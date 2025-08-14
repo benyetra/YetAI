@@ -8,6 +8,8 @@ from datetime import datetime
 from app.services.data_pipeline import sports_pipeline
 from app.services.fantasy_pipeline import fantasy_pipeline
 from app.services.ai_chat_service import ai_chat_service
+from app.services.real_fantasy_pipeline import real_fantasy_pipeline
+from app.services.performance_tracker import performance_tracker
 from app.core.config import settings
 from pydantic import BaseModel
 from typing import List, Optional
@@ -255,6 +257,194 @@ async def check_chat_health():
         health_status["error"] = str(e)
     
     return health_status
+
+# Enhanced Fantasy API endpoints
+@app.get("/api/fantasy/projections/v2")
+async def get_enhanced_fantasy_projections():
+    """Get enhanced fantasy projections using real player stats"""
+    try:
+        # Get real player stats
+        logger.info("Fetching real player season stats...")
+        player_stats = await real_fantasy_pipeline.get_player_season_stats()
+        
+        # Get games for context
+        games = await sports_pipeline.get_nfl_games_today()
+        
+        # Get injury reports
+        injury_data = await real_fantasy_pipeline.get_injury_reports()
+        
+        # Get weather data
+        weather_data = await real_fantasy_pipeline.get_weather_data(games)
+        
+        # Generate advanced projections
+        projections = real_fantasy_pipeline.calculate_advanced_projections(
+            player_stats, games, injury_data, weather_data
+        )
+        
+        # Record predictions for tracking (async)
+        for projection in projections[:10]:  # Track top 10 projections
+            asyncio.create_task(performance_tracker.record_prediction({
+                'type': 'fantasy',
+                'player_id': projection['player_id'],
+                'name': projection['name'],
+                'team': projection['team'],
+                'position': projection['position'],
+                'opponent': projection['opponent'],
+                'predicted_points': projection['projected_points'],
+                'confidence': projection['confidence'],
+                'reasoning': projection['reasoning'],
+                'game_date': projection['game_date']
+            }))
+        
+        return {
+            "status": "success",
+            "version": "2.0",
+            "data_sources": {
+                "player_stats": len(player_stats),
+                "injury_reports": len(injury_data),
+                "weather_data": len(weather_data),
+                "games": len(games)
+            },
+            "projections": projections,
+            "last_updated": datetime.now().isoformat(),
+            "methodology": "Real season stats + injury reports + weather + matchup analysis"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error generating enhanced projections: {e}")
+        raise HTTPException(status_code=500, detail=f"Error generating projections: {str(e)}")
+
+@app.get("/api/fantasy/player-stats/{player_id}")
+async def get_detailed_player_stats(player_id: str):
+    """Get detailed season stats for a specific player"""
+    try:
+        # Get all player stats
+        all_stats = await real_fantasy_pipeline.get_player_season_stats()
+        
+        if player_id not in all_stats:
+            raise HTTPException(status_code=404, detail="Player not found")
+        
+        player_data = all_stats[player_id]
+        
+        # Calculate per-game averages
+        games_played = player_data['stats'].get('games_played', 1)
+        per_game_stats = {}
+        
+        for stat_name, value in player_data['stats'].items():
+            if stat_name != 'games_played' and isinstance(value, (int, float)):
+                per_game_stats[f"{stat_name}_per_game"] = round(value / games_played, 2)
+        
+        return {
+            "status": "success",
+            "player": {
+                "id": player_id,
+                "name": player_data['name'],
+                "position": player_data['position'],
+                "team": player_data['team'],
+                "age": player_data.get('age'),
+                "season_stats": player_data['stats'],
+                "per_game_averages": per_game_stats,
+                "games_played": games_played
+            }
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching player stats: {str(e)}")
+
+@app.get("/api/performance/metrics")
+async def get_prediction_performance():
+    """Get prediction accuracy and performance metrics"""
+    try:
+        metrics = await performance_tracker.get_performance_metrics(days=30)
+        return {
+            "status": "success",
+            "metrics": metrics
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching performance metrics: {str(e)}")
+
+@app.get("/api/performance/best-predictions")
+async def get_best_predictions():
+    """Get the most accurate recent predictions"""
+    try:
+        best_preds = await performance_tracker.get_best_predictions(limit=15)
+        return {
+            "status": "success",
+            "best_predictions": best_preds,
+            "count": len(best_preds)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching best predictions: {str(e)}")
+
+@app.post("/api/performance/simulate-data")
+async def simulate_historical_performance():
+    """Generate sample historical performance data for demo"""
+    try:
+        await performance_tracker.simulate_historical_data()
+        return {
+            "status": "success", 
+            "message": "Sample historical data generated"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating sample data: {str(e)}")
+
+@app.get("/api/fantasy/injury-report")
+async def get_current_injury_report():
+    """Get current injury reports for fantasy-relevant players"""
+    try:
+        injury_data = await real_fantasy_pipeline.get_injury_reports()
+        
+        # Format for frontend
+        formatted_injuries = []
+        for player_key, status in injury_data.items():
+            formatted_injuries.append({
+                "player": player_key.replace('_', ' ').title(),
+                "status": status,
+                "severity": "high" if status == "out" else "medium" if status in ["doubtful", "questionable"] else "low"
+            })
+        
+        return {
+            "status": "success",
+            "injury_report": formatted_injuries,
+            "last_updated": datetime.now().isoformat(),
+            "total_players": len(formatted_injuries)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching injury report: {str(e)}")
+
+@app.get("/api/fantasy/weather-impact")
+async def get_weather_impact():
+    """Get weather impact analysis for upcoming games"""
+    try:
+        games = await sports_pipeline.get_nfl_games_today()
+        weather_data = await real_fantasy_pipeline.get_weather_data(games)
+        
+        # Format weather impact
+        weather_impact = []
+        for game_key, weather in weather_data.items():
+            teams = game_key.split('_vs_')
+            weather_impact.append({
+                "matchup": f"{teams[0]} vs {teams[1]}",
+                "conditions": weather['conditions'],
+                "temperature": weather['temperature'],
+                "wind_speed": weather['wind_speed'],
+                "impact_rating": weather['impact_rating'],
+                "fantasy_advice": {
+                    "passing": "reduced" if weather['impact_rating'] == "high" else "normal",
+                    "kicking": "difficult" if weather['wind_speed'] > 15 else "normal",
+                    "running": "enhanced" if weather['impact_rating'] == "high" else "normal"
+                }
+            })
+        
+        return {
+            "status": "success",
+            "weather_impact": weather_impact,
+            "games_analyzed": len(weather_impact)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching weather impact: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

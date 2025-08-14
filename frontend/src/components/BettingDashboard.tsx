@@ -1,54 +1,104 @@
-'use client';
+"use client";
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Target, Clock, AlertCircle, ChevronRight, Users, MessageCircle, Send } from 'lucide-react';
+import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3 } from 'lucide-react';
+import PerformanceDashboard from './PerformanceDashboard';
 
-// API client
-const api = {
-  baseURL: 'http://localhost:8000',
-  
-  async get(endpoint) {
-    try {
-      const response = await fetch(`${this.baseURL}${endpoint}`);
-      return await response.json();
-    } catch (error) {
-      console.error(`API Error: ${endpoint}`, error);
-      return null;
-    }
-  },
-  
-  async post(endpoint, data) {
-    try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data)
-      });
-      return await response.json();
-    } catch (error) {
-      console.error(`API Error: ${endpoint}`, error);
-      return null;
-    }
-  }
+// Types
+type Message = {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: string;
+  type?: string;
 };
 
-// Main Dashboard Component
+type Suggestion = {
+  text: string;
+  category: string;
+};
+
+type Game = {
+  away_team_full?: string;
+  home_team_full?: string;
+  venue?: string;
+  week?: number;
+  date?: string;
+  status?: string;
+  away_team?: string;
+  home_team?: string;
+  commence_time?: string;
+  moneyline?: any;
+  spread?: any;
+  total?: any;
+};
+
+type Prediction = {
+  game_id: string;
+  matchup: string;
+  game_time: string;
+  predictions: Array<{
+    type: string;
+    recommendation: string;
+    confidence: number;
+    reasoning: string;
+    book: string;
+  }>;
+};
+
+type FantasyProjection = {
+  player_name: string;
+  position: string;
+  team: string;
+  opponent: string;
+  projected_points: number;
+  floor: number;
+  ceiling: number;
+  snap_percentage: number;
+  injury_status: string;
+};
+
 export default function BettingDashboard() {
-  const [games, setGames] = useState([]);
-  const [odds, setOdds] = useState([]);
-  const [predictions, setPredictions] = useState([]);
-  const [fantasyProjections, setFantasyProjections] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState('predictions');
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [games, setGames] = useState<Game[]>([]);
+  const [odds, setOdds] = useState<Game[]>([]);
+  const [predictions, setPredictions] = useState<Prediction[]>([]);
+  const [fantasyProjections, setFantasyProjections] = useState<FantasyProjection[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<string>('predictions');
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   
   // Chat state
-  const [messages, setMessages] = useState([]);
-  const [currentMessage, setCurrentMessage] = useState('');
-  const [chatLoading, setChatLoading] = useState(false);
-  const [suggestions, setSuggestions] = useState([]);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [currentMessage, setCurrentMessage] = useState<string>('');
+  const [chatLoading, setChatLoading] = useState<boolean>(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+
+  const api = {
+    baseURL: 'http://localhost:8000',
+    get: async (endpoint: string): Promise<any> => {
+      try {
+        const response = await fetch(`${api.baseURL}${endpoint}`);
+        return await response.json();
+      } catch (error) {
+        console.error(`API Error: ${endpoint}`, error);
+        return null;
+      }
+    },
+    post: async (endpoint: string, data: any): Promise<any> => {
+      try {
+        const response = await fetch(`${api.baseURL}${endpoint}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(data)
+        });
+        return await response.json();
+      } catch (error) {
+        console.error(`API Error: ${endpoint}`, error);
+        return null;
+      }
+    }
+  };
 
   // Fetch all data
   useEffect(() => {
@@ -211,8 +261,9 @@ export default function BettingDashboard() {
           <nav className="-mb-px flex space-x-8">
             {[
               { id: 'predictions', name: 'AI Predictions', icon: Target },
-              { id: 'chat', name: 'AI Assistant', icon: MessageCircle },
               { id: 'fantasy', name: 'Fantasy', icon: Users },
+              { id: 'performance', name: 'Performance', icon: BarChart3 },
+              { id: 'chat', name: 'AI Assistant', icon: MessageCircle },
               { id: 'games', name: 'Games', icon: Clock },
               { id: 'odds', name: 'Live Odds', icon: TrendingUp }
             ].map(({ id, name, icon: Icon }) => (
@@ -235,61 +286,55 @@ export default function BettingDashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        
+        {/* AI Predictions Tab */}
         {activeTab === 'predictions' && (
           <div className="space-y-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex items-center">
-                <AlertCircle className="w-5 h-5 text-blue-600 mr-2" />
+                <Target className="w-5 h-5 text-blue-600 mr-2" />
                 <p className="text-blue-800 text-sm">
-                  <strong>AI Predictions:</strong> Using real data from ESPN and The Odds API. 
-                  {predictions.length === 0 && " Currently showing sample predictions - live predictions coming soon!"}
+                  <strong>AI Predictions:</strong> Advanced machine learning models analyze player performance, matchups, and weather to provide betting recommendations.
                 </p>
               </div>
             </div>
 
+            {/* Predictions Cards */}
             <div className="grid gap-6">
               {displayPredictions.map((game, idx) => (
-                <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-200">
-                  <div className="px-6 py-4 border-b border-gray-200">
-                    <div className="flex justify-between items-center">
-                      <h3 className="text-lg font-semibold text-gray-900">{game.matchup}</h3>
-                      <span className="text-sm text-gray-500">
-                        {new Date(game.game_time).toLocaleString()}
-                      </span>
-                    </div>
+                <div key={idx} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                  <div className="mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">{game.matchup}</h3>
+                    <p className="text-sm text-gray-500">
+                      {new Date(game.game_time).toLocaleString()}
+                    </p>
                   </div>
                   
-                  <div className="p-6 space-y-4">
+                  <div className="space-y-4">
                     {game.predictions.map((pred, predIdx) => (
-                      <div key={predIdx} className="border border-gray-100 rounded-lg p-4">
-                        <div className="flex justify-between items-start mb-3">
+                      <div key={predIdx} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex justify-between items-start mb-2">
                           <div>
-                            <div className="flex items-center space-x-3">
-                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                                {pred.type.toUpperCase()}
-                              </span>
-                              <span className="font-semibold text-gray-900">
-                                {pred.recommendation}
-                              </span>
-                            </div>
-                            <p className="text-sm text-gray-600 mt-1">via {pred.book}</p>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 mb-2">
+                              {pred.type}
+                            </span>
+                            <h4 className="text-lg font-medium text-gray-900">{pred.recommendation}</h4>
                           </div>
                           <div className="text-right">
-                            <div className="flex items-center">
-                              <div className={`w-2 h-2 rounded-full mr-2 ${
-                                pred.confidence >= 70 ? 'bg-green-500' : 
-                                pred.confidence >= 60 ? 'bg-yellow-500' : 'bg-red-500'
-                              }`}></div>
-                              <span className="text-sm font-medium text-gray-900">
-                                {pred.confidence}% confidence
-                              </span>
-                            </div>
+                            <p className="text-sm text-gray-600">Confidence</p>
+                            <p className={`text-lg font-bold ${
+                              pred.confidence >= 80 ? 'text-green-600' :
+                              pred.confidence >= 60 ? 'text-yellow-600' : 'text-red-600'
+                            }`}>
+                              {pred.confidence}%
+                            </p>
                           </div>
                         </div>
-                        
-                        <p className="text-gray-700 text-sm leading-relaxed">
-                          {pred.reasoning}
-                        </p>
+                        <p className="text-sm text-gray-600 mb-2">{pred.reasoning}</p>
+                        <div className="flex justify-between items-center text-xs text-gray-500">
+                          <span>Best odds: {pred.book}</span>
+                          <span>AI Recommendation</span>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -299,13 +344,112 @@ export default function BettingDashboard() {
           </div>
         )}
 
+        {/* Fantasy Tab */}
+        {activeTab === 'fantasy' && (
+          <div className="space-y-6">
+            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+              <div className="flex items-center">
+                <Users className="w-5 h-5 text-purple-600 mr-2" />
+                <p className="text-purple-800 text-sm">
+                  <strong>Fantasy Football:</strong> AI-powered projections and start/sit advice for weekly lineup optimization.
+                </p>
+              </div>
+            </div>
+
+            {/* Position Filter Buttons */}
+            <div className="flex flex-wrap gap-2 mb-6">
+              {['All', 'QB', 'RB', 'WR', 'TE', 'K'].map((position) => (
+                <button
+                  key={position}
+                  className="px-3 py-1 text-sm font-medium rounded-full bg-gray-100 text-gray-700 hover:bg-purple-100 hover:text-purple-700 transition-colors"
+                >
+                  {position}
+                </button>
+              ))}
+            </div>
+
+            {/* Fantasy Projections */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-semibold text-gray-900">Weekly Projections</h3>
+                <p className="text-sm text-gray-500">Current Week • {fantasyProjections.length} Players</p>
+              </div>
+
+              {fantasyProjections.length === 0 ? (
+                <div className="p-8 text-center">
+                  <p className="text-gray-500">Loading fantasy projections...</p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projection</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Range</th>
+                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="bg-white divide-y divide-gray-200">
+                      {fantasyProjections.slice(0, 20).map((player, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50">
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div>
+                              <div className="text-sm font-medium text-gray-900">{player.player_name}</div>
+                              <div className="text-sm text-gray-500">vs {player.opponent}</div>
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              player.position === 'QB' ? 'bg-red-100 text-red-800' :
+                              player.position === 'RB' ? 'bg-green-100 text-green-800' :
+                              player.position === 'WR' ? 'bg-blue-100 text-blue-800' :
+                              player.position === 'TE' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-gray-100 text-gray-800'
+                            }`}>
+                              {player.position}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player.team}</td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <div className="text-sm font-semibold text-gray-900">{player.projected_points} pts</div>
+                            <div className="text-xs text-gray-500">{player.snap_percentage}% snaps</div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                            {player.floor} - {player.ceiling}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                              player.injury_status === 'Healthy' ? 'bg-green-100 text-green-800' :
+                              player.injury_status === 'Questionable' ? 'bg-yellow-100 text-yellow-800' :
+                              'bg-red-100 text-red-800'
+                            }`}>
+                              {player.injury_status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Performance Tab */}
+        {activeTab === 'performance' && <PerformanceDashboard />}
+
+        {/* Chat Tab */}
         {activeTab === 'chat' && (
           <div className="space-y-6">
             <div className="bg-green-50 border border-green-200 rounded-lg p-4">
               <div className="flex items-center">
                 <MessageCircle className="w-5 h-5 text-green-600 mr-2" />
                 <p className="text-green-800 text-sm">
-                  <strong>AI Sports Assistant:</strong> Get real-time betting advice, fantasy insights, and game analysis using live data.
+                  <strong>AI Assistant:</strong> Get personalized betting advice, fantasy recommendations, and real-time analysis.
                 </p>
               </div>
             </div>
@@ -405,100 +549,7 @@ export default function BettingDashboard() {
           </div>
         )}
 
-        {activeTab === 'fantasy' && (
-          <div className="space-y-6">
-            <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-              <div className="flex items-center">
-                <Users className="w-5 h-5 text-purple-600 mr-2" />
-                <p className="text-purple-800 text-sm">
-                  <strong>Fantasy Football:</strong> AI-powered projections and start/sit advice for weekly lineup optimization.
-                </p>
-              </div>
-            </div>
-
-            {/* Position Filter Buttons */}
-            <div className="flex flex-wrap gap-2 mb-6">
-              {['All', 'QB', 'RB', 'WR', 'TE', 'K'].map((position) => (
-                <button
-                  key={position}
-                  className="px-3 py-1 text-sm font-medium rounded-full bg-gray-100 text-gray-700 hover:bg-purple-100 hover:text-purple-700 transition-colors"
-                >
-                  {position}
-                </button>
-              ))}
-            </div>
-
-            {/* Fantasy Projections */}
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-900">Weekly Projections</h3>
-                <p className="text-sm text-gray-500">Current Week • {fantasyProjections.length} Players</p>
-              </div>
-
-              {fantasyProjections.length === 0 ? (
-                <div className="p-8 text-center">
-                  <p className="text-gray-500">Loading fantasy projections...</p>
-                </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full">
-                    <thead className="bg-gray-50">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Player</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Position</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Team</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Projection</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Range</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
-                      </tr>
-                    </thead>
-                    <tbody className="bg-white divide-y divide-gray-200">
-                      {fantasyProjections.slice(0, 20).map((player, idx) => (
-                        <tr key={idx} className="hover:bg-gray-50">
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div>
-                              <div className="text-sm font-medium text-gray-900">{player.player_name}</div>
-                              <div className="text-sm text-gray-500">vs {player.opponent}</div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              player.position === 'QB' ? 'bg-red-100 text-red-800' :
-                              player.position === 'RB' ? 'bg-green-100 text-green-800' :
-                              player.position === 'WR' ? 'bg-blue-100 text-blue-800' :
-                              player.position === 'TE' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-gray-100 text-gray-800'
-                            }`}>
-                              {player.position}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">{player.team}</td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <div className="text-sm font-semibold text-gray-900">{player.projected_points} pts</div>
-                            <div className="text-xs text-gray-500">{player.snap_percentage}% snaps</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                            {player.floor} - {player.ceiling}
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                              player.injury_status === 'Healthy' ? 'bg-green-100 text-green-800' :
-                              player.injury_status === 'Questionable' ? 'bg-yellow-100 text-yellow-800' :
-                              'bg-red-100 text-red-800'
-                            }`}>
-                              {player.injury_status}
-                            </span>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
+        {/* Games Tab */}
         {activeTab === 'games' && (
           <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Current NFL Games</h2>
@@ -521,14 +572,14 @@ export default function BettingDashboard() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium text-gray-900">
-                          {new Date(game.date).toLocaleString()}
+                          {game.date && new Date(game.date).toLocaleString()}
                         </p>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           game.status === 'STATUS_SCHEDULED' ? 'bg-blue-100 text-blue-800' :
                           game.status === 'STATUS_IN_PROGRESS' ? 'bg-green-100 text-green-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
-                          {game.status.replace('STATUS_', '')}
+                          {game.status?.replace('STATUS_', '') || 'TBD'}
                         </span>
                       </div>
                     </div>
@@ -539,6 +590,7 @@ export default function BettingDashboard() {
           </div>
         )}
 
+        {/* Odds Tab */}
         {activeTab === 'odds' && (
           <div className="space-y-4">
             <h2 className="text-xl font-semibold text-gray-900">Live Betting Odds</h2>
@@ -555,7 +607,7 @@ export default function BettingDashboard() {
                         {game.away_team} @ {game.home_team}
                       </h3>
                       <p className="text-sm text-gray-500">
-                        {new Date(game.commence_time).toLocaleString()}
+                        {game.commence_time && new Date(game.commence_time).toLocaleString()}
                       </p>
                     </div>
                     
@@ -609,7 +661,7 @@ export default function BettingDashboard() {
                           <div>
                             <p className="text-gray-600 font-medium mb-1">Total</p>
                             <div className="space-y-1">
-                              {Object.entries(game.total).map(([type, data]) => (
+                              {Object.entries(game.total).map(([type, data]: [string, any]) => (
                                 <div key={type} className="flex justify-between">
                                   <span>{type} {data.point}</span>
                                   <span className="font-mono">{data.price > 0 ? '+' : ''}{data.price}</span>
