@@ -1,6 +1,7 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Depends, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
 import logging
 from datetime import datetime
@@ -10,8 +11,9 @@ from app.services.fantasy_pipeline import fantasy_pipeline
 from app.services.ai_chat_service import ai_chat_service
 from app.services.real_fantasy_pipeline import real_fantasy_pipeline
 from app.services.performance_tracker import performance_tracker
+from app.services.auth_service import auth_service
 from app.core.config import settings
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
 # Configure logging
@@ -28,6 +30,30 @@ class ChatRequest(BaseModel):
     message: str
     conversation_history: Optional[List[ChatMessage]] = None
 
+# Security scheme
+security = HTTPBearer()
+
+# Auth Request/Response models
+class UserSignup(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+class UserPreferences(BaseModel):
+    favorite_teams: Optional[list] = None
+    preferred_sports: Optional[list] = None
+    notification_settings: Optional[dict] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+class SubscriptionUpgrade(BaseModel):
+    tier: str  # "pro" or "elite"
+
 app = FastAPI(
     title="AI Sports Betting MVP",
     description="AI-powered sports betting and fantasy insights platform",
@@ -39,11 +65,38 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["http://localhost:3000", "http://localhost:3002"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Dependency to get current user
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user from JWT token"""
+    token = credentials.credentials
+    user = await auth_service.get_user_by_token(token)
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+# Optional user dependency (doesn't require auth)
+async def get_current_user_optional(credentials: Optional[HTTPAuthorizationCredentials] = Depends(HTTPBearer(auto_error=False))):
+    """Get current user if authenticated, None otherwise"""
+    if not credentials:
+        return None
+    
+    try:
+        token = credentials.credentials
+        user = await auth_service.get_user_by_token(token)
+        return user
+    except:
+        return None
 
 @app.get("/")
 async def root():
@@ -445,6 +498,190 @@ async def get_weather_impact():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching weather impact: {str(e)}")
+
+# Auth endpoints
+@app.post("/api/auth/signup")
+async def signup(user_data: UserSignup):
+    """Create a new user account"""
+    try:
+        result = await auth_service.create_user(
+            email=user_data.email,
+            password=user_data.password,
+            first_name=user_data.first_name,
+            last_name=user_data.last_name
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": "Account created successfully",
+                "user": result["user"],
+                "access_token": result["access_token"],
+                "token_type": result["token_type"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Signup failed: {str(e)}")
+
+@app.post("/api/auth/login")
+async def login(user_data: UserLogin):
+    """Authenticate user and return access token"""
+    try:
+        result = await auth_service.authenticate_user(
+            email=user_data.email,
+            password=user_data.password
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": "Login successful",
+                "user": result["user"],
+                "access_token": result["access_token"],
+                "token_type": result["token_type"]
+            }
+        else:
+            raise HTTPException(status_code=401, detail=result["error"])
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Login failed: {str(e)}")
+
+@app.get("/api/auth/me")
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
+    """Get current user information"""
+    return {
+        "status": "success",
+        "user": current_user
+    }
+
+@app.put("/api/auth/preferences")
+async def update_preferences(
+    preferences: UserPreferences,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user preferences"""
+    try:
+        result = await auth_service.update_user_preferences(
+            user_id=current_user["id"],
+            preferences=preferences.dict(exclude_unset=True)
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
+
+@app.post("/api/auth/upgrade")
+async def upgrade_subscription(
+    upgrade_data: SubscriptionUpgrade,
+    current_user: dict = Depends(get_current_user)
+):
+    """Upgrade user subscription"""
+    try:
+        # Validate tier
+        valid_tiers = ["pro", "elite"]
+        if upgrade_data.tier not in valid_tiers:
+            raise HTTPException(status_code=400, detail=f"Invalid tier. Must be one of: {valid_tiers}")
+        
+        result = await auth_service.upgrade_subscription(
+            user_id=current_user["id"],
+            tier=upgrade_data.tier
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "new_tier": upgrade_data.tier
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upgrade subscription: {str(e)}")
+
+@app.post("/api/auth/demo-users")
+async def create_demo_users():
+    """Create demo users for testing"""
+    try:
+        auth_service.create_demo_users()
+        return {
+            "status": "success",
+            "message": "Demo users created",
+            "demo_accounts": [
+                {"email": "demo@example.com", "password": "demo123", "tier": "free"},
+                {"email": "pro@example.com", "password": "pro123", "tier": "pro"}
+            ]
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create demo users: {str(e)}")
+
+# Protected endpoint examples
+@app.get("/api/predictions/personalized")
+async def get_personalized_predictions(current_user: dict = Depends(get_current_user)):
+    """Get predictions personalized for the current user"""
+    try:
+        # Use user's favorite teams and preferences
+        import json
+        favorite_teams = json.loads(current_user.get("favorite_teams", "[]"))
+        preferred_sports = json.loads(current_user.get("preferred_sports", "[\"NFL\"]"))
+        
+        # Get regular predictions (you'd filter these based on user prefs)
+        from app.services.data_pipeline import sports_pipeline
+        games = await sports_pipeline.get_nfl_games_today()
+        
+        # Filter for user's favorite teams
+        personalized_games = []
+        for game in games:
+            if (game.get("home_team") in favorite_teams or 
+                game.get("away_team") in favorite_teams):
+                personalized_games.append(game)
+        
+        return {
+            "status": "success",
+            "user_id": current_user["id"],
+            "subscription_tier": current_user["subscription_tier"],
+            "favorite_teams": favorite_teams,
+            "personalized_games": personalized_games,
+            "total_games": len(personalized_games)
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting personalized predictions: {str(e)}")
+
+@app.get("/api/user/performance")
+async def get_user_performance(current_user: dict = Depends(get_current_user)):
+    """Get user's personal prediction performance"""
+    try:
+        # This would integrate with your performance tracker
+        # For now, return mock user-specific data
+        
+        return {
+            "status": "success",
+            "user_id": current_user["id"],
+            "personal_stats": {
+                "predictions_made": 25,
+                "accuracy_rate": 78.5,
+                "best_sport": "NFL",
+                "favorite_bet_type": "spreads",
+                "total_profit": 125.50 if current_user["subscription_tier"] != "free" else "Upgrade to see profits"
+            },
+            "recent_predictions": [
+                {"game": "Chiefs vs Bills", "prediction": "Chiefs -3", "result": "Won", "profit": 10.50},
+                {"game": "Cowboys vs Eagles", "prediction": "Over 47.5", "result": "Lost", "profit": -11.00}
+            ]
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error getting user performance: {str(e)}")
 
 if __name__ == "__main__":
     import uvicorn

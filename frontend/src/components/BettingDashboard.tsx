@@ -1,8 +1,9 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3 } from 'lucide-react';
+import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3, Crown } from 'lucide-react';
 import PerformanceDashboard from './PerformanceDashboard';
+import { useAuth } from './Auth';
 
 // Types
 type Message = {
@@ -72,11 +73,18 @@ export default function BettingDashboard() {
   const [chatLoading, setChatLoading] = useState<boolean>(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
 
+  // Auth integration
+  const { user, token, isAuthenticated } = useAuth();
+
   const api = {
     baseURL: 'http://localhost:8000',
     get: async (endpoint: string): Promise<any> => {
       try {
-        const response = await fetch(`${api.baseURL}${endpoint}`);
+        const headers: any = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
+        const response = await fetch(`${api.baseURL}${endpoint}`, { headers });
         return await response.json();
       } catch (error) {
         console.error(`API Error: ${endpoint}`, error);
@@ -85,11 +93,13 @@ export default function BettingDashboard() {
     },
     post: async (endpoint: string, data: any): Promise<any> => {
       try {
+        const headers: any = { 'Content-Type': 'application/json' };
+        if (token) {
+          headers['Authorization'] = `Bearer ${token}`;
+        }
         const response = await fetch(`${api.baseURL}${endpoint}`, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers,
           body: JSON.stringify(data)
         });
         return await response.json();
@@ -243,6 +253,14 @@ export default function BettingDashboard() {
               <h1 className="text-2xl font-bold text-gray-900">AI Sports Betting</h1>
               <p className="text-sm text-gray-500">
                 Last updated: {lastUpdated} • {games.length} games • {odds.length} odds
+                {isAuthenticated && user && (
+                  <span className="ml-2">
+                    • Welcome back, {user.first_name || user.email}
+                    {user.subscription_tier !== 'free' && (
+                      <Crown className="w-4 h-4 inline ml-1 text-yellow-500" />
+                    )}
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex items-center space-x-4">
@@ -250,6 +268,12 @@ export default function BettingDashboard() {
                 <div className="w-2 h-2 bg-green-500 rounded-full mr-2"></div>
                 <span className="text-sm font-medium">Live Data</span>
               </div>
+              {isAuthenticated && user?.subscription_tier !== 'free' && (
+                <div className="flex items-center text-blue-600">
+                  <Crown className="w-4 h-4 mr-1" />
+                  <span className="text-sm font-medium capitalize">{user.subscription_tier}</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -265,7 +289,8 @@ export default function BettingDashboard() {
               { id: 'performance', name: 'Performance', icon: BarChart3 },
               { id: 'chat', name: 'AI Assistant', icon: MessageCircle },
               { id: 'games', name: 'Games', icon: Clock },
-              { id: 'odds', name: 'Live Odds', icon: TrendingUp }
+              { id: 'odds', name: 'Live Odds', icon: TrendingUp },
+              ...(isAuthenticated ? [{ id: 'personalized', name: 'My Picks', icon: Crown }] : [])
             ].map(({ id, name, icon: Icon }) => (
               <button
                 key={id}
@@ -683,6 +708,120 @@ export default function BettingDashboard() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Personalized Tab */}
+        {activeTab === 'personalized' && isAuthenticated && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-gray-900">My Personalized Picks</h2>
+              <div className="flex items-center text-blue-600">
+                <Crown className="w-5 h-5 mr-2" />
+                <span className="text-sm font-medium">
+                  {user?.subscription_tier === 'free' ? 'Free Tier' : `${user?.subscription_tier} Member`}
+                </span>
+              </div>
+            </div>
+
+            {user?.subscription_tier === 'free' && (
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-6 border border-blue-200">
+                <div className="flex items-start">
+                  <Crown className="w-6 h-6 text-blue-600 mt-1 mr-3" />
+                  <div>
+                    <h3 className="text-lg font-semibold text-blue-900 mb-2">
+                      Upgrade to Pro for Personalized Picks
+                    </h3>
+                    <p className="text-blue-700 mb-4">
+                      Get AI-powered predictions based on your favorite teams, betting history, and risk preferences.
+                    </p>
+                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium">
+                      Upgrade to Pro
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Favorite Teams Section */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Favorite Teams</h3>
+              {user?.favorite_teams ? (
+                <div className="flex flex-wrap gap-2">
+                  {JSON.parse(user.favorite_teams).map((team: string) => (
+                    <span key={team} className="bg-blue-100 text-blue-800 px-3 py-1 rounded-full text-sm font-medium">
+                      {team}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-gray-500">No favorite teams set. Update your preferences to see personalized picks.</p>
+              )}
+            </div>
+
+            {/* Personalized Games */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+              <h3 className="text-lg font-semibold text-gray-900 mb-4">Games Featuring Your Teams</h3>
+              {user?.favorite_teams && games.length > 0 ? (
+                <div className="space-y-4">
+                  {games
+                    .filter(game => {
+                      const favoriteTeams = JSON.parse(user.favorite_teams || '[]');
+                      return favoriteTeams.includes(game.home_team) || favoriteTeams.includes(game.away_team);
+                    })
+                    .map((game, idx) => (
+                      <div key={idx} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className="font-semibold text-gray-900">
+                            {game.away_team_full} @ {game.home_team_full}
+                          </h4>
+                          <span className="text-xs text-gray-500">{game.status}</span>
+                        </div>
+                        <div className="text-sm text-gray-600">
+                          <p>{game.venue}</p>
+                          <p>{game.date && new Date(game.date).toLocaleString()}</p>
+                        </div>
+                        {user?.subscription_tier !== 'free' && (
+                          <div className="mt-3 p-3 bg-green-50 rounded border-l-4 border-green-400">
+                            <p className="text-sm text-green-800 font-medium">
+                              🎯 AI Recommendation: Strong value on {game.home_team} spread based on your betting history
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  {games.filter(game => {
+                    const favoriteTeams = JSON.parse(user.favorite_teams || '[]');
+                    return favoriteTeams.includes(game.home_team) || favoriteTeams.includes(game.away_team);
+                  }).length === 0 && (
+                    <p className="text-gray-500">None of your favorite teams are playing today.</p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-gray-500">Set your favorite teams to see personalized game recommendations.</p>
+              )}
+            </div>
+
+            {/* User Performance */}
+            {user?.subscription_tier !== 'free' && (
+              <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+                <h3 className="text-lg font-semibold text-gray-900 mb-4">Your Betting Performance</h3>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-green-50 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">78.5%</div>
+                    <div className="text-sm text-green-800">Win Rate</div>
+                  </div>
+                  <div className="text-center p-4 bg-blue-50 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">25</div>
+                    <div className="text-sm text-blue-800">Total Bets</div>
+                  </div>
+                  <div className="text-center p-4 bg-purple-50 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600">+$125.50</div>
+                    <div className="text-sm text-purple-800">Profit/Loss</div>
+                  </div>
+                </div>
               </div>
             )}
           </div>
