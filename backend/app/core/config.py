@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     # External APIs
     ODDS_API_KEY: Optional[str] = None
     OPENAI_API_KEY: Optional[str] = None
+    WEATHER_API_KEY: Optional[str] = None
     
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
