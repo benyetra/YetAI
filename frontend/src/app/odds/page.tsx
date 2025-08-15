@@ -1,77 +1,185 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import Layout from '@/components/Layout';
-import { apiClient } from '@/lib/api';
-import { TrendingUp, TrendingDown, Minus, Clock, DollarSign } from 'lucide-react';
+import { LiveOdds } from '@/components/LiveOdds';
+import { SportsSelector } from '@/components/SportsSelector';
+import { LiveScores } from '@/components/LiveScores';
+import { TrendingUp, Activity, Trophy, Target, BarChart3, Zap } from 'lucide-react';
 
 export default function OddsPage() {
-  const [odds, setOdds] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [selectedSport, setSelectedSport] = useState('nfl');
+  const [selectedSport, setSelectedSport] = useState<string>('');
+  const [selectedSportTitle, setSelectedSportTitle] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'odds' | 'scores' | 'popular'>('popular');
 
-  useEffect(() => {
-    fetchOdds();
-  }, [selectedSport]);
-
-  const fetchOdds = async () => {
-    setLoading(true);
-    try {
-      const data = await apiClient.get(`/api/odds/${selectedSport}`);
-      setOdds(data.odds || []);
-    } catch (error) {
-      console.error('Error fetching odds:', error);
-    } finally {
-      setLoading(false);
+  const handleSportChange = (sportKey: string, sportTitle: string) => {
+    setSelectedSport(sportKey);
+    setSelectedSportTitle(sportTitle);
+    if (sportKey) {
+      setActiveTab('odds');
     }
   };
 
   return (
     <Layout>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Live Odds</h1>
-          <select
-            value={selectedSport}
-            onChange={(e) => setSelectedSport(e.target.value)}
-            className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-          >
-            <option value="nfl">NFL</option>
-            <option value="nba">NBA</option>
-            <option value="mlb">MLB</option>
-            <option value="nhl">NHL</option>
-          </select>
+        {/* Header */}
+        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
+          <div className="flex items-center space-x-3">
+            <div className="p-2 bg-[#A855F7]/10 rounded-lg">
+              <TrendingUp className="w-6 h-6 text-[#A855F7]" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Live Odds & Scores</h1>
+              <p className="text-gray-600">Real-time betting odds and game results</p>
+            </div>
+          </div>
+
+          {/* Sports Selector */}
+          <div className="w-full lg:w-80">
+            <SportsSelector
+              selectedSport={selectedSport}
+              onSportChange={handleSportChange}
+              placeholder="Select a sport for odds..."
+            />
+          </div>
         </div>
 
-        {loading ? (
-          <div className="flex justify-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {odds.map((game: any, index: number) => (
-              <div key={index} className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-xs font-medium px-2 py-1 bg-gray-100 rounded">
-                    {selectedSport.toUpperCase()}
-                  </span>
-                  <Clock className="w-4 h-4 text-gray-500" />
-                </div>
-                <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">{game.away_team}</span>
-                    <span className="text-lg font-bold">+110</span>
-                  </div>
-                  <div className="flex justify-between items-center">
-                    <span className="font-medium">{game.home_team}</span>
-                    <span className="text-lg font-bold">-130</span>
-                  </div>
-                </div>
-                <button className="w-full mt-4 bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 transition-colors">
-                  Place Bet
-                </button>
+        {/* Tabs */}
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('popular')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'popular'
+                  ? 'border-[#A855F7] text-[#A855F7]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <Zap className="w-4 h-4" />
+                <span>Popular Sports</span>
               </div>
-            ))}
+            </button>
+
+            <button
+              onClick={() => setActiveTab('odds')}
+              disabled={!selectedSport}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'odds' && selectedSport
+                  ? 'border-[#A855F7] text-[#A855F7]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } ${!selectedSport ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <div className="flex items-center space-x-2">
+                <Target className="w-4 h-4" />
+                <span>{selectedSportTitle || 'Sport Odds'}</span>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('scores')}
+              disabled={!selectedSport}
+              className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                activeTab === 'scores' && selectedSport
+                  ? 'border-[#A855F7] text-[#A855F7]'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              } ${!selectedSport ? 'opacity-50 cursor-not-allowed' : ''}`}
+            >
+              <div className="flex items-center space-x-2">
+                <Trophy className="w-4 h-4" />
+                <span>Scores</span>
+              </div>
+            </button>
+          </nav>
+        </div>
+
+        {/* Content */}
+        <div className="space-y-6">
+          {activeTab === 'popular' && (
+            <div className="space-y-6">
+              {/* Popular Sports Odds */}
+              <div>
+                <div className="mb-4 flex items-center space-x-2">
+                  <Activity className="w-5 h-5 text-[#A855F7]" />
+                  <h2 className="text-xl font-semibold text-gray-900">Popular Sports</h2>
+                  <span className="text-sm text-gray-600">NFL • NBA • MLB • NHL</span>
+                </div>
+                <LiveOdds 
+                  showPopular={true}
+                  autoRefresh={true}
+                  refreshInterval={300000} // 5 minutes
+                  maxGames={12}
+                />
+              </div>
+
+              {/* Featured Stats */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-8">
+                <div className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] rounded-lg p-6 text-white">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium opacity-90">Live Games</h3>
+                      <p className="text-2xl font-bold">8</p>
+                    </div>
+                    <Activity className="w-8 h-8 opacity-80" />
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-600">Best Odds</h3>
+                      <p className="text-2xl font-bold text-gray-900">+450</p>
+                    </div>
+                    <TrendingUp className="w-8 h-8 text-green-500" />
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-lg shadow-lg p-6 border">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-sm font-medium text-gray-600">Markets</h3>
+                      <p className="text-2xl font-bold text-gray-900">150+</p>
+                    </div>
+                    <BarChart3 className="w-8 h-8 text-[#A855F7]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeTab === 'odds' && selectedSport && (
+            <LiveOdds 
+              sportKey={selectedSport}
+              autoRefresh={true}
+              refreshInterval={180000} // 3 minutes for specific sports
+              maxGames={20}
+            />
+          )}
+
+          {activeTab === 'scores' && selectedSport && (
+            <LiveScores 
+              sportKey={selectedSport}
+              daysFrom={3}
+              autoRefresh={true}
+              refreshInterval={600000} // 10 minutes
+              maxScores={15}
+              showCompleted={true}
+              showLive={true}
+            />
+          )}
+        </div>
+
+        {/* Help Text */}
+        {!selectedSport && (activeTab === 'odds' || activeTab === 'scores') && (
+          <div className="bg-gray-50 rounded-lg p-8 text-center">
+            <div className="max-w-md mx-auto">
+              <Target className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">Select a Sport</h3>
+              <p className="text-gray-600">
+                Choose a sport from the dropdown above to view live odds and scores.
+              </p>
+            </div>
           </div>
         )}
       </div>

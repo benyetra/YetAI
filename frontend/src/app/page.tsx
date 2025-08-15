@@ -5,9 +5,10 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthModal } from '@/components/Auth';
 import { useAuth } from '@/components/Auth';
 import Layout from '@/components/Layout';
+import { LiveOdds } from '@/components/LiveOdds';
 import { 
   Zap, TrendingUp, Brain, Trophy, Users, Shield, 
-  ChevronRight, Star, ArrowRight, DollarSign 
+  ChevronRight, Star, ArrowRight, DollarSign, Activity 
 } from 'lucide-react';
 
 export default function HomePage() {
@@ -79,6 +80,42 @@ export default function HomePage() {
                 Sign In
               </button>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Live Odds Preview Section */}
+      <div className="py-16 bg-white border-b border-gray-100">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-12">
+            <div className="flex justify-center items-center space-x-2 mb-4">
+              <Activity className="w-6 h-6 text-[#A855F7]" />
+              <h2 className="text-3xl font-bold text-gray-900">Live Sports Odds</h2>
+            </div>
+            <p className="text-lg text-gray-600 max-w-2xl mx-auto">
+              Real-time odds from major sportsbooks, updated every minute. 
+              See the live data that powers our AI predictions.
+            </p>
+          </div>
+          
+          <LiveOdds 
+            showPopular={true}
+            autoRefresh={true}
+            refreshInterval={300000}
+            maxGames={4}
+          />
+          
+          <div className="text-center mt-8">
+            <button
+              onClick={() => {
+                setAuthMode('signup');
+                setShowAuthModal(true);
+              }}
+              className="inline-flex items-center px-6 py-3 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors font-medium"
+            >
+              Get Full Access
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </button>
           </div>
         </div>
       </div>

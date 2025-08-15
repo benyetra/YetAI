@@ -2,10 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users, Wifi, WifiOff } from 'lucide-react';
+import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users, Wifi, WifiOff, Activity, Zap } from 'lucide-react';
 import { useAuth } from './Auth';
 import BetModal from './BetModal';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import { LiveOdds } from './LiveOdds';
+import { sportsAPI, oddsUtils } from '../lib/api';
+import { formatSpread, formatTotal, formatGameStatus } from '../lib/formatting';
 
 interface User {
   id: string;
@@ -134,7 +137,7 @@ const GameCard: React.FC<{
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center space-x-2">
           <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(game.status)}`}>
-            {game.status}
+            {formatGameStatus(game.status)}
           </span>
           {getWeatherIcon(game.weather_impact)}
           {isFavorite && <span className="text-blue-600 text-xs font-medium">★ Favorite</span>}
@@ -161,8 +164,8 @@ const GameCard: React.FC<{
 
       {game.spread && (
         <div className="mt-3 text-sm text-gray-700 font-medium">
-          <p>Spread: {game.home_team} {game.spread > 0 ? '+' : ''}{game.spread}</p>
-          {game.over_under && <p>O/U: {game.over_under}</p>}
+          <p>Spread: {game.home_team} {game.spread > 0 ? '+' : ''}{formatSpread(game.spread)}</p>
+          {game.over_under && <p>O/U: {formatTotal(game.over_under)}</p>}
         </div>
       )}
 
@@ -248,17 +251,26 @@ const Dashboard: React.FC = () => {
   const { isConnected, subscribeToGame, unsubscribeFromGame, getGameUpdate } = useWebSocket();
 
   // Handle place bet
-  const handlePlaceBet = (game: Game) => {
-    // Enhance game with required fields for BetModal
-    const enhancedGame = {
-      ...game,
-      sport: 'NFL',
-      commence_time: game.start_time,
-      home_odds: game.home_odds || -110,
-      away_odds: game.away_odds || +100,
-      total: game.over_under || 45.5
-    };
-    setSelectedGame(enhancedGame);
+  const handlePlaceBet = (game: Game | any) => {
+    // Check if this is a live odds game with bookmakers
+    if (game.bookmakers && game.bookmakers.length > 0) {
+      // Convert live odds data to simple format for BetModal
+      const simpleGame = oddsUtils.toSimpleGame(game);
+      setSelectedGame(simpleGame);
+    } else {
+      // Handle legacy game format
+      const enhancedGame = {
+        ...game,
+        id: game.id || `game_${Math.random()}`,
+        sport: game.sport || game.sport_key || 'NFL',
+        commence_time: game.commence_time || game.start_time,
+        home_odds: game.home_odds || -110,
+        away_odds: game.away_odds || +100,
+        spread: game.spread ? parseFloat(formatSpread(game.spread)) : 0,
+        total: game.total ? parseFloat(formatTotal(game.total)) : (game.over_under ? parseFloat(formatTotal(game.over_under)) : 45.5)
+      };
+      setSelectedGame(enhancedGame);
+    }
     setShowBetModal(true);
   };
 
@@ -301,8 +313,8 @@ const Dashboard: React.FC = () => {
             away_score: game.away_score,
             status: game.status || 'upcoming',
             start_time: game.start_time || new Date().toISOString(),
-            spread: game.spread || Math.random() * 14 - 7,
-            over_under: game.over_under || 45 + Math.random() * 20,
+            spread: game.spread || Math.round((Math.random() * 14 - 7) * 2) / 2,
+            over_under: game.over_under || Math.round((45 + Math.random() * 20) * 2) / 2,
             home_odds: game.home_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
             away_odds: game.away_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
             weather_impact: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as 'low' | 'medium' | 'high'
@@ -522,6 +534,28 @@ const Dashboard: React.FC = () => {
                   <AIInsightCard key={index} insight={insight} />
                 ))}
               </div>
+            </div>
+
+            {/* Live Odds Section */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-bold text-gray-900 section-subtitle flex items-center">
+                  <Activity className="w-5 h-5 mr-2 text-[#A855F7]" />
+                  Live Odds & Games
+                </h2>
+                <Link 
+                  href="/odds"
+                  className="text-[#A855F7] hover:text-[#A855F7]/80 font-medium text-sm flex items-center"
+                >
+                  View All <ArrowUpRight className="w-4 h-4 ml-1" />
+                </Link>
+              </div>
+              <LiveOdds 
+                showPopular={true}
+                autoRefresh={true}
+                refreshInterval={300000} // 5 minutes
+                maxGames={6}
+              />
             </div>
 
             {/* Featured Games */}

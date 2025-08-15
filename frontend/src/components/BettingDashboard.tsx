@@ -5,6 +5,19 @@ import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3, Crown
 import PerformanceDashboard from './PerformanceDashboard';
 import { useAuth } from './Auth';
 import BetModal from './BetModal';
+import { oddsUtils } from '../lib/api';
+import { 
+  formatSportName, 
+  formatLocalDateTime, 
+  formatLocalDate, 
+  formatLocalTime, 
+  formatTimeFromNow, 
+  formatOdds as formatOddsDisplay, 
+  formatTotal,
+  formatSpread,
+  formatGameStatus,
+  formatFriendlyDate 
+} from '../lib/formatting';
 
 // Types
 type Message = {
@@ -198,20 +211,27 @@ export default function BettingDashboard() {
 
   // Handle place bet
   const handlePlaceBet = (game: any) => {
-    // Enhance game with required fields for BetModal
-    const enhancedGame = {
-      ...game,
-      id: game.id || `game_${Math.random()}`,
-      sport: game.sport || 'NFL',
-      commence_time: game.commence_time || game.date || new Date().toISOString(),
-      home_odds: game.moneyline?.home || -110,
-      away_odds: game.moneyline?.away || +100,
-      total: game.total?.point || 45.5,
-      spread: game.spread?.home?.point || -3.5,
-      home_team: game.home_team || game.home_team_full || 'Home Team',
-      away_team: game.away_team || game.away_team_full || 'Away Team'
-    };
-    setSelectedGame(enhancedGame);
+    // Check if this is a live odds game with bookmakers
+    if (game.bookmakers && game.bookmakers.length > 0) {
+      // Convert live odds data to simple format for BetModal
+      const simpleGame = oddsUtils.toSimpleGame(game);
+      setSelectedGame(simpleGame);
+    } else {
+      // Handle legacy game format
+      const enhancedGame = {
+        ...game,
+        id: game.id || `game_${Math.random()}`,
+        sport: game.sport || game.sport_key || 'NFL',
+        commence_time: game.commence_time || game.date || new Date().toISOString(),
+        home_odds: game.moneyline?.home || -110,
+        away_odds: game.moneyline?.away || +100,
+        total: parseFloat(formatTotal(game.total?.point || 45.5)),
+        spread: parseFloat(formatSpread(game.spread?.home?.point || -3.5)),
+        home_team: game.home_team || game.home_team_full || 'Home Team',
+        away_team: game.away_team || game.away_team_full || 'Away Team'
+      };
+      setSelectedGame(enhancedGame);
+    }
     setShowBetModal(true);
   };
 
@@ -621,14 +641,14 @@ export default function BettingDashboard() {
                       </div>
                       <div className="text-right">
                         <p className="text-sm font-medium text-gray-900">
-                          {game.date && new Date(game.date).toLocaleString()}
+                          {game.date && formatLocalDateTime(game.date)}
                         </p>
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
                           game.status === 'STATUS_SCHEDULED' ? 'bg-blue-100 text-blue-800' :
                           game.status === 'STATUS_IN_PROGRESS' ? 'bg-green-100 text-green-800' :
                           'bg-gray-100 text-gray-800'
                         }`}>
-                          {game.status?.replace('STATUS_', '') || 'TBD'}
+                          {formatGameStatus(game.status || 'TBD')}
                         </span>
                       </div>
                     </div>
@@ -666,7 +686,7 @@ export default function BettingDashboard() {
                         {game.away_team} @ {game.home_team}
                       </h3>
                       <p className="text-sm text-gray-500">
-                        {game.commence_time && new Date(game.commence_time).toLocaleString()}
+                        {game.commence_time && formatLocalDateTime(game.commence_time)}
                       </p>
                     </div>
                     
@@ -681,13 +701,13 @@ export default function BettingDashboard() {
                               {game.moneyline.home && (
                                 <div className="flex justify-between">
                                   <span>{game.home_team}</span>
-                                  <span className="font-mono">{game.moneyline.home > 0 ? '+' : ''}{game.moneyline.home}</span>
+                                  <span className="font-mono">{formatOddsDisplay(game.moneyline.home)}</span>
                                 </div>
                               )}
                               {game.moneyline.away && (
                                 <div className="flex justify-between">
                                   <span>{game.away_team}</span>
-                                  <span className="font-mono">{game.moneyline.away > 0 ? '+' : ''}{game.moneyline.away}</span>
+                                  <span className="font-mono">{formatOddsDisplay(game.moneyline.away)}</span>
                                 </div>
                               )}
                             </div>
@@ -701,14 +721,14 @@ export default function BettingDashboard() {
                             <div className="space-y-1">
                               {game.spread.home && (
                                 <div className="flex justify-between">
-                                  <span>{game.home_team} {game.spread.home.point > 0 ? '+' : ''}{game.spread.home.point}</span>
-                                  <span className="font-mono">{game.spread.home.price > 0 ? '+' : ''}{game.spread.home.price}</span>
+                                  <span>{game.home_team} {game.spread.home.point > 0 ? '+' : ''}{formatSpread(game.spread.home.point)}</span>
+                                  <span className="font-mono">{formatOddsDisplay(game.spread.home.price)}</span>
                                 </div>
                               )}
                               {game.spread.away && (
                                 <div className="flex justify-between">
-                                  <span>{game.away_team} {game.spread.away.point > 0 ? '+' : ''}{game.spread.away.point}</span>
-                                  <span className="font-mono">{game.spread.away.price > 0 ? '+' : ''}{game.spread.away.price}</span>
+                                  <span>{game.away_team} {game.spread.away.point > 0 ? '+' : ''}{formatSpread(game.spread.away.point)}</span>
+                                  <span className="font-mono">{formatOddsDisplay(game.spread.away.price)}</span>
                                 </div>
                               )}
                             </div>
@@ -722,8 +742,8 @@ export default function BettingDashboard() {
                             <div className="space-y-1">
                               {Object.entries(game.total).map(([type, data]: [string, any]) => (
                                 <div key={type} className="flex justify-between">
-                                  <span>{type} {data.point}</span>
-                                  <span className="font-mono">{data.price > 0 ? '+' : ''}{data.price}</span>
+                                  <span>{type} {formatTotal(data.point)}</span>
+                                  <span className="font-mono">{formatOddsDisplay(data.price)}</span>
                                 </div>
                               ))}
                             </div>
@@ -821,11 +841,11 @@ export default function BettingDashboard() {
                           <h4 className="font-semibold text-gray-900">
                             {game.away_team_full} @ {game.home_team_full}
                           </h4>
-                          <span className="text-xs text-gray-500">{game.status}</span>
+                          <span className="text-xs text-gray-500">{formatGameStatus(game.status || 'TBD')}</span>
                         </div>
                         <div className="text-sm text-gray-600">
                           <p>{game.venue}</p>
-                          <p>{game.date && new Date(game.date).toLocaleString()}</p>
+                          <p>{game.date && formatLocalDateTime(game.date)}</p>
                         </div>
                         {user?.subscription_tier !== 'free' && (
                           <div className="mt-3 p-3 bg-green-50 rounded border-l-4 border-green-400">

@@ -14,6 +14,9 @@ from app.services.performance_tracker import performance_tracker
 from app.services.auth_service import auth_service
 from app.services.bet_service import bet_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
+from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
+from app.services.cache_service import cache_service
+from app.services.scheduler_service import scheduler_service
 from app.models.bet_models import *
 from app.core.config import settings
 from pydantic import BaseModel, EmailStr
@@ -525,6 +528,544 @@ async def get_weather_impact():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching weather impact: {str(e)}")
 
+# Live Sports Data API endpoints (The Odds API integration)
+@app.get("/api/sports")
+async def get_available_sports():
+    """Get list of available sports from The Odds API"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        # Define allowed sports - only show these on the site
+        ALLOWED_SPORTS = {
+            'baseball_mlb',
+            'basketball_nba', 
+            'icehockey_nhl',
+            'americanfootball_nfl',
+            'americanfootball_ncaaf',
+            'basketball_ncaab',
+            'basketball_wnba',
+            'soccer_epl',
+            'soccer_mls'
+        }
+        
+        # Check cache first
+        cached_data = await cache_service.get_sports_list()
+        if cached_data:
+            logger.info("Returning cached sports list")
+            return cached_data
+        
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            sports = await service.get_sports()
+            
+            # Filter to active sports only and add sport categories
+            active_sports = []
+            for sport in sports:
+                # Only include allowed sports
+                if sport.get("active", False) and sport["key"] in ALLOWED_SPORTS:
+                    # Add sport category based on title/key
+                    category = "Other"
+                    if "football" in sport["key"].lower():
+                        category = "Football"
+                    elif "basketball" in sport["key"].lower():
+                        category = "Basketball"
+                    elif "baseball" in sport["key"].lower():
+                        category = "Baseball"
+                    elif "hockey" in sport["key"].lower():
+                        category = "Hockey"
+                    elif "soccer" in sport["key"].lower():
+                        category = "Soccer"
+                    elif "tennis" in sport["key"].lower():
+                        category = "Tennis"
+                    elif "golf" in sport["key"].lower():
+                        category = "Golf"
+                    elif "mma" in sport["key"].lower() or "boxing" in sport["key"].lower():
+                        category = "Combat Sports"
+                    
+                    sport["category"] = category
+                    active_sports.append(sport)
+            
+            result = {
+                "status": "success",
+                "count": len(active_sports),
+                "sports": active_sports,
+                "last_updated": datetime.now().isoformat(),
+                "cached": False,
+                "filtered": True,
+                "allowed_sports": list(ALLOWED_SPORTS)
+            }
+            
+            # Cache the result for 6 hours (sports list rarely changes)
+            await cache_service.set_sports_list(result, expire_seconds=21600)
+            logger.info(f"Cached filtered sports list with {len(active_sports)} sports")
+            
+            return result
+            
+    except Exception as e:
+        logger.error(f"Error fetching sports list: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching sports: {str(e)}")
+
+@app.get("/api/odds/popular")
+async def get_popular_sports_odds():
+    """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        from app.services.odds_api_service import get_popular_sports_odds
+        
+        games = await get_popular_sports_odds()
+        
+        # Convert to serializable format
+        games_data = []
+        for game in games:
+            bookmakers_data = []
+            for bookmaker in game.bookmakers:
+                bookmakers_data.append({
+                    "key": bookmaker.key,
+                    "title": bookmaker.title,
+                    "last_update": bookmaker.last_update.isoformat(),
+                    "markets": bookmaker.markets
+                })
+            
+            games_data.append({
+                "id": game.id,
+                "sport_key": game.sport_key,
+                "sport_title": game.sport_title,
+                "commence_time": game.commence_time.isoformat(),
+                "home_team": game.home_team,
+                "away_team": game.away_team,
+                "bookmakers": bookmakers_data
+            })
+        
+        return {
+            "status": "success",
+            "count": len(games_data),
+            "games": games_data,
+            "sports_included": ["NFL", "NBA", "MLB", "NHL"],
+            "rate_limit": await get_rate_limit_info(),
+            "last_updated": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching popular sports odds: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching popular odds: {str(e)}")
+
+@app.get("/api/odds/{sport_key}")
+async def get_live_odds(
+    sport_key: str,
+    regions: str = "us",
+    markets: str = "h2h,spreads,totals",
+    odds_format: str = "american",
+    bookmakers: str = None
+):
+    """Get live odds for a specific sport"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        # Check cache first
+        cached_data = await cache_service.get_odds(
+            sport_key, regions, markets, odds_format, bookmakers
+        )
+        if cached_data:
+            logger.info(f"Returning cached odds for {sport_key}")
+            cached_data["cached"] = True
+            return cached_data
+        
+        # Validate sport key
+        valid_sports = [sport.value for sport in SportKey]
+        if sport_key not in valid_sports and sport_key not in [sport.name.lower() for sport in SportKey]:
+            # Try to find a matching sport key
+            sport_key_mapping = {sport.name.lower(): sport.value for sport in SportKey}
+            sport_key = sport_key_mapping.get(sport_key.lower(), sport_key)
+        
+        # Validate odds format
+        format_enum = OddsFormat.AMERICAN if odds_format.lower() == "american" else OddsFormat.DECIMAL
+        
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            games = await service.get_odds(
+                sport=sport_key,
+                regions=regions,
+                markets=markets,
+                odds_format=format_enum,
+                bookmakers=bookmakers
+            )
+            
+            # Convert to serializable format
+            games_data = []
+            for game in games:
+                bookmakers_data = []
+                for bookmaker in game.bookmakers:
+                    bookmakers_data.append({
+                        "key": bookmaker.key,
+                        "title": bookmaker.title,
+                        "last_update": bookmaker.last_update.isoformat(),
+                        "markets": bookmaker.markets
+                    })
+                
+                games_data.append({
+                    "id": game.id,
+                    "sport_key": game.sport_key,
+                    "sport_title": game.sport_title,
+                    "commence_time": game.commence_time.isoformat(),
+                    "home_team": game.home_team,
+                    "away_team": game.away_team,
+                    "bookmakers": bookmakers_data
+                })
+            
+            result = {
+                "status": "success",
+                "sport": sport_key,
+                "count": len(games_data),
+                "games": games_data,
+                "rate_limit": await get_rate_limit_info(),
+                "last_updated": datetime.now().isoformat(),
+                "cached": False
+            }
+            
+            # Cache odds for 2 hours (balance freshness with API usage)
+            await cache_service.set_odds(
+                sport_key, regions, markets, odds_format, result, 
+                bookmakers, expire_seconds=7200
+            )
+            logger.info(f"Cached odds for {sport_key} with {len(games_data)} games")
+            
+            return result
+            
+    except Exception as e:
+        logger.error(f"Error fetching odds for {sport_key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching odds: {str(e)}")
+
+@app.get("/api/scores/{sport_key}")
+async def get_game_scores(
+    sport_key: str,
+    days_from: int = 3
+):
+    """Get scores and results for completed games"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    # Validate days_from parameter
+    if days_from < 1 or days_from > 3:
+        raise HTTPException(status_code=400, detail="days_from must be between 1 and 3")
+    
+    try:
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            scores = await service.get_scores(
+                sport=sport_key,
+                days_from=days_from
+            )
+            
+            # Convert to serializable format
+            scores_data = []
+            for score in scores:
+                scores_data.append({
+                    "id": score.id,
+                    "sport_key": score.sport_key,
+                    "sport_title": score.sport_title,
+                    "commence_time": score.commence_time.isoformat(),
+                    "home_team": score.home_team,
+                    "away_team": score.away_team,
+                    "completed": score.completed,
+                    "home_score": score.home_score,
+                    "away_score": score.away_score,
+                    "last_update": score.last_update.isoformat()
+                })
+            
+            return {
+                "status": "success",
+                "sport": sport_key,
+                "days_from": days_from,
+                "count": len(scores_data),
+                "scores": scores_data,
+                "rate_limit": await get_rate_limit_info(),
+                "last_updated": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching scores for {sport_key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching scores: {str(e)}")
+
+@app.get("/api/odds/{sport_key}/event/{event_id}")
+async def get_event_odds(
+    sport_key: str,
+    event_id: str,
+    regions: str = "us",
+    markets: str = "h2h,spreads,totals",
+    odds_format: str = "american",
+    bookmakers: str = None
+):
+    """Get odds for a specific game/event"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        format_enum = OddsFormat.AMERICAN if odds_format.lower() == "american" else OddsFormat.DECIMAL
+        
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            game = await service.get_event_odds(
+                sport=sport_key,
+                event_id=event_id,
+                regions=regions,
+                markets=markets,
+                odds_format=format_enum,
+                bookmakers=bookmakers
+            )
+            
+            if not game:
+                raise HTTPException(status_code=404, detail="Event not found")
+            
+            # Convert to serializable format
+            bookmakers_data = []
+            for bookmaker in game.bookmakers:
+                bookmakers_data.append({
+                    "key": bookmaker.key,
+                    "title": bookmaker.title,
+                    "last_update": bookmaker.last_update.isoformat(),
+                    "markets": bookmaker.markets
+                })
+            
+            game_data = {
+                "id": game.id,
+                "sport_key": game.sport_key,
+                "sport_title": game.sport_title,
+                "commence_time": game.commence_time.isoformat(),
+                "home_team": game.home_team,
+                "away_team": game.away_team,
+                "bookmakers": bookmakers_data
+            }
+            
+            return {
+                "status": "success",
+                "event_id": event_id,
+                "game": game_data,
+                "rate_limit": await get_rate_limit_info(),
+                "last_updated": datetime.now().isoformat()
+            }
+            
+    except Exception as e:
+        logger.error(f"Error fetching event odds for {event_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching event odds: {str(e)}")
+
+@app.get("/api/odds/live")
+async def get_live_games():
+    """Get games that are currently live or starting soon"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        from app.services.odds_api_service import get_live_games
+        
+        games = await get_live_games()
+        
+        # Convert to serializable format
+        games_data = []
+        for game in games:
+            bookmakers_data = []
+            for bookmaker in game.bookmakers:
+                bookmakers_data.append({
+                    "key": bookmaker.key,
+                    "title": bookmaker.title,
+                    "last_update": bookmaker.last_update.isoformat(),
+                    "markets": bookmaker.markets
+                })
+            
+            games_data.append({
+                "id": game.id,
+                "sport_key": game.sport_key,
+                "sport_title": game.sport_title,
+                "commence_time": game.commence_time.isoformat(),
+                "home_team": game.home_team,
+                "away_team": game.away_team,
+                "bookmakers": bookmakers_data
+            })
+        
+        return {
+            "status": "success",
+            "count": len(games_data),
+            "games": games_data,
+            "description": "Games starting within the next 2 hours",
+            "rate_limit": await get_rate_limit_info(),
+            "last_updated": datetime.now().isoformat()
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching live games: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching live games: {str(e)}")
+
+async def get_rate_limit_info():
+    """Helper function to get rate limit information"""
+    try:
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            return service.get_rate_limit_status()
+    except:
+        return {
+            "api_requests_used": 0,
+            "api_requests_remaining": 500,
+            "daily_requests": 0,
+            "daily_limit": 700,
+            "monthly_requests": 0,
+            "monthly_limit": 20000,
+            "last_request_time": 0
+        }
+
+@app.get("/api/cache/status")
+async def get_cache_status():
+    """Get cache system status and statistics"""
+    try:
+        stats = await cache_service.get_cache_stats()
+        return {
+            "status": "success",
+            "cache_stats": stats,
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting cache status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting cache status: {str(e)}")
+
+@app.get("/api/usage/stats")
+async def get_usage_stats():
+    """Get detailed API usage statistics for rate limit monitoring"""
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(status_code=503, detail="The Odds API key not configured")
+    
+    try:
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            usage_stats = service.get_usage_stats()
+            rate_limit_status = service.get_rate_limit_status()
+            
+            return {
+                "status": "success",
+                "usage_stats": usage_stats,
+                "rate_limit_status": rate_limit_status,
+                "last_updated": datetime.now().isoformat()
+            }
+    except Exception as e:
+        logger.error(f"Error getting usage stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting usage stats: {str(e)}")
+
+@app.post("/api/cache/clear")
+async def clear_cache():
+    """Clear all cached data (admin only)"""
+    try:
+        await cache_service.clear_pattern("odds_api:*")
+        return {
+            "status": "success",
+            "message": "Cache cleared successfully",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error clearing cache: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing cache: {str(e)}")
+
+@app.post("/api/cache/clear/{sport_key}")
+async def clear_sport_cache(sport_key: str):
+    """Clear cached data for a specific sport"""
+    try:
+        await cache_service.invalidate_sport_caches(sport_key)
+        return {
+            "status": "success",
+            "message": f"Cache cleared for sport: {sport_key}",
+            "sport": sport_key,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error clearing cache for {sport_key}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing cache: {str(e)}")
+
+# Scheduler endpoints
+@app.get("/api/scheduler/status")
+async def get_scheduler_status():
+    """Get status of all scheduled tasks"""
+    try:
+        task_status = scheduler_service.get_task_status()
+        return {
+            "status": "success",
+            "scheduler_running": scheduler_service.running,
+            "task_count": len(task_status),
+            "tasks": task_status,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error getting scheduler status: {e}")
+        raise HTTPException(status_code=500, detail=f"Error getting scheduler status: {str(e)}")
+
+@app.post("/api/scheduler/task/{task_name}/run")
+async def run_task_manually(task_name: str):
+    """Manually trigger a scheduled task to run immediately"""
+    try:
+        await scheduler_service.run_task_now(task_name)
+        return {
+            "status": "success",
+            "message": f"Task '{task_name}' executed successfully",
+            "task_name": task_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error running task {task_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error running task: {str(e)}")
+
+@app.post("/api/scheduler/task/{task_name}/enable")
+async def enable_task(task_name: str):
+    """Enable a scheduled task"""
+    try:
+        scheduler_service.enable_task(task_name)
+        return {
+            "status": "success",
+            "message": f"Task '{task_name}' enabled",
+            "task_name": task_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error enabling task {task_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error enabling task: {str(e)}")
+
+@app.post("/api/scheduler/task/{task_name}/disable")
+async def disable_task(task_name: str):
+    """Disable a scheduled task"""
+    try:
+        scheduler_service.disable_task(task_name)
+        return {
+            "status": "success",
+            "message": f"Task '{task_name}' disabled",
+            "task_name": task_name,
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error disabling task {task_name}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error disabling task: {str(e)}")
+
+@app.post("/api/scheduler/start")
+async def start_scheduler():
+    """Start the scheduler service"""
+    try:
+        await scheduler_service.start()
+        return {
+            "status": "success",
+            "message": "Scheduler started",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error starting scheduler: {e}")
+        raise HTTPException(status_code=500, detail=f"Error starting scheduler: {str(e)}")
+
+@app.post("/api/scheduler/stop")
+async def stop_scheduler():
+    """Stop the scheduler service"""
+    try:
+        await scheduler_service.stop()
+        return {
+            "status": "success",
+            "message": "Scheduler stopped",
+            "timestamp": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error stopping scheduler: {e}")
+        raise HTTPException(status_code=500, detail=f"Error stopping scheduler: {str(e)}")
+
 # Auth endpoints
 @app.post("/api/auth/signup")
 async def signup(user_data: UserSignup):
@@ -812,7 +1353,11 @@ async def startup_event():
     """Start background tasks for live updates"""
     asyncio.create_task(simulate_odds_updates())
     asyncio.create_task(simulate_score_updates())
-    logger.info("WebSocket services started")
+    
+    # Start the scheduler for live sports data updates
+    await scheduler_service.start()
+    
+    logger.info("WebSocket services and scheduler started")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):

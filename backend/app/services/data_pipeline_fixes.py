@@ -124,9 +124,13 @@ class FixedSportsDataPipeline:
                                             if market_key == 'h2h':  # Moneyline
                                                 market_data[team_name] = outcome['price']
                                             elif market_key in ['spreads', 'totals']:
+                                                # Round spreads and totals to nearest 0.5 (standard betting increments)
+                                                raw_point = outcome.get('point', 0)
+                                                rounded_point = round(raw_point * 2) / 2 if raw_point else 0
+                                                
                                                 market_data[team_name] = {
                                                     'price': outcome['price'],
-                                                    'point': outcome.get('point', 0)
+                                                    'point': rounded_point
                                                 }
                                         
                                         if market_data:  # Only add if we have data

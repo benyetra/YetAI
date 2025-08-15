@@ -168,11 +168,19 @@ async def simulate_odds_updates():
                 spread_change = random.uniform(-0.5, 0.5)
                 total_change = random.uniform(-1.0, 1.0)
                 
+                # Generate spread and total with proper betting increments (0.5 steps)
+                raw_spread = random.uniform(-7, 7) + spread_change
+                raw_total = random.uniform(40, 55) + total_change
+                
+                # Round to nearest 0.5 for proper betting increments
+                proper_spread = round(raw_spread * 2) / 2
+                proper_total = round(raw_total * 2) / 2
+                
                 odds_update = {
                     "home_odds": base_odds + random.randint(-10, 10),
                     "away_odds": base_odds + random.randint(-10, 10),
-                    "spread": round(random.uniform(-7, 7) + spread_change, 1),
-                    "total": round(random.uniform(40, 55) + total_change, 1),
+                    "spread": proper_spread,
+                    "total": proper_total,
                     "movement": movement_type
                 }
                 
