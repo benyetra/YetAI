@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { User, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 
 // Auth Context
 const AuthContext = createContext<any>(null);
@@ -444,6 +445,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
 // User Menu Component
 export function UserMenu() {
   const { user, logout } = useAuth();
+  const router = useRouter();
   const [showMenu, setShowMenu] = useState(false);
 
   if (!user) return null;
@@ -497,7 +499,10 @@ export function UserMenu() {
             </button>
             
             {user.subscription_tier === 'free' && (
-              <button className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center">
+              <button 
+                onClick={() => router.push('/upgrade')}
+                className="w-full text-left px-4 py-2 text-sm text-blue-600 hover:bg-blue-50 flex items-center"
+              >
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade to Pro
               </button>

@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3, Crown } from 'lucide-react';
 import PerformanceDashboard from './PerformanceDashboard';
 import { useAuth } from './Auth';
@@ -73,6 +74,7 @@ type FantasyProjection = {
 };
 
 export default function BettingDashboard() {
+  const router = useRouter();
   const [games, setGames] = useState<Game[]>([]);
   const [odds, setOdds] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
@@ -801,7 +803,10 @@ export default function BettingDashboard() {
                     <p className="text-blue-700 mb-4">
                       Get AI-powered predictions based on your favorite teams, betting history, and risk preferences.
                     </p>
-                    <button className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium">
+                    <button 
+                      onClick={() => router.push('/upgrade')}
+                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
+                    >
                       Upgrade to Pro
                     </button>
                   </div>

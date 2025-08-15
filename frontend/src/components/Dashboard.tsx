@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users, Wifi, WifiOff, Activity, Zap } from 'lucide-react';
 import { useAuth } from './Auth';
 import BetModal from './BetModal';
@@ -233,6 +234,7 @@ const AIInsightCard: React.FC<{ insight: AIInsight }> = ({ insight }) => {
 // Main Dashboard Component
 const Dashboard: React.FC = () => {
   const { user, token } = useAuth() as { user: User; token: string };
+  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<Stats>({
     total_predictions: 0,
@@ -452,7 +454,10 @@ const Dashboard: React.FC = () => {
               </p>
             </div>
             {user?.subscription_tier === 'free' && (
-              <button className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-purple-700 font-medium flex items-center">
+              <button 
+                onClick={() => router.push('/upgrade')}
+                className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-purple-700 font-medium flex items-center"
+              >
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade to Pro
               </button>
@@ -659,7 +664,10 @@ const Dashboard: React.FC = () => {
                   Get advanced analytics, profit tracking, exclusive insights, and more accurate predictions.
                 </p>
               </div>
-              <button className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] text-white px-6 py-3 rounded-lg hover:from-[#A855F7]/90 hover:to-[#F59E0B]/90 font-medium flex items-center whitespace-nowrap ml-4">
+              <button 
+                onClick={() => router.push('/upgrade')}
+                className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] text-white px-6 py-3 rounded-lg hover:from-[#A855F7]/90 hover:to-[#F59E0B]/90 font-medium flex items-center whitespace-nowrap ml-4"
+              >
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade Now
               </button>

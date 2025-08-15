@@ -140,7 +140,10 @@ export default function BetPage() {
                   Upgrade to Pro for AI betting recommendations, advanced analytics, and premium odds tracking.
                 </p>
               </div>
-              <button className="ml-4 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors">
+              <button 
+                onClick={() => router.push('/upgrade')}
+                className="ml-4 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              >
                 Upgrade
               </button>
             </div>
