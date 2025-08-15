@@ -4,12 +4,46 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
-import { User, Bell, Shield, CreditCard, Smartphone, Eye, EyeOff } from 'lucide-react';
+import { useNotifications } from '@/components/NotificationProvider';
+import { DetailedWebSocketStatus } from '@/components/WebSocketIndicator';
+import { User, Bell, Shield, CreditCard, Smartphone, Eye, EyeOff, TestTube } from 'lucide-react';
 
 export default function SettingsPage() {
   const { isAuthenticated, loading } = useAuth();
+  const { addNotification } = useNotifications();
   const router = useRouter();
   const [showPassword, setShowPassword] = useState(false);
+
+  const testNotification = (type: 'bet_won' | 'odds_change' | 'prediction' | 'achievement') => {
+    const testNotifications = {
+      bet_won: {
+        type: 'bet_won' as const,
+        title: 'Test Bet Won!',
+        message: 'Your test bet just won! +$50.00',
+        priority: 'high' as const
+      },
+      odds_change: {
+        type: 'odds_change' as const,
+        title: 'Test Odds Change',
+        message: 'Odds changed for Test Game (+150 → +175)',
+        priority: 'medium' as const
+      },
+      prediction: {
+        type: 'prediction' as const,
+        title: 'Test AI Prediction',
+        message: 'New high-confidence test prediction available',
+        priority: 'medium' as const
+      },
+      achievement: {
+        type: 'achievement' as const,
+        title: 'Test Achievement!',
+        message: 'You unlocked a test achievement badge',
+        priority: 'low' as const
+      }
+    };
+
+    addNotification(testNotifications[type]);
+  };
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -201,9 +235,54 @@ export default function SettingsPage() {
               </div>
             </div>
 
+            {/* Developer Tools */}
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="flex items-center mb-6">
+                <TestTube className="w-6 h-6 text-gray-600 mr-3" />
+                <h2 className="text-xl font-semibold">Developer Tools</h2>
+              </div>
+              
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">Test Notifications</h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      onClick={() => testNotification('bet_won')}
+                      className="px-3 py-2 text-sm bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors"
+                    >
+                      Test Bet Won
+                    </button>
+                    <button
+                      onClick={() => testNotification('odds_change')}
+                      className="px-3 py-2 text-sm bg-blue-100 text-blue-700 rounded-lg hover:bg-blue-200 transition-colors"
+                    >
+                      Test Odds Change
+                    </button>
+                    <button
+                      onClick={() => testNotification('prediction')}
+                      className="px-3 py-2 text-sm bg-purple-100 text-purple-700 rounded-lg hover:bg-purple-200 transition-colors"
+                    >
+                      Test Prediction
+                    </button>
+                    <button
+                      onClick={() => testNotification('achievement')}
+                      className="px-3 py-2 text-sm bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors"
+                    >
+                      Test Achievement
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <button className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
               Save Changes
             </button>
+          </div>
+
+          <div className="space-y-6">
+            {/* WebSocket Status */}
+            <DetailedWebSocketStatus />
           </div>
         </div>
       </div>

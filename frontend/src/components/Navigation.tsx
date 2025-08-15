@@ -31,6 +31,9 @@ import {
   ChevronDown
 } from 'lucide-react';
 import { useAuth } from './Auth';
+import { useNotifications } from './NotificationProvider';
+import { WebSocketIndicator } from './WebSocketIndicator';
+import { NotificationPanel } from './NotificationPanel';
 
 interface NavItem {
   name: string;
@@ -286,15 +289,9 @@ export function Sidebar() {
 
 export function Header() {
   const { user, isAuthenticated } = useAuth();
+  const { unreadCount } = useNotifications();
   const router = useRouter();
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState([
-    { id: 1, type: 'bet_won', message: 'Your bet on Lakers won! +$45.00', time: '2m ago', read: false },
-    { id: 2, type: 'odds_change', message: 'Odds changed for Chiefs vs Bills', time: '15m ago', read: false },
-    { id: 3, type: 'system', message: 'New AI predictions available', time: '1h ago', read: true },
-  ]);
-
-  const unreadCount = notifications.filter(n => !n.read).length;
 
   return (
     <header className="fixed top-0 right-0 left-0 lg:left-64 h-16 bg-white border-b border-gray-200 z-30">
@@ -313,11 +310,8 @@ export function Header() {
 
         {/* Right Section - Actions */}
         <div className="flex items-center space-x-4">
-          {/* Live Indicator */}
-          <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 rounded-full">
-            <Activity className="w-4 h-4 text-green-600 animate-pulse" />
-            <span className="text-sm font-medium text-green-700">Live</span>
-          </div>
+          {/* WebSocket Status Indicator */}
+          <WebSocketIndicator />
 
           {/* Quick Bet Button */}
           {isAuthenticated && (
@@ -339,42 +333,16 @@ export function Header() {
               >
                 <Bell className="w-5 h-5 text-gray-600" />
                 {unreadCount > 0 && (
-                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                  <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
+                    {unreadCount > 9 ? '9+' : unreadCount}
+                  </span>
                 )}
               </button>
               
-              {showNotifications && (
-                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200">
-                  <div className="p-4 border-b border-gray-200">
-                    <div className="flex items-center justify-between">
-                      <h3 className="font-semibold text-gray-900">Notifications</h3>
-                      {unreadCount > 0 && (
-                        <span className="text-xs text-blue-600 hover:underline cursor-pointer">
-                          Mark all read
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                  <div className="max-h-96 overflow-y-auto">
-                    {notifications.map((notif) => (
-                      <div
-                        key={notif.id}
-                        className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
-                          !notif.read ? 'bg-blue-50' : ''
-                        }`}
-                      >
-                        <p className="text-sm text-gray-900">{notif.message}</p>
-                        <p className="text-xs text-gray-500 mt-1">{notif.time}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <div className="p-3 text-center border-t border-gray-200">
-                    <button className="text-sm text-blue-600 hover:underline">
-                      View all notifications
-                    </button>
-                  </div>
-                </div>
-              )}
+              <NotificationPanel 
+                isOpen={showNotifications}
+                onClose={() => setShowNotifications(false)}
+              />
             </div>
           )}
 
