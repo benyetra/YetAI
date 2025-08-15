@@ -100,6 +100,7 @@ app/
 ├── services/           # Business logic services
 │   ├── auth_service.py # Authentication logic
 │   ├── bet_service.py  # Betting operations
+│   ├── yetai_bets_service.py # YetAI Bets management
 │   ├── websocket_manager.py # WebSocket management
 │   ├── data_pipeline.py # Sports data processing
 │   ├── odds_api_service.py # External API integration
@@ -115,7 +116,7 @@ frontend/src/
 │   ├── page.tsx        # Landing page with live odds preview
 │   ├── dashboard/      # User dashboard with live data
 │   ├── odds/           # Live odds display with tabbed interface
-│   ├── predictions/    # AI predictions
+│   ├── predictions/    # YetAI Bets (AI predictions)
 │   ├── bet/            # Bet placement interface
 │   ├── bets/           # Bet history
 │   ├── parlays/        # Parlay builder
@@ -125,7 +126,8 @@ frontend/src/
 │   ├── leaderboard/    # User rankings
 │   ├── settings/       # User preferences
 │   ├── help/           # Support center
-│   └── upgrade/        # Subscription plans
+│   ├── upgrade/        # Subscription plans
+│   └── admin/          # Admin dashboard (admin users only)
 ├── components/         # Reusable UI components
 │   ├── Auth.tsx        # Authentication components
 │   ├── Navigation.tsx  # Sidebar, header, mobile nav
@@ -208,6 +210,22 @@ frontend/src/
 - ✅ Production-ready authentication system validation
 - ✅ Multiple testing scenarios supported (demo, individual, batch users)
 
+### Phase 3.8: Admin Role & Bet Management System ✅ COMPLETE (August 15, 2025)
+- ✅ Complete admin role-based access control system
+- ✅ Admin authentication and user role management
+- ✅ Admin-only navigation items with conditional visibility
+- ✅ Comprehensive admin dashboard (`/frontend/src/app/admin/page.tsx`)
+- ✅ Advanced bet constructor interface with form validation
+- ✅ Backend YetAI Bets service (`/backend/app/services/yetai_bets_service.py`)
+- ✅ Admin API endpoints for bet creation, management, and retrieval
+- ✅ Integration of admin-created bets with user-facing YetAI Bets page
+- ✅ Support for both straight bets and parlay bet infrastructure
+- ✅ Tier-based access control (Free vs Premium bets)
+- ✅ Real-time bet creation with success/error messaging
+- ✅ Fixed API data handling and React error resolution
+- ✅ Enhanced predictions page with proper API response parsing
+- ✅ Temporary WebSocket connection management for stability
+
 ## Next Development Phases 🚀
 
 ### Phase 4: AI Integration (Planned)
@@ -264,12 +282,12 @@ frontend/src/
 - [ ] Leaderboards and competitions
 - [ ] Social betting challenges
 
-### Phase 11: Business Features (Planned)
+### Phase 11: Business Features (Partially Complete)
 - [ ] Subscription management system
 - [ ] Payment processing integration
 - [ ] Advanced analytics for premium users
 - [ ] API rate limiting and quotas
-- [ ] Admin dashboard and management
+- ✅ Admin dashboard and management system
 
 ### Phase 12: Performance & Scale (Planned)
 - [ ] Performance optimization
@@ -286,16 +304,22 @@ frontend/src/
 - `GET /api/auth/me` - Get current user
 - `POST /api/bets` - Place a new bet
 - `GET /api/bets` - Get user bet history
+- `GET /api/yetai-bets` - Get YetAI Bets based on user tier
 - `GET /api/odds/{sport}` - Get live odds for sport
 - `GET /api/sports` - Get available sports list
 - `GET /api/odds/popular` - Get popular sports odds
 - `GET /api/scores/{sport}` - Get live scores and results
 - `GET /api/odds/{sport}/{event_id}` - Get specific event odds
+- `POST /api/admin/yetai-bets` - Create YetAI Bet (admin only)
+- `GET /api/admin/yetai-bets` - Get all YetAI Bets (admin only)
+- `PUT /api/admin/yetai-bets/{bet_id}` - Update YetAI Bet status (admin only)
+- `DELETE /api/admin/yetai-bets/{bet_id}` - Delete YetAI Bet (admin only)
 - `WS /ws/{user_id}` - WebSocket connection for real-time updates
 
 ### Database Schema
-- **Users**: id, email, password_hash, first_name, last_name, subscription_tier, created_at
+- **Users**: id, email, password_hash, first_name, last_name, subscription_tier, is_admin, created_at
 - **Bets**: id, user_id, game_id, bet_type, amount, odds, status, created_at, updated_at
+- **YetAI Bets**: id, sport, game, bet_type, pick, odds, confidence, reasoning, game_time, status, is_premium, bet_category, created_by, created_at
 - **Games**: id, home_team, away_team, sport, start_time, status, home_score, away_score
 
 ### WebSocket Message Types
@@ -387,5 +411,5 @@ frontend/src/
 ---
 
 *Last Updated: August 15, 2025*
-*Version: 1.4*
-*Status: Phase 3.7 Complete - User Management & Testing Infrastructure Implemented. Platform now ready for real user testing with comprehensive authentication system, management tools, and professional UI formatting.*
+*Version: 1.5*
+*Status: Phase 3.8 Complete - Admin Role & Bet Management System Implemented. Platform now features complete admin dashboard with bet creation capabilities, role-based access control, and seamless integration between admin-created content and user-facing features.*
