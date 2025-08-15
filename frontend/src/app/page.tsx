@@ -41,11 +41,20 @@ export default function HomePage() {
       <div className="relative overflow-hidden">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
           <div className="text-center">
+            <div className="flex justify-center mb-8">
+              <div className="w-24 h-24 rounded-2xl overflow-hidden shadow-lg">
+                <img 
+                  src="/logo.png" 
+                  alt="YetAI Logo" 
+                  className="w-full h-full object-cover"
+                />
+              </div>
+            </div>
             <h1 className="text-5xl font-bold text-gray-900 mb-6">
               AI-Powered Sports Betting
-              <span className="block text-blue-600">Made Simple</span>
+              <span className="block bg-gradient-to-r from-[#A855F7] to-[#F59E0B] bg-clip-text text-transparent">Made Simple</span>
             </h1>
-            <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+            <p className="text-xl text-gray-700 font-medium mb-8 max-w-2xl mx-auto">
               Get real-time odds, AI predictions, and smart betting insights all in one platform.
               Join thousands making smarter bets with YetAI.
             </p>
@@ -55,7 +64,7 @@ export default function HomePage() {
                   setAuthMode('signup');
                   setShowAuthModal(true);
                 }}
-                className="px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+                className="px-8 py-4 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors flex items-center"
               >
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 ml-2" />
@@ -132,11 +141,11 @@ function FeatureCard({ icon: Icon, title, description }: {
 }) {
   return (
     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-lg transition-shadow">
-      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
-        <Icon className="w-6 h-6 text-blue-600" />
+      <div className="w-12 h-12 bg-[#A855F7]/10 rounded-lg flex items-center justify-center mb-4">
+        <Icon className="w-6 h-6 text-[#A855F7]" />
       </div>
-      <h3 className="text-lg font-semibold mb-2">{title}</h3>
-      <p className="text-gray-600">{description}</p>
+      <h3 className="text-lg font-bold text-gray-900 mb-2">{title}</h3>
+      <p className="text-gray-700 leading-relaxed">{description}</p>
     </div>
   );
 }

@@ -3,6 +3,39 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  
+  /* YetAI Brand Colors - Extracted from Gorilla Logo */
+  --brand-primary: #A855F7;     /* Purple background */
+  --brand-secondary: #FCD34D;   /* Yellow sunglasses */
+  --brand-accent: #F59E0B;      /* Golden yellow */
+  --brand-gray-light: #E5E7EB;  /* Light gray fur */
+  --brand-gray: #9CA3AF;        /* Medium gray */
+  --brand-gray-dark: #6B7280;   /* Dark gray */
+  --brand-charcoal: #4B5563;    /* Jacket dark */
+  --brand-charcoal-dark: #374151; /* Darker details */
+  
+  /* YetAI Platform - Improved Text Colors for Better Readability */
+  
+  /* Dark Theme Colors */
+  --text-primary: #ffffff;           /* Main text - high contrast */
+  --text-secondary: #e2e8f0;         /* Secondary text - good contrast */
+  --text-muted: #94a3b8;             /* Muted text - still readable */
+  --text-disabled: #64748b;          /* Disabled states - minimum readable */
+  
+  /* Light Theme Colors */
+  --text-primary-light: #1a202c;     /* Main text on light backgrounds */
+  --text-secondary-light: #2d3748;   /* Secondary text on light */
+  --text-muted-light: #4a5568;       /* Muted but readable */
+  
+  /* Accent Colors */
+  --text-success: #10b981;           /* Green for positive values */
+  --text-error: #ef4444;             /* Red for negative values */
+  --text-warning: #f59e0b;           /* Orange for warnings */
+  --text-info: #3b82f6;              /* Blue for info */
+  
+  /* Card/Component specific */
+  --card-bg: #1e293b;
+  --card-border: #334155;
 }
 
 @theme inline {
@@ -10,6 +43,30 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+  
+  /* YetAI Custom Color Palette */
+  --color-brand-primary: var(--brand-primary);
+  --color-brand-secondary: var(--brand-secondary);
+  --color-brand-accent: var(--brand-accent);
+  --color-brand-gray-light: var(--brand-gray-light);
+  --color-brand-gray: var(--brand-gray);
+  --color-brand-gray-dark: var(--brand-gray-dark);
+  --color-brand-charcoal: var(--brand-charcoal);
+  --color-brand-charcoal-dark: var(--brand-charcoal-dark);
+  
+  /* YetAI Text Colors */
+  --color-text-primary: var(--text-primary-light);
+  --color-text-secondary: var(--text-secondary-light);
+  --color-text-muted: var(--text-muted-light);
+  --color-text-disabled: var(--text-disabled);
+  --color-text-success: var(--text-success);
+  --color-text-error: var(--text-error);
+  --color-text-warning: var(--text-warning);
+  --color-text-info: var(--text-info);
+  
+  /* Component Colors */
+  --color-card-bg: var(--background);
+  --color-card-border: var(--brand-gray-light);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -23,4 +80,862 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Primary Text Elements */
+.text-primary,
+h1, h2, h3, h4, h5, h6,
+.metric-value,
+.page-title {
+  color: var(--text-primary-light) !important;
+  font-weight: 600;
+}
+
+/* Secondary Text */
+.text-secondary,
+.metric-label,
+.nav-item,
+.section-subtitle {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500;
+}
+
+/* Muted Text (but still readable) */
+.text-muted,
+.time-stamp,
+.helper-text,
+.description {
+  color: var(--text-muted-light) !important;
+  font-weight: 400;
+}
+
+/* Status-based Colors */
+.text-success,
+.profit-positive,
+.win-rate {
+  color: var(--text-success) !important;
+  font-weight: 600;
+}
+
+.text-error,
+.loss-negative {
+  color: var(--text-error) !important;
+  font-weight: 600;
+}
+
+.text-warning {
+  color: var(--text-warning) !important;
+}
+
+.text-info,
+.percentage-value {
+  color: var(--text-info) !important;
+}
+
+/* Specific Component Fixes */
+
+/* Navigation Menu */
+.sidebar-nav .nav-item {
+  color: var(--text-secondary-light) !important;
+}
+
+.sidebar-nav .nav-item:hover,
+.sidebar-nav .nav-item.active {
+  color: var(--text-primary-light) !important;
+}
+
+/* Metric Cards */
+.metric-card .value {
+  color: var(--text-primary-light) !important;
+  font-size: 2rem;
+  font-weight: 700;
+}
+
+.metric-card .label {
+  color: var(--text-secondary-light) !important;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.metric-card .subtitle {
+  color: var(--text-muted-light) !important;
+  font-size: 0.75rem;
+}
+
+/* Live Odds Cards */
+.odds-card {
+  background: var(--background);
+  border: 1px solid var(--brand-gray-light);
+}
+
+.odds-card .team-name {
+  color: var(--text-primary-light) !important;
+  font-weight: 600;
+}
+
+.odds-card .odds-value {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500;
+}
+
+.odds-card .game-time {
+  color: var(--text-muted-light) !important;
+  font-size: 0.875rem;
+}
+
+/* Form Elements */
+.form-label {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500;
+}
+
+.form-control {
+  color: var(--text-primary-light) !important;
+  background-color: var(--background);
+  border-color: var(--brand-gray-light);
+}
+
+.form-control::placeholder {
+  color: var(--text-muted-light) !important;
+  opacity: 1;
+}
+
+/* Buttons */
+.btn-primary {
+  background-color: var(--brand-primary);
+  border-color: var(--brand-primary);
+  color: #ffffff !important;
+  font-weight: 600;
+}
+
+.btn-secondary {
+  background-color: var(--background);
+  border-color: var(--brand-gray-light);
+  color: var(--text-secondary-light) !important;
+}
+
+/* Tables */
+.table {
+  color: var(--text-secondary-light) !important;
+}
+
+.table th {
+  color: var(--text-primary-light) !important;
+  font-weight: 600;
+  border-color: var(--brand-gray-light);
+}
+
+.table td {
+  border-color: var(--brand-gray-light);
+}
+
+/* Chat/Community */
+.chat-message {
+  color: var(--text-secondary-light) !important;
+}
+
+.chat-timestamp {
+  color: var(--text-muted-light) !important;
+  font-size: 0.75rem;
+}
+
+/* Performance Analytics */
+.performance-metric {
+  background: var(--background);
+  border: 1px solid var(--brand-gray-light);
+  border-radius: 8px;
+  padding: 1.5rem;
+}
+
+.performance-metric .value {
+  color: var(--text-primary-light) !important;
+  font-size: 1.875rem;
+  font-weight: 700;
+}
+
+.performance-metric .label {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500;
+}
+
+.performance-metric .change-positive {
+  color: var(--text-success) !important;
+}
+
+.performance-metric .change-negative {
+  color: var(--text-error) !important;
+}
+
+/* Notifications */
+.notification-item {
+  color: var(--text-secondary-light) !important;
+}
+
+.notification-item.unread {
+  color: var(--text-primary-light) !important;
+  font-weight: 600;
+}
+
+/* Empty States */
+.empty-state-text {
+  color: var(--text-muted-light) !important;
+  text-align: center;
+}
+
+.empty-state-title {
+  color: var(--text-secondary-light) !important;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* Accessibility Improvements */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Focus States */
+.btn:focus,
+.form-control:focus,
+.nav-link:focus {
+  outline: 2px solid var(--text-info);
+  outline-offset: 2px;
+}
+
+/* Responsive Text Scaling */
+@media (max-width: 768px) {
+  .metric-card .value {
+    font-size: 1.5rem;
+  }
+  
+  .performance-metric .value {
+    font-size: 1.5rem;
+  }
+}
+
+/* Fix Specific Utility Class Combinations That Bleed */
+
+/* Font Weight + Size Combinations */
+.font-medium {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500 !important;
+}
+
+.text-lg.font-bold,
+.font-bold.text-lg {
+  color: var(--text-primary-light) !important;
+  font-weight: 700 !important;
+}
+
+.text-sm.font-medium,
+.font-medium.text-sm {
+  color: var(--text-secondary-light) !important;
+  font-weight: 500 !important;
+}
+
+.text-xs.font-medium,
+.font-medium.text-xs {
+  color: var(--text-muted-light) !important;
+  font-weight: 500 !important;
+}
+
+/* Badge/Pill Components */
+.text-xs.font-medium.px-2.py-1,
+.px-2.py-1.bg-gray-100.rounded,
+.bg-gray-100.text-xs,
+.bg-gray-100.rounded {
+  color: var(--text-primary-light) !important;
+  background-color: var(--brand-gray-light) !important;
+  font-weight: 500 !important;
+}
+
+/* Form Input Styles */
+.px-4.py-2.border.border-gray-300,
+input[class*="px-4"][class*="py-2"],
+.border-gray-300 {
+  color: var(--text-primary-light) !important;
+  border-color: var(--brand-gray) !important;
+  background-color: var(--background) !important;
+}
+
+.focus\:ring-2.focus\:ring-blue-500:focus,
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: var(--brand-primary) !important;
+  ring-color: var(--brand-primary) !important;
+  outline: none !important;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.1) !important;
+}
+
+/* Search/Input with Icon */
+.w-full.pl-10.pr-4.py-2,
+input[class*="pl-10"] {
+  color: var(--text-primary-light) !important;
+  background-color: var(--background) !important;
+  border-color: var(--brand-gray) !important;
+}
+
+/* Override Any Remaining Gray Text */
+.text-gray-500,
+.text-gray-400,
+.text-gray-600,
+.text-gray-700 {
+  color: var(--text-secondary-light) !important;
+}
+
+.text-gray-300,
+.text-gray-200 {
+  color: var(--text-muted-light) !important;
+}
+
+.text-gray-800,
+.text-gray-900 {
+  color: var(--text-primary-light) !important;
+}
+
+/* Placeholder Text */
+::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-muted-light) !important;
+  opacity: 0.8 !important;
+}
+
+/* Disabled States */
+input:disabled,
+textarea:disabled,
+select:disabled,
+button:disabled {
+  color: var(--text-disabled) !important;
+  opacity: 0.6 !important;
+}
+
+/* Link States */
+a,
+.link {
+  color: var(--text-info) !important;
+}
+
+a:hover,
+.link:hover {
+  color: var(--brand-primary) !important;
+}
+
+/* Button Text Override */
+button {
+  font-weight: 500 !important;
+}
+
+button.font-medium {
+  font-weight: 500 !important;
+}
+
+/* Status Indicators */
+.status-active,
+.text-green-600,
+.text-green-500 {
+  color: var(--text-success) !important;
+}
+
+.status-error,
+.text-red-600,
+.text-red-500 {
+  color: var(--text-error) !important;
+}
+
+.status-warning,
+.text-yellow-600,
+.text-yellow-500,
+.text-orange-500 {
+  color: var(--text-warning) !important;
+}
+
+.status-info,
+.text-blue-600,
+.text-blue-500 {
+  color: var(--text-info) !important;
+}
+
+/* Force Dark Text on Light Backgrounds */
+.bg-white *,
+.bg-gray-50 *,
+.bg-gray-100 * {
+  color: var(--text-primary-light) !important;
+}
+
+.bg-white .text-gray-500,
+.bg-gray-50 .text-gray-500,
+.bg-gray-100 .text-gray-500 {
+  color: var(--text-secondary-light) !important;
+}
+
+.bg-white .text-gray-400,
+.bg-gray-50 .text-gray-400,
+.bg-gray-100 .text-gray-400 {
+  color: var(--text-muted-light) !important;
+}
+
+/* Professional Dropdown Styles */
+
+/* Base dropdown container */
+.custom-dropdown {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+/* Dropdown button/trigger */
+.custom-dropdown-button {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  padding: 12px 16px;
+  background-color: #ffffff !important; /* white background for maximum visibility */
+  border: 1px solid #d1d5db !important; /* light gray border */
+  border-radius: 8px;
+  color: #1f2937 !important; /* dark text for contrast on white */
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease-in-out;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+}
+
+/* Hover state */
+.custom-dropdown-button:hover {
+  border-color: #3b82f6; /* blue-500 */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+/* Focus state */
+.custom-dropdown-button:focus {
+  outline: 2px solid #3b82f6; /* blue-500 */
+  outline-offset: 2px;
+  border-color: #3b82f6;
+}
+
+/* Disabled state */
+.custom-dropdown-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background-color: #475569; /* darker slate-600 */
+}
+
+/* Dropdown arrow */
+.custom-dropdown-arrow {
+  width: 16px;
+  height: 16px;
+  color: #94a3b8; /* slate-400 */
+  transition: transform 0.2s ease-in-out;
+}
+
+.custom-dropdown-button:hover .custom-dropdown-arrow {
+  color: #cbd5e1; /* slate-300 */
+}
+
+/* Rotate arrow when dropdown is open */
+.custom-dropdown.open .custom-dropdown-arrow {
+  transform: rotate(180deg);
+}
+
+/* Dropdown menu */
+.custom-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 50;
+  margin-top: 4px;
+  background-color: #ffffff !important; /* white background for menu */
+  border: 1px solid #d1d5db !important; /* light gray border */
+  border-radius: 8px;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Dropdown menu items */
+.custom-dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  color: #1f2937 !important; /* dark text on white background */
+  font-size: 14px;
+  font-weight: 400;
+  text-align: left;
+  background: none;
+  border: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease-in-out;
+}
+
+/* Hover state for menu items */
+.custom-dropdown-item:hover {
+  background-color: #f3f4f6 !important; /* light gray hover */
+  color: #1f2937 !important; /* keep dark text */
+}
+
+/* Active/selected item */
+.custom-dropdown-item.active,
+.custom-dropdown-item[data-selected="true"] {
+  background-color: #3b82f6; /* blue-500 */
+  color: #ffffff !important;
+}
+
+/* First and last item border radius */
+.custom-dropdown-item:first-child {
+  border-top-left-radius: 7px;
+  border-top-right-radius: 7px;
+}
+
+.custom-dropdown-item:last-child {
+  border-bottom-left-radius: 7px;
+  border-bottom-right-radius: 7px;
+}
+
+/* Native select dropdown styling */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  background-color: #ffffff !important; /* white background */
+  border: 1px solid #d1d5db !important; /* light gray border */
+  border-radius: 8px !important;
+  color: #1f2937 !important; /* dark text */
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+  cursor: pointer !important;
+  transition: all 0.2s ease-in-out !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06) !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+  background-position: right 12px center !important;
+  background-repeat: no-repeat !important;
+  background-size: 16px 12px !important;
+  padding-right: 40px !important;
+}
+
+select:hover {
+  border-color: #3b82f6 !important; /* blue-500 */
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+}
+
+select:focus {
+  outline: 2px solid #3b82f6 !important; /* blue-500 */
+  outline-offset: 2px !important;
+  border-color: #3b82f6 !important;
+}
+
+select:disabled {
+  opacity: 0.6 !important;
+  cursor: not-allowed !important;
+  background-color: #475569 !important; /* darker slate-600 */
+}
+
+/* Option styling */
+select option {
+  background-color: #ffffff !important; /* white background */
+  color: #1f2937 !important; /* dark text */
+  padding: 8px 12px !important;
+}
+
+/* Platform-specific dropdown fixes */
+
+/* Bet History Filters */
+.bet-history-filters select,
+.bet-history-filters .custom-dropdown-button {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #fbd2fdff !important;
+}
+
+/* Settings Dropdowns */
+.settings-dropdown select,
+.settings-dropdown .custom-dropdown-button {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #fbd2fdff !important;
+}
+
+/* Search/Filter Controls */
+.search-filters select,
+.filter-controls select,
+.search-filters .custom-dropdown-button,
+.filter-controls .custom-dropdown-button {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #fbd2fdff !important;
+}
+
+/* Sports/league selector */
+.sport-selector select,
+.league-selector select {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #fbd2fdff !important;
+}
+
+/* Modal dropdowns */
+.modal select,
+.modal .custom-dropdown-button {
+  background-color: #ffffff !important;
+  border-color: #d1d5db !important;
+  color: #1f2937 !important;
+}
+
+/* Safari-specific fixes for dropdown styling */
+@supports (-webkit-appearance: none) {
+  /* Force Safari to use our custom styling */
+  select {
+    -webkit-appearance: none !important;
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    border: 1px solid #d1d5db !important;
+  }
+  
+  select option {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+  }
+}
+
+/* Additional Safari overrides */
+select::-webkit-calendar-picker-indicator {
+  display: none !important;
+}
+
+select::-webkit-inner-spin-button,
+select::-webkit-outer-spin-button {
+  -webkit-appearance: none !important;
+  margin: 0 !important;
+}
+
+/* Force white background on all select elements regardless of browser */
+select,
+select[multiple],
+select[size] {
+  background: #ffffff !important;
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
+  border-color: #d1d5db !important;
+}
+
+/* Browser-specific select styling */
+@-moz-document url-prefix() {
+  /* Firefox specific */
+  select {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+  }
+}
+
+/* WebKit (Safari/Chrome) specific */
+@media screen and (-webkit-min-device-pixel-ratio:0) {
+  select {
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    -webkit-appearance: none !important;
+  }
+}
+
+/* Ultra-specific overrides for stubborn elements */
+html select,
+body select,
+div select,
+form select,
+select[class],
+select[class*=""],
+*[class*=""] select,
+main select,
+section select,
+article select,
+aside select,
+nav select,
+header select,
+footer select {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='m6 8 4 4 4-4'/%3e%3c/svg%3e") !important;
+  background-position: right 12px center !important;
+  background-repeat: no-repeat !important;
+  background-size: 16px 12px !important;
+  color: #1f2937 !important;
+  border: 1px solid #d1d5db !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  padding: 12px 40px 12px 16px !important;
+  border-radius: 8px !important;
+  font-size: 14px !important;
+  font-weight: 500 !important;
+}
+
+/* Nuclear option - override everything with highest specificity */
+html body main section article div form fieldset select,
+html body main section article div form fieldset select option,
+html body * select,
+html body * select option {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #1f2937 !important;
+  border-color: #d1d5db !important;
+  -webkit-appearance: none !important;
+}
+
+/* Dark mode overrides to prevent OS dark mode interference */
+@media (prefers-color-scheme: dark) {
+  select {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #1f2937 !important;
+    border: 1px solid #d1d5db !important;
+  }
+  
+  select option {
+    background-color: #ffffff !important;
+    background: #ffffff !important;
+    color: #1f2937 !important;
+  }
+}
+
+/* Force Safari select styling with JavaScript backup */
+select {
+  /* Multiple background declarations to catch all browsers */
+  background: white !important;
+  background-color: white !important;
+  background-color: #ffffff !important;
+  background-color: rgb(255, 255, 255) !important;
+  background-color: hsl(0, 0%, 100%) !important;
+  
+  /* Multiple color declarations */
+  color: black !important;
+  color: #1f2937 !important;
+  color: rgb(31, 41, 55) !important;
+  color: hsl(220, 13%, 18%) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .custom-dropdown-button,
+  select {
+    padding: 10px 14px !important;
+    font-size: 16px !important; /* Prevents zoom on iOS */
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+  }
+  
+  .custom-dropdown-menu {
+    max-height: 250px;
+    background-color: #ffffff !important;
+  }
+}
+
+/* Force styling on all form controls */
+/* Input fields styling */
+input[type="text"],
+input[type="email"], 
+input[type="password"],
+input[type="search"],
+input[type="number"],
+input[type="tel"],
+input[type="url"],
+input:not([type]),
+textarea {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  padding: 12px 16px !important;
+  font-size: 14px !important;
+  font-weight: 400 !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06) !important;
+}
+
+/* Focus states for inputs */
+input[type="text"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="number"]:focus,
+input[type="tel"]:focus,
+input[type="url"]:focus,
+input:not([type]):focus,
+textarea:focus {
+  outline: 2px solid #3b82f6 !important;
+  outline-offset: 2px !important;
+  border-color: #3b82f6 !important;
+}
+
+/* Placeholder styling */
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* Safari-specific input styling */
+@supports (-webkit-appearance: none) {
+  input[type="text"],
+  input[type="email"],
+  input[type="password"],
+  input[type="search"],
+  input[type="number"],
+  input[type="tel"],
+  input[type="url"],
+  input:not([type]),
+  textarea {
+    -webkit-appearance: none !important;
+    background-color: #ffffff !important;
+    color: #1f2937 !important;
+    border: 1px solid #d1d5db !important;
+  }
+}
+
+/* Ultra-specific input overrides */
+html input[type="text"],
+body input[type="text"],
+div input[type="text"],
+form input[type="text"],
+html input[type="email"],
+body input[type="email"],
+div input[type="email"],
+form input[type="email"],
+html input[type="password"],
+body input[type="password"],
+div input[type="password"],
+form input[type="password"],
+html input[type="search"],
+body input[type="search"],
+div input[type="search"],
+form input[type="search"],
+html textarea,
+body textarea,
+div textarea,
+form textarea {
+  background-color: #ffffff !important;
+  background: #ffffff !important;
+  color: #1f2937 !important;
+  border: 1px solid #d1d5db !important;
+}
+
+/* Force styling on page load */
+/* This CSS rule forces a redraw and style recalculation */
+select:not(:defined),
+input:not(:defined),
+textarea:not(:defined) {
+  background-color: #ffffff !important;
+  color: #1f2937 !important;
 }

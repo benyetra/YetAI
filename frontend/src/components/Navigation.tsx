@@ -116,12 +116,25 @@ export function Sidebar() {
         <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
           {!isCollapsed && (
             <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
-                <Zap className="w-5 h-5 text-white" />
+              <div className="w-8 h-8 rounded-lg overflow-hidden">
+                <img 
+                  src="/logo.png" 
+                  alt="YetAI Logo" 
+                  className="w-full h-full object-cover"
+                />
               </div>
-              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <span className="text-xl font-bold bg-gradient-to-r from-[#A855F7] to-[#F59E0B] bg-clip-text text-transparent">
                 YetAI
               </span>
+            </div>
+          )}
+          {isCollapsed && (
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img 
+                src="/logo.png" 
+                alt="YetAI Logo" 
+                className="w-full h-full object-cover"
+              />
             </div>
           )}
           <button
@@ -137,17 +150,17 @@ export function Sidebar() {
           <div className={`px-4 py-4 border-b border-gray-200 ${isCollapsed ? 'px-2' : ''}`}>
             {isCollapsed ? (
               <div className="flex justify-center">
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                <div className="w-10 h-10 bg-[#A855F7] rounded-full flex items-center justify-center">
                   <User className="w-6 h-6 text-white" />
                 </div>
               </div>
             ) : (
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                <div className="w-10 h-10 bg-[#A855F7] rounded-full flex items-center justify-center flex-shrink-0">
                   <User className="w-6 h-6 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900 truncate">
+                  <p className="text-sm font-semibold text-gray-900 truncate">
                     {user.first_name || user.email}
                   </p>
                   <div className="flex items-center space-x-1">
@@ -156,7 +169,7 @@ export function Sidebar() {
                         user.subscription_tier === 'elite' ? 'text-purple-600' : 'text-yellow-600'
                       }`} />
                     )}
-                    <p className="text-xs text-gray-500 capitalize">
+                    <p className="text-xs text-gray-600 capitalize font-medium">
                       {user.subscription_tier} Member
                     </p>
                   </div>
@@ -180,18 +193,18 @@ export function Sidebar() {
                 disabled={locked}
                 className={`
                   w-full flex items-center justify-between px-3 py-2 rounded-lg
-                  transition-all duration-200 group
+                  transition-all duration-200 group nav-item sidebar-nav
                   ${active
-                    ? 'bg-blue-50 text-blue-600'
+                    ? 'bg-[#A855F7]/10 text-[#A855F7] active'
                     : locked
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                    ? 'text-gray-400 cursor-not-allowed opacity-60'
+                    : 'text-gray-800 hover:bg-gray-50 hover:text-gray-900'
                   }
                   ${isCollapsed ? 'justify-center' : ''}
                 `}
               >
                 <div className="flex items-center space-x-3">
-                  <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : ''}`} />
+                  <Icon className={`w-5 h-5 ${active ? 'text-[#A855F7]' : ''}`} />
                   {!isCollapsed && (
                     <span className="text-sm font-medium">{item.name}</span>
                   )}
@@ -199,9 +212,9 @@ export function Sidebar() {
                 {!isCollapsed && item.badge && (
                   <span className={`
                     text-xs px-2 py-0.5 rounded-full font-medium
-                    ${item.badge === 'AI' ? 'bg-purple-100 text-purple-700' :
-                      item.badge === 'NEW' ? 'bg-green-100 text-green-700' :
-                      item.badge === 'BETA' ? 'bg-yellow-100 text-yellow-700' :
+                    ${item.badge === 'AI' ? 'bg-[#A855F7]/10 text-[#A855F7]' :
+                      item.badge === 'NEW' ? 'bg-[#FCD34D]/20 text-[#F59E0B]' :
+                      item.badge === 'BETA' ? 'bg-[#FCD34D]/20 text-[#F59E0B]' :
                       'bg-gray-100 text-gray-700'}
                   `}>
                     {item.badge}
@@ -228,10 +241,10 @@ export function Sidebar() {
                   w-full flex items-center px-3 py-2 rounded-lg
                   transition-all duration-200
                   ${active
-                    ? 'bg-blue-50 text-blue-600'
+                    ? 'bg-[#A855F7]/10 text-[#A855F7]'
                     : locked
-                    ? 'text-gray-400 cursor-not-allowed'
-                    : 'text-gray-700 hover:bg-gray-50'
+                    ? 'text-gray-400 cursor-not-allowed opacity-60'
+                    : 'text-gray-800 hover:bg-gray-50 hover:text-gray-900'
                   }
                   ${isCollapsed ? 'justify-center' : ''}
                 `}
@@ -265,7 +278,7 @@ export function Sidebar() {
         {/* Upgrade Banner (for free users) */}
         {!isCollapsed && isAuthenticated && user?.subscription_tier === 'free' && (
           <div className="p-4 border-t border-gray-200">
-            <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg p-4 text-white">
+            <div className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] rounded-lg p-4 text-white">
               <div className="flex items-center space-x-2 mb-2">
                 <Sparkles className="w-5 h-5" />
                 <span className="font-bold">Upgrade to Pro</span>
@@ -275,7 +288,7 @@ export function Sidebar() {
               </p>
               <button
                 onClick={() => router.push('/upgrade')}
-                className="w-full bg-white text-purple-600 text-sm font-medium py-2 rounded-lg hover:bg-purple-50 transition-colors"
+                className="w-full bg-white text-[#A855F7] text-sm font-medium py-2 rounded-lg hover:bg-[#A855F7]/5 transition-colors"
               >
                 Upgrade Now
               </button>
@@ -299,10 +312,10 @@ export function Header() {
         {/* Left Section - Page Context */}
         <div className="flex items-center space-x-4">
           <div className="hidden lg:block">
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-lg font-bold text-gray-900">
               AI Sports Betting Platform
             </h2>
-            <p className="text-xs text-gray-500">
+            <p className="text-xs text-gray-600 font-medium">
               Real-time odds • AI predictions • Smart betting
             </p>
           </div>
@@ -317,7 +330,7 @@ export function Header() {
           {isAuthenticated && (
             <button
               onClick={() => router.push('/bet')}
-              className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors"
             >
               <DollarSign className="w-4 h-4" />
               <span className="text-sm font-medium">Quick Bet</span>
@@ -351,13 +364,13 @@ export function Header() {
             <div className="flex items-center space-x-2">
               <button
                 onClick={() => router.push('/?login=true')}
-                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                className="px-4 py-2 text-gray-800 font-medium hover:bg-gray-100 rounded-lg transition-colors"
               >
                 Sign In
               </button>
               <button
                 onClick={() => router.push('/?signup=true')}
-                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors"
               >
                 Get Started
               </button>
@@ -400,8 +413,8 @@ export function MobileBottomNav() {
                 }
               }}
               className={`
-                flex flex-col items-center justify-center space-y-1
-                ${active ? 'text-blue-600' : 'text-gray-600'}
+                flex flex-col items-center justify-center space-y-1 font-medium
+                ${active ? 'text-[#A855F7]' : 'text-gray-700'}
               `}
             >
               <Icon className="w-5 h-5" />

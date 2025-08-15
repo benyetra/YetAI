@@ -71,7 +71,7 @@ const StatCard: React.FC<{
     switch (changeType) {
       case 'positive': return 'text-green-600';
       case 'negative': return 'text-red-600';
-      default: return 'text-gray-600';
+      default: return 'text-gray-700';
     }
   };
 
@@ -84,13 +84,13 @@ const StatCard: React.FC<{
   };
 
   return (
-    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+    <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200 metric-card">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-2">{value}</p>
+          <p className="text-sm font-semibold text-gray-700 metric-label">{title}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-2 metric-value value">{value}</p>
           {subtitle && (
-            <p className="text-sm text-gray-500 mt-1">{subtitle}</p>
+            <p className="text-sm text-gray-600 font-medium mt-1 subtitle">{subtitle}</p>
           )}
         </div>
         <div className="p-2 bg-blue-50 rounded-lg">
@@ -160,7 +160,7 @@ const GameCard: React.FC<{
       </div>
 
       {game.spread && (
-        <div className="mt-3 text-sm text-gray-600">
+        <div className="mt-3 text-sm text-gray-700 font-medium">
           <p>Spread: {game.home_team} {game.spread > 0 ? '+' : ''}{game.spread}</p>
           {game.over_under && <p>O/U: {game.over_under}</p>}
         </div>
@@ -178,8 +178,8 @@ const GameCard: React.FC<{
               {prediction.confidence}% confidence
             </span>
           </div>
-          <p className="text-sm text-gray-700">{prediction.recommendation}</p>
-          <p className="text-xs text-gray-500 mt-1">{prediction.reasoning}</p>
+          <p className="text-sm text-gray-800 font-medium">{prediction.recommendation}</p>
+          <p className="text-xs text-gray-600 mt-1">{prediction.reasoning}</p>
         </div>
       )}
       
@@ -216,9 +216,9 @@ const AIInsightCard: React.FC<{ insight: AIInsight }> = ({ insight }) => {
         </div>
         <div className="flex-1">
           <h4 className="font-medium text-gray-900 mb-1">{insight.title}</h4>
-          <p className="text-sm text-gray-600 mb-2">{insight.content}</p>
+          <p className="text-sm text-gray-700 mb-2 leading-relaxed">{insight.content}</p>
           <div className="flex justify-between items-center">
-            <span className="text-xs text-gray-500 capitalize">{insight.category}</span>
+            <span className="text-xs text-gray-600 capitalize font-medium">{insight.category}</span>
             <span className="text-xs font-medium text-blue-600">{insight.confidence}% confidence</span>
           </div>
         </div>
@@ -418,7 +418,7 @@ const Dashboard: React.FC = () => {
           <div className="flex justify-between items-center h-16">
             <div>
               <div className="flex items-center space-x-3">
-                <h1 className="text-2xl font-bold text-gray-900">
+                <h1 className="text-2xl font-bold text-gray-900 page-title">
                   Welcome back, {user?.first_name || 'Player'}!
                 </h1>
                 <div className="flex items-center space-x-1">
@@ -434,7 +434,7 @@ const Dashboard: React.FC = () => {
                   </span>
                 </div>
               </div>
-              <p className="text-sm text-gray-600">
+              <p className="text-sm text-gray-700 font-medium">
                 {user?.subscription_tier === 'free' ? 'Free Tier' : 
                  user?.subscription_tier === 'pro' ? 'Pro Member' : 'Elite Member'}
               </p>
@@ -460,7 +460,7 @@ const Dashboard: React.FC = () => {
                 className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${
                   activeTab === tab
                     ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300 font-medium'
                 }`}
               >
                 {tab}
@@ -513,7 +513,7 @@ const Dashboard: React.FC = () => {
 
             {/* AI Insights */}
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center">
+              <h2 className="text-xl font-bold text-gray-900 mb-4 flex items-center section-subtitle">
                 <Brain className="w-5 h-5 mr-2 text-purple-600" />
                 AI Insights
               </h2>
@@ -526,7 +526,7 @@ const Dashboard: React.FC = () => {
 
             {/* Featured Games */}
             <div>
-              <h2 className="text-xl font-bold text-gray-900 mb-4">Today's Featured Games</h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-4 section-subtitle">Today's Featured Games</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {games.slice(0, 6).map((game) => {
                   const prediction = predictions.find(p => p.game_id === game.id);
@@ -621,11 +621,11 @@ const Dashboard: React.FC = () => {
                 <h3 className="text-lg font-bold text-gray-900 mb-2">
                   Unlock Premium Features
                 </h3>
-                <p className="text-gray-600">
+                <p className="text-gray-700 leading-relaxed">
                   Get advanced analytics, profit tracking, exclusive insights, and more accurate predictions.
                 </p>
               </div>
-              <button className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-6 py-3 rounded-lg hover:from-blue-700 hover:to-purple-700 font-medium flex items-center whitespace-nowrap ml-4">
+              <button className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] text-white px-6 py-3 rounded-lg hover:from-[#A855F7]/90 hover:to-[#F59E0B]/90 font-medium flex items-center whitespace-nowrap ml-4">
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade Now
               </button>
