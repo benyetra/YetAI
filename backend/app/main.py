@@ -13,6 +13,7 @@ from app.services.real_fantasy_pipeline import real_fantasy_pipeline
 from app.services.performance_tracker import performance_tracker
 from app.services.auth_service import auth_service
 from app.services.bet_service import bet_service
+from app.services.yetai_bets_service import yetai_bets_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
 from app.services.cache_service import cache_service
@@ -1346,6 +1347,211 @@ async def simulate_bet_results(current_user: dict = Depends(get_current_user)):
         }
     else:
         raise HTTPException(status_code=400, detail=result["error"])
+
+# YetAI Bets API endpoints (Admin-created best bets)
+async def get_current_user_from_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user from authentication token"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="Authorization required")
+    
+    user = await auth_service.get_user_by_token(credentials.credentials)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid or expired token")
+    
+    return user
+
+async def require_admin(user: dict = Depends(get_current_user_from_auth)):
+    """Require admin privileges"""
+    if not user.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Admin privileges required")
+    return user
+
+@app.get("/api/yetai-bets")
+async def get_yetai_bets(user: dict = Depends(get_current_user_from_auth)):
+    """Get YetAI Bets for the current user based on their tier"""
+    try:
+        user_tier = user.get("subscription_tier", "free")
+        bets = await yetai_bets_service.get_active_bets(user_tier)
+        stats = await yetai_bets_service.get_performance_stats()
+        
+        return {
+            "status": "success",
+            "bets": bets,
+            "performance_stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting YetAI bets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get bets")
+
+@app.get("/api/admin/yetai-bets")
+async def get_all_yetai_bets(admin_user: dict = Depends(require_admin)):
+    """Get all YetAI Bets for admin management"""
+    try:
+        bets = await yetai_bets_service.get_all_bets()
+        stats = await yetai_bets_service.get_performance_stats()
+        
+        return {
+            "status": "success",
+            "bets": bets,
+            "performance_stats": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting all YetAI bets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get bets")
+
+@app.post("/api/admin/yetai-bets")
+async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict = Depends(require_admin)):
+    """Create a new YetAI Bet (Admin only)"""
+    try:
+        result = await yetai_bets_service.create_bet(bet_request, admin_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "bet_id": result["bet_id"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating YetAI bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create bet")
+
+@app.post("/api/admin/yetai-bets/parlay")
+async def create_yetai_parlay(parlay_request: CreateParlayBetRequest, admin_user: dict = Depends(require_admin)):
+    """Create a new YetAI Parlay Bet (Admin only)"""
+    try:
+        result = await yetai_bets_service.create_parlay(parlay_request, admin_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"],
+                "bet_id": result["bet_id"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating YetAI parlay: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create parlay")
+
+@app.put("/api/admin/yetai-bets/{bet_id}")
+async def update_yetai_bet(bet_id: str, update_request: UpdateYetAIBetRequest, admin_user: dict = Depends(require_admin)):
+    """Update a YetAI Bet (Admin only)"""
+    try:
+        result = await yetai_bets_service.update_bet(bet_id, update_request, admin_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating YetAI bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update bet")
+
+@app.delete("/api/admin/yetai-bets/{bet_id}")
+async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin)):
+    """Delete a YetAI Bet (Admin only)"""
+    try:
+        result = await yetai_bets_service.delete_bet(bet_id, admin_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting YetAI bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete bet")
+
+# Admin User Management Endpoints
+class PromoteAdminRequest(BaseModel):
+    email: EmailStr
+
+class CreateAdminRequest(BaseModel):
+    email: EmailStr
+    password: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+
+@app.post("/api/auth/promote-admin")
+async def promote_user_to_admin(request: PromoteAdminRequest, current_user: dict = Depends(require_admin)):
+    """Promote a user to admin (admin only)"""
+    try:
+        # Find user by email
+        target_user = None
+        for user in auth_service.users.values():
+            if user["email"] == request.email:
+                target_user = user
+                break
+        
+        if not target_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Promote to admin
+        target_user["is_admin"] = True
+        target_user["subscription_tier"] = "elite"  # Admins get elite tier
+        
+        return {
+            "status": "success",
+            "message": f"User {request.email} promoted to admin",
+            "user": {
+                "email": target_user["email"],
+                "first_name": target_user["first_name"],
+                "last_name": target_user["last_name"],
+                "is_admin": target_user["is_admin"],
+                "subscription_tier": target_user["subscription_tier"]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to promote user: {str(e)}")
+
+@app.post("/api/auth/create-admin")
+async def create_admin_user(request: CreateAdminRequest, current_user: dict = Depends(require_admin)):
+    """Create a new admin user (admin only)"""
+    try:
+        result = await auth_service.create_admin_user(
+            email=request.email,
+            password=request.password,
+            first_name=request.first_name,
+            last_name=request.last_name
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": "Admin user created successfully",
+                "user": result["user"],
+                "access_token": result["access_token"],
+                "token_type": result["token_type"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create admin user: {str(e)}")
 
 # WebSocket endpoints and startup events
 @app.on_event("startup")

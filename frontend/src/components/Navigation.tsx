@@ -28,7 +28,8 @@ import {
   Layers,
   Target,
   Sparkles,
-  ChevronDown
+  ChevronDown,
+  Shield
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { useNotifications } from './NotificationProvider';
@@ -223,6 +224,34 @@ export function Sidebar() {
               </button>
             );
           })}
+          
+          {/* Admin Navigation Item - Only show for admin users */}
+          {isAuthenticated && user?.is_admin && (
+            <button
+              onClick={() => router.push('/admin')}
+              className={`
+                w-full flex items-center justify-between px-3 py-2 rounded-lg
+                transition-all duration-200 group nav-item sidebar-nav
+                ${isActive('/admin')
+                  ? 'bg-[#A855F7]/10 text-[#A855F7] active'
+                  : 'text-gray-800 hover:bg-gray-50 hover:text-gray-900'
+                }
+                ${isCollapsed ? 'justify-center' : ''}
+              `}
+            >
+              <div className="flex items-center space-x-3">
+                <Shield className={`w-5 h-5 ${isActive('/admin') ? 'text-[#A855F7]' : ''}`} />
+                {!isCollapsed && (
+                  <span className="text-sm font-medium">Admin</span>
+                )}
+              </div>
+              {!isCollapsed && (
+                <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-red-100 text-red-600">
+                  ADMIN
+                </span>
+              )}
+            </button>
+          )}
         </nav>
 
         {/* Bottom Section */}

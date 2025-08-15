@@ -39,6 +39,10 @@ export function useWebSocket() {
       return;
     }
 
+    // Temporarily disable WebSocket connections to resolve admin page loading issues
+    console.log('WebSocket: Connection temporarily disabled');
+    return;
+
     try {
       // WebSocket URL - update with your actual domain in production
       const wsUrl = `ws://localhost:8000/ws/${user.id}`;

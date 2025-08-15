@@ -86,6 +86,7 @@ class AuthService:
                 "is_active": True,
                 "is_verified": False,
                 "verification_token": secrets.token_urlsafe(32),
+                "is_admin": False,
                 "created_at": datetime.utcnow(),
                 "last_login": None
             }
@@ -103,7 +104,8 @@ class AuthService:
                     "first_name": new_user["first_name"],
                     "last_name": new_user["last_name"],
                     "subscription_tier": new_user["subscription_tier"],
-                    "is_verified": new_user["is_verified"]
+                    "is_verified": new_user["is_verified"],
+                    "is_admin": new_user["is_admin"]
                 },
                 "access_token": access_token,
                 "token_type": "bearer"
@@ -146,6 +148,7 @@ class AuthService:
                     "last_name": user["last_name"],
                     "subscription_tier": user["subscription_tier"],
                     "is_verified": user["is_verified"],
+                    "is_admin": user["is_admin"],
                     "last_login": user["last_login"].isoformat() if user["last_login"] else None
                 },
                 "access_token": access_token,
@@ -174,6 +177,7 @@ class AuthService:
                 "last_name": user["last_name"],
                 "subscription_tier": user["subscription_tier"],
                 "is_verified": user["is_verified"],
+                "is_admin": user["is_admin"],
                 "favorite_teams": user["favorite_teams"],
                 "preferred_sports": user["preferred_sports"],
                 "notification_settings": user["notification_settings"]
@@ -252,6 +256,14 @@ class AuthService:
                     "first_name": "Pro",
                     "last_name": "User",
                     "tier": "pro"
+                },
+                {
+                    "email": "admin@example.com", 
+                    "password": "admin123",
+                    "first_name": "Admin",
+                    "last_name": "User",
+                    "tier": "elite",
+                    "is_admin": True
                 }
             ]
             
@@ -284,6 +296,7 @@ class AuthService:
                         "is_active": True,
                         "is_verified": True,
                         "verification_token": None,
+                        "is_admin": user_data.get("is_admin", False),
                         "created_at": datetime.utcnow(),
                         "last_login": None
                     }
@@ -294,6 +307,64 @@ class AuthService:
             
         except Exception as e:
             logger.error(f"Error creating demo users: {e}")
+    
+    async def create_admin_user(self, email: str, password: str, first_name: str = None, last_name: str = None) -> Dict:
+        """Create a new admin user"""
+        try:
+            # Check if user already exists
+            for user in self.users.values():
+                if user["email"] == email:
+                    return {"success": False, "error": "Email already registered"}
+            
+            # Create new admin user
+            user_id = self.user_id_counter
+            self.user_id_counter += 1
+            
+            hashed_password = self.hash_password(password)
+            
+            new_admin = {
+                "id": user_id,
+                "email": email,
+                "password_hash": hashed_password,
+                "first_name": first_name,
+                "last_name": last_name,
+                "subscription_tier": "elite",  # Admins get elite tier
+                "subscription_expires_at": None,
+                "stripe_customer_id": None,
+                "favorite_teams": "[]",
+                "preferred_sports": "[\"NFL\"]",
+                "notification_settings": "{\"email\": true, \"push\": true}",
+                "is_active": True,
+                "is_verified": True,
+                "verification_token": None,
+                "is_admin": True,  # This is the key field
+                "created_at": datetime.utcnow(),
+                "last_login": None
+            }
+            
+            self.users[user_id] = new_admin
+            
+            # Generate access token
+            access_token = self.generate_token(new_admin["id"])
+            
+            return {
+                "success": True,
+                "user": {
+                    "id": new_admin["id"],
+                    "email": new_admin["email"],
+                    "first_name": new_admin["first_name"],
+                    "last_name": new_admin["last_name"],
+                    "subscription_tier": new_admin["subscription_tier"],
+                    "is_verified": new_admin["is_verified"],
+                    "is_admin": new_admin["is_admin"]
+                },
+                "access_token": access_token,
+                "token_type": "bearer"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating admin user: {e}")
+            return {"success": False, "error": "Failed to create admin account"}
 
 # Service instance
 auth_service = AuthService()

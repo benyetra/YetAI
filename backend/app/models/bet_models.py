@@ -71,3 +71,55 @@ class BetStats(BaseModel):
     current_streak: int
     longest_win_streak: int
     longest_loss_streak: int
+
+# YetAI Bets Models for Admin-Created Best Bets
+class YetAIBetType(str, Enum):
+    STRAIGHT = "straight"
+    PARLAY = "parlay"
+
+class CreateYetAIBetRequest(BaseModel):
+    sport: str
+    game: str
+    bet_type: str  # e.g., "Spread", "Moneyline", "Total", "Puck Line" 
+    pick: str      # e.g., "Chiefs -3.5", "Over 228.5"
+    odds: str      # e.g., "-110", "+150"
+    confidence: int = Field(ge=50, le=100)
+    reasoning: str
+    game_time: str
+    is_premium: bool = True
+    bet_category: YetAIBetType = YetAIBetType.STRAIGHT
+    
+class CreateParlayBetRequest(BaseModel):
+    name: str  # e.g., "3-Team NFL Parlay"
+    legs: List[CreateYetAIBetRequest]
+    total_odds: str  # e.g., "+650"
+    confidence: int = Field(ge=50, le=100)
+    reasoning: str
+    is_premium: bool = True
+
+class YetAIBet(BaseModel):
+    id: str
+    sport: str
+    game: str
+    bet_type: str
+    pick: str
+    odds: str
+    confidence: int
+    reasoning: str
+    status: BetStatus = BetStatus.PENDING
+    is_premium: bool
+    game_time: str
+    created_at: datetime
+    settled_at: Optional[datetime] = None
+    result: Optional[str] = None
+    bet_category: YetAIBetType
+    created_by_admin: int  # admin user ID
+    
+class UpdateYetAIBetRequest(BaseModel):
+    status: Optional[BetStatus] = None
+    result: Optional[str] = None
+    
+class YetAIBetResponse(BaseModel):
+    bets: List[YetAIBet]
+    total_count: int
+    performance_stats: Dict[str, Any]
