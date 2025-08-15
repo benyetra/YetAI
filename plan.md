@@ -79,23 +79,33 @@ YetAI is an AI-powered sports betting and fantasy insights platform that provide
 
 ## Architecture Overview
 
+### Project Structure
+```
+ai-sports-betting-mvp/
+├── create_test_users.sh     # User management shell script
+├── create_test_users.py     # User management Python script  
+├── USER_MANAGEMENT.md       # User management documentation
+├── plan.md                  # Project development plan
+├── backend/                 # FastAPI backend application
+└── frontend/                # Next.js frontend application
+```
+
 ### Backend Structure
 ```
 app/
 ├── main.py              # FastAPI application entry point
 ├── models/             # SQLAlchemy database models
-│   ├── user.py         # User model with authentication
-│   ├── bet.py          # Bet tracking model
-│   └── game.py         # Sports game data model
-├── routes/             # API route handlers
-│   ├── auth.py         # Authentication endpoints
-│   ├── bets.py         # Betting operations
-│   └── websocket.py    # WebSocket connections
+│   ├── bet_models.py   # Betting and user models
+│   └── sports_models.py # Sports data models
 ├── services/           # Business logic services
 │   ├── auth_service.py # Authentication logic
 │   ├── bet_service.py  # Betting operations
-│   └── websocket_manager.py # WebSocket management
-└── database.py         # Database configuration
+│   ├── websocket_manager.py # WebSocket management
+│   ├── data_pipeline.py # Sports data processing
+│   ├── odds_api_service.py # External API integration
+│   └── cache_service.py # Caching and performance
+└── core/               # Core configuration
+    └── config.py       # Application settings
 ```
 
 ### Frontend Structure
@@ -183,6 +193,20 @@ frontend/src/
 - ✅ Updated WebSocket manager to generate proper 0.5-step betting increments
 - ✅ Enhanced data pipeline with rounding logic for spreads and totals
 - ✅ All betting odds now display in professional sportsbook format
+
+### Phase 3.7: User Management & Testing Infrastructure ✅ COMPLETE (August 15, 2025)
+- ✅ Comprehensive user management tools (`create_test_users.sh` and `create_test_users.py`)
+- ✅ Shell script with colorized output and zero external dependencies
+- ✅ Batch user creation capabilities for development testing
+- ✅ Demo user management with preset free and pro tier accounts
+- ✅ Login testing and validation functionality
+- ✅ Complete documentation system (`USER_MANAGEMENT.md`)
+- ✅ Verified existing JWT authentication system functionality
+- ✅ Tested frontend signup/login UI components
+- ✅ Confirmed WebSocket integration with user sessions
+- ✅ Cross-platform user creation tools for team development
+- ✅ Production-ready authentication system validation
+- ✅ Multiple testing scenarios supported (demo, individual, batch users)
 
 ## Next Development Phases 🚀
 
@@ -363,5 +387,5 @@ frontend/src/
 ---
 
 *Last Updated: August 15, 2025*
-*Version: 1.3*
-*Status: Phase 3.6 Complete - UI Polish & Betting Display Refinements Completed. All betting odds now display in professional sportsbook format with proper formatting, clean sport names, and local timezone support.*
+*Version: 1.4*
+*Status: Phase 3.7 Complete - User Management & Testing Infrastructure Implemented. Platform now ready for real user testing with comprehensive authentication system, management tools, and professional UI formatting.*
