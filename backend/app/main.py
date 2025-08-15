@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -12,6 +12,9 @@ from app.services.ai_chat_service import ai_chat_service
 from app.services.real_fantasy_pipeline import real_fantasy_pipeline
 from app.services.performance_tracker import performance_tracker
 from app.services.auth_service import auth_service
+from app.services.bet_service import bet_service
+from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
+from app.models.bet_models import *
 from app.core.config import settings
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -62,14 +65,37 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
-# CORS middleware
+# CORS middleware - MUST be configured properly for OPTIONS requests
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3002"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://192.168.1.44:3000",
+        "http://192.168.1.44:3001",
+        "ws://localhost:8000"
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
     allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600
 )
+
+# Handle OPTIONS requests explicitly
+@app.options("/{full_path:path}")
+async def options_handler(full_path: str):
+    return JSONResponse(
+        content={"message": "OK"},
+        headers={
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+            "Access-Control-Allow-Headers": "*",
+        }
+    )
 
 # Dependency to get current user
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
@@ -682,6 +708,144 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting user performance: {str(e)}")
+
+# Bet endpoints
+@app.post("/api/bets/place")
+async def place_bet(
+    bet_data: PlaceBetRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Place a single bet"""
+    result = await bet_service.place_bet(current_user["id"], bet_data)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "bet": result["bet"],
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.post("/api/bets/parlay")
+async def place_parlay(
+    parlay_data: PlaceParlayRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Place a parlay bet"""
+    result = await bet_service.place_parlay(current_user["id"], parlay_data)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "parlay": result["parlay"],
+            "legs": result["legs"],
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.post("/api/bets/history")
+async def get_bet_history(
+    query: BetHistoryQuery,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user's bet history"""
+    result = await bet_service.get_bet_history(current_user["id"], query)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "bets": result["bets"],
+            "total": result["total"],
+            "offset": result.get("offset", query.offset),
+            "limit": result.get("limit", query.limit)
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to fetch bet history"))
+
+@app.get("/api/bets/stats")
+async def get_bet_stats(current_user: dict = Depends(get_current_user)):
+    """Get user's betting statistics"""
+    result = await bet_service.get_bet_stats(current_user["id"])
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "stats": result["stats"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.delete("/api/bets/{bet_id}")
+async def cancel_bet(
+    bet_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Cancel a pending bet"""
+    result = await bet_service.cancel_bet(current_user["id"], bet_id)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.post("/api/bets/simulate")
+async def simulate_bet_results(current_user: dict = Depends(get_current_user)):
+    """Simulate bet results for demo purposes"""
+    result = await bet_service.simulate_bet_results(current_user["id"])
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+# WebSocket endpoints and startup events
+@app.on_event("startup")
+async def startup_event():
+    """Start background tasks for live updates"""
+    asyncio.create_task(simulate_odds_updates())
+    asyncio.create_task(simulate_score_updates())
+    logger.info("WebSocket services started")
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    """WebSocket endpoint for live updates"""
+    await manager.connect(websocket, user_id)
+    try:
+        while True:
+            # Receive messages from client
+            data = await websocket.receive_json()
+            
+            if data["type"] == "subscribe":
+                await manager.subscribe_to_game(user_id, data["game_id"])
+            elif data["type"] == "unsubscribe":
+                await manager.unsubscribe_from_game(user_id, data["game_id"])
+            elif data["type"] == "ping":
+                await manager.send_personal_message({"type": "pong"}, user_id)
+            else:
+                logger.warning(f"Unknown message type: {data.get('type')}")
+                
+    except WebSocketDisconnect:
+        logger.info(f"WebSocket disconnected for user {user_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user_id}: {e}")
+    finally:
+        manager.disconnect(user_id)
+
+@app.get("/api/websocket/stats")
+async def get_websocket_stats():
+    """Get WebSocket connection statistics"""
+    return {
+        "status": "success",
+        "stats": manager.get_connection_stats()
+    }
 
 if __name__ == "__main__":
     import uvicorn

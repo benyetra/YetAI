@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3, Crown } from 'lucide-react';
 import PerformanceDashboard from './PerformanceDashboard';
 import { useAuth } from './Auth';
+import BetModal from './BetModal';
 
 // Types
 type Message = {
@@ -72,6 +73,10 @@ export default function BettingDashboard() {
   const [currentMessage, setCurrentMessage] = useState<string>('');
   const [chatLoading, setChatLoading] = useState<boolean>(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  
+  // Bet modal state
+  const [showBetModal, setShowBetModal] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
 
   // Auth integration
   const { user, token, isAuthenticated } = useAuth();
@@ -152,8 +157,8 @@ export default function BettingDashboard() {
     const messageToSend = messageText || currentMessage.trim();
     if (!messageToSend) return;
     
-    const userMessage = {
-      role: 'user',
+    const userMessage: Message = {
+      role: 'user' as const,
       content: messageToSend,
       timestamp: new Date().toISOString()
     };
@@ -189,6 +194,25 @@ export default function BettingDashboard() {
     } finally {
       setChatLoading(false);
     }
+  };
+
+  // Handle place bet
+  const handlePlaceBet = (game: any) => {
+    // Enhance game with required fields for BetModal
+    const enhancedGame = {
+      ...game,
+      id: game.id || `game_${Math.random()}`,
+      sport: game.sport || 'NFL',
+      commence_time: game.commence_time || game.date || new Date().toISOString(),
+      home_odds: game.moneyline?.home || -110,
+      away_odds: game.moneyline?.away || +100,
+      total: game.total?.point || 45.5,
+      spread: game.spread?.home?.point || -3.5,
+      home_team: game.home_team || game.home_team_full || 'Home Team',
+      away_team: game.away_team || game.away_team_full || 'Away Team'
+    };
+    setSelectedGame(enhancedGame);
+    setShowBetModal(true);
   };
 
   // Mock predictions for demo (since real predictions need aligned data)
@@ -608,6 +632,16 @@ export default function BettingDashboard() {
                         </span>
                       </div>
                     </div>
+                    
+                    {/* Place Bet Button */}
+                    {isAuthenticated && (game.status === 'STATUS_SCHEDULED' || game.status?.toLowerCase() === 'upcoming' || game.status === 'SCHEDULED') && (
+                      <button
+                        onClick={() => handlePlaceBet(game)}
+                        className="mt-3 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                      >
+                        Place Bet
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -706,6 +740,16 @@ export default function BettingDashboard() {
                         )}
                       </div>
                     </div>
+                    
+                    {/* Place Bet Button */}
+                    {isAuthenticated && (
+                      <button
+                        onClick={() => handlePlaceBet(game)}
+                        className="mt-4 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                      >
+                        Place Bet
+                      </button>
+                    )}
                   </div>
                 ))}
               </div>
@@ -790,6 +834,16 @@ export default function BettingDashboard() {
                             </p>
                           </div>
                         )}
+                        
+                        {/* Place Bet Button */}
+                        {(game.status === 'STATUS_SCHEDULED' || game.status?.toLowerCase() === 'upcoming' || game.status === 'SCHEDULED') && (
+                          <button
+                            onClick={() => handlePlaceBet(game)}
+                            className="mt-3 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+                          >
+                            Place Bet
+                          </button>
+                        )}
                       </div>
                     ))}
                   {games.filter(game => {
@@ -837,6 +891,16 @@ export default function BettingDashboard() {
           </p>
         </div>
       </footer>
+
+      {/* Bet Placement Modal */}
+      <BetModal
+        isOpen={showBetModal}
+        onClose={() => {
+          setShowBetModal(false);
+          setSelectedGame(null);
+        }}
+        game={selectedGame}
+      />
     </div>
   );
 }

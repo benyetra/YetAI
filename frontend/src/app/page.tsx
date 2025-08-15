@@ -43,6 +43,12 @@ export default function Home() {
                   >
                     Dashboard
                   </Link>
+                  <Link 
+                    href="/bets" 
+                    className="text-purple-600 hover:text-purple-700 font-medium"
+                  >
+                    My Bets
+                  </Link>
                 </nav>
               )}
             </div>

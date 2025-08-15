@@ -1,8 +1,11 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users } from 'lucide-react';
+import Link from 'next/link';
+import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users, Wifi, WifiOff } from 'lucide-react';
 import { useAuth } from './Auth';
+import BetModal from './BetModal';
+import { useWebSocket } from '@/hooks/useWebSocket';
 
 interface User {
   id: string;
@@ -21,7 +24,12 @@ interface Game {
   away_score?: number;
   status: string;
   start_time: string;
+  commence_time?: string;
+  sport?: string;
+  home_odds?: number;
+  away_odds?: number;
   spread?: number;
+  total?: number;
   over_under?: number;
   weather_impact?: 'low' | 'medium' | 'high';
 }
@@ -104,7 +112,8 @@ const GameCard: React.FC<{
   game: Game;
   prediction?: Prediction;
   isFavorite?: boolean;
-}> = ({ game, prediction, isFavorite }) => {
+  onPlaceBet?: (game: Game) => void;
+}> = ({ game, prediction, isFavorite, onPlaceBet }) => {
   const getStatusColor = (status: string) => {
     switch (status.toLowerCase()) {
       case 'live': return 'bg-red-100 text-red-800';
@@ -173,6 +182,16 @@ const GameCard: React.FC<{
           <p className="text-xs text-gray-500 mt-1">{prediction.reasoning}</p>
         </div>
       )}
+      
+      {/* Place Bet Button */}
+      {onPlaceBet && (game.status.toLowerCase() === 'upcoming' || game.status.toLowerCase() === 'status_scheduled' || game.status === 'SCHEDULED') && (
+        <button
+          onClick={() => onPlaceBet(game)}
+          className="mt-3 w-full bg-blue-600 text-white py-2 rounded-lg hover:bg-blue-700 font-medium transition-colors"
+        >
+          Place Bet
+        </button>
+      )}
     </div>
   );
 };
@@ -222,6 +241,26 @@ const Dashboard: React.FC = () => {
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [insights, setInsights] = useState<AIInsight[]>([]);
   const [activeTab, setActiveTab] = useState('overview');
+  const [showBetModal, setShowBetModal] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<Game | null>(null);
+  
+  // WebSocket integration
+  const { isConnected, subscribeToGame, unsubscribeFromGame, getGameUpdate } = useWebSocket();
+
+  // Handle place bet
+  const handlePlaceBet = (game: Game) => {
+    // Enhance game with required fields for BetModal
+    const enhancedGame = {
+      ...game,
+      sport: 'NFL',
+      commence_time: game.start_time,
+      home_odds: game.home_odds || -110,
+      away_odds: game.away_odds || +100,
+      total: game.over_under || 45.5
+    };
+    setSelectedGame(enhancedGame);
+    setShowBetModal(true);
+  };
 
   // Fetch dashboard data
   useEffect(() => {
@@ -264,6 +303,8 @@ const Dashboard: React.FC = () => {
             start_time: game.start_time || new Date().toISOString(),
             spread: game.spread || Math.random() * 14 - 7,
             over_under: game.over_under || 45 + Math.random() * 20,
+            home_odds: game.home_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
+            away_odds: game.away_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
             weather_impact: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as 'low' | 'medium' | 'high'
           })) || [];
           setGames(enhancedGames);
@@ -323,6 +364,41 @@ const Dashboard: React.FC = () => {
     }
   }, [user, token]);
 
+  // Subscribe to game updates via WebSocket
+  useEffect(() => {
+    if (isConnected && games.length > 0) {
+      games.forEach(game => {
+        subscribeToGame(game.id);
+      });
+
+      // Cleanup on unmount or games change
+      return () => {
+        games.forEach(game => {
+          unsubscribeFromGame(game.id);
+        });
+      };
+    }
+  }, [isConnected, games, subscribeToGame, unsubscribeFromGame]);
+
+  // Function to get live odds for a game
+  const getLiveGameData = (game: Game) => {
+    const liveUpdate = getGameUpdate(game.id);
+    if (liveUpdate) {
+      return {
+        ...game,
+        home_odds: liveUpdate.home_odds ?? game.home_odds,
+        away_odds: liveUpdate.away_odds ?? game.away_odds,
+        spread: liveUpdate.spread ?? game.spread,
+        total: liveUpdate.total ?? game.total,
+        home_score: liveUpdate.home_score ?? game.home_score,
+        away_score: liveUpdate.away_score ?? game.away_score,
+        movement: liveUpdate.movement,
+        last_updated: liveUpdate.last_updated
+      };
+    }
+    return game;
+  };
+
   // Get user's favorite teams for highlighting
   const favoriteTeams = user?.favorite_teams || ['KC', 'BUF']; // Demo favorites
 
@@ -341,9 +417,23 @@ const Dashboard: React.FC = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">
-                Welcome back, {user?.first_name || 'Player'}!
-              </h1>
+              <div className="flex items-center space-x-3">
+                <h1 className="text-2xl font-bold text-gray-900">
+                  Welcome back, {user?.first_name || 'Player'}!
+                </h1>
+                <div className="flex items-center space-x-1">
+                  {isConnected ? (
+                    <Wifi className="w-4 h-4 text-green-600" />
+                  ) : (
+                    <WifiOff className="w-4 h-4 text-red-600" />
+                  )}
+                  <span className={`text-xs font-medium ${
+                    isConnected ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {isConnected ? 'Live' : 'Offline'}
+                  </span>
+                </div>
+              </div>
               <p className="text-sm text-gray-600">
                 {user?.subscription_tier === 'free' ? 'Free Tier' : 
                  user?.subscription_tier === 'pro' ? 'Pro Member' : 'Elite Member'}
@@ -376,6 +466,12 @@ const Dashboard: React.FC = () => {
                 {tab}
               </button>
             ))}
+            <Link
+              href="/bets"
+              className="py-4 px-1 border-b-2 border-transparent text-purple-600 hover:text-purple-700 hover:border-purple-300 font-medium text-sm"
+            >
+              My Bets
+            </Link>
           </nav>
         </div>
       </div>
@@ -440,9 +536,10 @@ const Dashboard: React.FC = () => {
                   return (
                     <GameCard
                       key={game.id}
-                      game={game}
+                      game={getLiveGameData(game)}
                       prediction={prediction}
                       isFavorite={isFavorite}
+                      onPlaceBet={handlePlaceBet}
                     />
                   );
                 })}
@@ -463,9 +560,10 @@ const Dashboard: React.FC = () => {
                 return (
                   <GameCard
                     key={game.id}
-                    game={game}
+                    game={getLiveGameData(game)}
                     prediction={prediction}
                     isFavorite={isFavorite}
+                    onPlaceBet={handlePlaceBet}
                   />
                 );
               })}
@@ -535,6 +633,16 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* Bet Placement Modal */}
+      <BetModal
+        isOpen={showBetModal}
+        onClose={() => {
+          setShowBetModal(false);
+          setSelectedGame(null);
+        }}
+        game={selectedGame}
+      />
     </div>
   );
 };
