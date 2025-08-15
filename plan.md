@@ -129,7 +129,8 @@ frontend/src/
 │   ├── SportsSelector.tsx # Sports selection with search
 │   └── LiveScores.tsx  # Live scores with filtering
 └── lib/                # Utility functions
-    └── api.ts          # Enhanced API client with circuit breaker
+    ├── api.ts          # Enhanced API client with circuit breaker
+    └── formatting.ts   # Comprehensive formatting utilities
 ```
 
 ## Current Development Status
@@ -166,6 +167,22 @@ frontend/src/
 - ✅ Added MutationObserver for dynamic content styling
 - ✅ Resolved specific utility class combinations causing text bleeding issues
 - ✅ Tested and verified across Chrome, Safari, Firefox, and Edge browsers
+
+### Phase 3.6: UI Polish & Betting Display ✅ COMPLETE (August 15, 2025)
+- ✅ Created comprehensive formatting utilities (`/frontend/src/lib/formatting.ts`)
+- ✅ Implemented sport name mapping system (baseball_mlb → MLB, basketball_nba → NBA)
+- ✅ Fixed weird decimal values in betting odds display (proper 0.5 increments only)
+- ✅ Converted all time displays to user's local timezone with friendly formatting
+- ✅ Replaced raw API status codes with clean labels (STATUS_SCHEDULED → "Scheduled")
+- ✅ Updated LiveOdds component with sport name formatting and time display
+- ✅ Enhanced LiveScores with friendly date formatting and clean sport names
+- ✅ Fixed BettingDashboard spread/total formatting and status labels
+- ✅ Updated Place Bet page with proper sport name display
+- ✅ Fixed Dashboard component mock data generation for standard betting increments
+- ✅ Applied formatSpread, formatTotal, and formatGameStatus across all components
+- ✅ Updated WebSocket manager to generate proper 0.5-step betting increments
+- ✅ Enhanced data pipeline with rounding logic for spreads and totals
+- ✅ All betting odds now display in professional sportsbook format
 
 ## Next Development Phases 🚀
 
@@ -346,5 +363,5 @@ frontend/src/
 ---
 
 *Last Updated: August 15, 2025*
-*Version: 1.2*
-*Status: Phases 5, 9, and 10 Complete - Live Sports Data Integration, Frontend Integration, and Error Handling Implemented*
+*Version: 1.3*
+*Status: Phase 3.6 Complete - UI Polish & Betting Display Refinements Completed. All betting odds now display in professional sportsbook format with proper formatting, clean sport names, and local timezone support.*
