@@ -1,92 +1,142 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
-import BettingDashboard from '@/components/BettingDashboard';
-import { useAuth, UserMenu, AuthModal } from '@/components/Auth';
+import { useState, useEffect } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { AuthModal } from '@/components/Auth';
+import { useAuth } from '@/components/Auth';
+import Layout from '@/components/Layout';
+import { 
+  Zap, TrendingUp, Brain, Trophy, Users, Shield, 
+  ChevronRight, Star, ArrowRight, DollarSign 
+} from 'lucide-react';
 
-export default function Home() {
-  const { isAuthenticated, loading } = useAuth();
+export default function HomePage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { isAuthenticated } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
-    );
-  }
+  useEffect(() => {
+    // Check URL params for login/signup
+    if (searchParams.get('login') === 'true') {
+      setAuthMode('login');
+      setShowAuthModal(true);
+    } else if (searchParams.get('signup') === 'true') {
+      setAuthMode('signup');
+      setShowAuthModal(true);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    // Redirect to dashboard if already authenticated
+    if (isAuthenticated) {
+      router.push('/dashboard');
+    }
+  }, [isAuthenticated, router]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center space-x-8">
-              <h1 className="text-xl font-bold text-gray-900">
-                AI Sports Betting MVP
-              </h1>
-              
-              {/* Navigation Links */}
-              {isAuthenticated && (
-                <nav className="flex space-x-6">
-                  <Link 
-                    href="/" 
-                    className="text-gray-600 hover:text-gray-900 font-medium"
-                  >
-                    Home
-                  </Link>
-                  <Link 
-                    href="/dashboard" 
-                    className="text-blue-600 hover:text-blue-700 font-medium"
-                  >
-                    Dashboard
-                  </Link>
-                  <Link 
-                    href="/bets" 
-                    className="text-purple-600 hover:text-purple-700 font-medium"
-                  >
-                    My Bets
-                  </Link>
-                </nav>
-              )}
-            </div>
-            
-            <div className="flex items-center space-x-4">
-              {isAuthenticated ? (
-                <div className="flex items-center space-x-4">
-                  <Link 
-                    href="/dashboard"
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
-                  >
-                    Go to Dashboard
-                  </Link>
-                  <UserMenu />
-                </div>
-              ) : (
-                <button
-                  onClick={() => setShowAuthModal(true)}
-                  className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 font-medium"
-                >
-                  Sign In
-                </button>
-              )}
+    <Layout>
+      {/* Hero Section */}
+      <div className="relative overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24">
+          <div className="text-center">
+            <h1 className="text-5xl font-bold text-gray-900 mb-6">
+              AI-Powered Sports Betting
+              <span className="block text-blue-600">Made Simple</span>
+            </h1>
+            <p className="text-xl text-gray-600 mb-8 max-w-2xl mx-auto">
+              Get real-time odds, AI predictions, and smart betting insights all in one platform.
+              Join thousands making smarter bets with YetAI.
+            </p>
+            <div className="flex justify-center space-x-4">
+              <button
+                onClick={() => {
+                  setAuthMode('signup');
+                  setShowAuthModal(true);
+                }}
+                className="px-8 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+              >
+                Start Free Trial
+                <ArrowRight className="w-5 h-5 ml-2" />
+              </button>
+              <button
+                onClick={() => {
+                  setAuthMode('login');
+                  setShowAuthModal(true);
+                }}
+                className="px-8 py-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Sign In
+              </button>
             </div>
           </div>
         </div>
-      </header>
+      </div>
 
-      {/* Main Content */}
-      <main>
-        <BettingDashboard />
-      </main>
+      {/* Features Grid */}
+      <div className="py-20 bg-gray-50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <h2 className="text-3xl font-bold text-center mb-12">
+            Everything You Need to Win
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            <FeatureCard
+              icon={Brain}
+              title="AI Predictions"
+              description="Advanced algorithms analyze thousands of data points to give you winning predictions"
+            />
+            <FeatureCard
+              icon={TrendingUp}
+              title="Live Odds"
+              description="Real-time odds from major sportsbooks, all in one place"
+            />
+            <FeatureCard
+              icon={Trophy}
+              title="Fantasy Insights"
+              description="Optimize your fantasy lineups with AI-powered player projections"
+            />
+            <FeatureCard
+              icon={DollarSign}
+              title="Smart Betting"
+              description="Track your bets, analyze performance, and improve your strategy"
+            />
+            <FeatureCard
+              icon={Users}
+              title="Community"
+              description="Join a community of smart bettors and share insights"
+            />
+            <FeatureCard
+              icon={Shield}
+              title="Secure & Safe"
+              description="Bank-level security to protect your data and privacy"
+            />
+          </div>
+        </div>
+      </div>
 
       {/* Auth Modal */}
-      <AuthModal 
-        isOpen={showAuthModal} 
-        onClose={() => setShowAuthModal(false)} 
+      <AuthModal
+        isOpen={showAuthModal}
+        onClose={() => setShowAuthModal(false)}
+        initialMode={authMode}
       />
+    </Layout>
+  );
+}
+
+function FeatureCard({ icon: Icon, title, description }: {
+  icon: React.ElementType;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-lg transition-shadow">
+      <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center mb-4">
+        <Icon className="w-6 h-6 text-blue-600" />
+      </div>
+      <h3 className="text-lg font-semibold mb-2">{title}</h3>
+      <p className="text-gray-600">{description}</p>
     </div>
   );
 }

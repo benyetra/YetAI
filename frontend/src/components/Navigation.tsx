@@ -1,0 +1,447 @@
+'use client';
+
+import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import {
+  Home,
+  TrendingUp,
+  History,
+  Trophy,
+  Brain,
+  MessageSquare,
+  Settings,
+  HelpCircle,
+  Menu,
+  X,
+  ChevronLeft,
+  DollarSign,
+  BarChart3,
+  Users,
+  Zap,
+  Calendar,
+  Bell,
+  LogOut,
+  User,
+  Crown,
+  Activity,
+  Layers,
+  Target,
+  Sparkles,
+  ChevronDown
+} from 'lucide-react';
+import { useAuth } from './Auth';
+
+interface NavItem {
+  name: string;
+  href: string;
+  icon: React.ElementType;
+  badge?: string;
+  requiresAuth?: boolean;
+  requiresPro?: boolean;
+}
+
+const navigation: NavItem[] = [
+  { name: 'Dashboard', href: '/dashboard', icon: Home, requiresAuth: true },
+  { name: 'Live Odds', href: '/odds', icon: TrendingUp },
+  { name: 'AI Predictions', href: '/predictions', icon: Brain, badge: 'AI' },
+  { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
+  { name: 'Bet History', href: '/bets', icon: History, requiresAuth: true },
+  { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW' },
+  { name: 'Fantasy', href: '/fantasy', icon: Trophy },
+  { name: 'Performance', href: '/performance', icon: BarChart3, requiresAuth: true },
+  { name: 'AI Chat', href: '/chat', icon: MessageSquare, badge: 'BETA' },
+  { name: 'Leaderboard', href: '/leaderboard', icon: Users },
+];
+
+const bottomNavigation: NavItem[] = [
+  { name: 'Settings', href: '/settings', icon: Settings, requiresAuth: true },
+  { name: 'Help & Support', href: '/help', icon: HelpCircle },
+];
+
+export function Sidebar() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { user, logout, isAuthenticated } = useAuth();
+  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [pathname]);
+
+  const handleNavClick = (item: NavItem) => {
+    if (item.requiresAuth && !isAuthenticated) {
+      // Open login modal or redirect to login
+      router.push('/?login=true');
+      return;
+    }
+    router.push(item.href);
+  };
+
+  const isActive = (href: string) => pathname === href || pathname.startsWith(href + '/');
+
+  return (
+    <>
+      {/* Mobile menu button */}
+      <button
+        onClick={() => setIsMobileOpen(!isMobileOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-white rounded-lg shadow-lg"
+      >
+        {isMobileOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
+      </button>
+
+      {/* Mobile overlay */}
+      {isMobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black bg-opacity-50 z-40"
+          onClick={() => setIsMobileOpen(false)}
+        />
+      )}
+
+      {/* Sidebar */}
+      <div
+        className={`
+          fixed top-0 left-0 h-full bg-white border-r border-gray-200 z-40
+          transition-all duration-300 ease-in-out
+          ${isCollapsed ? 'w-20' : 'w-64'}
+          ${isMobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+      >
+        {/* Logo Section */}
+        <div className="flex items-center justify-between h-16 px-4 border-b border-gray-200">
+          {!isCollapsed && (
+            <div className="flex items-center space-x-2">
+              <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-purple-600 rounded-lg flex items-center justify-center">
+                <Zap className="w-5 h-5 text-white" />
+              </div>
+              <span className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                YetAI
+              </span>
+            </div>
+          )}
+          <button
+            onClick={() => setIsCollapsed(!isCollapsed)}
+            className="hidden lg:block p-1 hover:bg-gray-100 rounded"
+          >
+            <ChevronLeft className={`w-5 h-5 transition-transform ${isCollapsed ? 'rotate-180' : ''}`} />
+          </button>
+        </div>
+
+        {/* User Section */}
+        {isAuthenticated && user && (
+          <div className={`px-4 py-4 border-b border-gray-200 ${isCollapsed ? 'px-2' : ''}`}>
+            {isCollapsed ? (
+              <div className="flex justify-center">
+                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+              </div>
+            ) : (
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-gray-900 truncate">
+                    {user.first_name || user.email}
+                  </p>
+                  <div className="flex items-center space-x-1">
+                    {user.subscription_tier !== 'free' && (
+                      <Crown className={`w-3 h-3 ${
+                        user.subscription_tier === 'elite' ? 'text-purple-600' : 'text-yellow-600'
+                      }`} />
+                    )}
+                    <p className="text-xs text-gray-500 capitalize">
+                      {user.subscription_tier} Member
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Navigation Items */}
+        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+          {navigation.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+            const locked = item.requiresAuth && !isAuthenticated;
+            
+            return (
+              <button
+                key={item.name}
+                onClick={() => handleNavClick(item)}
+                disabled={locked}
+                className={`
+                  w-full flex items-center justify-between px-3 py-2 rounded-lg
+                  transition-all duration-200 group
+                  ${active
+                    ? 'bg-blue-50 text-blue-600'
+                    : locked
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-gray-700 hover:bg-gray-50 hover:text-gray-900'
+                  }
+                  ${isCollapsed ? 'justify-center' : ''}
+                `}
+              >
+                <div className="flex items-center space-x-3">
+                  <Icon className={`w-5 h-5 ${active ? 'text-blue-600' : ''}`} />
+                  {!isCollapsed && (
+                    <span className="text-sm font-medium">{item.name}</span>
+                  )}
+                </div>
+                {!isCollapsed && item.badge && (
+                  <span className={`
+                    text-xs px-2 py-0.5 rounded-full font-medium
+                    ${item.badge === 'AI' ? 'bg-purple-100 text-purple-700' :
+                      item.badge === 'NEW' ? 'bg-green-100 text-green-700' :
+                      item.badge === 'BETA' ? 'bg-yellow-100 text-yellow-700' :
+                      'bg-gray-100 text-gray-700'}
+                  `}>
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Bottom Section */}
+        <div className="px-4 py-4 border-t border-gray-200 space-y-1">
+          {bottomNavigation.map((item) => {
+            const Icon = item.icon;
+            const active = isActive(item.href);
+            const locked = item.requiresAuth && !isAuthenticated;
+            
+            return (
+              <button
+                key={item.name}
+                onClick={() => handleNavClick(item)}
+                disabled={locked}
+                className={`
+                  w-full flex items-center px-3 py-2 rounded-lg
+                  transition-all duration-200
+                  ${active
+                    ? 'bg-blue-50 text-blue-600'
+                    : locked
+                    ? 'text-gray-400 cursor-not-allowed'
+                    : 'text-gray-700 hover:bg-gray-50'
+                  }
+                  ${isCollapsed ? 'justify-center' : ''}
+                `}
+              >
+                <Icon className="w-5 h-5" />
+                {!isCollapsed && (
+                  <span className="ml-3 text-sm font-medium">{item.name}</span>
+                )}
+              </button>
+            );
+          })}
+          
+          {/* Logout Button */}
+          {isAuthenticated && (
+            <button
+              onClick={logout}
+              className={`
+                w-full flex items-center px-3 py-2 rounded-lg
+                text-red-600 hover:bg-red-50 transition-all duration-200
+                ${isCollapsed ? 'justify-center' : ''}
+              `}
+            >
+              <LogOut className="w-5 h-5" />
+              {!isCollapsed && (
+                <span className="ml-3 text-sm font-medium">Sign Out</span>
+              )}
+            </button>
+          )}
+        </div>
+
+        {/* Upgrade Banner (for free users) */}
+        {!isCollapsed && isAuthenticated && user?.subscription_tier === 'free' && (
+          <div className="p-4 border-t border-gray-200">
+            <div className="bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg p-4 text-white">
+              <div className="flex items-center space-x-2 mb-2">
+                <Sparkles className="w-5 h-5" />
+                <span className="font-bold">Upgrade to Pro</span>
+              </div>
+              <p className="text-xs mb-3 opacity-90">
+                Get AI insights, unlimited bets & more
+              </p>
+              <button
+                onClick={() => router.push('/upgrade')}
+                className="w-full bg-white text-purple-600 text-sm font-medium py-2 rounded-lg hover:bg-purple-50 transition-colors"
+              >
+                Upgrade Now
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+export function Header() {
+  const { user, isAuthenticated } = useAuth();
+  const router = useRouter();
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [notifications, setNotifications] = useState([
+    { id: 1, type: 'bet_won', message: 'Your bet on Lakers won! +$45.00', time: '2m ago', read: false },
+    { id: 2, type: 'odds_change', message: 'Odds changed for Chiefs vs Bills', time: '15m ago', read: false },
+    { id: 3, type: 'system', message: 'New AI predictions available', time: '1h ago', read: true },
+  ]);
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  return (
+    <header className="fixed top-0 right-0 left-0 lg:left-64 h-16 bg-white border-b border-gray-200 z-30">
+      <div className="h-full px-4 flex items-center justify-between">
+        {/* Left Section - Page Context */}
+        <div className="flex items-center space-x-4">
+          <div className="hidden lg:block">
+            <h2 className="text-lg font-semibold text-gray-900">
+              AI Sports Betting Platform
+            </h2>
+            <p className="text-xs text-gray-500">
+              Real-time odds • AI predictions • Smart betting
+            </p>
+          </div>
+        </div>
+
+        {/* Right Section - Actions */}
+        <div className="flex items-center space-x-4">
+          {/* Live Indicator */}
+          <div className="flex items-center space-x-2 px-3 py-1 bg-green-50 rounded-full">
+            <Activity className="w-4 h-4 text-green-600 animate-pulse" />
+            <span className="text-sm font-medium text-green-700">Live</span>
+          </div>
+
+          {/* Quick Bet Button */}
+          {isAuthenticated && (
+            <button
+              onClick={() => router.push('/bet')}
+              className="hidden sm:flex items-center space-x-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
+              <DollarSign className="w-4 h-4" />
+              <span className="text-sm font-medium">Quick Bet</span>
+            </button>
+          )}
+
+          {/* Notifications */}
+          {isAuthenticated && (
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Bell className="w-5 h-5 text-gray-600" />
+                {unreadCount > 0 && (
+                  <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full"></span>
+                )}
+              </button>
+              
+              {showNotifications && (
+                <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200">
+                  <div className="p-4 border-b border-gray-200">
+                    <div className="flex items-center justify-between">
+                      <h3 className="font-semibold text-gray-900">Notifications</h3>
+                      {unreadCount > 0 && (
+                        <span className="text-xs text-blue-600 hover:underline cursor-pointer">
+                          Mark all read
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="max-h-96 overflow-y-auto">
+                    {notifications.map((notif) => (
+                      <div
+                        key={notif.id}
+                        className={`p-4 border-b border-gray-100 hover:bg-gray-50 cursor-pointer ${
+                          !notif.read ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <p className="text-sm text-gray-900">{notif.message}</p>
+                        <p className="text-xs text-gray-500 mt-1">{notif.time}</p>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="p-3 text-center border-t border-gray-200">
+                    <button className="text-sm text-blue-600 hover:underline">
+                      View all notifications
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Login/Signup for non-authenticated users */}
+          {!isAuthenticated && (
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => router.push('/?login=true')}
+                className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                Sign In
+              </button>
+              <button
+                onClick={() => router.push('/?signup=true')}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Get Started
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+    </header>
+  );
+}
+
+export function MobileBottomNav() {
+  const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated } = useAuth();
+
+  const mobileNav = [
+    { name: 'Home', href: '/dashboard', icon: Home },
+    { name: 'Odds', href: '/odds', icon: TrendingUp },
+    { name: 'Bet', href: '/bet', icon: Target },
+    { name: 'History', href: '/bets', icon: History },
+    { name: 'More', href: '/settings', icon: Menu },
+  ];
+
+  return (
+    <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 z-40">
+      <div className="grid grid-cols-5 h-16">
+        {mobileNav.map((item) => {
+          const Icon = item.icon;
+          const active = pathname === item.href || pathname.startsWith(item.href + '/');
+          
+          return (
+            <button
+              key={item.name}
+              onClick={() => {
+                if ((item.href === '/bet' || item.href === '/bets' || item.href === '/dashboard') && !isAuthenticated) {
+                  router.push('/?login=true');
+                } else {
+                  router.push(item.href);
+                }
+              }}
+              className={`
+                flex flex-col items-center justify-center space-y-1
+                ${active ? 'text-blue-600' : 'text-gray-600'}
+              `}
+            >
+              <Icon className="w-5 h-5" />
+              <span className="text-xs">{item.name}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

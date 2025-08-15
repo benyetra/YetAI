@@ -2,6 +2,7 @@
 
 import { useAuth } from '@/components/Auth';
 import BetHistory from '@/components/BetHistory';
+import Layout from '@/components/Layout';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -11,21 +12,27 @@ export default function BetsPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/');
+      router.push('/?login=true');
     }
   }, [isAuthenticated, loading, router]);
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
-      </div>
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </Layout>
     );
   }
 
   if (!isAuthenticated) {
-    return null; // Will redirect in useEffect
+    return null;
   }
 
-  return <BetHistory />;
+  return (
+    <Layout requiresAuth fullWidth>
+      <BetHistory />
+    </Layout>
+  );
 }
