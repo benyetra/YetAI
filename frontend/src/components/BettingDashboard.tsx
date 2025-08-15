@@ -330,7 +330,7 @@ export default function BettingDashboard() {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-8">
             {[
-              { id: 'predictions', name: 'AI Predictions', icon: Target },
+              { id: 'predictions', name: 'YetAI Bets', icon: Target },
               { id: 'fantasy', name: 'Fantasy', icon: Users },
               { id: 'performance', name: 'Performance', icon: BarChart3 },
               { id: 'chat', name: 'AI Assistant', icon: MessageCircle },
@@ -358,14 +358,14 @@ export default function BettingDashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         
-        {/* AI Predictions Tab */}
+        {/* YetAI Bets Tab */}
         {activeTab === 'predictions' && (
           <div className="space-y-6">
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
               <div className="flex items-center">
                 <Target className="w-5 h-5 text-blue-600 mr-2" />
                 <p className="text-blue-800 text-sm">
-                  <strong>AI Predictions:</strong> Advanced machine learning models analyze player performance, matchups, and weather to provide betting recommendations.
+                  <strong>YetAI Bets:</strong> Our expert AI provides daily best bets with tracked performance. Free users get 1 bet per day, Pro users get 3+ bets daily.
                 </p>
               </div>
             </div>

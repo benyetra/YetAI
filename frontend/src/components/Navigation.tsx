@@ -47,7 +47,7 @@ interface NavItem {
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, requiresAuth: true },
   { name: 'Live Odds', href: '/odds', icon: TrendingUp },
-  { name: 'AI Predictions', href: '/predictions', icon: Brain, badge: 'AI' },
+  { name: 'YetAI Bets', href: '/predictions', icon: Brain, badge: 'AI' },
   { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
   { name: 'Bet History', href: '/bets', icon: History, requiresAuth: true },
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW' },
