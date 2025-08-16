@@ -394,12 +394,12 @@ class BetService:
         else:
             return (100 / abs(odds)) + 1
     
-    def _decimal_to_american(self, odds: float) -> float:
+    def _decimal_to_american(self, odds: float) -> int:
         """Convert decimal odds to American"""
         if odds >= 2:
-            return (odds - 1) * 100
+            return round((odds - 1) * 100)
         else:
-            return -100 / (odds - 1)
+            return round(-100 / (odds - 1))
     
     async def _check_bet_limits(self, user_id: int, amount: float) -> bool:
         """Check if bet amount is within user limits"""
@@ -417,6 +417,119 @@ class BetService:
             return False
         
         return True
+    
+    async def get_user_parlays(self, user_id: int, status: Optional[str] = None, limit: int = 50) -> Dict:
+        """Get user's parlay bets"""
+        try:
+            if user_id not in self.user_bets:
+                return {"success": True, "parlays": [], "total": 0}
+            
+            user_bet_ids = self.user_bets[user_id]
+            parlay_list = []
+            
+            # Get parlay bets (those with bet_type = PARLAY)
+            for bet_id in user_bet_ids:
+                bet = self.bets.get(bet_id)
+                if not bet or bet.get("bet_type") != BetType.PARLAY:
+                    continue
+                
+                # Apply status filter if provided
+                if status and bet.get("status") != status:
+                    continue
+                
+                # Get parlay details including legs
+                parlay_id = bet_id
+                parlay_info = self.parlay_bets.get(parlay_id, {})
+                
+                # Get leg details
+                legs = []
+                if "legs" in parlay_info:
+                    for leg_id in parlay_info["legs"]:
+                        leg_bet = self.bets.get(leg_id)
+                        if leg_bet:
+                            legs.append(leg_bet)
+                
+                parlay_data = {
+                    "id": bet_id,
+                    "user_id": bet["user_id"],
+                    "amount": bet["amount"],
+                    "potential_win": bet["potential_win"],
+                    "status": bet["status"],
+                    "placed_at": bet["placed_at"],
+                    "settled_at": bet.get("settled_at"),
+                    "result_amount": bet.get("result_amount"),
+                    "legs": legs,
+                    "leg_count": len(legs),
+                    "total_odds": bet.get("odds", 0)
+                }
+                
+                parlay_list.append(parlay_data)
+            
+            # Sort by date (newest first)
+            parlay_list.sort(key=lambda x: x["placed_at"], reverse=True)
+            
+            # Apply limit
+            if limit:
+                parlay_list = parlay_list[:limit]
+            
+            return {
+                "success": True,
+                "parlays": parlay_list,
+                "total": len(parlay_list)
+            }
+            
+        except Exception as e:
+            logger.error(f"Error fetching user parlays: {e}")
+            return {"success": False, "error": str(e)}
+
+    async def get_parlay_by_id(self, user_id: int, parlay_id: str) -> Dict:
+        """Get specific parlay details by ID"""
+        try:
+            # Check if parlay exists and belongs to user
+            bet = self.bets.get(parlay_id)
+            if not bet:
+                return {"success": False, "error": "Parlay not found"}
+            
+            if bet["user_id"] != user_id:
+                return {"success": False, "error": "Unauthorized"}
+            
+            if bet["bet_type"] != BetType.PARLAY.value:
+                return {"success": False, "error": "Not a parlay bet"}
+            
+            # Get parlay legs
+            legs = []
+            parlay_info = self.parlay_bets.get(parlay_id, {})
+            if "legs" in parlay_info:
+                for leg_id in parlay_info["legs"]:
+                    leg_bet = self.bets.get(leg_id)
+                    if leg_bet:
+                        legs.append({
+                            "id": leg_id,
+                            "game_id": leg_bet.get("game_id"),
+                            "bet_type": leg_bet["bet_type"],
+                            "selection": leg_bet["selection"],
+                            "odds": leg_bet["odds"],
+                            "status": leg_bet["status"]
+                        })
+            
+            parlay_data = {
+                "id": parlay_id,
+                "amount": bet["amount"],
+                "potential_win": bet["potential_win"],
+                "status": bet["status"],
+                "placed_at": bet["placed_at"],
+                "settled_at": bet.get("settled_at"),
+                "result_amount": bet.get("result_amount"),
+                "legs": legs,
+                "leg_count": len(legs),
+                "total_odds": bet.get("odds", 0)
+            }
+            
+            return {"success": True, "parlay": parlay_data}
+            
+        except Exception as e:
+            logger.error(f"Error fetching parlay {parlay_id}: {e}")
+            return {"success": False, "error": str(e)}
     
     async def _get_period_total(self, user_id: int, period: timedelta) -> float:
         """Get total bet amount for a period"""

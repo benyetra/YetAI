@@ -1287,6 +1287,40 @@ async def place_parlay(
     else:
         raise HTTPException(status_code=400, detail=result["error"])
 
+@app.get("/api/bets/parlays")
+async def get_user_parlays(
+    current_user: dict = Depends(get_current_user),
+    status: Optional[str] = None,
+    limit: int = 50
+):
+    """Get user's parlay bets"""
+    result = await bet_service.get_user_parlays(current_user["id"], status, limit)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "parlays": result["parlays"],
+            "total": result["total"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result.get("error", "Failed to fetch parlays"))
+
+@app.get("/api/bets/parlay/{parlay_id}")
+async def get_parlay_details(
+    parlay_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get specific parlay details"""
+    result = await bet_service.get_parlay_by_id(current_user["id"], parlay_id)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "parlay": result["parlay"]
+        }
+    else:
+        raise HTTPException(status_code=404, detail=result.get("error", "Parlay not found"))
+
 @app.post("/api/bets/history")
 async def get_bet_history(
     query: BetHistoryQuery,

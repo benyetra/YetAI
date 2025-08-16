@@ -19,7 +19,9 @@ import {
   Layers,
   AlertCircle,
   Wifi,
-  WifiOff
+  WifiOff,
+  X,
+  Eye
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { apiClient } from '@/lib/api';
@@ -57,6 +59,28 @@ interface BetStats {
   longest_loss_streak: number;
 }
 
+interface ParlayLeg {
+  id: string;
+  game_id: string;
+  bet_type: string;
+  selection: string;
+  odds: number;
+  status: string;
+}
+
+interface ParlayDetails {
+  id: string;
+  amount: number;
+  potential_win: number;
+  status: string;
+  placed_at: string;
+  settled_at?: string;
+  result_amount?: number;
+  legs: ParlayLeg[];
+  leg_count: number;
+  total_odds: number;
+}
+
 const BetHistory: React.FC = () => {
   const { user, token } = useAuth();
   const { isConnected } = useWebSocket();
@@ -68,6 +92,8 @@ const BetHistory: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
   const [showStats, setShowStats] = useState(true);
+  const [selectedParlay, setSelectedParlay] = useState<ParlayDetails | null>(null);
+  const [parlayModalLoading, setParlayModalLoading] = useState(false);
 
   useEffect(() => {
     if (user && token) {
@@ -113,6 +139,36 @@ const BetHistory: React.FC = () => {
     }
   };
 
+  const fetchParlayDetails = async (parlayId: string) => {
+    try {
+      setParlayModalLoading(true);
+      const response = await fetch(`http://localhost:8000/api/bets/parlay/${parlayId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+      const result = await response.json();
+      
+      if (result.status === 'success') {
+        setSelectedParlay(result.parlay);
+      } else {
+        console.error('Failed to fetch parlay details:', result.detail);
+      }
+    } catch (error) {
+      console.error('Error fetching parlay details:', error);
+    } finally {
+      setParlayModalLoading(false);
+    }
+  };
+
+  const handleParlayClick = (parlayId: string) => {
+    fetchParlayDetails(parlayId);
+  };
+
+  const closeModal = () => {
+    setSelectedParlay(null);
+  };
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'won':
@@ -154,7 +210,8 @@ const BetHistory: React.FC = () => {
   };
 
   const formatOdds = (odds: number) => {
-    return odds > 0 ? `+${odds}` : `${odds}`;
+    const roundedOdds = Math.round(odds);
+    return roundedOdds > 0 ? `+${roundedOdds}` : `${roundedOdds}`;
   };
 
   const filteredBets = bets.filter(bet => {
@@ -332,7 +389,13 @@ const BetHistory: React.FC = () => {
           ) : (
             <div className="divide-y divide-gray-200">
               {filteredBets.map((bet) => (
-                <div key={bet.id} className="p-6 hover:bg-gray-50 transition-colors">
+                <div 
+                  key={bet.id} 
+                  className={`p-6 transition-colors ${
+                    bet.bet_type === 'parlay' ? 'hover:bg-gray-50 cursor-pointer' : 'hover:bg-gray-50'
+                  }`}
+                  onClick={() => bet.bet_type === 'parlay' && handleParlayClick(bet.id)}
+                >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
                       <div className="flex items-center space-x-3 mb-2">
@@ -343,9 +406,11 @@ const BetHistory: React.FC = () => {
                         <span className="text-sm text-gray-500 capitalize">
                           {bet.bet_type}
                         </span>
-                        {bet.parlay_id && (
-                          <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium">
-                            Parlay
+                        {bet.bet_type === 'parlay' && (
+                          <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium flex items-center space-x-1">
+                            <Layers className="w-3 h-3" />
+                            <span>Parlay</span>
+                            <Eye className="w-3 h-3" />
                           </span>
                         )}
                       </div>
@@ -365,6 +430,12 @@ const BetHistory: React.FC = () => {
                           </>
                         )}
                       </div>
+                      
+                      {bet.bet_type === 'parlay' && (
+                        <p className="text-sm text-blue-600 mt-2">
+                          Click to view parlay details
+                        </p>
+                      )}
                     </div>
                     
                     <div className="text-right">
@@ -401,6 +472,121 @@ const BetHistory: React.FC = () => {
             >
               Load More
             </button>
+          </div>
+        )}
+        
+        {/* Parlay Details Modal */}
+        {selectedParlay && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Parlay Details</h2>
+                <button
+                  onClick={closeModal}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-6 h-6" />
+                </button>
+              </div>
+              
+              {parlayModalLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-gray-600">Loading parlay details...</p>
+                </div>
+              ) : (
+                <div className="p-6">
+                  {/* Parlay Header */}
+                  <div className="bg-gray-50 rounded-lg p-4 mb-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex items-center space-x-2">
+                          {getStatusIcon(selectedParlay.status)}
+                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(selectedParlay.status)}`}>
+                            {selectedParlay.status.charAt(0).toUpperCase() + selectedParlay.status.slice(1)}
+                          </span>
+                        </div>
+                        <span className="text-sm text-gray-500">
+                          {selectedParlay.leg_count} Leg Parlay
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-sm text-gray-500">
+                          {formatDate(selectedParlay.placed_at)}
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Bet Amount</p>
+                        <p className="text-sm font-semibold">${selectedParlay.amount.toFixed(2)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Parlay Odds</p>
+                        <p className="text-sm font-mono">{formatOdds(selectedParlay.total_odds)}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">Potential Win</p>
+                        <p className="text-sm font-semibold text-green-600">
+                          ${selectedParlay.potential_win.toFixed(2)}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-gray-500 mb-1">
+                          {selectedParlay.status === 'won' ? 'Won' : selectedParlay.status === 'lost' ? 'Lost' : 'Potential Payout'}
+                        </p>
+                        <p className={`text-sm font-semibold ${
+                          selectedParlay.status === 'won' ? 'text-green-600' : 
+                          selectedParlay.status === 'lost' ? 'text-red-600' : 
+                          'text-blue-600'
+                        }`}>
+                          ${(
+                            selectedParlay.status === 'won' ? (selectedParlay.result_amount || selectedParlay.potential_win) :
+                            selectedParlay.status === 'lost' ? 0 :
+                            selectedParlay.potential_win + selectedParlay.amount
+                          ).toFixed(2)}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Parlay Legs */}
+                  <div className="space-y-3">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-4">Legs</h3>
+                    {selectedParlay.legs.map((leg, index) => (
+                      <div key={leg.id || index} className="border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2 mb-1">
+                              <span className="text-sm font-medium">{leg.selection}</span>
+                              <span className={`px-1.5 py-0.5 text-xs rounded ${getStatusColor(leg.status)}`}>
+                                {leg.status}
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-500 capitalize">{leg.bet_type}</p>
+                            {leg.game_id && (
+                              <p className="text-xs text-gray-400">Game: {leg.game_id}</p>
+                            )}
+                          </div>
+                          <div className="text-right">
+                            <span className="text-sm font-mono">{formatOdds(leg.odds)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                  
+                  {selectedParlay.settled_at && (
+                    <div className="mt-6 pt-4 border-t border-gray-200">
+                      <p className="text-xs text-gray-500">
+                        Settled on {formatDate(selectedParlay.settled_at)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

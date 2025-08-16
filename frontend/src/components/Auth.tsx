@@ -210,7 +210,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
               />
@@ -227,7 +227,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
                 type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Password"
                 required
               />
@@ -245,6 +245,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
             onClick={submitLogin}
             disabled={loading}
             className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            style={{ color: 'white', backgroundColor: '#2563eb' }}
           >
             {loading ? 'Signing In...' : 'Sign In'}
           </button>
@@ -386,7 +387,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
                 name="email"
                 value={formData.email}
                 onChange={handleChange}
-                className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
               />
@@ -404,7 +405,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
                 name="password"
                 value={formData.password}
                 onChange={handleChange}
-                className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Password (min 6 characters)"
                 required
                 minLength={6}
@@ -423,6 +424,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
             onClick={submitSignup}
             disabled={loading}
             className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+            style={{ color: 'white', backgroundColor: '#2563eb' }}
           >
             {loading ? 'Creating Account...' : 'Create Account'}
           </button>

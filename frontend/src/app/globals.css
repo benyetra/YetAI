@@ -464,11 +464,83 @@ button.font-medium {
   color: var(--text-info) !important;
 }
 
-/* Force Dark Text on Light Backgrounds */
+/* Force Dark Text on Light Backgrounds - DISABLED DUE TO BUTTON ISSUES
 .bg-white *,
 .bg-gray-50 *,
 .bg-gray-100 * {
   color: var(--text-primary-light) !important;
+}
+*/
+
+/* More targeted approach for text colors in light backgrounds */
+.bg-white p,
+.bg-white span:not([class*="bg-"]),
+.bg-white div:not([class*="bg-"]),
+.bg-white h1,
+.bg-white h2,
+.bg-white h3,
+.bg-white h4,
+.bg-white h5,
+.bg-white h6,
+.bg-white label,
+.bg-gray-50 p,
+.bg-gray-50 span:not([class*="bg-"]),
+.bg-gray-50 div:not([class*="bg-"]),
+.bg-gray-50 h1,
+.bg-gray-50 h2,
+.bg-gray-50 h3,
+.bg-gray-50 h4,
+.bg-gray-50 h5,
+.bg-gray-50 h6,
+.bg-gray-50 label,
+.bg-gray-100 p,
+.bg-gray-100 span:not([class*="bg-"]),
+.bg-gray-100 div:not([class*="bg-"]),
+.bg-gray-100 h1,
+.bg-gray-100 h2,
+.bg-gray-100 h3,
+.bg-gray-100 h4,
+.bg-gray-100 h5,
+.bg-gray-100 h6,
+.bg-gray-100 label {
+  color: var(--text-primary-light) !important;
+}
+
+/* Exception for buttons with colored backgrounds - STRONG OVERRIDE */
+.bg-white .bg-blue-600,
+.bg-white .bg-blue-700,
+.bg-white .bg-blue-500,
+.bg-white [class*="bg-blue"],
+.bg-gray-50 .bg-blue-600,
+.bg-gray-50 .bg-blue-700,
+.bg-gray-50 .bg-blue-500,
+.bg-gray-50 [class*="bg-blue"],
+.bg-gray-100 .bg-blue-600,
+.bg-gray-100 .bg-blue-700,
+.bg-gray-100 .bg-blue-500,
+.bg-gray-100 [class*="bg-blue"],
+button.bg-blue-600,
+button.bg-blue-700,
+button.bg-blue-500,
+button[class*="bg-blue"] {
+  color: #ffffff !important;
+  color: white !important;
+  color: rgb(255, 255, 255) !important;
+}
+
+/* Ultra-specific override for blue buttons */
+.bg-white button.bg-blue-600.text-white,
+.bg-white button.bg-blue-700.text-white,
+.bg-white button.bg-blue-500.text-white,
+.bg-gray-50 button.bg-blue-600.text-white,
+.bg-gray-50 button.bg-blue-700.text-white,
+.bg-gray-50 button.bg-blue-500.text-white,
+.bg-gray-100 button.bg-blue-600.text-white,
+.bg-gray-100 button.bg-blue-700.text-white,
+.bg-gray-100 button.bg-blue-500.text-white {
+  color: #ffffff !important;
+  color: white !important;
+  color: rgb(255, 255, 255) !important;
 }
 
 .bg-white .text-gray-500,
@@ -938,4 +1010,61 @@ input:not(:defined),
 textarea:not(:defined) {
   background-color: #ffffff !important;
   color: #1f2937 !important;
+}
+
+/* Fix autofill styles for inputs with icons */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px white inset !important;
+  -webkit-text-fill-color: #1f2937 !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Ensure proper padding for inputs with icons */
+input.pl-14,
+input[class*="pl-14"] {
+  padding-left: 3.5rem !important;
+}
+
+input.pl-12,
+input[class*="pl-12"] {
+  padding-left: 3rem !important;
+}
+
+/* Override any conflicting styles for auth form inputs */
+.relative input[type="email"],
+.relative input[type="password"] {
+  padding-left: 3.5rem !important;
+}
+
+/* Ensure icons don't interfere with autofilled text */
+.relative svg {
+  pointer-events: none;
+  z-index: 10;
+}
+
+/* FINAL OVERRIDE - Fix blue button text color in all contexts */
+button.bg-blue-600,
+button.bg-blue-700,
+button.bg-blue-500,
+button.bg-blue-400,
+button.bg-indigo-600,
+button[class*="bg-blue-"] {
+  color: #ffffff !important;
+  color: white !important;
+  color: rgb(255, 255, 255) !important;
+  -webkit-text-fill-color: #ffffff !important;
+}
+
+/* Specific fix for auth modal buttons */
+.fixed.inset-0 button.bg-blue-600,
+.fixed.inset-0 button.bg-blue-700,
+div[class*="bg-white"] button.bg-blue-600,
+div[class*="bg-white"] button.bg-blue-700 {
+  color: #ffffff !important;
+  color: white !important;
+  color: rgb(255, 255, 255) !important;
+  -webkit-text-fill-color: #ffffff !important;
 }
