@@ -7,7 +7,7 @@ import { useAuth } from '@/components/Auth';
 import { useNotifications } from '@/components/NotificationProvider';
 import { DetailedWebSocketStatus } from '@/components/WebSocketIndicator';
 import { sportsAPI, apiClient } from '@/lib/api';
-import { User, Bell, Shield, CreditCard, Smartphone, Eye, EyeOff, TestTube, Save, AlertCircle } from 'lucide-react';
+import { User, Bell, Shield, CreditCard, Smartphone, Eye, EyeOff, TestTube, Save, AlertCircle, QrCode, Copy, Check, X } from 'lucide-react';
 
 export default function SettingsPage() {
   const { isAuthenticated, loading, user, token, refreshUser } = useAuth();
@@ -46,6 +46,20 @@ export default function SettingsPage() {
     theme: 'light',
     default_sport: 'NFL'
   });
+  
+  // 2FA state
+  const [show2FAModal, setShow2FAModal] = useState(false);
+  const [twoFAStatus, setTwoFAStatus] = useState({
+    enabled: false,
+    backup_codes_remaining: 0,
+    setup_in_progress: false
+  });
+  const [qrCodeData, setQrCodeData] = useState('');
+  const [secretKey, setSecretKey] = useState('');
+  const [backupCodes, setBackupCodes] = useState<string[]>([]);
+  const [verificationCode, setVerificationCode] = useState('');
+  const [setupStep, setSetupStep] = useState(1); // 1: QR, 2: Verify, 3: Backup codes
+  const [copiedCodes, setCopiedCodes] = useState(false);
 
   const testNotification = (type: 'bet_won' | 'odds_change' | 'prediction' | 'achievement') => {
     const testNotifications = {
@@ -96,17 +110,47 @@ export default function SettingsPage() {
         confirmPassword: ''
       });
       
-      // Parse user preferences
+      // Parse user preferences with better error handling
       try {
-        const favoriteTeams = typeof user.favorite_teams === 'string' 
-          ? JSON.parse(user.favorite_teams) 
-          : user.favorite_teams || [];
-        const preferredSports = typeof user.preferred_sports === 'string' 
-          ? JSON.parse(user.preferred_sports) 
-          : user.preferred_sports || ['NFL'];
-        const notificationSettings = typeof user.notification_settings === 'string' 
-          ? JSON.parse(user.notification_settings) 
-          : user.notification_settings || {};
+        let favoriteTeams = [];
+        let preferredSports = ['NFL'];
+        let notificationSettings = {};
+        
+        // Safely parse favorite_teams
+        if (user.favorite_teams) {
+          try {
+            favoriteTeams = typeof user.favorite_teams === 'string' 
+              ? JSON.parse(user.favorite_teams) 
+              : Array.isArray(user.favorite_teams) ? user.favorite_teams : [];
+          } catch (e) {
+            console.warn('Error parsing favorite_teams:', e);
+            favoriteTeams = [];
+          }
+        }
+        
+        // Safely parse preferred_sports
+        if (user.preferred_sports) {
+          try {
+            preferredSports = typeof user.preferred_sports === 'string' 
+              ? JSON.parse(user.preferred_sports) 
+              : Array.isArray(user.preferred_sports) ? user.preferred_sports : ['NFL'];
+          } catch (e) {
+            console.warn('Error parsing preferred_sports:', e);
+            preferredSports = ['NFL'];
+          }
+        }
+        
+        // Safely parse notification_settings
+        if (user.notification_settings) {
+          try {
+            notificationSettings = typeof user.notification_settings === 'string' 
+              ? JSON.parse(user.notification_settings) 
+              : (typeof user.notification_settings === 'object' ? user.notification_settings : {});
+          } catch (e) {
+            console.warn('Error parsing notification_settings:', e);
+            notificationSettings = {};
+          }
+        }
         
         setPreferences({
           favorite_teams: favoriteTeams,
@@ -122,16 +166,37 @@ export default function SettingsPage() {
           }
         });
       } catch (error) {
-        console.error('Error parsing user preferences:', error);
+        console.error('Error setting up user preferences:', error);
+        // Set safe defaults
+        setPreferences({
+          favorite_teams: [],
+          preferred_sports: ['NFL'],
+          notification_settings: {
+            bet_updates: true,
+            ai_predictions: true,
+            game_alerts: false,
+            login_alerts: true,
+            email: true,
+            push: false
+          }
+        });
       }
       
       // Load app preferences from localStorage
-      const savedTheme = localStorage.getItem('app_theme') || 'light';
-      const savedDefaultSport = localStorage.getItem('default_sport') || 'NFL';
-      setAppPreferences({
-        theme: savedTheme,
-        default_sport: savedDefaultSport
-      });
+      try {
+        const savedTheme = localStorage.getItem('app_theme') || 'light';
+        const savedDefaultSport = localStorage.getItem('default_sport') || 'NFL';
+        setAppPreferences({
+          theme: savedTheme,
+          default_sport: savedDefaultSport
+        });
+      } catch (error) {
+        console.error('Error loading app preferences:', error);
+        setAppPreferences({
+          theme: 'light',
+          default_sport: 'NFL'
+        });
+      }
     }
   }, [user, isAuthenticated]);
   
@@ -148,6 +213,36 @@ export default function SettingsPage() {
     
     loadSports();
   }, []);
+  
+  // Load 2FA status
+  useEffect(() => {
+    const load2FAStatus = async () => {
+      if (!token) return;
+      
+      try {
+        const response = await apiClient.get('/api/auth/2fa/status', token);
+        if (response.status === 'success') {
+          setTwoFAStatus({
+            enabled: response.data?.enabled || false,
+            backup_codes_remaining: response.data?.backup_codes_remaining || 0,
+            setup_in_progress: response.data?.setup_in_progress || false
+          });
+        }
+      } catch (error) {
+        console.error('Error loading 2FA status:', error);
+        // Set safe defaults on error
+        setTwoFAStatus({
+          enabled: false,
+          backup_codes_remaining: 0,
+          setup_in_progress: false
+        });
+      }
+    };
+    
+    if (isAuthenticated && token) {
+      load2FAStatus();
+    }
+  }, [isAuthenticated, token]);
 
   if (loading) {
     return (
@@ -187,6 +282,115 @@ export default function SettingsPage() {
     return Object.keys(newErrors).length === 0;
   };
   
+  // 2FA functions
+  const start2FASetup = async () => {
+    setIsLoading(true);
+    try {
+      const response = await apiClient.post('/api/auth/2fa/setup', {}, token);
+      if (response.status === 'success') {
+        setQrCodeData(response.data.qr_code);
+        setSecretKey(response.data.secret);
+        setBackupCodes(response.data.backup_codes);
+        setSetupStep(1);
+        setShow2FAModal(true);
+      } else {
+        throw new Error(response.detail || 'Failed to setup 2FA');
+      }
+    } catch (error: any) {
+      addNotification({
+        type: 'system',
+        title: '2FA Setup Failed',
+        message: error.message || 'Failed to setup 2FA. Please try again.',
+        priority: 'high'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const verify2FASetup = async () => {
+    if (!verificationCode || verificationCode.length !== 6) {
+      addNotification({
+        type: 'system',
+        title: 'Invalid Code',
+        message: 'Please enter a 6-digit verification code',
+        priority: 'high'
+      });
+      return;
+    }
+    
+    setIsLoading(true);
+    try {
+      const response = await apiClient.post('/api/auth/2fa/enable', {
+        token: verificationCode
+      }, token);
+      
+      if (response.status === 'success') {
+        setSetupStep(3); // Show backup codes
+        setTwoFAStatus(prev => ({ ...prev, enabled: true, backup_codes_remaining: backupCodes.length }));
+        addNotification({
+          type: 'system',
+          title: '2FA Enabled',
+          message: 'Two-factor authentication has been enabled successfully',
+          priority: 'medium'
+        });
+      } else {
+        throw new Error(response.detail || 'Invalid verification code');
+      }
+    } catch (error: any) {
+      addNotification({
+        type: 'system',
+        title: 'Verification Failed',
+        message: error.message || 'Invalid verification code. Please try again.',
+        priority: 'high'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+  
+  const disable2FA = async () => {
+    // This would require password + 2FA token, implement later
+    addNotification({
+      type: 'system',
+      title: 'Feature Coming Soon',
+      message: '2FA disable functionality will be available soon',
+      priority: 'low'
+    });
+  };
+  
+  const copyBackupCodes = async () => {
+    const codesText = backupCodes.join('\n');
+    try {
+      await navigator.clipboard.writeText(codesText);
+      setCopiedCodes(true);
+      setTimeout(() => setCopiedCodes(false), 2000);
+      addNotification({
+        type: 'system',
+        title: 'Codes Copied',
+        message: 'Backup codes copied to clipboard',
+        priority: 'low'
+      });
+    } catch (error) {
+      addNotification({
+        type: 'system',
+        title: 'Copy Failed',
+        message: 'Failed to copy codes. Please save them manually.',
+        priority: 'high'
+      });
+    }
+  };
+  
+  const close2FAModal = () => {
+    setShow2FAModal(false);
+    setSetupStep(1);
+    setVerificationCode('');
+    setQrCodeData('');
+    setSecretKey('');
+    setBackupCodes([]);
+    setCopiedCodes(false);
+  };
+
   // Save changes function
   const handleSaveChanges = async () => {
     if (!validateForm()) {
@@ -483,10 +687,25 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="font-medium">Two-Factor Authentication</h3>
-                    <p className="text-sm text-gray-600">Add an extra layer of security</p>
+                    <p className="text-sm text-gray-600">
+                      {twoFAStatus?.enabled ? 'Enabled - Your account is secured with 2FA' : 'Add an extra layer of security'}
+                    </p>
+                    {twoFAStatus?.enabled && (
+                      <p className="text-xs text-green-600 mt-1">
+                        {twoFAStatus?.backup_codes_remaining || 0} backup codes remaining
+                      </p>
+                    )}
                   </div>
-                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
-                    Enable
+                  <button 
+                    onClick={twoFAStatus?.enabled ? disable2FA : start2FASetup}
+                    disabled={isLoading}
+                    className={`px-4 py-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                      twoFAStatus?.enabled 
+                        ? 'bg-red-600 text-white hover:bg-red-700' 
+                        : 'bg-blue-600 text-white hover:bg-blue-700'
+                    }`}
+                  >
+                    {twoFAStatus?.enabled ? 'Disable' : 'Enable'}
                   </button>
                 </div>
                 
@@ -583,7 +802,7 @@ export default function SettingsPage() {
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Preferred Sports</label>
                   <div className="space-y-2 max-h-32 overflow-y-auto">
-                    {sportsList.map((sport) => (
+                    {Array.isArray(sportsList) && sportsList.map((sport) => (
                       <div key={sport.key} className="flex items-center">
                         <input
                           type="checkbox"
@@ -684,6 +903,140 @@ export default function SettingsPage() {
                 <li key={index}>• {error}</li>
               ))}
             </ul>
+          </div>
+        )}
+        
+        {/* 2FA Setup Modal */}
+        {show2FAModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-xl font-semibold">Setup Two-Factor Authentication</h2>
+                <button 
+                  onClick={close2FAModal}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              {setupStep === 1 && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <QrCode className="w-8 h-8 text-blue-600 mx-auto mb-4" />
+                    <h3 className="font-medium mb-2">Scan QR Code</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Use your authenticator app (Google Authenticator, Authy, etc.) to scan this QR code:
+                    </p>
+                  </div>
+                  
+                  {qrCodeData && (
+                    <div className="flex justify-center mb-4">
+                      <img src={qrCodeData} alt="2FA QR Code" className="border rounded-lg" />
+                    </div>
+                  )}
+                  
+                  <div className="bg-gray-50 p-3 rounded-lg">
+                    <p className="text-xs text-gray-600 mb-1">Manual Entry Key:</p>
+                    <code className="text-sm font-mono break-all">{secretKey}</code>
+                  </div>
+                  
+                  <button
+                    onClick={() => setSetupStep(2)}
+                    className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                  >
+                    I've Added the Account
+                  </button>
+                </div>
+              )}
+              
+              {setupStep === 2 && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <Shield className="w-8 h-8 text-green-600 mx-auto mb-4" />
+                    <h3 className="font-medium mb-2">Verify Setup</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Enter the 6-digit code from your authenticator app:
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <input
+                      type="text"
+                      value={verificationCode}
+                      onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="000000"
+                      className="w-full px-4 py-3 text-center text-lg font-mono border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      maxLength={6}
+                    />
+                  </div>
+                  
+                  <div className="flex space-x-3">
+                    <button
+                      onClick={() => setSetupStep(1)}
+                      className="flex-1 px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={verify2FASetup}
+                      disabled={isLoading || verificationCode.length !== 6}
+                      className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {isLoading ? 'Verifying...' : 'Verify & Enable'}
+                    </button>
+                  </div>
+                </div>
+              )}
+              
+              {setupStep === 3 && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <Check className="w-8 h-8 text-green-600 mx-auto mb-4" />
+                    <h3 className="font-medium mb-2">2FA Enabled Successfully!</h3>
+                    <p className="text-sm text-gray-600 mb-4">
+                      Save these backup codes in a safe place. You can use them to access your account if you lose your authenticator device.
+                    </p>
+                  </div>
+                  
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="font-medium text-sm">Backup Codes</h4>
+                      <button
+                        onClick={copyBackupCodes}
+                        className="flex items-center text-sm text-blue-600 hover:text-blue-700"
+                      >
+                        {copiedCodes ? (
+                          <><Check className="w-4 h-4 mr-1" /> Copied</>
+                        ) : (
+                          <><Copy className="w-4 h-4 mr-1" /> Copy All</>
+                        )}
+                      </button>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 font-mono text-sm">
+                      {Array.isArray(backupCodes) && backupCodes.map((code, index) => (
+                        <div key={index} className="bg-white p-2 rounded border text-center">
+                          {code}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  
+                  <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                    <p className="text-sm text-yellow-800">
+                      <strong>Important:</strong> Each backup code can only be used once. Store them securely!
+                    </p>
+                  </div>
+                  
+                  <button
+                    onClick={close2FAModal}
+                    className="w-full px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+                  >
+                    Complete Setup
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>
