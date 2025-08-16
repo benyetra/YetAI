@@ -289,7 +289,7 @@ export default function SettingsPage() {
       const response = await apiClient.post('/api/auth/2fa/setup', {}, token);
       if (response.status === 'success') {
         setQrCodeData(response.data.qr_code);
-        setSecretKey(response.data.secret);
+        setSecretKey(''); // Secret not returned for security
         setBackupCodes(response.data.backup_codes);
         setSetupStep(1);
         setShow2FAModal(true);
@@ -936,10 +936,12 @@ export default function SettingsPage() {
                     </div>
                   )}
                   
-                  <div className="bg-gray-50 p-3 rounded-lg">
-                    <p className="text-xs text-gray-600 mb-1">Manual Entry Key:</p>
-                    <code className="text-sm font-mono break-all">{secretKey}</code>
-                  </div>
+                  {secretKey && (
+                    <div className="bg-gray-50 p-3 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">Manual Entry Key:</p>
+                      <code className="text-sm font-mono break-all">{secretKey}</code>
+                    </div>
+                  )}
                   
                   <button
                     onClick={() => setSetupStep(2)}
