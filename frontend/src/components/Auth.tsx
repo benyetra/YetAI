@@ -123,12 +123,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem('user_data');
   };
 
+  const refreshUser = async () => {
+    if (!token) return;
+    
+    try {
+      const response = await authAPI.get('/api/auth/me', token);
+      
+      if (response.status === 'success') {
+        setUser(response.user);
+        localStorage.setItem('user_data', JSON.stringify(response.user));
+        return { success: true };
+      } else {
+        return { success: false, error: response.detail || 'Failed to refresh user data' };
+      }
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  };
+
   const value = {
     user,
     token,
     login,
     signup,
     logout,
+    refreshUser,
     isAuthenticated: !!user,
     loading
   };
