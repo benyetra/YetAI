@@ -256,6 +256,20 @@ frontend/src/
 - ✅ Professional form design with proper accessibility and user experience
 - ✅ Maintained developer tools section with functional notification testing
 
+### Phase 3.11: Two-Factor Authentication (2FA) System ✅ COMPLETE (August 16, 2025)
+- ✅ Complete TOTP-based Two-Factor Authentication implementation
+- ✅ Backend TOTP service with pyotp library for secure token generation and verification
+- ✅ QR code generation for authenticator app setup (Google Authenticator, Authy, etc.)
+- ✅ Comprehensive backup codes system with 8 single-use recovery codes
+- ✅ Enhanced user model with 2FA fields (totp_enabled, totp_secret, backup_codes, totp_last_used)
+- ✅ Complete API endpoints: `/api/auth/2fa/status`, `/api/auth/2fa/setup`, `/api/auth/2fa/enable`, `/api/auth/2fa/disable`, `/api/auth/2fa/verify`
+- ✅ Professional 3-step setup modal in settings page (QR scan, verification, backup codes)
+- ✅ Real-time 2FA status display with remaining backup codes counter
+- ✅ Secure secret management with proper validation and replay attack prevention
+- ✅ Copy-to-clipboard functionality for backup codes with user-friendly interface
+- ✅ Complete integration between frontend modal and backend TOTP verification
+- ✅ Enterprise-grade security features with 30-second time windows and proper error handling
+
 ## Next Development Phases 🚀
 
 ### Phase 4: AI Integration (Planned)
@@ -347,10 +361,15 @@ frontend/src/
 - `GET /api/admin/yetai-bets` - Get all YetAI Bets (admin only)
 - `PUT /api/admin/yetai-bets/{bet_id}` - Update YetAI Bet status (admin only)
 - `DELETE /api/admin/yetai-bets/{bet_id}` - Delete YetAI Bet (admin only)
+- `GET /api/auth/2fa/status` - Get user's 2FA status and backup codes remaining
+- `POST /api/auth/2fa/setup` - Generate QR code and backup codes for 2FA setup
+- `POST /api/auth/2fa/enable` - Enable 2FA after verifying setup token
+- `POST /api/auth/2fa/disable` - Disable 2FA with password and 2FA verification
+- `POST /api/auth/2fa/verify` - Verify 2FA token or backup code
 - `WS /ws/{user_id}` - WebSocket connection for real-time updates
 
 ### Database Schema
-- **Users**: id, email, password_hash, first_name, last_name, subscription_tier, is_admin, created_at
+- **Users**: id, email, password_hash, first_name, last_name, subscription_tier, is_admin, totp_enabled, totp_secret, backup_codes, totp_last_used, created_at
 - **Bets**: id, user_id, game_id, bet_type, amount, odds, status, created_at, updated_at
 - **YetAI Bets**: id, sport, game, bet_type, pick, odds, confidence, reasoning, game_time, status, is_premium, bet_category, created_by, created_at
 - **Games**: id, home_team, away_team, sport, start_time, status, home_score, away_score
@@ -444,5 +463,5 @@ frontend/src/
 ---
 
 *Last Updated: August 16, 2025*
-*Version: 1.7*
-*Status: Phase 3.10 Complete - Functional Settings & User Preferences Implemented. Platform now features a fully functional settings page with real user data integration, comprehensive form validation, live notification preferences, sports API integration, and robust data persistence ensuring all user preferences survive page reloads.*
+*Version: 1.8*
+*Status: Phase 3.11 Complete - Two-Factor Authentication (2FA) System Implemented. Platform now features enterprise-grade 2FA security with TOTP-based authentication, QR code setup, backup codes, and comprehensive frontend/backend integration. Users can secure their accounts with authenticator apps like Google Authenticator or Authy.*
