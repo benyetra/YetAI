@@ -61,6 +61,20 @@ class UserPreferences(BaseModel):
 class SubscriptionUpgrade(BaseModel):
     tier: str  # "pro" or "elite"
 
+# 2FA Request models
+class Setup2FARequest(BaseModel):
+    pass  # No additional data needed
+
+class Enable2FARequest(BaseModel):
+    token: str = Field(min_length=6, max_length=6)
+
+class Disable2FARequest(BaseModel):
+    password: str
+    token: str  # Can be TOTP token or backup code
+
+class Verify2FARequest(BaseModel):
+    token: str
+
 app = FastAPI(
     title="AI Sports Betting MVP",
     description="AI-powered sports betting and fantasy insights platform",
@@ -1586,6 +1600,114 @@ async def create_admin_user(request: CreateAdminRequest, current_user: dict = De
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to create admin user: {str(e)}")
+
+# 2FA (Two-Factor Authentication) endpoints
+@app.get("/api/auth/2fa/status")
+async def get_2fa_status(current_user: dict = Depends(get_current_user)):
+    """Get 2FA status for current user"""
+    try:
+        result = await auth_service.get_2fa_status(current_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "enabled": result["enabled"],
+                "backup_codes_remaining": result["backup_codes_remaining"],
+                "setup_in_progress": result["setup_in_progress"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get 2FA status: {str(e)}")
+
+@app.post("/api/auth/2fa/setup")
+async def setup_2fa(current_user: dict = Depends(get_current_user)):
+    """Setup 2FA - generate QR code and backup codes"""
+    try:
+        result = await auth_service.setup_2fa(current_user["id"])
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "qr_code": result["qr_code"],
+                "backup_codes": result["backup_codes"],
+                "message": "Scan the QR code with your authenticator app"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to setup 2FA: {str(e)}")
+
+@app.post("/api/auth/2fa/enable")
+async def enable_2fa(
+    request: Enable2FARequest, 
+    current_user: dict = Depends(get_current_user)
+):
+    """Enable 2FA after verifying the setup token"""
+    try:
+        result = await auth_service.enable_2fa(current_user["id"], request.token)
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to enable 2FA: {str(e)}")
+
+@app.post("/api/auth/2fa/disable")
+async def disable_2fa(
+    request: Disable2FARequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Disable 2FA with password and 2FA verification"""
+    try:
+        result = await auth_service.disable_2fa(
+            current_user["id"], 
+            request.password, 
+            request.token
+        )
+        
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to disable 2FA: {str(e)}")
+
+@app.post("/api/auth/2fa/verify")
+async def verify_2fa_token(
+    request: Verify2FARequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Verify a 2FA token (for testing or validation)"""
+    try:
+        is_valid = await auth_service.verify_2fa_token(current_user["id"], request.token)
+        
+        return {
+            "status": "success",
+            "valid": is_valid
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to verify 2FA token: {str(e)}")
 
 # WebSocket endpoints and startup events
 @app.on_event("startup")

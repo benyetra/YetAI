@@ -3,11 +3,13 @@
 
 import hashlib
 import secrets
+import json
 from datetime import datetime, timedelta
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
+from app.services.totp_service import totp_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -88,7 +90,12 @@ class AuthService:
                 "verification_token": secrets.token_urlsafe(32),
                 "is_admin": False,
                 "created_at": datetime.utcnow(),
-                "last_login": None
+                "last_login": None,
+                # 2FA fields
+                "totp_enabled": False,
+                "totp_secret": None,
+                "backup_codes": None,
+                "totp_last_used": None
             }
             
             self.users[user_id] = new_user
@@ -298,7 +305,12 @@ class AuthService:
                         "verification_token": None,
                         "is_admin": user_data.get("is_admin", False),
                         "created_at": datetime.utcnow(),
-                        "last_login": None
+                        "last_login": None,
+                        # 2FA fields
+                        "totp_enabled": False,
+                        "totp_secret": None,
+                        "backup_codes": None,
+                        "totp_last_used": None
                     }
                     
                     self.users[user_id] = new_user
@@ -339,7 +351,12 @@ class AuthService:
                 "verification_token": None,
                 "is_admin": True,  # This is the key field
                 "created_at": datetime.utcnow(),
-                "last_login": None
+                "last_login": None,
+                # 2FA fields
+                "totp_enabled": False,
+                "totp_secret": None,
+                "backup_codes": None,
+                "totp_last_used": None
             }
             
             self.users[user_id] = new_admin
@@ -365,6 +382,157 @@ class AuthService:
         except Exception as e:
             logger.error(f"Error creating admin user: {e}")
             return {"success": False, "error": "Failed to create admin account"}
+    
+    async def setup_2fa(self, user_id: int) -> Dict:
+        """Generate 2FA setup data (secret, QR code, backup codes)"""
+        try:
+            user = self.users.get(user_id)
+            if not user:
+                return {"success": False, "error": "User not found"}
+            
+            if user.get("totp_enabled", False):
+                return {"success": False, "error": "2FA is already enabled"}
+            
+            # Generate secret and QR code
+            secret = totp_service.generate_secret()
+            qr_code = totp_service.generate_qr_code_data(user["email"], secret)
+            backup_codes = totp_service.generate_backup_codes()
+            
+            if not qr_code:
+                return {"success": False, "error": "Failed to generate QR code"}
+            
+            # Store temporary secret (not enabled yet)
+            user["temp_totp_secret"] = secret
+            user["temp_backup_codes"] = json.dumps(backup_codes)
+            
+            return {
+                "success": True,
+                "secret": secret,
+                "qr_code": qr_code,
+                "backup_codes": backup_codes
+            }
+            
+        except Exception as e:
+            logger.error(f"Error setting up 2FA: {e}")
+            return {"success": False, "error": "Failed to setup 2FA"}
+    
+    async def enable_2fa(self, user_id: int, token: str) -> Dict:
+        """Enable 2FA after verifying the setup token"""
+        try:
+            user = self.users.get(user_id)
+            if not user:
+                return {"success": False, "error": "User not found"}
+            
+            if user.get("totp_enabled", False):
+                return {"success": False, "error": "2FA is already enabled"}
+            
+            temp_secret = user.get("temp_totp_secret")
+            if not temp_secret:
+                return {"success": False, "error": "No 2FA setup in progress"}
+            
+            # Verify the token
+            if not totp_service.verify_token(temp_secret, token):
+                return {"success": False, "error": "Invalid verification code"}
+            
+            # Enable 2FA
+            user["totp_enabled"] = True
+            user["totp_secret"] = temp_secret
+            user["backup_codes"] = user.get("temp_backup_codes")
+            user["totp_last_used"] = datetime.utcnow()
+            
+            # Clean up temporary data
+            user.pop("temp_totp_secret", None)
+            user.pop("temp_backup_codes", None)
+            
+            return {"success": True, "message": "2FA enabled successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error enabling 2FA: {e}")
+            return {"success": False, "error": "Failed to enable 2FA"}
+    
+    async def disable_2fa(self, user_id: int, password: str, token_or_backup: str) -> Dict:
+        """Disable 2FA with password and 2FA verification"""
+        try:
+            user = self.users.get(user_id)
+            if not user:
+                return {"success": False, "error": "User not found"}
+            
+            if not user.get("totp_enabled", False):
+                return {"success": False, "error": "2FA is not enabled"}
+            
+            # Verify password first
+            if not self.verify_password(password, user["password_hash"]):
+                return {"success": False, "error": "Invalid password"}
+            
+            # Verify 2FA token or backup code
+            if not await self.verify_2fa_token(user_id, token_or_backup):
+                return {"success": False, "error": "Invalid 2FA code"}
+            
+            # Disable 2FA
+            user["totp_enabled"] = False
+            user["totp_secret"] = None
+            user["backup_codes"] = None
+            user["totp_last_used"] = None
+            
+            return {"success": True, "message": "2FA disabled successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error disabling 2FA: {e}")
+            return {"success": False, "error": "Failed to disable 2FA"}
+    
+    async def verify_2fa_token(self, user_id: int, token: str) -> bool:
+        """Verify a 2FA token or backup code"""
+        try:
+            user = self.users.get(user_id)
+            if not user or not user.get("totp_enabled", False):
+                return False
+            
+            secret = user.get("totp_secret")
+            last_used = user.get("totp_last_used")
+            
+            # Try TOTP token first
+            if totp_service.verify_token(secret, token, last_used):
+                user["totp_last_used"] = datetime.utcnow()
+                return True
+            
+            # Try backup code
+            backup_codes_str = user.get("backup_codes")
+            if backup_codes_str:
+                backup_codes = json.loads(backup_codes_str)
+                is_valid, updated_codes = totp_service.verify_backup_code(backup_codes, token)
+                if is_valid:
+                    user["backup_codes"] = json.dumps(updated_codes)
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Error verifying 2FA token: {e}")
+            return False
+    
+    async def get_2fa_status(self, user_id: int) -> Dict:
+        """Get 2FA status for a user"""
+        try:
+            user = self.users.get(user_id)
+            if not user:
+                return {"success": False, "error": "User not found"}
+            
+            backup_codes_str = user.get("backup_codes")
+            backup_codes_count = 0
+            if backup_codes_str:
+                backup_codes = json.loads(backup_codes_str)
+                backup_codes_count = len(backup_codes)
+            
+            return {
+                "success": True,
+                "enabled": user.get("totp_enabled", False),
+                "backup_codes_remaining": backup_codes_count,
+                "setup_in_progress": "temp_totp_secret" in user
+            }
+            
+        except Exception as e:
+            logger.error(f"Error getting 2FA status: {e}")
+            return {"success": False, "error": "Failed to get 2FA status"}
 
 # Service instance
 auth_service = AuthService()
