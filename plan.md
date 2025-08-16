@@ -136,7 +136,9 @@ frontend/src/
 │   ├── NotificationPanel.tsx    # Notification UI
 │   ├── WebSocketIndicator.tsx   # Connection status
 │   ├── Dashboard.tsx   # Dashboard with live odds section
-│   ├── BetHistory.tsx  # Bet tracking components
+│   ├── BetHistory.tsx  # Bet tracking with parlay modal
+│   ├── ParlayBuilder.tsx # Advanced parlay builder with validation
+│   ├── ParlayList.tsx  # Parlay listing and management
 │   ├── LiveOdds.tsx    # Live odds display with real-time updates
 │   ├── SportsSelector.tsx # Sports selection with search
 │   └── LiveScores.tsx  # Live scores with filtering
@@ -226,6 +228,20 @@ frontend/src/
 - ✅ Enhanced predictions page with proper API response parsing
 - ✅ Temporary WebSocket connection management for stability
 
+### Phase 3.9: Comprehensive Parlay System ✅ COMPLETE (August 16, 2025)
+- ✅ Complete parlay builder with advanced conflict detection and validation
+- ✅ Parlay details modal with comprehensive leg information and status tracking
+- ✅ Enhanced parlay listing and management interface
+- ✅ Backend API endpoint for fetching specific parlay details by ID
+- ✅ Fixed parlay odds formatting to display as clean whole numbers
+- ✅ Clickable parlay entries in bet history with detailed modal views
+- ✅ Advanced validation logic preventing duplicate and conflicting bets
+- ✅ Mutually exclusive bet detection (over/under, both ML sides, same-team conflicts)
+- ✅ Real-time parlay odds calculation with proper American odds conversion
+- ✅ Complete integration between parlay builder, bet history, and detail views
+- ✅ Enhanced user experience with visual indicators and loading states
+- ✅ Professional sportsbook-style odds display throughout the application
+
 ## Next Development Phases 🚀
 
 ### Phase 4: AI Integration (Planned)
@@ -304,6 +320,9 @@ frontend/src/
 - `GET /api/auth/me` - Get current user
 - `POST /api/bets` - Place a new bet
 - `GET /api/bets` - Get user bet history
+- `POST /api/bets/parlay` - Place a parlay bet
+- `GET /api/bets/parlays` - Get user parlay bets
+- `GET /api/bets/parlay/{parlay_id}` - Get specific parlay details with legs
 - `GET /api/yetai-bets` - Get YetAI Bets based on user tier
 - `GET /api/odds/{sport}` - Get live odds for sport
 - `GET /api/sports` - Get available sports list
@@ -410,6 +429,6 @@ frontend/src/
 
 ---
 
-*Last Updated: August 15, 2025*
-*Version: 1.5*
-*Status: Phase 3.8 Complete - Admin Role & Bet Management System Implemented. Platform now features complete admin dashboard with bet creation capabilities, role-based access control, and seamless integration between admin-created content and user-facing features.*
+*Last Updated: August 16, 2025*
+*Version: 1.6*
+*Status: Phase 3.9 Complete - Comprehensive Parlay System Implemented. Platform now features complete parlay builder with advanced validation, parlay details modal, enhanced bet history integration, and professional sportsbook-style odds formatting throughout the application.*
