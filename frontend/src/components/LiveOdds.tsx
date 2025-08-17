@@ -246,7 +246,7 @@ export function LiveOdds({
             <button
               onClick={() => fetchOdds(true)}
               disabled={loading}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+              className="p-2 hover:bg-gray-100 rounded-lg transition-colors border border-gray-200 bg-white text-gray-700 shadow-sm"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
             </button>
@@ -449,7 +449,7 @@ export function LiveOdds({
                   <div className="mt-4 flex justify-center">
                     <button
                       onClick={() => onPlaceBet(game)}
-                      className="bg-[#A855F7] hover:bg-[#A855F7]/90 text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2"
+                      className="bg-[#A855F7] hover:bg-[#9333EA] text-white px-6 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2"
                     >
                       <Target className="w-4 h-4" />
                       <span>Place Bet</span>

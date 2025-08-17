@@ -324,8 +324,9 @@ const Dashboard: React.FC = () => {
           setGames(enhancedGames);
         }
 
-        // Mock predictions for demonstration
-        const mockPredictions: Prediction[] = games.slice(0, 3).map((game, index) => ({
+        // Mock predictions for demonstration - only create if games exist
+        const mockPredictions: Prediction[] = (enhancedGames && enhancedGames.length > 0) ? 
+          enhancedGames.slice(0, 3).map((game, index) => ({
           id: `pred_${index}`,
           game_id: game.id,
           type: ['spread', 'moneyline', 'over_under'][index % 3] as 'spread' | 'moneyline' | 'over_under',
@@ -341,7 +342,7 @@ const Dashboard: React.FC = () => {
             'Away team has favorable matchup against weak defense',
             'Weather conditions favor under, both teams struggle in rain'
           ][index % 3]
-        }));
+        })) : [];
         setPredictions(mockPredictions);
 
         // Mock AI insights
@@ -380,41 +381,53 @@ const Dashboard: React.FC = () => {
 
   // Subscribe to game updates via WebSocket
   useEffect(() => {
-    if (isConnected && games.length > 0) {
+    if (isConnected && games && Array.isArray(games) && games.length > 0) {
       games.forEach(game => {
-        subscribeToGame(game.id);
+        if (game && game.id) {
+          subscribeToGame(game.id);
+        }
       });
 
       // Cleanup on unmount or games change
       return () => {
-        games.forEach(game => {
-          unsubscribeFromGame(game.id);
-        });
+        if (games && Array.isArray(games)) {
+          games.forEach(game => {
+            if (game && game.id) {
+              unsubscribeFromGame(game.id);
+            }
+          });
+        }
       };
     }
   }, [isConnected, games, subscribeToGame, unsubscribeFromGame]);
 
   // Function to get live odds for a game
   const getLiveGameData = (game: Game) => {
-    const liveUpdate = getGameUpdate(game.id);
-    if (liveUpdate) {
-      return {
-        ...game,
-        home_odds: liveUpdate.home_odds ?? game.home_odds,
-        away_odds: liveUpdate.away_odds ?? game.away_odds,
-        spread: liveUpdate.spread ?? game.spread,
-        total: liveUpdate.total ?? game.total,
-        home_score: liveUpdate.home_score ?? game.home_score,
-        away_score: liveUpdate.away_score ?? game.away_score,
-        movement: liveUpdate.movement,
-        last_updated: liveUpdate.last_updated
-      };
+    if (!game || !game.id) return game;
+    
+    try {
+      const liveUpdate = getGameUpdate(game.id);
+      if (liveUpdate) {
+        return {
+          ...game,
+          home_odds: liveUpdate.home_odds ?? game.home_odds,
+          away_odds: liveUpdate.away_odds ?? game.away_odds,
+          spread: liveUpdate.spread ?? game.spread,
+          total: liveUpdate.total ?? game.total,
+          home_score: liveUpdate.home_score ?? game.home_score,
+          away_score: liveUpdate.away_score ?? game.away_score,
+          movement: liveUpdate.movement,
+          last_updated: liveUpdate.last_updated
+        };
+      }
+    } catch (error) {
+      console.error('Error getting live game data:', error);
     }
     return game;
   };
 
   // Get user's favorite teams for highlighting
-  const favoriteTeams = user?.favorite_teams || ['KC', 'BUF']; // Demo favorites
+  const favoriteTeams = Array.isArray(user?.favorite_teams) ? user.favorite_teams : ['KC', 'BUF']; // Demo favorites
 
   if (loading) {
     return (
@@ -456,7 +469,7 @@ const Dashboard: React.FC = () => {
             {user?.subscription_tier === 'free' && (
               <button 
                 onClick={() => router.push('/upgrade')}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 text-white px-4 py-2 rounded-lg hover:from-blue-700 hover:to-purple-700 font-medium flex items-center"
+                className="btn-gradient-blue-purple px-4 py-2 rounded-lg font-medium flex items-center"
               >
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade to Pro
@@ -469,15 +482,15 @@ const Dashboard: React.FC = () => {
       {/* Navigation Tabs */}
       <div className="bg-white border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
+          <nav className="flex space-x-2 py-4">
             {['overview', 'games', 'insights', 'performance'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`py-4 px-1 border-b-2 font-medium text-sm capitalize ${
+                className={`px-6 py-2.5 font-medium text-sm capitalize transition-all duration-200 rounded-full ${
                   activeTab === tab
-                    ? 'border-blue-500 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-800 hover:border-gray-300 font-medium'
+                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                    : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100 bg-gray-50'
                 }`}
               >
                 {tab}
@@ -485,7 +498,7 @@ const Dashboard: React.FC = () => {
             ))}
             <Link
               href="/bets"
-              className="py-4 px-1 border-b-2 border-transparent text-purple-600 hover:text-purple-700 hover:border-purple-300 font-medium text-sm"
+              className="px-6 py-2.5 font-medium text-sm transition-all duration-200 rounded-full text-purple-600 hover:text-purple-700 hover:bg-purple-50 bg-gray-50"
             >
               My Bets
             </Link>
@@ -535,7 +548,7 @@ const Dashboard: React.FC = () => {
                 AI Insights
               </h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {insights.map((insight, index) => (
+                {insights && insights.length > 0 && insights.map((insight, index) => (
                   <AIInsightCard key={index} insight={insight} />
                 ))}
               </div>
@@ -567,11 +580,11 @@ const Dashboard: React.FC = () => {
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 section-subtitle">Today's Featured Games</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {games.slice(0, 6).map((game) => {
-                  const prediction = predictions.find(p => p.game_id === game.id);
-                  const isFavorite = favoriteTeams.some(team => 
-                    game.home_team.includes(team) || game.away_team.includes(team)
-                  );
+                {games && games.length > 0 && games.slice(0, 6).map((game) => {
+                  const prediction = predictions && predictions.length > 0 ? predictions.find(p => p.game_id === game.id) : undefined;
+                  const isFavorite = favoriteTeams && favoriteTeams.length > 0 ? favoriteTeams.some(team => 
+                    game.home_team && game.home_team.includes(team) || game.away_team && game.away_team.includes(team)
+                  ) : false;
                   return (
                     <GameCard
                       key={game.id}
@@ -591,11 +604,11 @@ const Dashboard: React.FC = () => {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-gray-900">All Games</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {games.map((game) => {
-                const prediction = predictions.find(p => p.game_id === game.id);
-                const isFavorite = favoriteTeams.some(team => 
-                  game.home_team.includes(team) || game.away_team.includes(team)
-                );
+              {games && games.length > 0 && games.map((game) => {
+                const prediction = predictions && predictions.length > 0 ? predictions.find(p => p.game_id === game.id) : undefined;
+                const isFavorite = favoriteTeams && favoriteTeams.length > 0 ? favoriteTeams.some(team => 
+                  game.home_team && game.home_team.includes(team) || game.away_team && game.away_team.includes(team)
+                ) : false;
                 return (
                   <GameCard
                     key={game.id}
@@ -614,7 +627,7 @@ const Dashboard: React.FC = () => {
           <div className="space-y-6">
             <h2 className="text-xl font-bold text-gray-900">AI Insights & Analysis</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {insights.map((insight, index) => (
+              {insights && insights.length > 0 && insights.map((insight, index) => (
                 <AIInsightCard key={index} insight={insight} />
               ))}
             </div>
@@ -666,7 +679,7 @@ const Dashboard: React.FC = () => {
               </div>
               <button 
                 onClick={() => router.push('/upgrade')}
-                className="bg-gradient-to-r from-[#A855F7] to-[#F59E0B] text-white px-6 py-3 rounded-lg hover:from-[#A855F7]/90 hover:to-[#F59E0B]/90 font-medium flex items-center whitespace-nowrap ml-4"
+                className="btn-gradient-brand px-6 py-3 rounded-lg font-medium flex items-center whitespace-nowrap ml-4"
               >
                 <Crown className="w-4 h-4 mr-2" />
                 Upgrade Now
