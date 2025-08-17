@@ -10,7 +10,6 @@ import {
   Trophy,
   Brain,
   MessageSquare,
-  Settings,
   HelpCircle,
   Menu,
   X,
@@ -35,6 +34,7 @@ import { useAuth } from './Auth';
 import { useNotifications } from './NotificationProvider';
 import { WebSocketIndicator } from './WebSocketIndicator';
 import { NotificationPanel } from './NotificationPanel';
+import Avatar from './Avatar';
 
 interface NavItem {
   name: string;
@@ -59,7 +59,6 @@ const navigation: NavItem[] = [
 ];
 
 const bottomNavigation: NavItem[] = [
-  { name: 'Settings', href: '/settings', icon: Settings, requiresAuth: true },
   { name: 'Help & Support', href: '/help', icon: HelpCircle },
 ];
 
@@ -151,15 +150,11 @@ export function Sidebar() {
           <div className={`px-4 py-4 border-b border-gray-200 ${isCollapsed ? 'px-2' : ''}`}>
             {isCollapsed ? (
               <div className="flex justify-center">
-                <div className="w-10 h-10 bg-[#A855F7] rounded-full flex items-center justify-center">
-                  <User className="w-6 h-6 text-white" />
-                </div>
+                <Avatar user={user} size="md" />
               </div>
             ) : (
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-[#A855F7] rounded-full flex items-center justify-center flex-shrink-0">
-                  <User className="w-6 h-6 text-white" />
-                </div>
+                <Avatar user={user} size="md" className="flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">
                     {user.first_name || user.email}
@@ -224,6 +219,29 @@ export function Sidebar() {
               </button>
             );
           })}
+          
+          {/* Profile Navigation Item - Show for authenticated users */}
+          {isAuthenticated && (
+            <button
+              onClick={() => router.push('/profile')}
+              className={`
+                w-full flex items-center justify-between px-3 py-2 rounded-lg
+                transition-all duration-200 group nav-item sidebar-nav
+                ${isActive('/profile')
+                  ? 'bg-[#A855F7]/10 text-[#A855F7] active'
+                  : 'text-gray-800 hover:bg-gray-50 hover:text-gray-900'
+                }
+                ${isCollapsed ? 'justify-center' : ''}
+              `}
+            >
+              <div className="flex items-center space-x-3">
+                <User className={`w-5 h-5 ${isActive('/profile') ? 'text-[#A855F7]' : ''}`} />
+                {!isCollapsed && (
+                  <span className="text-sm font-medium">Profile</span>
+                )}
+              </div>
+            </button>
+          )}
           
           {/* Admin Navigation Item - Only show for admin users */}
           {isAuthenticated && user?.is_admin && (

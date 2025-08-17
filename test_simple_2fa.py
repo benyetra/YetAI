@@ -1,0 +1,22 @@
+#!/usr/bin/env python3
+
+# Let's extract the secret from the QR provisioning URI
+import re
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), 'backend'))
+
+# Extract from the QR code data we got
+qr_data = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAeoAAAHqAQAAAADjFjCXAAAEk0lEQVR4nO2dXW7bMAzHKSZAHxOgB9hR3BvsSMWOtBvYR8kBCsSPAxJw4JesbG+0AScV/w9eFPmH2h1BiaSkFoIVmnANDZB4WBhHWYmHhXGUlXhYGEdZiYeFcZSVeFgYR1mJ94wX0xFgOvMXs3y6l/IB9wJTOUL5mOXit348zcOHhXGUlXhcxIJB/rkeNLYgohvAIM0T8eUGNMJBb2mI8aXfHRPfGZ/NfdEoZsa+rnbQyO7w8wogt6hPfKaHDwqjoCrxsI7/tMtwOd7Yw/EIewCA05fdos3v9O6Y+JNYHU0/blCa5scbleHyxv7vXLb+6Zh411Z34hndLL5ObOtwA5jfoQzXcwGxxOG33Urf5d0x8X3xSeJSCV/hQDD4HM6aFzFOiTXuGsLClj89KgyTosT39XX0OMIuouks4+29EMCN76Pv8+6Y+L6ZExF7OJFmSUbOl2jvyVIllkPxjsycrBB2jENjV5aWM6tTI+SLJei8CQOl1UHia0Sqq9sam56Ks8SSvlPnVnsth0xpdauE3eNFsr+f9KeY/bnr814rWmhcoUWzp3n4sDCOshJf7etISmBWDNPClw6z3GRfZwWyZeil9HWrhB3j4FZXS6saOfjMzaZ0YoRuk3YLpdWtEXaMg4UFMqRKfV+b4vAe1gGI6f2j8aXfHRPf2erAUyU1fF38WmN/MtercS2l1cWFHeOwzOvM9DxysIF0We7UeEJKXweJb+LrQCMH/lIywo3DqzGsRhOZr3v5/3d8mlWdo2bkPKQV51aDC/d6NaSl9HWrhIlP53sBOP0pVhab3zRoLZ+XI9A480onLVqYaHyeh48Kw6Qo8biomaotQWsdV3Ws9RKs65DzOkh8heixvu/bIyyasGmeJE38YokUSqtbJewYh4c1JxYqNJ9UHrQ2ZQlRWl1c2DEOVNWsOalbwdpoolpd4xhx14fHxF/a6kYvRuh3utzJq6+ePq7VV5/wpdWtEHaMw+LrvBghJQh3fU2+7iFprEqriws7xkGsxxseL0jHYmvadKvL6r8q8ZU41SLrshVbtl1rr/q/ue7RyXzdZr/5PnEwX7e4tMbheb5Oa/668K7FKH1dXNgxDmp1lgxuc8M+paupkjqla+IK3PXhMfEX3/t/PxLMZ7Ym2Y/4dYTh97s4vFvhXv4EMIy8UXvZnfjS746J74zPfEwYD6RyatinHDHBh4jZRUbde6FfZ77kSWIb/uZ7xMFGWC138Rc+hrYLin02p8pVnaLE46JHedDgGyU0QXz6fyu2KK0uLuwYB7Eeb/y3vq51gqxaoKW0Okx8JT6IEcnIKSfp8KmJw1WmdLz67of0+h7t6VyXFj/Fw0eFYVKU+GZndRa9qHFxh66qkxOK7ewnGC55phMkvuGpiSKC+Z1g+vnl2RReUGxnOnGGBW7H7/DumPjeMSw0OyOaBXUqjWZr0SKr/xv85jFxqDUHluTm5Kh/X0tsHaXw6XY5wooS3y6GHXwFsefr6sE6ukDA4gpVxrBxYcd4yb9eFxWGSVHiYWEcZSUeFsZRVuJhYRxlJR4WxlFW4mFhHIXO8b9IxUSpmn6KbwAAAABJRU5ErkJggg=="
+
+# Decode QR to get provisioning URI (this is complex, let's use a simpler approach)
+# For testing, let's just generate a token with a known secret
+
+import pyotp
+
+# Let's create a test secret and use it
+test_secret = "JBSWY3DPEHPK3PXP"  # Base32 test secret
+totp = pyotp.TOTP(test_secret)
+print(f"Test secret: {test_secret}")
+print(f"Current token: {totp.now()}")
+print(f"URI: {totp.provisioning_uri('test@example.com', issuer_name='YetAI Sports Betting')}")

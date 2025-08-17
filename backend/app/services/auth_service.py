@@ -10,6 +10,7 @@ import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
 from app.services.totp_service import totp_service
+from app.services.email_service import email_service
 import logging
 
 logger = logging.getLogger(__name__)
@@ -24,9 +25,15 @@ class AuthService:
         # In-memory user storage (replace with database in production)
         self.users = {}
         self.user_id_counter = 1
+        # Add password context to instance
+        self.pwd_context = pwd_context
         
         # Create demo users immediately
         self.create_demo_users()
+        
+        # Migrate any existing sports preferences to use consistent keys
+        self.migrate_sports_preferences()
+        
     
     def hash_password(self, password: str) -> str:
         """Hash a password securely"""
@@ -83,7 +90,7 @@ class AuthService:
                 "subscription_expires_at": None,
                 "stripe_customer_id": None,
                 "favorite_teams": "[]",
-                "preferred_sports": "[\"NFL\"]",
+                "preferred_sports": "[\"americanfootball_nfl\"]",
                 "notification_settings": "{\"email\": true, \"push\": false}",
                 "is_active": True,
                 "is_verified": False,
@@ -95,10 +102,23 @@ class AuthService:
                 "totp_enabled": False,
                 "totp_secret": None,
                 "backup_codes": None,
-                "totp_last_used": None
+                "totp_last_used": None,
+                # Avatar fields
+                "avatar_url": None,
+                "avatar_thumbnail": None
             }
             
             self.users[user_id] = new_user
+            
+            # Send verification email
+            try:
+                email_service.send_verification_email(
+                    to_email=email,
+                    verification_token=new_user["verification_token"],
+                    first_name=first_name
+                )
+            except Exception as email_error:
+                logger.warning(f"Failed to send verification email: {email_error}")
             
             # Generate access token
             access_token = self.generate_token(new_user["id"])
@@ -112,7 +132,9 @@ class AuthService:
                     "last_name": new_user["last_name"],
                     "subscription_tier": new_user["subscription_tier"],
                     "is_verified": new_user["is_verified"],
-                    "is_admin": new_user["is_admin"]
+                    "is_admin": new_user["is_admin"],
+                    "avatar_url": new_user.get("avatar_url"),
+                    "avatar_thumbnail": new_user.get("avatar_thumbnail")
                 },
                 "access_token": access_token,
                 "token_type": "bearer"
@@ -137,7 +159,7 @@ class AuthService:
             if not self.verify_password(password, user["password_hash"]):
                 return {"success": False, "error": "Invalid email or password"}
             
-            if not user["is_active"]:
+            if not user.get("is_active", True):
                 return {"success": False, "error": "Account is deactivated"}
             
             # Update last login
@@ -156,7 +178,9 @@ class AuthService:
                     "subscription_tier": user["subscription_tier"],
                     "is_verified": user["is_verified"],
                     "is_admin": user["is_admin"],
-                    "last_login": user["last_login"].isoformat() if user["last_login"] else None
+                    "last_login": user["last_login"].isoformat() if user["last_login"] else None,
+                    "avatar_url": user.get("avatar_url"),
+                    "avatar_thumbnail": user.get("avatar_thumbnail")
                 },
                 "access_token": access_token,
                 "token_type": "bearer"
@@ -187,7 +211,9 @@ class AuthService:
                 "is_admin": user["is_admin"],
                 "favorite_teams": user["favorite_teams"],
                 "preferred_sports": user["preferred_sports"],
-                "notification_settings": user["notification_settings"]
+                "notification_settings": user["notification_settings"],
+                "avatar_url": user.get("avatar_url"),
+                "avatar_thumbnail": user.get("avatar_thumbnail")
             }
             
         except Exception as e:
@@ -246,6 +272,47 @@ class AuthService:
             logger.error(f"Error upgrading subscription: {e}")
             return {"success": False, "error": "Failed to upgrade subscription"}
     
+    def migrate_sports_preferences(self):
+        """Migrate old sport titles to sport keys for consistency"""
+        sport_title_to_key = {
+            "NFL": "americanfootball_nfl",
+            "NCAA Football": "americanfootball_ncaaf", 
+            "NCAAF": "americanfootball_ncaaf",
+            "NBA": "basketball_nba",
+            "NCAA Basketball": "basketball_ncaab",
+            "NCAAB": "basketball_ncaab", 
+            "WNBA": "basketball_wnba",
+            "MLB": "baseball_mlb",
+            "NHL": "icehockey_nhl",
+            "EPL": "soccer_epl",
+            "Premier League": "soccer_epl"
+        }
+        
+        try:
+            for user in self.users.values():
+                if user.get("preferred_sports"):
+                    try:
+                        current_sports = json.loads(user["preferred_sports"]) if isinstance(user["preferred_sports"], str) else user["preferred_sports"]
+                        if isinstance(current_sports, list):
+                            # Convert any titles to keys
+                            normalized_sports = []
+                            for sport in current_sports:
+                                if sport in sport_title_to_key:
+                                    normalized_sports.append(sport_title_to_key[sport])
+                                else:
+                                    # Assume it's already a key
+                                    normalized_sports.append(sport)
+                            
+                            # Remove duplicates and save
+                            user["preferred_sports"] = json.dumps(list(set(normalized_sports)))
+                    except Exception as e:
+                        logger.warning(f"Error migrating sports for user {user.get('id')}: {e}")
+                        user["preferred_sports"] = "[\"americanfootball_nfl\"]"
+                        
+            logger.info("Sports preferences migration completed")
+        except Exception as e:
+            logger.error(f"Error during sports migration: {e}")
+
     def create_demo_users(self):
         """Create some demo users for testing"""
         try:
@@ -298,7 +365,7 @@ class AuthService:
                         "subscription_expires_at": None,
                         "stripe_customer_id": None,
                         "favorite_teams": "[\"KC\", \"BUF\"]",
-                        "preferred_sports": "[\"NFL\"]",
+                        "preferred_sports": "[\"americanfootball_nfl\"]",
                         "notification_settings": "{\"email\": true, \"push\": true}",
                         "is_active": True,
                         "is_verified": True,
@@ -310,7 +377,10 @@ class AuthService:
                         "totp_enabled": False,
                         "totp_secret": None,
                         "backup_codes": None,
-                        "totp_last_used": None
+                        "totp_last_used": None,
+                        # Avatar fields
+                        "avatar_url": None,
+                        "avatar_thumbnail": None
                     }
                     
                     self.users[user_id] = new_user
@@ -344,7 +414,7 @@ class AuthService:
                 "subscription_expires_at": None,
                 "stripe_customer_id": None,
                 "favorite_teams": "[]",
-                "preferred_sports": "[\"NFL\"]",
+                "preferred_sports": "[\"americanfootball_nfl\"]",
                 "notification_settings": "{\"email\": true, \"push\": true}",
                 "is_active": True,
                 "is_verified": True,
@@ -356,7 +426,10 @@ class AuthService:
                 "totp_enabled": False,
                 "totp_secret": None,
                 "backup_codes": None,
-                "totp_last_used": None
+                "totp_last_used": None,
+                # Avatar fields
+                "avatar_url": None,
+                "avatar_thumbnail": None
             }
             
             self.users[user_id] = new_admin
@@ -533,6 +606,278 @@ class AuthService:
         except Exception as e:
             logger.error(f"Error getting 2FA status: {e}")
             return {"success": False, "error": "Failed to get 2FA status"}
+    
+    async def get_user_by_email(self, email: str) -> Optional[Dict]:
+        """Get user by email address"""
+        for user in self.users.values():
+            if user["email"] == email:
+                return user
+        return None
+    
+    async def get_all_users(self, skip: int = 0, limit: int = 100, search: str = None) -> List[Dict]:
+        """Get all users with optional search"""
+        users = []
+        for user in self.users.values():
+            if search:
+                search_lower = search.lower()
+                if (search_lower in user["email"].lower() or 
+                    search_lower in user.get("first_name", "").lower() or 
+                    search_lower in user.get("last_name", "").lower()):
+                    users.append({
+                        "id": user["id"],
+                        "email": user["email"],
+                        "first_name": user.get("first_name", ""),
+                        "last_name": user.get("last_name", ""),
+                        "subscription_tier": user.get("subscription_tier", "free"),
+                        "is_admin": user.get("is_admin", False),
+                        "is_verified": user.get("is_verified", False),
+                        "created_at": user.get("created_at", ""),
+                        "last_login": user.get("last_login", ""),
+                        "totp_enabled": user.get("totp_enabled", False)
+                    })
+            else:
+                users.append({
+                    "id": user["id"],
+                    "email": user["email"],
+                    "first_name": user.get("first_name", ""),
+                    "last_name": user.get("last_name", ""),
+                    "subscription_tier": user.get("subscription_tier", "free"),
+                    "is_admin": user.get("is_admin", False),
+                    "is_verified": user.get("is_verified", False),
+                    "created_at": user.get("created_at", ""),
+                    "last_login": user.get("last_login", ""),
+                    "totp_enabled": user.get("totp_enabled", False)
+                })
+        
+        # Sort by ID and apply pagination
+        users.sort(key=lambda x: x["id"])
+        return users[skip:skip + limit]
+    
+    async def update_user(self, user_id: int, update_data: Dict) -> Optional[Dict]:
+        """Update user details"""
+        if user_id not in self.users:
+            return None
+        
+        user = self.users[user_id]
+        
+        # Update allowed fields including email, password and 2FA
+        allowed_fields = ["email", "password", "first_name", "last_name", "subscription_tier", "is_admin", "is_verified", "totp_enabled", "avatar_url", "avatar_thumbnail"]
+        for field in allowed_fields:
+            if field in update_data:
+                if field == "password" and update_data[field]:
+                    # Hash the new password
+                    user["password_hash"] = self.pwd_context.hash(update_data[field])
+                elif field == "totp_enabled" and not update_data[field]:
+                    # If disabling 2FA, clear related fields
+                    user["totp_enabled"] = False
+                    user["totp_secret"] = None
+                    user["backup_codes"] = None
+                    user["totp_last_used"] = None
+                elif field != "password":  # Don't store plain password
+                    user[field] = update_data[field]
+        
+        self.users[user_id] = user
+        
+        # Return sanitized user data
+        return {
+            "id": user["id"],
+            "email": user["email"],
+            "first_name": user.get("first_name", ""),
+            "last_name": user.get("last_name", ""),
+            "subscription_tier": user.get("subscription_tier", "free"),
+            "is_admin": user.get("is_admin", False),
+            "is_verified": user.get("is_verified", False),
+            "totp_enabled": user.get("totp_enabled", False),
+            "avatar_url": user.get("avatar_url"),
+            "avatar_thumbnail": user.get("avatar_thumbnail")
+        }
+    
+    async def delete_user(self, user_id: int) -> bool:
+        """Delete a user"""
+        if user_id in self.users:
+            del self.users[user_id]
+            return True
+        return False
+    
+    async def create_user_admin(self, email: str, password: str, first_name: str = "", last_name: str = "", 
+                         subscription_tier: str = "free", is_admin: bool = False, 
+                         is_verified: bool = True) -> Optional[Dict]:
+        """Create a new user (admin functionality)"""
+        try:
+            # Check if user already exists
+            if await self.get_user_by_email(email):
+                return None
+            
+            # Hash password
+            password_hash = self.pwd_context.hash(password)
+            
+            # Generate new user ID
+            new_id = max(self.users.keys()) + 1 if self.users else 1
+            
+            # Create user
+            new_user = {
+                "id": new_id,
+                "email": email,
+                "password_hash": password_hash,
+                "first_name": first_name,
+                "last_name": last_name,
+                "subscription_tier": subscription_tier,
+                "is_active": True,
+                "is_verified": is_verified,
+                "is_admin": is_admin,
+                "created_at": datetime.now().isoformat(),
+                "last_login": None,
+                "totp_enabled": False,
+                "totp_secret": None,
+                "backup_codes": None,
+                "totp_last_used": None,
+                # Avatar fields
+                "avatar_url": None,
+                "avatar_thumbnail": None
+            }
+            
+            self.users[new_id] = new_user
+            
+            # Return sanitized user data
+            return {
+                "id": new_user["id"],
+                "email": new_user["email"],
+                "first_name": new_user["first_name"],
+                "last_name": new_user["last_name"],
+                "subscription_tier": new_user["subscription_tier"],
+                "is_admin": new_user["is_admin"],
+                "is_verified": new_user["is_verified"]
+            }
+            
+        except Exception as e:
+            logger.error(f"Error creating user: {e}")
+            return None
+    
+    async def reset_user_password(self, user_id: int) -> Optional[str]:
+        """Reset user password to a temporary one"""
+        if user_id not in self.users:
+            return None
+        
+        # Generate a temporary password
+        import secrets
+        import string
+        alphabet = string.ascii_letters + string.digits
+        temp_password = ''.join(secrets.choice(alphabet) for _ in range(12))
+        
+        # Hash and update password
+        self.users[user_id]["password_hash"] = self.pwd_context.hash(temp_password)
+        
+        return temp_password
+    
+    async def verify_email(self, token: str) -> Dict:
+        """Verify user email with token"""
+        try:
+            # Find user with this verification token
+            user = None
+            for u in self.users.values():
+                if u.get("verification_token") == token:
+                    user = u
+                    break
+            
+            if not user:
+                return {"success": False, "error": "Invalid or expired verification token"}
+            
+            # Mark as verified
+            user["is_verified"] = True
+            user["verification_token"] = None
+            
+            return {"success": True, "message": "Email verified successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error verifying email: {e}")
+            return {"success": False, "error": "Failed to verify email"}
+    
+    async def request_password_reset(self, email: str) -> Dict:
+        """Request a password reset for user"""
+        try:
+            # Find user by email
+            user = await self.get_user_by_email(email)
+            
+            if not user:
+                # Don't reveal if email exists
+                return {"success": True, "message": "If the email exists, a reset link has been sent"}
+            
+            # Generate reset token
+            reset_token = secrets.token_urlsafe(32)
+            reset_expires = datetime.utcnow() + timedelta(hours=1)
+            
+            # Store reset token
+            user["reset_token"] = reset_token
+            user["reset_token_expires"] = reset_expires
+            
+            # Send reset email
+            email_service.send_password_reset_email(
+                to_email=user["email"],
+                reset_token=reset_token,
+                first_name=user.get("first_name")
+            )
+            
+            return {"success": True, "message": "If the email exists, a reset link has been sent"}
+            
+        except Exception as e:
+            logger.error(f"Error requesting password reset: {e}")
+            return {"success": False, "error": "Failed to process password reset request"}
+    
+    async def reset_password(self, token: str, new_password: str) -> Dict:
+        """Reset password with token"""
+        try:
+            # Find user with this reset token
+            user = None
+            for u in self.users.values():
+                if u.get("reset_token") == token:
+                    # Check if token is expired
+                    if u.get("reset_token_expires"):
+                        if datetime.utcnow() > u["reset_token_expires"]:
+                            return {"success": False, "error": "Reset token has expired"}
+                    user = u
+                    break
+            
+            if not user:
+                return {"success": False, "error": "Invalid reset token"}
+            
+            # Update password
+            user["password_hash"] = self.pwd_context.hash(new_password)
+            user["reset_token"] = None
+            user["reset_token_expires"] = None
+            
+            return {"success": True, "message": "Password reset successfully"}
+            
+        except Exception as e:
+            logger.error(f"Error resetting password: {e}")
+            return {"success": False, "error": "Failed to reset password"}
+    
+    async def resend_verification_email(self, email: str) -> Dict:
+        """Resend verification email"""
+        try:
+            user = await self.get_user_by_email(email)
+            
+            if not user:
+                return {"success": False, "error": "User not found"}
+            
+            if user.get("is_verified"):
+                return {"success": False, "error": "Email already verified"}
+            
+            # Generate new verification token if needed
+            if not user.get("verification_token"):
+                user["verification_token"] = secrets.token_urlsafe(32)
+            
+            # Send verification email
+            email_service.send_verification_email(
+                to_email=user["email"],
+                verification_token=user["verification_token"],
+                first_name=user.get("first_name")
+            )
+            
+            return {"success": True, "message": "Verification email sent"}
+            
+        except Exception as e:
+            logger.error(f"Error resending verification email: {e}")
+            return {"success": False, "error": "Failed to send verification email"}
 
 # Service instance
 auth_service = AuthService()

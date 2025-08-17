@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
@@ -12,6 +13,7 @@ from app.services.ai_chat_service import ai_chat_service
 from app.services.real_fantasy_pipeline import real_fantasy_pipeline
 from app.services.performance_tracker import performance_tracker
 from app.services.auth_service import auth_service
+from app.services.avatar_service import avatar_service
 from app.services.bet_service import bet_service
 from app.services.yetai_bets_service import yetai_bets_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
@@ -82,6 +84,9 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Mount static files for avatars
+app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
 # CORS middleware - MUST be configured properly for OPTIONS requests
 app.add_middleware(
@@ -1082,6 +1087,76 @@ async def stop_scheduler():
         raise HTTPException(status_code=500, detail=f"Error stopping scheduler: {str(e)}")
 
 # Auth endpoints
+@app.post("/api/auth/verify-email")
+async def verify_email(data: dict):
+    """Verify user email with token"""
+    token = data.get("token")
+    if not token:
+        raise HTTPException(status_code=400, detail="Token is required")
+    
+    result = await auth_service.verify_email(token)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(data: dict):
+    """Resend verification email"""
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    result = await auth_service.resend_verification_email(email)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(data: dict):
+    """Request password reset"""
+    email = data.get("email")
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    
+    result = await auth_service.request_password_reset(email)
+    
+    return {
+        "status": "success",
+        "message": result["message"]
+    }
+
+@app.post("/api/auth/reset-password")
+async def reset_password(data: dict):
+    """Reset password with token"""
+    token = data.get("token")
+    new_password = data.get("new_password")
+    
+    if not token or not new_password:
+        raise HTTPException(status_code=400, detail="Token and new password are required")
+    
+    if len(new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    
+    result = await auth_service.reset_password(token, new_password)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
 @app.post("/api/auth/signup")
 async def signup(user_data: UserSignup):
     """Create a new user account"""
@@ -1093,7 +1168,7 @@ async def signup(user_data: UserSignup):
             last_name=user_data.last_name
         )
         
-        if result["success"]:
+        if result.get("success"):
             return {
                 "status": "success",
                 "message": "Account created successfully",
@@ -1102,7 +1177,7 @@ async def signup(user_data: UserSignup):
                 "token_type": result["token_type"]
             }
         else:
-            raise HTTPException(status_code=400, detail=result["error"])
+            raise HTTPException(status_code=400, detail=result.get("error", "Unknown error"))
             
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Signup failed: {str(e)}")
@@ -1137,6 +1212,134 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         "status": "success",
         "user": current_user
     }
+
+
+@app.put("/api/auth/profile")
+async def update_profile(
+    profile_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user profile including email and password"""
+    try:
+        # If changing password, verify current password first
+        if "current_password" in profile_data and "new_password" in profile_data:
+            user = auth_service.users.get(current_user["id"])
+            if not user or not auth_service.verify_password(profile_data["current_password"], user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Current password is incorrect")
+            
+            # Update password
+            profile_data["password"] = profile_data["new_password"]
+            del profile_data["current_password"]
+            del profile_data["new_password"]
+        
+        # Update user
+        updated_user = await auth_service.update_user(current_user["id"], profile_data)
+        
+        if updated_user:
+            return {
+                "status": "success",
+                "message": "Profile updated successfully",
+                "user": updated_user
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update profile")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")
+
+@app.post("/api/auth/avatar")
+async def upload_avatar(
+    avatar_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload user avatar"""
+    try:
+        image_data = avatar_data.get("image_data")
+        if not image_data:
+            raise HTTPException(status_code=400, detail="Image data is required")
+        
+        # Save avatar
+        success, result = avatar_service.save_avatar(current_user["id"], image_data)
+        
+        if success:
+            # Update user record with avatar URLs
+            user = auth_service.users.get(current_user["id"])
+            if user:
+                # Delete old avatar if exists
+                if user.get("avatar_url"):
+                    avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+                
+                # Update with new avatar
+                user["avatar_url"] = result["avatar"]
+                user["avatar_thumbnail"] = result["thumbnail"]
+                
+                return {
+                    "status": "success",
+                    "message": "Avatar uploaded successfully",
+                    "avatar_url": result["avatar"],
+                    "thumbnail_url": result["thumbnail"]
+                }
+            else:
+                raise HTTPException(status_code=404, detail="User not found")
+        else:
+            raise HTTPException(status_code=400, detail=result)
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload avatar: {str(e)}")
+
+@app.delete("/api/auth/avatar")
+async def delete_avatar(current_user: dict = Depends(get_current_user)):
+    """Delete user avatar"""
+    try:
+        user = auth_service.users.get(current_user["id"])
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Delete avatar files
+        if user.get("avatar_url"):
+            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+            
+            # Update user record
+            user["avatar_url"] = None
+            user["avatar_thumbnail"] = None
+            
+            return {
+                "status": "success",
+                "message": "Avatar deleted successfully"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="No avatar to delete")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete avatar: {str(e)}")
+
+@app.get("/api/auth/avatar/{user_id}")
+async def get_user_avatar(user_id: int):
+    """Get user avatar URL"""
+    try:
+        user = auth_service.users.get(user_id)
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        avatar_url = avatar_service.get_avatar_url(user)
+        
+        return {
+            "status": "success",
+            "avatar_url": avatar_url,
+            "thumbnail_url": user.get("avatar_thumbnail"),
+            "has_custom_avatar": bool(user.get("avatar_url"))
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get avatar: {str(e)}")
 
 @app.put("/api/auth/preferences")
 async def update_preferences(
@@ -1692,6 +1895,90 @@ async def disable_2fa(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to disable 2FA: {str(e)}")
 
+@app.get("/api/auth/2fa/backup-codes/status")
+async def get_backup_codes_status(current_user: dict = Depends(get_current_user)):
+    """Get backup codes status"""
+    try:
+        user = auth_service.users.get(current_user["id"])
+        if not user or not user.get("totp_enabled"):
+            raise HTTPException(status_code=400, detail="2FA is not enabled")
+        
+        backup_codes_str = user.get("backup_codes", "[]")
+        backup_codes = json.loads(backup_codes_str) if backup_codes_str else []
+        
+        # For tracking used codes, we'd need to maintain a separate list
+        # For now, we'll just return remaining codes
+        return {
+            "status": "success",
+            "remaining_codes": backup_codes,
+            "used_codes": [],  # Would need to track this separately
+            "total_generated": len(backup_codes)
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get backup codes status: {str(e)}")
+
+@app.post("/api/auth/2fa/backup-codes/regenerate")
+async def regenerate_backup_codes(current_user: dict = Depends(get_current_user)):
+    """Regenerate backup codes"""
+    try:
+        user = auth_service.users.get(current_user["id"])
+        if not user or not user.get("totp_enabled"):
+            raise HTTPException(status_code=400, detail="2FA is not enabled")
+        
+        # Generate new backup codes
+        from app.services.totp_service import totp_service
+        new_codes = totp_service.generate_backup_codes()
+        
+        # Update user's backup codes
+        user["backup_codes"] = json.dumps(new_codes)
+        
+        return {
+            "status": "success",
+            "backup_codes": new_codes,
+            "message": "Backup codes regenerated successfully"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to regenerate backup codes: {str(e)}")
+
+@app.post("/api/auth/2fa/backup-codes/email")
+async def email_backup_codes(current_user: dict = Depends(get_current_user)):
+    """Email backup codes to user"""
+    try:
+        user = auth_service.users.get(current_user["id"])
+        if not user or not user.get("totp_enabled"):
+            raise HTTPException(status_code=400, detail="2FA is not enabled")
+        
+        backup_codes_str = user.get("backup_codes", "[]")
+        backup_codes = json.loads(backup_codes_str) if backup_codes_str else []
+        
+        if not backup_codes:
+            raise HTTPException(status_code=400, detail="No backup codes available")
+        
+        # Send email with backup codes
+        from app.services.email_service import email_service
+        email_sent = email_service.send_2fa_backup_codes_email(
+            to_email=user["email"],
+            backup_codes=backup_codes,
+            first_name=user.get("first_name")
+        )
+        
+        if email_sent:
+            return {
+                "status": "success",
+                "message": "Backup codes sent to your email"
+            }
+        else:
+            raise HTTPException(status_code=500, detail="Failed to send email")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to email backup codes: {str(e)}")
+
 @app.post("/api/auth/2fa/verify")
 async def verify_2fa_token(
     request: Verify2FARequest,
@@ -1708,6 +1995,164 @@ async def verify_2fa_token(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to verify 2FA token: {str(e)}")
+
+# Admin user management endpoints
+@app.get("/api/admin/users")
+async def get_all_users(
+    current_user: dict = Depends(get_current_user),
+    skip: int = 0,
+    limit: int = 100,
+    search: str = None
+):
+    """Get all users (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        users = await auth_service.get_all_users(skip=skip, limit=limit, search=search)
+        return {
+            "status": "success",
+            "users": users,
+            "total": len(users)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get users: {str(e)}")
+
+@app.put("/api/admin/users/{user_id}")
+async def update_user(
+    user_id: int,
+    update_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user details (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Don't allow admins to modify their own admin status
+        if user_id == current_user["id"] and "is_admin" in update_data:
+            raise HTTPException(status_code=400, detail="Cannot modify your own admin status")
+        
+        # Check if email is being changed and validate it
+        if "email" in update_data:
+            existing_user = await auth_service.get_user_by_email(update_data["email"])
+            if existing_user and existing_user["id"] != user_id:
+                raise HTTPException(status_code=400, detail="Email already in use by another user")
+        
+        updated_user = await auth_service.update_user(user_id, update_data)
+        if updated_user:
+            return {
+                "status": "success",
+                "user": updated_user,
+                "message": "User updated successfully"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update user: {str(e)}")
+
+@app.post("/api/admin/users")
+async def create_user_admin(
+    user_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a new user (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Extract user data
+        email = user_data.get("email")
+        password = user_data.get("password", "password123")  # Default password if not provided
+        first_name = user_data.get("first_name", "")
+        last_name = user_data.get("last_name", "")
+        subscription_tier = user_data.get("subscription_tier", "free")
+        is_admin = user_data.get("is_admin", False)
+        is_verified = user_data.get("is_verified", True)
+        
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+        
+        # Check if user already exists
+        existing_user = await auth_service.get_user_by_email(email)
+        if existing_user:
+            raise HTTPException(status_code=400, detail="User with this email already exists")
+        
+        # Create user
+        new_user = await auth_service.create_user_admin(
+            email=email,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            subscription_tier=subscription_tier,
+            is_admin=is_admin,
+            is_verified=is_verified
+        )
+        
+        if new_user:
+            return {
+                "status": "success",
+                "user": new_user,
+                "message": f"User created successfully with password: {password}"
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to create user")
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to create user: {str(e)}")
+
+@app.delete("/api/admin/users/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a user (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        # Don't allow admins to delete themselves
+        if user_id == current_user["id"]:
+            raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        
+        success = await auth_service.delete_user(user_id)
+        if success:
+            return {
+                "status": "success",
+                "message": "User deleted successfully"
+            }
+        else:
+            raise HTTPException(status_code=404, detail="User not found")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def reset_user_password(
+    user_id: int,
+    current_user: dict = Depends(get_current_user)
+):
+    """Reset user password (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        new_password = await auth_service.reset_user_password(user_id)
+        if new_password:
+            return {
+                "status": "success",
+                "temporary_password": new_password,
+                "message": "Password reset successfully. Share this temporary password with the user."
+            }
+        else:
+            raise HTTPException(status_code=404, detail="User not found")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to reset password: {str(e)}")
 
 # WebSocket endpoints and startup events
 @app.on_event("startup")

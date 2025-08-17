@@ -12,7 +12,8 @@ import {
   Clock, 
   Save,
   Lock,
-  Unlock
+  Unlock,
+  Users
 } from 'lucide-react';
 
 
@@ -111,6 +112,40 @@ export default function AdminPage() {
             <p className="text-gray-600 mt-1">
               Create and manage YetAI Bets for all users
             </p>
+          </div>
+        </div>
+        
+        {/* Quick Actions */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <button
+            onClick={() => router.push('/admin/users')}
+            className="bg-white rounded-lg border border-gray-200 p-6 hover:border-blue-500 transition-colors group"
+          >
+            <div className="flex items-center">
+              <Users className="w-8 h-8 text-blue-600 mr-4" />
+              <div className="text-left">
+                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600">
+                  User Management
+                </h3>
+                <p className="text-sm text-gray-600">
+                  View, edit, and manage all user accounts
+                </p>
+              </div>
+            </div>
+          </button>
+          
+          <div className="bg-white rounded-lg border border-gray-200 p-6 opacity-50 cursor-not-allowed">
+            <div className="flex items-center">
+              <Shield className="w-8 h-8 text-gray-400 mr-4" />
+              <div className="text-left">
+                <h3 className="text-lg font-semibold text-gray-500">
+                  System Settings
+                </h3>
+                <p className="text-sm text-gray-400">
+                  Coming soon...
+                </p>
+              </div>
+            </div>
           </div>
         </div>
         

@@ -98,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         last_name: lastName
       });
       
-      if (response.status === 'success') {
+      if (response.status === 'success' && response.user && response.access_token) {
         const { user: userData, access_token } = response;
         
         setUser(userData);
@@ -109,7 +109,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         return { success: true };
       } else {
-        return { success: false, error: response.detail || 'Signup failed' };
+        return { success: false, error: response.detail || response.message || 'Signup failed' };
       }
     } catch (error: any) {
       return { success: false, error: error.message };
@@ -289,15 +289,25 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
           </button>
         </div>
 
-        <p className="mt-6 text-center text-sm text-gray-600">
-          Don't have an account?{' '}
-          <button
-            onClick={onSwitchToSignup}
-            className="text-blue-600 hover:text-blue-500 font-medium"
-          >
-            Sign up
-          </button>
-        </p>
+        <div className="mt-6 space-y-2">
+          <p className="text-center">
+            <a
+              href="/forgot-password"
+              className="text-sm text-[#A855F7] hover:text-[#A855F7]/80 font-medium"
+            >
+              Forgot your password?
+            </a>
+          </p>
+          <p className="text-center text-sm text-gray-600">
+            Don't have an account?{' '}
+            <button
+              onClick={onSwitchToSignup}
+              className="text-blue-600 hover:text-blue-500 font-medium"
+            >
+              Sign up
+            </button>
+          </p>
+        </div>
       </div>
     </div>
   );
