@@ -472,8 +472,23 @@ frontend/src/
 - Legal compliance research
 - Unique AI-powered differentiators
 
+### Phase 3.13: Profile/Settings Consolidation & Sports Selection Fix ✅ COMPLETE (August 17, 2025)
+- ✅ Merged Settings page functionality into unified Profile page for better UX
+- ✅ Removed redundant Quick Actions sections from both Profile and Settings pages
+- ✅ Fixed sports selection visual highlighting issue with purple border indicators
+- ✅ Resolved backend sport key/title data format mismatch (NFL → americanfootball_nfl)
+- ✅ Implemented data migration logic to normalize mixed format preferences
+- ✅ Fixed authentication token passing in all API client methods
+- ✅ Improved card and modal layouts with optimized spacing (p-6, gap-6, h-fit)
+- ✅ Enhanced modal responsiveness with max-w-lg and overflow-y-auto
+- ✅ Fixed signup flow error handling for "success" response parsing
+- ✅ Resolved 401 Unauthorized errors on profile/settings API endpoints
+- ✅ Sports selection now shows immediate visual feedback with checked states
+- ✅ Filtered preferred sports list to 8 major leagues (MLB, NBA, NFL, NHL, NCAAB, NCAAF, WNBA, EPL)
+- ✅ Validated all fixes with Playwright browser automation testing
+
 ---
 
 *Last Updated: August 17, 2025*
-*Version: 1.9*
-*Status: Phase 3.12 Complete - Modern UI Navigation Enhancement Implemented. Platform now features sleek, contemporary pill-shaped navigation buttons with brand-consistent styling, smooth animations, and professional visual hierarchy across Dashboard and Live Odds pages. The UI aesthetic now matches modern design standards while maintaining accessibility and usability.*
+*Version: 1.10*
+*Status: Phase 3.13 Complete - Profile/Settings Consolidation & Sports Selection Fix. Successfully merged Settings functionality into Profile page, fixed visual highlighting for sports selection with proper data format consistency between backend and frontend, resolved authentication issues, and improved overall UX with better layouts and spacing.*
