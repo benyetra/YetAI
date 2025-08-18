@@ -1,185 +1,187 @@
 'use client';
 
-import React, { useState } from 'react';
-import { LiveOdds } from '@/components/LiveOdds';
-import BetModal from '@/components/BetModal';
-import { oddsUtils } from '@/lib/api';
+import { useState, useEffect } from 'react';
+import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
-import { Activity, Target, Crown } from 'lucide-react';
-
-interface Game {
-  id: string;
-  sport_key: string;
-  sport_title: string;
-  commence_time: string;
-  home_team: string;
-  away_team: string;
-  bookmakers: Array<{
-    key: string;
-    title: string;
-    last_update: string;
-    markets: Array<{
-      key: string;
-      outcomes: Array<{
-        name: string;
-        price: number;
-        point?: number;
-      }>;
-    }>;
-  }>;
-}
+import LiveBettingDashboard from '@/components/LiveBettingDashboard';
+import ActiveLiveBets from '@/components/ActiveLiveBets';
+import { apiClient } from '@/lib/api';
+import { useNotifications } from '@/components/NotificationProvider';
+import { Activity, TrendingUp, DollarSign, Clock } from 'lucide-react';
 
 export default function LiveBettingPage() {
-  const { user, isAuthenticated } = useAuth();
-  const [showBetModal, setShowBetModal] = useState(false);
-  const [selectedGame, setSelectedGame] = useState<any>(null);
+  const { isAuthenticated, loading, token } = useAuth();
+  const { addNotification } = useNotifications();
+  const [activeTab, setActiveTab] = useState('markets');
+  const [stats, setStats] = useState({
+    activeBets: 0,
+    totalCashedOut: 0,
+    potentialWins: 0,
+    liveGames: 0
+  });
 
-  // Handle place bet from live odds
-  const handlePlaceBet = (game: Game) => {
-    if (!isAuthenticated) {
-      alert('Please log in to place bets');
-      return;
+  useEffect(() => {
+    if (isAuthenticated && token) {
+      loadStats();
     }
+  }, [isAuthenticated, token]);
 
-    // Convert live odds data to simple format for BetModal
-    const simpleGame = oddsUtils.toSimpleGame(game);
-    setSelectedGame(simpleGame);
-    setShowBetModal(true);
+  const loadStats = async () => {
+    try {
+      // Load user's live betting stats
+      const activeBetsResponse = await apiClient.get('/api/live-bets/active', token);
+      const marketsResponse = await apiClient.get('/api/live-bets/markets', token);
+      
+      if (activeBetsResponse.status === 'success') {
+        const activeBets = activeBetsResponse.bets || [];
+        const potentialWins = activeBets.reduce((sum: number, bet: any) => 
+          sum + (bet.current_potential_win || bet.potential_win || 0), 0
+        );
+        
+        setStats({
+          activeBets: activeBets.length,
+          totalCashedOut: activeBets.filter((b: any) => b.status === 'cashed_out').length,
+          potentialWins,
+          liveGames: marketsResponse.count || 0
+        });
+      }
+    } catch (error) {
+      console.error('Failed to load live betting stats:', error);
+    }
   };
 
+  if (loading) {
+    return (
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+        </div>
+      </Layout>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Layout>
+        <div className="min-h-screen flex items-center justify-center">
+          <div className="text-center">
+            <h2 className="text-2xl font-bold text-gray-800 mb-4">Sign In Required</h2>
+            <p className="text-gray-600">Please sign in to access live betting.</p>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
+    <Layout>
+      <div className="space-y-6">
+        {/* Page Header */}
+        <div className="bg-gradient-to-r from-red-600 to-orange-600 rounded-lg p-6 text-white">
+          <div className="flex items-center justify-between">
             <div>
-              <div className="flex items-center space-x-3">
-                <Activity className="w-8 h-8 text-[#A855F7]" />
-                <div>
-                  <h1 className="text-2xl font-bold text-gray-900">
-                    Live Sports Betting
-                  </h1>
-                  <p className="text-sm text-gray-600">
-                    Real-time odds from multiple bookmakers
-                  </p>
-                </div>
-              </div>
+              <h1 className="text-3xl font-bold flex items-center">
+                <Activity className="w-8 h-8 mr-3" />
+                Live Betting
+              </h1>
+              <p className="mt-2 text-red-100">
+                Place bets on games in progress with real-time odds and instant cash-out options
+              </p>
             </div>
-            
-            {isAuthenticated ? (
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">
-                    Welcome, {user?.first_name || user?.email}
-                  </p>
-                  <p className="text-xs text-gray-600 flex items-center">
-                    {user?.subscription_tier !== 'free' && (
-                      <Crown className="w-3 h-3 mr-1 text-yellow-500" />
-                    )}
-                    {user?.subscription_tier === 'free' ? 'Free Tier' : `${user.subscription_tier} Member`}
-                  </p>
-                </div>
+            <div className="hidden lg:flex items-center space-x-2 bg-white/10 backdrop-blur px-4 py-2 rounded-lg">
+              <div className="w-3 h-3 bg-green-400 rounded-full animate-pulse"></div>
+              <span className="text-sm font-medium">Live Now</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Active Live Bets</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.activeBets}</p>
               </div>
+              <Activity className="w-8 h-8 text-red-500" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Potential Wins</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  ${stats.potentialWins.toFixed(2)}
+                </p>
+              </div>
+              <TrendingUp className="w-8 h-8 text-green-500" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Cashed Out</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.totalCashedOut}</p>
+              </div>
+              <DollarSign className="w-8 h-8 text-blue-500" />
+            </div>
+          </div>
+
+          <div className="bg-white rounded-lg border border-gray-200 p-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-gray-600">Live Games</p>
+                <p className="text-2xl font-bold text-gray-900">{stats.liveGames}</p>
+              </div>
+              <Clock className="w-8 h-8 text-purple-500" />
+            </div>
+          </div>
+        </div>
+
+        {/* Tab Navigation */}
+        <div className="bg-white rounded-lg border border-gray-200">
+          <div className="border-b border-gray-200">
+            <div className="flex space-x-8 px-6">
+              <button
+                onClick={() => setActiveTab('markets')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
+                  activeTab === 'markets'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                Live Markets
+              </button>
+              <button
+                onClick={() => setActiveTab('active')}
+                className={`py-4 px-1 border-b-2 font-medium text-sm transition-colors relative ${
+                  activeTab === 'active'
+                    ? 'border-red-500 text-red-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                My Active Bets
+                {stats.activeBets > 0 && (
+                  <span className="absolute -top-1 -right-6 bg-red-500 text-white text-xs rounded-full px-2 py-0.5">
+                    {stats.activeBets}
+                  </span>
+                )}
+              </button>
+            </div>
+          </div>
+
+          {/* Tab Content */}
+          <div className="p-6">
+            {activeTab === 'markets' ? (
+              <LiveBettingDashboard onBetPlaced={loadStats} />
             ) : (
-              <div className="text-sm text-gray-600">
-                <span>Login to place bets</span>
-              </div>
+              <ActiveLiveBets onUpdate={loadStats} />
             )}
           </div>
         </div>
       </div>
-
-      {/* Main Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Auth Notice */}
-        {!isAuthenticated && (
-          <div className="mb-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-center">
-              <Target className="w-5 h-5 text-blue-600 mr-2" />
-              <p className="text-blue-800 text-sm">
-                <strong>Sign in to place bets:</strong> You can view live odds below, but you'll need to create an account to place bets.
-              </p>
-            </div>
-          </div>
-        )}
-        
-        {/* Free Tier Upsell */}
-        {isAuthenticated && user?.subscription_tier === 'free' && (
-          <div className="mb-6 bg-gradient-to-r from-purple-50 to-blue-50 border border-purple-200 rounded-lg p-4">
-            <div className="flex items-center">
-              <Crown className="w-5 h-5 text-purple-600 mr-2" />
-              <div>
-                <p className="text-purple-800 text-sm">
-                  <strong>Upgrade to Pro:</strong> Get advanced analytics, better odds tracking, and personalized betting recommendations.
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Live Odds Display with Betting */}
-        <LiveOdds 
-          showPopular={true}
-          autoRefresh={true}
-          refreshInterval={300000} // 5 minutes
-          maxGames={20}
-          onPlaceBet={handlePlaceBet}
-        />
-        
-        {/* Additional Information */}
-        <div className="mt-8 bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-bold text-gray-900 mb-4">How It Works</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="text-center">
-              <div className="w-12 h-12 bg-[#A855F7] rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Activity className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Live Odds</h3>
-              <p className="text-sm text-gray-600">
-                Real-time odds from multiple sportsbooks, updated every 5 minutes.
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-12 h-12 bg-[#A855F7] rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Target className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-2">Easy Betting</h3>
-              <p className="text-sm text-gray-600">
-                Click "Place Bet" on any game to open the betting interface with pre-filled odds.
-              </p>
-            </div>
-            
-            <div className="text-center">
-              <div className="w-12 h-12 bg-[#A855F7] rounded-lg flex items-center justify-center mx-auto mb-3">
-                <Crown className="w-6 h-6 text-white" />
-              </div>
-              <h3 className="font-semibold text-gray-900 mb-2">AI Insights</h3>
-              <p className="text-sm text-gray-600">
-                Get AI-powered betting recommendations and analysis with Pro membership.
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Responsible Gambling */}
-        <div className="mt-6 text-center">
-          <p className="text-xs text-gray-500">
-            Please bet responsibly. Must be 21+ to place bets. If you need help, call 1-800-GAMBLER.
-          </p>
-        </div>
-      </div>
-
-      {/* Bet Placement Modal */}
-      <BetModal
-        isOpen={showBetModal}
-        onClose={() => {
-          setShowBetModal(false);
-          setSelectedGame(null);
-        }}
-        game={selectedGame}
-      />
-    </div>
+    </Layout>
   );
 }

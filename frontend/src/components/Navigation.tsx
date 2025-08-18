@@ -18,12 +18,12 @@ import {
   BarChart3,
   Users,
   Zap,
+  Activity,
   Calendar,
   Bell,
   LogOut,
   User,
   Crown,
-  Activity,
   Layers,
   Target,
   Sparkles,
@@ -47,7 +47,7 @@ interface NavItem {
 
 const navigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, requiresAuth: true },
-  { name: 'Live Odds', href: '/odds', icon: TrendingUp },
+  { name: 'Live Betting', href: '/live-betting', icon: Activity, requiresAuth: true, badge: 'LIVE' },
   { name: 'YetAI Bets', href: '/predictions', icon: Brain, badge: 'AI' },
   { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
   { name: 'Bet History', href: '/bets', icon: History, requiresAuth: true },
@@ -436,7 +436,7 @@ export function MobileBottomNav() {
 
   const mobileNav = [
     { name: 'Home', href: '/dashboard', icon: Home },
-    { name: 'Odds', href: '/odds', icon: TrendingUp },
+    { name: 'Live', href: '/live-betting', icon: Activity },
     { name: 'Bet', href: '/bet', icon: Target },
     { name: 'History', href: '/bets', icon: History },
     { name: 'More', href: '/settings', icon: Menu },
@@ -453,7 +453,7 @@ export function MobileBottomNav() {
             <button
               key={item.name}
               onClick={() => {
-                if ((item.href === '/bet' || item.href === '/bets' || item.href === '/dashboard') && !isAuthenticated) {
+                if ((item.href === '/bet' || item.href === '/bets' || item.href === '/dashboard' || item.href === '/live-betting') && !isAuthenticated) {
                   router.push('/?login=true');
                 } else {
                   router.push(item.href);

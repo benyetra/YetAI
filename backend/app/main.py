@@ -16,11 +16,14 @@ from app.services.auth_service import auth_service
 from app.services.avatar_service import avatar_service
 from app.services.bet_service import bet_service
 from app.services.yetai_bets_service import yetai_bets_service
+from app.services.live_betting_service import live_betting_service
+from app.services.live_betting_simulator import live_betting_simulator
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
 from app.services.cache_service import cache_service
 from app.services.scheduler_service import scheduler_service
 from app.models.bet_models import *
+from app.models.live_bet_models import *
 from app.core.config import settings
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
@@ -158,6 +161,7 @@ async def root():
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+
 
 # Test endpoints for development
 @app.get("/test/odds")
@@ -1598,6 +1602,217 @@ async def simulate_bet_results(current_user: dict = Depends(get_current_user)):
         }
     else:
         raise HTTPException(status_code=400, detail=result["error"])
+
+# Live Betting Endpoints
+@app.post("/api/live-bets/place")
+async def place_live_bet(
+    request: PlaceLiveBetRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Place a live bet during an active game"""
+    try:
+        result = live_betting_service.place_live_bet(current_user["id"], request)
+        
+        if result.success:
+            # Notify via WebSocket
+            await manager.send_personal_message(
+                {
+                    "type": "live_bet_placed",
+                    "bet": result.bet.dict() if result.bet else None,
+                    "timestamp": datetime.now().isoformat()
+                },
+                current_user["id"]
+            )
+            
+            return {
+                "status": "success",
+                "bet": result.bet,
+                "odds_changed": result.odds_changed,
+                "new_odds": result.new_odds
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result.error)
+            
+    except Exception as e:
+        logger.error(f"Error placing live bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to place live bet")
+
+@app.get("/api/live-bets/cash-out/{bet_id}")
+async def get_cash_out_offer(
+    bet_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get current cash out offer for a live bet"""
+    try:
+        offer = live_betting_service.get_cash_out_offer(bet_id, current_user["id"])
+        
+        if not offer:
+            raise HTTPException(status_code=404, detail="Bet not found or cash out not available")
+        
+        return {
+            "status": "success",
+            "offer": offer
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting cash out offer: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get cash out offer")
+
+@app.post("/api/live-bets/cash-out")
+async def execute_cash_out(
+    request: CashOutRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Execute cash out for a live bet"""
+    try:
+        # Get current offer first
+        offer = live_betting_service.get_cash_out_offer(request.bet_id, current_user["id"])
+        
+        if not offer or not offer.is_available:
+            raise HTTPException(status_code=400, detail="Cash out not available")
+        
+        # Use current offer amount if not specified
+        accept_amount = request.accept_amount or offer.current_cash_out_value
+        
+        result = live_betting_service.execute_cash_out(
+            request.bet_id, 
+            current_user["id"], 
+            accept_amount
+        )
+        
+        if result["success"]:
+            # Notify via WebSocket
+            await manager.send_personal_message(
+                {
+                    "type": "cash_out_executed",
+                    "bet_id": request.bet_id,
+                    "amount": result["cash_out_amount"],
+                    "profit_loss": result["profit_loss"],
+                    "timestamp": datetime.now().isoformat()
+                },
+                current_user["id"]
+            )
+            
+            return {
+                "status": "success",
+                "cash_out_amount": result["cash_out_amount"],
+                "profit_loss": result["profit_loss"],
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error executing cash out: {e}")
+        raise HTTPException(status_code=500, detail="Failed to execute cash out")
+
+@app.get("/api/live-bets/markets")
+async def get_live_betting_markets(
+    sport: Optional[str] = None
+):
+    """Get available live betting markets with real sports data (public endpoint)"""
+    try:
+        print(f"Live betting markets endpoint called with sport: {sport}")
+        markets = await live_betting_service.get_live_betting_markets(sport)
+        print(f"Service returned {len(markets)} markets")
+        
+        return {
+            "status": "success",
+            "count": len(markets),
+            "markets": markets
+        }
+        
+    except Exception as e:
+        print(f"Exception in live betting endpoint: {e}")
+        logger.error(f"Error getting live markets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get live markets")
+
+@app.get("/api/live-bets/active")
+async def get_user_live_bets(
+    include_settled: bool = False,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get user's active live bets"""
+    try:
+        bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled)
+        
+        return {
+            "status": "success",
+            "count": len(bets),
+            "bets": bets
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting user live bets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get live bets")
+
+@app.get("/api/live-bets/history/{bet_id}")
+async def get_live_bet_details(
+    bet_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Get detailed history of a live bet including cash out info"""
+    try:
+        bet = live_betting_service.live_bets.get(bet_id)
+        
+        if not bet or bet.user_id != current_user["id"]:
+            raise HTTPException(status_code=404, detail="Bet not found")
+        
+        # Get cash out history if applicable
+        cash_out_history = None
+        for history in live_betting_service.cash_out_history:
+            if history.bet_id == bet_id:
+                cash_out_history = history
+                break
+        
+        return {
+            "status": "success",
+            "bet": bet,
+            "cash_out_history": cash_out_history
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting live bet details: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get bet details")
+
+@app.post("/api/live-bets/simulate")
+async def start_live_betting_simulation(
+    current_user: dict = Depends(get_current_user)
+):
+    """Start live betting simulation for testing (requires authentication)"""
+    try:
+        await live_betting_simulator.start_simulation()
+        
+        return {
+            "status": "success",
+            "message": "Live betting simulation started",
+            "info": "Simulating 2 live games with dynamic odds and scores"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error starting simulation: {e}")
+        raise HTTPException(status_code=500, detail="Failed to start simulation")
+
+@app.post("/api/live-bets/simulate/stop")
+async def stop_live_betting_simulation(
+    current_user: dict = Depends(get_current_user)
+):
+    """Stop live betting simulation"""
+    try:
+        await live_betting_simulator.stop_simulation()
+        
+        return {
+            "status": "success",
+            "message": "Live betting simulation stopped"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error stopping simulation: {e}")
+        raise HTTPException(status_code=500, detail="Failed to stop simulation")
 
 # YetAI Bets API endpoints (Admin-created best bets)
 async def get_current_user_from_auth(credentials: HTTPAuthorizationCredentials = Depends(security)):

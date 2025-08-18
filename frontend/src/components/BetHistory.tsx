@@ -18,6 +18,7 @@ import {
   RefreshCw,
   Layers,
   AlertCircle,
+  Activity,
   Wifi,
   WifiOff,
   X,
@@ -85,6 +86,7 @@ const BetHistory: React.FC = () => {
   const { user, token } = useAuth();
   const { isConnected } = useWebSocket();
   const [bets, setBets] = useState<Bet[]>([]);
+  const [liveBets, setLiveBets] = useState<any[]>([]);
   const [stats, setStats] = useState<BetStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -98,6 +100,7 @@ const BetHistory: React.FC = () => {
   useEffect(() => {
     if (user && token) {
       fetchBetHistory();
+      fetchLiveBets();
       fetchBetStats();
     }
   }, [user, token, filterStatus, filterBetType]);
@@ -125,6 +128,17 @@ const BetHistory: React.FC = () => {
       console.error('Error fetching bet history:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchLiveBets = async () => {
+    try {
+      const response = await apiClient.get('/api/live-bets/active?include_settled=true', token);
+      if (response.status === 'success') {
+        setLiveBets(response.bets || []);
+      }
+    } catch (error) {
+      console.error('Error fetching live bets:', error);
     }
   };
 
@@ -177,6 +191,10 @@ const BetHistory: React.FC = () => {
         return <XCircle className="w-5 h-5 text-red-600" />;
       case 'pending':
         return <Clock className="w-5 h-5 text-yellow-600" />;
+      case 'live':
+        return <Activity className="w-5 h-5 text-green-500" />;
+      case 'cashed_out':
+        return <DollarSign className="w-5 h-5 text-blue-600" />;
       case 'cancelled':
         return <XCircle className="w-5 h-5 text-gray-600" />;
       default:
@@ -192,6 +210,10 @@ const BetHistory: React.FC = () => {
         return 'bg-red-100 text-red-800';
       case 'pending':
         return 'bg-yellow-100 text-yellow-800';
+      case 'live':
+        return 'bg-green-100 text-green-800';
+      case 'cashed_out':
+        return 'bg-blue-100 text-blue-800';
       case 'cancelled':
         return 'bg-gray-100 text-gray-800';
       default:
@@ -214,13 +236,52 @@ const BetHistory: React.FC = () => {
     return roundedOdds > 0 ? `+${roundedOdds}` : `${roundedOdds}`;
   };
 
-  const filteredBets = bets.filter(bet => {
+  // Convert live bets to the same format as regular bets for display
+  const normalizedLiveBets = liveBets.map(liveBet => ({
+    id: liveBet.id,
+    user_id: liveBet.user_id,
+    game_id: liveBet.game_id,
+    bet_type: `live_${liveBet.bet_type}`, // Mark as live bet
+    selection: liveBet.selection,
+    odds: liveBet.original_odds,
+    amount: liveBet.amount,
+    potential_win: liveBet.potential_win,
+    status: liveBet.status,
+    placed_at: liveBet.placed_at,
+    settled_at: liveBet.settled_at,
+    result_amount: liveBet.result_amount,
+    parlay_id: null,
+    // Additional live bet fields for display
+    current_odds: liveBet.current_odds,
+    cash_out_value: liveBet.cash_out_value,
+    cash_out_available: liveBet.cash_out_available
+  }));
+
+  // Combine regular bets and live bets
+  const allBets = [...bets, ...normalizedLiveBets];
+
+  const filteredBets = allBets.filter(bet => {
+    // Status filter
+    if (filterStatus !== 'all' && bet.status !== filterStatus) {
+      return false;
+    }
+    
+    // Bet type filter (handle live bet prefixes)
+    if (filterBetType !== 'all') {
+      const betType = bet.bet_type.replace('live_', '');
+      if (betType !== filterBetType) {
+        return false;
+      }
+    }
+    
+    // Search filter
     if (searchTerm) {
       return bet.selection.toLowerCase().includes(searchTerm.toLowerCase()) ||
              bet.bet_type.toLowerCase().includes(searchTerm.toLowerCase());
     }
+    
     return true;
-  });
+  }).sort((a, b) => new Date(b.placed_at).getTime() - new Date(a.placed_at).getTime());
 
   const StatCard: React.FC<{
     title: string;
@@ -404,8 +465,14 @@ const BetHistory: React.FC = () => {
                           {bet.status.charAt(0).toUpperCase() + bet.status.slice(1)}
                         </span>
                         <span className="text-sm text-gray-500 capitalize">
-                          {bet.bet_type}
+                          {bet.bet_type.replace('live_', '')}
                         </span>
+                        {bet.bet_type.startsWith('live_') && (
+                          <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs font-medium flex items-center space-x-1">
+                            <Activity className="w-3 h-3" />
+                            <span>Live</span>
+                          </span>
+                        )}
                         {bet.bet_type === 'parlay' && (
                           <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium flex items-center space-x-1">
                             <Layers className="w-3 h-3" />
