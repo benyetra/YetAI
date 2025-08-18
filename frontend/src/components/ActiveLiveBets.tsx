@@ -53,6 +53,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
   const { token } = useAuth();
   const { addNotification } = useNotifications();
   const [bets, setBets] = useState<LiveBet[]>([]);
+  const [pendingBets, setPendingBets] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [cashingOut, setCashingOut] = useState<string | null>(null);
   const [cashOutOffers, setCashOutOffers] = useState<{[key: string]: CashOutOffer}>({});
@@ -62,10 +63,12 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
 
   useEffect(() => {
     loadBets();
+    loadPendingBets();
     
     // Set up auto-refresh every 10 seconds for active bets
     const interval = setInterval(() => {
       loadBets();
+      loadPendingBets();
       refreshCashOutOffers();
     }, 10000);
     setRefreshInterval(interval);
@@ -92,6 +95,21 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
       }
     } catch (error) {
       console.error('Failed to load active bets:', error);
+    }
+  };
+
+  const loadPendingBets = async () => {
+    try {
+      const response = await apiClient.post('/api/bets/history', {
+        status: 'pending',
+        limit: 50
+      }, token);
+      
+      if (response.status === 'success') {
+        setPendingBets(response.bets || []);
+      }
+    } catch (error) {
+      console.error('Failed to load pending bets:', error);
     } finally {
       setLoading(false);
     }
@@ -141,6 +159,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
         
         // Reload bets
         await loadBets();
+        await loadPendingBets();
         if (onUpdate) onUpdate();
       }
     } catch (error: any) {
@@ -188,6 +207,22 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
     return 'text-gray-600';
   };
 
+  const formatPendingBetTitle = (bet: any) => {
+    if (bet.home_team && bet.away_team) {
+      const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
+      if (bet.bet_type === 'moneyline') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} to Win (${gameInfo})`;
+      } else if (bet.bet_type === 'spread') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} Spread (${gameInfo})`;
+      } else if (bet.bet_type === 'total') {
+        return `${bet.selection.toUpperCase()} (${gameInfo})`;
+      }
+    }
+    return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -196,12 +231,12 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
     );
   }
 
-  if (bets.length === 0) {
+  if (bets.length === 0 && pendingBets.length === 0) {
     return (
       <div className="text-center py-12">
         <DollarSign className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Active Live Bets</h3>
-        <p className="text-gray-600">Place a live bet to see it here</p>
+        <h3 className="text-lg font-semibold text-gray-900 mb-2">No Active Bets</h3>
+        <p className="text-gray-600">Place a bet to see it here</p>
       </div>
     );
   }
@@ -209,6 +244,75 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
   return (
     <>
       <div className="space-y-4">
+        {/* Pending Regular Bets */}
+        {pendingBets.map(bet => (
+          <div
+            key={bet.id}
+            className="bg-white rounded-lg border border-gray-200 overflow-hidden"
+          >
+            <div className="p-6">
+              <div className="flex items-start justify-between mb-4">
+                <div className="flex items-center space-x-3">
+                  <Clock className="w-5 h-5 text-yellow-500" />
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="font-semibold text-gray-900">
+                        {formatPendingBetTitle(bet)}
+                      </span>
+                      <span className="text-sm text-gray-600">
+                        @ {formatOdds(bet.odds)}
+                      </span>
+                    </div>
+                    <div className="text-sm text-gray-600 mt-1">
+                      Placed: {new Date(bet.placed_at).toLocaleString()}
+                    </div>
+                    {bet.sport && (
+                      <div className="text-xs text-gray-500 mt-1">
+                        {bet.sport} • Upcoming Game
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-right">
+                  <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
+                    Pending
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <div className="text-sm text-gray-600">Bet Amount</div>
+                  <div className="font-semibold">${bet.amount.toFixed(2)}</div>
+                </div>
+                
+                <div>
+                  <div className="text-sm text-gray-600">Potential Win</div>
+                  <div className="font-semibold text-green-600">
+                    ${bet.potential_win.toFixed(2)}
+                  </div>
+                </div>
+                
+                {bet.commence_time && (
+                  <div>
+                    <div className="text-sm text-gray-600">Game Time</div>
+                    <div className="font-semibold text-sm">
+                      {new Date(bet.commence_time).toLocaleDateString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        ))}
+
+        {/* Live Bets */}
         {bets.map(bet => {
           const offer = cashOutOffers[bet.id];
           const isActive = bet.status === 'active';

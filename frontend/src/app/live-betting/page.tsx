@@ -13,6 +13,7 @@ export default function LiveBettingPage() {
   const { isAuthenticated, loading, token } = useAuth();
   const { addNotification } = useNotifications();
   const [activeTab, setActiveTab] = useState('markets');
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [stats, setStats] = useState({
     activeBets: 0,
     totalCashedOut: 0,
@@ -28,26 +29,39 @@ export default function LiveBettingPage() {
 
   const loadStats = async () => {
     try {
-      // Load user's live betting stats
+      // Load user's live betting stats and pending regular bets
       const activeBetsResponse = await apiClient.get('/api/live-bets/active', token);
+      const pendingBetsResponse = await apiClient.post('/api/bets/history', { status: 'pending', limit: 50 }, token);
       const marketsResponse = await apiClient.get('/api/live-bets/markets', token);
       
       if (activeBetsResponse.status === 'success') {
-        const activeBets = activeBetsResponse.bets || [];
-        const potentialWins = activeBets.reduce((sum: number, bet: any) => 
+        const activeLiveBets = activeBetsResponse.bets || [];
+        const pendingRegularBets = pendingBetsResponse.status === 'success' ? pendingBetsResponse.bets || [] : [];
+        
+        const totalActiveBets = activeLiveBets.length + pendingRegularBets.length;
+        const livePotentialWins = activeLiveBets.reduce((sum: number, bet: any) => 
           sum + (bet.current_potential_win || bet.potential_win || 0), 0
+        );
+        const pendingPotentialWins = pendingRegularBets.reduce((sum: number, bet: any) => 
+          sum + (bet.potential_win || 0), 0
         );
         
         setStats({
-          activeBets: activeBets.length,
-          totalCashedOut: activeBets.filter((b: any) => b.status === 'cashed_out').length,
-          potentialWins,
+          activeBets: totalActiveBets,
+          totalCashedOut: activeLiveBets.filter((b: any) => b.status === 'cashed_out').length,
+          potentialWins: livePotentialWins + pendingPotentialWins,
           liveGames: marketsResponse.count || 0
         });
       }
     } catch (error) {
       console.error('Failed to load live betting stats:', error);
     }
+  };
+
+  const handleBetPlaced = () => {
+    // Refresh stats and trigger refresh of ActiveLiveBets component
+    loadStats();
+    setRefreshTrigger(prev => prev + 1);
   };
 
   if (loading) {
@@ -175,9 +189,9 @@ export default function LiveBettingPage() {
           {/* Tab Content */}
           <div className="p-6">
             {activeTab === 'markets' ? (
-              <LiveBettingDashboard onBetPlaced={loadStats} />
+              <LiveBettingDashboard onBetPlaced={handleBetPlaced} />
             ) : (
-              <ActiveLiveBets onUpdate={loadStats} />
+              <ActiveLiveBets onUpdate={handleBetPlaced} key={refreshTrigger} />
             )}
           </div>
         </div>

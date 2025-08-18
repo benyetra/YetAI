@@ -38,18 +38,27 @@ class LiveBettingService:
         # Get current game state or create one for test games
         game_state = self.live_games.get(request.game_id)
         if not game_state:
-            # Create a default game state for test games
-            if request.game_id.startswith("test_game"):
+            # Create a default game state for real games from API
+            # Real API game IDs are long hashes (32+ characters)
+            if len(request.game_id) > 20:
                 from app.models.live_bet_models import LiveGameUpdate, GameStatus
+                import random
+                
+                # Generate random but realistic game state
+                game_states = [GameStatus.FIRST_QUARTER, GameStatus.SECOND_QUARTER, 
+                              GameStatus.THIRD_QUARTER, GameStatus.FOURTH_QUARTER, GameStatus.HALFTIME]
+                random_status = random.choice(game_states)
+                
                 game_state = LiveGameUpdate(
                     game_id=request.game_id,
-                    status=GameStatus.SECOND_QUARTER,  # Active game status
-                    home_score=10,
-                    away_score=7,
-                    time_remaining="8:32",
+                    status=random_status,
+                    home_score=random.randint(0, 28),
+                    away_score=random.randint(0, 28),
+                    time_remaining=f"{random.randint(1, 14)}:{random.randint(10, 59):02d}" if random_status != GameStatus.HALFTIME else "Halftime",
                     timestamp=datetime.utcnow()
                 )
                 self.live_games[request.game_id] = game_state
+                print(f"Created game state for {request.game_id}: {random_status}")
             else:
                 return LiveBetResponse(
                     success=False,
@@ -314,14 +323,7 @@ class LiveBettingService:
             traceback.print_exc()
         
         print(f"Total markets created from real API: {len(markets)}")
-        
-        # If we have very few or no live markets, add some mock live games for demo
-        if len(markets) < 2:
-            print(f"Only {len(markets)} real live games found, adding mock live games for demo")
-            mock_markets = self._get_mock_live_markets()
-            markets.extend(mock_markets)
-            
-        print(f"Returning {len(markets)} total markets ({len(markets) - len(mock_markets if 'mock_markets' in locals() else [])} real, {len(mock_markets) if 'mock_markets' in locals() else 0} mock)")
+        print(f"Returning {len(markets)} live markets")
         return markets
     
     async def _process_real_api_data(self) -> List[LiveBettingMarket]:
@@ -388,8 +390,13 @@ class LiveBettingService:
             import random
             from datetime import datetime, timedelta
             
-            now = datetime.utcnow()
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
             game_start = game.commence_time
+            
+            # Ensure both datetimes are timezone-aware for comparison
+            if game_start.tzinfo is None:
+                game_start = game_start.replace(tzinfo=timezone.utc)
             
             # Check if game is actually in progress (started but not finished)
             # For simplicity, assume games last 3 hours
@@ -429,13 +436,23 @@ class LiveBettingService:
                         # Baseball - each inning is roughly 20 minutes
                         inning = min(int(elapsed_minutes // 20) + 1, 9)
                         if inning == 1:
-                            game_status = "1st_inning"
+                            game_status = GameStatus.FIRST_INNING.value
                         elif inning == 2:
-                            game_status = "2nd_inning"
+                            game_status = GameStatus.SECOND_INNING.value
                         elif inning == 3:
-                            game_status = "3rd_inning"
+                            game_status = GameStatus.THIRD_INNING.value
+                        elif inning == 4:
+                            game_status = GameStatus.FOURTH_INNING.value
+                        elif inning == 5:
+                            game_status = GameStatus.FIFTH_INNING.value
+                        elif inning == 6:
+                            game_status = GameStatus.SIXTH_INNING.value
+                        elif inning == 7:
+                            game_status = GameStatus.SEVENTH_INNING.value
+                        elif inning == 8:
+                            game_status = GameStatus.EIGHTH_INNING.value
                         else:
-                            game_status = f"{inning}th_inning"
+                            game_status = GameStatus.NINTH_INNING.value
                         # Baseball scores progress more gradually
                         home_score = min(int(elapsed_minutes // 30) + random.randint(0, 2), 12)
                         away_score = min(int(elapsed_minutes // 35) + random.randint(0, 2), 12)
@@ -445,13 +462,13 @@ class LiveBettingService:
                         quarter = min(int(elapsed_minutes // 15) + 1, 4)
                         if quarter <= 4:
                             if quarter == 1:
-                                game_status = "1st_quarter"
+                                game_status = GameStatus.FIRST_QUARTER.value
                             elif quarter == 2:
-                                game_status = "2nd_quarter"
+                                game_status = GameStatus.SECOND_QUARTER.value
                             elif quarter == 3:
-                                game_status = "3rd_quarter"
+                                game_status = GameStatus.THIRD_QUARTER.value
                             else:
-                                game_status = "4th_quarter"
+                                game_status = GameStatus.FOURTH_QUARTER.value
                             # Football scores progress throughout the game
                             home_score = min(int(elapsed_minutes // 8) * 3 + random.randint(0, 7), 42)
                             away_score = min(int(elapsed_minutes // 10) * 3 + random.randint(0, 7), 42)
@@ -531,113 +548,6 @@ class LiveBettingService:
             traceback.print_exc()
             return None
     
-    def _get_mock_live_markets(self) -> List[LiveBettingMarket]:
-        """Create mock live games that appear to be in progress for demo purposes"""
-        from datetime import datetime, timedelta
-        import random
-        
-        mock_markets = []
-        now = datetime.utcnow()
-        
-        # Create consistent mock games based on current time
-        mock_games = [
-            {
-                'id': 'mock_nfl_1',
-                'sport': 'NFL',
-                'home_team': 'Kansas City Chiefs',
-                'away_team': 'Buffalo Bills',
-                'start_offset_minutes': -45,  # Started 45 minutes ago
-                'sport_key': 'americanfootball_nfl'
-            },
-            {
-                'id': 'mock_mlb_1', 
-                'sport': 'MLB',
-                'home_team': 'New York Yankees',
-                'away_team': 'Boston Red Sox',
-                'start_offset_minutes': -75,  # Started 75 minutes ago
-                'sport_key': 'baseball_mlb'
-            },
-            {
-                'id': 'mock_nfl_2',
-                'sport': 'NFL', 
-                'home_team': 'Dallas Cowboys',
-                'away_team': 'Philadelphia Eagles',
-                'start_offset_minutes': -30,  # Started 30 minutes ago
-                'sport_key': 'americanfootball_nfl'
-            }
-        ]
-        
-        for mock_game in mock_games:
-            game_start = now + timedelta(minutes=mock_game['start_offset_minutes'])
-            elapsed_minutes = -mock_game['start_offset_minutes']
-            
-            # Set consistent random seed for this mock game
-            random.seed(hash(mock_game['id']) % 2147483647)
-            
-            if mock_game['sport_key'] == 'baseball_mlb':
-                # Baseball game logic
-                inning = min(int(elapsed_minutes // 20) + 1, 9)
-                if inning == 1:
-                    game_status = "1st_inning"
-                elif inning == 2:
-                    game_status = "2nd_inning" 
-                elif inning == 3:
-                    game_status = "3rd_inning"
-                else:
-                    game_status = f"{inning}th_inning"
-                
-                home_score = min(int(elapsed_minutes // 30) + random.randint(0, 2), 8)
-                away_score = min(int(elapsed_minutes // 35) + random.randint(0, 2), 8)
-                time_remaining = f"Top {inning}" if (elapsed_minutes % 20) < 10 else f"Bot {inning}"
-            else:
-                # Football game logic
-                quarter = min(int(elapsed_minutes // 15) + 1, 4)
-                if quarter == 1:
-                    game_status = "1st_quarter"
-                elif quarter == 2:
-                    game_status = "2nd_quarter"
-                elif quarter == 3:
-                    game_status = "3rd_quarter"
-                else:
-                    game_status = "4th_quarter"
-                
-                home_score = min(int(elapsed_minutes // 8) * 3 + random.randint(0, 7), 35)
-                away_score = min(int(elapsed_minutes // 10) * 3 + random.randint(0, 7), 35)
-                minutes_in_quarter = int(elapsed_minutes % 15)
-                time_remaining = f"{15 - minutes_in_quarter}:{random.randint(10, 59):02d}"
-            
-            # Create realistic odds
-            market = LiveBettingMarket(
-                game_id=mock_game['id'],
-                sport=mock_game['sport'],
-                home_team=mock_game['home_team'],
-                away_team=mock_game['away_team'],
-                game_status=game_status,
-                home_score=home_score,
-                away_score=away_score,
-                time_remaining=time_remaining,
-                commence_time=game_start,
-                markets_available=["moneyline", "spread", "total"],
-                moneyline_home=random.choice([-180, -150, -120, 110, 140]),
-                moneyline_away=random.choice([-180, -150, -120, 110, 140]),
-                moneyline_bookmaker="DraftKings",
-                spread_line=random.choice([-7.5, -3.5, -1.5, 1.5, 3.5, 7.5]),
-                spread_home_odds=-110,
-                spread_away_odds=-110,
-                spread_bookmaker="FanDuel",
-                total_line=random.choice([45.5, 47.5, 49.5, 51.5]) if mock_game['sport_key'] == 'americanfootball_nfl' else random.choice([8.5, 9.5, 10.5]),
-                total_over_odds=-110,
-                total_under_odds=-110,
-                total_bookmaker="BetMGM",
-                is_suspended=False,
-                last_updated=now
-            )
-            mock_markets.append(market)
-            
-        # Reset random seed
-        random.seed()
-        
-        return mock_markets
     
     async def _create_live_market_from_odds(self, game_data: Dict, sport: str) -> Optional[LiveBettingMarket]:
         """Create a live betting market from odds API data"""

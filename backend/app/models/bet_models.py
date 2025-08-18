@@ -23,6 +23,11 @@ class PlaceBetRequest(BaseModel):
     selection: str
     odds: float
     amount: float = Field(gt=0, le=10000)
+    # Optional game details for better bet history display
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
+    commence_time: Optional[datetime] = None
 
 class ParlayLeg(BaseModel):
     game_id: str
@@ -48,6 +53,11 @@ class BetResponse(BaseModel):
     settled_at: Optional[datetime]
     result_amount: Optional[float]
     parlay_id: Optional[str]
+    # Additional game details for better display
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
+    commence_time: Optional[datetime] = None
 
 class BetHistoryQuery(BaseModel):
     status: Optional[BetStatus] = None

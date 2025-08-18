@@ -51,6 +51,11 @@ class BetService:
                 placed_at=datetime.utcnow(),
                 settled_at=None,
                 result_amount=None,
+                # Include game details for better display
+                home_team=bet_data.home_team,
+                away_team=bet_data.away_team,
+                sport=bet_data.sport,
+                commence_time=bet_data.commence_time,
                 parlay_id=None
             )
             

@@ -30,6 +30,14 @@ class GameStatus(str, Enum):
     SECOND_PERIOD = "2nd_period"
     THIRD_PERIOD = "3rd_period"
     FIRST_INNING = "1st_inning"
+    SECOND_INNING = "2nd_inning"
+    THIRD_INNING = "3rd_inning"
+    FOURTH_INNING = "4th_inning"
+    FIFTH_INNING = "5th_inning"
+    SIXTH_INNING = "6th_inning"
+    SEVENTH_INNING = "7th_inning"
+    EIGHTH_INNING = "8th_inning"
+    NINTH_INNING = "9th_inning"
     # Add more as needed
 
 class LiveOddsUpdate(BaseModel):

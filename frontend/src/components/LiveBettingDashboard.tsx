@@ -121,10 +121,78 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
         : await sportsAPI.getOdds(selectedSport);
       
       if (response.status === 'success') {
-        setUpcomingGames(response.games || []);
+        const games = response.games || [];
+        setUpcomingGames(games);
+      } else {
+        console.error('Upcoming games API error:', response);
+        setUpcomingGames([]); // Clear games on error
       }
     } catch (error) {
       console.error('Failed to load upcoming games:', error);
+    }
+  };
+
+  const placeUpcomingBet = async (
+    game: UpcomingGame,
+    betType: string,
+    selection: string,
+    odds: number
+  ) => {
+    if (!token) {
+      addNotification({
+        type: 'error',
+        title: 'Authentication Required',
+        message: 'Please log in to place bets',
+        priority: 'high'
+      });
+      return;
+    }
+
+    const betKey = `${game.id}-${betType}-${selection}`;
+    setPlacingBet(betKey);
+
+    try {
+      // Use regular bet placement API for upcoming games
+      const response = await apiClient.post('/api/bets/place', {
+        game_id: game.id,
+        bet_type: betType,
+        selection,
+        odds,
+        amount: parseFloat(betAmount),
+        // Include game details for better bet history display
+        home_team: game.home_team,
+        away_team: game.away_team,
+        sport: game.sport_title || game.sport_key,
+        commence_time: game.commence_time
+      }, token);
+
+      if (response.status === 'success') {
+        addNotification({
+          type: 'success',
+          title: 'Bet Placed!',
+          message: `$${betAmount} ${betType} bet on ${game.away_team} @ ${game.home_team}`,
+          priority: 'high'
+        });
+        
+        if (onBetPlaced) onBetPlaced();
+      } else {
+        // Handle API error response
+        addNotification({
+          type: 'error',
+          title: 'Bet Failed',
+          message: response.detail || response.message || 'Failed to place bet',
+          priority: 'high'
+        });
+      }
+    } catch (error: any) {
+      addNotification({
+        type: 'error',
+        title: 'Bet Failed',
+        message: error.detail || 'Failed to place bet',
+        priority: 'high'
+      });
+    } finally {
+      setPlacingBet(null);
     }
   };
 
@@ -651,7 +719,11 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                           Moneyline
                         </h4>
                         <div className="space-y-2">
-                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          <button
+                            onClick={() => awayMoneyline.odds && placeUpcomingBet(game, 'moneyline', 'away', awayMoneyline.odds)}
+                            disabled={!awayMoneyline.odds || placingBet === `${game.id}-moneyline-away`}
+                            className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
                             <span className="font-medium text-gray-900">{game.away_team}</span>
                             <div className="text-right">
                               <div className="font-bold text-purple-600">
@@ -661,8 +733,12 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                                 <div className="text-xs text-gray-500">{awayMoneyline.bookmaker}</div>
                               )}
                             </div>
-                          </div>
-                          <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                          </button>
+                          <button
+                            onClick={() => homeMoneyline.odds && placeUpcomingBet(game, 'moneyline', 'home', homeMoneyline.odds)}
+                            disabled={!homeMoneyline.odds || placingBet === `${game.id}-moneyline-home`}
+                            className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
                             <span className="font-medium text-gray-900">{game.home_team}</span>
                             <div className="text-right">
                               <div className="font-bold text-purple-600">
@@ -672,7 +748,7 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                                 <div className="text-xs text-gray-500">{homeMoneyline.bookmaker}</div>
                               )}
                             </div>
-                          </div>
+                          </button>
                         </div>
                       </div>
 
@@ -684,22 +760,30 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                             Spread
                           </h4>
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <button
+                              onClick={() => placeUpcomingBet(game, 'spread', 'away', -110)}
+                              disabled={placingBet === `${game.id}-spread-away`}
+                              className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <span className="font-medium text-gray-900">
                                 {game.away_team} {formatSpread(-spreadLine)}
                               </span>
                               <div className="font-bold text-purple-600">
                                 {formatOdds(-110)}
                               </div>
-                            </div>
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            </button>
+                            <button
+                              onClick={() => placeUpcomingBet(game, 'spread', 'home', -110)}
+                              disabled={placingBet === `${game.id}-spread-home`}
+                              className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <span className="font-medium text-gray-900">
                                 {game.home_team} {formatSpread(spreadLine)}
                               </span>
                               <div className="font-bold text-purple-600">
                                 {formatOdds(-110)}
                               </div>
-                            </div>
+                            </button>
                           </div>
                         </div>
                       )}
@@ -712,22 +796,30 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                             Total
                           </h4>
                           <div className="space-y-2">
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            <button
+                              onClick={() => placeUpcomingBet(game, 'total', 'over', -110)}
+                              disabled={placingBet === `${game.id}-total-over`}
+                              className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <span className="font-medium text-gray-900">
                                 Over {formatTotal(totalLine)}
                               </span>
                               <div className="font-bold text-purple-600">
                                 {formatOdds(-110)}
                               </div>
-                            </div>
-                            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                            </button>
+                            <button
+                              onClick={() => placeUpcomingBet(game, 'total', 'under', -110)}
+                              disabled={placingBet === `${game.id}-total-under`}
+                              className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
                               <span className="font-medium text-gray-900">
                                 Under {formatTotal(totalLine)}
                               </span>
                               <div className="font-bold text-purple-600">
                                 {formatOdds(-110)}
                               </div>
-                            </div>
+                            </button>
                           </div>
                         </div>
                       )}

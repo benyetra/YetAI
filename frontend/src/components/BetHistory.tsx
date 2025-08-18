@@ -42,6 +42,11 @@ interface Bet {
   settled_at: string | null;
   result_amount: number | null;
   parlay_id: string | null;
+  // Additional game details for better display
+  home_team?: string;
+  away_team?: string;
+  sport?: string;
+  commence_time?: string;
 }
 
 interface BetStats {
@@ -234,6 +239,46 @@ const BetHistory: React.FC = () => {
   const formatOdds = (odds: number) => {
     const roundedOdds = Math.round(odds);
     return roundedOdds > 0 ? `+${roundedOdds}` : `${roundedOdds}`;
+  };
+
+  const formatBetTitle = (bet: Bet) => {
+    // If we have team information, show a proper game description
+    if (bet.home_team && bet.away_team) {
+      const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
+      
+      if (bet.bet_type === 'moneyline') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} to Win (${gameInfo})`;
+      } else if (bet.bet_type === 'spread') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} Spread (${gameInfo})`;
+      } else if (bet.bet_type === 'total') {
+        return `${bet.selection.toUpperCase()} (${gameInfo})`;
+      }
+    }
+    
+    // Fallback to generic description
+    return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
+  };
+
+  const formatBetSubtitle = (bet: Bet) => {
+    const parts = [];
+    
+    if (bet.sport) {
+      parts.push(bet.sport);
+    }
+    
+    if (bet.commence_time) {
+      const gameTime = new Date(bet.commence_time).toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      parts.push(gameTime);
+    }
+    
+    return parts.join(' • ');
   };
 
   // Convert live bets to the same format as regular bets for display
@@ -483,8 +528,12 @@ const BetHistory: React.FC = () => {
                       </div>
                       
                       <h3 className="text-lg font-medium text-gray-900 mb-1">
-                        {bet.selection}
+                        {formatBetTitle(bet)}
                       </h3>
+                      
+                      {formatBetSubtitle(bet) && (
+                        <p className="text-sm text-gray-500 mb-2">{formatBetSubtitle(bet)}</p>
+                      )}
                       
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
                         <span>Odds: {formatOdds(bet.odds)}</span>
@@ -533,7 +582,7 @@ const BetHistory: React.FC = () => {
             <button
               onClick={() => {
                 // Implement load more functionality
-                console.log('Load more bets');
+                // TODO: Add load more functionality
               }}
               className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
             >
