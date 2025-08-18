@@ -7,8 +7,9 @@ import { useNotifications } from './NotificationProvider';
 import { formatGameStatus } from '@/lib/formatting';
 import { 
   DollarSign, TrendingUp, TrendingDown, AlertCircle, 
-  Clock, CheckCircle, XCircle, RefreshCw
+  Clock, CheckCircle, XCircle, RefreshCw, Share2
 } from 'lucide-react';
+import BetShareModal from './BetShareModal';
 
 interface LiveBet {
   id: string;
@@ -60,6 +61,8 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
   const [showCashOutModal, setShowCashOutModal] = useState(false);
   const [selectedBet, setSelectedBet] = useState<LiveBet | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<NodeJS.Timeout | null>(null);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedBetForShare, setSelectedBetForShare] = useState<any>(null);
 
   useEffect(() => {
     loadBets();
@@ -223,6 +226,16 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
     return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
   };
 
+  const openShareModal = (bet: any) => {
+    setSelectedBetForShare(bet);
+    setShareModalOpen(true);
+  };
+
+  const closeShareModal = () => {
+    setSelectedBetForShare(null);
+    setShareModalOpen(false);
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
@@ -275,6 +288,15 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
                 </div>
                 
                 <div className="text-right">
+                  <div className="flex items-center justify-end space-x-2 mb-2">
+                    <button
+                      onClick={() => openShareModal(bet)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Share this bet"
+                    >
+                      <Share2 className="w-4 h-4" />
+                    </button>
+                  </div>
                   <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded-full text-xs font-medium">
                     Pending
                   </span>
@@ -341,16 +363,26 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
                     </div>
                   </div>
                   
-                  {isActive && bet.cash_out_available && offer && (
+                  <div className="flex items-start space-x-2">
                     <button
-                      onClick={() => openCashOutModal(bet)}
-                      disabled={cashingOut === bet.id}
-                      className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 flex items-center space-x-2"
+                      onClick={() => openShareModal(bet)}
+                      className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Share this bet"
                     >
-                      <DollarSign className="w-4 h-4" />
-                      <span>Cash Out ${offer.current_cash_out_value.toFixed(2)}</span>
+                      <Share2 className="w-4 h-4" />
                     </button>
-                  )}
+                    
+                    {isActive && bet.cash_out_available && offer && (
+                      <button
+                        onClick={() => openCashOutModal(bet)}
+                        disabled={cashingOut === bet.id}
+                        className="px-4 py-2 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all disabled:opacity-50 flex items-center space-x-2"
+                      >
+                        <DollarSign className="w-4 h-4" />
+                        <span>Cash Out ${offer.current_cash_out_value.toFixed(2)}</span>
+                      </button>
+                    )}
+                  </div>
                   
                   {bet.status === 'cashed_out' && bet.cashed_out_amount && (
                     <div className="text-right">
@@ -497,6 +529,15 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Bet Share Modal */}
+      {selectedBetForShare && (
+        <BetShareModal
+          bet={selectedBetForShare}
+          isOpen={shareModalOpen}
+          onClose={closeShareModal}
+        />
       )}
     </>
   );

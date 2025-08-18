@@ -18,6 +18,7 @@ from app.services.bet_service import bet_service
 from app.services.yetai_bets_service import yetai_bets_service
 from app.services.live_betting_service import live_betting_service
 from app.services.live_betting_simulator import live_betting_simulator
+from app.services.bet_sharing_service import bet_sharing_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
 from app.services.cache_service import cache_service
@@ -2405,6 +2406,102 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
         logger.error(f"WebSocket error for user {user_id}: {e}")
     finally:
         manager.disconnect(user_id)
+
+# Bet Sharing Endpoints
+@app.post("/api/bets/share")
+async def create_shareable_bet_link(
+    request: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Create a shareable link for a bet"""
+    bet_id = request.get("bet_id")
+    
+    if not bet_id:
+        raise HTTPException(status_code=400, detail="Bet ID is required")
+    
+    # First try to get from bet history
+    bet_history_result = await bet_service.get_bet_history(current_user["id"], BetHistoryQuery(limit=100))
+    
+    if not bet_history_result["success"]:
+        raise HTTPException(status_code=400, detail="Failed to retrieve bet data")
+    
+    # Find the specific bet
+    bet_data = None
+    for bet in bet_history_result["bets"]:
+        if bet["id"] == bet_id:
+            bet_data = bet
+            break
+    
+    # If not found in regular bets, check parlays
+    if not bet_data:
+        parlay_result = await bet_service.get_user_parlays(current_user["id"], limit=100)
+        if parlay_result["success"]:
+            for parlay in parlay_result["parlays"]:
+                if parlay["id"] == bet_id:
+                    bet_data = parlay
+                    # Ensure bet_type is set for parlays
+                    bet_data["bet_type"] = "parlay"
+                    break
+    
+    if not bet_data:
+        raise HTTPException(status_code=404, detail="Bet not found")
+    
+    result = await bet_sharing_service.create_shareable_link(current_user["id"], bet_data)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "share_id": result["share_id"],
+            "share_url": result["share_url"],
+            "expires_at": result["expires_at"],
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.get("/api/share/bet/{share_id}")
+async def get_shared_bet(share_id: str):
+    """Get shared bet data (public endpoint)"""
+    result = await bet_sharing_service.get_shared_bet(share_id)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "shared_bet": result["shared_bet"],
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=404, detail=result["error"])
+
+@app.get("/api/bets/shared")
+async def get_user_shared_bets(current_user: dict = Depends(get_current_user)):
+    """Get all shared bets created by the current user"""
+    result = await bet_sharing_service.get_user_shared_bets(current_user["id"])
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "shared_bets": result["shared_bets"],
+            "total": result["total"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
+
+@app.delete("/api/bets/shared/{share_id}")
+async def delete_shared_bet(
+    share_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete a shared bet link"""
+    result = await bet_sharing_service.delete_shared_bet(current_user["id"], share_id)
+    
+    if result["success"]:
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    else:
+        raise HTTPException(status_code=400, detail=result["error"])
 
 @app.get("/api/websocket/stats")
 async def get_websocket_stats():

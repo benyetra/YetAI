@@ -22,11 +22,13 @@ import {
   Wifi,
   WifiOff,
   X,
-  Eye
+  Eye,
+  Share2
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { apiClient } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
+import BetShareModal from './BetShareModal';
 
 interface Bet {
   id: string;
@@ -101,6 +103,8 @@ const BetHistory: React.FC = () => {
   const [showStats, setShowStats] = useState(true);
   const [selectedParlay, setSelectedParlay] = useState<ParlayDetails | null>(null);
   const [parlayModalLoading, setParlayModalLoading] = useState(false);
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedBetForShare, setSelectedBetForShare] = useState<Bet | null>(null);
 
   useEffect(() => {
     if (user && token) {
@@ -186,6 +190,16 @@ const BetHistory: React.FC = () => {
 
   const closeModal = () => {
     setSelectedParlay(null);
+  };
+
+  const openShareModal = (bet: Bet) => {
+    setSelectedBetForShare(bet);
+    setShareModalOpen(true);
+  };
+
+  const closeShareModal = () => {
+    setSelectedBetForShare(null);
+    setShareModalOpen(false);
   };
 
   const getStatusIcon = (status: string) => {
@@ -555,6 +569,15 @@ const BetHistory: React.FC = () => {
                     </div>
                     
                     <div className="text-right">
+                      <div className="flex items-center justify-end space-x-2 mb-2">
+                        <button
+                          onClick={() => openShareModal(bet)}
+                          className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                          title="Share this bet"
+                        >
+                          <Share2 className="w-4 h-4" />
+                        </button>
+                      </div>
                       <p className="text-lg font-semibold text-gray-900">
                         ${bet.amount.toFixed(2)}
                       </p>
@@ -597,12 +620,27 @@ const BetHistory: React.FC = () => {
             <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
               <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
                 <h2 className="text-2xl font-bold text-gray-900">Parlay Details</h2>
-                <button
-                  onClick={closeModal}
-                  className="text-gray-400 hover:text-gray-600"
-                >
-                  <X className="w-6 h-6" />
-                </button>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() => openShareModal({
+                      ...selectedParlay,
+                      bet_type: 'parlay',
+                      selection: `Parlay (${selectedParlay.leg_count} legs)`,
+                      odds: selectedParlay.total_odds,
+                      legs: selectedParlay.legs
+                    })}
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="Share this parlay"
+                  >
+                    <Share2 className="w-5 h-5" />
+                  </button>
+                  <button
+                    onClick={closeModal}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
               </div>
               
               {parlayModalLoading ? (
@@ -704,6 +742,15 @@ const BetHistory: React.FC = () => {
               )}
             </div>
           </div>
+        )}
+
+        {/* Bet Share Modal */}
+        {selectedBetForShare && (
+          <BetShareModal
+            bet={selectedBetForShare}
+            isOpen={shareModalOpen}
+            onClose={closeShareModal}
+          />
         )}
       </div>
     </div>

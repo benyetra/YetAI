@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Layers, Clock, CheckCircle, XCircle, DollarSign, Calendar } from 'lucide-react';
+import { Layers, Clock, CheckCircle, XCircle, DollarSign, Calendar, Share2 } from 'lucide-react';
+import BetShareModal from './BetShareModal';
 
 interface ParlayLeg {
   id: string;
@@ -34,6 +35,8 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [filter, setFilter] = useState<string>('all');
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [selectedParlayForShare, setSelectedParlayForShare] = useState<any>(null);
 
   const fetchParlays = async () => {
     try {
@@ -92,6 +95,29 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
 
   const formatOdds = (odds: number) => {
     return odds > 0 ? `+${odds}` : `${odds}`;
+  };
+
+  const openShareModal = (parlay: Parlay) => {
+    // Convert parlay to bet format for sharing
+    const betForShare = {
+      id: parlay.id,
+      bet_type: 'parlay',
+      selection: `Parlay (${parlay.leg_count} legs)`,
+      odds: parlay.total_odds,
+      amount: parlay.amount,
+      potential_win: parlay.potential_win,
+      status: parlay.status,
+      placed_at: parlay.placed_at,
+      result_amount: parlay.result_amount,
+      legs: parlay.legs
+    };
+    setSelectedParlayForShare(betForShare);
+    setShareModalOpen(true);
+  };
+
+  const closeShareModal = () => {
+    setSelectedParlayForShare(null);
+    setShareModalOpen(false);
   };
 
   const filteredParlays = parlays.filter(parlay => {
@@ -168,10 +194,22 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
                     {parlay.leg_count} Leg Parlay
                   </span>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm text-gray-500">
-                    <Calendar className="w-4 h-4 inline mr-1" />
-                    {new Date(parlay.placed_at).toLocaleDateString()}
+                <div className="flex items-center space-x-3">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      openShareModal(parlay);
+                    }}
+                    className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="Share this parlay"
+                  >
+                    <Share2 className="w-4 h-4" />
+                  </button>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-500">
+                      <Calendar className="w-4 h-4 inline mr-1" />
+                      {new Date(parlay.placed_at).toLocaleDateString()}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -242,6 +280,15 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Bet Share Modal */}
+      {selectedParlayForShare && (
+        <BetShareModal
+          bet={selectedParlayForShare}
+          isOpen={shareModalOpen}
+          onClose={closeShareModal}
+        />
       )}
     </div>
   );
