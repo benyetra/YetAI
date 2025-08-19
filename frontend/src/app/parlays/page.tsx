@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import ParlayBuilder from '@/components/ParlayBuilder';
 import ParlayList from '@/components/ParlayList';
+import { sportsAPI } from '@/lib/api';
 import { Layers, TrendingUp, DollarSign, Plus } from 'lucide-react';
 
 export default function ParlaysPage() {
@@ -13,6 +14,8 @@ export default function ParlaysPage() {
   const router = useRouter();
   const [showParlayBuilder, setShowParlayBuilder] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [availableGames, setAvailableGames] = useState([]);
+  const [gamesLoading, setGamesLoading] = useState(false);
   const [stats, setStats] = useState({
     activeParlays: 0,
     winRate: 0,
@@ -28,6 +31,7 @@ export default function ParlaysPage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchParlayStats();
+      fetchAvailableGames();
     }
   }, [isAuthenticated, refreshTrigger]);
 
@@ -62,6 +66,83 @@ export default function ParlaysPage() {
     }
   };
 
+  const fetchAvailableGames = async () => {
+    setGamesLoading(true);
+    try {
+      const result = await sportsAPI.getPopularOdds();
+      if (result.status === 'success' && result.games) {
+        const transformedGames = transformApiGamesToParlayFormat(result.games);
+        setAvailableGames(transformedGames);
+      }
+    } catch (error) {
+      console.error('Failed to fetch available games:', error);
+    } finally {
+      setGamesLoading(false);
+    }
+  };
+
+  const transformApiGamesToParlayFormat = (apiGames: any[]) => {
+    return apiGames.map((game: any) => {
+      // Find the best bookmaker (FanDuel, DraftKings, BetMGM are preferred)
+      const preferredBookmakers = ['fanduel', 'draftkings', 'betmgm'];
+      let bestBookmaker = game.bookmakers?.find((b: any) => preferredBookmakers.includes(b.key));
+      if (!bestBookmaker && game.bookmakers?.length > 0) {
+        bestBookmaker = game.bookmakers[0];
+      }
+
+      if (!bestBookmaker) return null;
+
+      // Extract odds data
+      const moneylineMarket = bestBookmaker.markets?.find((m: any) => m.key === 'h2h');
+      const spreadMarket = bestBookmaker.markets?.find((m: any) => m.key === 'spreads');
+      const totalMarket = bestBookmaker.markets?.find((m: any) => m.key === 'totals');
+
+      const odds = {
+        moneyline: {},
+        spread: {},
+        total: {}
+      };
+
+      // Parse moneyline odds
+      if (moneylineMarket?.outcomes) {
+        const homeOutcome = moneylineMarket.outcomes.find((o: any) => o.name === game.home_team);
+        const awayOutcome = moneylineMarket.outcomes.find((o: any) => o.name === game.away_team);
+        odds.moneyline = {
+          [game.home_team.toLowerCase().replace(/\s+/g, '')]: homeOutcome?.price || 0,
+          [game.away_team.toLowerCase().replace(/\s+/g, '')]: awayOutcome?.price || 0
+        };
+      }
+
+      // Parse spread odds
+      if (spreadMarket?.outcomes) {
+        const homeOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.home_team);
+        const awayOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.away_team);
+        odds.spread = {
+          [game.home_team.toLowerCase().replace(/\s+/g, '')]: `${homeOutcome?.point >= 0 ? '+' : ''}${homeOutcome?.point || 0} (${homeOutcome?.price || -110})`,
+          [game.away_team.toLowerCase().replace(/\s+/g, '')]: `${awayOutcome?.point >= 0 ? '+' : ''}${awayOutcome?.point || 0} (${awayOutcome?.price || -110})`
+        };
+      }
+
+      // Parse total odds
+      if (totalMarket?.outcomes) {
+        const overOutcome = totalMarket.outcomes.find((o: any) => o.name === 'Over');
+        const underOutcome = totalMarket.outcomes.find((o: any) => o.name === 'Under');
+        odds.total = {
+          over: `O ${overOutcome?.point || 0} (${overOutcome?.price || -110})`,
+          under: `U ${underOutcome?.point || 0} (${underOutcome?.price || -110})`
+        };
+      }
+
+      return {
+        id: game.id,
+        sport: game.sport_title || 'Unknown',
+        teams: [game.away_team, game.home_team],
+        gameTime: game.commence_time,
+        odds
+      };
+    }).filter(Boolean);
+  };
+
   const handleParlayCreated = () => {
     setShowParlayBuilder(false);
     setRefreshTrigger(prev => prev + 1);
@@ -88,11 +169,12 @@ export default function ParlaysPage() {
           <h1 className="text-3xl font-bold text-gray-900">Parlays</h1>
           <button 
             onClick={() => setShowParlayBuilder(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+            disabled={gamesLoading}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
             style={{ color: 'white', backgroundColor: '#2563eb' }}
           >
             <Plus className="w-4 h-4 mr-2" />
-            Create Parlay
+            {gamesLoading ? 'Loading Games...' : 'Create Parlay'}
           </button>
         </div>
 
@@ -136,6 +218,7 @@ export default function ParlaysPage() {
           isOpen={showParlayBuilder}
           onClose={() => setShowParlayBuilder(false)}
           onParlayCreated={handleParlayCreated}
+          availableGames={availableGames}
         />
       )}
     </Layout>
