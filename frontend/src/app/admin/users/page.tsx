@@ -25,6 +25,7 @@ import {
 interface User {
   id: number;
   email: string;
+  username: string;
   first_name: string;
   last_name: string;
   subscription_tier: string;
@@ -52,6 +53,7 @@ export default function AdminUsersPage() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newUser, setNewUser] = useState({
     email: '',
+    username: '',
     password: 'password123',
     first_name: '',
     last_name: '',
@@ -101,6 +103,7 @@ export default function AdminUsersPage() {
     try {
       const updateData: any = {
         email: editingUser.email,
+        username: editingUser.username,
         first_name: editingUser.first_name,
         last_name: editingUser.last_name,
         subscription_tier: editingUser.subscription_tier,
@@ -150,8 +153,19 @@ export default function AdminUsersPage() {
   };
 
   const handleCreateUser = async () => {
-    if (!newUser.email) {
-      setMessage({ type: 'error', text: 'Email is required' });
+    if (!newUser.email || !newUser.username) {
+      setMessage({ type: 'error', text: 'Email and username are required' });
+      return;
+    }
+
+    // Validate username format
+    if (!/^[a-zA-Z0-9_-]+$/.test(newUser.username)) {
+      setMessage({ type: 'error', text: 'Username can only contain letters, numbers, underscores, and hyphens' });
+      return;
+    }
+
+    if (newUser.username.length < 3) {
+      setMessage({ type: 'error', text: 'Username must be at least 3 characters long' });
       return;
     }
     
@@ -163,6 +177,7 @@ export default function AdminUsersPage() {
         setShowCreateModal(false);
         setNewUser({
           email: '',
+          username: '',
           password: 'password123',
           first_name: '',
           last_name: '',
@@ -252,7 +267,7 @@ export default function AdminUsersPage() {
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
               <input
                 type="text"
-                placeholder="Search by name or email..."
+                placeholder="Search by name, email, or username..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -290,7 +305,8 @@ export default function AdminUsersPage() {
                         <div className="text-sm font-medium text-gray-900">
                           {user.first_name} {user.last_name}
                         </div>
-                        <div className="text-sm text-gray-500">{user.email}</div>
+                        <div className="text-sm text-gray-500">@{user.username}</div>
+                        <div className="text-sm text-gray-400">{user.email}</div>
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -391,6 +407,20 @@ export default function AdminUsersPage() {
                     onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                  <input
+                    type="text"
+                    value={editingUser.username}
+                    onChange={(e) => setEditingUser({ ...editingUser, username: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="username123"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    3+ characters, letters, numbers, underscores and hyphens only
+                  </p>
                 </div>
 
                 <div>
@@ -574,6 +604,20 @@ export default function AdminUsersPage() {
                 </div>
 
                 <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Username *</label>
+                  <input
+                    type="text"
+                    value={newUser.username}
+                    onChange={(e) => setNewUser({ ...newUser, username: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    placeholder="username123"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    3+ characters, letters, numbers, underscores and hyphens only
+                  </p>
+                </div>
+
+                <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
                   <input
                     type="text"
@@ -647,7 +691,7 @@ export default function AdminUsersPage() {
                 </button>
                 <button
                   onClick={handleCreateUser}
-                  disabled={isLoading || !newUser.email}
+                  disabled={isLoading || !newUser.email || !newUser.username}
                   className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50"
                 >
                   <Users className="w-4 h-4 inline mr-2" />

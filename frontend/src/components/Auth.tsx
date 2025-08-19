@@ -67,9 +67,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const login = async (emailOrUsername: string, password: string) => {
     try {
-      const response = await authAPI.post('/api/auth/login', { email, password });
+      const response = await authAPI.post('/api/auth/login', { email_or_username: emailOrUsername, password });
       
       if (response.status === 'success') {
         const { user: userData, access_token } = response;
@@ -89,10 +89,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const signup = async (email: string, password: string, firstName = '', lastName = '') => {
+  const signup = async (email: string, username: string, password: string, firstName = '', lastName = '') => {
     try {
       const response = await authAPI.post('/api/auth/signup', {
         email,
+        username,
         password,
         first_name: firstName,
         last_name: lastName
@@ -503,7 +504,7 @@ export function UserMenu() {
         </div>
         <div className="hidden sm:block text-left">
           <p className="text-sm font-medium text-gray-900">
-            {user.first_name || user.email}
+            {user.first_name || user.username}
           </p>
           <div className="flex items-center space-x-1">
             {getSubscriptionBadge(user.subscription_tier)}
@@ -521,7 +522,7 @@ export function UserMenu() {
               <p className="text-sm font-medium text-gray-900">
                 {user.first_name} {user.last_name}
               </p>
-              <p className="text-xs text-gray-500">{user.email}</p>
+              <p className="text-xs text-gray-500">@{user.username}</p>
             </div>
             
             <button className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 flex items-center">

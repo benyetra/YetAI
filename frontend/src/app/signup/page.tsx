@@ -13,6 +13,7 @@ export default function SignUpPage() {
     firstName: '',
     lastName: '',
     email: '',
+    username: '',
     password: '',
     confirmPassword: '',
     agreeToTerms: false
@@ -40,6 +41,18 @@ export default function SignUpPage() {
     }
     if (!formData.email.trim()) {
       setError('Email is required');
+      return false;
+    }
+    if (!formData.username.trim()) {
+      setError('Username is required');
+      return false;
+    }
+    if (formData.username.length < 3) {
+      setError('Username must be at least 3 characters long');
+      return false;
+    }
+    if (!/^[a-zA-Z0-9_-]+$/.test(formData.username)) {
+      setError('Username can only contain letters, numbers, underscores, and hyphens');
       return false;
     }
     if (formData.password.length < 6) {
@@ -70,6 +83,7 @@ export default function SignUpPage() {
     try {
       const result = await signup(
         formData.email,
+        formData.username,
         formData.password,
         formData.firstName,
         formData.lastName
@@ -208,6 +222,28 @@ export default function SignUpPage() {
                   placeholder="john@example.com"
                 />
               </div>
+            </div>
+
+            {/* Username Field */}
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                Username
+              </label>
+              <div className="relative">
+                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                <input
+                  id="username"
+                  name="username"
+                  type="text"
+                  autoComplete="username"
+                  required
+                  value={formData.username}
+                  onChange={(e) => handleInputChange('username', e.target.value)}
+                  className="pl-10 pr-4 py-3 w-full border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors"
+                  placeholder="john_doe"
+                />
+              </div>
+              <p className="mt-1 text-xs text-gray-500">3+ characters, letters, numbers, underscore and hyphen only</p>
             </div>
 
             {/* Password Fields */}

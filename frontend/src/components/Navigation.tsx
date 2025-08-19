@@ -157,7 +157,7 @@ export function Sidebar() {
                 <Avatar user={user} size="md" className="flex-shrink-0" />
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-semibold text-gray-900 truncate">
-                    {user.first_name || user.email}
+                    {user.first_name || user.username}
                   </p>
                   <div className="flex items-center space-x-1">
                     {user.subscription_tier !== 'free' && (

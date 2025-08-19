@@ -38,6 +38,7 @@ export default function ProfilePage() {
   
   const [profileData, setProfileData] = useState({
     email: '',
+    username: '',
     first_name: '',
     last_name: '',
     current_password: '',
@@ -153,6 +154,7 @@ export default function ProfilePage() {
       setProfileData(prev => ({
         ...prev,
         email: user.email || '',
+        username: user.username || '',
         first_name: user.first_name || '',
         last_name: user.last_name || ''
       }));
@@ -298,8 +300,18 @@ export default function ProfilePage() {
   };
 
   const validateForm = () => {
-    if (!profileData.email || !profileData.first_name) {
-      setMessage({ type: 'error', text: 'Email and first name are required' });
+    if (!profileData.email || !profileData.first_name || !profileData.username) {
+      setMessage({ type: 'error', text: 'Email, username, and first name are required' });
+      return false;
+    }
+
+    if (profileData.username.length < 3) {
+      setMessage({ type: 'error', text: 'Username must be at least 3 characters long' });
+      return false;
+    }
+
+    if (!/^[a-zA-Z0-9_-]+$/.test(profileData.username)) {
+      setMessage({ type: 'error', text: 'Username can only contain letters, numbers, underscores, and hyphens' });
       return false;
     }
 
@@ -331,6 +343,7 @@ export default function ProfilePage() {
     try {
       const updateData: any = {
         email: profileData.email,
+        username: profileData.username,
         first_name: profileData.first_name,
         last_name: profileData.last_name
       };
@@ -778,6 +791,27 @@ export default function ProfilePage() {
                         <span>Email verification will be required after saving</span>
                       </p>
                     )}
+                  </div>
+
+                  {/* Username */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-900 mb-3">
+                      Username *
+                    </label>
+                    <div className="relative">
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <input
+                        type="text"
+                        value={profileData.username}
+                        onChange={(e) => handleInputChange('username', e.target.value)}
+                        className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        placeholder="john_doe"
+                        required
+                      />
+                    </div>
+                    <p className="text-xs text-gray-500 mt-1">
+                      3+ characters, letters, numbers, underscores and hyphens only
+                    </p>
                   </div>
 
                   {/* Password Section */}

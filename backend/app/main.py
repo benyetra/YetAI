@@ -52,12 +52,13 @@ security = HTTPBearer()
 # Auth Request/Response models
 class UserSignup(BaseModel):
     email: EmailStr
+    username: str
     password: str
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 
 class UserLogin(BaseModel):
-    email: EmailStr
+    email_or_username: str
     password: str
 
 class UserPreferences(BaseModel):
@@ -66,6 +67,7 @@ class UserPreferences(BaseModel):
     notification_settings: Optional[dict] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
+    username: Optional[str] = None
 
 class SubscriptionUpgrade(BaseModel):
     tier: str  # "pro" or "elite"
@@ -1171,6 +1173,7 @@ async def signup(user_data: UserSignup):
     try:
         result = await auth_service.create_user(
             email=user_data.email,
+            username=user_data.username,
             password=user_data.password,
             first_name=user_data.first_name,
             last_name=user_data.last_name
@@ -1195,7 +1198,7 @@ async def login(user_data: UserLogin):
     """Authenticate user and return access token"""
     try:
         result = await auth_service.authenticate_user(
-            email=user_data.email,
+            email_or_username=user_data.email_or_username,
             password=user_data.password
         )
         

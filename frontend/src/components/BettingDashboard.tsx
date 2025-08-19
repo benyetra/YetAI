@@ -301,7 +301,7 @@ export default function BettingDashboard() {
                 Last updated: {lastUpdated} • {games.length} games • {odds.length} odds
                 {isAuthenticated && user && (
                   <span className="ml-2">
-                    • Welcome back, {user.first_name || user.email}
+                    • Welcome back, {user.first_name || user.username}
                     {user.subscription_tier !== 'free' && (
                       <Crown className="w-4 h-4 inline ml-1 text-yellow-500" />
                     )}

@@ -26,7 +26,7 @@ export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated, loading } = useAuth();
   const [formData, setFormData] = useState({
-    email: '',
+    emailOrUsername: '',
     password: '',
     rememberMe: false
   });
@@ -51,7 +51,7 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const result = await login(formData.email, formData.password);
+      const result = await login(formData.emailOrUsername, formData.password);
       if (result.success) {
         router.push('/dashboard');
       } else {
@@ -174,7 +174,7 @@ export default function LoginPage() {
               <div className="w-full border-t border-gray-300" />
             </div>
             <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white text-gray-500">or Sign in with Email</span>
+              <span className="px-2 bg-white text-gray-500">or Sign in with Email/Username</span>
             </div>
           </div>
 
@@ -186,23 +186,23 @@ export default function LoginPage() {
               </div>
             )}
 
-            {/* Email Field */}
+            {/* Email or Username Field */}
             <div>
-              <label htmlFor="email" className="block text-sm font-medium text-gray-700 mb-2">
-                Email address
+              <label htmlFor="emailOrUsername" className="block text-sm font-medium text-gray-700 mb-2">
+                Email or Username
               </label>
               <div className="relative">
                 <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
                 <input
-                  id="email"
-                  name="email"
-                  type="email"
-                  autoComplete="email"
+                  id="emailOrUsername"
+                  name="emailOrUsername"
+                  type="text"
+                  autoComplete="username email"
                   required
-                  value={formData.email}
-                  onChange={(e) => handleInputChange('email', e.target.value)}
+                  value={formData.emailOrUsername}
+                  onChange={(e) => handleInputChange('emailOrUsername', e.target.value)}
                   className="pl-10 pr-4 py-3 w-full border border-gray-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors"
-                  placeholder="john@example.com"
+                  placeholder="john@example.com or johndoe"
                 />
               </div>
             </div>

@@ -8,6 +8,7 @@ interface AvatarProps {
   user?: {
     id?: number;
     email?: string;
+    username?: string;
     first_name?: string;
     last_name?: string;
   };
@@ -128,7 +129,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     return (
       <img
         src={avatarUrl}
-        alt={`${user?.first_name || user?.email || 'User'} avatar`}
+        alt={`${user?.first_name || user?.username || 'User'} avatar`}
         className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
         onError={handleImageError}
       />
@@ -140,7 +141,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     return (
       <img
         src={generateDefaultAvatar()}
-        alt={`${user.first_name || user.email} avatar`}
+        alt={`${user.first_name || user.username || user.email} avatar`}
         className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
       />
     );

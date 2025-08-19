@@ -16,6 +16,7 @@ from app.models.database_models import User, UserSession
 from app.services.totp_service import totp_service
 from app.services.email_service import email_service
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -39,6 +40,28 @@ class AuthServiceDB:
         """Verify a password against its hash"""
         return pwd_context.verify(plain_password, hashed_password)
     
+    def validate_username(self, username: str) -> Dict[str, str]:
+        """Validate username format and availability"""
+        # Check format
+        if not username:
+            return {"valid": False, "error": "Username is required"}
+        
+        if len(username) < 3:
+            return {"valid": False, "error": "Username must be at least 3 characters long"}
+        
+        if len(username) > 50:
+            return {"valid": False, "error": "Username must be less than 50 characters long"}
+        
+        # Check for valid characters (alphanumeric, underscore, hyphen)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', username):
+            return {"valid": False, "error": "Username can only contain letters, numbers, underscores, and hyphens"}
+        
+        # Check if username starts with alphanumeric
+        if not re.match(r'^[a-zA-Z0-9]', username):
+            return {"valid": False, "error": "Username must start with a letter or number"}
+        
+        return {"valid": True}
+    
     def generate_token(self, user_id: int, expires_delta: timedelta = None) -> str:
         """Generate a JWT token for user"""
         if expires_delta:
@@ -61,16 +84,26 @@ class AuthServiceDB:
         except jwt.PyJWTError:
             return None
     
-    async def create_user(self, email: str, password: str, first_name: str = None, 
+    async def create_user(self, email: str, password: str, username: str, first_name: str = None, 
                          last_name: str = None) -> Dict:
         """Create a new user account"""
         try:
+            # Validate username format
+            username_validation = self.validate_username(username)
+            if not username_validation["valid"]:
+                return {"success": False, "error": username_validation["error"]}
+            
             db = SessionLocal()
             try:
-                # Check if user already exists
-                existing_user = db.query(User).filter(User.email == email).first()
+                # Check if user already exists by email or username
+                existing_user = db.query(User).filter(
+                    or_(User.email == email, User.username == username)
+                ).first()
                 if existing_user:
-                    return {"success": False, "error": "Email already registered"}
+                    if existing_user.email == email:
+                        return {"success": False, "error": "Email already registered"}
+                    else:
+                        return {"success": False, "error": "Username already taken"}
                 
                 # Create new user
                 hashed_password = self.hash_password(password)
@@ -78,6 +111,7 @@ class AuthServiceDB:
                 
                 new_user = User(
                     email=email,
+                    username=username,
                     password_hash=hashed_password,
                     first_name=first_name,
                     last_name=last_name,
@@ -114,6 +148,7 @@ class AuthServiceDB:
                     "user": {
                         "id": new_user.id,
                         "email": new_user.email,
+                        "username": new_user.username,
                         "first_name": new_user.first_name,
                         "last_name": new_user.last_name,
                         "subscription_tier": new_user.subscription_tier,
@@ -133,18 +168,21 @@ class AuthServiceDB:
             logger.error(f"Error creating user: {e}")
             return {"success": False, "error": "Failed to create account"}
     
-    async def authenticate_user(self, email: str, password: str) -> Dict:
-        """Authenticate user login"""
+    async def authenticate_user(self, email_or_username: str, password: str) -> Dict:
+        """Authenticate user login with email or username"""
         try:
             db = SessionLocal()
             try:
-                user = db.query(User).filter(User.email == email).first()
+                # Try to find user by email or username
+                user = db.query(User).filter(
+                    or_(User.email == email_or_username, User.username == email_or_username)
+                ).first()
                 
                 if not user:
-                    return {"success": False, "error": "Invalid email or password"}
+                    return {"success": False, "error": "Invalid email/username or password"}
                 
                 if not self.verify_password(password, user.password_hash):
-                    return {"success": False, "error": "Invalid email or password"}
+                    return {"success": False, "error": "Invalid email/username or password"}
                 
                 if not user.is_active:
                     return {"success": False, "error": "Account is deactivated"}
@@ -161,6 +199,7 @@ class AuthServiceDB:
                     "user": {
                         "id": user.id,
                         "email": user.email,
+                        "username": user.username,
                         "first_name": user.first_name,
                         "last_name": user.last_name,
                         "subscription_tier": user.subscription_tier,
@@ -197,6 +236,7 @@ class AuthServiceDB:
                 return {
                     "id": user.id,
                     "email": user.email,
+                    "username": user.username,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
                     "subscription_tier": user.subscription_tier,
@@ -228,6 +268,7 @@ class AuthServiceDB:
                 return {
                     "id": user.id,
                     "email": user.email,
+                    "username": user.username,
                     "first_name": user.first_name,
                     "last_name": user.last_name,
                     "subscription_tier": user.subscription_tier,
@@ -293,6 +334,15 @@ class AuthServiceDB:
                 
                 if "last_name" in preferences:
                     user.last_name = preferences["last_name"]
+                
+                if "username" in preferences:
+                    # Check if username is already taken by another user
+                    existing_user = db.query(User).filter(
+                        and_(User.username == preferences["username"], User.id != user_id)
+                    ).first()
+                    if existing_user:
+                        return {"success": False, "error": "Username already taken"}
+                    user.username = preferences["username"]
                 
                 db.commit()
                 
@@ -371,6 +421,7 @@ class AuthServiceDB:
                 if search:
                     search_filter = or_(
                         User.email.ilike(f"%{search}%"),
+                        User.username.ilike(f"%{search}%"),
                         User.first_name.ilike(f"%{search}%"),
                         User.last_name.ilike(f"%{search}%")
                     )
@@ -382,6 +433,7 @@ class AuthServiceDB:
                     {
                         "id": user.id,
                         "email": user.email,
+                        "username": user.username,
                         "first_name": user.first_name or "",
                         "last_name": user.last_name or "",
                         "subscription_tier": user.subscription_tier,
@@ -408,6 +460,7 @@ class AuthServiceDB:
                 demo_users = [
                     {
                         "email": "demo@example.com",
+                        "username": "demouser",
                         "password": "demo123",
                         "first_name": "Demo",
                         "last_name": "User",
@@ -415,6 +468,7 @@ class AuthServiceDB:
                     },
                     {
                         "email": "pro@example.com", 
+                        "username": "prouser",
                         "password": "pro123",
                         "first_name": "Pro",
                         "last_name": "User",
@@ -422,6 +476,7 @@ class AuthServiceDB:
                     },
                     {
                         "email": "admin@example.com", 
+                        "username": "admin",
                         "password": "admin123",
                         "first_name": "Admin",
                         "last_name": "User",
@@ -439,6 +494,7 @@ class AuthServiceDB:
                         
                         new_user = User(
                             email=user_data["email"],
+                            username=user_data["username"],
                             password_hash=hashed_password,
                             first_name=user_data["first_name"],
                             last_name=user_data["last_name"],
@@ -566,6 +622,71 @@ class AuthServiceDB:
         except Exception as e:
             logger.error(f"Error getting 2FA status: {e}")
             return {"success": False, "error": "Failed to get 2FA status"}
+
+    async def update_user(self, user_id: int, update_data: Dict) -> Optional[Dict]:
+        """Update user information"""
+        try:
+            db = SessionLocal()
+            try:
+                # Get the user
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    return None
+
+                # Update fields if provided
+                if "email" in update_data:
+                    user.email = update_data["email"]
+                
+                if "username" in update_data:
+                    # Validate username format
+                    validation = self.validate_username(update_data["username"])
+                    if not validation["valid"]:
+                        raise ValueError(validation["error"])
+                    
+                    # Check if username is already taken by another user
+                    existing_user = db.query(User).filter(
+                        and_(User.username == update_data["username"], User.id != user_id)
+                    ).first()
+                    if existing_user:
+                        raise ValueError("Username is already taken")
+                    
+                    user.username = update_data["username"]
+                
+                if "first_name" in update_data:
+                    user.first_name = update_data["first_name"]
+                
+                if "last_name" in update_data:
+                    user.last_name = update_data["last_name"]
+                
+                if "password" in update_data:
+                    user.password_hash = self.hash_password(update_data["password"])
+
+                # Commit changes
+                db.commit()
+                db.refresh(user)
+                
+                return {
+                    "id": user.id,
+                    "email": user.email,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "subscription_tier": user.subscription_tier,
+                    "is_verified": user.is_verified,
+                    "is_admin": user.is_admin,
+                    "avatar_url": user.avatar_url,
+                    "avatar_thumbnail": user.avatar_thumbnail
+                }
+                
+            finally:
+                db.close()
+                
+        except ValueError as e:
+            logger.error(f"Validation error updating user {user_id}: {e}")
+            raise e
+        except Exception as e:
+            logger.error(f"Error updating user {user_id}: {e}")
+            return None
 
 # Initialize service
 auth_service_db = AuthServiceDB()
