@@ -693,8 +693,46 @@ CREATE TABLE user_sessions (
 - ✅ Responsive design with mobile-friendly authentication interface
 - ✅ Enhanced user experience with loading states and visual feedback
 
+### Phase 3.19: Real Performance Analytics & Parlay Display Fixes ✅ COMPLETE (August 19, 2025)
+- ✅ **Complete Database-Powered Performance Analytics System**
+  - ✅ Replaced mock performance data with real user betting analytics from PostgreSQL
+  - ✅ Implemented comprehensive `BettingAnalyticsService` with sport-by-sport breakdowns
+  - ✅ Added bet type analysis (moneyline, spread, total) with ROI calculations
+  - ✅ Created performance trend analysis comparing last 7 days vs previous period
+  - ✅ Enhanced analytics with actionable insights and recommendations for users
+  - ✅ Fixed database field references (`placed_at` vs `created_at`) for proper data queries
+  - ✅ Added sport name formatting and bet type name mapping for better UX
+  - ✅ Updated frontend performance page to consume real analytics API
+
+- ✅ **Parlay Leg Display Enhancement**
+  - ✅ Fixed parlay legs showing "Game: nfl-1" instead of actual team matchups
+  - ✅ Enhanced backend ParlayLeg model to capture team information (`home_team`, `away_team`, `sport`)
+  - ✅ Updated parlay creation process to store complete game details for each leg
+  - ✅ Modified frontend ParlayBuilder to include team details in leg data
+  - ✅ Enhanced parlay details display to show "Dallas Cowboys @ Kansas City Chiefs" format
+  - ✅ Added robust datetime parsing and null safety for team information
+  - ✅ Implemented fallback logic for existing parlays without team data
+
+- ✅ **JavaScript Error Resolution**
+  - ✅ Fixed `TypeError: Cannot read properties of undefined (reading 'toUpperCase')` in bet history
+  - ✅ Added comprehensive null checks in `formatBetTitle` and `formatOdds` functions
+  - ✅ Enhanced parlay interface definitions with proper TypeScript typing
+  - ✅ Resolved "NaN odds" display issues with proper odds formatting
+
+- ✅ **Data Integration Improvements**
+  - ✅ Enhanced bet history API to properly join parlay legs with game information
+  - ✅ Updated `_parlay_to_dict` method to fetch missing team data from Game table
+  - ✅ Improved parlay leg creation to prioritize leg data over game record data
+  - ✅ Added comprehensive error handling for datetime parsing and missing data
+
+**Results Achieved:**
+- Performance page now shows real user analytics with sport breakdowns and insights
+- Parlay details display proper team matchups instead of generic game IDs
+- All JavaScript errors resolved with proper null safety
+- Complete data persistence with team information captured at parlay creation time
+
 ---
 
 *Last Updated: August 19, 2025*
-*Version: 2.1*
-*Status: Modern Authentication & Google OAuth Complete - Added beautiful split-screen login/signup pages with complete Google OAuth 2.0 integration. Features both client-side and server-side OAuth flows with production-ready configuration for https://www.yetai.app. Enhanced user experience with glassmorphism design, responsive interface, and comprehensive error handling. OAuth system ready for both development and production deployment.*
+*Version: 2.2*
+*Status: Real Analytics & Parlay Fixes Complete - Implemented comprehensive database-powered performance analytics with sport-by-sport breakdowns and bet type analysis. Fixed parlay leg display to show actual team matchups ("Dallas Cowboys @ Kansas City Chiefs") instead of game IDs. Resolved all JavaScript errors with proper null safety. Enhanced data models to capture complete game information at parlay creation time. Both performance analytics and parlay functionality now fully production-ready.*
