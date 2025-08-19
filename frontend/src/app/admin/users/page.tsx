@@ -19,7 +19,8 @@ import {
   Save,
   AlertCircle,
   Eye,
-  EyeOff
+  EyeOff,
+  Database
 } from 'lucide-react';
 
 interface User {
@@ -210,6 +211,25 @@ export default function AdminUsersPage() {
     }
   };
 
+  const handleDeleteAllBets = async (userId: number, username: string) => {
+    if (!confirm(`Are you sure you want to delete ALL bets for user "${username}"? This action cannot be undone and is intended for testing purposes only.`)) return;
+    
+    setIsLoading(true);
+    try {
+      const response = await apiClient.delete(`/api/admin/users/${userId}/bets`, token);
+      if (response.status === 'success') {
+        setMessage({ 
+          type: 'success', 
+          text: `Successfully deleted ${response.deleted_counts.regular_bets} regular bets, ${response.deleted_counts.live_bets} live bets, ${response.deleted_counts.parlay_bets} parlay bets, and ${response.deleted_counts.yetai_bets} YetAI bets for ${username}` 
+        });
+      }
+    } catch (error: any) {
+      setMessage({ type: 'error', text: error.detail || 'Failed to delete user bets' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -311,12 +331,12 @@ export default function AdminUsersPage() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        user.subscription_tier === 'premium' 
+                        (user.subscription_tier === 'pro' || user.subscription_tier === 'elite')
                           ? 'bg-yellow-100 text-yellow-800' 
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {user.subscription_tier === 'premium' && <Star className="w-3 h-3 mr-1" />}
-                        {user.subscription_tier}
+                        {(user.subscription_tier === 'pro' || user.subscription_tier === 'elite') && <Star className="w-3 h-3 mr-1" />}
+                        {user.subscription_tier === 'pro' ? 'Pro' : user.subscription_tier === 'elite' ? 'Elite' : user.subscription_tier}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
@@ -366,6 +386,14 @@ export default function AdminUsersPage() {
                           title="Reset password"
                         >
                           <Key className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAllBets(user.id, user.username)}
+                          className="text-orange-600 hover:text-orange-900"
+                          title="Delete all bets (testing only)"
+                          disabled={isLoading}
+                        >
+                          <Database className="w-4 h-4" />
                         </button>
                         <button
                           onClick={() => handleDelete(user.id)}
@@ -478,7 +506,8 @@ export default function AdminUsersPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="free">Free</option>
-                    <option value="premium">Premium</option>
+                    <option value="pro">Pro</option>
+                    <option value="elite">Elite</option>
                   </select>
                 </div>
 
@@ -655,7 +684,8 @@ export default function AdminUsersPage() {
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="free">Free</option>
-                    <option value="premium">Premium</option>
+                    <option value="pro">Pro</option>
+                    <option value="elite">Elite</option>
                   </select>
                 </div>
 

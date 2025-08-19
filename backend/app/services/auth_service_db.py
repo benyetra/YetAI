@@ -246,7 +246,9 @@ class AuthServiceDB:
                     "preferred_sports": user.preferred_sports,
                     "notification_settings": user.notification_settings,
                     "avatar_url": user.avatar_url,
-                    "avatar_thumbnail": user.avatar_thumbnail
+                    "avatar_thumbnail": user.avatar_thumbnail,
+                    "totp_enabled": user.totp_enabled,
+                    "backup_codes": user.backup_codes
                 }
                 
             finally:
@@ -278,7 +280,9 @@ class AuthServiceDB:
                     "avatar_thumbnail": user.avatar_thumbnail,
                     "favorite_teams": user.favorite_teams,
                     "preferred_sports": user.preferred_sports,
-                    "notification_settings": user.notification_settings
+                    "notification_settings": user.notification_settings,
+                    "totp_enabled": user.totp_enabled,
+                    "backup_codes": user.backup_codes
                 }
                 
             finally:
@@ -540,14 +544,10 @@ class AuthServiceDB:
                 if not qr_code:
                     return {"success": False, "error": "Failed to generate QR code"}
                 
-                # Store temporary secret (not enabled yet)
-                # Note: In a real implementation, you'd add temp fields to the User model
-                # For now, we'll store in a way that works with current model
-                temp_data = {
-                    "temp_totp_secret": secret,
-                    "temp_backup_codes": backup_codes
-                }
-                # This is a simplified approach - in production you'd want dedicated temp fields
+                # Store temporary secret and backup codes (not enabled yet)
+                user.temp_totp_secret = secret
+                user.temp_backup_codes = backup_codes
+                db.commit()
                 
                 return {
                     "success": True,
@@ -563,7 +563,7 @@ class AuthServiceDB:
             logger.error(f"Error setting up 2FA: {e}")
             return {"success": False, "error": "Failed to setup 2FA"}
 
-    async def enable_2fa(self, user_id: int, token: str, secret: str, backup_codes: List[str]) -> Dict:
+    async def enable_2fa(self, user_id: int, token: str) -> Dict:
         """Enable 2FA after verifying the setup token"""
         try:
             db = SessionLocal()
@@ -575,15 +575,24 @@ class AuthServiceDB:
                 if user.totp_enabled:
                     return {"success": False, "error": "2FA is already enabled"}
                 
+                # Check if we have temp setup data
+                temp_secret = user.temp_totp_secret
+                if not temp_secret:
+                    return {"success": False, "error": "No 2FA setup in progress"}
+                
                 # Verify the token
-                if not totp_service.verify_token(secret, token):
+                if not totp_service.verify_token(temp_secret, token):
                     return {"success": False, "error": "Invalid verification code"}
                 
                 # Enable 2FA
                 user.totp_enabled = True
-                user.totp_secret = secret
-                user.backup_codes = backup_codes
+                user.totp_secret = temp_secret
+                user.backup_codes = user.temp_backup_codes or []
                 user.totp_last_used = datetime.utcnow()
+                
+                # Clear temporary data
+                user.temp_totp_secret = None
+                user.temp_backup_codes = None
                 
                 db.commit()
                 
@@ -626,12 +635,16 @@ class AuthServiceDB:
     async def update_user(self, user_id: int, update_data: Dict) -> Optional[Dict]:
         """Update user information"""
         try:
+            logger.info(f"Attempting to update user {user_id} with data: {update_data}")
             db = SessionLocal()
             try:
                 # Get the user
                 user = db.query(User).filter(User.id == user_id).first()
                 if not user:
+                    logger.warning(f"User with ID {user_id} not found in database")
                     return None
+                
+                logger.info(f"Found user: {user.email} (ID: {user.id})")
 
                 # Update fields if provided
                 if "email" in update_data:
@@ -660,10 +673,33 @@ class AuthServiceDB:
                 
                 if "password" in update_data:
                     user.password_hash = self.hash_password(update_data["password"])
+                
+                if "subscription_tier" in update_data:
+                    # Validate subscription tier
+                    valid_tiers = ["free", "pro", "elite"]
+                    if update_data["subscription_tier"] not in valid_tiers:
+                        raise ValueError(f"Invalid subscription tier. Must be one of: {', '.join(valid_tiers)}")
+                    user.subscription_tier = update_data["subscription_tier"]
+                
+                if "is_admin" in update_data:
+                    user.is_admin = update_data["is_admin"]
+                
+                if "is_verified" in update_data:
+                    user.is_verified = update_data["is_verified"]
+                
+                if "totp_enabled" in update_data:
+                    user.totp_enabled = update_data["totp_enabled"]
+                    if not update_data["totp_enabled"]:
+                        # If disabling 2FA, clear related fields
+                        user.totp_secret = None
+                        user.backup_codes = None
+                        user.totp_last_used = None
 
                 # Commit changes
                 db.commit()
                 db.refresh(user)
+                
+                logger.info(f"Successfully updated user {user_id}. New values: is_admin={user.is_admin}, subscription_tier={user.subscription_tier}")
                 
                 return {
                     "id": user.id,
@@ -674,8 +710,11 @@ class AuthServiceDB:
                     "subscription_tier": user.subscription_tier,
                     "is_verified": user.is_verified,
                     "is_admin": user.is_admin,
+                    "totp_enabled": user.totp_enabled,
                     "avatar_url": user.avatar_url,
-                    "avatar_thumbnail": user.avatar_thumbnail
+                    "avatar_thumbnail": user.avatar_thumbnail,
+                    "created_at": user.created_at.isoformat() if user.created_at else None,
+                    "last_login": user.last_login.isoformat() if user.last_login else None
                 }
                 
             finally:

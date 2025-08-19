@@ -25,10 +25,16 @@ from app.services.cache_service import cache_service
 from app.services.scheduler_service import scheduler_service
 from app.services.google_oauth_service import google_oauth_service
 from app.services.betting_analytics_service import betting_analytics_service
+from app.services.bet_verification_service import bet_verification_service
+from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cleanup_scheduler
+from app.services.fantasy_service import FantasyService
+from app.services.sleeper_fantasy_service import SleeperFantasyService
 from app.models.bet_models import *
 from app.models.live_bet_models import *
+from app.models.fantasy_models import FantasyPlatform
 from app.core.config import settings
 from app.core.database import init_db, check_db_connection
+from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
@@ -557,6 +563,244 @@ async def get_weather_impact():
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching weather impact: {str(e)}")
+
+# Fantasy League Integration Endpoints
+from app.core.database import get_db
+
+# Global fantasy service instance
+fantasy_service_instance = None
+
+def get_fantasy_service(db: Session = Depends(get_db)) -> FantasyService:
+    """Get fantasy service with registered platforms"""
+    global fantasy_service_instance
+    
+    if fantasy_service_instance is None:
+        fantasy_service_instance = FantasyService(db)
+        # Register platform interfaces
+        fantasy_service_instance.register_platform(FantasyPlatform.SLEEPER, SleeperFantasyService())
+    
+    # Update database session (since it changes per request)
+    fantasy_service_instance.db = db
+    return fantasy_service_instance
+
+class ConnectAccountRequest(BaseModel):
+    platform: FantasyPlatform
+    credentials: dict
+
+@app.post("/api/fantasy/connect")
+async def connect_fantasy_account(
+    request: ConnectAccountRequest,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Connect a user's fantasy sports account"""
+    try:
+        result = await fantasy_service.connect_user_account(
+            user_id=current_user.id,
+            platform=request.platform,
+            credentials=request.credentials
+        )
+        
+        if result["success"]:
+            return {
+                "success": True,
+                "message": f"Successfully connected {request.platform} account",
+                "fantasy_user_id": result["fantasy_user_id"]
+            }
+        else:
+            return {
+                "success": False,
+                "message": "Failed to connect account",
+                "error": result.get("error")
+            }
+            
+    except Exception as e:
+        logger.error(f"Error connecting fantasy account: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/accounts")
+async def get_fantasy_accounts(
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get all connected fantasy accounts for the user"""
+    try:
+        accounts = fantasy_service.get_user_fantasy_accounts(current_user.id)
+        
+        return {
+            "success": True,
+            "accounts": [
+                {
+                    "id": account["id"],
+                    "platform": account["platform"],
+                    "username": account["username"],
+                    "last_sync": account["last_sync"].isoformat() if account["last_sync"] else None,
+                    "league_count": account["league_count"]
+                }
+                for account in accounts
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting fantasy accounts: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/leagues")
+async def get_fantasy_leagues(
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get all fantasy leagues for the user"""
+    try:
+        leagues = fantasy_service.get_user_leagues(current_user.id)
+        
+        return {
+            "success": True,
+            "leagues": [
+                {
+                    "id": league["id"],
+                    "name": league["name"],
+                    "platform": league["platform"],
+                    "season": league["season"],
+                    "team_count": league["team_count"],
+                    "scoring_type": league["scoring_type"],
+                    "last_sync": league["last_sync"].isoformat() if league["last_sync"] else None,
+                    "user_team": league["user_team"]
+                }
+                for league in leagues
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting fantasy leagues: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/fantasy/sync/{fantasy_user_id}")
+async def sync_fantasy_leagues(
+    fantasy_user_id: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Manually sync leagues for a fantasy account"""
+    try:
+        # Verify the fantasy user belongs to current user
+        accounts = fantasy_service.get_user_fantasy_accounts(current_user.id)
+        if not any(acc["id"] == fantasy_user_id for acc in accounts):
+            raise HTTPException(status_code=403, detail="Fantasy account not found or not owned by user")
+        
+        # Run sync
+        result = await fantasy_service.sync_user_leagues(fantasy_user_id)
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing fantasy leagues: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/fantasy/disconnect/{fantasy_user_id}")
+async def disconnect_fantasy_account(
+    fantasy_user_id: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Disconnect a fantasy sports account"""
+    try:
+        result = fantasy_service.disconnect_fantasy_account(current_user.id, fantasy_user_id)
+        return result
+            
+    except Exception as e:
+        logger.error(f"Error disconnecting fantasy account: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/recommendations/start-sit/{week}")
+async def get_start_sit_recommendations(
+    week: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get start/sit recommendations for the current week"""
+    try:
+        recommendations = await fantasy_service.generate_start_sit_recommendations(
+            current_user.id, week
+        )
+        
+        return {
+            "success": True,
+            "week": week,
+            "recommendations": recommendations
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting start/sit recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/recommendations/waiver-wire/{week}")
+async def get_waiver_wire_recommendations(
+    week: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get waiver wire pickup recommendations"""
+    try:
+        recommendations = await fantasy_service.generate_waiver_wire_recommendations(
+            current_user.id, week
+        )
+        
+        return {
+            "success": True,
+            "week": week,
+            "recommendations": recommendations
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting waiver wire recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+# Test endpoints for Sleeper API
+@app.get("/api/fantasy/test/sleeper/{username}")
+async def test_sleeper_user(username: str):
+    """Test endpoint to verify Sleeper API integration"""
+    try:
+        sleeper_service = SleeperFantasyService()
+        
+        # Test authentication
+        auth_result = await sleeper_service.authenticate_user({"username": username})
+        
+        # Test getting leagues
+        leagues = await sleeper_service.get_user_leagues(auth_result["user_id"])
+        
+        return {
+            "success": True,
+            "user": auth_result,
+            "leagues_count": len(leagues),
+            "leagues": leagues[:3]  # Return first 3 leagues for testing
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing Sleeper integration: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/test/sleeper-trending")
+async def test_sleeper_trending():
+    """Test endpoint for Sleeper trending players"""
+    try:
+        sleeper_service = SleeperFantasyService()
+        
+        # Get trending adds and drops
+        trending_adds = await sleeper_service.get_trending_players("add")
+        trending_drops = await sleeper_service.get_trending_players("drop")
+        
+        return {
+            "success": True,
+            "trending_adds": trending_adds[:10],
+            "trending_drops": trending_drops[:10]
+        }
+        
+    except Exception as e:
+        logger.error(f"Error testing Sleeper trending: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Live Sports Data API endpoints (The Odds API integration)
 @app.get("/api/sports")
@@ -1722,10 +1966,57 @@ async def get_bet_history(
     query: BetHistoryQuery,
     current_user: dict = Depends(get_current_user)
 ):
-    """Get user's bet history"""
+    """Get user's bet history including live bets"""
     result = await bet_service.get_bet_history(current_user["id"], query)
     
     if result["success"]:
+        # Also get live bets from database and format them for bet history
+        live_bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled=True)
+        
+        # Convert live bets to bet history format
+        for live_bet in live_bets:
+            # Create a descriptive title for live bets
+            if live_bet.bet_type == "moneyline":
+                if live_bet.selection == "home":
+                    title = f"{live_bet.home_team} to Win"
+                else:
+                    title = f"{live_bet.away_team} to Win"
+            elif live_bet.bet_type == "spread":
+                if live_bet.selection == "home":
+                    title = f"{live_bet.home_team} Spread"
+                else:
+                    title = f"{live_bet.away_team} Spread"
+            elif live_bet.bet_type == "total":
+                if live_bet.selection == "over":
+                    title = f"Over Total ({live_bet.home_team} vs {live_bet.away_team})"
+                else:
+                    title = f"Under Total ({live_bet.home_team} vs {live_bet.away_team})"
+            else:
+                title = f"{live_bet.bet_type.title()} - {live_bet.selection.title()}"
+            
+            # Add to regular bets list with proper formatting
+            bet_data = {
+                "id": live_bet.id,
+                "bet_type": "Live",
+                "title": title,
+                "status": live_bet.status.title(),
+                "amount": live_bet.amount,
+                "odds": live_bet.original_odds,
+                "potential_win": live_bet.potential_win,
+                "placed_at": live_bet.placed_at.isoformat(),
+                "home_team": live_bet.home_team,
+                "away_team": live_bet.away_team,
+                "sport": live_bet.sport,
+                "current_score": f"{live_bet.current_home_score or 0} - {live_bet.current_away_score or 0}" if live_bet.current_home_score is not None else None,
+                "game_time": live_bet.current_game_status.value if live_bet.current_game_status else None,
+                "selection": live_bet.selection
+            }
+            result["bets"].append(bet_data)
+        
+        # Sort by placed_at date (newest first)
+        result["bets"].sort(key=lambda x: x["placed_at"], reverse=True)
+        result["total"] = len(result["bets"])
+        
         return {
             "status": "success",
             "bets": result["bets"],
@@ -2122,6 +2413,63 @@ async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin
         logger.error(f"Error deleting YetAI bet: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete bet")
 
+@app.delete("/api/admin/users/{user_id}/bets")
+async def delete_all_user_bets(user_id: int, admin_user: dict = Depends(require_admin)):
+    """Delete all bets for a specific user (Admin only - for testing purposes)"""
+    try:
+        # Import database models and session
+        from app.core.database import SessionLocal
+        from app.models.database_models import Bet, LiveBet as LiveBetDB, ParlayBet, YetAIBet
+        
+        deleted_counts = {"regular_bets": 0, "live_bets": 0, "parlay_bets": 0, "yetai_bets": 0}
+        
+        db = SessionLocal()
+        try:
+            # Delete regular bets
+            regular_bets = db.query(Bet).filter(Bet.user_id == user_id).all()
+            regular_count = len(regular_bets)
+            for bet in regular_bets:
+                db.delete(bet)
+            deleted_counts["regular_bets"] = regular_count
+            
+            # Delete live bets
+            live_bets = db.query(LiveBetDB).filter(LiveBetDB.user_id == user_id).all()
+            live_count = len(live_bets)
+            for bet in live_bets:
+                db.delete(bet)
+            deleted_counts["live_bets"] = live_count
+            
+            # Delete parlay bets
+            parlay_bets = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
+            parlay_count = len(parlay_bets)
+            for bet in parlay_bets:
+                db.delete(bet)
+            deleted_counts["parlay_bets"] = parlay_count
+            
+            # Delete YetAI bets
+            yetai_bets = db.query(YetAIBet).filter(YetAIBet.user_id == user_id).all()
+            yetai_count = len(yetai_bets)
+            for bet in yetai_bets:
+                db.delete(bet)
+            deleted_counts["yetai_bets"] = yetai_count
+            
+            db.commit()
+            
+            logger.info(f"Admin {admin_user['id']} deleted all bets for user {user_id}: {deleted_counts}")
+            
+            return {
+                "status": "success",
+                "message": f"Successfully deleted {deleted_counts['regular_bets']} regular bets, {deleted_counts['live_bets']} live bets, {deleted_counts['parlay_bets']} parlay bets, and {deleted_counts['yetai_bets']} YetAI bets for user {user_id}",
+                "deleted_counts": deleted_counts
+            }
+            
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error deleting all bets for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete user bets")
+
 # Admin User Management Endpoints
 class PromoteAdminRequest(BaseModel):
     email: EmailStr
@@ -2429,14 +2777,17 @@ async def update_user(
             if existing_user and existing_user["id"] != user_id:
                 raise HTTPException(status_code=400, detail="Email already in use by another user")
         
+        logger.info(f"Admin {current_user['id']} updating user {user_id} with data: {update_data}")
         updated_user = await auth_service.update_user(user_id, update_data)
         if updated_user:
+            logger.info(f"User {user_id} updated successfully")
             return {
                 "status": "success",
                 "user": updated_user,
                 "message": "User updated successfully"
             }
         else:
+            logger.error(f"User {user_id} not found or update failed")
             raise HTTPException(status_code=404, detail="User not found")
     except HTTPException:
         raise
@@ -2565,7 +2916,19 @@ async def startup_event():
     # Start the scheduler for live sports data updates
     await scheduler_service.start()
     
-    logger.info("WebSocket services, scheduler, and database started")
+    # Start the bet verification scheduler
+    init_scheduler()
+    
+    logger.info("WebSocket services, sports scheduler, bet verification scheduler, and database started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on shutdown"""
+    try:
+        cleanup_scheduler()
+        logger.info("Bet verification scheduler stopped")
+    except Exception as e:
+        logger.error(f"Error during scheduler cleanup: {e}")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -2687,6 +3050,79 @@ async def delete_shared_bet(
         }
     else:
         raise HTTPException(status_code=400, detail=result["error"])
+
+# Bet Verification Endpoints (Admin Only)
+@app.post("/api/admin/bets/verify")
+async def trigger_bet_verification(current_user: dict = Depends(get_current_user)):
+    """Manually trigger bet verification (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = await bet_scheduler.run_verification_now()
+        return {
+            "status": "success" if result.get("success", False) else "error",
+            "data": result
+        }
+    except Exception as e:
+        logger.error(f"Error triggering bet verification: {e}")
+        raise HTTPException(status_code=500, detail=f"Verification failed: {str(e)}")
+
+@app.get("/api/admin/bets/verification/stats")
+async def get_verification_stats(current_user: dict = Depends(get_current_user)):
+    """Get bet verification statistics and scheduler status (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        stats = bet_scheduler.get_stats()
+        return {
+            "status": "success",
+            "data": stats
+        }
+    except Exception as e:
+        logger.error(f"Error getting verification stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get stats: {str(e)}")
+
+@app.post("/api/admin/bets/verification/config")
+async def update_verification_config(
+    config: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update bet verification scheduler configuration (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = bet_scheduler.update_config(config)
+        if result.get("success", False):
+            return {
+                "status": "success",
+                "message": result["message"]
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result.get("error", "Configuration update failed"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating verification config: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update config: {str(e)}")
+
+@app.post("/api/admin/bets/verification/reset-stats")
+async def reset_verification_stats(current_user: dict = Depends(get_current_user)):
+    """Reset bet verification statistics (admin only)"""
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        result = bet_scheduler.reset_stats()
+        return {
+            "status": "success",
+            "message": result["message"]
+        }
+    except Exception as e:
+        logger.error(f"Error resetting verification stats: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to reset stats: {str(e)}")
 
 @app.get("/api/websocket/stats")
 async def get_websocket_stats():
