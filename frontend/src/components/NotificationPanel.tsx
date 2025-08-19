@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { 
   Bell, 
   X, 
@@ -121,6 +122,7 @@ interface NotificationPanelProps {
 }
 
 export const NotificationPanel: React.FC<NotificationPanelProps> = ({ isOpen, onClose }) => {
+  const router = useRouter();
   const { 
     notifications, 
     unreadCount, 
@@ -229,7 +231,13 @@ export const NotificationPanel: React.FC<NotificationPanelProps> = ({ isOpen, on
       {/* Footer */}
       {notifications.length > 0 && (
         <div className="p-3 text-center border-t border-gray-200">
-          <button className="text-sm text-blue-600 hover:text-blue-700">
+          <button 
+            onClick={() => {
+              router.push('/profile');
+              onClose();
+            }}
+            className="text-sm text-blue-600 hover:text-blue-700"
+          >
             View notification settings
           </button>
         </div>

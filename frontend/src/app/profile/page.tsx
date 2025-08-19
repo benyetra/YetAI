@@ -63,7 +63,7 @@ export default function ProfilePage() {
   // Preferences state
   const [preferences, setPreferences] = useState({
     favorite_teams: [] as string[],
-    preferred_sports: ['NFL'] as string[],
+    preferred_sports: ['americanfootball_nfl'] as string[],
     notification_settings: {
       bet_updates: true,
       ai_predictions: true,
@@ -77,7 +77,7 @@ export default function ProfilePage() {
   // App preferences state
   const [appPreferences, setAppPreferences] = useState({
     theme: 'light',
-    default_sport: 'NFL'
+    default_sport: 'americanfootball_nfl'
   });
   
   // 2FA state
@@ -93,6 +93,22 @@ export default function ProfilePage() {
   const [verificationCode, setVerificationCode] = useState('');
   const [setupStep, setSetupStep] = useState(1);
   const [copiedCodes, setCopiedCodes] = useState(false);
+
+  // Data migration helper to normalize sport formats  
+  const normalizeSportKeys = (sports: string[]): string[] => {
+    const sportKeyMap: { [key: string]: string } = {
+      'NFL': 'americanfootball_nfl',
+      'NBA': 'basketball_nba', 
+      'MLB': 'baseball_mlb',
+      'NHL': 'icehockey_nhl',
+      'NCAAB': 'basketball_ncaab',
+      'NCAAF': 'americanfootball_ncaaf',
+      'WNBA': 'basketball_wnba',
+      'EPL': 'soccer_epl'
+    };
+    
+    return sports.map(sport => sportKeyMap[sport] || sport);
+  };
 
   const testNotification = (type: 'bet_won' | 'odds_change' | 'prediction' | 'achievement') => {
     const testNotifications = {
@@ -149,7 +165,7 @@ export default function ProfilePage() {
     if (user && isAuthenticated) {
       try {
         let favoriteTeams = [];
-        let preferredSports = ['NFL'];
+        let preferredSports = ['americanfootball_nfl'];
         let notificationSettings = {};
         
         if (user.favorite_teams) {
@@ -165,12 +181,13 @@ export default function ProfilePage() {
         
         if (user.preferred_sports) {
           try {
-            preferredSports = typeof user.preferred_sports === 'string' 
+            const rawSports = typeof user.preferred_sports === 'string' 
               ? JSON.parse(user.preferred_sports) 
-              : Array.isArray(user.preferred_sports) ? user.preferred_sports : ['NFL'];
+              : Array.isArray(user.preferred_sports) ? user.preferred_sports : ['americanfootball_nfl'];
+            preferredSports = normalizeSportKeys(rawSports);
           } catch (e) {
             console.warn('Error parsing preferred_sports:', e);
-            preferredSports = ['NFL'];
+            preferredSports = ['americanfootball_nfl'];
           }
         }
         
@@ -202,7 +219,7 @@ export default function ProfilePage() {
         console.error('Error setting up user preferences:', error);
         setPreferences({
           favorite_teams: [],
-          preferred_sports: ['NFL'],
+          preferred_sports: ['americanfootball_nfl'],
           notification_settings: {
             bet_updates: true,
             ai_predictions: true,
@@ -216,7 +233,7 @@ export default function ProfilePage() {
       
       try {
         const savedTheme = localStorage.getItem('app_theme') || 'light';
-        const savedDefaultSport = localStorage.getItem('default_sport') || 'NFL';
+        const savedDefaultSport = localStorage.getItem('default_sport') || 'americanfootball_nfl';
         setAppPreferences({
           theme: savedTheme,
           default_sport: savedDefaultSport
@@ -225,7 +242,7 @@ export default function ProfilePage() {
         console.error('Error loading app preferences:', error);
         setAppPreferences({
           theme: 'light',
-          default_sport: 'NFL'
+          default_sport: 'americanfootball_nfl'
         });
       }
     }
@@ -548,6 +565,18 @@ export default function ProfilePage() {
 
   return (
     <Layout>
+      <style jsx>{`
+        .sport-selected {
+          border-color: #9333ea !important;
+          background-color: #f3f4f6 !important;
+          color: #9333ea !important;
+        }
+        .sport-unselected {
+          border-color: #d1d5db !important;
+          background-color: #ffffff !important;
+          color: #374151 !important;
+        }
+      `}</style>
       <div className="min-h-screen bg-gray-50">
         {/* Header */}
         <div className="bg-white border-b border-gray-200">
@@ -866,17 +895,17 @@ export default function ProfilePage() {
                         <label key={sport.key} className="relative flex items-center">
                           <input
                             type="checkbox"
-                            checked={preferences.preferred_sports.includes(sport.key)}
+                            checked={preferences.preferred_sports.includes(sport.key) || preferences.preferred_sports.includes(sport.title)}
                             onChange={(e) => {
                               if (e.target.checked) {
                                 setPreferences(prev => ({
                                   ...prev,
-                                  preferred_sports: [...prev.preferred_sports, sport.key]
+                                  preferred_sports: [...prev.preferred_sports.filter(s => s !== sport.title), sport.key]
                                 }));
                               } else {
                                 setPreferences(prev => ({
                                   ...prev,
-                                  preferred_sports: prev.preferred_sports.filter(s => s !== sport.key)
+                                  preferred_sports: prev.preferred_sports.filter(s => s !== sport.key && s !== sport.title)
                                 }));
                               }
                             }}
@@ -884,9 +913,8 @@ export default function ProfilePage() {
                           />
                           <div 
                             className={`flex-1 px-4 py-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              preferences.preferred_sports.includes(sport.key)
-                                ? 'border-[#A855F7] bg-[#A855F7]/5 text-[#A855F7]'
-                                : 'border-gray-200 hover:border-gray-300 text-gray-700'
+                              preferences.preferred_sports.includes(sport.key) || preferences.preferred_sports.includes(sport.title)
+                                ? 'sport-selected' : 'sport-unselected'
                             }`}
                           >
                             <span className="font-medium text-sm">{sport.title}</span>

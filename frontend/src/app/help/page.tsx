@@ -7,7 +7,7 @@ import { useAuth } from '@/components/Auth';
 import { HelpCircle, Search, Book, MessageSquare, Mail, ChevronDown, ChevronRight } from 'lucide-react';
 
 export default function HelpPage() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedFaq, setExpandedFaq] = useState<number | null>(null);
@@ -63,6 +63,72 @@ export default function HelpPage() {
     setExpandedFaq(expandedFaq === index ? null : index);
   };
 
+  const openSupportEmail = () => {
+    if (!user) return;
+    
+    const subject = encodeURIComponent('YetAI Support Request');
+    const body = encodeURIComponent(`Hello YetAI Support Team,
+
+I need assistance with the following:
+
+[Please describe your issue here]
+
+Account Information:
+- Username: ${user.username || 'N/A'}
+- Name: ${user.first_name && user.last_name ? `${user.first_name} ${user.last_name}` : 'N/A'}
+- Email: ${user.email || 'N/A'}
+- Account Type: ${user.subscription_tier || 'free'}
+
+Thank you for your assistance.
+
+Best regards,
+${user.first_name || user.username || 'User'}`);
+    
+    const mailtoUrl = `mailto:yetai.help@gmail.com?subject=${subject}&body=${body}`;
+    window.open(mailtoUrl, '_blank');
+  };
+
+  const openFeedbackEmail = () => {
+    if (!user) return;
+    
+    const subject = encodeURIComponent('YetAI Feedback Submission');
+    const body = encodeURIComponent(`Hello YetAI Team,
+
+Thank you for providing this platform! I would like to share my feedback:
+
+FEEDBACK TYPE (Please delete options that don't apply, keep one):
+- Feature Request
+- Bug Report  
+- General Feedback
+- User Experience Improvement
+- Other: [Please specify]
+
+FEEDBACK DETAILS:
+[Please share your thoughts, suggestions, or observations here]
+
+
+RATING (Optional - Please delete ratings that don't apply):
+Overall Experience: [Excellent | Good | Fair | Poor]
+Ease of Use: [Excellent | Good | Fair | Poor]
+AI Predictions: [Excellent | Good | Fair | Poor]
+
+ADDITIONAL COMMENTS:
+[Any other thoughts or suggestions]
+
+Account Information:
+- Username: ${user.username || 'N/A'}
+- Email: ${user.email || 'N/A'}
+- Account Type: ${user.subscription_tier || 'free'}
+
+Thank you for your time!
+
+Best regards,
+${user.first_name || user.username || 'User'}`);
+    
+    const mailtoUrl = `mailto:yetai.help@gmail.com?subject=${subject}&body=${body}`;
+    window.open(mailtoUrl, '_blank');
+  };
+
   return (
     <Layout requiresAuth>
       <div className="space-y-6">
@@ -105,7 +171,10 @@ export default function HelpPage() {
             <Mail className="w-12 h-12 text-purple-600 mx-auto mb-4" />
             <h3 className="font-semibold text-lg mb-2">Email Support</h3>
             <p className="text-gray-600 text-sm mb-4">Send us a detailed message about your issue</p>
-            <button className="text-purple-600 hover:text-purple-700 font-medium">
+            <button 
+              onClick={openSupportEmail}
+              className="text-purple-600 hover:text-purple-700 font-medium"
+            >
               Send Email
             </button>
           </div>
@@ -148,10 +217,16 @@ export default function HelpPage() {
             Can't find what you're looking for? Our support team is here to help you 24/7.
           </p>
           <div className="flex space-x-4">
-            <button className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+            <button 
+              onClick={openSupportEmail}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+            >
               Contact Support
             </button>
-            <button className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors">
+            <button 
+              onClick={openFeedbackEmail}
+              className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+            >
               Submit Feedback
             </button>
           </div>
