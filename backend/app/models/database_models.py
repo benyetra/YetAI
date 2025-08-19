@@ -98,7 +98,6 @@ class Game(Base):
     
     # Relationships
     bets = relationship("Bet", back_populates="game")
-    live_bets = relationship("LiveBet", back_populates="game")
 
 class Bet(Base):
     __tablename__ = "bets"
@@ -217,7 +216,7 @@ class LiveBet(Base):
     
     id = Column(String(255), primary_key=True, index=True)  # UUID
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    game_id = Column(String(255), ForeignKey("games.id"), nullable=False)
+    game_id = Column(String(255), nullable=False)  # Removed FK constraint for API-sourced games
     
     bet_type = Column(Enum(BetType), nullable=False)
     selection = Column(String(255), nullable=False)
@@ -248,7 +247,6 @@ class LiveBet(Base):
     
     # Relationships
     user = relationship("User", back_populates="live_bets")
-    game = relationship("Game", back_populates="live_bets")
 
 # Additional tables for advanced features
 class BetLimit(Base):

@@ -33,6 +33,43 @@ class YetAIBetsServiceDB:
             try:
                 bet_id = str(uuid.uuid4())
                 
+                # Debug: Log the incoming bet request data
+                logger.info(f"Creating YetAI Bet with data: sport={bet_request.sport}, game={bet_request.game}, game_time='{bet_request.game_time}'")
+                
+                # Parse game_time to datetime if it's provided
+                game_commence_time = None
+                if hasattr(bet_request, 'game_time') and bet_request.game_time and bet_request.game_time != 'TBD':
+                    try:
+                        # Handle different formats that might come from the frontend
+                        from dateutil import parser
+                        import re
+                        
+                        game_time_str = bet_request.game_time.strip()
+                        logger.info(f"Attempting to parse game_time: '{game_time_str}'")
+                        
+                        # Clean up the format - handle "@" symbol and EDT/EST
+                        if "@" in game_time_str:
+                            game_time_str = game_time_str.replace("@", "")
+                        
+                        # Try to parse with dateutil
+                        game_commence_time = parser.parse(game_time_str)
+                        logger.info(f"Successfully parsed game_time '{bet_request.game_time}' to datetime: {game_commence_time}")
+                    except Exception as e:
+                        logger.error(f"Could not parse game_time '{bet_request.game_time}': {e}")
+                        game_commence_time = None
+
+                # Parse odds correctly to preserve sign
+                odds_value = bet_request.odds
+                if isinstance(odds_value, str):
+                    if odds_value.startswith('+'):
+                        odds_value = float(odds_value.replace('+', ''))
+                    elif odds_value.startswith('-'):
+                        odds_value = -float(odds_value.replace('-', ''))
+                    else:
+                        odds_value = float(odds_value)
+                else:
+                    odds_value = float(odds_value)
+
                 new_bet = YetAIBet(
                     id=bet_id,
                     sport=bet_request.sport,
@@ -40,11 +77,12 @@ class YetAIBetsServiceDB:
                     description=bet_request.reasoning,
                     bet_type=bet_request.bet_type,
                     selection=bet_request.pick,
-                    odds=float(bet_request.odds.replace('+', '').replace('-', '') if isinstance(bet_request.odds, str) else bet_request.odds),
+                    odds=odds_value,
                     confidence=float(bet_request.confidence),
                     tier_requirement=SubscriptionTier.PRO if bet_request.is_premium else SubscriptionTier.FREE,
                     status="pending",
-                    created_at=datetime.utcnow()
+                    created_at=datetime.utcnow(),
+                    commence_time=game_commence_time
                 )
                 
                 db.add(new_bet)
@@ -251,17 +289,38 @@ class YetAIBetsServiceDB:
     
     def _yetai_bet_to_dict(self, bet: YetAIBet) -> Dict:
         """Convert YetAIBet model to dictionary"""
+        # Format game time as MM/DD/YYYY @H:MMPM EST  
+        game_time_formatted = "TBD"
+        if bet.commence_time:
+            try:
+                formatted_date = bet.commence_time.strftime('%m/%d/%Y')
+                formatted_time = bet.commence_time.strftime('%I:%M %p EDT')
+                game_time_formatted = f"{formatted_date} @{formatted_time}"
+                logger.debug(f"Formatted game time: {game_time_formatted} from {bet.commence_time}")
+            except Exception as e:
+                logger.warning(f"Error formatting game time {bet.commence_time}: {e}")
+                game_time_formatted = bet.commence_time.isoformat()
+        
+        # Clean up pick display by removing redundant bet type prefix
+        clean_pick = bet.selection
+        if bet.bet_type.lower() == 'spread' and clean_pick.startswith('Spread '):
+            clean_pick = clean_pick[7:]  # Remove "Spread " prefix
+        elif bet.bet_type.lower() == 'moneyline' and clean_pick.startswith('Moneyline '):
+            clean_pick = clean_pick[10:]  # Remove "Moneyline " prefix  
+        elif bet.bet_type.lower() == 'total' and clean_pick.startswith('Total '):
+            clean_pick = clean_pick[6:]  # Remove "Total " prefix
+
         bet_dict = {
             "id": bet.id,
             "sport": bet.sport,
             "game": bet.title,
             "bet_type": bet.bet_type,
-            "pick": bet.selection,
-            "odds": str(int(bet.odds)) if bet.odds >= 0 else str(int(bet.odds)),
+            "pick": clean_pick,
+            "odds": f"+{int(bet.odds)}" if bet.odds > 0 else str(int(bet.odds)),
             "confidence": int(bet.confidence),
             "reasoning": bet.description,
             "is_premium": bet.tier_requirement != SubscriptionTier.FREE,
-            "game_time": "TBD",  # Not stored in DB model
+            "game_time": game_time_formatted,
             "bet_category": "parlay" if hasattr(bet, 'parlay_legs') and bet.parlay_legs else "straight",
             "status": bet.status,
             "created_at": bet.created_at.isoformat() if bet.created_at else None,

@@ -108,6 +108,9 @@ class LiveBet(BaseModel):
     cashed_out_amount: Optional[float] = None
     settled_at: Optional[datetime] = None
     result_amount: Optional[float] = None
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
 
 class PlaceLiveBetRequest(BaseModel):
     """Request to place a live bet"""

@@ -33,6 +33,9 @@ interface LiveBet {
   cash_out_value: number | null;
   cashed_out_at: string | null;
   cashed_out_amount: number | null;
+  home_team?: string;
+  away_team?: string;
+  sport?: string;
 }
 
 interface CashOutOffer {
@@ -220,7 +223,23 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} Spread (${gameInfo})`;
       } else if (bet.bet_type === 'total') {
-        return `${bet.selection.toUpperCase()} (${gameInfo})`;
+        return `${(bet.selection || '').toUpperCase()} (${gameInfo})`;
+      }
+    }
+    return `${(bet.bet_type || '').toUpperCase()} - ${(bet.selection || '').toUpperCase()}`;
+  };
+
+  const formatLiveBetTitle = (bet: LiveBet) => {
+    if (bet.home_team && bet.away_team) {
+      const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
+      if (bet.bet_type.toLowerCase() === 'moneyline') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} to Win (${gameInfo})`;
+      } else if (bet.bet_type.toLowerCase() === 'spread') {
+        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+        return `${team} Spread (${gameInfo})`;
+      } else if (bet.bet_type.toLowerCase() === 'total') {
+        return `${bet.selection.toUpperCase()} Total (${gameInfo})`;
       }
     }
     return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
@@ -351,7 +370,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
                     <div>
                       <div className="flex items-center space-x-2">
                         <span className="font-semibold text-gray-900">
-                          {bet.bet_type.toUpperCase()} - {bet.selection.toUpperCase()}
+                          {formatLiveBetTitle(bet)}
                         </span>
                         <span className="text-sm text-gray-600">
                           @ {formatOdds(bet.original_odds)}

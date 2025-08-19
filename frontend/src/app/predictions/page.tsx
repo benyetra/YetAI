@@ -188,7 +188,7 @@ export default function YetAIBetsPage() {
       <div className="mb-4">
         <h3 className="font-bold text-lg text-gray-900 mb-1">{bet.game}</h3>
         <div className="flex items-center space-x-4">
-          <span className="text-gray-600">{bet.bet_type}:</span>
+          <span className="text-gray-600">{bet.bet_type.charAt(0).toUpperCase() + bet.bet_type.slice(1)}:</span>
           <span className="font-semibold text-blue-600">{bet.pick}</span>
           <span className="text-gray-500">({bet.odds})</span>
         </div>

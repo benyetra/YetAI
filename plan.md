@@ -767,8 +767,100 @@ CREATE TABLE user_sessions (
 - ✅ User session management functional
 - ✅ All API endpoints properly authenticated
 
+### Phase 3.21: Enhanced Admin Section with Real Game Data Autofill ✅ COMPLETE (August 19, 2025)
+- ✅ **Admin UI/UX Improvements**
+  - ✅ Fixed Free/Premium button visual feedback with enhanced styling and borders
+  - ✅ Added explicit color schemes (green for Free, orange for Premium) with proper contrast
+  - ✅ Implemented inline styling overrides to ensure consistent visual states across browsers
+  - ✅ Enhanced button styling with font weight changes and distinct border indicators
+
+- ✅ **Real Sports Data Integration**
+  - ✅ Integrated The Odds API v4 for real-time game data in admin section
+  - ✅ Added dynamic sport selection triggering real game fetches (272 NFL games available)
+  - ✅ Implemented game selection dropdown with real matchups and game times
+  - ✅ Added auto-population of game details (teams, commence time) when game is selected
+  - ✅ Enhanced state management with proper loading indicators during API calls
+
+- ✅ **Improved Bet Type Selection**
+  - ✅ **Spread Selection Enhancement**: Converted from auto-select to user choice dropdown
+  - ✅ Added `handleSpreadSelection` function allowing users to choose between home/away team spread options
+  - ✅ Created conditional UI showing spread options with both teams and their respective odds
+  - ✅ **Before**: Auto-selected home team spread → **After**: User chooses from "Eagles -7 (-105)" or "Cowboys +7 (-110)"
+  - ✅ Maintained auto-population for Moneyline and Total (Over/Under) bet types
+  - ✅ Enhanced odds parsing and selection logic for better user experience
+
+- ✅ **Game Time Display Fix**
+  - ✅ **Root Cause**: Backend service wasn't utilizing `game_time` field from request data
+  - ✅ **Solution**: Enhanced `yetai_bets_service_db.py` to parse and store `commence_time` in database
+  - ✅ Updated `_yetai_bet_to_dict` method to return actual game time instead of hardcoded "TBD"
+  - ✅ Added dateutil parsing for flexible datetime format handling
+  - ✅ **Result**: Predictions page now shows real game times (e.g., "9/4/2025, 8:20:00 PM") instead of "TBD"
+
+- ✅ **Technical Implementation Details**
+  - ✅ Added comprehensive error handling for API rate limits and data availability
+  - ✅ Implemented proper state management with React hooks for form data and game selection
+  - ✅ Enhanced sport-to-API key mapping (NFL → americanfootball_nfl, NBA → basketball_nba)
+  - ✅ Added proper data validation and null safety throughout the admin workflow
+  - ✅ Integrated with existing database models while maintaining backward compatibility
+
+**Admin Section Features:**
+- ✅ **Real Data Workflow**: Sport selection → Real games fetch → Game selection → Auto-fill game details
+- ✅ **Smart Bet Type Handling**: Auto-fill for simple bets, choice dropdown for spread bets
+- ✅ **Visual Feedback**: Clear Free/Premium selection with distinct styling
+- ✅ **Data Accuracy**: Real game times, team names, and odds from live sportsbooks
+- ✅ **Error Handling**: Graceful degradation when API limits reached or data unavailable
+
+**User Experience Improvements:**
+- ✅ **Before**: Manual data entry, no visual feedback, "TBD" game times, auto-selected spreads
+- ✅ **After**: Real game selection, clear UI feedback, actual game times, user choice for spreads
+- ✅ Seamless workflow from sport selection to bet creation with real data
+- ✅ Professional admin interface matching production sportsbook standards
+
+### Phase 3.22: Final Admin & Display Refinements ✅ COMPLETE (August 19, 2025)
+
+- ✅ **Enhanced Game Time Localization**
+  - ✅ **Frontend**: Updated `handleGameSelection` to format times as `MM/DD/YYYY @H:MMPM EST`
+  - ✅ **Backend**: Enhanced `_yetai_bet_to_dict` to consistently format times as `MM/DD/YYYY @H:MMPM EDT`
+  - ✅ **Result**: Game times display as user-friendly "10/21/2025 @8:00PM EST" instead of ISO format
+
+- ✅ **Professional Wager Display Styling**
+  - ✅ **Updated Pick Formatting**: Standardized to show bet type prefix (e.g., "Spread TeamName +/-X.X")
+  - ✅ **Enhanced Odds Display**: Proper +/- sign formatting (e.g., "+162" for positive, "-110" for negative)  
+  - ✅ **Cleaned Redundancy**: Removed duplicate "Spread" prefix from pick display since bet type already shows
+  - ✅ **Result**: Clean display like "Spread: New England Patriots -3 (+114)" instead of cluttered format
+
+- ✅ **Universal Bet Type User Choice**
+  - ✅ **Removed Auto-Selection**: All bet types (Spread, Moneyline, Over/Under) now use choice dropdowns
+  - ✅ **Enhanced handleBetTypeSelection**: Simplified to reset selections and let user choose all options
+  - ✅ **Universal handleBetOptionSelection**: Single handler for all bet type option selections with proper formatting
+  - ✅ **Result**: Consistent user experience across all bet types with dropdown selection
+
+- ✅ **Fixed Dropdown Selection Bugs**
+  - ✅ **Value Matching Logic**: Added extraction logic to match formatted picks back to dropdown values
+  - ✅ **Conditional Display**: Enhanced dropdown to show selected value properly using computed value function
+  - ✅ **Frontend Capitalization**: Updated predictions page to capitalize bet types ("spread:" → "Spread:")
+  - ✅ **Result**: Dropdowns correctly show selected options and update properly
+
+- ✅ **Backend Odds & Time Processing**
+  - ✅ **Improved Odds Parsing**: Enhanced parsing to preserve positive/negative signs correctly
+  - ✅ **Enhanced Time Parsing**: Better handling of formatted time strings with "@" symbols and EDT/EST
+  - ✅ **Debug Logging**: Added comprehensive logging for bet creation and time parsing issues
+  - ✅ **Clean Pick Storage**: Remove redundant bet type prefixes from stored selections
+
+**Technical Improvements:**
+- ✅ **Frontend (`admin/page.tsx`)**: Enhanced game time formatting, universal bet option selection, proper dropdown value matching
+- ✅ **Frontend (`predictions/page.tsx`)**: Capitalized bet type display, improved presentation formatting  
+- ✅ **Backend (`yetai_bets_service_db.py`)**: Enhanced odds parsing, time formatting, pick cleanup, comprehensive logging
+
+**Final Result - Professional Betting Interface:**
+- ✅ **Game Times**: "10/21/2025 @8:00PM EST" (user-friendly localized format)
+- ✅ **Wager Display**: "Spread: New England Patriots -3 (+114)" (clean, professional format)
+- ✅ **User Choice**: All bet types use consistent dropdown selection interface
+- ✅ **Working Dropdowns**: Proper value selection and display across all bet type options
+- ✅ **Data Accuracy**: Correct odds formatting and actual game times throughout the system
+
 ---
 
 *Last Updated: August 19, 2025*
-*Version: 2.3*
-*Status: Live Betting & Authentication Complete - Resolved all remaining live betting display issues including generic titles, cash out values, and baseball game status. Fixed authentication system conflicts and verified database-backed user login functionality. Live betting system now shows proper team names, realistic scores, and working cash out functionality. All remaining issues from user feedback have been addressed and the system is production-ready.*
+*Version: 2.4*
+*Status: Enhanced Admin Section Complete - Resolved all three admin section issues: Free/Premium button visual feedback, spread selection user choice, and real game time display. Admin section now features real sports data integration with 272+ NFL games, professional UI/UX, and seamless autofill workflow. Production-ready admin interface for creating YetAI Bets with real game data.*

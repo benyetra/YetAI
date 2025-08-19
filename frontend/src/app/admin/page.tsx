@@ -15,6 +15,7 @@ import {
   Unlock,
   Users
 } from 'lucide-react';
+import { sportsAPI } from '@/lib/api';
 
 
 export default function AdminPage() {
@@ -37,6 +38,11 @@ export default function AdminPage() {
   
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
+  
+  // Auto-fill states
+  const [availableGames, setAvailableGames] = useState<any[]>([]);
+  const [loadingGames, setLoadingGames] = useState(false);
+  const [selectedGame, setSelectedGame] = useState<any>(null);
 
   useEffect(() => {
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
@@ -70,7 +76,10 @@ export default function AdminPage() {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          ...formData,
+          bet_type: formData.bet_type.toLowerCase()
+        })
       });
       
       if (response.ok) {
@@ -96,6 +105,129 @@ export default function AdminPage() {
       setMessage({ type: 'error', text: 'Network error occurred' });
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  // Fetch games when sport is selected
+  const handleSportChange = async (selectedSport: string) => {
+    setFormData({...formData, sport: selectedSport, game: '', bet_type: '', pick: '', odds: '', game_time: ''});
+    setSelectedGame(null);
+    setAvailableGames([]);
+    
+    if (!selectedSport) return;
+    
+    setLoadingGames(true);
+    try {
+      // Map sport names to API keys
+      const sportKeyMap: {[key: string]: string} = {
+        'NFL': 'americanfootball_nfl',
+        'NBA': 'basketball_nba', 
+        'MLB': 'baseball_mlb',
+        'NHL': 'icehockey_nhl'
+      };
+      
+      const sportKey = sportKeyMap[selectedSport];
+      if (!sportKey) {
+        console.warn('Unsupported sport:', selectedSport);
+        return;
+      }
+      
+      const result = await sportsAPI.getOdds(sportKey);
+      if (result.status === 'success' && result.games) {
+        setAvailableGames(result.games);
+      }
+    } catch (error) {
+      console.error('Error fetching games:', error);
+      setMessage({ type: 'error', text: 'Failed to fetch games for ' + selectedSport });
+    } finally {
+      setLoadingGames(false);
+    }
+  };
+
+  // Handle game selection and auto-fill data
+  const handleGameSelection = (gameId: string) => {
+    const game = availableGames.find(g => g.id === gameId);
+    if (!game) return;
+    
+    setSelectedGame(game);
+    const gameDisplay = `${game.away_team} @ ${game.home_team}`;
+    
+    // Format game time as: MM/DD/YYYY @H:MMPM EST
+    const gameDate = new Date(game.commence_time);
+    const formattedDate = gameDate.toLocaleDateString('en-US', {
+      month: '2-digit',
+      day: '2-digit', 
+      year: 'numeric'
+    });
+    const formattedTime = gameDate.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+    const gameTime = `${formattedDate} @${formattedTime}`;
+    
+    setFormData({
+      ...formData, 
+      game: gameDisplay,
+      game_time: gameTime,
+      bet_type: '', // Reset bet type so user can select
+      pick: '',
+      odds: ''
+    });
+  };
+
+  // Handle bet type selection - don't auto-populate, let user choose all options
+  const handleBetTypeSelection = (betType: string) => {
+    if (!selectedGame) return;
+    
+    // Reset pick and odds when bet type changes - user will select from dropdown
+    setFormData(prev => ({
+      ...prev,
+      bet_type: betType,
+      pick: '',
+      odds: ''
+    }));
+  };
+
+  // Handle bet option selection (works for all bet types)
+  const handleBetOptionSelection = (selectedOption: string) => {
+    if (!selectedGame || !selectedOption) return;
+
+    const bookmaker = selectedGame.bookmakers?.[0];
+    if (!bookmaker) return;
+
+    let outcome: any = null;
+    let formattedPick = selectedOption;
+
+    if (formData.bet_type === 'Spread') {
+      const spreadMarket = bookmaker.markets?.find((m: any) => m.key === 'spreads');
+      // selectedOption is the team name, find the matching outcome
+      outcome = spreadMarket?.outcomes?.find((o: any) => o.name === selectedOption);
+      if (outcome) {
+        formattedPick = `Spread ${outcome.name} ${outcome.point >= 0 ? '+' : ''}${outcome.point}`;
+      }
+    } else if (formData.bet_type === 'Moneyline') {
+      const moneylineMarket = bookmaker.markets?.find((m: any) => m.key === 'h2h');
+      outcome = moneylineMarket?.outcomes?.find((o: any) => o.name === selectedOption);
+      if (outcome) {
+        formattedPick = `Moneyline ${outcome.name}`;
+      }
+    } else if (formData.bet_type === 'Total (Over/Under)') {
+      const totalMarket = bookmaker.markets?.find((m: any) => m.key === 'totals');
+      const overUnder = selectedOption.split(' ')[0]; // 'Over' or 'Under'
+      outcome = totalMarket?.outcomes?.find((o: any) => o.name === overUnder);
+      if (outcome) {
+        formattedPick = `Total ${outcome.name} ${outcome.point}`;
+      }
+    }
+    
+    if (outcome) {
+      const formattedOdds = outcome.price > 0 ? `+${outcome.price}` : `${outcome.price}`;
+      setFormData(prev => ({
+        ...prev,
+        pick: formattedPick,
+        odds: formattedOdds
+      }));
     }
   };
 
@@ -200,7 +332,7 @@ export default function AdminPage() {
               <label className="block text-sm font-medium text-gray-700 mb-2">Sport</label>
               <select
                 value={formData.sport}
-                onChange={(e) => setFormData({...formData, sport: e.target.value})}
+                onChange={(e) => handleSportChange(e.target.value)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select Sport</option>
@@ -216,27 +348,46 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Game</label>
-              <input
-                type="text"
-                value={formData.game}
-                onChange={(e) => setFormData({...formData, game: e.target.value})}
-                placeholder="e.g., Chiefs vs Bills"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Game {loadingGames && <span className="text-xs text-blue-600">(Loading...)</span>}
+              </label>
+              {availableGames.length > 0 ? (
+                <select
+                  value={selectedGame?.id || ''}
+                  onChange={(e) => handleGameSelection(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select Game</option>
+                  {availableGames.map((game) => (
+                    <option key={game.id} value={game.id}>
+                      {game.away_team} @ {game.home_team} ({new Date(game.commence_time).toLocaleDateString()})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={formData.game}
+                  onChange={(e) => setFormData({...formData, game: e.target.value})}
+                  placeholder={formData.sport ? "Loading games..." : "Select a sport first"}
+                  disabled={loadingGames || !formData.sport}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                />
+              )}
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Bet Type</label>
               <select
                 value={formData.bet_type}
-                onChange={(e) => setFormData({...formData, bet_type: e.target.value})}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                onChange={(e) => handleBetTypeSelection(e.target.value)}
+                disabled={!selectedGame}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
               >
-                <option value="">Select Bet Type</option>
+                <option value="">{selectedGame ? "Select Bet Type" : "Select a game first"}</option>
                 <option value="Spread">Spread</option>
                 <option value="Moneyline">Moneyline</option>
-                <option value="Total">Total (Over/Under)</option>
+                <option value="Total (Over/Under)">Total (Over/Under)</option>
                 <option value="Puck Line">Puck Line</option>
                 <option value="Run Line">Run Line</option>
                 <option value="1st Half">1st Half</option>
@@ -247,13 +398,57 @@ export default function AdminPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Pick</label>
-              <input
-                type="text"
-                value={formData.pick}
-                onChange={(e) => setFormData({...formData, pick: e.target.value})}
-                placeholder="e.g., Chiefs -3.5, Over 228.5"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
+              {formData.bet_type && selectedGame ? (
+                <select
+                  value={(() => {
+                    // Extract the key part from formatted pick for dropdown value matching
+                    if (!formData.pick) return '';
+                    if (formData.bet_type === 'Spread') {
+                      // Extract team name from "Spread TeamName +/-X.X" 
+                      const match = formData.pick.match(/Spread (.+?) [+-]/);
+                      return match ? match[1] : '';
+                    } else if (formData.bet_type === 'Moneyline') {
+                      // Extract team name from "Moneyline TeamName"
+                      return formData.pick.replace('Moneyline ', '');
+                    } else if (formData.bet_type === 'Total (Over/Under)') {
+                      // Extract "Over/Under X.X" from "Total Over/Under X.X"
+                      return formData.pick.replace('Total ', '');
+                    }
+                    return formData.pick;
+                  })()}
+                  onChange={(e) => handleBetOptionSelection(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                >
+                  <option value="">Select {formData.bet_type.toLowerCase()} option</option>
+                  {formData.bet_type === 'Spread' && selectedGame.bookmakers?.[0]?.markets?.find((m: any) => m.key === 'spreads')?.outcomes?.map((outcome: any) => {
+                    const spreadText = `${outcome.name} ${outcome.point >= 0 ? '+' : ''}${outcome.point}`;
+                    return (
+                      <option key={outcome.name} value={outcome.name}>
+                        Spread: {spreadText} ({outcome.price > 0 ? '+' : ''}{outcome.price})
+                      </option>
+                    );
+                  })}
+                  {formData.bet_type === 'Moneyline' && selectedGame.bookmakers?.[0]?.markets?.find((m: any) => m.key === 'h2h')?.outcomes?.map((outcome: any) => (
+                    <option key={outcome.name} value={outcome.name}>
+                      Moneyline: {outcome.name} ({outcome.price > 0 ? '+' : ''}{outcome.price})
+                    </option>
+                  ))}
+                  {formData.bet_type === 'Total (Over/Under)' && selectedGame.bookmakers?.[0]?.markets?.find((m: any) => m.key === 'totals')?.outcomes?.map((outcome: any) => (
+                    <option key={outcome.name} value={`${outcome.name} ${outcome.point}`}>
+                      Total: {outcome.name} {outcome.point} ({outcome.price > 0 ? '+' : ''}{outcome.price})
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  type="text"
+                  value={formData.pick}
+                  onChange={(e) => setFormData({...formData, pick: e.target.value})}
+                  placeholder={formData.bet_type ? "Select a bet type first" : "e.g., Chiefs -3.5, Over 228.5"}
+                  disabled={!formData.bet_type}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                />
+              )}
             </div>
 
             <div>
@@ -304,24 +499,28 @@ export default function AdminPage() {
               <div className="flex items-center space-x-4">
                 <button
                   onClick={() => setFormData({...formData, is_premium: false})}
-                  className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                    !formData.is_premium
-                      ? 'bg-green-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className="flex items-center px-4 py-2 rounded-lg font-medium transition-colors border-2"
+                  style={{
+                    backgroundColor: !formData.is_premium ? '#059669' : '#f9fafb',
+                    color: !formData.is_premium ? 'white' : '#6b7280',
+                    borderColor: !formData.is_premium ? '#059669' : '#d1d5db',
+                    fontWeight: !formData.is_premium ? 'bold' : 'normal'
+                  }}
                 >
-                  <Unlock className="w-4 h-4 mr-2" />
+                  <Unlock className="w-4 h-4 mr-2" style={{ color: !formData.is_premium ? 'white' : '#6b7280' }} />
                   Free
                 </button>
                 <button
                   onClick={() => setFormData({...formData, is_premium: true})}
-                  className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                    formData.is_premium
-                      ? 'bg-yellow-600 text-white'
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className="flex items-center px-4 py-2 rounded-lg font-medium transition-colors border-2"
+                  style={{
+                    backgroundColor: formData.is_premium ? '#d97706' : '#f9fafb',
+                    color: formData.is_premium ? 'white' : '#6b7280',
+                    borderColor: formData.is_premium ? '#d97706' : '#d1d5db',
+                    fontWeight: formData.is_premium ? 'bold' : 'normal'
+                  }}
                 >
-                  <Lock className="w-4 h-4 mr-2" />
+                  <Lock className="w-4 h-4 mr-2" style={{ color: formData.is_premium ? 'white' : '#6b7280' }} />
                   Premium
                 </button>
               </div>
@@ -343,7 +542,7 @@ export default function AdminPage() {
           {/* Submit Button */}
           <button
             onClick={handleSubmitBet}
-            disabled={isSubmitting || !formData.sport || !formData.game || !formData.reasoning}
+            disabled={isSubmitting || !formData.sport || !formData.game || !formData.bet_type || !formData.pick || !formData.odds || !formData.reasoning || !formData.game_time}
             className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
           >
             {isSubmitting ? (
