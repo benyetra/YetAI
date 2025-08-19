@@ -304,10 +304,12 @@ const Dashboard: React.FC = () => {
           })
         ]);
 
+        let enhancedGames: Game[] = [];
+
         if (gamesResponse.ok) {
           const gamesData = await gamesResponse.json();
           // Mock enhance games with additional data
-          const enhancedGames = gamesData.games?.map((game: any, index: number) => ({
+          enhancedGames = gamesData.games?.map((game: any, index: number) => ({
             id: game.id || `game_${index}`,
             home_team: game.home_team || game.home_display_name || 'TBD',
             away_team: game.away_team || game.away_display_name || 'TBD',
@@ -345,27 +347,8 @@ const Dashboard: React.FC = () => {
         })) : [];
         setPredictions(mockPredictions);
 
-        // Mock AI insights
-        setInsights([
-          {
-            title: 'Weather Alert: Chiefs vs Bills',
-            content: 'Heavy winds expected (15+ mph) will significantly impact passing games. Consider under bets and rushing prop overs.',
-            confidence: 87,
-            category: 'weather'
-          },
-          {
-            title: 'Value Opportunity: Cowboys Spread',
-            content: 'Public heavily backing Cowboys, but advanced metrics suggest Eagles are undervalued at current spread.',
-            confidence: 92,
-            category: 'value'
-          },
-          {
-            title: 'Injury Impact: Star WR Questionable',
-            content: 'Top receiver listed as questionable with ankle injury. Historical data shows 15% drop in offensive production.',
-            confidence: 78,
-            category: 'injury'
-          }
-        ]);
+        // Don't show mock AI insights to avoid fake data
+        setInsights([]);
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);

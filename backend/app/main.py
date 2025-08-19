@@ -1849,8 +1849,20 @@ async def get_personalized_predictions(current_user: dict = Depends(get_current_
     try:
         # Use user's favorite teams and preferences
         import json
-        favorite_teams = json.loads(current_user.get("favorite_teams", "[]"))
-        preferred_sports = json.loads(current_user.get("preferred_sports", "[\"NFL\"]"))
+        
+        # Handle favorite_teams - might be string or already parsed list
+        favorite_teams_raw = current_user.get("favorite_teams", "[]")
+        if isinstance(favorite_teams_raw, str):
+            favorite_teams = json.loads(favorite_teams_raw)
+        else:
+            favorite_teams = favorite_teams_raw if favorite_teams_raw else []
+            
+        # Handle preferred_sports - might be string or already parsed list  
+        preferred_sports_raw = current_user.get("preferred_sports", "[\"NFL\"]")
+        if isinstance(preferred_sports_raw, str):
+            preferred_sports = json.loads(preferred_sports_raw)
+        else:
+            preferred_sports = preferred_sports_raw if preferred_sports_raw else ["NFL"]
         
         # Get regular predictions (you'd filter these based on user prefs)
         from app.services.data_pipeline import sports_pipeline
