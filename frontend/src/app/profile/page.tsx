@@ -392,12 +392,12 @@ export default function ProfilePage() {
         try {
           const response = await apiClient.post('/api/auth/avatar', {
             image_data: imageData
-          }, {
-            headers: { 'Authorization': `Bearer ${token}` }
-          });
+          }, token);
 
           if (response.status === 'success') {
             setAvatarUrl(response.avatar_url);
+            // Force refresh user data to update avatar display
+            refreshUser();
             setMessage({ type: 'success', text: 'Avatar updated successfully' });
           }
         } catch (error: any) {
@@ -421,9 +421,7 @@ export default function ProfilePage() {
     if (!token) return;
 
     try {
-      const response = await apiClient.delete('/api/auth/avatar', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
+      const response = await apiClient.delete('/api/auth/avatar', token);
 
       if (response.status === 'success') {
         setAvatarUrl('');
@@ -570,17 +568,17 @@ export default function ProfilePage() {
 
         {/* Main Content */}
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-4 gap-8">
             
             {/* Account Info Sidebar */}
-            <div className="lg:col-span-1">
+            <div className="lg:col-span-2 xl:col-span-1">
               <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
                 {/* User Info */}
                 <div className="text-center mb-6">
                   <Avatar 
                     user={user} 
                     size="xl" 
-                    className="w-20 h-20 mx-auto mb-4"
+                    className="mx-auto mb-4 min-w-[80px] min-h-[80px] lg:min-w-[96px] lg:min-h-[96px] flex-shrink-0"
                   />
                   <h3 className="font-semibold text-gray-900">{user?.first_name} {user?.last_name}</h3>
                   <p className="text-sm text-gray-600 capitalize">{user?.subscription_tier} Member</p>
@@ -616,7 +614,7 @@ export default function ProfilePage() {
             </div>
 
             {/* Profile Content */}
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 xl:col-span-3">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
               
               {/* Avatar Card */}
@@ -630,8 +628,8 @@ export default function ProfilePage() {
                   <div className="relative">
                     <Avatar 
                       user={user} 
-                      size="lg" 
-                      className="w-24 h-24"
+                      size="xl"
+                      key={`avatar-${user?.id}-${avatarUrl}`}
                     />
                     {isUploadingAvatar && (
                       <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">

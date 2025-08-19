@@ -1,14 +1,72 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
-import { BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Calendar } from 'lucide-react';
+import { BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info } from 'lucide-react';
+import { sportsAPI } from '@/lib/api';
+
+interface PerformanceData {
+  status: string;
+  period_days: number;
+  overview: {
+    total_bets: number;
+    total_wagered: number;
+    total_profit: number;
+    win_rate: number;
+    roi: number;
+    won_bets: number;
+    lost_bets: number;
+    pending_bets: number;
+  };
+  sport_breakdown: Array<{
+    sport: string;
+    sport_name: string;
+    total_bets: number;
+    total_wagered: number;
+    profit_loss: number;
+    win_rate: number;
+    roi: number;
+  }>;
+  bet_type_breakdown: Array<{
+    bet_type: string;
+    bet_type_name: string;
+    total_bets: number;
+    total_wagered: number;
+    profit_loss: number;
+    win_rate: number;
+    roi: number;
+  }>;
+  performance_trend: {
+    recent_period: {
+      win_rate: number;
+      profit: number;
+      total_bets: number;
+    };
+    previous_period: {
+      win_rate: number;
+      profit: number;
+      total_bets: number;
+    };
+    win_rate_change: number;
+    profit_change: number;
+    trend_direction: string;
+  };
+  insights: Array<{
+    type: string;
+    icon: string;
+    message: string;
+  }>;
+}
 
 export default function PerformancePage() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
+  const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [selectedPeriod, setSelectedPeriod] = useState(30);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -16,7 +74,52 @@ export default function PerformancePage() {
     }
   }, [isAuthenticated, loading, router]);
 
-  if (loading) {
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchPerformanceData();
+    }
+  }, [isAuthenticated, selectedPeriod]);
+
+  const fetchPerformanceData = async () => {
+    try {
+      setIsLoadingData(true);
+      setError('');
+      
+      const token = localStorage.getItem('auth_token');
+      const response = await sportsAPI.getUserPerformance(selectedPeriod, token);
+      
+      if (response.status === 'success') {
+        setPerformanceData(response);
+      } else {
+        setError('Failed to load performance data');
+      }
+    } catch (error) {
+      console.error('Error fetching performance data:', error);
+      setError('Failed to load performance data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  const getIconComponent = (iconName: string) => {
+    switch (iconName) {
+      case 'trending-up': return TrendingUp;
+      case 'trending-down': return TrendingDown;
+      case 'target': return Target;
+      case 'info': return Info;
+      default: return Info;
+    }
+  };
+
+  const formatCurrency = (amount: number) => {
+    return new Intl.NumberFormat('en-US', {
+      style: 'currency',
+      currency: 'USD',
+      minimumFractionDigits: 2
+    }).format(amount);
+  };
+
+  if (loading || isLoadingData) {
     return (
       <Layout>
         <div className="min-h-screen flex items-center justify-center">
@@ -30,6 +133,42 @@ export default function PerformancePage() {
     return null;
   }
 
+  if (error || !performanceData) {
+    return (
+      <Layout requiresAuth>
+        <div className="space-y-6">
+          <h1 className="text-3xl font-bold text-gray-900">Performance Analytics</h1>
+          
+          {error ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+              <p className="text-red-600 mb-4">{error}</p>
+              <button 
+                onClick={fetchPerformanceData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
+              <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-300" />
+              <h3 className="text-xl font-semibold text-gray-600 mb-2">No Betting Data Yet</h3>
+              <p className="text-gray-500 mb-6">Start placing bets to see your performance analytics</p>
+              <button 
+                onClick={() => router.push('/odds')}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                View Live Odds
+              </button>
+            </div>
+          )}
+        </div>
+      </Layout>
+    );
+  }
+
+  const { overview, sport_breakdown, bet_type_breakdown, performance_trend, insights } = performanceData;
+
   return (
     <Layout requiresAuth>
       <div className="space-y-6">
@@ -37,38 +176,47 @@ export default function PerformancePage() {
           <h1 className="text-3xl font-bold text-gray-900">Performance Analytics</h1>
           <div className="flex items-center space-x-2">
             <Calendar className="w-4 h-4 text-gray-500" />
-            <select className="px-3 py-1 border border-gray-300 rounded text-sm">
-              <option>Last 30 days</option>
-              <option>Last 7 days</option>
-              <option>This week</option>
-              <option>All time</option>
+            <select 
+              value={selectedPeriod}
+              onChange={(e) => setSelectedPeriod(Number(e.target.value))}
+              className="px-3 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value={7}>Last 7 days</option>
+              <option value={30}>Last 30 days</option>
+              <option value={90}>Last 3 months</option>
+              <option value={365}>All time</option>
             </select>
           </div>
         </div>
 
+        {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
-              <DollarSign className="w-8 h-8 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">+$1,250</span>
+              <DollarSign className={`w-8 h-8 ${overview.total_profit >= 0 ? 'text-green-600' : 'text-red-600'}`} />
+              <span className={`text-2xl font-bold ${overview.total_profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                {overview.total_profit >= 0 ? '+' : ''}{formatCurrency(overview.total_profit)}
+              </span>
             </div>
             <h3 className="font-semibold text-gray-900">Total Profit</h3>
-            <p className="text-sm text-gray-600">Last 30 days</p>
+            <p className="text-sm text-gray-600">Last {selectedPeriod} days</p>
           </div>
           
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <Target className="w-8 h-8 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">68.5%</span>
+              <span className="text-2xl font-bold text-blue-600">{overview.win_rate}%</span>
             </div>
             <h3 className="font-semibold text-gray-900">Win Rate</h3>
-            <p className="text-sm text-gray-600">All time</p>
+            <p className="text-sm text-gray-600">{overview.won_bets}W - {overview.lost_bets}L</p>
           </div>
 
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
-              <TrendingUp className="w-8 h-8 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">15.3%</span>
+              <TrendingUp className={`w-8 h-8 ${overview.roi >= 0 ? 'text-purple-600' : 'text-red-600'}`} />
+              <span className={`text-2xl font-bold ${overview.roi >= 0 ? 'text-purple-600' : 'text-red-600'}`}>
+                {overview.roi >= 0 ? '+' : ''}{overview.roi}%
+              </span>
             </div>
             <h3 className="font-semibold text-gray-900">ROI</h3>
             <p className="text-sm text-gray-600">Return on investment</p>
@@ -77,68 +225,127 @@ export default function PerformancePage() {
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <BarChart3 className="w-8 h-8 text-orange-600" />
-              <span className="text-2xl font-bold text-orange-600">156</span>
+              <span className="text-2xl font-bold text-orange-600">{overview.total_bets}</span>
             </div>
             <h3 className="font-semibold text-gray-900">Total Bets</h3>
-            <p className="text-sm text-gray-600">This month</p>
+            <p className="text-sm text-gray-600">{formatCurrency(overview.total_wagered)} wagered</p>
           </div>
         </div>
+
+        {/* Performance Trend */}
+        {performance_trend && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
+            <h2 className="text-xl font-semibold mb-4">Performance Trend</h2>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="text-center">
+                <p className="text-sm text-gray-600">Last 7 Days</p>
+                <p className="text-lg font-semibold">{performance_trend.recent_period.win_rate}% Win Rate</p>
+                <p className={`text-sm ${performance_trend.recent_period.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(performance_trend.recent_period.profit)}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-gray-600">Previous 7 Days</p>
+                <p className="text-lg font-semibold">{performance_trend.previous_period.win_rate}% Win Rate</p>
+                <p className={`text-sm ${performance_trend.previous_period.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                  {formatCurrency(performance_trend.previous_period.profit)}
+                </p>
+              </div>
+              <div className="text-center">
+                <p className="text-sm text-gray-600">Trend</p>
+                <p className={`text-lg font-semibold capitalize ${
+                  performance_trend.trend_direction === 'improving' ? 'text-green-600' : 
+                  performance_trend.trend_direction === 'declining' ? 'text-red-600' : 'text-yellow-600'
+                }`}>
+                  {performance_trend.trend_direction}
+                </p>
+                <p className="text-sm text-gray-600">
+                  {performance_trend.win_rate_change >= 0 ? '+' : ''}{performance_trend.win_rate_change}% change
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold mb-4">Profit/Loss Chart</h2>
-            <div className="text-center py-12 text-gray-500">
-              <BarChart3 className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-              <p>Performance charts coming soon</p>
-              <p className="text-sm">Visualize your betting performance over time</p>
-            </div>
-          </div>
-
+          {/* Sport Breakdown */}
           <div className="bg-white rounded-lg border border-gray-200 p-6">
             <h2 className="text-xl font-semibold mb-4">Sport Breakdown</h2>
-            <div className="space-y-4">
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <span className="font-medium">NFL</span>
-                <div className="text-right">
-                  <div className="text-sm text-green-600 font-semibold">+$450</div>
-                  <div className="text-xs text-gray-500">72% win rate</div>
-                </div>
+            {sport_breakdown && sport_breakdown.length > 0 ? (
+              <div className="space-y-4">
+                {sport_breakdown.slice(0, 5).map((sport, index) => (
+                  <div key={sport.sport} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                    <span className="font-medium">{sport.sport_name}</span>
+                    <div className="text-right">
+                      <div className={`text-sm font-semibold ${sport.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {sport.profit_loss >= 0 ? '+' : ''}{formatCurrency(sport.profit_loss)}
+                      </div>
+                      <div className="text-xs text-gray-500">{sport.win_rate}% win rate</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <span className="font-medium">NBA</span>
-                <div className="text-right">
-                  <div className="text-sm text-green-600 font-semibold">+$320</div>
-                  <div className="text-xs text-gray-500">65% win rate</div>
-                </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No sport data available yet</p>
+                <p className="text-sm">Place bets on different sports to see breakdown</p>
               </div>
-              <div className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                <span className="font-medium">MLB</span>
-                <div className="text-right">
-                  <div className="text-sm text-red-600 font-semibold">-$125</div>
-                  <div className="text-xs text-gray-500">58% win rate</div>
-                </div>
+            )}
+          </div>
+
+          {/* Bet Type Breakdown */}
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold mb-4">Bet Type Breakdown</h2>
+            {bet_type_breakdown && bet_type_breakdown.length > 0 ? (
+              <div className="space-y-4">
+                {bet_type_breakdown.slice(0, 5).map((betType, index) => (
+                  <div key={betType.bet_type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
+                    <span className="font-medium">{betType.bet_type_name}</span>
+                    <div className="text-right">
+                      <div className={`text-sm font-semibold ${betType.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                        {betType.profit_loss >= 0 ? '+' : ''}{formatCurrency(betType.profit_loss)}
+                      </div>
+                      <div className="text-xs text-gray-500">{betType.win_rate}% win rate</div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            ) : (
+              <div className="text-center py-8 text-gray-500">
+                <p>No bet type data available yet</p>
+                <p className="text-sm">Try different bet types to see breakdown</p>
+              </div>
+            )}
           </div>
         </div>
 
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold mb-4">Recent Performance Insights</h2>
-          <div className="space-y-3">
-            <div className="flex items-center p-3 bg-green-50 border border-green-200 rounded">
-              <TrendingUp className="w-5 h-5 text-green-600 mr-3" />
-              <span className="text-green-800">Your NFL betting has improved 25% this month</span>
-            </div>
-            <div className="flex items-center p-3 bg-blue-50 border border-blue-200 rounded">
-              <Target className="w-5 h-5 text-blue-600 mr-3" />
-              <span className="text-blue-800">Best performance on weekend games (78% win rate)</span>
-            </div>
-            <div className="flex items-center p-3 bg-yellow-50 border border-yellow-200 rounded">
-              <TrendingDown className="w-5 h-5 text-yellow-600 mr-3" />
-              <span className="text-yellow-800">Consider reducing bet sizes on underdog picks</span>
+        {/* Performance Insights */}
+        {insights && insights.length > 0 && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold mb-4">Performance Insights</h2>
+            <div className="space-y-3">
+              {insights.map((insight, index) => {
+                const IconComponent = getIconComponent(insight.icon);
+                const bgColor = insight.type === 'positive' ? 'bg-green-50 border-green-200' : 
+                               insight.type === 'warning' ? 'bg-yellow-50 border-yellow-200' : 
+                               'bg-blue-50 border-blue-200';
+                const textColor = insight.type === 'positive' ? 'text-green-800' :
+                                 insight.type === 'warning' ? 'text-yellow-800' :
+                                 'text-blue-800';
+                const iconColor = insight.type === 'positive' ? 'text-green-600' :
+                                 insight.type === 'warning' ? 'text-yellow-600' :
+                                 'text-blue-600';
+
+                return (
+                  <div key={index} className={`flex items-center p-3 border rounded ${bgColor}`}>
+                    <IconComponent className={`w-5 h-5 mr-3 ${iconColor}`} />
+                    <span className={textColor}>{insight.message}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </Layout>
   );

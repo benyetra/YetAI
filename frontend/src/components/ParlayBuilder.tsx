@@ -10,6 +10,11 @@ interface ParlayLeg {
   odds: number;
   gameInfo?: string;
   teamNames?: string[];
+  // Game details for backend
+  home_team?: string;
+  away_team?: string;
+  sport?: string;
+  commence_time?: string;
 }
 
 interface ParlayBuilderProps {
@@ -171,7 +176,12 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
       selection,
       odds,
       gameInfo,
-      teamNames: game?.teams || []
+      teamNames: game?.teams || [],
+      // Include team details for backend
+      home_team: game?.teams?.[1], // Home team is typically second in the array
+      away_team: game?.teams?.[0], // Away team is typically first  
+      sport: game?.sport,
+      commence_time: game?.gameTime
     };
 
     setLegs(prevLegs => [...prevLegs, newLeg]);
@@ -237,7 +247,11 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
           game_id: leg.gameId,
           bet_type: leg.betType.toLowerCase(),
           selection: leg.selection,
-          odds: leg.odds
+          odds: leg.odds,
+          home_team: leg.home_team,
+          away_team: leg.away_team,
+          sport: leg.sport,
+          commence_time: leg.commence_time
         })),
         amount: parseFloat(amount)
       };

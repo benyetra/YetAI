@@ -377,6 +377,44 @@ export const sportsAPI = {
       undefined, 
       useCache
     );
+  },
+
+  // Get user performance analytics
+  getUserPerformance: async (days: number = 30, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    
+    const fallbackData = {
+      status: 'success',
+      period_days: days,
+      overview: {
+        total_bets: 0,
+        total_wagered: 0,
+        total_profit: 0,
+        win_rate: 0,
+        roi: 0,
+        won_bets: 0,
+        lost_bets: 0,
+        pending_bets: 0
+      },
+      sport_breakdown: [],
+      bet_type_breakdown: [],
+      performance_trend: {
+        recent_period: { win_rate: 0, profit: 0, total_bets: 0 },
+        previous_period: { win_rate: 0, profit: 0, total_bets: 0 },
+        win_rate_change: 0,
+        profit_change: 0,
+        trend_direction: 'stable'
+      },
+      insights: []
+    };
+
+    try {
+      const response = await enhancedApiClient.get(`/api/user/performance?days=${days}`, authToken);
+      return response;
+    } catch (error) {
+      console.warn('Failed to fetch user performance data:', error);
+      return fallbackData;
+    }
   }
 };
 

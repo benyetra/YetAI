@@ -34,6 +34,11 @@ class ParlayLeg(BaseModel):
     bet_type: BetType
     selection: str
     odds: float
+    # Game details for display
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
+    commence_time: Optional[str] = None
     
 class PlaceParlayRequest(BaseModel):
     legs: List[ParlayLeg]

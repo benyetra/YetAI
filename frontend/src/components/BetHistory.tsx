@@ -49,6 +49,10 @@ interface Bet {
   away_team?: string;
   sport?: string;
   commence_time?: string;
+  // Parlay-specific fields
+  total_odds?: number;
+  leg_count?: number;
+  legs?: any[];
 }
 
 interface BetStats {
@@ -74,6 +78,9 @@ interface ParlayLeg {
   selection: string;
   odds: number;
   status: string;
+  home_team?: string;
+  away_team?: string;
+  sport?: string;
 }
 
 interface ParlayDetails {
@@ -251,11 +258,20 @@ const BetHistory: React.FC = () => {
   };
 
   const formatOdds = (odds: number) => {
+    if (isNaN(odds) || odds === null || odds === undefined) {
+      return 'N/A';
+    }
     const roundedOdds = Math.round(odds);
     return roundedOdds > 0 ? `+${roundedOdds}` : `${roundedOdds}`;
   };
 
   const formatBetTitle = (bet: Bet) => {
+    // Handle parlay bets specially
+    if (bet.bet_type === 'parlay') {
+      const legCount = bet.leg_count || bet.legs?.length || 0;
+      return `${legCount}-Leg Parlay`;
+    }
+    
     // If we have team information, show a proper game description
     if (bet.home_team && bet.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
@@ -267,12 +283,12 @@ const BetHistory: React.FC = () => {
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} Spread (${gameInfo})`;
       } else if (bet.bet_type === 'total') {
-        return `${bet.selection.toUpperCase()} (${gameInfo})`;
+        return `${(bet.selection || '').toUpperCase()} (${gameInfo})`;
       }
     }
     
     // Fallback to generic description
-    return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
+    return `${(bet.bet_type || 'BET').toUpperCase()} - ${(bet.selection || 'UNKNOWN').toUpperCase()}`;
   };
 
   const formatBetSubtitle = (bet: Bet) => {
@@ -335,8 +351,8 @@ const BetHistory: React.FC = () => {
     
     // Search filter
     if (searchTerm) {
-      return bet.selection.toLowerCase().includes(searchTerm.toLowerCase()) ||
-             bet.bet_type.toLowerCase().includes(searchTerm.toLowerCase());
+      return (bet.selection || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+             (bet.bet_type || '').toLowerCase().includes(searchTerm.toLowerCase());
     }
     
     return true;
@@ -550,7 +566,7 @@ const BetHistory: React.FC = () => {
                       )}
                       
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
-                        <span>Odds: {formatOdds(bet.odds)}</span>
+                        <span>Odds: {formatOdds(bet.bet_type === 'parlay' ? bet.total_odds : bet.odds)}</span>
                         <span>•</span>
                         <span>{formatDate(bet.placed_at)}</span>
                         {bet.game_id && (
@@ -719,9 +735,11 @@ const BetHistory: React.FC = () => {
                               </span>
                             </div>
                             <p className="text-xs text-gray-500 capitalize">{leg.bet_type}</p>
-                            {leg.game_id && (
+                            {(leg.home_team && leg.away_team) ? (
+                              <p className="text-xs text-gray-400">{leg.away_team} @ {leg.home_team}</p>
+                            ) : leg.game_id ? (
                               <p className="text-xs text-gray-400">Game: {leg.game_id}</p>
-                            )}
+                            ) : null}
                           </div>
                           <div className="text-right">
                             <span className="text-sm font-mono">{formatOdds(leg.odds)}</span>

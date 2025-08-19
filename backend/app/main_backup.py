@@ -12,23 +12,20 @@ from app.services.fantasy_pipeline import fantasy_pipeline
 from app.services.ai_chat_service import ai_chat_service
 from app.services.real_fantasy_pipeline import real_fantasy_pipeline
 from app.services.performance_tracker import performance_tracker
-from app.services.auth_service_db import auth_service_db as auth_service
+from app.services.auth_service import auth_service
 from app.services.avatar_service import avatar_service
-from app.services.bet_service_db import bet_service_db as bet_service
-from app.services.yetai_bets_service_db import yetai_bets_service_db as yetai_bets_service
-from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
+from app.services.bet_service import bet_service
+from app.services.yetai_bets_service import yetai_bets_service
+from app.services.live_betting_service import live_betting_service
 from app.services.live_betting_simulator import live_betting_simulator
-from app.services.bet_sharing_service_db import bet_sharing_service_db as bet_sharing_service
+from app.services.bet_sharing_service import bet_sharing_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
 from app.services.cache_service import cache_service
 from app.services.scheduler_service import scheduler_service
-from app.services.google_oauth_service import google_oauth_service
-from app.services.betting_analytics_service import betting_analytics_service
 from app.models.bet_models import *
 from app.models.live_bet_models import *
 from app.core.config import settings
-from app.core.database import init_db, check_db_connection
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional
 
@@ -1222,170 +1219,6 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     }
 
 
-# Google OAuth routes
-@app.get("/api/auth/google/url")
-async def get_google_auth_url():
-    """Get Google OAuth authorization URL"""
-    try:
-        result = google_oauth_service.get_authorization_url()
-        if 'error' in result:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": result['error']}
-            )
-        
-        return {
-            "status": "success",
-            "authorization_url": result['authorization_url'],
-            "state": result['state']
-        }
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Failed to get authorization URL: {str(e)}"}
-        )
-
-
-@app.get("/api/auth/google/callback")
-async def google_oauth_callback(code: str, state: str):
-    """Handle Google OAuth callback"""
-    try:
-        result = google_oauth_service.handle_callback(code, state)
-        
-        if 'error' in result:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": result['error']}
-            )
-        
-        user_info = result['user_info']
-        
-        # Check if user already exists
-        existing_user = await auth_service.get_user_by_email(user_info['email'])
-        
-        if existing_user:
-            # User exists - log them in
-            token_data = await auth_service.create_access_token(existing_user)
-            
-            # Update profile picture if provided
-            if user_info.get('picture'):
-                await auth_service.update_user_avatar(existing_user['id'], user_info['picture'])
-            
-            return {
-                "status": "success",
-                "message": "Login successful",
-                "access_token": token_data["access_token"],
-                "token_type": "bearer",
-                "user": existing_user
-            }
-        else:
-            # Create new user
-            user_data = {
-                "email": user_info['email'],
-                "password": "google_oauth",  # Placeholder password
-                "first_name": user_info['first_name'],
-                "last_name": user_info['last_name'],
-                "google_id": user_info['google_id'],
-                "is_verified": user_info.get('email_verified', False),
-                "avatar_url": user_info.get('picture', '')
-            }
-            
-            result = await auth_service.create_user(user_data)
-            
-            if result["success"]:
-                token_data = await auth_service.create_access_token(result["user"])
-                return {
-                    "status": "success",
-                    "message": "Account created and login successful",
-                    "access_token": token_data["access_token"],
-                    "token_type": "bearer",
-                    "user": result["user"]
-                }
-            else:
-                return JSONResponse(
-                    status_code=400,
-                    content={"status": "error", "message": result["message"]}
-                )
-                
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"OAuth callback failed: {str(e)}"}
-        )
-
-
-@app.post("/api/auth/google/verify")
-async def verify_google_token(data: dict):
-    """Verify Google ID token (for client-side OAuth)"""
-    try:
-        id_token = data.get('id_token')
-        if not id_token:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": "ID token is required"}
-            )
-        
-        user_info = google_oauth_service.verify_id_token(id_token)
-        if not user_info:
-            return JSONResponse(
-                status_code=400,
-                content={"status": "error", "message": "Invalid ID token"}
-            )
-        
-        # Check if user already exists
-        existing_user = await auth_service.get_user_by_email(user_info['email'])
-        
-        if existing_user:
-            # User exists - log them in
-            token_data = await auth_service.create_access_token(existing_user)
-            
-            # Update profile picture if provided
-            if user_info.get('picture'):
-                await auth_service.update_user_avatar(existing_user['id'], user_info['picture'])
-            
-            return {
-                "status": "success",
-                "message": "Login successful",
-                "access_token": token_data["access_token"],
-                "token_type": "bearer",
-                "user": existing_user
-            }
-        else:
-            # Create new user
-            user_data = {
-                "email": user_info['email'],
-                "password": "google_oauth",  # Placeholder password
-                "first_name": user_info['first_name'],
-                "last_name": user_info['last_name'],
-                "google_id": user_info['google_id'],
-                "is_verified": user_info.get('email_verified', False),
-                "avatar_url": user_info.get('picture', '')
-            }
-            
-            result = await auth_service.create_user(user_data)
-            
-            if result["success"]:
-                token_data = await auth_service.create_access_token(result["user"])
-                return {
-                    "status": "success",
-                    "message": "Account created and login successful",
-                    "access_token": token_data["access_token"],
-                    "token_type": "bearer",
-                    "user": result["user"]
-                }
-            else:
-                return JSONResponse(
-                    status_code=400,
-                    content={"status": "error", "message": result["message"]}
-                )
-                
-    except Exception as e:
-        return JSONResponse(
-            status_code=500,
-            content={"status": "error", "message": f"Token verification failed: {str(e)}"}
-        )
-
-
 @app.put("/api/auth/profile")
 async def update_profile(
     profile_data: dict,
@@ -1432,27 +1265,21 @@ async def upload_avatar(
         if not image_data:
             raise HTTPException(status_code=400, detail="Image data is required")
         
-        # Get current user from database
-        user = await auth_service.get_user_by_id(current_user["id"])
-        if not user:
-            raise HTTPException(status_code=404, detail="User not found")
-        
-        # Delete old avatar if exists
-        if user.get("avatar_url"):
-            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
-        
-        # Save new avatar
+        # Save avatar
         success, result = avatar_service.save_avatar(current_user["id"], image_data)
         
         if success:
-            # Update user record with avatar URLs in database
-            update_result = await auth_service.update_user_avatar(
-                current_user["id"],
-                result["avatar"],
-                result["thumbnail"]
-            )
-            
-            if update_result["success"]:
+            # Update user record with avatar URLs
+            user = auth_service.users.get(current_user["id"])
+            if user:
+                # Delete old avatar if exists
+                if user.get("avatar_url"):
+                    avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+                
+                # Update with new avatar
+                user["avatar_url"] = result["avatar"]
+                user["avatar_thumbnail"] = result["thumbnail"]
+                
                 return {
                     "status": "success",
                     "message": "Avatar uploaded successfully",
@@ -1460,7 +1287,7 @@ async def upload_avatar(
                     "thumbnail_url": result["thumbnail"]
                 }
             else:
-                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+                raise HTTPException(status_code=404, detail="User not found")
         else:
             raise HTTPException(status_code=400, detail=result)
             
@@ -1473,8 +1300,7 @@ async def upload_avatar(
 async def delete_avatar(current_user: dict = Depends(get_current_user)):
     """Delete user avatar"""
     try:
-        # Get current user from database
-        user = await auth_service.get_user_by_id(current_user["id"])
+        user = auth_service.users.get(current_user["id"])
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -1482,20 +1308,14 @@ async def delete_avatar(current_user: dict = Depends(get_current_user)):
         if user.get("avatar_url"):
             avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
             
-            # Clear avatar URLs from database
-            update_result = await auth_service.update_user_avatar(
-                current_user["id"],
-                None,
-                None
-            )
+            # Update user record
+            user["avatar_url"] = None
+            user["avatar_thumbnail"] = None
             
-            if update_result["success"]:
-                return {
-                    "status": "success",
-                    "message": "Avatar deleted successfully"
-                }
-            else:
-                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+            return {
+                "status": "success",
+                "message": "Avatar deleted successfully"
+            }
         else:
             raise HTTPException(status_code=400, detail="No avatar to delete")
             
@@ -1508,8 +1328,7 @@ async def delete_avatar(current_user: dict = Depends(get_current_user)):
 async def get_user_avatar(user_id: int):
     """Get user avatar URL"""
     try:
-        # Get user from database
-        user = await auth_service.get_user_by_id(user_id)
+        user = auth_service.users.get(user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         
@@ -1629,17 +1448,27 @@ async def get_personalized_predictions(current_user: dict = Depends(get_current_
         raise HTTPException(status_code=500, detail=f"Error getting personalized predictions: {str(e)}")
 
 @app.get("/api/user/performance")
-async def get_user_performance(
-    days: int = 30,
-    current_user: dict = Depends(get_current_user)
-):
-    """Get user's comprehensive betting performance analytics"""
+async def get_user_performance(current_user: dict = Depends(get_current_user)):
+    """Get user's personal prediction performance"""
     try:
-        analytics = await betting_analytics_service.get_user_performance_analytics(
-            user_id=current_user["id"],
-            days=days
-        )
-        return analytics
+        # This would integrate with your performance tracker
+        # For now, return mock user-specific data
+        
+        return {
+            "status": "success",
+            "user_id": current_user["id"],
+            "personal_stats": {
+                "predictions_made": 25,
+                "accuracy_rate": 78.5,
+                "best_sport": "NFL",
+                "favorite_bet_type": "spreads",
+                "total_profit": 125.50 if current_user["subscription_tier"] != "free" else "Upgrade to see profits"
+            },
+            "recent_predictions": [
+                {"game": "Chiefs vs Bills", "prediction": "Chiefs -3", "result": "Won", "profit": 10.50},
+                {"game": "Cowboys vs Eagles", "prediction": "Over 47.5", "result": "Lost", "profit": -11.00}
+            ]
+        }
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error getting user performance: {str(e)}")
@@ -2544,25 +2373,14 @@ async def reset_user_password(
 # WebSocket endpoints and startup events
 @app.on_event("startup")
 async def startup_event():
-    """Start background tasks and initialize database"""
-    # Initialize database connection and tables
-    try:
-        if not check_db_connection():
-            logger.error("Database connection failed - switching to in-memory fallback")
-        else:
-            init_db()
-            logger.info("Database initialized successfully")
-    except Exception as e:
-        logger.error(f"Database initialization failed: {e}")
-    
-    # Start background tasks for live updates
+    """Start background tasks for live updates"""
     asyncio.create_task(simulate_odds_updates())
     asyncio.create_task(simulate_score_updates())
     
     # Start the scheduler for live sports data updates
     await scheduler_service.start()
     
-    logger.info("WebSocket services, scheduler, and database started")
+    logger.info("WebSocket services and scheduler started")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):

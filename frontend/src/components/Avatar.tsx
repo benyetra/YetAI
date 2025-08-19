@@ -20,6 +20,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [forceRefresh, setForceRefresh] = useState(0);
 
   // Size mappings
   const sizeClasses = {
@@ -28,6 +29,13 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     lg: 'w-16 h-16',
     xl: 'w-24 h-24'
   };
+
+  // Filter out width and height classes from className to prevent conflicts
+  // but allow min-width and min-height classes for responsive sizing
+  const filteredClassName = className
+    .split(' ')
+    .filter(cls => (!cls.match(/^w-\d+$/) && !cls.match(/^h-\d+$/)) || cls.includes('min-w-') || cls.includes('min-h-'))
+    .join(' ');
 
   const iconSizes = {
     sm: 'w-4 h-4',
@@ -47,7 +55,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     if (user?.id) {
       loadAvatar();
     }
-  }, [user?.id]);
+  }, [user?.id, forceRefresh]);
 
   const loadAvatar = async () => {
     if (!user?.id) return;
@@ -111,7 +119,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
   // Show loading state
   if (loading) {
     return (
-      <div className={`${sizeClasses[size]} ${className} rounded-full bg-gray-200 animate-pulse`} />
+      <div className={`${sizeClasses[size]} ${filteredClassName} rounded-full bg-gray-200 animate-pulse`} />
     );
   }
 
@@ -121,7 +129,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
       <img
         src={avatarUrl}
         alt={`${user?.first_name || user?.email || 'User'} avatar`}
-        className={`${sizeClasses[size]} ${className} rounded-full object-cover`}
+        className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
         onError={handleImageError}
       />
     );
@@ -133,7 +141,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
       <img
         src={generateDefaultAvatar()}
         alt={`${user.first_name || user.email} avatar`}
-        className={`${sizeClasses[size]} ${className} rounded-full object-cover`}
+        className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
       />
     );
   }
@@ -141,7 +149,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
   // Show fallback icon if no user data
   if (showFallback) {
     return (
-      <div className={`${sizeClasses[size]} ${className} rounded-full bg-gray-300 flex items-center justify-center`}>
+      <div className={`${sizeClasses[size]} ${filteredClassName} rounded-full bg-gray-300 flex items-center justify-center`}>
         <User className={`${iconSizes[size]} text-gray-600`} />
       </div>
     );

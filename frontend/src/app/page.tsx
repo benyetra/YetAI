@@ -19,15 +19,13 @@ export default function HomePage() {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
 
   useEffect(() => {
-    // Check URL params for login/signup
+    // Redirect to new login/signup pages
     if (searchParams.get('login') === 'true') {
-      setAuthMode('login');
-      setShowAuthModal(true);
+      router.push('/login');
     } else if (searchParams.get('signup') === 'true') {
-      setAuthMode('signup');
-      setShowAuthModal(true);
+      router.push('/signup');
     }
-  }, [searchParams]);
+  }, [searchParams, router]);
 
   useEffect(() => {
     // Redirect to dashboard if already authenticated
@@ -61,20 +59,14 @@ export default function HomePage() {
             </p>
             <div className="flex justify-center space-x-4">
               <button
-                onClick={() => {
-                  setAuthMode('signup');
-                  setShowAuthModal(true);
-                }}
+                onClick={() => router.push('/signup')}
                 className="px-8 py-4 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors flex items-center"
               >
                 Start Free Trial
                 <ArrowRight className="w-5 h-5 ml-2" />
               </button>
               <button
-                onClick={() => {
-                  setAuthMode('login');
-                  setShowAuthModal(true);
-                }}
+                onClick={() => router.push('/login')}
                 className="px-8 py-4 border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
               >
                 Sign In
@@ -107,10 +99,7 @@ export default function HomePage() {
           
           <div className="text-center mt-8">
             <button
-              onClick={() => {
-                setAuthMode('signup');
-                setShowAuthModal(true);
-              }}
+              onClick={() => router.push('/signup')}
               className="inline-flex items-center px-6 py-3 bg-[#A855F7] text-white rounded-lg hover:bg-[#A855F7]/90 transition-colors font-medium"
             >
               Get Full Access
