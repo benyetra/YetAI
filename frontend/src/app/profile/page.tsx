@@ -148,6 +148,13 @@ export default function ProfilePage() {
     }
   }, [isAuthenticated, loading, router]);
 
+  // Refresh user data on profile page load
+  useEffect(() => {
+    if (isAuthenticated && token && !loading) {
+      refreshUser();
+    }
+  }, [isAuthenticated, token, loading]);
+
   // Initialize form with user data
   useEffect(() => {
     if (user) {
@@ -274,10 +281,12 @@ export default function ProfilePage() {
         
         if (response.status === 'success') {
           setTwoFAStatus({
-            enabled: response.totp_enabled || false,
+            enabled: response.enabled || false,
             backup_codes_remaining: response.backup_codes_remaining || 0,
-            setup_in_progress: false
+            setup_in_progress: response.setup_in_progress || false
           });
+        } else if (response.status === 'error') {
+          console.error('2FA status API error:', response.detail);
         }
       } catch (error) {
         console.error('Error loading 2FA status:', error);
