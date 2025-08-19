@@ -17,8 +17,11 @@ import {
   DollarSign,
   BarChart3,
   Star,
-  Zap
+  Zap,
+  Trash2,
+  Plus
 } from 'lucide-react';
+import YetAIBetModal from '@/components/YetAIBetModal';
 
 interface BestBet {
   id: string;
@@ -57,6 +60,9 @@ export default function YetAIBetsPage() {
     wonBets: 0,
     avgOdds: 0
   });
+  const [selectedBetForPlacement, setSelectedBetForPlacement] = useState<BestBet | null>(null);
+  const [showBetModal, setShowBetModal] = useState(false);
+  const [deletingBetId, setDeletingBetId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -115,6 +121,49 @@ export default function YetAIBetsPage() {
     }
   };
 
+  const handlePlaceBet = (bet: BestBet) => {
+    setSelectedBetForPlacement(bet);
+    setShowBetModal(true);
+  };
+
+  const handleDeleteBet = async (betId: string) => {
+    if (!user?.is_admin) return;
+    
+    const confirmed = window.confirm('Are you sure you want to delete this bet? This action cannot be undone.');
+    if (!confirmed) return;
+
+    try {
+      setDeletingBetId(betId);
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`http://localhost:8000/api/admin/yetai-bets/${betId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        // Remove the bet from the local state
+        setBets(prevBets => prevBets.filter(bet => bet.id !== betId));
+      } else {
+        const errorData = await response.json();
+        alert(`Failed to delete bet: ${errorData.detail || 'Unknown error'}`);
+      }
+    } catch (error) {
+      console.error('Error deleting bet:', error);
+      alert('Failed to delete bet. Please try again.');
+    } finally {
+      setDeletingBetId(null);
+    }
+  };
+
+  const handleBetPlaced = () => {
+    // Optionally refresh bets or show success message
+    setShowBetModal(false);
+    setSelectedBetForPlacement(null);
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -157,6 +206,22 @@ export default function YetAIBetsPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Admin Delete Button */}
+      {user?.is_admin && !isLocked && (
+        <button
+          onClick={() => handleDeleteBet(bet.id)}
+          disabled={deletingBetId === bet.id}
+          className="absolute top-2 right-2 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-50 rounded-full transition-colors disabled:opacity-50 z-10"
+          title="Delete bet (Admin only)"
+        >
+          {deletingBetId === bet.id ? (
+            <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-red-500"></div>
+          ) : (
+            <Trash2 className="w-3 h-3" />
+          )}
+        </button>
       )}
       
       <div className="flex items-start justify-between mb-4">
@@ -217,6 +282,19 @@ export default function YetAIBetsPage() {
               bet.status === 'won' ? 'text-green-600' : 'text-red-600'
             }`}>
               Result: {bet.result}
+            </div>
+          )}
+
+          {/* Place Bet Button - Only show for pending bets and non-locked cards */}
+          {bet.status === 'pending' && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <button
+                onClick={() => handlePlaceBet(bet)}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center space-x-2"
+              >
+                <Plus className="w-4 h-4" />
+                <span>Place Bet</span>
+              </button>
             </div>
           )}
         </>
@@ -394,6 +472,17 @@ export default function YetAIBetsPage() {
             </div>
           </div>
         )}
+
+        {/* Bet Placement Modal */}
+        <YetAIBetModal
+          isOpen={showBetModal}
+          onClose={() => {
+            setShowBetModal(false);
+            setSelectedBetForPlacement(null);
+          }}
+          bet={selectedBetForPlacement}
+          onBetPlaced={handleBetPlaced}
+        />
       </div>
     </Layout>
   );
