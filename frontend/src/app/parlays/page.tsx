@@ -122,47 +122,51 @@ export default function ParlaysPage() {
       const totalMarket = bestBookmaker.markets?.find((m: any) => m.key === 'totals');
 
       const odds = {
-        moneyline: {},
-        spread: {},
-        total: {}
+        moneyline: [],
+        spread: [],
+        total: []
       };
 
-      // Parse moneyline odds
+      // Parse moneyline odds - store as array matching team order [away, home]
       if (moneylineMarket?.outcomes) {
-        const homeOutcome = moneylineMarket.outcomes.find((o: any) => o.name === game.home_team);
         const awayOutcome = moneylineMarket.outcomes.find((o: any) => o.name === game.away_team);
-        odds.moneyline = {
-          [game.home_team.toLowerCase().replace(/\s+/g, '')]: homeOutcome?.price || 0,
-          [game.away_team.toLowerCase().replace(/\s+/g, '')]: awayOutcome?.price || 0
-        };
+        const homeOutcome = moneylineMarket.outcomes.find((o: any) => o.name === game.home_team);
+        odds.moneyline = [
+          awayOutcome?.price || 0,
+          homeOutcome?.price || 0
+        ];
       }
 
-      // Parse spread odds
+      // Parse spread odds - store as array matching team order [away, home]
       if (spreadMarket?.outcomes) {
-        const homeOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.home_team);
         const awayOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.away_team);
-        odds.spread = {
-          [game.home_team.toLowerCase().replace(/\s+/g, '')]: `${homeOutcome?.point >= 0 ? '+' : ''}${homeOutcome?.point || 0} (${homeOutcome?.price || -110})`,
-          [game.away_team.toLowerCase().replace(/\s+/g, '')]: `${awayOutcome?.point >= 0 ? '+' : ''}${awayOutcome?.point || 0} (${awayOutcome?.price || -110})`
-        };
+        const homeOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.home_team);
+        odds.spread = [
+          `${awayOutcome?.point >= 0 ? '+' : ''}${awayOutcome?.point || 0} (${awayOutcome?.price || -110})`,
+          `${homeOutcome?.point >= 0 ? '+' : ''}${homeOutcome?.point || 0} (${homeOutcome?.price || -110})`
+        ];
       }
 
       // Parse total odds
       if (totalMarket?.outcomes) {
         const overOutcome = totalMarket.outcomes.find((o: any) => o.name === 'Over');
         const underOutcome = totalMarket.outcomes.find((o: any) => o.name === 'Under');
-        odds.total = {
-          over: `O ${overOutcome?.point || 0} (${overOutcome?.price || -110})`,
-          under: `U ${underOutcome?.point || 0} (${underOutcome?.price || -110})`
-        };
+        odds.total = [
+          `O ${overOutcome?.point || 0} (${overOutcome?.price || -110})`,
+          `U ${underOutcome?.point || 0} (${underOutcome?.price || -110})`
+        ];
       }
 
       return {
         id: game.id,
         sport: game.sport_title || 'Unknown',
-        teams: [game.away_team, game.home_team],
+        teams: [game.away_team, game.home_team], // [away, home]
         gameTime: game.commence_time,
-        odds
+        odds,
+        // Store raw API data for proper odds extraction
+        raw_moneyline: moneylineMarket?.outcomes || [],
+        raw_spread: spreadMarket?.outcomes || [],
+        raw_total: totalMarket?.outcomes || []
       };
     }).filter(Boolean);
   };

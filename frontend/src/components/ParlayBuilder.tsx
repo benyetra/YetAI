@@ -37,24 +37,48 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     {
       id: 'nfl-1',
       sport: 'NFL',
-      teams: ['Dallas Cowboys', 'Philadelphia Eagles'],
+      teams: ['Dallas Cowboys', 'Philadelphia Eagles'], // [away, home]
       gameTime: '2025-09-04 20:20:00',
       odds: {
-        moneyline: { cowboys: 270, eagles: -280 },
-        spread: { cowboys: '+7 (-110)', eagles: '-7 (-110)' },
-        total: { over: 'O 46.5 (-110)', under: 'U 46.5 (-110)' }
-      }
+        moneyline: [270, -280], // [away, home]
+        spread: ['+7 (-110)', '-7 (-110)'], // [away, home]
+        total: ['O 46.5 (-110)', 'U 46.5 (-110)']
+      },
+      raw_moneyline: [
+        { name: 'Dallas Cowboys', price: 270 },
+        { name: 'Philadelphia Eagles', price: -280 }
+      ],
+      raw_spread: [
+        { name: 'Dallas Cowboys', price: -110, point: 7 },
+        { name: 'Philadelphia Eagles', price: -110, point: -7 }
+      ],
+      raw_total: [
+        { name: 'Over', price: -110, point: 46.5 },
+        { name: 'Under', price: -110, point: 46.5 }
+      ]
     },
     {
       id: 'nfl-2',
       sport: 'NFL',
-      teams: ['Kansas City Chiefs', 'Los Angeles Chargers'],
+      teams: ['Kansas City Chiefs', 'Los Angeles Chargers'], // [away, home]
       gameTime: '2025-09-05 20:00:00',
       odds: {
-        moneyline: { chiefs: -160, chargers: 150 },
-        spread: { chiefs: '-3 (-120)', chargers: '+3 (-102)' },
-        total: { over: 'O 45.5 (-105)', under: 'U 45.5 (-115)' }
-      }
+        moneyline: [-160, 150], // [away, home]
+        spread: ['-3 (-120)', '+3 (-102)'], // [away, home]
+        total: ['O 45.5 (-105)', 'U 45.5 (-115)']
+      },
+      raw_moneyline: [
+        { name: 'Kansas City Chiefs', price: -160 },
+        { name: 'Los Angeles Chargers', price: 150 }
+      ],
+      raw_spread: [
+        { name: 'Kansas City Chiefs', price: -120, point: -3 },
+        { name: 'Los Angeles Chargers', price: -102, point: 3 }
+      ],
+      raw_total: [
+        { name: 'Over', price: -105, point: 45.5 },
+        { name: 'Under', price: -115, point: 45.5 }
+      ]
     }
   ];
 
@@ -355,13 +379,17 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <h5 className="text-sm font-medium text-gray-700 mb-1">Moneyline</h5>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'moneyline',
-                              game.teams[0],
-                              Object.values(game.odds.moneyline)[0] as number,
-                              `${game.teams[0]} vs ${game.teams[1]} - Moneyline`
-                            )}
+                            onClick={() => {
+                              const awayOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[0] : 
+                                (game.raw_moneyline?.find(o => o.name === game.teams[0])?.price || 0);
+                              addLeg(
+                                game.id,
+                                'moneyline',
+                                game.teams[0],
+                                awayOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Moneyline`
+                              );
+                            }}
                             disabled={isBetDisabled(game.id, 'moneyline', game.teams[0])}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
                               isBetDisabled(game.id, 'moneyline', game.teams[0])
@@ -369,16 +397,24 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {game.teams[0]} {Object.values(game.odds.moneyline)[0] > 0 ? '+' : ''}{Object.values(game.odds.moneyline)[0]}
+                            {(() => {
+                              const awayOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[0] : 
+                                (game.raw_moneyline?.find(o => o.name === game.teams[0])?.price || 0);
+                              return `${game.teams[0]} ${awayOdds > 0 ? '+' : ''}${awayOdds}`;
+                            })()}
                           </button>
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'moneyline',
-                              game.teams[1],
-                              Object.values(game.odds.moneyline)[1] as number,
-                              `${game.teams[0]} vs ${game.teams[1]} - Moneyline`
-                            )}
+                            onClick={() => {
+                              const homeOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[1] : 
+                                (game.raw_moneyline?.find(o => o.name === game.teams[1])?.price || 0);
+                              addLeg(
+                                game.id,
+                                'moneyline',
+                                game.teams[1],
+                                homeOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Moneyline`
+                              );
+                            }}
                             disabled={isBetDisabled(game.id, 'moneyline', game.teams[1])}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
                               isBetDisabled(game.id, 'moneyline', game.teams[1])
@@ -386,7 +422,11 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {game.teams[1]} {Object.values(game.odds.moneyline)[1] > 0 ? '+' : ''}{Object.values(game.odds.moneyline)[1]}
+                            {(() => {
+                              const homeOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[1] : 
+                                (game.raw_moneyline?.find(o => o.name === game.teams[1])?.price || 0);
+                              return `${game.teams[1]} ${homeOdds > 0 ? '+' : ''}${homeOdds}`;
+                            })()}
                           </button>
                         </div>
                       </div>
@@ -396,38 +436,58 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <h5 className="text-sm font-medium text-gray-700 mb-1">Spread</h5>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'spread',
-                              `${game.teams[0]} ${Object.values(game.odds.spread)[0]}`,
-                              -110,
-                              `${game.teams[0]} vs ${game.teams[1]} - Spread`
-                            )}
-                            disabled={isBetDisabled(game.id, 'spread', `${game.teams[0]} ${Object.values(game.odds.spread)[0]}`)}
+                            onClick={() => {
+                              const awaySpreadData = game.raw_spread?.find(o => o.name === game.teams[0]);
+                              const awaySpread = Array.isArray(game.odds.spread) ? game.odds.spread[0] : 
+                                `${awaySpreadData?.point >= 0 ? '+' : ''}${awaySpreadData?.point || 0} (${awaySpreadData?.price || -110})`;
+                              const awayOdds = awaySpreadData?.price || -110;
+                              addLeg(
+                                game.id,
+                                'spread',
+                                `${game.teams[0]} ${awaySpread.split(' ')[0]}`,
+                                awayOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Spread`
+                              );
+                            }}
+                            disabled={isBetDisabled(game.id, 'spread', `${game.teams[0]}`)}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
-                              isBetDisabled(game.id, 'spread', `${game.teams[0]} ${Object.values(game.odds.spread)[0]}`)
+                              isBetDisabled(game.id, 'spread', `${game.teams[0]}`)
                                 ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {game.teams[0]} {Object.values(game.odds.spread)[0]}
+                            {(() => {
+                              const awaySpreadData = game.raw_spread?.find(o => o.name === game.teams[0]);
+                              const spreadLine = `${awaySpreadData?.point >= 0 ? '+' : ''}${awaySpreadData?.point || 0}`;
+                              return `${game.teams[0]} ${spreadLine}`;
+                            })()}
                           </button>
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'spread',
-                              `${game.teams[1]} ${Object.values(game.odds.spread)[1]}`,
-                              -110,
-                              `${game.teams[0]} vs ${game.teams[1]} - Spread`
-                            )}
-                            disabled={isBetDisabled(game.id, 'spread', `${game.teams[1]} ${Object.values(game.odds.spread)[1]}`)}
+                            onClick={() => {
+                              const homeSpreadData = game.raw_spread?.find(o => o.name === game.teams[1]);
+                              const homeSpread = Array.isArray(game.odds.spread) ? game.odds.spread[1] : 
+                                `${homeSpreadData?.point >= 0 ? '+' : ''}${homeSpreadData?.point || 0} (${homeSpreadData?.price || -110})`;
+                              const homeOdds = homeSpreadData?.price || -110;
+                              addLeg(
+                                game.id,
+                                'spread',
+                                `${game.teams[1]} ${homeSpread.split(' ')[0]}`,
+                                homeOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Spread`
+                              );
+                            }}
+                            disabled={isBetDisabled(game.id, 'spread', `${game.teams[1]}`)}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
-                              isBetDisabled(game.id, 'spread', `${game.teams[1]} ${Object.values(game.odds.spread)[1]}`)
+                              isBetDisabled(game.id, 'spread', `${game.teams[1]}`)
                                 ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {game.teams[1]} {Object.values(game.odds.spread)[1]}
+                            {(() => {
+                              const homeSpreadData = game.raw_spread?.find(o => o.name === game.teams[1]);
+                              const spreadLine = `${homeSpreadData?.point >= 0 ? '+' : ''}${homeSpreadData?.point || 0}`;
+                              return `${game.teams[1]} ${spreadLine}`;
+                            })()}
                           </button>
                         </div>
                       </div>
@@ -437,38 +497,56 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <h5 className="text-sm font-medium text-gray-700 mb-1">Total</h5>
                         <div className="flex gap-2">
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'total',
-                              Object.values(game.odds.total)[0] as string,
-                              -110,
-                              `${game.teams[0]} vs ${game.teams[1]} - Total`
-                            )}
-                            disabled={isBetDisabled(game.id, 'total', Object.values(game.odds.total)[0] as string)}
+                            onClick={() => {
+                              const overData = game.raw_total?.find(o => o.name === 'Over');
+                              const overSelection = Array.isArray(game.odds.total) ? game.odds.total[0] : 
+                                `O ${overData?.point || 0} (${overData?.price || -110})`;
+                              const overOdds = overData?.price || -110;
+                              addLeg(
+                                game.id,
+                                'total',
+                                overSelection,
+                                overOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Total`
+                              );
+                            }}
+                            disabled={isBetDisabled(game.id, 'total', 'Over')}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
-                              isBetDisabled(game.id, 'total', Object.values(game.odds.total)[0] as string)
+                              isBetDisabled(game.id, 'total', 'Over')
                                 ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {Object.values(game.odds.total)[0]}
+                            {(() => {
+                              const overData = game.raw_total?.find(o => o.name === 'Over');
+                              return `O ${overData?.point || 0} (${overData?.price || -110})`;
+                            })()}
                           </button>
                           <button
-                            onClick={() => addLeg(
-                              game.id,
-                              'total',
-                              Object.values(game.odds.total)[1] as string,
-                              -115,
-                              `${game.teams[0]} vs ${game.teams[1]} - Total`
-                            )}
-                            disabled={isBetDisabled(game.id, 'total', Object.values(game.odds.total)[1] as string)}
+                            onClick={() => {
+                              const underData = game.raw_total?.find(o => o.name === 'Under');
+                              const underSelection = Array.isArray(game.odds.total) ? game.odds.total[1] : 
+                                `U ${underData?.point || 0} (${underData?.price || -115})`;
+                              const underOdds = underData?.price || -115;
+                              addLeg(
+                                game.id,
+                                'total',
+                                underSelection,
+                                underOdds,
+                                `${game.teams[0]} vs ${game.teams[1]} - Total`
+                              );
+                            }}
+                            disabled={isBetDisabled(game.id, 'total', 'Under')}
                             className={`flex-1 px-3 py-2 text-sm border rounded transition-colors ${
-                              isBetDisabled(game.id, 'total', Object.values(game.odds.total)[1] as string)
+                              isBetDisabled(game.id, 'total', 'Under')
                                 ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
                                 : 'border-gray-300 hover:bg-gray-50'
                             }`}
                           >
-                            {Object.values(game.odds.total)[1]}
+                            {(() => {
+                              const underData = game.raw_total?.find(o => o.name === 'Under');
+                              return `U ${underData?.point || 0} (${underData?.price || -115})`;
+                            })()}
                           </button>
                         </div>
                       </div>
