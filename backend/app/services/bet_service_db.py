@@ -537,8 +537,18 @@ class BetServiceDB:
                 away_team=away_team,
                 commence_time=commence_time
             )
-            db.add(game)
             
+            try:
+                db.add(game)
+                db.flush()  # Flush to catch unique constraint violations
+            except Exception as e:
+                # Handle unique constraint violation - another transaction created the game
+                db.rollback()
+                game = db.query(Game).filter(Game.id == leg.game_id).first()
+                if not game:
+                    # If still not found, re-raise the error
+                    raise e
+                    
         return game
     
     def _calculate_potential_win(self, amount: float, odds: float) -> float:
