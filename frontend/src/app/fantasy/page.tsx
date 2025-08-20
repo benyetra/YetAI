@@ -327,7 +327,13 @@ export default function FantasyPage() {
       }
 
       if (leaguesResponse.status === 'success') {
-        setLeagues(leaguesResponse.leagues || []);
+        const loadedLeagues = leaguesResponse.leagues || [];
+        setLeagues(loadedLeagues);
+        
+        // Auto-select league for team fit analysis if only one league
+        if (loadedLeagues.length === 1 && !selectedLeague) {
+          loadLeagueForAnalysis(loadedLeagues[0].league_id);
+        }
       }
 
       if (trendingResponse.status === 'success') {
@@ -428,13 +434,22 @@ export default function FantasyPage() {
     setError(null);
 
     try {
-      const response = await fantasyAPI.getLeagueStandings(leagueId);
+      // Load both standings and rules for comprehensive league data
+      const [standingsResponse, rulesResponse] = await Promise.all([
+        fantasyAPI.getLeagueStandings(leagueId),
+        fantasyAPI.getLeagueRules(leagueId)
+      ]);
       
-      if (response.status === 'success') {
-        setStandings(response.standings || []);
+      if (standingsResponse.status === 'success') {
+        setStandings(standingsResponse.standings || []);
       } else {
-        setError(response.message || 'Failed to load league standings');
+        setError(standingsResponse.message || 'Failed to load league standings');
         setStandings([]);
+      }
+
+      // Also load league rules for team fit analysis
+      if (rulesResponse.status === 'success') {
+        setLeagueRules(rulesResponse.rules || null);
       }
     } catch (err) {
       setError('Failed to load league standings. Please try again.');
@@ -470,6 +485,30 @@ export default function FantasyPage() {
       setLeagueRules(null);
     } finally {
       setIsLoadingRules(false);
+    }
+  };
+
+  // Helper function to load league rules for team fit analysis
+  const loadLeagueForAnalysis = async (leagueId: string) => {
+    setSelectedLeague(leagueId);
+    
+    try {
+      const response = await fantasyAPI.getLeagueRules(leagueId);
+      
+      if (response.status === 'success') {
+        setLeagueRules(response.rules || null);
+        
+        // Also load roster if not already loaded
+        if (roster.length === 0) {
+          const rosterResponse = await fantasyAPI.getRoster(leagueId);
+          if (rosterResponse.status === 'success') {
+            setRoster(rosterResponse.roster || []);
+            setRosterTeamName(rosterResponse.team_name || '');
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load league for analysis:', err);
     }
   };
 
@@ -557,9 +596,66 @@ export default function FantasyPage() {
       console.log('Compare response:', response);
       
       if (response.status === 'success') {
-        setComparisonData(response.comparison);
+        console.log('Loading advanced analytics for comparison...');
+        
+        // Load analytics data for each player
+        const playersWithAnalytics = await Promise.all(
+          response.comparison.players.map(async (player: any) => {
+            try {
+              // Load recent 5 weeks of analytics and trends
+              const [analyticsResponse, trendsResponse, efficiencyResponse] = await Promise.all([
+                fantasyAPI.getPlayerAnalytics(parseInt(player.player_id), "8,9,10,11,12"),
+                fantasyAPI.getPlayerTrends(parseInt(player.player_id), "8,9,10,11,12"),
+                fantasyAPI.getPlayerEfficiency(parseInt(player.player_id), "8,9,10,11,12")
+              ]);
+
+              // Calculate average analytics from recent weeks
+              let avgAnalytics = {};
+              if (analyticsResponse.status === 'success' && analyticsResponse.analytics && analyticsResponse.analytics.length > 0) {
+                const analytics = analyticsResponse.analytics;
+                const validAnalytics = analytics.filter((a: any) => a !== null && a !== undefined);
+                
+                if (validAnalytics.length > 0) {
+                  avgAnalytics = {
+                    snap_percentage: validAnalytics.reduce((sum: number, a: any) => sum + (a.snap_percentage || 0), 0) / validAnalytics.length,
+                    target_share: validAnalytics.reduce((sum: number, a: any) => sum + (a.target_share || 0), 0) / validAnalytics.length,
+                    red_zone_share: validAnalytics.reduce((sum: number, a: any) => sum + (a.red_zone_share || 0), 0) / validAnalytics.length,
+                    points_per_snap: validAnalytics.reduce((sum: number, a: any) => sum + (a.points_per_snap || 0), 0) / validAnalytics.length,
+                    points_per_target: validAnalytics.reduce((sum: number, a: any) => sum + (a.points_per_target || 0), 0) / validAnalytics.length,
+                    boom_rate: validAnalytics.reduce((sum: number, a: any) => sum + (a.boom_rate || 0), 0) / validAnalytics.length,
+                    bust_rate: validAnalytics.reduce((sum: number, a: any) => sum + (a.bust_rate || 0), 0) / validAnalytics.length,
+                    weekly_variance: validAnalytics.reduce((sum: number, a: any) => sum + (a.weekly_variance || 0), 0) / validAnalytics.length,
+                    floor_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.floor_score || 0), 0) / validAnalytics.length,
+                    ceiling_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.ceiling_score || 0), 0) / validAnalytics.length,
+                  };
+                }
+              }
+
+              return {
+                ...player,
+                analytics: avgAnalytics,
+                trends: trendsResponse.status === 'success' ? trendsResponse.trends : {},
+                efficiency: efficiencyResponse.status === 'success' ? efficiencyResponse.efficiency_metrics : {}
+              };
+            } catch (error) {
+              console.warn(`Failed to load analytics for player ${player.player_id}:`, error);
+              // Return player with empty analytics if loading fails
+              return {
+                ...player,
+                analytics: {},
+                trends: {},
+                efficiency: {}
+              };
+            }
+          })
+        );
+
+        setComparisonData({
+          ...response.comparison,
+          players: playersWithAnalytics
+        });
         setShowComparison(true);
-        console.log('Comparison data set, showing comparison');
+        console.log('Comparison data set with advanced analytics, showing comparison');
       } else {
         setError(response.message || 'Failed to compare players');
         console.error('Compare failed:', response.message);
@@ -1770,84 +1866,578 @@ export default function FantasyPage() {
                   </button>
                 </div>
 
-                {/* Players Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Enhanced Players Comparison Grid with Advanced Analytics */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
                   {comparisonData.players.map((player: any, index: number) => (
-                    <div key={player.player_id} className="bg-white border rounded-lg p-6">
-                      <div className="flex items-center justify-between mb-4">
-                        <h4 className="text-lg font-semibold">{player.name}</h4>
-                        <div className="text-sm text-gray-500">
-                          {player.position} • {player.team}
-                        </div>
-                      </div>
-
-                      <div className="space-y-3">
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="font-medium text-gray-600">Age:</span>
-                            <span className="ml-2">{player.age}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Experience:</span>
-                            <span className="ml-2">{player.experience} yrs</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Height:</span>
-                            <span className="ml-2">{player.physical_stats?.height || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Weight:</span>
-                            <span className="ml-2">{player.physical_stats?.weight ? `${player.physical_stats.weight} lbs` : 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">College:</span>
-                            <span className="ml-2">{player.career_info?.college || 'N/A'}</span>
-                          </div>
-                          <div>
-                            <span className="font-medium text-gray-600">Depth Chart:</span>
-                            <span className="ml-2">#{player.team_context?.depth_chart_order || 'N/A'}</span>
+                    <div key={player.player_id} className="bg-white border rounded-lg overflow-hidden shadow-sm">
+                      {/* Player Header with Gradient */}
+                      <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white p-4">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-lg font-semibold">{player.name}</h4>
+                          <div className="text-sm opacity-90">
+                            {player.position} • {player.team}
                           </div>
                         </div>
-
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex items-center gap-2 mt-2">
                           <div className={`px-2 py-1 rounded text-xs font-medium ${
                             player.injury_status === 'Healthy' 
-                              ? 'bg-green-100 text-green-700'
+                              ? 'bg-green-500 bg-opacity-20 text-green-100'
                               : player.injury_status === 'Questionable'
-                              ? 'bg-yellow-100 text-yellow-700'
-                              : 'bg-red-100 text-red-700'
+                              ? 'bg-yellow-500 bg-opacity-20 text-yellow-100'
+                              : 'bg-red-500 bg-opacity-20 text-red-100'
                           }`}>
                             {player.injury_status}
                           </div>
-                          
                           {player.trending?.type !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
                               player.trending.type === 'hot'
-                                ? 'bg-orange-100 text-orange-700'
-                                : 'bg-blue-100 text-blue-700'
+                                ? 'bg-orange-500 bg-opacity-20 text-orange-100'
+                                : 'bg-blue-300 bg-opacity-20 text-blue-100'
                             }`}>
                               {player.trending.type === 'hot' ? '🔥 Hot' : '❄️ Cold'}
                             </div>
                           )}
                         </div>
                       </div>
+
+                      {/* Player Analytics Sections */}
+                      <div className="p-4">
+                        <div className="space-y-3">
+                          {/* Basic Info Section */}
+                          <div className="bg-gray-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <Eye className="w-4 h-4" />
+                              Basic Info
+                            </h5>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div><span className="font-medium">Age:</span> {player.age}</div>
+                              <div><span className="font-medium">Exp:</span> {player.experience} yrs</div>
+                              <div><span className="font-medium">Height:</span> {player.physical_stats?.height || 'N/A'}</div>
+                              <div><span className="font-medium">Weight:</span> {player.physical_stats?.weight ? `${player.physical_stats.weight}lbs` : 'N/A'}</div>
+                              <div className="col-span-2"><span className="font-medium">College:</span> {player.career_info?.college || 'N/A'}</div>
+                            </div>
+                          </div>
+
+                          {/* Usage Analytics Section */}
+                          <div className="bg-green-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <BarChart3 className="w-4 h-4" />
+                              Usage Analytics
+                            </h5>
+                            <div className="space-y-2">
+                              {/* Snap Share */}
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-medium">Snap Share:</span>
+                                <div className="flex items-center gap-1">
+                                  {comparisonData.players.length > 1 && (
+                                    (() => {
+                                      const allSnapShares = comparisonData.players.map((p: any) => p.analytics?.snap_percentage || 0);
+                                      const maxSnapShare = Math.max(...allSnapShares);
+                                      const isWinner = (player.analytics?.snap_percentage || 0) === maxSnapShare && maxSnapShare > 0;
+                                      return isWinner ? <span className="text-green-600 font-bold">👑</span> : null;
+                                    })()
+                                  )}
+                                  <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                                    <div 
+                                      className="bg-green-500 h-1.5 rounded-full transition-all" 
+                                      style={{ width: `${Math.min(100, (player.analytics?.snap_percentage || 0))}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="w-8 text-right font-medium">{player.analytics?.snap_percentage?.toFixed(0) || 0}%</span>
+                                </div>
+                              </div>
+                              
+                              {/* Target Share (for skill position players) */}
+                              {['WR', 'TE', 'RB'].includes(player.position) && (
+                                <div className="flex justify-between items-center text-xs">
+                                  <span className="font-medium">Target Share:</span>
+                                  <div className="flex items-center gap-1">
+                                    {comparisonData.players.length > 1 && (
+                                      (() => {
+                                        const skillPlayers = comparisonData.players.filter((p: any) => ['WR', 'TE', 'RB'].includes(p.position));
+                                        const allTargetShares = skillPlayers.map((p: any) => p.analytics?.target_share || 0);
+                                        const maxTargetShare = Math.max(...allTargetShares);
+                                        const isWinner = (player.analytics?.target_share || 0) === maxTargetShare && maxTargetShare > 0;
+                                        return isWinner ? <span className="text-blue-600 font-bold">🎯</span> : null;
+                                      })()
+                                    )}
+                                    <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                                      <div 
+                                        className="bg-blue-500 h-1.5 rounded-full transition-all" 
+                                        style={{ width: `${Math.min(100, (player.analytics?.target_share || 0) * 100)}%` }}
+                                      ></div>
+                                    </div>
+                                    <span className="w-8 text-right font-medium">{((player.analytics?.target_share || 0) * 100).toFixed(0)}%</span>
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Red Zone Usage */}
+                              <div className="flex justify-between items-center text-xs">
+                                <span className="font-medium">RZ Usage:</span>
+                                <div className="flex items-center gap-1">
+                                  {comparisonData.players.length > 1 && (
+                                    (() => {
+                                      const allRedZoneShares = comparisonData.players.map((p: any) => p.analytics?.red_zone_share || 0);
+                                      const maxRedZoneShare = Math.max(...allRedZoneShares);
+                                      const isWinner = (player.analytics?.red_zone_share || 0) === maxRedZoneShare && maxRedZoneShare > 0;
+                                      return isWinner ? <span className="text-red-600 font-bold">🔥</span> : null;
+                                    })()
+                                  )}
+                                  <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                                    <div 
+                                      className="bg-red-500 h-1.5 rounded-full transition-all" 
+                                      style={{ width: `${Math.min(100, (player.analytics?.red_zone_share || 0) * 100)}%` }}
+                                    ></div>
+                                  </div>
+                                  <span className="w-8 text-right font-medium">{((player.analytics?.red_zone_share || 0) * 100).toFixed(0)}%</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Efficiency Metrics Section */}
+                          <div className="bg-blue-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <Target className="w-4 h-4" />
+                              Efficiency
+                            </h5>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allPtsPerSnap = comparisonData.players.map((p: any) => p.analytics?.points_per_snap || 0);
+                                    const maxPtsPerSnap = Math.max(...allPtsPerSnap);
+                                    const isWinner = (player.analytics?.points_per_snap || 0) === maxPtsPerSnap && maxPtsPerSnap > 0;
+                                    return isWinner ? <span className="text-blue-600 text-xs">⚡</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Pts/Snap:</span>
+                                <span className="ml-1 text-blue-600 font-semibold">
+                                  {player.analytics?.points_per_snap?.toFixed(2) || '0.00'}
+                                </span>
+                              </div>
+                              {['WR', 'TE', 'RB'].includes(player.position) && (
+                                <div className="flex items-center gap-1">
+                                  {comparisonData.players.length > 1 && (
+                                    (() => {
+                                      const skillPlayers = comparisonData.players.filter((p: any) => ['WR', 'TE', 'RB'].includes(p.position));
+                                      const allPtsPerTarget = skillPlayers.map((p: any) => p.analytics?.points_per_target || 0);
+                                      const maxPtsPerTarget = Math.max(...allPtsPerTarget);
+                                      const isWinner = (player.analytics?.points_per_target || 0) === maxPtsPerTarget && maxPtsPerTarget > 0;
+                                      return isWinner ? <span className="text-blue-600 text-xs">🎯</span> : null;
+                                    })()
+                                  )}
+                                  <span className="font-medium">Pts/Target:</span>
+                                  <span className="ml-1 text-blue-600 font-semibold">
+                                    {player.analytics?.points_per_target?.toFixed(2) || '0.00'}
+                                  </span>
+                                </div>
+                              )}
+                              <div className="flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allFloors = comparisonData.players.map((p: any) => p.analytics?.floor_score || 0);
+                                    const maxFloor = Math.max(...allFloors);
+                                    const isWinner = (player.analytics?.floor_score || 0) === maxFloor && maxFloor > 0;
+                                    return isWinner ? <span className="text-green-600 text-xs">🛡️</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Floor:</span>
+                                <span className="ml-1 text-gray-600">
+                                  {player.analytics?.floor_score?.toFixed(1) || '0.0'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allCeilings = comparisonData.players.map((p: any) => p.analytics?.ceiling_score || 0);
+                                    const maxCeiling = Math.max(...allCeilings);
+                                    const isWinner = (player.analytics?.ceiling_score || 0) === maxCeiling && maxCeiling > 0;
+                                    return isWinner ? <span className="text-purple-600 text-xs">🚀</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Ceiling:</span>
+                                <span className="ml-1 text-gray-600">
+                                  {player.analytics?.ceiling_score?.toFixed(1) || '0.0'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Consistency Section */}
+                          <div className="bg-yellow-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <TrendingUp className="w-4 h-4" />
+                              Consistency
+                            </h5>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div className="flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allBoomRates = comparisonData.players.map((p: any) => p.analytics?.boom_rate || 0);
+                                    const maxBoomRate = Math.max(...allBoomRates);
+                                    const isWinner = (player.analytics?.boom_rate || 0) === maxBoomRate && maxBoomRate > 0;
+                                    return isWinner ? <span className="text-green-600 text-xs">💥</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Boom Rate:</span>
+                                <span className="ml-1 text-green-600 font-semibold">
+                                  {((player.analytics?.boom_rate || 0) * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allBustRates = comparisonData.players.map((p: any) => p.analytics?.bust_rate || 0);
+                                    const minBustRate = Math.min(...allBustRates);
+                                    const isWinner = (player.analytics?.bust_rate || 0) === minBustRate;
+                                    return isWinner ? <span className="text-green-600 text-xs">✅</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Bust Rate:</span>
+                                <span className="ml-1 text-red-600 font-semibold">
+                                  {((player.analytics?.bust_rate || 0) * 100).toFixed(0)}%
+                                </span>
+                              </div>
+                              <div className="col-span-2 flex items-center gap-1">
+                                {comparisonData.players.length > 1 && (
+                                  (() => {
+                                    const allVariances = comparisonData.players.map((p: any) => p.analytics?.weekly_variance || 999);
+                                    const minVariance = Math.min(...allVariances);
+                                    const isWinner = (player.analytics?.weekly_variance || 999) === minVariance && minVariance < 999;
+                                    return isWinner ? <span className="text-yellow-600 text-xs">⭐</span> : null;
+                                  })()
+                                )}
+                                <span className="font-medium">Variance:</span>
+                                <span className="ml-1 text-gray-600">
+                                  {player.analytics?.weekly_variance?.toFixed(1) || '0.0'}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Trends Indicators */}
+                          <div className="bg-purple-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <TrendingUp className="w-4 h-4" />
+                              Recent Trends
+                            </h5>
+                            <div className="flex flex-wrap gap-1">
+                              {/* Snap Share Trends */}
+                              {(player.trends?.snap_share_trend || 0) > 0.1 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-green-100 text-green-800">
+                                  📈 Snap ↗ {(player.trends.snap_share_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              {(player.trends?.snap_share_trend || 0) < -0.1 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                                  📉 Snap ↘ {Math.abs(player.trends.snap_share_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              
+                              {/* Target Share Trends (for skill positions) */}
+                              {['WR', 'TE', 'RB'].includes(player.position) && (player.trends?.target_share_trend || 0) > 0.005 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
+                                  🎯 Target ↗ {(player.trends.target_share_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              {['WR', 'TE', 'RB'].includes(player.position) && (player.trends?.target_share_trend || 0) < -0.005 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800">
+                                  🎯 Target ↘ {Math.abs(player.trends.target_share_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              
+                              {/* Red Zone Trends */}
+                              {(player.trends?.red_zone_usage_trend || 0) > 0.005 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-purple-100 text-purple-800">
+                                  🏈 RZ ↗ {(player.trends.red_zone_usage_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              {(player.trends?.red_zone_usage_trend || 0) < -0.005 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                                  🏈 RZ ↘ {Math.abs(player.trends.red_zone_usage_trend * 100).toFixed(1)}%
+                                </span>
+                              )}
+                              
+                              {/* Stable/No Trends */}
+                              {player.trends && Object.keys(player.trends).length > 0 && 
+                               Math.abs(player.trends?.snap_share_trend || 0) <= 0.1 &&
+                               Math.abs(player.trends?.target_share_trend || 0) <= 0.005 &&
+                               Math.abs(player.trends?.red_zone_usage_trend || 0) <= 0.005 && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                  📊 Stable Usage
+                                </span>
+                              )}
+                              
+                              {/* Loading State */}
+                              {(!player.trends || Object.keys(player.trends).length === 0) && (
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                  📊 Analytics Loading...
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Team Fit Analysis */}
+                          <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-200">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <Users className="w-4 h-4" />
+                              Team Fit Analysis
+                            </h5>
+                            <div className="space-y-2 text-xs">
+                              {/* League Selector for Multiple Leagues */}
+                              {leagues.length > 1 && (
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="font-medium text-gray-700">League:</span>
+                                  <select 
+                                    value={selectedLeague || ''} 
+                                    onChange={(e) => e.target.value ? loadLeagueForAnalysis(e.target.value) : null}
+                                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                  >
+                                    <option value="">Select League...</option>
+                                    {leagues.map(league => (
+                                      <option key={league.league_id} value={league.league_id}>
+                                        {league.league_name} ({league.platform})
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+                              )}
+
+                              {selectedLeague && leagueRules ? (
+                                <>
+                                  {/* Position Need Assessment */}
+                                  {(() => {
+                                    const positionCounts = roster.reduce((acc: any, p: any) => {
+                                      acc[p.position] = (acc[p.position] || 0) + 1;
+                                      return acc;
+                                    }, {});
+                                    
+                                    const requiredPositions = leagueRules.roster_settings.positions;
+                                    const playerPosition = player.position;
+                                    const currentCount = positionCounts[playerPosition] || 0;
+                                    const requiredCount = requiredPositions[playerPosition] || 0;
+                                    const needLevel = currentCount < requiredCount ? 'critical' : 
+                                                     currentCount < requiredCount + 1 ? 'moderate' : 'depth';
+                                    
+                                    return (
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">Position Need:</span>
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                          needLevel === 'critical' ? 'bg-red-100 text-red-800' :
+                                          needLevel === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
+                                          'bg-green-100 text-green-800'
+                                        }`}>
+                                          {needLevel === 'critical' ? '🚨 Critical Need' :
+                                           needLevel === 'moderate' ? '⚠️ Moderate Need' :
+                                           '✅ Depth Add'}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {/* Scoring System Fit */}
+                                  {(() => {
+                                    const scoringType = leagueRules.scoring_settings.type;
+                                    const pprValue = leagueRules.scoring_settings.receiving.receptions;
+                                    
+                                    let scoringFit = 'Standard Fit';
+                                    let fitIcon = '📊';
+                                    let fitColor = 'bg-blue-100 text-blue-800';
+                                    
+                                    if (['WR', 'TE', 'RB'].includes(player.position)) {
+                                      const targetShare = (player.analytics?.target_share || 0) * 100;
+                                      
+                                      if (pprValue >= 1 && targetShare > 15) {
+                                        scoringFit = 'Elite PPR Fit';
+                                        fitIcon = '🎯';
+                                        fitColor = 'bg-green-100 text-green-800';
+                                      } else if (pprValue >= 0.5 && targetShare > 10) {
+                                        scoringFit = 'Good Half-PPR';
+                                        fitIcon = '📈';
+                                        fitColor = 'bg-blue-100 text-blue-800';
+                                      } else if (pprValue === 0 && (player.analytics?.red_zone_share || 0) > 0.3) {
+                                        scoringFit = 'TD-Dependent';
+                                        fitIcon = '🏈';
+                                        fitColor = 'bg-yellow-100 text-yellow-800';
+                                      }
+                                    }
+                                    
+                                    return (
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">Scoring Fit:</span>
+                                        <span className={`px-2 py-1 rounded text-xs font-medium ${fitColor}`}>
+                                          {fitIcon} {scoringFit}
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {/* League Context Match */}
+                                  {(() => {
+                                    const aiContext = leagueRules.ai_context;
+                                    let contextMatches = [];
+                                    
+                                    if (aiContext.prioritize_volume && ['WR', 'TE'].includes(player.position)) {
+                                      const targetShare = (player.analytics?.target_share || 0) * 100;
+                                      if (targetShare > 20) contextMatches.push('High-Volume Target');
+                                    }
+                                    
+                                    if (aiContext.rb_premium && player.position === 'RB') {
+                                      const snapShare = player.analytics?.snap_percentage || 0;
+                                      if (snapShare > 60) contextMatches.push('Workhorse RB');
+                                    }
+                                    
+                                    if (aiContext.superflex && player.position === 'QB') {
+                                      contextMatches.push('QB Premium Value');
+                                    }
+                                    
+                                    const consistencyScore = 100 - ((player.analytics?.weekly_variance || 0) * 20);
+                                    if (consistencyScore > 80) contextMatches.push('Consistent Producer');
+                                    
+                                    return contextMatches.length > 0 ? (
+                                      <div className="flex items-start justify-between">
+                                        <span className="font-medium">League Match:</span>
+                                        <div className="flex flex-wrap gap-1 text-right">
+                                          {contextMatches.map((match, idx) => (
+                                            <span key={idx} className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs font-medium">
+                                              ✨ {match}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="flex items-center justify-between">
+                                        <span className="font-medium">League Match:</span>
+                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                                          📋 Standard Fit
+                                        </span>
+                                      </div>
+                                    );
+                                  })()}
+
+                                  {/* Trade/Acquisition Difficulty */}
+                                  {leagueRules.features.trades_enabled && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-medium">Acquisition:</span>
+                                      <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
+                                        💼 Trade Target
+                                      </span>
+                                    </div>
+                                  )}
+                                </>
+                              ) : (
+                                <div className="text-center py-2">
+                                  {leagues.length === 0 ? (
+                                    <span className="text-gray-500 text-xs">
+                                      🔗 Connect a fantasy league to see personalized team fit analysis
+                                    </span>
+                                  ) : leagues.length === 1 ? (
+                                    <span className="text-blue-500 text-xs">
+                                      📊 Loading league data for team fit analysis...
+                                    </span>
+                                  ) : (
+                                    <span className="text-gray-500 text-xs">
+                                      👆 Select a league above to see personalized team fit analysis
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   ))}
                 </div>
 
-                {/* Comparison Insights */}
-                {comparisonData.insights && comparisonData.insights.length > 0 && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <h4 className="font-semibold text-blue-900 mb-2">Comparison Insights</h4>
-                    <ul className="space-y-1">
-                      {comparisonData.insights.map((insight: string, index: number) => (
-                        <li key={index} className="text-sm text-blue-800">
-                          • {insight}
-                        </li>
-                      ))}
-                    </ul>
+                {/* Advanced Comparison Insights */}
+                <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-6">
+                  <h4 className="font-semibold text-blue-900 mb-4 flex items-center gap-2">
+                    <BarChart3 className="w-5 h-5" />
+                    Advanced Analytics Comparison
+                  </h4>
+                  
+                  {/* Analytics Comparison Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    {/* Highest Snap Share */}
+                    {comparisonData.players.some((p: any) => p.analytics?.snap_percentage > 0) && (
+                      <div className="bg-white rounded-lg p-3 border border-green-200">
+                        <div className="text-sm font-medium text-green-800 mb-1">📈 Highest Snap Share</div>
+                        {(() => {
+                          const topSnapPlayer = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.snap_percentage || 0) > (prev.analytics?.snap_percentage || 0) ? current : prev
+                          );
+                          return (
+                            <div className="text-xs">
+                              <span className="font-semibold">{topSnapPlayer.name}</span>
+                              <span className="text-green-600 ml-2">{topSnapPlayer.analytics?.snap_percentage?.toFixed(0) || 0}%</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    
+                    {/* Best Target Share (for skill positions) */}
+                    {comparisonData.players.some((p: any) => ['WR', 'TE', 'RB'].includes(p.position) && p.analytics?.target_share > 0) && (
+                      <div className="bg-white rounded-lg p-3 border border-blue-200">
+                        <div className="text-sm font-medium text-blue-800 mb-1">🎯 Best Target Share</div>
+                        {(() => {
+                          const skillPlayers = comparisonData.players.filter((p: any) => ['WR', 'TE', 'RB'].includes(p.position));
+                          const topTargetPlayer = skillPlayers.reduce((prev: any, current: any) => 
+                            (current.analytics?.target_share || 0) > (prev.analytics?.target_share || 0) ? current : prev
+                          );
+                          return skillPlayers.length > 0 ? (
+                            <div className="text-xs">
+                              <span className="font-semibold">{topTargetPlayer.name}</span>
+                              <span className="text-blue-600 ml-2">{((topTargetPlayer.analytics?.target_share || 0) * 100).toFixed(0)}%</span>
+                            </div>
+                          ) : null;
+                        })()}
+                      </div>
+                    )}
+                    
+                    {/* Most Consistent */}
+                    {comparisonData.players.some((p: any) => p.analytics?.weekly_variance !== undefined) && (
+                      <div className="bg-white rounded-lg p-3 border border-yellow-200">
+                        <div className="text-sm font-medium text-yellow-800 mb-1">⭐ Most Consistent</div>
+                        {(() => {
+                          const mostConsistent = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.weekly_variance || 999) < (prev.analytics?.weekly_variance || 999) ? current : prev
+                          );
+                          return (
+                            <div className="text-xs">
+                              <span className="font-semibold">{mostConsistent.name}</span>
+                              <span className="text-yellow-600 ml-2">Low Variance</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
                   </div>
-                )}
+
+                  {/* Original Insights */}
+                  {comparisonData.insights && comparisonData.insights.length > 0 && (
+                    <div>
+                      <h5 className="font-medium text-blue-900 mb-2">AI Insights</h5>
+                      <ul className="space-y-1">
+                        {comparisonData.insights.map((insight: string, index: number) => (
+                          <li key={index} className="text-sm text-blue-800">
+                            • {insight}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  
+                  {/* Analytics Summary */}
+                  <div className="mt-4 pt-4 border-t border-blue-200">
+                    <div className="text-xs text-blue-700">
+                      📊 Analytics based on recent 5 weeks of performance data
+                    </div>
+                  </div>
+                </div>
 
                 {/* Comparison Date */}
                 {comparisonData.comparison_date && (

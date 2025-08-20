@@ -737,6 +737,71 @@ export const fantasyAPI = {
     } catch (error) {
       return { status: 'error', comparison: null, message: 'Failed to compare players' };
     }
+  },
+
+  // Player Analytics
+  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      if (weeks) params.append('weeks', weeks);
+      params.append('season', season.toString());
+      
+      return await apiClient.get(`/api/fantasy/analytics/${playerId}?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', analytics: [], message: 'Failed to get player analytics' };
+    }
+  },
+
+  getPlayerTrends: async (playerId: number, weeks: string = "8,9,10,11,12", season: number = 2024, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      params.append('weeks', weeks);
+      params.append('season', season.toString());
+      
+      return await apiClient.get(`/api/fantasy/analytics/${playerId}/trends?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', trends: {}, message: 'Failed to get player trends' };
+    }
+  },
+
+  getPlayerEfficiency: async (playerId: number, weeks: string = "8,9,10,11,12", season: number = 2024, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      params.append('weeks', weeks);
+      params.append('season', season.toString());
+      
+      return await apiClient.get(`/api/fantasy/analytics/${playerId}/efficiency?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', efficiency_metrics: {}, message: 'Failed to get player efficiency' };
+    }
+  },
+
+  getBreakoutCandidates: async (position: string, season: number = 2024, minWeeks: number = 3, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      params.append('season', season.toString());
+      params.append('min_weeks', minWeeks.toString());
+      
+      return await apiClient.get(`/api/fantasy/analytics/breakout-candidates/${position}?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', candidates: [], message: 'Failed to get breakout candidates' };
+    }
+  },
+
+  getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2024, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      params.append('season', season.toString());
+      
+      return await apiClient.get(`/api/fantasy/analytics/${playerId}/matchup/${opponent}?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', matchup_analysis: {}, message: 'Failed to get matchup analytics' };
+    }
   }
 };
 
