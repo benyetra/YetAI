@@ -549,8 +549,214 @@ class LiveBettingServiceDB:
     # Include all the helper methods from the original service
     async def _create_simple_live_market(self, game) -> Optional[LiveBettingMarket]:
         """Disabled to prevent fake live markets - only show real live data"""
-        logger.info(f"Skipping game {game.id} to avoid creating fake live markets")
-        return None    
+        try:
+            logger.info(f"Creating market for game: {game.id}")
+            
+            # Extract basic game info from Game object
+            game_id = game.id
+            home_team = game.home_team
+            away_team = game.away_team
+            
+            # Clean up sport display name
+            sport_mapping = {
+                'americanfootball_nfl': 'NFL',
+                'basketball_nba': 'NBA', 
+                'baseball_mlb': 'MLB',
+                'icehockey_nhl': 'NHL'
+            }
+            sport = sport_mapping.get(game.sport_key.lower(), game.sport_key.upper())
+            
+            # Determine if game is actually live based on commence time
+            import random
+            from datetime import timezone
+            
+            now = datetime.now(timezone.utc)
+            game_start = game.commence_time
+            
+            # Ensure both datetimes are timezone-aware for comparison
+            if game_start.tzinfo is None:
+                game_start = game_start.replace(tzinfo=timezone.utc)
+            
+            # Check if game is in progress or recently started
+            # For demo purposes, show games as live if they started within the last 12 hours or will start within the next 2 hours
+            time_since_start = now - game_start
+            time_until_start = game_start - now
+            
+            if time_until_start > timedelta(hours=2):
+                # Game is too far in the future - skip for live betting
+                logger.info(f"Game {game_id} is too far in the future: starts in {time_until_start.total_seconds()/3600:.1f} hours")
+                return None
+            elif time_since_start > timedelta(hours=12):
+                # Game is too old - skip for live betting  
+                logger.info(f"Game {game_id} is too old: started {time_since_start.total_seconds()/3600:.1f} hours ago")
+                return None
+            else:
+                # Game is likely in progress - create live market
+                logger.info(f"Game {game_id} ({home_team} vs {away_team}) is likely in progress - creating live market")
+                
+                # Check if we have a cached state for this game
+                cache_key = f"{game_id}_{game_start.isoformat()}"
+                
+                if cache_key in self.game_state_cache:
+                    # Use cached state for consistency
+                    cached_state = self.game_state_cache[cache_key]
+                    game_status = cached_state['game_status']
+                    home_score = cached_state['home_score']
+                    away_score = cached_state['away_score']
+                    time_remaining = cached_state['time_remaining']
+                    # Cache game details if available in the cached state
+                    if 'home_team' in cached_state and 'away_team' in cached_state:
+                        self.game_details_cache[game_id] = (
+                            cached_state['home_team'], 
+                            cached_state['away_team'], 
+                            cached_state.get('sport', sport)
+                        )
+                else:
+                    # Try to get real live scores from API first
+                    try:
+                        live_scores = await self.get_real_live_scores(game.sport_key)
+                        real_score_data = live_scores.get(game_id)
+                    except Exception as e:
+                        logger.warning(f"Failed to fetch real scores: {e}")
+                        real_score_data = None
+                    
+                    # Calculate game state and cache it
+                    elapsed_minutes = (now - game_start).total_seconds() / 60
+                    
+                    # Generate game state based on sport and elapsed time
+                    if game.sport_key.lower() == 'baseball_mlb':
+                        inning = min(int(elapsed_minutes // 20) + 1, 9)
+                        # Use proper inning-specific GameStatus enum values for baseball
+                        inning_statuses = [
+                            GameStatus.FIRST_INNING, GameStatus.SECOND_INNING, GameStatus.THIRD_INNING,
+                            GameStatus.FOURTH_INNING, GameStatus.FIFTH_INNING, GameStatus.SIXTH_INNING,
+                            GameStatus.SEVENTH_INNING, GameStatus.EIGHTH_INNING, GameStatus.NINTH_INNING
+                        ]
+                        game_status = inning_statuses[min(inning - 1, 8)]  # Cap at 9th inning
+                        
+                        # Use real scores if available, otherwise generate realistic scores
+                        if real_score_data:
+                            home_score = real_score_data['home_score']
+                            away_score = real_score_data['away_score']
+                            logger.info(f"Using real scores for {game_id}: {home_team} {home_score} - {away_team} {away_score}")
+                            
+                            # Determine inning based on real scores (higher scores suggest later innings)
+                            total_runs = int(home_score) + int(away_score)
+                            if total_runs <= 2:
+                                inning = random.randint(1, 3)
+                            elif total_runs <= 6:
+                                inning = random.randint(4, 6)
+                            else:
+                                inning = random.randint(7, 9)
+                            game_status = inning_statuses[min(inning - 1, 8)]
+                        else:
+                            # Fallback to simulated scores with deterministic generation
+                            game_hash = hash(game_id) % 1000000
+                            
+                            # Create realistic progression: early innings have fewer runs
+                            if inning <= 3:
+                                home_score = min((game_hash % 3), 2)
+                                away_score = min(((game_hash // 3) % 3), 2)
+                            elif inning <= 6:
+                                home_score = min((game_hash % 5), 4)
+                                away_score = min(((game_hash // 5) % 5), 4)
+                            else:
+                                home_base = (game_hash % 7) + 1
+                                away_base = ((game_hash // 7) % 7) + 1
+                                home_score = min(home_base, 8)
+                                away_score = min(away_base, 8)
+                            
+                            logger.info(f"Using simulated scores for {game_id}: {home_team} {home_score} - {away_team} {away_score}")
+                        
+                        # Generate time remaining based on current inning
+                        time_remaining = f"Top {inning}" if (elapsed_minutes % 20) < 10 else f"Bot {inning}"
+                    else:
+                        # Football - each quarter is 15 minutes
+                        quarter = min(int(elapsed_minutes // 15) + 1, 4)
+                        if quarter == 1:
+                            game_status = GameStatus.FIRST_QUARTER
+                        elif quarter == 2:
+                            game_status = GameStatus.SECOND_QUARTER
+                        elif quarter == 3:
+                            game_status = GameStatus.THIRD_QUARTER
+                        elif quarter == 4:
+                            game_status = GameStatus.FOURTH_QUARTER
+                        else:
+                            # Game should be finished
+                            return None
+                            
+                        home_score = min(int(elapsed_minutes // 8) * 3 + random.randint(0, 7), 42)
+                        away_score = min(int(elapsed_minutes // 10) * 3 + random.randint(0, 7), 42)
+                        minutes_in_quarter = int(elapsed_minutes % 15)
+                        time_remaining = f"{15 - minutes_in_quarter}:{random.randint(10, 59):02d}"
+                    
+                    # Cache the state for consistency
+                    self.game_state_cache[cache_key] = {
+                        'game_id': game_id,
+                        'home_team': home_team,
+                        'away_team': away_team,
+                        'sport': sport,
+                        'game_status': game_status,
+                        'home_score': home_score,
+                        'away_score': away_score,
+                        'time_remaining': time_remaining
+                    }
+                    
+                    # Also cache game details separately for easy lookup
+                    self.game_details_cache[game_id] = (home_team, away_team, sport)
+                    
+                    # Reset random seed
+                    random.seed()
+            
+            # Extract real odds with fallback values
+            h2h_odds, h2h_bookmaker = self._extract_odds_from_game(game, 'h2h')
+            spreads_odds, spreads_bookmaker = self._extract_odds_from_game(game, 'spreads')
+            totals_odds, totals_bookmaker = self._extract_odds_from_game(game, 'totals')
+            
+            # Only use real odds - no fallback fake odds to avoid showing mock data
+            if not h2h_odds.get('home') or not h2h_odds.get('away'):
+                print(f"Missing real moneyline odds for {home_team} vs {away_team} - skipping to avoid fake data")
+                return None
+            if not spreads_odds.get('point'):
+                print(f"Missing real spread odds for {home_team} vs {away_team} - skipping to avoid fake data") 
+                return None
+            if not totals_odds.get('point'):
+                print(f"Missing real total odds for {home_team} vs {away_team} - skipping to avoid fake data")
+                return None
+            
+            market = LiveBettingMarket(
+                game_id=game_id,
+                sport=sport,
+                home_team=home_team,
+                away_team=away_team,
+                game_status=game_status,
+                home_score=home_score,
+                away_score=away_score,
+                time_remaining=time_remaining,
+                commence_time=game.commence_time,
+                markets_available=["moneyline", "spread", "total"],
+                moneyline_home=h2h_odds.get('home'),
+                moneyline_away=h2h_odds.get('away'),
+                moneyline_bookmaker=h2h_bookmaker,
+                spread_line=spreads_odds.get('point'),
+                spread_home_odds=spreads_odds.get('home_odds', -110),
+                spread_away_odds=spreads_odds.get('away_odds', -110),
+                spread_bookmaker=spreads_bookmaker,
+                total_line=totals_odds.get('point'),
+                total_over_odds=totals_odds.get('over_odds', -110),
+                total_under_odds=totals_odds.get('under_odds', -110),
+                total_bookmaker=totals_bookmaker,
+                is_suspended=False,
+                last_updated=datetime.utcnow()
+            )
+            
+            logger.info(f"✓ Successfully created market for {home_team} vs {away_team}")
+            return market
+            
+        except Exception as e:
+            logger.error(f"Error in _create_simple_live_market: {e}")
+            return None
+    
     def _extract_odds_from_game(self, game, market_type: str) -> tuple:
         """Extract odds for a specific market type from a Game object"""
         bookmakers = game.bookmakers

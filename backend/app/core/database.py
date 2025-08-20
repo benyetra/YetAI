@@ -34,6 +34,11 @@ def init_db():
     try:
         # Import all models to ensure they are registered
         from app.models.database_models import User, Bet, ParlayBet, SharedBet, YetAIBet, LiveBet, Game
+        from app.models.fantasy_models import (
+            FantasyUser, FantasyLeague, FantasyTeam, FantasyPlayer,
+            FantasyRosterSpot, PlayerProjection, FantasyRecommendation,
+            FantasyMatchup, FantasyTransaction, WaiverWireTarget
+        )
         
         # Create all tables
         Base.metadata.create_all(bind=engine)

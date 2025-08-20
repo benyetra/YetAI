@@ -99,6 +99,14 @@ class FantasyLeague(Base):
     playoff_teams = Column(Integer)
     trade_deadline = Column(DateTime)
     
+    # Waiver settings
+    waiver_type = Column(String(50))  # "FAAB", "waiver_priority", "free_agent"
+    waiver_budget = Column(Integer)  # FAAB budget for the season
+    waiver_clear_days = Column(Integer)  # Days on waivers
+    
+    # League configuration
+    roster_positions = Column(JSON)  # Position slots configuration
+    
     # Sync settings
     is_synced = Column(Boolean, default=True)
     sync_enabled = Column(Boolean, default=True)
@@ -362,6 +370,67 @@ class WaiverWireTarget(Base):
     league = relationship("FantasyLeague")
     player = relationship("FantasyPlayer")
 
+class LeagueHistoricalData(Base):
+    """Historical league data for competitor analysis"""
+    __tablename__ = "league_historical_data"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    league_id = Column(Integer, ForeignKey("fantasy_leagues.id"), nullable=False)
+    season = Column(Integer, nullable=False)
+    
+    # League metadata for historical season
+    team_count = Column(Integer)
+    waiver_type = Column(String(50))
+    waiver_budget = Column(Integer)
+    scoring_type = Column(String(50))
+    
+    # Raw data storage
+    teams_data = Column(JSON)  # Team rosters, records, etc.
+    transactions_data = Column(JSON)  # All transactions for season
+    standings_data = Column(JSON)  # Final standings
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    league = relationship("FantasyLeague")
+
+class CompetitorAnalysis(Base):
+    """Analysis of competitor tendencies in leagues"""
+    __tablename__ = "competitor_analysis"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    league_id = Column(Integer, ForeignKey("fantasy_leagues.id"), nullable=False)
+    team_id = Column(Integer, ForeignKey("fantasy_teams.id"), nullable=False)
+    
+    # Analysis period
+    seasons_analyzed = Column(JSON)  # List of seasons included in analysis
+    
+    # Waiver wire tendencies
+    avg_waiver_adds_per_season = Column(Float, default=0)
+    preferred_positions = Column(JSON)  # Position preferences in adds
+    waiver_aggressiveness_score = Column(Float)  # 0-100 aggressiveness rating
+    
+    # FAAB tendencies (if applicable)
+    avg_faab_spent_per_season = Column(Float)
+    high_faab_bid_threshold = Column(Float)  # Amount considered "high" for this manager
+    faab_conservation_tendency = Column(String(20))  # conservative, moderate, aggressive
+    
+    # Position needs patterns
+    common_position_needs = Column(JSON)  # Historical position needs by week
+    panic_drop_tendency = Column(Float)  # Likelihood to make reactionary drops
+    
+    # Timing patterns
+    waiver_claim_day_preferences = Column(JSON)  # When they typically make claims
+    season_phase_activity = Column(JSON)  # Activity by early/mid/late season
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_updated = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    league = relationship("FantasyLeague")
+    team = relationship("FantasyTeam")
+
 # Create indexes for better performance
 from sqlalchemy import Index
 
@@ -372,3 +441,5 @@ Index('idx_roster_team_week', FantasyRosterSpot.team_id, FantasyRosterSpot.week)
 Index('idx_projections_player_week', PlayerProjection.player_id, PlayerProjection.week, PlayerProjection.season)
 Index('idx_recommendations_user_active', FantasyRecommendation.user_id, FantasyRecommendation.is_active)
 Index('idx_waiver_targets_league_week', WaiverWireTarget.league_id, WaiverWireTarget.week)
+Index('idx_historical_data_league_season', LeagueHistoricalData.league_id, LeagueHistoricalData.season)
+Index('idx_competitor_analysis_league_team', CompetitorAnalysis.league_id, CompetitorAnalysis.team_id)

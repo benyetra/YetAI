@@ -100,8 +100,10 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
 
   const loadMarkets = async () => {
     try {
+      // Default to baseball_mlb when 'all' is selected to avoid rate limiting
+      const sportParam = selectedSport !== 'all' ? selectedSport : 'baseball_mlb';
       const response = await apiClient.get(
-        `/api/live-bets/markets${selectedSport !== 'all' ? `?sport=${selectedSport}` : ''}`,
+        `/api/live-bets/markets?sport=${sportParam}`,
         token
       );
       

@@ -58,6 +58,24 @@ class YetAIBetsServiceDB:
                         logger.error(f"Could not parse game_time '{bet_request.game_time}': {e}")
                         game_commence_time = None
 
+                # Map user-friendly bet types to database enum values
+                bet_type_mapping = {
+                    "total (over/under)": "total",
+                    "total": "total",
+                    "over/under": "total",
+                    "spread": "spread",
+                    "point spread": "spread",
+                    "moneyline": "moneyline",
+                    "money line": "moneyline",
+                    "parlay": "parlay",
+                    "prop": "prop",
+                    "proposition": "prop"
+                }
+                
+                # Normalize bet type to enum value
+                normalized_bet_type = bet_type_mapping.get(bet_request.bet_type.lower(), bet_request.bet_type.lower())
+                logger.info(f"Mapped bet_type '{bet_request.bet_type}' to '{normalized_bet_type}'")
+                
                 # Parse odds correctly to preserve sign
                 odds_value = bet_request.odds
                 if isinstance(odds_value, str):
@@ -75,7 +93,7 @@ class YetAIBetsServiceDB:
                     sport=bet_request.sport,
                     title=bet_request.game,
                     description=bet_request.reasoning,
-                    bet_type=bet_request.bet_type,
+                    bet_type=normalized_bet_type,
                     selection=bet_request.pick,
                     odds=odds_value,
                     confidence=float(bet_request.confidence),

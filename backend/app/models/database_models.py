@@ -12,6 +12,7 @@ class BetStatus(str, enum.Enum):
     PENDING = "pending"
     WON = "won"
     LOST = "lost"
+    PUSHED = "pushed"
     CANCELLED = "cancelled"
     LIVE = "live"
     CASHED_OUT = "cashed_out"
@@ -62,6 +63,10 @@ class User(Base):
     totp_secret = Column(String(255))
     backup_codes = Column(JSON, default=list)
     totp_last_used = Column(DateTime)
+    
+    # Temporary 2FA setup fields
+    temp_totp_secret = Column(String(255))
+    temp_backup_codes = Column(JSON, default=list)
     
     # Avatar fields
     avatar_url = Column(String(500))

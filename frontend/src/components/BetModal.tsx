@@ -117,24 +117,12 @@ export default function BetModal({
     }
   }, [isOpen, game]);
 
-  // Generate mock AI recommendation (replace with actual API call)
+  // AI recommendation disabled to avoid showing fake recommendations
   const generateAIRecommendation = () => {
     if (!game) return;
     
-    // Mock AI recommendation - replace with actual API call
-    const confidence = 0.65 + Math.random() * 0.25;
-    const favoriteTeam = game.home_odds < game.away_odds ? game.home_team : game.away_team;
-    const suggestedTeam = Math.random() > 0.3 ? favoriteTeam : (favoriteTeam === game.home_team ? game.away_team : game.home_team);
-    
-    setAiRecommendation({
-      confidence: confidence,
-      suggestedBet: suggestedTeam,
-      reasoning: `Based on recent performance metrics, ${suggestedTeam} has shown strong ${
-        suggestedTeam === favoriteTeam ? 'consistency' : 'value'
-      } in similar matchups. Historical data suggests a ${Math.round(confidence * 100)}% probability of covering.`,
-      riskLevel: confidence > 0.8 ? 'low' : confidence > 0.65 ? 'medium' : 'high',
-      suggestedAmount: user?.subscription_tier === 'free' ? 25 : 50
-    });
+    // Don't generate fake AI recommendations
+    setAiRecommendation(null);
   };
 
   const handleAmountChange = (value: string) => {

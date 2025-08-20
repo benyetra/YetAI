@@ -15,38 +15,9 @@ class LiveBettingSimulator:
         self.game_timers = {}
         
     async def start_simulation(self):
-        """Start simulating live games"""
-        # Create sample games
-        games = [
-            {
-                "game_id": "nfl_2024_game1",
-                "sport": "NFL",
-                "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills",
-                "status": GameStatus.FIRST_QUARTER,
-                "home_score": 0,
-                "away_score": 0,
-                "time_remaining": "15:00"
-            },
-            {
-                "game_id": "nba_2024_game1",
-                "sport": "NBA",
-                "home_team": "Los Angeles Lakers",
-                "away_team": "Boston Celtics",
-                "status": GameStatus.FIRST_QUARTER,
-                "home_score": 0,
-                "away_score": 0,
-                "time_remaining": "12:00"
-            }
-        ]
-        
-        for game_data in games:
-            await self.create_live_game(game_data)
-        
-        # Start game simulations
-        for game_id in self.active_games:
-            asyncio.create_task(self.simulate_game_progress(game_id))
-            asyncio.create_task(self.simulate_odds_changes(game_id))
+        """Disabled to prevent fake data from appearing in live betting"""
+        print("Live betting simulator disabled to prevent fake data")
+        return
     
     async def create_live_game(self, game_data):
         """Create a live game with initial state"""

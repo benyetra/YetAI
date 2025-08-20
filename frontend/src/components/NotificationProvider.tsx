@@ -59,47 +59,8 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   // Initialize with some sample notifications
   useEffect(() => {
     if (isAuthenticated) {
-      const sampleNotifications: Notification[] = [
-        {
-          id: '1',
-          type: 'bet_won',
-          title: 'Bet Won!',
-          message: 'Your bet on Lakers vs Warriors won! +$45.00',
-          timestamp: new Date(Date.now() - 2 * 60 * 1000),
-          read: false,
-          priority: 'high',
-          data: { amount: 45.00, gameId: 'lakers-warriors-123' }
-        },
-        {
-          id: '2',
-          type: 'odds_change',
-          title: 'Odds Update',
-          message: 'Odds changed for Chiefs vs Bills (+150 → +165)',
-          timestamp: new Date(Date.now() - 15 * 60 * 1000),
-          read: false,
-          priority: 'medium',
-          data: { gameId: 'chiefs-bills-456', oldOdds: 150, newOdds: 165 }
-        },
-        {
-          id: '3',
-          type: 'prediction',
-          title: 'New AI Prediction',
-          message: 'High confidence prediction available for tonight\'s games',
-          timestamp: new Date(Date.now() - 60 * 60 * 1000),
-          read: true,
-          priority: 'medium'
-        },
-        {
-          id: '4',
-          type: 'achievement',
-          title: 'Achievement Unlocked!',
-          message: 'You\'ve reached a 70% win rate this month',
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          read: true,
-          priority: 'low'
-        }
-      ];
-      setNotifications(sampleNotifications);
+      // Don't add sample notifications to avoid showing fake data
+      setNotifications([]);
     }
   }, [isAuthenticated]);
 

@@ -293,6 +293,11 @@ export default function FantasyPage() {
   const [showComparison, setShowComparison] = useState(false);
   const [comparisonData, setComparisonData] = useState<any>(null);
   const lastActionRef = useRef<{playerId: string, timestamp: number} | null>(null);
+  
+  // League disconnect states
+  const [showDisconnectModal, setShowDisconnectModal] = useState(false);
+  const [leagueToDisconnect, setLeagueToDisconnect] = useState<{id: string, name: string} | null>(null);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -586,6 +591,35 @@ export default function FantasyPage() {
     setShowFilters(false);
   };
 
+  const handleDisconnectLeague = (leagueId: string, leagueName: string) => {
+    setLeagueToDisconnect({ id: leagueId, name: leagueName });
+    setShowDisconnectModal(true);
+  };
+
+  const confirmDisconnectLeague = async () => {
+    if (!leagueToDisconnect) return;
+
+    setIsDisconnecting(true);
+    setError(null);
+
+    try {
+      const response = await fantasyAPI.disconnectLeague(leagueToDisconnect.id);
+      
+      if (response.status === 'success' || response.success === true) {
+        setShowDisconnectModal(false);
+        setLeagueToDisconnect(null);
+        await loadFantasyData(); // Refresh the data
+      } else {
+        setError(response.message || response.error || 'Failed to disconnect league');
+      }
+    } catch (err) {
+      setError('Failed to disconnect league. Please try again.');
+      console.error('Disconnect league error:', err);
+    } finally {
+      setIsDisconnecting(false);
+    }
+  };
+
   if (loading) {
     return (
       <Layout>
@@ -771,6 +805,14 @@ export default function FantasyPage() {
                             <Settings className="w-3 h-3" />
                           )}
                           Rules
+                        </button>
+                        <button
+                          onClick={() => handleDisconnectLeague(league.id, league.name)}
+                          className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 flex items-center gap-1"
+                          title="Disconnect league and erase all data"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          Disconnect
                         </button>
                       </div>
                     </div>
@@ -1102,7 +1144,11 @@ export default function FantasyPage() {
                               {rec.priority_score.toFixed(1)}
                             </div>
                             <div className="text-xs text-gray-500">
-                              FAAB: {rec.suggested_fab_percentage}%
+                              {rec.waiver_suggestion?.suggestion_type === 'FAAB' ? (
+                                <>FAAB: {rec.waiver_suggestion.faab_percentage || rec.suggested_fab_percentage}%</>
+                              ) : (
+                                <>{rec.waiver_suggestion?.claim_advice || 'Waiver Priority'}</>
+                              )}
                             </div>
                             {rec.trend_count > 0 && (
                               <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
@@ -1333,9 +1379,19 @@ export default function FantasyPage() {
                     </div>
                     <div>
                       <span className="text-yellow-700">Waivers:</span>
-                      <div className={`font-medium ${leagueRules.features.waivers_enabled ? 'text-green-600' : 'text-red-600'}`}>
-                        {leagueRules.features.waivers_enabled ? 'Enabled' : 'Disabled'}
+                      <div className="font-medium text-blue-600">
+                        {leagueRules.features.waiver_type === 'FAAB' 
+                          ? `FAAB ($${leagueRules.features.waiver_budget || 100})`
+                          : leagueRules.features.waiver_type === 'waiver_priority' 
+                          ? 'Priority/Rolling'
+                          : leagueRules.features.waiver_type || 'Unknown'}
                       </div>
+                      {leagueRules.features.waiver_type && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          DB: {leagueRules.features.waiver_type}
+                          {leagueRules.features.waiver_budget && ` | Budget: $${leagueRules.features.waiver_budget}`}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <span className="text-yellow-700">Playoff Teams:</span>
@@ -1816,6 +1872,74 @@ export default function FantasyPage() {
                 </ul>
               </div>
             )}
+          </div>
+        )}
+
+        {/* Disconnect League Confirmation Modal */}
+        {showDisconnectModal && leagueToDisconnect && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-white rounded-lg max-w-md w-full p-6">
+              <div className="flex items-center justify-center mb-4">
+                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600" />
+                </div>
+              </div>
+              
+              <h2 className="text-xl font-semibold text-center mb-4">Disconnect League</h2>
+              
+              <div className="mb-6 text-center">
+                <p className="text-gray-700 mb-2">
+                  Are you sure you want to disconnect <strong>"{leagueToDisconnect.name}"</strong>?
+                </p>
+                <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <AlertCircle className="w-4 h-4 text-red-600" />
+                    <span className="font-semibold text-red-800">Warning: This action cannot be undone</span>
+                  </div>
+                  <p className="text-sm text-red-700">
+                    This will permanently remove all league data including:
+                  </p>
+                  <ul className="text-sm text-red-700 mt-2 space-y-1">
+                    <li>• Fantasy teams and rosters</li>
+                    <li>• League standings and matchups</li>
+                    <li>• Historical transaction data</li>
+                    <li>• AI recommendations and insights</li>
+                    <li>• All competitor analysis data</li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowDisconnectModal(false);
+                    setLeagueToDisconnect(null);
+                  }}
+                  disabled={isDisconnecting}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDisconnectLeague}
+                  disabled={isDisconnecting}
+                  className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                >
+                  {isDisconnecting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin mr-2" />
+                      Disconnecting...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-4 h-4 mr-2" />
+                      Disconnect League
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         )}
 

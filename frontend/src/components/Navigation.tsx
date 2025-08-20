@@ -52,7 +52,7 @@ const navigation: NavItem[] = [
   { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
   { name: 'Bet History', href: '/bets', icon: History, requiresAuth: true },
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW' },
-  { name: 'Fantasy', href: '/fantasy', icon: Trophy },
+  { name: 'Fantasy', href: '/fantasy', icon: Trophy, requiresAuth: true },
   { name: 'Performance', href: '/performance', icon: BarChart3, requiresAuth: true },
   { name: 'AI Chat', href: '/chat', icon: MessageSquare, badge: 'BETA' },
   { name: 'Leaderboard', href: '/leaderboard', icon: Users },

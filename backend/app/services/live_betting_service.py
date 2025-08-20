@@ -35,36 +35,13 @@ class LiveBettingService:
                 error="Market temporarily suspended. Please try again in a moment."
             )
         
-        # Get current game state or create one for test games
+        # Get current game state - only allow bets on games with real live data
         game_state = self.live_games.get(request.game_id)
         if not game_state:
-            # Create a default game state for real games from API
-            # Real API game IDs are long hashes (32+ characters)
-            if len(request.game_id) > 20:
-                from app.models.live_bet_models import LiveGameUpdate, GameStatus
-                import random
-                
-                # Generate random but realistic game state
-                game_states = [GameStatus.FIRST_QUARTER, GameStatus.SECOND_QUARTER, 
-                              GameStatus.THIRD_QUARTER, GameStatus.FOURTH_QUARTER, GameStatus.HALFTIME]
-                random_status = random.choice(game_states)
-                
-                game_state = LiveGameUpdate(
-                    game_id=request.game_id,
-                    status=random_status,
-                    home_score=random.randint(0, 28),
-                    away_score=random.randint(0, 28),
-                    time_remaining=f"{random.randint(1, 14)}:{random.randint(10, 59):02d}" if random_status != GameStatus.HALFTIME else "Halftime",
-                    timestamp=datetime.utcnow()
-                )
-                self.live_games[request.game_id] = game_state
-                print(f"Created game state for {request.game_id}: {random_status}")
-            else:
-                return LiveBetResponse(
-                    success=False,
-                    error="Game not available for live betting"
-                )
-        
+            return LiveBetResponse(
+                success=False,
+                error="Game not available for live betting - no live data available"
+            )
         # Check if game is still live
         if game_state.status in [GameStatus.FINAL, GameStatus.CANCELLED, GameStatus.POSTPONED]:
             return LiveBetResponse(
@@ -398,149 +375,16 @@ class LiveBettingService:
             if game_start.tzinfo is None:
                 game_start = game_start.replace(tzinfo=timezone.utc)
             
-            # Check if game is actually in progress (started but not finished)
-            # For simplicity, assume games last 3 hours
-            game_end_estimate = game_start + timedelta(hours=3)
-            
+            # Only show games that are actually live (not just scheduled)
+            # Skip all upcoming games to avoid showing fake live data
             if now < game_start:
-                # Game hasn't started yet - skip for live betting
                 print(f"Game hasn't started yet: {game_start} > {now}")
                 return None
-            elif now > game_end_estimate:
-                # Game likely finished - skip for live betting  
-                print(f"Game likely finished: {now} > {game_end_estimate}")
-                return None
-            else:
-                # Game is likely in progress - create live market
-                print(f"Game appears to be live: {game_start} <= {now} <= {game_end_estimate}")
-                
-                # Check if we have a cached state for this game
-                cache_key = f"{game_id}_{game_start.isoformat()}"
-                
-                if cache_key in self.game_state_cache:
-                    # Use cached state for consistency
-                    cached_state = self.game_state_cache[cache_key]
-                    game_status = cached_state['game_status']
-                    home_score = cached_state['home_score']
-                    away_score = cached_state['away_score']
-                    time_remaining = cached_state['time_remaining']
-                    print(f"Using cached game state: {game_status}, Score: {home_score}-{away_score}")
-                else:
-                    # Calculate elapsed time to determine game state
-                    elapsed_minutes = (now - game_start).total_seconds() / 60
-                    
-                    # Set random seed based on game_id for consistency across requests
-                    random.seed(hash(game_id) % 2147483647)
-                    
-                    if game.sport_key.lower() == 'baseball_mlb':
-                        # Baseball - each inning is roughly 20 minutes
-                        inning = min(int(elapsed_minutes // 20) + 1, 9)
-                        if inning == 1:
-                            game_status = GameStatus.FIRST_INNING.value
-                        elif inning == 2:
-                            game_status = GameStatus.SECOND_INNING.value
-                        elif inning == 3:
-                            game_status = GameStatus.THIRD_INNING.value
-                        elif inning == 4:
-                            game_status = GameStatus.FOURTH_INNING.value
-                        elif inning == 5:
-                            game_status = GameStatus.FIFTH_INNING.value
-                        elif inning == 6:
-                            game_status = GameStatus.SIXTH_INNING.value
-                        elif inning == 7:
-                            game_status = GameStatus.SEVENTH_INNING.value
-                        elif inning == 8:
-                            game_status = GameStatus.EIGHTH_INNING.value
-                        else:
-                            game_status = GameStatus.NINTH_INNING.value
-                        # Baseball scores progress more gradually
-                        home_score = min(int(elapsed_minutes // 30) + random.randint(0, 2), 12)
-                        away_score = min(int(elapsed_minutes // 35) + random.randint(0, 2), 12)
-                        time_remaining = f"Top {inning}" if (elapsed_minutes % 20) < 10 else f"Bot {inning}"
-                    else:
-                        # Football - each quarter is 15 minutes
-                        quarter = min(int(elapsed_minutes // 15) + 1, 4)
-                        if quarter <= 4:
-                            if quarter == 1:
-                                game_status = GameStatus.FIRST_QUARTER.value
-                            elif quarter == 2:
-                                game_status = GameStatus.SECOND_QUARTER.value
-                            elif quarter == 3:
-                                game_status = GameStatus.THIRD_QUARTER.value
-                            else:
-                                game_status = GameStatus.FOURTH_QUARTER.value
-                            # Football scores progress throughout the game
-                            home_score = min(int(elapsed_minutes // 8) * 3 + random.randint(0, 7), 42)
-                            away_score = min(int(elapsed_minutes // 10) * 3 + random.randint(0, 7), 42)
-                            minutes_in_quarter = int(elapsed_minutes % 15)
-                            time_remaining = f"{15 - minutes_in_quarter}:{random.randint(10, 59):02d}"
-                        else:
-                            # Game should be finished or in overtime
-                            return None
-                    
-                    # Cache the state for consistency
-                    self.game_state_cache[cache_key] = {
-                        'game_status': game_status,
-                        'home_score': home_score,
-                        'away_score': away_score,
-                        'time_remaining': time_remaining
-                    }
-                    print(f"Cached new game state: {game_status}, Score: {home_score}-{away_score}")
-                
-                # Reset random seed
-                random.seed()
             
-            print(f"Generated game state: {game_status}, Score: {home_score}-{away_score}")
-            
-            # Extract real odds with fallback values and bookmaker info
-            h2h_odds, h2h_bookmaker = self._extract_odds_from_game(game, 'h2h')
-            spreads_odds, spreads_bookmaker = self._extract_odds_from_game(game, 'spreads')
-            totals_odds, totals_bookmaker = self._extract_odds_from_game(game, 'totals')
-            
-            print(f"Extracted odds - H2H: {h2h_odds}, Spreads: {spreads_odds}, Totals: {totals_odds}")
-            print(f"Bookmakers - H2H: {h2h_bookmaker}, Spreads: {spreads_bookmaker}, Totals: {totals_bookmaker}")
-            
-            # Provide fallback odds if none found
-            if not h2h_odds.get('home'):
-                h2h_odds['home'] = random.choice([-150, -120, -110, 110, 130])
-                h2h_bookmaker = h2h_bookmaker or "BetMGM"
-            if not h2h_odds.get('away'):
-                h2h_odds['away'] = random.choice([-150, -120, -110, 110, 130])
-            if not spreads_odds.get('point'):
-                spreads_odds['point'] = random.choice([-7.5, -3.5, -1.5, 1.5, 3.5, 7.5])
-                spreads_bookmaker = spreads_bookmaker or "DraftKings"
-            if not totals_odds.get('point'):
-                totals_odds['point'] = random.choice([45.5, 47.5, 49.5, 51.5])
-                totals_bookmaker = totals_bookmaker or "FanDuel"
-            
-            market = LiveBettingMarket(
-                game_id=game_id,
-                sport=sport,
-                home_team=home_team,
-                away_team=away_team,
-                game_status=game_status,
-                home_score=home_score,
-                away_score=away_score,
-                time_remaining=time_remaining,
-                commence_time=game.commence_time,
-                markets_available=["moneyline", "spread", "total"],
-                moneyline_home=h2h_odds.get('home'),
-                moneyline_away=h2h_odds.get('away'),
-                moneyline_bookmaker=h2h_bookmaker,
-                spread_line=spreads_odds.get('point'),
-                spread_home_odds=spreads_odds.get('home_odds', -110),
-                spread_away_odds=spreads_odds.get('away_odds', -110),
-                spread_bookmaker=spreads_bookmaker,
-                total_line=totals_odds.get('point'),
-                total_over_odds=totals_odds.get('over_odds', -110),
-                total_under_odds=totals_odds.get('under_odds', -110),
-                total_bookmaker=totals_bookmaker,
-                is_suspended=False,
-                last_updated=datetime.utcnow()
-            )
-            
-            print(f"✓ Successfully created market for {home_team} vs {away_team}")
-            return market
+            # For games that appear to have started, we need actual live data
+            # Don't create fake live markets - return None to show only real live games
+            print(f"Game may be live but no confirmed live data available - skipping to avoid fake data")
+            return None
             
         except Exception as e:
             print(f"Error in _create_simple_live_market: {e}")
@@ -698,65 +542,9 @@ class LiveBettingService:
         return time_map.get(status)
     
     def _get_fallback_markets(self) -> List[LiveBettingMarket]:
-        """Get fallback simulated markets if API fails"""
-        print("Using fallback markets for testing")
-        markets = []
-        
-        # Create some sample markets for testing
-        sample_markets = [
-            {
-                "game_id": "test_game_1",
-                "sport": "AMERICANFOOTBALL_NFL",
-                "home_team": "Philadelphia Eagles",
-                "away_team": "Dallas Cowboys",
-                "game_status": "pre_game",
-                "home_score": 0,
-                "away_score": 0,
-                "moneyline_home": -340,
-                "moneyline_away": 270,
-                "spread_line": -7.0,
-                "total_line": 46.5
-            },
-            {
-                "game_id": "test_game_2", 
-                "sport": "BASKETBALL_NBA",
-                "home_team": "Los Angeles Lakers",
-                "away_team": "Boston Celtics",
-                "game_status": "2nd_quarter",
-                "home_score": 45,
-                "away_score": 42,
-                "moneyline_home": -150,
-                "moneyline_away": 130,
-                "spread_line": -3.5,
-                "total_line": 220.5
-            }
-        ]
-        
-        for sample in sample_markets:
-            market = LiveBettingMarket(
-                game_id=sample["game_id"],
-                sport=sample["sport"],
-                home_team=sample["home_team"],
-                away_team=sample["away_team"],
-                game_status=sample["game_status"],
-                home_score=sample["home_score"],
-                away_score=sample["away_score"],
-                time_remaining=self._get_time_remaining_for_status(sample["game_status"]),
-                markets_available=["moneyline", "spread", "total"],
-                moneyline_home=sample["moneyline_home"],
-                moneyline_away=sample["moneyline_away"],
-                spread_line=sample["spread_line"],
-                spread_home_odds=-110,
-                spread_away_odds=-110,
-                total_line=sample["total_line"],
-                total_over_odds=-110,
-                total_under_odds=-110,
-                is_suspended=False,
-                last_updated=datetime.utcnow()
-            )
-            markets.append(market)
-        
-        return markets
+        """Return empty list - no fallback markets to avoid showing fake data"""
+        print("No real markets available - returning empty list to avoid fake data")
+        return []
     
     def get_user_live_bets(self, user_id: int, include_settled: bool = False) -> List[LiveBet]:
         """Get all live bets for a user"""

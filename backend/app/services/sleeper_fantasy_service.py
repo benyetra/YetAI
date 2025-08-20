@@ -69,6 +69,9 @@ class SleeperFantasyService(FantasyPlatformInterface):
                     # Get additional league details
                     league_details = await self.get_league_details(league['league_id'])
                     
+                    # Determine waiver settings from league details
+                    waiver_settings = self._determine_waiver_settings(league_details.get('league_data', {}))
+                    
                     leagues.append({
                         'league_id': league['league_id'],
                         'name': league['name'],
@@ -76,7 +79,8 @@ class SleeperFantasyService(FantasyPlatformInterface):
                         'team_count': league['total_rosters'],
                         'scoring_type': self._determine_scoring_type(league),
                         'roster_positions': league.get('roster_positions', []),
-                        'teams': league_details.get('teams', [])
+                        'teams': league_details.get('teams', []),
+                        'waiver_settings': waiver_settings
                     })
                 
                 return leagues
@@ -162,6 +166,9 @@ class SleeperFantasyService(FantasyPlatformInterface):
                 
                 logger.info(f"Successfully processed {len(teams)} teams for league {league_id}")
                 
+                # Determine waiver settings
+                waiver_settings = self._determine_waiver_settings(league_data)
+                
                 return {
                     'league_id': league_id,
                     'name': league_data['name'],
@@ -169,6 +176,7 @@ class SleeperFantasyService(FantasyPlatformInterface):
                     'status': league_data['status'],
                     'scoring_settings': league_data.get('scoring_settings', {}),
                     'roster_positions': league_data.get('roster_positions', []),
+                    'waiver_settings': waiver_settings,
                     'teams': teams
                 }
                 
@@ -337,6 +345,104 @@ class SleeperFantasyService(FantasyPlatformInterface):
             return 'half_ppr'
         else:
             return 'standard'
+    
+    def _determine_waiver_settings(self, league_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Determine waiver settings from league data"""
+        settings = league_data.get('settings', {})
+        
+        # Check for FAAB budget
+        waiver_budget = settings.get('waiver_budget', 0)
+        waiver_clear_days = settings.get('waiver_clear_days', 1)
+        waiver_type = settings.get('waiver_type', 0)  # 0=rolling, 1=reverse standings, 2=FAAB
+        
+        # Determine waiver system - only waiver_type 2 is FAAB
+        if waiver_type == 2:
+            waiver_system = 'FAAB'
+        else:
+            waiver_system = 'waiver_priority'
+        
+        return {
+            'waiver_type': waiver_system,
+            'waiver_budget': waiver_budget if waiver_budget > 0 else None,
+            'waiver_clear_days': waiver_clear_days
+        }
+    
+    async def get_historical_league_data(self, league_id: str, season: int) -> Dict[str, Any]:
+        """Get historical data for a league season"""
+        try:
+            async with httpx.AsyncClient() as client:
+                # Get league details for historical season
+                league_response = await client.get(f"{self.base_url}/league/{league_id}")
+                league_response.raise_for_status()
+                league_data = league_response.json()
+                
+                # Get rosters for historical season
+                rosters_response = await client.get(f"{self.base_url}/league/{league_id}/rosters/{season}")
+                rosters_response.raise_for_status()
+                rosters_data = rosters_response.json()
+                
+                # Get all transactions for historical season
+                all_transactions = []
+                for week in range(1, 19):  # NFL weeks 1-18
+                    try:
+                        trans_response = await client.get(f"{self.base_url}/league/{league_id}/transactions/{week}")
+                        trans_response.raise_for_status()
+                        week_transactions = trans_response.json()
+                        all_transactions.extend(week_transactions)
+                        await asyncio.sleep(0.1)  # Rate limiting
+                    except Exception as e:
+                        logger.debug(f"No transactions for week {week}: {e}")
+                        continue
+                
+                # Get users data
+                users_response = await client.get(f"{self.base_url}/league/{league_id}/users")
+                users_response.raise_for_status()
+                users_data = users_response.json()
+                
+                # Process teams data with standings
+                teams_data = []
+                for roster in rosters_data:
+                    # Find corresponding user
+                    owner_id = roster.get('owner_id')
+                    owner = next((u for u in users_data if u['user_id'] == owner_id), {})
+                    
+                    teams_data.append({
+                        'roster_id': roster['roster_id'],
+                        'team_name': self._get_team_name(roster, owner),
+                        'owner_id': owner_id,
+                        'owner_name': owner.get('display_name', owner.get('username', 'Unknown')),
+                        'wins': roster.get('settings', {}).get('wins', 0),
+                        'losses': roster.get('settings', {}).get('losses', 0),
+                        'ties': roster.get('settings', {}).get('ties', 0),
+                        'points_for': float(roster.get('settings', {}).get('fpts', 0)),
+                        'points_against': float(roster.get('settings', {}).get('fpts_against', 0)),
+                        'waiver_position': roster.get('settings', {}).get('waiver_position'),
+                        'players': roster.get('players', [])
+                    })
+                
+                # Sort by wins, then points for standings
+                standings = sorted(teams_data, key=lambda x: (-x['wins'], -x['points_for']))
+                for i, team in enumerate(standings):
+                    team['final_rank'] = i + 1
+                
+                return {
+                    'season': season,
+                    'league_info': {
+                        'name': league_data['name'],
+                        'total_rosters': league_data['total_rosters'],
+                        'scoring_settings': league_data.get('scoring_settings', {}),
+                        'roster_positions': league_data.get('roster_positions', []),
+                        'settings': league_data.get('settings', {})
+                    },
+                    'teams_data': teams_data,
+                    'standings_data': standings,
+                    'transactions_data': all_transactions,
+                    'waiver_settings': self._determine_waiver_settings(league_data)
+                }
+                
+        except Exception as e:
+            logger.error(f"Failed to get historical data for league {league_id}, season {season}: {str(e)}")
+            return {}
     
     def _get_team_name(self, roster: Dict[str, Any], owner: Dict[str, Any]) -> str:
         """Get team name, falling back to owner name if no team name"""

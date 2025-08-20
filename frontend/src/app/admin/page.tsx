@@ -39,6 +39,11 @@ export default function AdminPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<{type: 'success' | 'error', text: string} | null>(null);
   
+  // Bet Verification states
+  const [showVerificationPanel, setShowVerificationPanel] = useState(false);
+  const [verificationStats, setVerificationStats] = useState<any>(null);
+  const [isVerifying, setIsVerifying] = useState(false);
+  
   // Auto-fill states
   const [availableGames, setAvailableGames] = useState<any[]>([]);
   const [loadingGames, setLoadingGames] = useState(false);
@@ -49,6 +54,35 @@ export default function AdminPage() {
       router.push('/dashboard');
     }
   }, [isAuthenticated, loading, user, router]);
+
+  // Load verification stats when panel is opened - must be at top level
+  useEffect(() => {
+    if (showVerificationPanel && !verificationStats) {
+      const fetchVerificationStats = async () => {
+        try {
+          const token = localStorage.getItem('auth_token');
+          const response = await fetch('http://localhost:8000/api/admin/bets/verification/stats', {
+            method: 'GET',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json'
+            }
+          });
+          
+          if (response.ok) {
+            const data = await response.json();
+            setVerificationStats(data.data || data);
+          } else {
+            setMessage({ type: 'error', text: 'Failed to fetch verification stats' });
+          }
+        } catch (error) {
+          console.error('Error fetching verification stats:', error);
+          setMessage({ type: 'error', text: 'Failed to fetch verification stats' });
+        }
+      };
+      fetchVerificationStats();
+    }
+  }, [showVerificationPanel, verificationStats]);
 
   if (loading) {
     return (
@@ -231,6 +265,59 @@ export default function AdminPage() {
     }
   };
 
+  // Bet Verification Functions
+  const fetchVerificationStats = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:8000/api/admin/bets/verification/stats', {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setVerificationStats(data.data || data);
+      } else {
+        setMessage({ type: 'error', text: 'Failed to fetch verification stats' });
+      }
+    } catch (error) {
+      console.error('Error fetching verification stats:', error);
+      setMessage({ type: 'error', text: 'Failed to fetch verification stats' });
+    }
+  };
+
+  const triggerVerification = async () => {
+    setIsVerifying(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch('http://localhost:8000/api/admin/bets/verify', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({})
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        setMessage({ type: 'success', text: `Verification completed: ${data.data?.message || 'Success'}` });
+        // Refresh stats by setting verificationStats to null to trigger re-fetch
+        setVerificationStats(null);
+      } else {
+        const errorData = await response.json();
+        setMessage({ type: 'error', text: `Verification failed: ${errorData.detail || 'Unknown error'}` });
+      }
+    } catch (error) {
+      console.error('Error triggering verification:', error);
+      setMessage({ type: 'error', text: 'Failed to trigger bet verification' });
+    } finally {
+      setIsVerifying(false);
+    }
+  };
 
   return (
     <Layout requiresAuth>
@@ -266,19 +353,22 @@ export default function AdminPage() {
             </div>
           </button>
           
-          <div className="bg-white rounded-lg border border-gray-200 p-6 opacity-50 cursor-not-allowed">
+          <button
+            onClick={() => setShowVerificationPanel(true)}
+            className="bg-white rounded-lg border border-gray-200 p-6 hover:border-green-500 transition-colors group"
+          >
             <div className="flex items-center">
-              <Shield className="w-8 h-8 text-gray-400 mr-4" />
+              <Target className="w-8 h-8 text-green-600 mr-4" />
               <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-500">
-                  System Settings
+                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-green-600">
+                  Bet Verification
                 </h3>
-                <p className="text-sm text-gray-400">
-                  Coming soon...
+                <p className="text-sm text-gray-600">
+                  Monitor and control automatic bet verification
                 </p>
               </div>
             </div>
-          </div>
+          </button>
         </div>
         
         {/* Message Alert */}
@@ -555,6 +645,195 @@ export default function AdminPage() {
             )}
           </button>
         </div>
+        
+        {/* Bet Verification Panel Modal */}
+        {showVerificationPanel && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-gray-200">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                    <Target className="w-6 h-6 text-green-600 mr-2" />
+                    Bet Verification System
+                  </h2>
+                  <button
+                    onClick={() => setShowVerificationPanel(false)}
+                    className="text-gray-400 hover:text-gray-600"
+                  >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                {/* Action Buttons */}
+                <div className="flex gap-4">
+                  <button
+                    onClick={triggerVerification}
+                    disabled={isVerifying}
+                    className="bg-green-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+                  >
+                    {isVerifying ? (
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    ) : (
+                      <Target className="w-5 h-5 mr-2" />
+                    )}
+                    {isVerifying ? 'Verifying...' : 'Run Verification Now'}
+                  </button>
+                  
+                  <button
+                    onClick={fetchVerificationStats}
+                    className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 flex items-center"
+                  >
+                    <Clock className="w-5 h-5 mr-2" />
+                    Refresh Stats
+                  </button>
+                </div>
+                
+                {/* Verification Statistics */}
+                {verificationStats && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {/* Scheduler Status */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h3 className="font-semibold text-gray-900 mb-2">Scheduler Status</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Status:</span>
+                          <span className={`font-medium ${verificationStats.status?.running ? 'text-green-600' : 'text-red-600'}`}>
+                            {verificationStats.status?.running ? 'Running' : 'Stopped'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Interval:</span>
+                          <span className="font-medium">{verificationStats.config?.interval_minutes} min</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>In Quiet Hours:</span>
+                          <span className={`font-medium ${verificationStats.status?.in_quiet_hours ? 'text-yellow-600' : 'text-green-600'}`}>
+                            {verificationStats.status?.in_quiet_hours ? 'Yes' : 'No'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Run Statistics */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h3 className="font-semibold text-gray-900 mb-2">Run Statistics</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Total Runs:</span>
+                          <span className="font-medium">{verificationStats.stats?.total_runs || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Successful:</span>
+                          <span className="font-medium text-green-600">{verificationStats.stats?.successful_runs || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Failed:</span>
+                          <span className="font-medium text-red-600">{verificationStats.stats?.failed_runs || 0}</span>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Bet Statistics */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h3 className="font-semibold text-gray-900 mb-2">Bet Statistics</h3>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Total Verified:</span>
+                          <span className="font-medium">{verificationStats.stats?.total_bets_verified || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Total Settled:</span>
+                          <span className="font-medium text-blue-600">{verificationStats.stats?.total_bets_settled || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Success Rate:</span>
+                          <span className="font-medium">
+                            {verificationStats.stats?.total_runs > 0 
+                              ? `${Math.round((verificationStats.stats.successful_runs / verificationStats.stats.total_runs) * 100)}%`
+                              : '0%'
+                            }
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {/* Recent Activity */}
+                {verificationStats?.stats && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-gray-900 mb-2">Recent Activity</h3>
+                    <div className="space-y-2 text-sm">
+                      {verificationStats.stats.last_run_time && (
+                        <div className="flex justify-between">
+                          <span>Last Run:</span>
+                          <span className="font-medium">
+                            {new Date(verificationStats.stats.last_run_time).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {verificationStats.stats.last_success_time && (
+                        <div className="flex justify-between">
+                          <span>Last Success:</span>
+                          <span className="font-medium text-green-600">
+                            {new Date(verificationStats.stats.last_success_time).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                      {verificationStats.stats.last_error && (
+                        <div className="mt-2">
+                          <span className="text-red-600 font-medium">Last Error:</span>
+                          <p className="text-red-600 text-xs mt-1 bg-red-50 p-2 rounded">
+                            {verificationStats.stats.last_error}
+                          </p>
+                        </div>
+                      )}
+                      {verificationStats.status?.next_run_estimate && (
+                        <div className="flex justify-between">
+                          <span>Next Run:</span>
+                          <span className="font-medium text-blue-600">
+                            {new Date(verificationStats.status.next_run_estimate).toLocaleString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                
+                {/* Configuration */}
+                {verificationStats?.config && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="font-semibold text-gray-900 mb-2">Configuration</h3>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div className="flex justify-between">
+                        <span>Check Interval:</span>
+                        <span className="font-medium">{verificationStats.config.interval_minutes} minutes</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Retry Interval:</span>
+                        <span className="font-medium">{verificationStats.config.retry_interval_minutes} minutes</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Max Retries:</span>
+                        <span className="font-medium">{verificationStats.config.max_retries}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Quiet Hours:</span>
+                        <span className="font-medium">
+                          {verificationStats.config.quiet_hours_start}:00 - {verificationStats.config.quiet_hours_end}:00 UTC
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

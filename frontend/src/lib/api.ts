@@ -24,11 +24,22 @@ export const apiClient = {
       headers
     });
 
+    // Parse JSON response regardless of status
+    const jsonResponse = await response.json();
+
     if (!response.ok) {
-      throw new Error(`API Error: ${response.statusText}`);
+      // Return the error response for proper handling
+      return {
+        status: 'error',
+        detail: jsonResponse.detail || response.statusText,
+        ...jsonResponse
+      };
     }
 
-    return response.json();
+    return {
+      status: 'success',
+      ...jsonResponse
+    };
   },
 
   async post(endpoint: string, data: any, token?: string) {
@@ -555,6 +566,177 @@ export const oddsUtils = {
       commence_time: game.commence_time,
       ...extractedOdds
     };
+  }
+};
+
+// Fantasy Sports API
+export const fantasyAPI = {
+  // Connect a fantasy platform account
+  connectAccount: async (platform: string, credentials: any, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/fantasy/connect', { platform, credentials }, authToken);
+  },
+
+  // Get connected fantasy accounts
+  getAccounts: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get('/api/fantasy/accounts', authToken);
+    } catch (error) {
+      return { status: 'error', accounts: [], message: 'Failed to fetch fantasy accounts' };
+    }
+  },
+
+  // Get fantasy leagues
+  getLeagues: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get('/api/fantasy/leagues', authToken);
+    } catch (error) {
+      return { status: 'error', leagues: [], message: 'Failed to fetch fantasy leagues' };
+    }
+  },
+
+  // Sync a specific league
+  syncLeague: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post(`/api/fantasy/sync-league/${leagueId}`, {}, authToken);
+  },
+
+  // Get roster for a specific league
+  getRoster: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/roster/${leagueId}`, authToken);
+    } catch (error) {
+      return { status: 'error', roster: [], message: 'Failed to fetch roster' };
+    }
+  },
+
+  // Disconnect fantasy account
+  disconnectAccount: async (accountId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.delete(`/api/fantasy/disconnect/${accountId}`, authToken);
+  },
+
+  // Disconnect and erase a specific league
+  disconnectLeague: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.delete(`/api/fantasy/leagues/${leagueId}`, authToken);
+  },
+
+  // Get start/sit recommendations
+  getStartSitRecommendations: async (week: number = 1, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/recommendations/start-sit/${week}`, authToken);
+    } catch (error) {
+      return { status: 'error', recommendations: [], message: 'Failed to fetch start/sit recommendations' };
+    }
+  },
+
+  // Get waiver wire recommendations
+  getWaiverWireRecommendations: async (week: number = 1, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/recommendations/waiver-wire/${week}`, authToken);
+    } catch (error) {
+      return { status: 'error', recommendations: [], message: 'Failed to fetch waiver wire recommendations' };
+    }
+  },
+
+  // Test Sleeper integration
+  testSleeper: async (username: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/test/sleeper/${username}`, authToken);
+    } catch (error) {
+      return { status: 'error', message: 'Failed to test Sleeper integration' };
+    }
+  },
+
+  // Get trending players
+  getTrendingPlayers: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get('/api/fantasy/test/sleeper-trending', authToken);
+    } catch (error) {
+      return { status: 'error', trending: [], message: 'Failed to fetch trending players' };
+    }
+  },
+
+  // Get league standings
+  getLeagueStandings: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/standings/${leagueId}`, authToken);
+    } catch (error) {
+      return { status: 'error', standings: [], message: 'Failed to fetch league standings' };
+    }
+  },
+
+  // Get league matchups for a specific week
+  getLeagueMatchups: async (leagueId: string, week: number, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/matchups/${leagueId}/${week}`, authToken);
+    } catch (error) {
+      return { status: 'error', matchups: [], message: 'Failed to fetch league matchups' };
+    }
+  },
+
+  // Get detailed league rules and settings
+  getLeagueRules: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/fantasy/leagues/${leagueId}/rules`, authToken);
+    } catch (error) {
+      return { status: 'error', rules: null, message: 'Failed to fetch league rules' };
+    }
+  },
+
+  // Advanced player search
+  searchPlayers: async (filters: {
+    query?: string;
+    position?: string;
+    team?: string;
+    age_min?: number;
+    age_max?: number;
+    experience_min?: number;
+    experience_max?: number;
+    availability?: string;
+    injury_status?: string;
+    trending?: string;
+    league_id?: string;
+    limit?: number;
+    offset?: number;
+  }, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const params = new URLSearchParams();
+      Object.entries(filters).forEach(([key, value]) => {
+        if (value !== undefined && value !== null && value !== '') {
+          params.append(key, value.toString());
+        }
+      });
+      return await apiClient.get(`/api/fantasy/players/search?${params.toString()}`, authToken);
+    } catch (error) {
+      return { status: 'error', players: [], message: 'Failed to search players' };
+    }
+  },
+
+  // Compare players
+  comparePlayers: async (playerIds: string[], leagueId?: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      const payload = {
+        player_ids: playerIds,
+        league_id: leagueId
+      };
+      return await apiClient.post('/api/fantasy/players/compare', payload, authToken);
+    } catch (error) {
+      return { status: 'error', comparison: null, message: 'Failed to compare players' };
+    }
   }
 };
 
