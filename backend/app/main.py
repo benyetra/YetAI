@@ -36,7 +36,7 @@ from app.core.config import settings
 from app.core.database import init_db, check_db_connection
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -110,8 +110,11 @@ app.add_middleware(
         "http://localhost:3000",
         "http://localhost:3001",
         "http://localhost:3002",
+        "http://localhost:3003",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
+        "http://127.0.0.1:3002",
+        "http://127.0.0.1:3003",
         "http://192.168.1.44:3000",
         "http://192.168.1.44:3001",
         "ws://localhost:8000"
@@ -596,7 +599,7 @@ async def connect_fantasy_account(
     """Connect a user's fantasy sports account"""
     try:
         result = await fantasy_service.connect_user_account(
-            user_id=current_user.id,
+            user_id=current_user["id"],
             platform=request.platform,
             credentials=request.credentials
         )
@@ -625,25 +628,35 @@ async def get_fantasy_accounts(
 ):
     """Get all connected fantasy accounts for the user"""
     try:
-        accounts = fantasy_service.get_user_fantasy_accounts(current_user.id)
+        accounts = fantasy_service.get_user_fantasy_accounts(current_user["id"])
+        
+        # Format for frontend compatibility
+        formatted_accounts = [
+            {
+                "id": str(account["id"]),
+                "platform": account["platform"],
+                "username": account["username"],
+                "user_id": str(current_user["id"]),
+                "is_active": True,  # All active accounts since we filter inactive ones
+                "last_sync": account["last_sync"].isoformat() if account["last_sync"] else None,
+                "created_at": None,  # Not available in current model
+                "league_count": account["league_count"]
+            }
+            for account in accounts
+        ]
         
         return {
-            "success": True,
-            "accounts": [
-                {
-                    "id": account["id"],
-                    "platform": account["platform"],
-                    "username": account["username"],
-                    "last_sync": account["last_sync"].isoformat() if account["last_sync"] else None,
-                    "league_count": account["league_count"]
-                }
-                for account in accounts
-            ]
+            "status": "success",
+            "accounts": formatted_accounts
         }
         
     except Exception as e:
         logger.error(f"Error getting fantasy accounts: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": str(e),
+            "accounts": []
+        }
 
 @app.get("/api/fantasy/leagues")
 async def get_fantasy_leagues(
@@ -652,28 +665,140 @@ async def get_fantasy_leagues(
 ):
     """Get all fantasy leagues for the user"""
     try:
-        leagues = fantasy_service.get_user_leagues(current_user.id)
+        leagues = fantasy_service.get_user_leagues(current_user["id"])
+        
+        # Format for frontend compatibility
+        formatted_leagues = [
+            {
+                "id": str(league["id"]),
+                "league_id": str(league["id"]),  # Frontend expects this field
+                "name": league["name"],
+                "platform": league["platform"],
+                "season": str(league["season"]),  # Frontend expects string
+                "total_teams": league["team_count"],  # Frontend expects this field name
+                "team_count": league["team_count"],  # Keep for backward compatibility
+                "scoring_type": league["scoring_type"],
+                "settings": {"scoring_type": league["scoring_type"]},  # Frontend expects this
+                "last_sync": league["last_sync"].isoformat() if league["last_sync"] else None,
+                "is_active": True,  # All synced leagues are active
+                "user_team": league["user_team"]
+            }
+            for league in leagues
+        ]
         
         return {
-            "success": True,
-            "leagues": [
-                {
-                    "id": league["id"],
-                    "name": league["name"],
-                    "platform": league["platform"],
-                    "season": league["season"],
-                    "team_count": league["team_count"],
-                    "scoring_type": league["scoring_type"],
-                    "last_sync": league["last_sync"].isoformat() if league["last_sync"] else None,
-                    "user_team": league["user_team"]
-                }
-                for league in leagues
-            ]
+            "status": "success", 
+            "leagues": formatted_leagues
         }
         
     except Exception as e:
         logger.error(f"Error getting fantasy leagues: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {
+            "status": "error",
+            "message": str(e),
+            "leagues": []
+        }
+
+@app.get("/api/fantasy/leagues/{league_id}/rules")
+async def get_league_rules(
+    league_id: str,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get detailed league rules and settings for AI recommendations"""
+    try:
+        # Verify user has access to this league
+        leagues = fantasy_service.get_user_leagues(current_user["id"])
+        league = next((l for l in leagues if str(l["id"]) == league_id), None)
+        
+        if not league:
+            raise HTTPException(status_code=404, detail="League not found or not accessible")
+        
+        # Use existing league data to create rules summary
+        scoring_type = league.get("scoring_type", "standard")
+        
+        # Basic scoring analysis from scoring_type
+        ppr_value = 0
+        if scoring_type == "ppr":
+            ppr_value = 1.0
+        elif scoring_type == "half_ppr":
+            ppr_value = 0.5
+        
+        # Standard NFL fantasy scoring assumptions
+        standard_scoring = {
+            "passing": {"touchdowns": 4, "yards_per_point": 25, "interceptions": -2},
+            "rushing": {"touchdowns": 6, "yards_per_point": 10, "fumbles": -2},
+            "receiving": {"touchdowns": 6, "yards_per_point": 10, "receptions": ppr_value}
+        }
+        
+        # Standard roster assumptions (12-team league)
+        standard_roster = {
+            "total_spots": 16,
+            "starting_spots": 9,
+            "bench_spots": 7,
+            "positions": {"QB": 1, "RB": 2, "WR": 2, "TE": 1, "FLEX": 1, "K": 1, "DEF": 1, "BN": 7},
+            "position_requirements": ["QB", "RB", "RB", "WR", "WR", "TE", "FLEX", "K", "DEF", "BN", "BN", "BN", "BN", "BN", "BN", "BN"]
+        }
+        
+        # Format rules response using existing data
+        rules = {
+            "league_id": league_id,
+            "league_name": league["name"],
+            "platform": league["platform"],
+            "season": int(league["season"]),
+            "league_type": "Redraft",  # Default assumption
+            "team_count": league["team_count"],
+            
+            # Roster Settings (standard assumptions)
+            "roster_settings": standard_roster,
+            
+            # Scoring Settings
+            "scoring_settings": {
+                "type": scoring_type.replace("_", " ").title(),
+                "passing": standard_scoring["passing"],
+                "rushing": standard_scoring["rushing"],
+                "receiving": standard_scoring["receiving"],
+                "special_scoring": [],
+                "raw_settings": {"rec": ppr_value, "scoring_type": scoring_type}
+            },
+            
+            # League Features (standard assumptions)
+            "features": {
+                "trades_enabled": True,
+                "waivers_enabled": True,
+                "playoffs": {"teams": 6, "weeks": 15}
+            },
+            
+            # AI Recommendation Context
+            "ai_context": {
+                "prioritize_volume": ppr_value > 0,  # PPR leagues favor target volume
+                "rb_premium": ppr_value < 0.5,  # Standard/half-PPR favors RBs more
+                "flex_strategy": True,  # Most leagues have flex
+                "superflex": False,  # Rare, assume no
+                "position_scarcity": {
+                    "qb": 1,
+                    "rb": 2, 
+                    "wr": 2,
+                    "te": 1,
+                    "flex": 1
+                }
+            }
+        }
+        
+        return {
+            "status": "success",
+            "rules": rules
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting league rules for league {league_id}: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "rules": None
+        }
 
 @app.post("/api/fantasy/sync/{fantasy_user_id}")
 async def sync_fantasy_leagues(
@@ -684,7 +809,7 @@ async def sync_fantasy_leagues(
     """Manually sync leagues for a fantasy account"""
     try:
         # Verify the fantasy user belongs to current user
-        accounts = fantasy_service.get_user_fantasy_accounts(current_user.id)
+        accounts = fantasy_service.get_user_fantasy_accounts(current_user["id"])
         if not any(acc["id"] == fantasy_user_id for acc in accounts):
             raise HTTPException(status_code=403, detail="Fantasy account not found or not owned by user")
         
@@ -699,6 +824,178 @@ async def sync_fantasy_leagues(
         logger.error(f"Error syncing fantasy leagues: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/fantasy/sync-league/{league_id}")
+async def sync_fantasy_league_by_id(
+    league_id: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Sync a specific league by finding its associated fantasy account"""
+    try:
+        # Get user's leagues to find the one being synced
+        user_leagues = fantasy_service.get_user_leagues(current_user["id"])
+        target_league = None
+        
+        for league in user_leagues:
+            if league["id"] == league_id:
+                target_league = league
+                break
+        
+        if not target_league:
+            raise HTTPException(status_code=404, detail="League not found or not owned by user")
+        
+        # Find the fantasy account that owns this league
+        accounts = fantasy_service.get_user_fantasy_accounts(current_user["id"])
+        fantasy_user_id = None
+        
+        # We need to get the fantasy_user_id from the league data
+        # Let's query the database directly for this league
+        from app.models.fantasy_models import FantasyLeague
+        from app.core.database import get_db
+        
+        db = next(get_db())
+        try:
+            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+            if league_obj:
+                fantasy_user_id = league_obj.fantasy_user_id
+        finally:
+            db.close()
+        
+        if not fantasy_user_id:
+            raise HTTPException(status_code=404, detail="League's fantasy account not found")
+        
+        # Verify the fantasy user belongs to current user
+        if not any(acc["id"] == fantasy_user_id for acc in accounts):
+            raise HTTPException(status_code=403, detail="Fantasy account not found or not owned by user")
+        
+        # Run sync for the fantasy account
+        result = await fantasy_service.sync_user_leagues(fantasy_user_id)
+        
+        return {
+            "status": "success" if result.get("success") else "error",
+            "message": f"Synced leagues for account" if result.get("success") else result.get("error", "Sync failed")
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error syncing league {league_id}: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
+
+@app.get("/api/fantasy/roster/{league_id}")
+async def get_fantasy_roster(
+    league_id: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get current user's roster for a specific league"""
+    try:
+        # Verify user owns this league
+        user_leagues = fantasy_service.get_user_leagues(current_user["id"])
+        target_league = None
+        
+        for league in user_leagues:
+            if league["id"] == league_id:
+                target_league = league
+                break
+        
+        if not target_league:
+            raise HTTPException(status_code=404, detail="League not found or not owned by user")
+        
+        # Get the user's team from the league
+        user_team = target_league.get("user_team")
+        if not user_team:
+            return {
+                "status": "error",
+                "message": "No team found for user in this league",
+                "roster": []
+            }
+        
+        # For now, we need to get roster data from Sleeper directly since we don't store player details
+        # Get the fantasy account that owns this league
+        from app.models.fantasy_models import FantasyLeague
+        from app.core.database import get_db
+        
+        db = next(get_db())
+        try:
+            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+            if not league_obj:
+                raise HTTPException(status_code=404, detail="League not found")
+            
+            fantasy_user_id = league_obj.fantasy_user_id
+            
+            # Get the FantasyUser object directly to get platform_user_id
+            from app.models.fantasy_models import FantasyUser
+            fantasy_user_obj = db.query(FantasyUser).filter(FantasyUser.id == fantasy_user_id).first()
+            
+            if not fantasy_user_obj:
+                raise HTTPException(status_code=404, detail="Fantasy account not found")
+            
+            platform_user_id = fantasy_user_obj.platform_user_id
+            platform_league_id = league_obj.platform_league_id
+        finally:
+            db.close()
+        
+        # Get fresh roster data from Sleeper
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+        sleeper_service = SleeperFantasyService()
+        
+        # Get league details which includes rosters
+        league_details = await sleeper_service.get_league_details(platform_league_id)
+        
+        # Find user's team in the league
+        user_roster = None
+        for team in league_details.get('teams', []):
+            if team.get('owner_id') == platform_user_id:
+                user_roster = team.get('roster', [])
+                break
+        
+        if not user_roster:
+            return {
+                "status": "success",
+                "message": "No players found in roster",
+                "roster": []
+            }
+        
+        # Get player details for the roster
+        players_data = await sleeper_service._get_all_players()
+        
+        formatted_roster = []
+        for player_id in user_roster:
+            if player_id in players_data:
+                player_data = players_data[player_id]
+                formatted_roster.append({
+                    "player_id": player_id,
+                    "name": f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip(),
+                    "position": player_data.get('position'),
+                    "team": player_data.get('team'),
+                    "age": player_data.get('age'),
+                    "experience": player_data.get('years_exp'),
+                    "fantasy_positions": player_data.get('fantasy_positions', []),
+                    "status": player_data.get('status'),
+                    "injury_status": player_data.get('injury_status')
+                })
+        
+        return {
+            "status": "success",
+            "league_name": target_league["name"],
+            "team_name": user_team["name"], 
+            "roster": formatted_roster
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting roster for league {league_id}: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "roster": []
+        }
+
 @app.delete("/api/fantasy/disconnect/{fantasy_user_id}")
 async def disconnect_fantasy_account(
     fantasy_user_id: int,
@@ -707,7 +1004,7 @@ async def disconnect_fantasy_account(
 ):
     """Disconnect a fantasy sports account"""
     try:
-        result = fantasy_service.disconnect_fantasy_account(current_user.id, fantasy_user_id)
+        result = fantasy_service.disconnect_fantasy_account(current_user["id"], fantasy_user_id)
         return result
             
     except Exception as e:
@@ -723,7 +1020,7 @@ async def get_start_sit_recommendations(
     """Get start/sit recommendations for the current week"""
     try:
         recommendations = await fantasy_service.generate_start_sit_recommendations(
-            current_user.id, week
+            current_user["id"], week
         )
         
         return {
@@ -745,7 +1042,7 @@ async def get_waiver_wire_recommendations(
     """Get waiver wire pickup recommendations"""
     try:
         recommendations = await fantasy_service.generate_waiver_wire_recommendations(
-            current_user.id, week
+            current_user["id"], week
         )
         
         return {
@@ -756,6 +1053,68 @@ async def get_waiver_wire_recommendations(
         
     except Exception as e:
         logger.error(f"Error getting waiver wire recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/standings/{league_id}")
+async def get_league_standings(
+    league_id: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get league standings with team records and stats"""
+    try:
+        # Get the league to verify user access
+        user_leagues = fantasy_service.get_user_leagues(current_user["id"])
+        league_found = any(league["id"] == league_id for league in user_leagues)
+        
+        if not league_found:
+            raise HTTPException(status_code=404, detail="League not found or not owned by user")
+        
+        # Get league standings data
+        standings = fantasy_service.get_league_standings(league_id)
+        
+        return {
+            "status": "success",
+            "league_id": league_id,
+            "standings": standings
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting league standings: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/matchups/{league_id}/{week}")
+async def get_league_matchups(
+    league_id: int,
+    week: int,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get league matchups for a specific week"""
+    try:
+        # Get the league to verify user access
+        user_leagues = fantasy_service.get_user_leagues(current_user["id"])
+        league_found = any(league["id"] == league_id for league in user_leagues)
+        
+        if not league_found:
+            raise HTTPException(status_code=404, detail="League not found or not owned by user")
+        
+        # Get matchups data
+        matchups = await fantasy_service.get_league_matchups(league_id, week)
+        
+        return {
+            "status": "success",
+            "league_id": league_id,
+            "week": week,
+            "matchups": matchups
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting league matchups: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 # Test endpoints for Sleeper API
@@ -792,15 +1151,488 @@ async def test_sleeper_trending():
         trending_adds = await sleeper_service.get_trending_players("add")
         trending_drops = await sleeper_service.get_trending_players("drop")
         
+        # Combine and format for frontend
+        combined_trending = []
+        
+        # Add trending adds with proper structure
+        for player in trending_adds[:5]:
+            combined_trending.append({
+                "player_id": player.get("player_id"),
+                "first_name": player.get("name", "").split(" ")[0] if player.get("name") else "",
+                "last_name": " ".join(player.get("name", "").split(" ")[1:]) if player.get("name") and len(player.get("name", "").split(" ")) > 1 else "",
+                "position": player.get("position"),
+                "team": player.get("team"),
+                "trend": "add",
+                "count": player.get("trend_count", 0)
+            })
+        
+        # Add trending drops with proper structure
+        for player in trending_drops[:5]:
+            combined_trending.append({
+                "player_id": player.get("player_id"),
+                "first_name": player.get("name", "").split(" ")[0] if player.get("name") else "",
+                "last_name": " ".join(player.get("name", "").split(" ")[1:]) if player.get("name") and len(player.get("name", "").split(" ")) > 1 else "",
+                "position": player.get("position"),
+                "team": player.get("team"),
+                "trend": "drop",
+                "count": player.get("trend_count", 0)
+            })
+        
         return {
-            "success": True,
-            "trending_adds": trending_adds[:10],
-            "trending_drops": trending_drops[:10]
+            "status": "success",
+            "trending": combined_trending
         }
         
     except Exception as e:
         logger.error(f"Error testing Sleeper trending: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# Advanced Player Search and Analysis API endpoints
+@app.get("/api/fantasy/players/search")
+async def search_players(
+    query: Optional[str] = None,
+    position: Optional[str] = None,
+    team: Optional[str] = None,
+    age_min: Optional[int] = None,
+    age_max: Optional[int] = None,
+    experience_min: Optional[int] = None,
+    experience_max: Optional[int] = None,
+    availability: Optional[str] = None,  # "available", "taken", "all"
+    injury_status: Optional[str] = None,  # "healthy", "questionable", "doubtful", "out"
+    trending: Optional[str] = None,  # "hot", "cold", "all"
+    league_id: Optional[str] = None,
+    limit: Optional[int] = 50,
+    offset: Optional[int] = 0,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Advanced player search with multi-criteria filtering"""
+    try:
+        logger.info(f"Player search called with query: {query}, position: {position}")
+        
+        # Simple test response first
+        if not query and not position:
+            return {
+                "status": "success",
+                "players": [
+                    {
+                        "player_id": "test1",
+                        "name": "Test Player 1",
+                        "position": "QB",
+                        "team": "KC",
+                        "age": 25,
+                        "experience": 3,
+                        "injury_status": "Healthy",
+                        "trending_status": "normal",
+                        "availability": "unknown",
+                        "fantasy_positions": ["QB"],
+                        "search_rank": 1,
+                        "league_metrics": {},
+                        "metadata": {}
+                    },
+                    {
+                        "player_id": "test2", 
+                        "name": "Test Player 2",
+                        "position": "RB",
+                        "team": "DAL",
+                        "age": 27,
+                        "experience": 5,
+                        "injury_status": "Healthy",
+                        "trending_status": "hot",
+                        "availability": "unknown",
+                        "fantasy_positions": ["RB"],
+                        "search_rank": 2,
+                        "league_metrics": {},
+                        "metadata": {}
+                    }
+                ],
+                "pagination": {
+                    "total": 2,
+                    "limit": 50,
+                    "offset": 0,
+                    "has_more": False
+                },
+                "filters_applied": {
+                    "query": query,
+                    "position": position,
+                    "team": team,
+                    "age_range": f"{age_min or 'any'}-{age_max or 'any'}",
+                    "experience_range": f"{experience_min or 'any'}-{experience_max or 'any'}",
+                    "availability": availability,
+                    "injury_status": injury_status,
+                    "trending": trending,
+                    "league_context": False
+                }
+            }
+
+        # Get Sleeper service for player data
+        sleeper_service = SleeperFantasyService()
+        
+        # Get all players data
+        all_players = await sleeper_service._get_all_players()
+        
+        # Get league context if league_id provided
+        league_context = None
+        if league_id:
+            leagues = fantasy_service.get_user_leagues(current_user["id"])
+            league = next((l for l in leagues if str(l["id"]) == league_id), None)
+            if league:
+                league_context = await fantasy_service._get_league_rules_context(league)
+        
+        # Get trending players data
+        trending_adds = await sleeper_service.get_trending_players("add")
+        trending_drops = await sleeper_service.get_trending_players("drop")
+        trending_lookup = {}
+        
+        for player in trending_adds:
+            trending_lookup[player.get("player_id")] = "hot"
+        for player in trending_drops:
+            if player.get("player_id") not in trending_lookup:
+                trending_lookup[player.get("player_id")] = "cold"
+        
+        # Get availability data if league specified
+        availability_lookup = {}
+        if league_id and availability != "all":
+            try:
+                available_players = await sleeper_service.get_available_players(league_id)
+                availability_lookup = {p.get("player_id"): "available" for p in available_players}
+            except:
+                pass  # Continue without availability filter
+        
+        # Filter and process players
+        filtered_players = []
+        
+        for player_id, player_data in all_players.items():
+            # Skip non-NFL players or invalid data
+            if not player_data or player_data.get("sport") != "nfl":
+                continue
+            
+            # Basic info extraction
+            name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+            player_position = player_data.get("position", "")
+            player_team = player_data.get("team", "")
+            player_age = player_data.get("age")
+            player_experience = player_data.get("years_exp")
+            injury_report = player_data.get("injury_status", "")
+            
+            # Apply filters
+            if query and query.lower() not in name.lower():
+                continue
+            
+            if position and player_position != position.upper():
+                continue
+            
+            if team and player_team != team.upper():
+                continue
+            
+            if age_min and (not player_age or player_age < age_min):
+                continue
+            
+            if age_max and (not player_age or player_age > age_max):
+                continue
+            
+            if experience_min and (not player_experience or player_experience < experience_min):
+                continue
+            
+            if experience_max and (not player_experience or player_experience > experience_max):
+                continue
+            
+            if injury_status:
+                if injury_status == "healthy" and injury_report not in [None, "", "Healthy"]:
+                    continue
+                elif injury_status == "questionable" and injury_report != "Questionable":
+                    continue
+                elif injury_status == "doubtful" and injury_report != "Doubtful":
+                    continue
+                elif injury_status == "out" and injury_report not in ["Out", "IR"]:
+                    continue
+            
+            if trending and trending != "all":
+                player_trending = trending_lookup.get(player_id, "normal")
+                if trending != player_trending:
+                    continue
+            
+            if availability and availability != "all" and league_id:
+                player_availability = availability_lookup.get(player_id, "taken")
+                if availability != player_availability:
+                    continue
+            
+            # Calculate league-specific metrics if league context available
+            league_metrics = {}
+            if league_context:
+                league_metrics = _calculate_league_specific_metrics(player_data, league_context)
+            
+            # Build comprehensive player object
+            player_result = {
+                "player_id": player_id,
+                "name": name,
+                "position": player_position,
+                "team": player_team,
+                "age": player_age,
+                "experience": player_experience,
+                "injury_status": injury_report or "Healthy",
+                "trending_status": trending_lookup.get(player_id, "normal"),
+                "availability": availability_lookup.get(player_id, "unknown"),
+                "fantasy_positions": player_data.get("fantasy_positions", []),
+                "height": player_data.get("height"),
+                "weight": player_data.get("weight"),
+                "college": player_data.get("college"),
+                "depth_chart_order": player_data.get("depth_chart_order"),
+                "search_rank": player_data.get("search_rank", 999),
+                "league_metrics": league_metrics,
+                "metadata": {
+                    "rotowire_id": player_data.get("rotowire_id"),
+                    "sportradar_id": player_data.get("sportradar_id"),
+                    "yahoo_id": player_data.get("yahoo_id")
+                }
+            }
+            
+            filtered_players.append(player_result)
+        
+        # Sort by search rank (lower = better) and name
+        filtered_players.sort(key=lambda x: (x["search_rank"] or 999, x["name"]))
+        
+        # Apply pagination
+        total_count = len(filtered_players)
+        paginated_players = filtered_players[offset:offset + limit]
+        
+        return {
+            "status": "success",
+            "players": paginated_players,
+            "pagination": {
+                "total": total_count,
+                "limit": limit,
+                "offset": offset,
+                "has_more": offset + limit < total_count
+            },
+            "filters_applied": {
+                "query": query,
+                "position": position,
+                "team": team,
+                "age_range": f"{age_min or 'any'}-{age_max or 'any'}",
+                "experience_range": f"{experience_min or 'any'}-{experience_max or 'any'}",
+                "availability": availability,
+                "injury_status": injury_status,
+                "trending": trending,
+                "league_context": bool(league_context)
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in player search: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class ComparePlayersRequest(BaseModel):
+    player_ids: List[str]
+    league_id: Optional[str] = None
+
+@app.post("/api/fantasy/players/compare")
+async def compare_players(
+    request: ComparePlayersRequest,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Compare multiple players side-by-side with league-specific analysis"""
+    try:
+        player_ids = request.player_ids
+        league_id = request.league_id
+        
+        logger.info(f"Player comparison called with {len(player_ids)} players: {player_ids}")
+        
+        if len(player_ids) < 2 or len(player_ids) > 4:
+            raise HTTPException(status_code=400, detail="Must compare 2-4 players")
+        
+        # Get Sleeper service for player data
+        sleeper_service = SleeperFantasyService()
+        all_players = await sleeper_service._get_all_players()
+        
+        # Get league context if provided
+        league_context = None
+        if league_id:
+            leagues = fantasy_service.get_user_leagues(current_user["id"])
+            league = next((l for l in leagues if str(l["id"]) == league_id), None)
+            if league:
+                league_context = await fantasy_service._get_league_rules_context(league)
+        
+        # Get trending data
+        trending_adds = await sleeper_service.get_trending_players("add")
+        trending_drops = await sleeper_service.get_trending_players("drop")
+        trending_lookup = {}
+        
+        for player in trending_adds:
+            trending_lookup[player.get("player_id")] = {"type": "hot", "count": player.get("trend_count", 0)}
+        for player in trending_drops:
+            if player.get("player_id") not in trending_lookup:
+                trending_lookup[player.get("player_id")] = {"type": "cold", "count": player.get("trend_count", 0)}
+        
+        compared_players = []
+        
+        for player_id in player_ids:
+            if player_id not in all_players:
+                continue
+            
+            player_data = all_players[player_id]
+            name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+            
+            # Enhanced comparison metrics
+            comparison_data = {
+                "player_id": player_id,
+                "name": name,
+                "position": player_data.get("position", ""),
+                "team": player_data.get("team", ""),
+                "age": player_data.get("age"),
+                "experience": player_data.get("years_exp"),
+                "injury_status": player_data.get("injury_status", "Healthy"),
+                "physical_stats": {
+                    "height": player_data.get("height"),
+                    "weight": player_data.get("weight")
+                },
+                "career_info": {
+                    "college": player_data.get("college"),
+                    "draft_year": player_data.get("draft_year"),
+                    "draft_round": player_data.get("draft_round"),
+                    "draft_pick": player_data.get("draft_pick")
+                },
+                "team_context": {
+                    "depth_chart_order": player_data.get("depth_chart_order"),
+                    "search_rank": player_data.get("search_rank", 999)
+                },
+                "trending": trending_lookup.get(player_id, {"type": "normal", "count": 0}),
+                "fantasy_positions": player_data.get("fantasy_positions", [])
+            }
+            
+            # Add league-specific analysis if available
+            if league_context:
+                league_analysis = _calculate_detailed_league_analysis(player_data, league_context)
+                comparison_data["league_analysis"] = league_analysis
+            
+            compared_players.append(comparison_data)
+        
+        # Generate comparison insights
+        insights = _generate_comparison_insights(compared_players, league_context)
+        
+        return {
+            "status": "success",
+            "comparison": {
+                "players": compared_players,
+                "insights": insights,
+                "league_context": league_context["scoring_type"] if league_context else None,
+                "comparison_date": datetime.utcnow().isoformat()
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error in player comparison: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+def _calculate_league_specific_metrics(player_data: Dict, league_context: Dict) -> Dict:
+    """Calculate league-specific player metrics"""
+    position = player_data.get("position", "")
+    ppr_value = league_context["ppr_value"]
+    
+    metrics = {
+        "scoring_type": league_context["scoring_type"],
+        "position_value": "Standard"
+    }
+    
+    # Position value based on league scoring
+    if position == "WR":
+        if ppr_value >= 1:
+            metrics["position_value"] = "Premium (Full PPR)"
+            metrics["league_boost"] = "+High"
+        elif ppr_value >= 0.5:
+            metrics["position_value"] = "High (Half PPR)" 
+            metrics["league_boost"] = "+Medium"
+        else:
+            metrics["position_value"] = "Standard"
+            metrics["league_boost"] = "Neutral"
+    elif position == "RB":
+        if ppr_value < 0.5:
+            metrics["position_value"] = "Premium (Standard)"
+            metrics["league_boost"] = "+High"
+        else:
+            metrics["position_value"] = "High (PPR)"
+            metrics["league_boost"] = "+Medium"
+    elif position == "TE":
+        if league_context["team_count"] >= 12:
+            metrics["position_value"] = "Premium (Large League)"
+            metrics["league_boost"] = "+High"
+        else:
+            metrics["position_value"] = "Standard"
+            metrics["league_boost"] = "Neutral"
+    
+    return metrics
+
+def _calculate_detailed_league_analysis(player_data: Dict, league_context: Dict) -> Dict:
+    """Calculate detailed league-specific analysis for comparisons"""
+    position = player_data.get("position", "")
+    ppr_value = league_context["ppr_value"]
+    
+    analysis = {
+        "scoring_impact": "Neutral",
+        "position_scarcity": "Standard",
+        "league_recommendation": "",
+        "value_tier": "Standard"
+    }
+    
+    # Scoring impact analysis
+    if position == "WR" and ppr_value > 0:
+        analysis["scoring_impact"] = f"+{ppr_value * 6:.1f} pts/game (PPR bonus)"
+        analysis["league_recommendation"] = f"High value in {league_context['scoring_type'].replace('_', ' ')} format"
+        analysis["value_tier"] = "Enhanced"
+    elif position == "RB" and ppr_value < 0.5:
+        analysis["scoring_impact"] = "+1.2 pts/game (Standard premium)"
+        analysis["league_recommendation"] = "Premium value in standard scoring"
+        analysis["value_tier"] = "Enhanced"
+    elif position == "TE":
+        if league_context["team_count"] >= 12:
+            analysis["position_scarcity"] = "High (12+ teams)"
+            analysis["league_recommendation"] = "Scarce position in large league"
+            analysis["value_tier"] = "Premium"
+        else:
+            analysis["position_scarcity"] = "Standard"
+    
+    return analysis
+
+def _generate_comparison_insights(players: List[Dict], league_context: Optional[Dict]) -> List[str]:
+    """Generate insights from player comparison"""
+    insights = []
+    
+    if len(players) < 2:
+        return insights
+    
+    # Age comparison
+    ages = [p.get("age") for p in players if p.get("age")]
+    if len(ages) >= 2:
+        youngest = min(ages)
+        oldest = max(ages)
+        if oldest - youngest >= 3:
+            insights.append(f"Age gap: {oldest - youngest} years - consider upside vs experience")
+    
+    # Position analysis
+    positions = [p.get("position") for p in players]
+    unique_positions = set(positions)
+    if len(unique_positions) == 1 and league_context:
+        pos = list(unique_positions)[0]
+        if pos == "WR" and league_context["ppr_value"] > 0:
+            insights.append(f"All WRs benefit from {league_context['ppr_value']} PPR scoring")
+        elif pos == "RB" and league_context["ppr_value"] < 0.5:
+            insights.append("All RBs have premium value in standard scoring")
+    
+    # Experience comparison
+    experiences = [p.get("experience") for p in players if p.get("experience")]
+    if experiences:
+        rookie = any(exp == 0 for exp in experiences)
+        veteran = any(exp >= 8 for exp in experiences)
+        if rookie and veteran:
+            insights.append("Mix of rookie upside and veteran reliability")
+    
+    # Trending analysis
+    hot_players = [p for p in players if p.get("trending", {}).get("type") == "hot"]
+    if hot_players:
+        insights.append(f"{len(hot_players)} player(s) trending up in waiver activity")
+    
+    return insights
 
 # Live Sports Data API endpoints (The Odds API integration)
 @app.get("/api/sports")
