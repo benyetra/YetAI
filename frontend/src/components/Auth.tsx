@@ -26,9 +26,17 @@ const authAPI = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       return await response.json();
     } catch (error: any) {
       console.error(`API Error: ${endpoint}`, error);
+      if (error.message === 'Failed to fetch') {
+        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running on port 8000.' };
+      }
       return { status: 'error', message: error.message };
     }
   },
@@ -41,9 +49,17 @@ const authAPI = {
       }
       
       const response = await fetch(`${this.baseURL}${endpoint}`, { headers });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       return await response.json();
     } catch (error: any) {
       console.error(`API Error: ${endpoint}`, error);
+      if (error.message === 'Failed to fetch') {
+        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running on port 8000.' };
+      }
       return { status: 'error', message: error.message };
     }
   }

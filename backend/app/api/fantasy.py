@@ -159,12 +159,13 @@ async def get_fantasy_leagues(
     """Get all fantasy leagues for the user"""
     try:
         leagues = fantasy_service.get_user_leagues(current_user["id"])
+        print(f"DEBUG: leagues from service: {leagues}")
         
         # Format for frontend compatibility
         formatted_leagues = [
             {
                 "id": str(league["id"]),
-                "league_id": str(league["id"]),  # Frontend expects this field
+                "league_id": league["platform_league_id"],  # Use platform league ID for Trade Analyzer
                 "name": league["name"],
                 "platform": league["platform"],
                 "season": str(league["season"]),  # Frontend expects string

@@ -688,11 +688,28 @@ export const fantasyAPI = {
   // Get detailed league rules and settings
   getLeagueRules: async (leagueId: string, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    
+    // Try the legacy fantasy endpoint first (since most leagues are still using the old system)
     try {
-      return await apiClient.get(`/api/fantasy/leagues/${leagueId}/rules`, authToken);
-    } catch (error) {
-      return { status: 'error', rules: null, message: 'Failed to fetch league rules' };
+      const fantasyResponse = await apiClient.get(`/api/fantasy/leagues/${leagueId}/rules`, authToken);
+      if (fantasyResponse.status === 'success') {
+        return fantasyResponse;
+      }
+    } catch (fantasyError) {
+      console.log('Fantasy endpoint failed, trying Sleeper endpoint:', fantasyError);
     }
+    
+    // Fallback to the new Sleeper endpoint
+    try {
+      const sleeperResponse = await apiClient.get(`/api/sleeper/leagues/${leagueId}/rules`, authToken);
+      if (sleeperResponse.status === 'success') {
+        return sleeperResponse;
+      }
+    } catch (sleeperError) {
+      console.log('Sleeper endpoint also failed:', sleeperError);
+    }
+    
+    return { status: 'error', rules: null, message: 'Failed to fetch league rules' };
   },
 
   // Advanced player search
@@ -801,6 +818,69 @@ export const fantasyAPI = {
       return await apiClient.get(`/api/fantasy/analytics/${playerId}/matchup/${opponent}?${params.toString()}`, authToken);
     } catch (error) {
       return { status: 'error', matchup_analysis: {}, message: 'Failed to get matchup analytics' };
+    }
+  }
+};
+
+// Sleeper-specific API endpoints
+export const sleeperAPI = {
+  // Connect Sleeper account
+  connectAccount: async (sleeperUsername: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/sleeper/connect', { sleeper_username: sleeperUsername }, authToken);
+  },
+
+  // Sync all leagues
+  syncLeagues: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/sleeper/sync/leagues', {}, authToken);
+  },
+
+  // Sync all rosters
+  syncRosters: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/sleeper/sync/rosters', {}, authToken);
+  },
+
+  // Sync NFL players (admin only)
+  syncPlayers: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/sleeper/sync/players', {}, authToken);
+  },
+
+  // Full sync workflow
+  fullSync: async (sleeperUsername: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    return apiClient.post('/api/sleeper/sync/full', { sleeper_username: sleeperUsername }, authToken);
+  },
+
+  // Get sync status
+  getStatus: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get('/api/sleeper/status', authToken);
+    } catch (error) {
+      return { status: 'error', message: 'Failed to get Sleeper sync status' };
+    }
+  },
+
+  // Get Sleeper leagues
+  getLeagues: async (token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get('/api/sleeper/leagues', authToken);
+    } catch (error) {
+      return { status: 'error', leagues: [], message: 'Failed to fetch Sleeper leagues' };
+    }
+  },
+
+  // Get league rosters
+  getLeagueRosters: async (leagueId: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    try {
+      return await apiClient.get(`/api/sleeper/leagues/${leagueId}/rosters`, authToken);
+    } catch (error) {
+      return { status: 'error', rosters: [], message: 'Failed to fetch league rosters' };
     }
   }
 };

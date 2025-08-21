@@ -30,11 +30,12 @@ from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cl
 from app.services.fantasy_service import FantasyService
 from app.services.comprehensive_league_sync import comprehensive_sync_service
 from app.services.sleeper_fantasy_service import SleeperFantasyService
+from app.services.player_analytics_service import PlayerAnalyticsService
 from app.models.bet_models import *
 from app.models.live_bet_models import *
 from app.models.fantasy_models import FantasyPlatform
 from app.core.config import settings
-from app.core.database import init_db, check_db_connection
+from app.core.database import init_db, check_db_connection, SessionLocal
 from sqlalchemy.orm import Session
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
@@ -112,10 +113,14 @@ app.add_middleware(
         "http://localhost:3001",
         "http://localhost:3002",
         "http://localhost:3003",
+        "http://localhost:3004",
+        "http://localhost:3005",
         "http://127.0.0.1:3000",
         "http://127.0.0.1:3001",
         "http://127.0.0.1:3002",
         "http://127.0.0.1:3003",
+        "http://127.0.0.1:3004",
+        "http://127.0.0.1:3005",
         "http://192.168.1.44:3000",
         "http://192.168.1.44:3001",
         "ws://localhost:8000"
@@ -667,12 +672,13 @@ async def get_fantasy_leagues(
     """Get all fantasy leagues for the user"""
     try:
         leagues = fantasy_service.get_user_leagues(current_user["id"])
+        print(f"DEBUG: leagues from service: {leagues}")
         
         # Format for frontend compatibility
         formatted_leagues = [
             {
                 "id": str(league["id"]),
-                "league_id": str(league["id"]),  # Frontend expects this field
+                "league_id": league["platform_league_id"],  # Use platform league ID for Trade Analyzer
                 "name": league["name"],
                 "platform": league["platform"],
                 "season": str(league["season"]),  # Frontend expects string
@@ -698,6 +704,39 @@ async def get_fantasy_leagues(
             "status": "error",
             "message": str(e),
             "leagues": []
+        }
+
+@app.get("/api/fantasy/leagues/{league_id}/teams")
+async def get_league_teams(
+    league_id: str,
+    current_user = Depends(get_current_user),
+    fantasy_service: FantasyService = Depends(get_fantasy_service)
+):
+    """Get all teams in a fantasy league"""
+    try:
+        teams = await fantasy_service.get_league_teams(league_id)
+        
+        # Format for frontend compatibility
+        formatted_teams = [
+            {
+                "id": team.get("id", team.get("team_id")),
+                "name": team.get("name", team.get("team_name", f"Team {team.get('id', 'Unknown')}")),
+                "owner_name": team.get("owner_name", team.get("owner", "Unknown Owner"))
+            }
+            for team in teams
+        ]
+        
+        return {
+            "status": "success",
+            "teams": formatted_teams
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting league teams: {str(e)}")
+        return {
+            "status": "error",
+            "message": str(e),
+            "teams": []
         }
 
 @app.get("/api/fantasy/leagues/{league_id}/rules")
@@ -829,7 +868,7 @@ async def sync_fantasy_leagues(
 
 @app.post("/api/fantasy/sync-league/{league_id}")
 async def sync_fantasy_league_by_id(
-    league_id: int,
+    league_id: str,
     current_user = Depends(get_current_user),
     fantasy_service: FantasyService = Depends(get_fantasy_service)
 ):
@@ -840,7 +879,7 @@ async def sync_fantasy_league_by_id(
         target_league = None
         
         for league in user_leagues:
-            if league["id"] == league_id:
+            if league["platform_league_id"] == league_id:
                 target_league = league
                 break
         
@@ -858,7 +897,7 @@ async def sync_fantasy_league_by_id(
         
         db = next(get_db())
         try:
-            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == target_league["id"]).first()
             if league_obj:
                 fantasy_user_id = league_obj.fantasy_user_id
         finally:
@@ -890,7 +929,7 @@ async def sync_fantasy_league_by_id(
 
 @app.get("/api/fantasy/roster/{league_id}")
 async def get_fantasy_roster(
-    league_id: int,
+    league_id: str,
     current_user = Depends(get_current_user),
     fantasy_service: FantasyService = Depends(get_fantasy_service)
 ):
@@ -901,7 +940,7 @@ async def get_fantasy_roster(
         target_league = None
         
         for league in user_leagues:
-            if league["id"] == league_id:
+            if league["platform_league_id"] == league_id:
                 target_league = league
                 break
         
@@ -924,7 +963,7 @@ async def get_fantasy_roster(
         
         db = next(get_db())
         try:
-            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+            league_obj = db.query(FantasyLeague).filter(FantasyLeague.id == target_league["id"]).first()
             if not league_obj:
                 raise HTTPException(status_code=404, detail="League not found")
             
@@ -1016,13 +1055,24 @@ async def disconnect_fantasy_account(
 
 @app.delete("/api/fantasy/leagues/{league_id}")
 async def disconnect_league(
-    league_id: int,
+    league_id: str,
     current_user = Depends(get_current_user),
     fantasy_service: FantasyService = Depends(get_fantasy_service)
 ):
     """Disconnect a specific league and erase all its data"""
     try:
-        result = fantasy_service.disconnect_league(current_user["id"], league_id)
+        # Find the internal league ID from platform league ID
+        user_leagues = fantasy_service.get_user_leagues(current_user["id"])
+        target_league = None
+        for league in user_leagues:
+            if league["platform_league_id"] == league_id:
+                target_league = league
+                break
+        
+        if not target_league:
+            raise HTTPException(status_code=404, detail="League not found or not owned by user")
+        
+        result = fantasy_service.disconnect_league(current_user["id"], target_league["id"])
         return result
             
     except Exception as e:
@@ -1075,7 +1125,7 @@ async def get_waiver_wire_recommendations(
 
 @app.get("/api/fantasy/standings/{league_id}")
 async def get_league_standings(
-    league_id: int,
+    league_id: str,
     current_user = Depends(get_current_user),
     fantasy_service: FantasyService = Depends(get_fantasy_service)
 ):
@@ -1083,13 +1133,17 @@ async def get_league_standings(
     try:
         # Get the league to verify user access
         user_leagues = fantasy_service.get_user_leagues(current_user["id"])
-        league_found = any(league["id"] == league_id for league in user_leagues)
+        target_league = None
+        for league in user_leagues:
+            if league["platform_league_id"] == league_id:
+                target_league = league
+                break
         
-        if not league_found:
+        if not target_league:
             raise HTTPException(status_code=404, detail="League not found or not owned by user")
         
-        # Get league standings data
-        standings = fantasy_service.get_league_standings(league_id)
+        # Get league standings data using internal database ID
+        standings = fantasy_service.get_league_standings(target_league["id"])
         
         return {
             "status": "success",
@@ -1105,7 +1159,7 @@ async def get_league_standings(
 
 @app.get("/api/fantasy/matchups/{league_id}/{week}")
 async def get_league_matchups(
-    league_id: int,
+    league_id: str,
     week: int,
     current_user = Depends(get_current_user),
     fantasy_service: FantasyService = Depends(get_fantasy_service)
@@ -1114,13 +1168,17 @@ async def get_league_matchups(
     try:
         # Get the league to verify user access
         user_leagues = fantasy_service.get_user_leagues(current_user["id"])
-        league_found = any(league["id"] == league_id for league in user_leagues)
+        target_league = None
+        for league in user_leagues:
+            if league["platform_league_id"] == league_id:
+                target_league = league
+                break
         
-        if not league_found:
+        if not target_league:
             raise HTTPException(status_code=404, detail="League not found or not owned by user")
         
-        # Get matchups data
-        matchups = await fantasy_service.get_league_matchups(league_id, week)
+        # Get matchups data using internal database ID
+        matchups = await fantasy_service.get_league_matchups(target_league["id"], week)
         
         return {
             "status": "success",
@@ -1651,6 +1709,361 @@ def _generate_comparison_insights(players: List[Dict], league_context: Optional[
         insights.append(f"{len(hot_players)} player(s) trending up in waiver activity")
     
     return insights
+
+# Simplified Sleeper Sync API endpoints
+from app.services.simplified_sleeper_service import SimplifiedSleeperService
+
+class SleeperConnectRequest(BaseModel):
+    sleeper_username: str
+
+class SleeperSyncResponse(BaseModel):
+    success: bool
+    message: str
+    data: Dict[str, Any]
+
+simplified_sleeper_service = SimplifiedSleeperService()
+
+@app.post("/api/sleeper/connect")
+async def connect_sleeper_account(
+    request: SleeperConnectRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Connect a Sleeper account by username"""
+    try:
+        result = await simplified_sleeper_service.connect_sleeper_account(
+            current_user["id"], 
+            request.sleeper_username, 
+            db
+        )
+        
+        return {
+            "success": True,
+            "message": f"Successfully connected Sleeper account: {request.sleeper_username}",
+            "data": result
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to connect Sleeper account: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to connect Sleeper account")
+
+@app.post("/api/sleeper/sync/leagues")
+async def sync_league_history(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Sync all league history from 2020-2025"""
+    try:
+        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        if not user or not user.sleeper_user_id:
+            raise HTTPException(status_code=400, detail="Must connect Sleeper account first")
+        
+        result = await simplified_sleeper_service.sync_all_league_history(current_user["id"], db)
+        
+        return {
+            "success": True,
+            "message": f"Successfully synced {result['total_synced']} leagues",
+            "data": result
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to sync league history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to sync league history")
+
+@app.post("/api/sleeper/sync/rosters")
+async def sync_all_rosters(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Sync all rosters for all user's leagues"""
+    try:
+        result = await simplified_sleeper_service.sync_all_rosters(current_user["id"], db)
+        
+        return {
+            "success": True,
+            "message": f"Successfully synced {result['total_rosters_synced']} rosters across {result['leagues_processed']} leagues",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to sync rosters: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to sync rosters")
+
+@app.post("/api/sleeper/sync/players")
+async def sync_nfl_players(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Sync all NFL player data (admin only)"""
+    try:
+        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        if not user or not user.is_admin:
+            raise HTTPException(status_code=403, detail="Only administrators can trigger full player sync")
+        
+        result = await simplified_sleeper_service.sync_nfl_players(db)
+        
+        return {
+            "success": True,
+            "message": f"Successfully synced {result['new_players']} new players and updated {result['updated_players']} existing players",
+            "data": result
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to sync NFL players: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to sync NFL players")
+
+@app.post("/api/sleeper/sync/full")
+async def full_sleeper_sync(
+    request: SleeperConnectRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Complete workflow: Connect account -> Sync leagues -> Sync rosters -> Sync players"""
+    try:
+        result = await simplified_sleeper_service.full_sync_workflow(
+            current_user["id"],
+            request.sleeper_username,
+            db
+        )
+        
+        return {
+            "success": True,
+            "message": "Full Sleeper sync completed successfully",
+            "data": result
+        }
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Failed to complete full sync: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to complete full sync")
+
+@app.get("/api/sleeper/status")
+async def get_sleeper_sync_status(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get current Sleeper sync status for the user"""
+    try:
+        from app.models.database_models import SleeperLeague, SleeperRoster, SleeperPlayer
+        
+        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        sleeper_connected = bool(user.sleeper_user_id) if user else False
+        
+        league_count = db.query(SleeperLeague).filter(SleeperLeague.user_id == current_user["id"]).count()
+        roster_count = db.query(SleeperRoster).join(SleeperLeague).filter(SleeperLeague.user_id == current_user["id"]).count()
+        player_count = db.query(SleeperPlayer).count()
+        
+        return {
+            "sleeper_connected": sleeper_connected,
+            "sleeper_user_id": user.sleeper_user_id if user else None,
+            "leagues_synced": league_count,
+            "rosters_synced": roster_count,
+            "total_players_in_system": player_count,
+            "last_sync": None
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get sync status: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get sync status")
+
+@app.get("/api/sleeper/leagues")
+async def get_user_leagues(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all synced leagues for the current user"""
+    try:
+        from app.models.database_models import SleeperLeague
+        
+        leagues = db.query(SleeperLeague).filter(SleeperLeague.user_id == current_user["id"]).all()
+        
+        return [
+            {
+                "id": league.id,
+                "sleeper_league_id": league.sleeper_league_id,
+                "name": league.name,
+                "season": league.season,
+                "total_rosters": league.total_rosters,
+                "status": league.status,
+                "scoring_type": league.scoring_type,
+                "last_synced": league.last_synced.isoformat() if league.last_synced else None
+            }
+            for league in leagues
+        ]
+        
+    except Exception as e:
+        logger.error(f"Failed to get user leagues: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get user leagues")
+
+@app.get("/api/sleeper/leagues/{league_id}/rosters")
+async def get_league_rosters(
+    league_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get all rosters for a specific league"""
+    try:
+        from app.models.database_models import SleeperLeague, SleeperRoster
+        
+        # Verify user owns this league
+        league = db.query(SleeperLeague).filter(
+            SleeperLeague.id == league_id,
+            SleeperLeague.user_id == current_user["id"]
+        ).first()
+        
+        if not league:
+            raise HTTPException(status_code=404, detail="League not found")
+        
+        rosters = db.query(SleeperRoster).filter(SleeperRoster.league_id == league_id).all()
+        
+        return [
+            {
+                "id": roster.id,
+                "sleeper_roster_id": roster.sleeper_roster_id,
+                "sleeper_owner_id": roster.sleeper_owner_id,
+                "team_name": roster.team_name,
+                "owner_name": roster.owner_name,
+                "wins": roster.wins,
+                "losses": roster.losses,
+                "ties": roster.ties,
+                "points_for": roster.points_for,
+                "points_against": roster.points_against,
+                "waiver_position": roster.waiver_position,
+                "player_count": len(roster.players) if roster.players else 0,
+                "last_synced": roster.last_synced.isoformat() if roster.last_synced else None
+            }
+            for roster in rosters
+        ]
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get league rosters: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get league rosters")
+
+@app.get("/api/sleeper/leagues/{league_id}/rules")
+async def get_sleeper_league_rules(
+    league_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get league rules and settings for a Sleeper league"""
+    try:
+        from app.models.database_models import SleeperLeague
+        
+        # Verify user owns this league
+        league = db.query(SleeperLeague).filter(
+            SleeperLeague.id == league_id,
+            SleeperLeague.user_id == current_user["id"]
+        ).first()
+        
+        if not league:
+            raise HTTPException(status_code=404, detail="League not found or not accessible")
+        
+        # Extract scoring type
+        scoring_type = league.scoring_type or "standard"
+        ppr_value = 0
+        if scoring_type == "ppr":
+            ppr_value = 1.0
+        elif scoring_type == "half_ppr":
+            ppr_value = 0.5
+        
+        # Get waiver settings
+        waiver_settings = league.waiver_settings or {}
+        waiver_type = waiver_settings.get('waiver_type', 'waiver_priority')
+        waiver_budget = waiver_settings.get('waiver_budget')
+        
+        # Build scoring settings from stored data
+        scoring_settings = league.scoring_settings or {}
+        standard_scoring = {
+            "passing": {
+                "touchdowns": scoring_settings.get("pass_td", 4),
+                "yards_per_point": scoring_settings.get("pass_yd", 25),
+                "interceptions": scoring_settings.get("pass_int", -2)
+            },
+            "rushing": {
+                "touchdowns": scoring_settings.get("rush_td", 6),
+                "yards_per_point": scoring_settings.get("rush_yd", 10),
+                "fumbles": scoring_settings.get("fum_lost", -2)
+            },
+            "receiving": {
+                "touchdowns": scoring_settings.get("rec_td", 6),
+                "yards_per_point": scoring_settings.get("rec_yd", 10),
+                "receptions": scoring_settings.get("rec", ppr_value)
+            }
+        }
+        
+        # Build roster info
+        roster_positions = league.roster_positions or []
+        
+        rules = {
+            "league_id": str(league_id),
+            "sleeper_league_id": league.sleeper_league_id,
+            "league_name": league.name,
+            "platform": "sleeper",
+            "season": league.season,
+            "league_type": "Redraft",
+            "team_count": league.total_rosters,
+            "status": league.status,
+            
+            # Roster Settings
+            "roster_settings": {
+                "total_spots": len(roster_positions),
+                "starting_spots": len([pos for pos in roster_positions if pos != "BN"]),
+                "bench_spots": len([pos for pos in roster_positions if pos == "BN"]),
+                "positions": roster_positions,
+                "position_requirements": roster_positions
+            },
+            
+            # Scoring Settings
+            "scoring_settings": {
+                "type": scoring_type.replace("_", " ").title(),
+                "passing": standard_scoring["passing"],
+                "rushing": standard_scoring["rushing"],
+                "receiving": standard_scoring["receiving"],
+                "raw_settings": scoring_settings
+            },
+            
+            # League Features
+            "features": {
+                "trades_enabled": True,
+                "waivers_enabled": True,
+                "waiver_type": waiver_type,
+                "waiver_budget": waiver_budget,
+                "playoffs": {"teams": 6, "weeks": 15}
+            },
+            
+            # AI Context
+            "ai_context": {
+                "prioritize_volume": ppr_value > 0,
+                "rb_premium": ppr_value < 0.5,
+                "flex_strategy": "FLEX" in roster_positions,
+                "superflex": "SUPER_FLEX" in roster_positions,
+                "position_scarcity": {
+                    "qb": roster_positions.count("QB"),
+                    "rb": roster_positions.count("RB"),
+                    "wr": roster_positions.count("WR"),
+                    "te": roster_positions.count("TE"),
+                    "flex": roster_positions.count("FLEX")
+                }
+            }
+        }
+        
+        return {
+            "status": "success",
+            "rules": rules
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get Sleeper league rules: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get league rules")
 
 # Live Sports Data API endpoints (The Odds API integration)
 @app.get("/api/sports")
@@ -4209,6 +4622,177 @@ async def reset_verification_stats(current_user: dict = Depends(get_current_user
         logger.error(f"Error resetting verification stats: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to reset stats: {str(e)}")
 
+# Player Analytics API endpoints
+@app.get("/api/fantasy/analytics/{player_id}")
+async def get_player_analytics(
+    player_id: int,
+    weeks: Optional[str] = None,  # comma-separated weeks, e.g. "1,2,3"
+    season: int = 2024,
+    current_user = Depends(get_current_user)
+):
+    """Get advanced analytics for a specific player"""
+    try:
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        week_list = None
+        if weeks:
+            week_list = [int(w.strip()) for w in weeks.split(',')]
+            
+        analytics = await analytics_service.get_player_analytics(player_id, week_list, season)
+        
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "analytics": analytics
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get player analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get player analytics: {str(e)}")
+    finally:
+        db.close()
+
+@app.get("/api/fantasy/analytics/{player_id}/trends")
+async def get_player_trends(
+    player_id: int,
+    weeks: str = "8,9,10,11,12",  # Default to recent 5 weeks
+    season: int = 2024,
+    current_user = Depends(get_current_user)
+):
+    """Get usage trends for a specific player"""
+    try:
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        week_list = [int(w.strip()) for w in weeks.split(',')]
+        trends = await analytics_service.calculate_usage_trends(player_id, week_list, season)
+        
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "weeks_analyzed": week_list,
+            "trends": trends
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get player trends: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get player trends: {str(e)}")
+    finally:
+        db.close()
+
+@app.get("/api/fantasy/analytics/{player_id}/efficiency")
+async def get_player_efficiency(
+    player_id: int,
+    weeks: str = "8,9,10,11,12",
+    season: int = 2024,
+    current_user = Depends(get_current_user)
+):
+    """Get efficiency metrics for a specific player"""
+    try:
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        week_list = [int(w.strip()) for w in weeks.split(',')]
+        efficiency = await analytics_service.calculate_efficiency_metrics(player_id, week_list, season)
+        
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "weeks_analyzed": week_list,
+            "efficiency_metrics": efficiency
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get player efficiency: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get player efficiency: {str(e)}")
+    finally:
+        db.close()
+
+@app.get("/api/fantasy/analytics/breakout-candidates/{position}")
+async def get_breakout_candidates(
+    position: str,
+    season: int = 2024,
+    min_weeks: int = 3,
+    current_user = Depends(get_current_user)
+):
+    """Identify players with increasing usage trends (breakout candidates)"""
+    try:
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        candidates = await analytics_service.identify_breakout_candidates(position, season, min_weeks)
+        
+        return {
+            "status": "success",
+            "position": position,
+            "candidates": candidates[:10]  # Return top 10 candidates
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get breakout candidates: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get breakout candidates: {str(e)}")
+    finally:
+        db.close()
+
+@app.get("/api/fantasy/analytics/{player_id}/matchup/{opponent}")
+async def get_matchup_analytics(
+    player_id: int,
+    opponent: str,
+    season: int = 2024,
+    current_user = Depends(get_current_user)
+):
+    """Get player's historical performance against specific opponent"""
+    try:
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        matchup_data = await analytics_service.get_matchup_specific_analytics(player_id, opponent, season)
+        
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "opponent": opponent,
+            "matchup_analysis": matchup_data
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to get matchup analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to get matchup analytics: {str(e)}")
+    finally:
+        db.close()
+
+@app.post("/api/fantasy/analytics/{player_id}/store")
+async def store_player_analytics(
+    player_id: int,
+    week: int,
+    season: int,
+    analytics_data: Dict[str, Any],
+    current_user = Depends(get_current_user)
+):
+    """Store weekly analytics data for a player (admin/system use)"""
+    try:
+        # Admin check for now - in production this would be system-only
+        if not current_user.get("is_admin"):
+            raise HTTPException(status_code=403, detail="Admin access required")
+            
+        db = SessionLocal()
+        analytics_service = PlayerAnalyticsService(db)
+        
+        analytics = await analytics_service.store_weekly_analytics(player_id, week, season, analytics_data)
+        
+        return {
+            "status": "success",
+            "message": "Analytics data stored successfully",
+            "analytics_id": analytics.id
+        }
+        
+    except Exception as e:
+        logger.error(f"Failed to store player analytics: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store analytics: {str(e)}")
+    finally:
+        db.close()
+
 @app.get("/api/websocket/stats")
 async def get_websocket_stats():
     """Get WebSocket connection statistics"""
@@ -4216,6 +4800,344 @@ async def get_websocket_stats():
         "status": "success",
         "stats": manager.get_connection_stats()
     }
+
+# ============================================================================
+# TRADE ANALYZER ENDPOINTS
+# ============================================================================
+
+from app.services.trade_analyzer_service import TradeAnalyzerService
+from app.services.trade_recommendation_engine import TradeRecommendationEngine
+
+@app.post("/api/v1/fantasy/trade-analyzer/propose-trade")
+async def propose_trade(
+    request: Dict[str, Any],
+    current_user = Depends(get_current_user)
+):
+    """Create a new trade proposal with immediate AI evaluation"""
+    try:
+        db = SessionLocal()
+        trade_analyzer = TradeAnalyzerService(db)
+        
+        result = trade_analyzer.propose_trade(
+            league_id=request["league_id"],
+            proposing_team_id=request["proposing_team_id"],
+            target_team_id=request["target_team_id"],
+            team1_gives=request["team1_gives"],
+            team2_gives=request["team2_gives"],
+            trade_reason=request.get("trade_reason"),
+            expires_in_hours=request.get("expires_in_hours", 72)
+        )
+        
+        return result
+            
+    except Exception as e:
+        logger.error(f"Failed to propose trade: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to propose trade")
+    finally:
+        db.close()
+
+@app.get("/api/v1/fantasy/trade-analyzer/evaluate-trade/{trade_id}")
+async def evaluate_trade(
+    trade_id: int,
+    force_refresh: bool = False,
+    current_user = Depends(get_current_user)
+):
+    """Get comprehensive AI evaluation of an existing trade"""
+    try:
+        db = SessionLocal()
+        trade_analyzer = TradeAnalyzerService(db)
+        
+        # Verify trade exists
+        from app.models.fantasy_models import Trade
+        trade = db.query(Trade).filter(Trade.id == trade_id).first()
+        if not trade:
+            raise HTTPException(status_code=404, detail="Trade not found")
+        
+        result = trade_analyzer.evaluate_trade(trade_id, force_refresh=force_refresh)
+        return result
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to evaluate trade {trade_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to evaluate trade")
+    finally:
+        db.close()
+
+@app.post("/api/v1/fantasy/trade-analyzer/recommendations")
+async def generate_trade_recommendations(
+    request: Dict[str, Any],
+    current_user = Depends(get_current_user)
+):
+    """Generate AI-powered trade recommendations for a team"""
+    try:
+        # Verify team exists in league - check both FantasyTeam and SleeperRoster
+        db = SessionLocal()
+        from app.models.fantasy_models import FantasyTeam
+        from app.models.database_models import SleeperRoster, SleeperLeague
+        
+        # First try to find as FantasyTeam (legacy system)
+        team = db.query(FantasyTeam).filter(
+            FantasyTeam.id == request["team_id"],
+            FantasyTeam.league_id == request["league_id"]
+        ).first()
+        
+        # If not found, try SleeperRoster (new system)
+        if not team:
+            roster = db.query(SleeperRoster).join(SleeperLeague).filter(
+                SleeperRoster.id == request["team_id"],
+                SleeperLeague.id == request["league_id"],
+                SleeperLeague.user_id == current_user["id"]
+            ).first()
+            
+            if not roster:
+                raise HTTPException(status_code=404, detail="League not found")
+        
+        recommendation_engine = TradeRecommendationEngine(db)
+        
+        recommendations = recommendation_engine.generate_trade_recommendations(
+            team_id=request["team_id"],
+            league_id=request["league_id"],
+            recommendation_type=request.get("recommendation_type", "all"),
+            max_recommendations=request.get("max_recommendations", 10)
+        )
+        
+        return {
+            "success": True,
+            "team_id": request["team_id"],
+            "league_id": request["league_id"],
+            "recommendation_type": request.get("recommendation_type", "all"),
+            "recommendation_count": len(recommendations),
+            "recommendations": recommendations
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate recommendations: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to generate trade recommendations")
+    finally:
+        db.close()
+
+@app.post("/api/v1/fantasy/trade-analyzer/mutual-benefit-trades")
+async def find_mutual_benefit_trades(
+    request: Dict[str, Any],
+    current_user = Depends(get_current_user)
+):
+    """Find trades that benefit both teams involved"""
+    try:
+        db = SessionLocal()
+        from app.models.fantasy_models import FantasyTeam
+        from app.models.database_models import SleeperRoster, SleeperLeague
+        
+        # Verify team exists - check both FantasyTeam and SleeperRoster
+        team = db.query(FantasyTeam).filter(
+            FantasyTeam.id == request["team_id"],
+            FantasyTeam.league_id == request["league_id"]
+        ).first()
+        
+        # If not found, try SleeperRoster (new system)
+        if not team:
+            roster = db.query(SleeperRoster).join(SleeperLeague).filter(
+                SleeperRoster.id == request["team_id"],
+                SleeperLeague.id == request["league_id"],
+                SleeperLeague.user_id == current_user["id"]
+            ).first()
+            
+            if not roster:
+                raise HTTPException(status_code=404, detail="League not found")
+        
+        # Verify target team if specified
+        target_team_id = request.get("target_team_id")
+        if target_team_id:
+            target_team = db.query(FantasyTeam).filter(
+                FantasyTeam.id == target_team_id,
+                FantasyTeam.league_id == request["league_id"]
+            ).first()
+            
+            # If not found, try SleeperRoster for target team
+            if not target_team:
+                target_roster = db.query(SleeperRoster).join(SleeperLeague).filter(
+                    SleeperRoster.id == target_team_id,
+                    SleeperLeague.id == request["league_id"],
+                    SleeperLeague.user_id == current_user["id"]
+                ).first()
+                
+                if not target_roster:
+                    raise HTTPException(status_code=404, detail="Target team not found in league")
+        
+        recommendation_engine = TradeRecommendationEngine(db)
+        
+        mutual_trades = recommendation_engine.find_mutual_benefit_trades(
+            team_id=request["team_id"],
+            league_id=request["league_id"],
+            target_team_id=target_team_id
+        )
+        
+        return {
+            "success": True,
+            "team_id": request["team_id"],
+            "league_id": request["league_id"],
+            "target_team_id": target_team_id,
+            "mutual_benefit_trades": mutual_trades,
+            "trade_count": len(mutual_trades)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to find mutual benefit trades: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to find mutual benefit trades")
+    finally:
+        db.close()
+
+@app.get("/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}")
+async def get_team_trade_analysis(
+    team_id: int,
+    league_id: int,
+    current_user = Depends(get_current_user)
+):
+    """Get comprehensive team analysis for trade purposes"""
+    try:
+        db = SessionLocal()
+        from app.models.fantasy_models import FantasyTeam
+        from app.models.database_models import SleeperRoster, SleeperLeague
+        
+        # Verify team exists - check both FantasyTeam and SleeperRoster
+        team = db.query(FantasyTeam).filter(
+            FantasyTeam.id == team_id,
+            FantasyTeam.league_id == league_id
+        ).first()
+        
+        # If not found, try SleeperRoster (new system)
+        if not team:
+            roster = db.query(SleeperRoster).join(SleeperLeague).filter(
+                SleeperRoster.id == team_id,
+                SleeperLeague.id == league_id,
+                SleeperLeague.user_id == current_user["id"]
+            ).first()
+            
+            if not roster:
+                raise HTTPException(status_code=404, detail="League not found")
+        
+        recommendation_engine = TradeRecommendationEngine(db)
+        
+        # Get comprehensive team context
+        team_context = recommendation_engine._get_comprehensive_team_context(team_id, league_id)
+        league_context = recommendation_engine._get_league_context(league_id)
+        
+        def get_recommended_approach(team_context):
+            tier = team_context["competitive_analysis"]["competitive_tier"]
+            
+            if tier == "championship":
+                return "Consolidate talent for playoff push. Trade depth for star players."
+            elif tier == "competitive":
+                return "Make targeted upgrades without sacrificing future. Focus on position needs."
+            elif tier == "bubble":
+                return "Cautious improvements. Don't mortgage future for marginal gains."
+            else:
+                return "Rebuild mode. Sell aging players for youth and draft picks."
+        
+        return {
+            "success": True,
+            "team_analysis": {
+                "team_info": {
+                    "team_id": team_context["team_id"],
+                    "team_name": team_context["team_name"],
+                    "record": team_context["record"],
+                    "points_for": team_context["points_for"],
+                    "team_rank": team_context["competitive_analysis"]["team_rank"],
+                    "competitive_tier": team_context["competitive_analysis"]["competitive_tier"]
+                },
+                "roster_analysis": {
+                    "position_strengths": team_context["position_strength"],
+                    "position_needs": team_context["position_needs"],
+                    "surplus_positions": team_context["surplus_positions"]
+                },
+                "tradeable_assets": {
+                    "surplus_players": team_context["tradeable_players"]["surplus"],
+                    "expendable_players": team_context["tradeable_players"]["expendable"],
+                    "valuable_players": team_context["tradeable_players"]["valuable"],
+                    "tradeable_picks": team_context["tradeable_picks"]
+                },
+                "trade_strategy": {
+                    "competitive_analysis": team_context["competitive_analysis"],
+                    "trade_preferences": team_context["trade_preferences"],
+                    "recommended_approach": get_recommended_approach(team_context)
+                }
+            },
+            "league_context": {
+                "scoring_type": league_context["scoring_type"],
+                "current_week": league_context["current_week"],
+                "trade_deadline_weeks": league_context["trade_deadline_weeks"],
+                "playoff_implications": league_context["current_week"] >= 10
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to get team analysis for {team_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to get team analysis")
+    finally:
+        db.close()
+
+@app.post("/api/v1/fantasy/trade-analyzer/quick-analysis")
+async def quick_trade_analysis(
+    trade_data: Dict[str, Any],
+    current_user = Depends(get_current_user)
+):
+    """Quick trade analysis without storing in database"""
+    try:
+        # Validate required fields
+        required_fields = ["league_id", "team1_id", "team2_id", "team1_gives", "team2_gives"]
+        for field in required_fields:
+            if field not in trade_data:
+                raise HTTPException(status_code=400, detail=f"Missing required field: {field}")
+        
+        db = SessionLocal()
+        trade_analyzer = TradeAnalyzerService(db)
+        
+        # Create temporary trade object for analysis
+        from app.models.fantasy_models import Trade
+        temp_trade = Trade(
+            league_id=trade_data["league_id"],
+            team1_id=trade_data["team1_id"],
+            team2_id=trade_data["team2_id"],
+            team1_gives=trade_data["team1_gives"],
+            team2_gives=trade_data["team2_gives"],
+            proposed_by_team_id=trade_data["team1_id"],
+            status="proposed"
+        )
+        
+        # Generate evaluation without storing
+        evaluation_data = trade_analyzer._generate_comprehensive_evaluation(temp_trade)
+        
+        return {
+            "success": True,
+            "quick_analysis": {
+                "team1_grade": evaluation_data["team1_grade"].value,
+                "team2_grade": evaluation_data["team2_grade"].value,
+                "fairness_score": evaluation_data["fairness_score"],
+                "ai_summary": evaluation_data["ai_summary"],
+                "key_factors": evaluation_data["key_factors"][:3],  # Top 3 factors
+                "confidence": evaluation_data["confidence"]
+            },
+            "value_breakdown": {
+                "team1_value_given": evaluation_data["team1_value_given"],
+                "team1_value_received": evaluation_data["team1_value_received"],
+                "team2_value_given": evaluation_data["team2_value_given"],
+                "team2_value_received": evaluation_data["team2_value_received"]
+            }
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to perform quick trade analysis: {str(e)}")
+        raise HTTPException(status_code=500, detail="Failed to perform quick trade analysis")
+    finally:
+        db.close()
 
 if __name__ == "__main__":
     import uvicorn

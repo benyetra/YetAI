@@ -76,6 +76,9 @@ class User(Base):
     reset_token = Column(String(255))
     reset_token_expires = Column(DateTime)
     
+    # Fantasy platform fields
+    sleeper_user_id = Column(String(255))  # Sleeper platform user ID
+    
     # Relationships
     bets = relationship("Bet", back_populates="user", cascade="all, delete-orphan")
     parlay_bets = relationship("ParlayBet", back_populates="user", cascade="all, delete-orphan")
@@ -294,3 +297,84 @@ class UserSession(Base):
     ip_address = Column(String(45))
     created_at = Column(DateTime, default=datetime.utcnow)
     last_activity = Column(DateTime, default=datetime.utcnow)
+
+# Fantasy Sports Tables
+
+class SleeperLeague(Base):
+    __tablename__ = "sleeper_leagues"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sleeper_league_id = Column(String(255), nullable=False)
+    name = Column(String(255), nullable=False)
+    season = Column(Integer, nullable=False)
+    total_rosters = Column(Integer, nullable=False)
+    status = Column(String(50))  # pre_draft, drafting, in_season, complete
+    scoring_type = Column(String(50))  # ppr, half_ppr, standard
+    roster_positions = Column(JSON)
+    scoring_settings = Column(JSON)
+    waiver_settings = Column(JSON)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_synced = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    user = relationship("User")
+    rosters = relationship("SleeperRoster", back_populates="league", cascade="all, delete-orphan")
+
+class SleeperRoster(Base):
+    __tablename__ = "sleeper_rosters"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    league_id = Column(Integer, ForeignKey("sleeper_leagues.id"), nullable=False)
+    sleeper_roster_id = Column(String(255), nullable=False)
+    sleeper_owner_id = Column(String(255), nullable=False)
+    team_name = Column(String(255))
+    owner_name = Column(String(255))
+    wins = Column(Integer, default=0)
+    losses = Column(Integer, default=0)
+    ties = Column(Integer, default=0)
+    points_for = Column(Float, default=0)
+    points_against = Column(Float, default=0)
+    waiver_position = Column(Integer)
+    players = Column(JSON, default=list)  # List of sleeper_player_ids
+    starters = Column(JSON, default=list)  # Current week starters
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_synced = Column(DateTime, default=datetime.utcnow)
+    
+    # Relationships
+    league = relationship("SleeperLeague", back_populates="rosters")
+
+class SleeperPlayer(Base):
+    __tablename__ = "sleeper_players"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    sleeper_player_id = Column(String(255), unique=True, nullable=False, index=True)
+    first_name = Column(String(100))
+    last_name = Column(String(100))
+    full_name = Column(String(255))
+    position = Column(String(10))
+    team = Column(String(10))
+    age = Column(Integer)
+    height = Column(String(10))
+    weight = Column(String(10))
+    years_exp = Column(Integer)
+    college = Column(String(255))
+    fantasy_positions = Column(JSON, default=list)
+    status = Column(String(50))  # Active, Inactive, etc.
+    injury_status = Column(String(50))
+    depth_chart_position = Column(Integer)
+    depth_chart_order = Column(Integer)
+    search_rank = Column(Integer)
+    hashtag = Column(String(255))
+    
+    # External IDs
+    espn_id = Column(String(50))
+    yahoo_id = Column(String(50))
+    fantasy_data_id = Column(String(50))
+    rotoworld_id = Column(String(50))
+    rotowire_id = Column(String(50))
+    sportradar_id = Column(String(50))
+    stats_id = Column(String(50))
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    last_synced = Column(DateTime, default=datetime.utcnow)

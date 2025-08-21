@@ -200,6 +200,10 @@ class FantasyService:
                 self.db.add(league)
                 self.db.flush()  # Get league ID
             
+            # Enable sync for this league (both new and existing)
+            league.sync_enabled = True
+            league.is_synced = True
+            
             # Sync teams
             await self._sync_league_teams(league, league_data.get('teams', []), fantasy_user)
             
@@ -283,6 +287,7 @@ class FantasyService:
         return [
             {
                 "id": league.id,
+                "platform_league_id": league.platform_league_id,
                 "name": league.name,
                 "platform": league.platform,
                 "season": league.season,
