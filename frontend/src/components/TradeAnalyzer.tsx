@@ -43,6 +43,12 @@ interface TradeAssets {
   faab: number;
 }
 
+interface RecommendationTradeAssets {
+  players: Player[];
+  picks: number[];
+  faab: number;
+}
+
 interface TradeEvaluation {
   trade_id: number;
   grades: {
@@ -71,8 +77,8 @@ interface TradeEvaluation {
 
 interface TradeRecommendation {
   target_team_id: number;
-  we_get: TradeAssets;
-  we_give: TradeAssets;
+  we_get: RecommendationTradeAssets;
+  we_give: RecommendationTradeAssets;
   recommendation_type: string;
   trade_rationale: string;
   priority_score: number;
@@ -175,6 +181,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   // Available players state (removed unused variables)
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Player[]>([]);
   const [targetTeamPlayers, setTargetTeamPlayers] = useState<Player[]>([]);
+  const [expandedRecommendation, setExpandedRecommendation] = useState<string | null>(null);
 
   useEffect(() => {
     if (selectedLeague && standingsTeams) {
@@ -292,7 +299,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
             position: player.position || 'Unknown',
             team: player.team || 'Unknown',
             age: player.age || 0,
-            trade_value: 10 // Default trade value
+            trade_value: player.trade_value || 25 // Use backend value or fallback
           }));
           
           setSelectedTeamPlayers(formattedPlayers);
@@ -526,6 +533,28 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         const allPlayers = await response.json();
         console.log('Got player database, processing', playerIds.length, 'players');
         
+        // Get trade values for all players at once
+        const playerNames = playerIds.map(playerId => {
+          const player = allPlayers[playerId];
+          return player ? `${player.first_name || ''} ${player.last_name || ''}`.trim() : '';
+        }).filter(name => name);
+        
+        let tradeValues: { [key: string]: number } = {};
+        try {
+          const valueResponse = await fetch(`http://localhost:8000/api/v1/fantasy/trade-analyzer/player-values?limit=200`);
+          if (valueResponse.ok) {
+            const valueData = await valueResponse.json();
+            if (valueData.success) {
+              // Create lookup map by player name
+              valueData.players.forEach((p: any) => {
+                tradeValues[p.name] = p.trade_value;
+              });
+            }
+          }
+        } catch (e) {
+          console.log('Failed to fetch trade values, using fallbacks');
+        }
+        
         // Filter and format players
         const formattedPlayers = playerIds.map((playerId, index) => {
           const player = allPlayers[playerId];
@@ -535,13 +564,16 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
                           1000000 + index; // Ensure unique fallback ID
           
           if (player) {
+            const playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
+            const trade_value = tradeValues[playerName] || 20; // Use API value or fallback
+            
             return {
               id: numericId,
-              name: `${player.first_name || ''} ${player.last_name || ''}`.trim(),
+              name: playerName,
               position: player.position || 'Unknown',
               team: player.team || 'Unknown',
               age: player.age || 0,
-              trade_value: 10 // Default value, would be calculated by our system
+              trade_value: trade_value
             };
           }
           return {
@@ -693,11 +725,12 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   };
 
   const loadTradeRecommendations = async (teamId: number, leagueId: number) => {
+    console.log('loadTradeRecommendations called with teamId:', teamId, 'leagueId:', leagueId);
     try {
       // Get the league from leagues data
       const league = leagues?.find(l => l.id === leagueId);
       if (!league) {
-        console.log('League not found for trade recommendations');
+        console.log('League not found for trade recommendations, available leagues:', leagues?.map(l => l.id));
         return;
       }
 
@@ -726,13 +759,17 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         
         if (response.ok) {
           const data = await response.json();
+          console.log('Trade recommendations API response:', data);
           if (data.success && data.recommendations) {
             setRecommendations(data.recommendations);
-            console.log('Successfully loaded trade recommendations from backend');
+            console.log('Successfully loaded', data.recommendations.length, 'trade recommendations from backend');
             return;
+          } else {
+            console.log('API succeeded but no recommendations in response:', data);
           }
         } else {
-          console.log('Backend recommendations API failed with status:', response.status);
+          const errorText = await response.text();
+          console.log('Backend recommendations API failed with status:', response.status, 'error:', errorText);
         }
       } catch (apiError) {
         console.log('Backend API failed, generating basic recommendations:', apiError);
@@ -964,6 +1001,20 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   };
 
   const renderRecommendations = () => {
+    console.log('Rendering recommendations, count:', recommendations.length);
+    
+    if (recommendations.length === 0) {
+      return (
+        <div className="bg-white rounded-lg border p-6 text-center">
+          <div className="text-gray-500 mb-4">
+            <Lightbulb className="h-12 w-12 mx-auto mb-2 text-gray-300" />
+            <h3 className="text-lg font-medium text-gray-900 mb-2">No Trade Recommendations</h3>
+            <p>Loading trade recommendations or no recommendations available for this team.</p>
+          </div>
+        </div>
+      );
+    }
+    
     const groupedRecommendations = recommendations.reduce((acc, rec) => {
       if (!acc[rec.recommendation_type]) {
         acc[rec.recommendation_type] = [];
@@ -1019,7 +1070,14 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
                         <h5 className="text-sm font-medium text-gray-700 mb-1">You Give:</h5>
                         <div className="text-sm text-gray-600">
                           {rec.we_give.players.length > 0 && (
-                            <div>Players: {rec.we_give.players.length}</div>
+                            <div>
+                              <div className="font-medium">Players:</div>
+                              {rec.we_give.players.map((player: Player, idx: number) => (
+                                <div key={idx} className="ml-2">
+                                  {player.name} ({player.position})
+                                </div>
+                              ))}
+                            </div>
                           )}
                           {rec.we_give.picks.length > 0 && (
                             <div>Picks: {rec.we_give.picks.length}</div>
@@ -1034,7 +1092,14 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
                         <h5 className="text-sm font-medium text-gray-700 mb-1">You Get:</h5>
                         <div className="text-sm text-gray-600">
                           {rec.we_get.players.length > 0 && (
-                            <div>Players: {rec.we_get.players.length}</div>
+                            <div>
+                              <div className="font-medium">Players:</div>
+                              {rec.we_get.players.map((player: Player, idx: number) => (
+                                <div key={idx} className="ml-2">
+                                  {player.name} ({player.position})
+                                </div>
+                              ))}
+                            </div>
                           )}
                           {rec.we_get.picks.length > 0 && (
                             <div>Picks: {rec.we_get.picks.length}</div>
@@ -1049,13 +1114,62 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
                     <p className="text-sm text-gray-600 mb-3">{rec.trade_rationale}</p>
 
                     <div className="flex items-center justify-between">
-                      <button className="text-blue-600 hover:text-blue-700 text-sm font-medium">
-                        View Details
+                      <button 
+                        className="text-blue-600 hover:text-blue-700 text-sm font-medium"
+                        onClick={() => {
+                          const recId = `${type}-${index}`;
+                          setExpandedRecommendation(expandedRecommendation === recId ? null : recId);
+                        }}
+                      >
+                        {expandedRecommendation === `${type}-${index}` ? 'Hide Details' : 'View Details'}
                       </button>
                       <button className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
                         Propose Trade
                       </button>
                     </div>
+                    
+                    {expandedRecommendation === `${type}-${index}` && (
+                      <div className="mt-4 pt-4 border-t border-gray-200">
+                        <div className="grid grid-cols-2 gap-6">
+                          <div>
+                            <h6 className="font-medium text-gray-900 mb-2">Detailed Trade Breakdown - You Give:</h6>
+                            {rec.we_give.players.map((player: Player, idx: number) => (
+                              <div key={idx} className="bg-red-50 border border-red-200 rounded p-3 mb-2">
+                                <div className="font-medium text-red-900">{player.name}</div>
+                                <div className="text-sm text-red-700">
+                                  {player.position} • {player.team} • Age: {player.age}
+                                </div>
+                                <div className="text-sm text-red-600">
+                                  Trade Value: {player.trade_value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                          <div>
+                            <h6 className="font-medium text-gray-900 mb-2">Detailed Trade Breakdown - You Get:</h6>
+                            {rec.we_get.players.map((player: Player, idx: number) => (
+                              <div key={idx} className="bg-green-50 border border-green-200 rounded p-3 mb-2">
+                                <div className="font-medium text-green-900">{player.name}</div>
+                                <div className="text-sm text-green-700">
+                                  {player.position} • {player.team} • Age: {player.age}
+                                </div>
+                                <div className="text-sm text-green-600">
+                                  Trade Value: {player.trade_value}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="mt-4 bg-blue-50 border border-blue-200 rounded p-3">
+                          <div className="font-medium text-blue-900 mb-1">Trade Analysis</div>
+                          <div className="text-sm text-blue-700">
+                            <div>Priority Score: {rec.priority_score}</div>
+                            <div>Estimated Likelihood: {(rec.estimated_likelihood * 100).toFixed(0)}%</div>
+                            <div>Trade Type: {rec.recommendation_type}</div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 );
               })}
