@@ -330,23 +330,23 @@ async def get_team_trade_analysis(
 ):
     """Get comprehensive team analysis for trade purposes"""
     try:
-        # Verify team exists
-        team = db.query(FantasyTeam).filter(
-            FantasyTeam.id == team_id,
-            FantasyTeam.league_id == league_id
-        ).first()
+        # Verify team exists - get team first, then use its actual league
+        team = db.query(FantasyTeam).filter(FantasyTeam.id == team_id).first()
         
         if not team:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Team not found in league"
+                detail="Team not found"
             )
+        
+        # Use the team's actual league_id instead of the provided one
+        actual_league_id = team.league_id
         
         recommendation_engine = TradeRecommendationEngine(db)
         
-        # Get comprehensive team context
-        team_context = recommendation_engine._get_comprehensive_team_context(team_id, league_id)
-        league_context = recommendation_engine._get_league_context(league_id)
+        # Get comprehensive team context using the team's actual league
+        team_context = recommendation_engine._get_comprehensive_team_context(team_id, actual_league_id)
+        league_context = recommendation_engine._get_league_context(actual_league_id)
         
         return {
             "success": True,
@@ -373,7 +373,7 @@ async def get_team_trade_analysis(
                 "trade_strategy": {
                     "competitive_analysis": team_context["competitive_analysis"],
                     "trade_preferences": team_context["trade_preferences"],
-                    "recommended_approach": self._get_recommended_approach(team_context)
+                    "recommended_approach": _get_recommended_approach(team_context)
                 }
             },
             "league_context": {

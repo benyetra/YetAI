@@ -669,7 +669,21 @@ export const fantasyAPI = {
   getLeagueStandings: async (leagueId: string, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
-      return await apiClient.get(`/api/fantasy/standings/${leagueId}`, authToken);
+      const response = await apiClient.get(`/api/v1/fantasy/standings/${leagueId}`, authToken);
+      
+      // Handle different response formats
+      if (response.success !== undefined) {
+        // New format: { success: true, standings: [...] }
+        return {
+          status: response.success ? 'success' : 'error',
+          standings: response.standings || [],
+          league_name: response.league_name,
+          season: response.season
+        };
+      } else {
+        // Old format: { status: 'success', standings: [...] }
+        return response;
+      }
     } catch (error) {
       return { status: 'error', standings: [], message: 'Failed to fetch league standings' };
     }

@@ -755,7 +755,7 @@ async def get_league_rules(
     try:
         # Verify user has access to this league
         leagues = fantasy_service.get_user_leagues(current_user["id"])
-        league = next((l for l in leagues if str(l["id"]) == league_id), None)
+        league = next((l for l in leagues if l["platform_league_id"] == league_id), None)
         
         if not league:
             raise HTTPException(status_code=404, detail="League not found or not accessible")
@@ -4692,14 +4692,17 @@ def calculate_dynamic_player_value(position: str, is_starter: bool) -> float:
     return round(final_value, 1)
 
 # Simplified Fantasy API endpoints (working with Sleeper data directly)
-@app.get("/api/fantasy/standings/{league_id}")
+
+@app.get("/api/v1/fantasy/standings/{league_id}")
 async def get_simple_standings(
     league_id: str,
     db: Session = Depends(get_db)
 ):
     """Get league standings using Sleeper data directly"""
     try:
-        # Find the Sleeper league
+        logger.info(f"Getting standings for league_id={league_id}")
+        
+        # Find the requested league
         sleeper_league = db.query(SleeperLeague).filter(
             SleeperLeague.sleeper_league_id == league_id
         ).first()
@@ -4710,17 +4713,94 @@ async def get_simple_standings(
                 detail="League not found or not owned by user"
             )
         
+        logger.info(f"Using league season {sleeper_league.season} (may be pre-season with 0-0 records)")
+        
         # Get all rosters for this league
         rosters = db.query(SleeperRoster).filter(
             SleeperRoster.league_id == sleeper_league.id
         ).order_by(SleeperRoster.wins.desc(), SleeperRoster.points_for.desc()).all()
         
+        # Check if we need to fetch real data from Sleeper API (if we have generic team names)
+        need_real_data = any(roster.owner_name == "Unknown" or roster.team_name.startswith("Team ") for roster in rosters)
+        logger.info(f"Need real data: {need_real_data}, found {len(rosters)} rosters")
+        
+        real_roster_data = {}
+        if need_real_data:
+            try:
+                import httpx
+                logger.info(f"Fetching real roster data from Sleeper API for league {league_id}")
+                with httpx.Client() as client:
+                    # Fetch real roster data from Sleeper
+                    rosters_response = client.get(f"https://api.sleeper.app/v1/league/{league_id}/rosters")
+                    rosters_response.raise_for_status()
+                    sleeper_rosters = rosters_response.json()
+                    
+                    # Fetch league users for owner names
+                    users_response = client.get(f"https://api.sleeper.app/v1/league/{league_id}/users")
+                    users_response.raise_for_status()
+                    sleeper_users = users_response.json()
+                    
+                    # Create mapping from owner_id to user data  
+                    user_map = {}
+                    for user in sleeper_users:
+                        user_id = user["user_id"]
+                        display_name = user.get("display_name", user.get("username", "Unknown"))
+                        # Check if user has a custom team name in metadata
+                        team_name = user.get("metadata", {}).get("team_name")
+                        if not team_name:
+                            team_name = f"{display_name}'s Team"
+                        
+                        user_map[user_id] = {
+                            "display_name": display_name,
+                            "team_name": team_name
+                        }
+                    
+                    # Create mapping from roster_id to real data
+                    logger.info(f"Found {len(sleeper_rosters)} Sleeper rosters and {len(sleeper_users)} users")
+                    for sleeper_roster in sleeper_rosters:
+                        roster_id = str(sleeper_roster["roster_id"])  # Convert to string to match database
+                        owner_id = sleeper_roster["owner_id"]
+                        
+                        if owner_id in user_map:
+                            user_data = user_map[owner_id]
+                            team_name = user_data["team_name"] 
+                            owner_name = user_data["display_name"]
+                        else:
+                            owner_name = "Unknown"
+                            team_name = f"Team {roster_id}"
+                        
+                        real_roster_data[roster_id] = {
+                            "team_name": team_name,
+                            "owner_name": owner_name
+                        }
+                    
+                    logger.info(f"Created real_roster_data mapping for {len(real_roster_data)} rosters")
+                        
+            except Exception as e:
+                logger.error(f"Failed to fetch real roster data from Sleeper: {e}")
+                logger.error(f"Exception type: {type(e).__name__}")
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+                # Continue with existing data
+                pass
+        
         standings = []
         for i, roster in enumerate(rosters):
+            # Use real data if available, otherwise fall back to database data
+            if roster.sleeper_roster_id in real_roster_data:
+                real_data = real_roster_data[roster.sleeper_roster_id]
+                team_name = real_data["team_name"]
+                owner_name = real_data["owner_name"]
+            else:
+                team_name = roster.team_name or f"Team {roster.sleeper_roster_id}"
+                owner_name = roster.owner_name or "Unknown"
+                
             standings.append({
                 "rank": i + 1,
-                "team_name": roster.team_name or f"Team {roster.sleeper_roster_id}",
-                "owner_name": roster.owner_name or "Unknown",
+                "team_name": team_name,
+                "name": team_name,  # For TradeAnalyzer compatibility
+                "owner_name": owner_name,
+                "team_id": int(roster.sleeper_roster_id),  # For TradeAnalyzer compatibility
                 "wins": roster.wins,
                 "losses": roster.losses,
                 "ties": roster.ties,
@@ -4745,25 +4825,149 @@ async def get_simple_standings(
             detail="Failed to get standings"
         )
 
+def _calculate_team_rank(roster, db) -> int:
+    """Calculate team rank based on actual standings"""
+    try:
+        # Get all rosters in the same league, ordered by record and points
+        all_rosters = db.query(SleeperRoster).filter(
+            SleeperRoster.league_id == roster.league_id
+        ).order_by(
+            SleeperRoster.wins.desc(), 
+            SleeperRoster.points_for.desc()
+        ).all()
+        
+        # Find this roster's position
+        for i, r in enumerate(all_rosters):
+            if r.id == roster.id:
+                return i + 1
+        
+        return 1  # Default fallback
+    except Exception:
+        return 1
+
+def _determine_competitive_tier(roster) -> str:
+    """Determine competitive tier based on record and points"""
+    wins = roster.wins or 0
+    losses = roster.losses or 0
+    total_games = wins + losses
+    
+    if total_games == 0:
+        return "unknown"
+    
+    win_rate = wins / total_games
+    
+    if win_rate >= 0.75:
+        return "elite"
+    elif win_rate >= 0.6:
+        return "competitive" 
+    elif win_rate >= 0.4:
+        return "rebuilding"
+    else:
+        return "struggling"
+
+def _get_tradeable_picks(roster, db) -> list:
+    """Get available draft picks for trading"""
+    try:
+        # Check if we have a draft picks table
+        # For now, return realistic defaults since draft picks table may be empty
+        league = db.query(SleeperLeague).filter(
+            SleeperLeague.id == roster.league_id
+        ).first()
+        
+        if not league:
+            return []
+            
+        # Default picks most teams have available
+        return [
+            {
+                "pick_id": f"{league.season + 1}_round_1",
+                "season": league.season + 1,
+                "round": 1,
+                "description": f"{league.season + 1} 1st Round Pick",
+                "trade_value": 15.0
+            },
+            {
+                "pick_id": f"{league.season + 1}_round_2", 
+                "season": league.season + 1,
+                "round": 2,
+                "description": f"{league.season + 1} 2nd Round Pick",
+                "trade_value": 8.0
+            }
+        ]
+    except Exception:
+        return []
+
 @app.get("/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}")
 async def get_simple_team_analysis(
     team_id: int,
-    league_id: int = None,  # Made optional since we'll use the team's actual league
+    league_id: int = None,
     db: Session = Depends(get_db)
 ):
-    """Get team analysis using Sleeper data directly"""
+    """Get team analysis using current (2025) season Sleeper data"""
     try:
-        # Find the roster by team ID, prioritizing the 2025 season
-        roster = db.query(SleeperRoster).join(SleeperLeague).filter(
-            SleeperRoster.sleeper_roster_id == str(team_id),
+        logger.info(f"Getting team analysis for team_id={team_id}, league_id={league_id}")
+        
+        # First, find the user who owns this team by finding their league
+        source_league = None
+        if league_id:
+            source_league = db.query(SleeperLeague).filter(SleeperLeague.id == league_id).first()
+        
+        if not source_league:
+            # Try to find by roster ID across all leagues
+            source_roster = db.query(SleeperRoster).join(SleeperLeague).filter(
+                SleeperRoster.sleeper_roster_id == str(team_id)
+            ).order_by(SleeperLeague.season.desc()).first()
+            if source_roster:
+                source_league = source_roster.league
+        
+        if not source_league:
+            raise HTTPException(status_code=404, detail="Team/League not found")
+        
+        user_id = source_league.user_id
+        logger.info(f"Found user_id={user_id} for team analysis")
+        
+        # Now find the user's current (2025) season league
+        current_league = db.query(SleeperLeague).filter(
+            SleeperLeague.user_id == user_id,
             SleeperLeague.season == 2025
         ).first()
         
-        # Fallback to any season if 2025 not found
-        if not roster:
-            roster = db.query(SleeperRoster).filter(
-                SleeperRoster.sleeper_roster_id == str(team_id)
-            ).order_by(SleeperRoster.id.desc()).first()
+        if not current_league:
+            logger.warning(f"No 2025 league found for user {user_id}, using most recent season")
+            current_league = db.query(SleeperLeague).filter(
+                SleeperLeague.user_id == user_id
+            ).order_by(SleeperLeague.season.desc()).first()
+            
+        if not current_league:
+            raise HTTPException(status_code=404, detail="No leagues found for user")
+        
+        # Find the user's roster in the current league
+        roster = db.query(SleeperRoster).filter(
+            SleeperRoster.league_id == current_league.id
+        ).first()
+        
+        # Check if roster data is stale and needs refresh
+        if roster and roster.last_synced:
+            hours_since_sync = (datetime.utcnow() - roster.last_synced).total_seconds() / 3600
+            if hours_since_sync > 1:  # Refresh if older than 1 hour
+                logger.info(f"Roster data is {hours_since_sync:.1f} hours old, triggering refresh")
+                try:
+                    from app.services.simplified_sleeper_service import SimplifiedSleeperService
+                    sleeper_service = SimplifiedSleeperService()
+                    await sleeper_service.sync_all_rosters(user_id, db)
+                    # Re-fetch the updated roster
+                    roster = db.query(SleeperRoster).filter(
+                        SleeperRoster.league_id == current_league.id
+                    ).first()
+                    logger.info("Roster data refreshed successfully")
+                except Exception as e:
+                    logger.warning(f"Failed to refresh roster data: {e}")
+        
+        if roster:
+            logger.info(f"Using roster from season {current_league.season}: {roster.team_name}, {roster.wins}-{roster.losses}, {roster.points_for} pts")
+            logger.info(f"Roster has {len(roster.players) if roster.players else 0} players")
+        else:
+            logger.error(f"No roster found for user {user_id} in league {current_league.id}")
         
         if not roster or not roster.players:
             raise HTTPException(
@@ -4828,26 +5032,58 @@ async def get_simple_team_analysis(
                     "trade_value": trade_value
                 })
         
-        # Calculate position strengths based on player count and starter ratio
+        # Calculate realistic position strengths based on player values
         position_strengths = {}
         position_needs = {}
         surplus_positions = []
         
         for pos, counts in position_counts.items():
-            # Calculate strength based on total players and starter quality
-            strength_score = (counts["total"] * 20) + (counts["starters"] * 30)
-            position_strengths[pos] = min(strength_score, 100)  # Cap at 100
+            # Get actual players at this position to calculate strength
+            position_players = [p for p in players if p["position"] == pos]
             
-            # Calculate needs (inverse of strength)
-            if counts["total"] <= 1:
-                position_needs[pos] = 80  # High need if only 1 or fewer players
-            elif counts["starters"] == 0:
-                position_needs[pos] = 60  # Medium-high need if no starters
+            if not position_players:
+                position_strengths[pos] = 0
+                position_needs[pos] = 100
+                continue
+            
+            # Calculate strength based on starter quality and depth
+            starters_at_pos = [p for p in position_players if p["is_starter"]]
+            bench_at_pos = [p for p in position_players if not p["is_starter"]]
+            
+            # Base strength from having starters (40-70 range)
+            if len(starters_at_pos) >= 2:
+                starter_strength = 65  # Multiple starters = strong
+            elif len(starters_at_pos) == 1:
+                starter_strength = 55  # One starter = decent
             else:
-                position_needs[pos] = max(20, 100 - strength_score)  # Inverse of strength
+                starter_strength = 30  # No reliable starters = weak
+            
+            # Depth bonus (add 0-25 points based on bench depth)
+            depth_bonus = min(len(bench_at_pos) * 8, 25)
+            
+            # Position-specific adjustments for realism
+            if pos == "QB" and len(position_players) >= 2:
+                strength_adjustment = 5  # QB depth is valuable
+            elif pos in ["RB", "WR"] and len(position_players) >= 4:
+                strength_adjustment = 10  # Skill position depth matters
+            else:
+                strength_adjustment = 0
+            
+            total_strength = starter_strength + depth_bonus + strength_adjustment
+            position_strengths[pos] = min(total_strength, 95)  # Cap at 95 for realism
+            
+            # Calculate realistic needs
+            if len(starters_at_pos) == 0:
+                position_needs[pos] = 85  # Critical need
+            elif len(position_players) == 1:
+                position_needs[pos] = 65  # High need - no depth
+            elif pos in ["RB", "WR"] and len(position_players) <= 2:
+                position_needs[pos] = 45  # Medium need for skill positions
+            else:
+                position_needs[pos] = max(5, 100 - total_strength)  # Inverse relationship
             
             # Mark as surplus if many players at position
-            if counts["total"] >= 4:
+            if len(position_players) >= 5 or (pos in ["RB", "WR"] and len(position_players) >= 4):
                 surplus_positions.append(pos)
 
         return {
@@ -4860,8 +5096,8 @@ async def get_simple_team_analysis(
                     "record": f"{roster.wins}-{roster.losses}-{roster.ties}",
                     "points_for": roster.points_for,
                     "points_against": roster.points_against,
-                    "team_rank": 1,  # Placeholder
-                    "competitive_tier": "competitive"  # Placeholder
+                    "team_rank": _calculate_team_rank(roster, db),
+                    "competitive_tier": _determine_competitive_tier(roster)
                 },
                 "roster_analysis": {
                     "position_strengths": position_strengths,
@@ -4872,7 +5108,7 @@ async def get_simple_team_analysis(
                     "surplus_players": expendable_players,
                     "expendable_players": expendable_players,
                     "valuable_players": valuable_players,
-                    "tradeable_picks": []  # Placeholder
+                    "tradeable_picks": _get_tradeable_picks(roster, db)
                 },
                 "trade_strategy": {
                     "competitive_analysis": {
@@ -5115,7 +5351,7 @@ async def get_dynamic_player_values(
 async def get_player_analytics(
     player_id: int,
     weeks: Optional[str] = None,  # comma-separated weeks, e.g. "1,2,3"
-    season: int = 2024,
+    season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get advanced analytics for a specific player"""
@@ -5145,7 +5381,7 @@ async def get_player_analytics(
 async def get_player_trends(
     player_id: int,
     weeks: str = "8,9,10,11,12",  # Default to recent 5 weeks
-    season: int = 2024,
+    season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get usage trends for a specific player"""
@@ -5173,7 +5409,7 @@ async def get_player_trends(
 async def get_player_efficiency(
     player_id: int,
     weeks: str = "8,9,10,11,12",
-    season: int = 2024,
+    season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get efficiency metrics for a specific player"""
@@ -5200,7 +5436,7 @@ async def get_player_efficiency(
 @app.get("/api/fantasy/analytics/breakout-candidates/{position}")
 async def get_breakout_candidates(
     position: str,
-    season: int = 2024,
+    season: int = 2025,
     min_weeks: int = 3,
     current_user = Depends(get_current_user)
 ):
@@ -5227,7 +5463,7 @@ async def get_breakout_candidates(
 async def get_matchup_analytics(
     player_id: int,
     opponent: str,
-    season: int = 2024,
+    season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get player's historical performance against specific opponent"""

@@ -20,7 +20,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         weeks: Optional[List[int]] = None,
-        season: int = 2024
+        season: int = 2025
     ) -> List[Dict]:
         """Get analytics data for a specific player"""
         try:
@@ -49,7 +49,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         weeks: List[int],
-        season: int = 2024
+        season: int = 2025
     ) -> Dict:
         """Calculate usage trends over specified weeks"""
         try:
@@ -88,7 +88,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         weeks: List[int],
-        season: int = 2024
+        season: int = 2025
     ) -> Dict:
         """Calculate advanced efficiency metrics"""
         try:
@@ -132,7 +132,7 @@ class PlayerAnalyticsService:
     async def identify_breakout_candidates(
         self, 
         position: str,
-        season: int = 2024,
+        season: int = 2025,
         min_weeks: int = 3
     ) -> List[Dict]:
         """Identify players with increasing usage trends (breakout candidates)"""
@@ -176,7 +176,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         opponent_team: str,
-        season: int = 2024
+        season: int = 2025
     ) -> Dict:
         """Get player's historical performance against specific opponent"""
         

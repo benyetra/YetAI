@@ -14,7 +14,7 @@ from app.models.fantasy_models import (
     PlayerValue, TeamNeedsAnalysis, TradeRecommendation, PlayerAnalytics,
     PlayerTrends, CompetitorAnalysis, DraftPick
 )
-from app.models.database_models import SleeperRoster, SleeperPlayer
+from app.models.database_models import SleeperRoster, SleeperPlayer, SleeperLeague
 from app.services.trade_analyzer_service import TradeAnalyzerService
 
 logger = logging.getLogger(__name__)
@@ -278,6 +278,7 @@ class TradeRecommendationEngine:
             player_values = []
             for player in players:
                 value = self._get_player_positional_value(player["id"], position)
+                print(f"DEBUG: Player {player.get('name', 'Unknown')} ({position}) strength value: {value}")
                 player_values.append(value)
             
             # Calculate position strength (weighted average)
@@ -478,9 +479,42 @@ class TradeRecommendationEngine:
             FantasyTeam.league_id == league_id
         ).all()
         
-        # Sort by record then points
-        sorted_teams = sorted(all_teams, key=lambda t: (-t.wins, -float(t.points_for or 0)))
-        team_rank = next(i for i, t in enumerate(sorted_teams, 1) if t.id == team.id)
+        # Try to get real data from Sleeper rosters first (current season for this user)
+        # Find the most recent league for the user that matches this platform_league_id pattern
+        sleeper_league = self.db.query(SleeperLeague).filter(
+            SleeperLeague.sleeper_league_id == team.platform_league_id
+        ).order_by(SleeperLeague.season.desc()).first()
+        
+        if sleeper_league:
+            sleeper_rosters = self.db.query(SleeperRoster).filter(
+                SleeperRoster.league_id == sleeper_league.id
+            ).all()
+            
+            # Map fantasy teams to sleeper rosters
+            team_stats = {}
+            for roster in sleeper_rosters:
+                fantasy_team = next((t for t in all_teams if str(t.platform_team_id) == str(roster.sleeper_roster_id)), None)
+                if fantasy_team:
+                    team_stats[fantasy_team.id] = {
+                        'wins': roster.wins or 0,
+                        'losses': roster.losses or 0, 
+                        'points_for': roster.points_for or 0
+                    }
+            
+            # Use Sleeper data if available
+            if team_stats:
+                sorted_teams = sorted(all_teams, 
+                    key=lambda t: (-team_stats.get(t.id, {}).get('wins', 0), 
+                                 -team_stats.get(t.id, {}).get('points_for', 0)))
+                team_rank = next(i for i, t in enumerate(sorted_teams, 1) if t.id == team.id)
+            else:
+                # Fallback to database values
+                sorted_teams = sorted(all_teams, key=lambda t: (-t.wins, -float(t.points_for or 0)))
+                team_rank = next(i for i, t in enumerate(sorted_teams, 1) if t.id == team.id)
+        else:
+            # Fallback to database values
+            sorted_teams = sorted(all_teams, key=lambda t: (-t.wins, -float(t.points_for or 0)))
+            team_rank = next(i for i, t in enumerate(sorted_teams, 1) if t.id == team.id)
         
         total_teams = len(all_teams)
         playoff_cutoff = 6  # Default playoff teams
@@ -492,7 +526,8 @@ class TradeRecommendationEngine:
             "playoff_bubble": playoff_cutoff < team_rank <= playoff_cutoff + 2,
             "rebuilding_candidate": team_rank > total_teams * 0.7,
             "championship_contender": team_rank <= 3,
-            "competitive_tier": self._determine_competitive_tier(team_rank, total_teams)
+            "competitive_tier": self._determine_competitive_tier(team_rank, total_teams),
+            "team_stats": team_stats.get(team.id, {'wins': 0, 'losses': 0, 'points_for': 0}) if 'team_stats' in locals() else {'wins': 0, 'losses': 0, 'points_for': 0}
         }
     
     def _determine_competitive_tier(self, rank: int, total_teams: int) -> str:
@@ -598,7 +633,7 @@ class TradeRecommendationEngine:
         buy_low_players = self.db.query(FantasyPlayer).join(PlayerTrends).filter(
             and_(
                 PlayerTrends.buy_low_indicator == True,
-                PlayerTrends.season == league_context.get("season", 2024)
+                PlayerTrends.season == league_context.get("season", 2025)
             )
         ).all()
         
@@ -628,7 +663,7 @@ class TradeRecommendationEngine:
             and_(
                 PlayerTrends.sell_high_indicator == True,
                 FantasyPlayer.id.in_(team_players),
-                PlayerTrends.season == league_context.get("season", 2024)
+                PlayerTrends.season == league_context.get("season", 2025)
             )
         ).all()
         
@@ -1334,11 +1369,10 @@ class TradeRecommendationEngine:
                 logger.info(f"Fantasy league {fantasy_team.league_id} not found")
                 return None
             
-            # Find the corresponding SleeperLeague for the correct season
-            from app.models.database_models import SleeperLeague
+            # Find the corresponding SleeperLeague for the most recent season
             sleeper_league = self.db.query(SleeperLeague).filter(
                 SleeperLeague.sleeper_league_id == fantasy_league.platform_league_id
-            ).first()
+            ).order_by(SleeperLeague.season.desc()).first()
             
             if not sleeper_league:
                 logger.info(f"Sleeper league {fantasy_league.platform_league_id} not found")

@@ -45,6 +45,8 @@ interface FantasyLeague {
   platform: string;
   season: string;
   total_teams: number;
+  team_count: number;
+  scoring_type: string;
   settings: any;
   last_sync: string;
   is_active: boolean;
@@ -68,22 +70,24 @@ interface Player {
 }
 
 interface StandingsTeam {
-  team_id: number;
-  platform_team_id: string;
-  name: string;
+  rank: number;
+  team_name: string;
+  name: string;  // For TradeAnalyzer compatibility
+  team_id: number;  // For TradeAnalyzer compatibility
   owner_name: string;
-  is_user_team: boolean;
   wins: number;
   losses: number;
   ties: number;
-  win_percentage: number;
   points_for: number;
   points_against: number;
-  points_per_game: number;
-  points_against_per_game: number;
-  point_differential: number;
-  waiver_position: number;
-  rank: number;
+  win_percentage: number;
+  // Optional fields that might not be provided
+  platform_team_id?: string;
+  is_user_team?: boolean;
+  points_per_game?: number;
+  points_against_per_game?: number;
+  point_differential?: number;
+  waiver_position?: number;
 }
 
 interface Matchup {
@@ -350,7 +354,7 @@ export default function FantasyPage() {
       // Auto-select first league for testing if available
       const currentLeagues = leaguesResponse.status === 'success' ? (leaguesResponse.leagues || []) : [];
       if (currentLeagues.length === 1 && !selectedLeague) {
-        loadLeagueForAnalysis(currentLeagues[0].league_id || currentLeagues[0].platform_league_id);
+        loadLeagueForAnalysis(currentLeagues[0].league_id);
       }
       
       // Mock trending players
@@ -978,11 +982,11 @@ export default function FantasyPage() {
                       )}
                       <div className="flex gap-2">
                         <button
-                          onClick={() => handleViewStandings(league.id)}
+                          onClick={() => handleViewStandings(league.league_id)}
                           disabled={isLoadingStandings}
                           className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
                         >
-                          {isLoadingStandings && selectedLeague === league.id ? (
+                          {isLoadingStandings && selectedLeague === league.league_id ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
                           ) : (
                             <Trophy className="w-3 h-3" />
@@ -990,11 +994,11 @@ export default function FantasyPage() {
                           Standings
                         </button>
                         <button
-                          onClick={() => handleViewLeagueRules(league.id)}
+                          onClick={() => handleViewLeagueRules(league.league_id)}
                           disabled={isLoadingRules}
                           className="px-3 py-1 bg-gray-600 text-white text-sm rounded hover:bg-gray-700 disabled:opacity-50 flex items-center gap-1"
                         >
-                          {isLoadingRules && selectedLeague === league.id ? (
+                          {isLoadingRules && selectedLeague === league.league_id ? (
                             <RefreshCw className="w-3 h-3 animate-spin" />
                           ) : (
                             <Settings className="w-3 h-3" />
@@ -1002,7 +1006,7 @@ export default function FantasyPage() {
                           Rules
                         </button>
                         <button
-                          onClick={() => handleDisconnectLeague(league.id, league.name)}
+                          onClick={() => handleDisconnectLeague(league.league_id, league.name)}
                           className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 flex items-center gap-1"
                           title="Disconnect league and erase all data"
                         >
@@ -1240,7 +1244,7 @@ export default function FantasyPage() {
                       </thead>
                       <tbody>
                         {standings.map((team, index) => (
-                          <tr key={team.team_id} className={`border-b border-gray-100 ${
+                          <tr key={team.rank || index} className={`border-b border-gray-100 ${
                             team.is_user_team ? 'bg-blue-50' : ''
                           }`}>
                             <td className="py-3 font-medium">{team.rank}</td>
@@ -1249,30 +1253,30 @@ export default function FantasyPage() {
                                 <div className={`font-medium ${
                                   team.is_user_team ? 'text-blue-700' : 'text-gray-900'
                                 }`}>
-                                  {team.name}
+                                  {team.team_name || team.name}
                                 </div>
                                 <div className="text-sm text-gray-500">{team.owner_name}</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
-                                <div>{team.wins}-{team.losses}{team.ties > 0 ? `-${team.ties}` : ''}</div>
-                                <div className="text-gray-500">({(team.win_percentage * 100).toFixed(1)}%)</div>
+                                <div>{team.wins || 0}-{team.losses || 0}{(team.ties || 0) > 0 ? `-${team.ties}` : ''}</div>
+                                <div className="text-gray-500">({((team.win_percentage || 0) * 100).toFixed(1)}%)</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
-                                <div>{team.points_for.toFixed(1)}</div>
-                                <div className="text-gray-500">({team.points_per_game.toFixed(1)}/game)</div>
+                                <div>{team.points_for?.toFixed(1) || '0.0'}</div>
+                                <div className="text-gray-500">({((team.points_for || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
-                                <div>{team.points_against.toFixed(1)}</div>
-                                <div className="text-gray-500">({team.points_against_per_game.toFixed(1)}/game)</div>
+                                <div>{team.points_against?.toFixed(1) || '0.0'}</div>
+                                <div className="text-gray-500">({((team.points_against || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
                               </div>
                             </td>
-                            <td className="py-3 text-sm">{team.waiver_position}</td>
+                            <td className="py-3 text-sm">{team.waiver_position || 'N/A'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -1753,7 +1757,7 @@ export default function FantasyPage() {
                       >
                         <option value="">No League Context</option>
                         {leagues.map((league) => (
-                          <option key={league.id} value={league.id}>
+                          <option key={league.id} value={league.league_id}>
                             {league.name} ({league.scoring_type})
                           </option>
                         ))}
@@ -2296,8 +2300,8 @@ export default function FantasyPage() {
                                   >
                                     <option value="">Select League...</option>
                                     {leagues.map(league => (
-                                      <option key={league.id} value={league.id}>
-                                        {league.league_name} ({league.platform})
+                                      <option key={league.id} value={league.league_id}>
+                                        {league.name} ({league.platform})
                                       </option>
                                     ))}
                                   </select>
