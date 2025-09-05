@@ -655,9 +655,9 @@ export default function FantasyPage() {
             try {
               // Load recent 5 weeks of analytics and trends
               const [analyticsResponse, trendsResponse, efficiencyResponse] = await Promise.all([
-                fantasyAPI.getPlayerAnalytics(parseInt(player.player_id), "8,9,10,11,12"),
-                fantasyAPI.getPlayerTrends(parseInt(player.player_id), "8,9,10,11,12"),
-                fantasyAPI.getPlayerEfficiency(parseInt(player.player_id), "8,9,10,11,12")
+                fantasyAPI.getPlayerAnalytics(parseInt(player.player_id)),
+                fantasyAPI.getPlayerTrends(parseInt(player.player_id)),
+                fantasyAPI.getPlayerEfficiency(parseInt(player.player_id))
               ]);
 
               // Calculate average analytics from recent weeks
@@ -914,8 +914,9 @@ export default function FantasyPage() {
                   
                   <button
                     onClick={() => {
-                      setShowComparison(true);
-                      setShowPlayerSearch(false);
+                      console.log('🔵 Player Compare button clicked - opening search interface');
+                      setShowPlayerSearch(true);
+                      setShowComparison(false);
                       setShowStandings(false);
                       setShowMatchups(false);
                       setShowWaiverRecommendations(false);
@@ -1487,117 +1488,135 @@ export default function FantasyPage() {
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
                       <span className="text-green-700">Total Roster:</span>
-                      <div className="font-medium">{leagueRules.roster_settings.total_spots} players</div>
+                      <div className="font-medium">{leagueRules?.roster_settings?.total_spots || 'Unknown'} players</div>
                     </div>
                     <div>
                       <span className="text-green-700">Starting:</span>
-                      <div className="font-medium">{leagueRules.roster_settings.starting_spots} spots</div>
+                      <div className="font-medium">{leagueRules?.roster_settings?.starting_spots || 'Unknown'} spots</div>
                     </div>
                     <div>
                       <span className="text-green-700">Bench:</span>
-                      <div className="font-medium">{leagueRules.roster_settings.bench_spots} spots</div>
+                      <div className="font-medium">{leagueRules?.roster_settings?.bench_spots || 'Unknown'} spots</div>
                     </div>
                     <div>
                       <span className="text-green-700">Superflex:</span>
-                      <div className="font-medium">{leagueRules.ai_context.superflex ? 'Yes' : 'No'}</div>
+                      <div className="font-medium">{leagueRules?.ai_context?.superflex ? 'Yes' : 'No'}</div>
                     </div>
                   </div>
                   
                   <div className="mt-3">
                     <h4 className="font-medium mb-2 text-green-800">Position Requirements</h4>
                     <div className="flex flex-wrap gap-2">
-                      {Object.entries(leagueRules.roster_settings.positions).map(([position, count]) => (
-                        <span key={position} className="px-2 py-1 bg-green-200 text-green-800 text-xs rounded">
-                          {position}: {count}
-                        </span>
-                      ))}
+                      {leagueRules?.roster_settings?.positions ? 
+                        Object.entries(leagueRules.roster_settings.positions).map(([position, count]) => (
+                          <span key={position} className="px-2 py-1 bg-green-200 text-green-800 text-xs rounded">
+                            {position}: {count}
+                          </span>
+                        ))
+                        : 
+                        <span className="text-gray-500 text-sm">Position requirements not available</span>
+                      }
                     </div>
                   </div>
                 </div>
 
                 {/* AI Strategy Context */}
-                <div className="bg-purple-50 rounded-lg p-4">
-                  <h3 className="text-lg font-medium mb-3 text-purple-900">AI Strategy Context</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-purple-700">Volume Strategy:</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          leagueRules.ai_context.prioritize_volume 
-                            ? 'bg-green-200 text-green-800' 
-                            : 'bg-red-200 text-red-800'
-                        }`}>
-                          {leagueRules.ai_context.prioritize_volume ? 'Target-Heavy WRs' : 'Efficiency Focus'}
-                        </span>
+                {leagueRules?.ai_context ? (
+                  <div className="bg-purple-50 rounded-lg p-4">
+                    <h3 className="text-lg font-medium mb-3 text-purple-900">AI Strategy Context</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-purple-700">Volume Strategy:</span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            leagueRules.ai_context.prioritize_volume 
+                              ? 'bg-green-200 text-green-800' 
+                              : 'bg-red-200 text-red-800'
+                          }`}>
+                            {leagueRules.ai_context.prioritize_volume ? 'Target-Heavy WRs' : 'Efficiency Focus'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-purple-700">RB Premium:</span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            leagueRules.ai_context.rb_premium 
+                              ? 'bg-green-200 text-green-800' 
+                              : 'bg-yellow-200 text-yellow-800'
+                          }`}>
+                            {leagueRules.ai_context.rb_premium ? 'High' : 'Standard'}
+                          </span>
+                        </div>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-purple-700">RB Premium:</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          leagueRules.ai_context.rb_premium 
-                            ? 'bg-green-200 text-green-800' 
-                            : 'bg-yellow-200 text-yellow-800'
-                        }`}>
-                          {leagueRules.ai_context.rb_premium ? 'High' : 'Standard'}
-                        </span>
-                      </div>
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-purple-700">Flex Strategy:</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          leagueRules.ai_context.flex_strategy 
-                            ? 'bg-blue-200 text-blue-800' 
-                            : 'bg-gray-200 text-gray-800'
-                        }`}>
-                          {leagueRules.ai_context.flex_strategy ? 'Flex Available' : 'No Flex'}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-purple-700">QB Strategy:</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          leagueRules.ai_context.superflex 
-                            ? 'bg-red-200 text-red-800' 
-                            : 'bg-blue-200 text-blue-800'
-                        }`}>
-                          {leagueRules.ai_context.superflex ? 'QB Premium' : 'Standard QB'}
-                        </span>
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-purple-700">Flex Strategy:</span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            leagueRules.ai_context.flex_strategy 
+                              ? 'bg-blue-200 text-blue-800' 
+                              : 'bg-gray-200 text-gray-800'
+                          }`}>
+                            {leagueRules.ai_context.flex_strategy ? 'Flex Available' : 'No Flex'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between">
+                          <span className="text-purple-700">QB Strategy:</span>
+                          <span className={`px-2 py-1 rounded text-xs font-medium ${
+                            leagueRules.ai_context.superflex 
+                              ? 'bg-red-200 text-red-800' 
+                              : 'bg-blue-200 text-blue-800'
+                          }`}>
+                            {leagueRules.ai_context.superflex ? 'QB Premium' : 'Standard QB'}
+                          </span>
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="text-lg font-medium mb-3 text-gray-700">AI Strategy Context</h3>
+                    <p className="text-gray-600">AI context not available for this league</p>
+                  </div>
+                )}
 
                 {/* League Features */}
-                <div className="bg-yellow-50 rounded-lg p-4">
-                  <h3 className="text-lg font-medium mb-3 text-yellow-900">League Features</h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div>
-                      <span className="text-yellow-700">Trades:</span>
-                      <div className={`font-medium ${leagueRules.features.trades_enabled ? 'text-green-600' : 'text-red-600'}`}>
-                        {leagueRules.features.trades_enabled ? 'Enabled' : 'Disabled'}
-                      </div>
-                    </div>
-                    <div>
-                      <span className="text-yellow-700">Waivers:</span>
-                      <div className="font-medium text-blue-600">
-                        {leagueRules.features.waiver_type === 'FAAB' 
-                          ? `FAAB ($${leagueRules.features.waiver_budget || 100})`
-                          : leagueRules.features.waiver_type === 'waiver_priority' 
-                          ? 'Priority/Rolling'
-                          : leagueRules.features.waiver_type || 'Unknown'}
-                      </div>
-                      {leagueRules.features.waiver_type && (
-                        <div className="text-xs text-gray-500 mt-1">
-                          DB: {leagueRules.features.waiver_type}
-                          {leagueRules.features.waiver_budget && ` | Budget: $${leagueRules.features.waiver_budget}`}
+                {leagueRules?.features ? (
+                  <div className="bg-yellow-50 rounded-lg p-4">
+                    <h3 className="text-lg font-medium mb-3 text-yellow-900">League Features</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                      <div>
+                        <span className="text-yellow-700">Trades:</span>
+                        <div className={`font-medium ${leagueRules.features.trades_enabled ? 'text-green-600' : 'text-red-600'}`}>
+                          {leagueRules.features.trades_enabled ? 'Enabled' : 'Disabled'}
                         </div>
-                      )}
-                    </div>
-                    <div>
-                      <span className="text-yellow-700">Playoff Teams:</span>
-                      <div className="font-medium">{leagueRules.features.playoffs.teams}</div>
+                      </div>
+                      <div>
+                        <span className="text-yellow-700">Waivers:</span>
+                        <div className="font-medium text-blue-600">
+                          {leagueRules.features.waiver_type === 'FAAB' 
+                            ? `FAAB ($${leagueRules.features.waiver_budget || 100})`
+                            : leagueRules.features.waiver_type === 'waiver_priority' 
+                            ? 'Priority/Rolling'
+                            : leagueRules.features.waiver_type || 'Unknown'}
+                        </div>
+                        {leagueRules.features.waiver_type && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            DB: {leagueRules.features.waiver_type}
+                            {leagueRules.features.waiver_budget && ` | Budget: $${leagueRules.features.waiver_budget}`}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <span className="text-yellow-700">Playoff Teams:</span>
+                        <div className="font-medium">{leagueRules.features.playoffs?.teams || 'Unknown'}</div>
+                      </div>
                     </div>
                   </div>
-                </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-lg p-4">
+                    <h3 className="text-lg font-medium mb-3 text-gray-700">League Features</h3>
+                    <p className="text-gray-600">League features not available</p>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -2022,6 +2041,7 @@ export default function FantasyPage() {
                           </div>
 
                           {/* Usage Analytics Section */}
+                          {(player.analytics && Object.keys(player.analytics).length > 0) && (
                           <div className="bg-green-50 rounded-lg p-3">
                             <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
                               <BarChart3 className="w-4 h-4" />
@@ -2046,7 +2066,7 @@ export default function FantasyPage() {
                                       style={{ width: `${Math.min(100, (player.analytics?.snap_percentage || 0))}%` }}
                                     ></div>
                                   </div>
-                                  <span className="w-8 text-right font-medium">{player.analytics?.snap_percentage?.toFixed(0) || 0}%</span>
+                                  <span className="w-8 text-right font-medium">{player.analytics?.snap_percentage ? player.analytics.snap_percentage.toFixed(0) + '%' : '--'}</span>
                                 </div>
                               </div>
                               
@@ -2070,7 +2090,7 @@ export default function FantasyPage() {
                                         style={{ width: `${Math.min(100, (player.analytics?.target_share || 0) * 100)}%` }}
                                       ></div>
                                     </div>
-                                    <span className="w-8 text-right font-medium">{((player.analytics?.target_share || 0) * 100).toFixed(0)}%</span>
+                                    <span className="w-8 text-right font-medium">{player.analytics?.target_share ? ((player.analytics.target_share) * 100).toFixed(0) + '%' : '--'}</span>
                                   </div>
                                 </div>
                               )}
@@ -2093,13 +2113,15 @@ export default function FantasyPage() {
                                       style={{ width: `${Math.min(100, (player.analytics?.red_zone_share || 0) * 100)}%` }}
                                     ></div>
                                   </div>
-                                  <span className="w-8 text-right font-medium">{((player.analytics?.red_zone_share || 0) * 100).toFixed(0)}%</span>
+                                  <span className="w-8 text-right font-medium">{player.analytics?.red_zone_share ? ((player.analytics.red_zone_share) * 100).toFixed(0) + '%' : '--'}</span>
                                 </div>
                               </div>
                             </div>
                           </div>
+                          )}
 
                           {/* Efficiency Metrics Section */}
+                          {(player.analytics && (player.analytics.points_per_snap || player.analytics.points_per_touch)) && (
                           <div className="bg-blue-50 rounded-lg p-3">
                             <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
                               <Target className="w-4 h-4" />
@@ -2117,7 +2139,7 @@ export default function FantasyPage() {
                                 )}
                                 <span className="font-medium">Pts/Snap:</span>
                                 <span className="ml-1 text-blue-600 font-semibold">
-                                  {player.analytics?.points_per_snap?.toFixed(2) || '0.00'}
+                                  {player.analytics?.points_per_snap ? player.analytics.points_per_snap.toFixed(2) : '--'}
                                 </span>
                               </div>
                               {['WR', 'TE', 'RB'].includes(player.position) && (
@@ -2133,7 +2155,7 @@ export default function FantasyPage() {
                                   )}
                                   <span className="font-medium">Pts/Target:</span>
                                   <span className="ml-1 text-blue-600 font-semibold">
-                                    {player.analytics?.points_per_target?.toFixed(2) || '0.00'}
+                                    {player.analytics?.points_per_target ? player.analytics.points_per_target.toFixed(2) : '--'}
                                   </span>
                                 </div>
                               )}
@@ -2148,7 +2170,7 @@ export default function FantasyPage() {
                                 )}
                                 <span className="font-medium">Floor:</span>
                                 <span className="ml-1 text-gray-600">
-                                  {player.analytics?.floor_score?.toFixed(1) || '0.0'}
+                                  {player.analytics?.floor_score ? player.analytics.floor_score.toFixed(1) : '--'}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
@@ -2162,13 +2184,57 @@ export default function FantasyPage() {
                                 )}
                                 <span className="font-medium">Ceiling:</span>
                                 <span className="ml-1 text-gray-600">
-                                  {player.analytics?.ceiling_score?.toFixed(1) || '0.0'}
+                                  {player.analytics?.ceiling_score ? player.analytics.ceiling_score.toFixed(1) : '--'}
                                 </span>
                               </div>
                             </div>
                           </div>
+                          )}
+
+                          {/* Season Performance Stats Section */}
+                          {(player.season_stats?.games_played > 0) && (
+                          <div className="bg-purple-50 rounded-lg p-3">
+                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                              <BarChart3 className="w-4 h-4" />
+                              Season Performance
+                            </h5>
+                            <div className="grid grid-cols-2 gap-2 text-xs">
+                              <div><span className="font-medium">Games:</span> {player.season_stats.games_played}</div>
+                              <div><span className="font-medium">PPG:</span> <span className="text-purple-600 font-semibold">{player.season_stats.points_per_game?.toFixed(1)}</span></div>
+                              
+                              {/* Position-specific stats */}
+                              {['WR', 'TE'].includes(player.position) && player.analytics && (
+                                <>
+                                  <div><span className="font-medium">Rec/G:</span> {player.analytics.receptions_per_game?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">Yds/G:</span> {player.analytics.yards_per_game?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">Tgt/G:</span> {player.analytics.targets_per_game?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">Catch%:</span> {player.analytics.catch_rate ? (player.analytics.catch_rate * 100).toFixed(0) + '%' : '--'}</div>
+                                </>
+                              )}
+                              
+                              {player.position === 'RB' && player.analytics && (
+                                <>
+                                  <div><span className="font-medium">Touch/G:</span> {player.analytics.touches_per_game?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">Rush Yds/G:</span> {player.analytics.rush_yards_per_game?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">YPC:</span> {player.analytics.yards_per_carry?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">Total Yds/G:</span> {player.analytics.total_yards_per_game?.toFixed(1) || '--'}</div>
+                                </>
+                              )}
+                              
+                              {player.position === 'QB' && player.analytics && (
+                                <>
+                                  <div><span className="font-medium">Comp%:</span> {player.analytics.completion_percentage?.toFixed(1) + '%' || '--'}</div>
+                                  <div><span className="font-medium">Y/A:</span> {player.analytics.yards_per_attempt?.toFixed(1) || '--'}</div>
+                                  <div><span className="font-medium">TD%:</span> {player.analytics.td_percentage?.toFixed(1) + '%' || '--'}</div>
+                                  <div><span className="font-medium">INT%:</span> {player.analytics.int_percentage?.toFixed(1) + '%' || '--'}</div>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          )}
 
                           {/* Consistency Section */}
+                          {(player.analytics && player.analytics.consistency_score !== undefined) && (
                           <div className="bg-yellow-50 rounded-lg p-3">
                             <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
                               <TrendingUp className="w-4 h-4" />
@@ -2178,49 +2244,36 @@ export default function FantasyPage() {
                               <div className="flex items-center gap-1">
                                 {comparisonData.players.length > 1 && (
                                   (() => {
-                                    const allBoomRates = comparisonData.players.map((p: any) => p.analytics?.boom_rate || 0);
-                                    const maxBoomRate = Math.max(...allBoomRates);
-                                    const isWinner = (player.analytics?.boom_rate || 0) === maxBoomRate && maxBoomRate > 0;
-                                    return isWinner ? <span className="text-green-600 text-xs">💥</span> : null;
+                                    const allConsistencies = comparisonData.players.map((p: any) => p.analytics?.consistency_score || 0);
+                                    const maxConsistency = Math.max(...allConsistencies);
+                                    const isWinner = (player.analytics?.consistency_score || 0) === maxConsistency && maxConsistency > 0;
+                                    return isWinner ? <span className="text-green-600 text-xs">⭐</span> : null;
                                   })()
                                 )}
-                                <span className="font-medium">Boom Rate:</span>
+                                <span className="font-medium">Consistency:</span>
                                 <span className="ml-1 text-green-600 font-semibold">
-                                  {((player.analytics?.boom_rate || 0) * 100).toFixed(0)}%
+                                  {player.analytics?.consistency_score ? ((player.analytics.consistency_score) * 100).toFixed(0) + '%' : '--'}
                                 </span>
                               </div>
                               <div className="flex items-center gap-1">
-                                {comparisonData.players.length > 1 && (
-                                  (() => {
-                                    const allBustRates = comparisonData.players.map((p: any) => p.analytics?.bust_rate || 0);
-                                    const minBustRate = Math.min(...allBustRates);
-                                    const isWinner = (player.analytics?.bust_rate || 0) === minBustRate;
-                                    return isWinner ? <span className="text-green-600 text-xs">✅</span> : null;
-                                  })()
-                                )}
-                                <span className="font-medium">Bust Rate:</span>
-                                <span className="ml-1 text-red-600 font-semibold">
-                                  {((player.analytics?.bust_rate || 0) * 100).toFixed(0)}%
-                                </span>
-                              </div>
-                              <div className="col-span-2 flex items-center gap-1">
-                                {comparisonData.players.length > 1 && (
-                                  (() => {
-                                    const allVariances = comparisonData.players.map((p: any) => p.analytics?.weekly_variance || 999);
-                                    const minVariance = Math.min(...allVariances);
-                                    const isWinner = (player.analytics?.weekly_variance || 999) === minVariance && minVariance < 999;
-                                    return isWinner ? <span className="text-yellow-600 text-xs">⭐</span> : null;
-                                  })()
-                                )}
-                                <span className="font-medium">Variance:</span>
-                                <span className="ml-1 text-gray-600">
-                                  {player.analytics?.weekly_variance?.toFixed(1) || '0.0'}
+                                <span className="font-medium">Pts/Touch:</span>
+                                <span className="ml-1 text-blue-600 font-semibold">
+                                  {player.analytics?.points_per_touch ? player.analytics.points_per_touch.toFixed(2) : 
+                                   player.analytics?.points_per_target ? player.analytics.points_per_target.toFixed(2) : '--'}
                                 </span>
                               </div>
                             </div>
                           </div>
+                          )}
 
                           {/* Trends Indicators */}
+                          {(player.trends && (
+                            Math.abs(player.trends.snap_share_trend || 0) > 0.05 ||
+                            Math.abs(player.trends.target_share_trend || 0) > 0.05 ||
+                            Math.abs(player.trends.touch_share_trend || 0) > 0.05 ||
+                            Math.abs(player.trends.red_zone_share_trend || 0) > 0.05 ||
+                            Math.abs(player.trends.fantasy_points_trend || 0) > 0.05
+                          )) && (
                           <div className="bg-purple-50 rounded-lg p-3">
                             <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
                               <TrendingUp className="w-4 h-4" />
@@ -2281,8 +2334,13 @@ export default function FantasyPage() {
                               )}
                             </div>
                           </div>
+                          )}
 
                           {/* Team Fit Analysis */}
+                          {(leagueRules && 
+                            leagueRules.roster_settings && 
+                            leagueRules.ai_context &&
+                            !leagueRules.ai_context.prioritize_volume) && (
                           <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-200">
                             <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
                               <Users className="w-4 h-4" />
@@ -2312,6 +2370,18 @@ export default function FantasyPage() {
                                 <>
                                   {/* Position Need Assessment */}
                                   {(() => {
+                                    // Check if roster settings are available
+                                    if (!leagueRules?.roster_settings?.positions) {
+                                      return (
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium">Position Need:</span>
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                            N/A
+                                          </span>
+                                        </div>
+                                      );
+                                    }
+                                    
                                     const positionCounts = roster.reduce((acc: any, p: any) => {
                                       acc[p.position] = (acc[p.position] || 0) + 1;
                                       return acc;
@@ -2342,6 +2412,18 @@ export default function FantasyPage() {
 
                                   {/* Scoring System Fit */}
                                   {(() => {
+                                    // Check if scoring settings are available
+                                    if (!leagueRules?.scoring_settings?.receiving) {
+                                      return (
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium">Scoring Fit:</span>
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                            N/A
+                                          </span>
+                                        </div>
+                                      );
+                                    }
+                                    
                                     const scoringType = leagueRules.scoring_settings.type;
                                     const pprValue = leagueRules.scoring_settings.receiving.receptions;
                                     
@@ -2379,6 +2461,18 @@ export default function FantasyPage() {
 
                                   {/* League Context Match */}
                                   {(() => {
+                                    // Check if AI context is available
+                                    if (!leagueRules?.ai_context) {
+                                      return (
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-medium">League Context:</span>
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                            N/A
+                                          </span>
+                                        </div>
+                                      );
+                                    }
+                                    
                                     const aiContext = leagueRules.ai_context;
                                     let contextMatches = [];
                                     
@@ -2421,7 +2515,7 @@ export default function FantasyPage() {
                                   })()}
 
                                   {/* Trade/Acquisition Difficulty */}
-                                  {leagueRules.features.trades_enabled && (
+                                  {leagueRules?.features?.trades_enabled && (
                                     <div className="flex items-center justify-between">
                                       <span className="font-medium">Acquisition:</span>
                                       <span className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs font-medium">
@@ -2449,6 +2543,7 @@ export default function FantasyPage() {
                               )}
                             </div>
                           </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -2465,7 +2560,7 @@ export default function FantasyPage() {
                   {/* Analytics Comparison Grid */}
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
                     {/* Highest Snap Share */}
-                    {comparisonData.players.some((p: any) => p.analytics?.snap_percentage > 0) && (
+                    {comparisonData.players.some((p: any) => p.analytics?.snap_percentage) && (
                       <div className="bg-white rounded-lg p-3 border border-green-200">
                         <div className="text-sm font-medium text-green-800 mb-1">📈 Highest Snap Share</div>
                         {(() => {
@@ -2475,44 +2570,98 @@ export default function FantasyPage() {
                           return (
                             <div className="text-xs">
                               <span className="font-semibold">{topSnapPlayer.name}</span>
-                              <span className="text-green-600 ml-2">{topSnapPlayer.analytics?.snap_percentage?.toFixed(0) || 0}%</span>
+                              <span className="text-green-600 ml-2">{topSnapPlayer.analytics?.snap_percentage ? topSnapPlayer.analytics.snap_percentage.toFixed(0) + '%' : '--'}</span>
                             </div>
                           );
                         })()}
                       </div>
                     )}
                     
-                    {/* Best Target Share (for skill positions) */}
-                    {comparisonData.players.some((p: any) => ['WR', 'TE', 'RB'].includes(p.position) && p.analytics?.target_share > 0) && (
+                    {/* Highest Target Share */}
+                    {comparisonData.players.some((p: any) => p.analytics?.target_share && ['WR', 'TE', 'RB'].includes(p.position)) && (
                       <div className="bg-white rounded-lg p-3 border border-blue-200">
-                        <div className="text-sm font-medium text-blue-800 mb-1">🎯 Best Target Share</div>
+                        <div className="text-sm font-medium text-blue-800 mb-1">🎯 Highest Target Share</div>
                         {(() => {
                           const skillPlayers = comparisonData.players.filter((p: any) => ['WR', 'TE', 'RB'].includes(p.position));
                           const topTargetPlayer = skillPlayers.reduce((prev: any, current: any) => 
                             (current.analytics?.target_share || 0) > (prev.analytics?.target_share || 0) ? current : prev
                           );
-                          return skillPlayers.length > 0 ? (
+                          return (
                             <div className="text-xs">
                               <span className="font-semibold">{topTargetPlayer.name}</span>
-                              <span className="text-blue-600 ml-2">{((topTargetPlayer.analytics?.target_share || 0) * 100).toFixed(0)}%</span>
+                              <span className="text-blue-600 ml-2">{topTargetPlayer.analytics?.target_share ? (topTargetPlayer.analytics.target_share * 100).toFixed(0) + '%' : '--'}</span>
                             </div>
-                          ) : null;
+                          );
+                        })()}
+                      </div>
+                    )}
+                    
+                    {/* Most Efficient */}
+                    {comparisonData.players.some((p: any) => p.analytics?.points_per_snap) && (
+                      <div className="bg-white rounded-lg p-3 border border-purple-200">
+                        <div className="text-sm font-medium text-purple-800 mb-1">⚡ Most Efficient</div>
+                        {(() => {
+                          const topEfficiencyPlayer = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.points_per_snap || 0) > (prev.analytics?.points_per_snap || 0) ? current : prev
+                          );
+                          return (
+                            <div className="text-xs">
+                              <span className="font-semibold">{topEfficiencyPlayer.name}</span>
+                              <span className="text-purple-600 ml-2">{topEfficiencyPlayer.analytics?.points_per_snap ? topEfficiencyPlayer.analytics.points_per_snap.toFixed(2) + ' pts/snap' : '--'}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    
+                    {/* Highest Red Zone Share */}
+                    {comparisonData.players.some((p: any) => p.analytics?.red_zone_share) && (
+                      <div className="bg-white rounded-lg p-3 border border-red-200">
+                        <div className="text-sm font-medium text-red-800 mb-1">🔥 Red Zone Dominance</div>
+                        {(() => {
+                          const topRzPlayer = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.red_zone_share || 0) > (prev.analytics?.red_zone_share || 0) ? current : prev
+                          );
+                          return (
+                            <div className="text-xs">
+                              <span className="font-semibold">{topRzPlayer.name}</span>
+                              <span className="text-red-600 ml-2">{topRzPlayer.analytics?.red_zone_share ? (topRzPlayer.analytics.red_zone_share * 100).toFixed(0) + '%' : '--'}</span>
+                            </div>
+                          );
                         })()}
                       </div>
                     )}
                     
                     {/* Most Consistent */}
-                    {comparisonData.players.some((p: any) => p.analytics?.weekly_variance !== undefined) && (
-                      <div className="bg-white rounded-lg p-3 border border-yellow-200">
-                        <div className="text-sm font-medium text-yellow-800 mb-1">⭐ Most Consistent</div>
+                    {comparisonData.players.some((p: any) => p.analytics?.consistency_score) && (
+                      <div className="bg-white rounded-lg p-3 border border-emerald-200">
+                        <div className="text-sm font-medium text-emerald-800 mb-1">⭐ Most Consistent</div>
                         {(() => {
-                          const mostConsistent = comparisonData.players.reduce((prev: any, current: any) => 
-                            (current.analytics?.weekly_variance || 999) < (prev.analytics?.weekly_variance || 999) ? current : prev
+                          const topConsistencyPlayer = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.consistency_score || 0) > (prev.analytics?.consistency_score || 0) ? current : prev
                           );
                           return (
                             <div className="text-xs">
-                              <span className="font-semibold">{mostConsistent.name}</span>
-                              <span className="text-yellow-600 ml-2">Low Variance</span>
+                              <span className="font-semibold">{topConsistencyPlayer.name}</span>
+                              <span className="text-emerald-600 ml-2">{topConsistencyPlayer.analytics?.consistency_score ? (topConsistencyPlayer.analytics.consistency_score * 100).toFixed(0) + '%' : '--'}</span>
+                            </div>
+                          );
+                        })()}
+                      </div>
+                    )}
+                    
+                    {/* Highest Ceiling */}
+                    {comparisonData.players.some((p: any) => p.analytics?.ceiling_score) && (
+                      <div className="bg-white rounded-lg p-3 border border-indigo-200">
+                        <div className="text-sm font-medium text-indigo-800 mb-1">🚀 Highest Ceiling</div>
+                        {(() => {
+                          const topCeilingPlayer = comparisonData.players.reduce((prev: any, current: any) => 
+                            (current.analytics?.ceiling_score || 0) > (prev.analytics?.ceiling_score || 0) ? current : prev
+                          );
+                          return (
+                            <div className="text-xs">
+                              <span className="font-semibold">{topCeilingPlayer.name}</span>
+                              <span className="text-indigo-600 ml-2">{topCeilingPlayer.analytics?.ceiling_score ? topCeilingPlayer.analytics.ceiling_score.toFixed(1) + ' pts' : '--'}</span>
                             </div>
                           );
                         })()}
@@ -2520,10 +2669,348 @@ export default function FantasyPage() {
                     )}
                   </div>
 
-                  {/* Original Insights */}
+                  {/* Detailed Analytics Comparison Table */}
+                  {comparisonData.players.some((p: any) => p.analytics && Object.keys(p.analytics).length > 0) && (
+                    <div className="mt-6 overflow-x-auto">
+                      <h5 className="font-medium text-blue-900 mb-3">Detailed Metrics Comparison</h5>
+                      <table className="w-full text-sm border-collapse bg-white rounded-lg overflow-hidden shadow-sm">
+                        <thead>
+                          <tr className="bg-gradient-to-r from-blue-600 to-blue-700 text-white">
+                            <th className="text-left p-3 font-semibold">Metric</th>
+                            {comparisonData.players.map((player: any) => (
+                              <th key={player.player_id} className="text-center p-3 font-semibold min-w-[120px]">
+                                <div>{player.name}</div>
+                                <div className="text-xs font-normal opacity-90">{player.position} • {player.team}</div>
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* Usage Metrics */}
+                          <tr className="bg-gradient-to-r from-green-50 to-emerald-50">
+                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-3 text-green-800 border-b border-green-200">
+                              📊 USAGE METRICS
+                            </td>
+                          </tr>
+                          <tr className="hover:bg-gray-50 transition-colors">
+                            <td className="p-3 border-b border-gray-200 font-medium text-gray-700">Snap Share</td>
+                            {(() => {
+                              const snapValues = comparisonData.players.map((p: any) => p.analytics?.snap_percentage || 0);
+                              const maxSnap = Math.max(...snapValues);
+                              const minSnap = Math.min(...snapValues.filter((v: number) => v > 0));
+                              
+                              return comparisonData.players.map((player: any) => {
+                                const value = player.analytics?.snap_percentage;
+                                const isMax = value === maxSnap && maxSnap > 0;
+                                const isMin = value === minSnap && value > 0 && comparisonData.players.length > 1;
+                                
+                                return (
+                                  <td key={player.player_id} className="text-center p-3 border-b border-gray-200">
+                                    {value ? (
+                                      <div className="relative">
+                                        {isMax && <span className="absolute -top-1 -right-1 text-green-500 text-xs">👑</span>}
+                                        <span className={`font-semibold text-lg ${
+                                          isMax ? 'text-green-600' : 
+                                          isMin ? 'text-red-500' : 
+                                          value >= 70 ? 'text-blue-600' : 
+                                          value >= 50 ? 'text-gray-700' : 'text-gray-500'
+                                        }`}>
+                                          {value.toFixed(0)}%
+                                        </span>
+                                        <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
+                                          <div 
+                                            className={`h-1 rounded-full transition-all ${
+                                              isMax ? 'bg-green-500' : 
+                                              isMin ? 'bg-red-400' : 
+                                              'bg-blue-500'
+                                            }`}
+                                            style={{ width: `${value}%` }}
+                                          />
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-400">--</span>
+                                    )}
+                                  </td>
+                                );
+                              });
+                            })()}
+                          </tr>
+                          {comparisonData.players.some((p: any) => ['WR', 'TE', 'RB'].includes(p.position)) && (
+                            <tr>
+                              <td className="p-2 border border-blue-200 text-gray-700 font-medium">Target Share</td>
+                              {comparisonData.players.map((player: any) => (
+                                <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                  {['WR', 'TE', 'RB'].includes(player.position) && player.analytics?.target_share ? 
+                                    <span className={`font-medium ${player.analytics.target_share >= 0.25 ? 'text-green-600' : player.analytics.target_share >= 0.15 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                      {(player.analytics.target_share * 100).toFixed(0)}%
+                                    </span> : '--'}
+                                </td>
+                              ))}
+                            </tr>
+                          )}
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Red Zone Share</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.analytics?.red_zone_share ? 
+                                  <span className={`font-medium ${player.analytics.red_zone_share >= 0.3 ? 'text-red-600' : player.analytics.red_zone_share >= 0.2 ? 'text-orange-600' : 'text-gray-600'}`}>
+                                    {(player.analytics.red_zone_share * 100).toFixed(0)}%
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          
+                          {/* Efficiency Metrics */}
+                          <tr className="bg-blue-50">
+                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                              ⚡ Efficiency Metrics
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Points/Snap</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.analytics?.points_per_snap ? 
+                                  <span className={`font-medium ${player.analytics.points_per_snap >= 0.3 ? 'text-purple-600' : player.analytics.points_per_snap >= 0.2 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                    {player.analytics.points_per_snap.toFixed(2)}
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          {comparisonData.players.some((p: any) => p.position === 'RB') && (
+                            <tr>
+                              <td className="p-2 border border-blue-200 text-gray-700 font-medium">Points/Touch</td>
+                              {comparisonData.players.map((player: any) => (
+                                <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                  {player.position === 'RB' && player.analytics?.points_per_touch ? 
+                                    <span className={`font-medium ${player.analytics.points_per_touch >= 0.8 ? 'text-purple-600' : player.analytics.points_per_touch >= 0.6 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                      {player.analytics.points_per_touch.toFixed(2)}
+                                    </span> : '--'}
+                                </td>
+                              ))}
+                            </tr>
+                          )}
+                          
+                          {/* Fantasy Scoring */}
+                          <tr className="bg-purple-50">
+                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                              🎯 Fantasy Scoring
+                            </td>
+                          </tr>
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">PPG</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.season_stats?.points_per_game ? 
+                                  <span className={`font-bold ${player.season_stats.points_per_game >= 15 ? 'text-green-600' : player.season_stats.points_per_game >= 10 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                    {player.season_stats.points_per_game.toFixed(1)}
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Floor</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.analytics?.floor_score ? 
+                                  <span className="font-medium text-gray-600">
+                                    {player.analytics.floor_score.toFixed(1)}
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Ceiling</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.analytics?.ceiling_score ? 
+                                  <span className={`font-medium ${player.analytics.ceiling_score >= 25 ? 'text-indigo-600' : player.analytics.ceiling_score >= 20 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                    {player.analytics.ceiling_score.toFixed(1)}
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          <tr>
+                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Consistency</td>
+                            {comparisonData.players.map((player: any) => (
+                              <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                {player.analytics?.consistency_score ? 
+                                  <span className={`font-medium ${player.analytics.consistency_score >= 0.8 ? 'text-emerald-600' : player.analytics.consistency_score >= 0.6 ? 'text-green-600' : 'text-gray-600'}`}>
+                                    {(player.analytics.consistency_score * 100).toFixed(0)}%
+                                  </span> : '--'}
+                              </td>
+                            ))}
+                          </tr>
+                          
+                          {/* Position-Specific Stats */}
+                          {comparisonData.players.some((p: any) => p.position === 'RB') && (
+                            <>
+                              <tr className="bg-orange-50">
+                                <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                                  🏈 RB Specific
+                                </td>
+                              </tr>
+                              <tr>
+                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">Touches/Game</td>
+                                {comparisonData.players.map((player: any) => (
+                                  <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                    {player.position === 'RB' && player.analytics?.touches_per_game ? 
+                                      <span className={`font-medium ${player.analytics.touches_per_game >= 20 ? 'text-green-600' : player.analytics.touches_per_game >= 15 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                        {player.analytics.touches_per_game.toFixed(1)}
+                                      </span> : '--'}
+                                  </td>
+                                ))}
+                              </tr>
+                              <tr>
+                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">Rush Yds/Game</td>
+                                {comparisonData.players.map((player: any) => (
+                                  <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                    {player.position === 'RB' && player.analytics?.rush_yards_per_game ? 
+                                      <span className="font-medium">
+                                        {player.analytics.rush_yards_per_game.toFixed(1)}
+                                      </span> : '--'}
+                                  </td>
+                                ))}
+                              </tr>
+                              <tr>
+                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">YPC</td>
+                                {comparisonData.players.map((player: any) => (
+                                  <td key={player.player_id} className="text-center p-2 border border-blue-200">
+                                    {player.position === 'RB' && player.analytics?.yards_per_carry ? 
+                                      <span className={`font-medium ${player.analytics.yards_per_carry >= 5.0 ? 'text-green-600' : player.analytics.yards_per_carry >= 4.0 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                        {player.analytics.yards_per_carry.toFixed(1)}
+                                      </span> : '--'}
+                                  </td>
+                                ))}
+                              </tr>
+                            </>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  
+                  {/* League-Specific Recommendation Summary */}
+                  {comparisonData.players.length > 0 && (
+                    <div className="mt-6 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg p-6">
+                      <h5 className="font-semibold text-purple-900 mb-4 flex items-center gap-2">
+                        <Trophy className="w-5 h-5" />
+                        Overall Winner & Recommendation
+                      </h5>
+                      
+                      {(() => {
+                        // Calculate overall winner based on multiple factors
+                        const players = comparisonData.players;
+                        const scores = players.map((p: any) => {
+                          let score = 0;
+                          
+                          // PPG is most important (40% weight)
+                          const ppg = p.season_stats?.points_per_game || 0;
+                          score += ppg * 2;
+                          
+                          // Consistency (20% weight)
+                          const consistency = (p.analytics?.consistency_score || 0) * 20;
+                          score += consistency;
+                          
+                          // Snap share (15% weight)
+                          const snapShare = (p.analytics?.snap_percentage || 0) * 0.15;
+                          score += snapShare;
+                          
+                          // Red zone usage (15% weight)
+                          const rzShare = (p.analytics?.red_zone_share || 0) * 50;
+                          score += rzShare;
+                          
+                          // Ceiling (10% weight)
+                          const ceiling = (p.analytics?.ceiling_score || 0) * 0.5;
+                          score += ceiling;
+                          
+                          return { player: p, score };
+                        });
+                        
+                        const winner = scores.reduce((prev, curr) => curr.score > prev.score ? curr : prev);
+                        const loser = scores.find(s => s.player.player_id !== winner.player.player_id);
+                        
+                        return (
+                          <>
+                            <div className="bg-white rounded-lg p-4 mb-4">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="text-3xl">🏆</div>
+                                  <div>
+                                    <div className="text-lg font-bold text-green-700">{winner.player.name}</div>
+                                    <div className="text-sm text-gray-600">Overall Score: {winner.score.toFixed(1)}</div>
+                                  </div>
+                                </div>
+                                <div className="text-right">
+                                  <div className="text-2xl font-bold text-green-600">+{(winner.score - (loser?.score || 0)).toFixed(1)}</div>
+                                  <div className="text-xs text-gray-500">Point Advantage</div>
+                                </div>
+                              </div>
+                              
+                              {/* Key Advantages */}
+                              <div className="border-t pt-3">
+                                <div className="text-sm font-medium text-gray-700 mb-2">Key Advantages:</div>
+                                <div className="grid grid-cols-2 gap-2 text-xs">
+                                  {winner.player.season_stats?.points_per_game > (loser?.player.season_stats?.points_per_game || 0) && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-green-500">✓</span>
+                                      <span className="text-gray-700">Higher PPG (+{(winner.player.season_stats.points_per_game - (loser?.player.season_stats?.points_per_game || 0)).toFixed(1)})</span>
+                                    </div>
+                                  )}
+                                  {winner.player.analytics?.snap_percentage > (loser?.player.analytics?.snap_percentage || 0) && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-green-500">✓</span>
+                                      <span className="text-gray-700">More Snaps (+{(winner.player.analytics.snap_percentage - (loser?.player.analytics?.snap_percentage || 0)).toFixed(0)}%)</span>
+                                    </div>
+                                  )}
+                                  {winner.player.analytics?.consistency_score > (loser?.player.analytics?.consistency_score || 0) && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-green-500">✓</span>
+                                      <span className="text-gray-700">More Consistent</span>
+                                    </div>
+                                  )}
+                                  {winner.player.analytics?.red_zone_share > (loser?.player.analytics?.red_zone_share || 0) && (
+                                    <div className="flex items-center gap-1">
+                                      <span className="text-green-500">✓</span>
+                                      <span className="text-gray-700">Red Zone Usage</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* League-Specific Recommendation */}
+                            <div className="bg-purple-100 bg-opacity-50 rounded-lg p-4">
+                              <div className="text-sm font-medium text-purple-900 mb-2">League-Specific Recommendation:</div>
+                              <div className="text-sm text-purple-800 space-y-1">
+                                {leagueRules?.scoring_type === 'ppr' ? (
+                                  <p>✨ In your Full PPR league, {winner.player.name} provides excellent value with {((winner.player.analytics?.target_share || 0) * 100).toFixed(0)}% target share.</p>
+                                ) : leagueRules?.scoring_type === 'half_ppr' ? (
+                                  <p>✨ In your Half PPR league, {winner.player.name} offers balanced production with both rushing and receiving upside.</p>
+                                ) : (
+                                  <p>✨ {winner.player.name} is the stronger overall option based on consistency and usage metrics.</p>
+                                )}
+                                
+                                {winner.player.trending?.type === 'hot' && (
+                                  <p>🔥 Currently trending up in waiver activity - high demand player!</p>
+                                )}
+                                
+                                {winner.player.age < (loser?.player.age || 100) && (
+                                  <p>⏰ Younger player with more long-term upside for dynasty leagues.</p>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+                  
+                  {/* Original AI Insights */}
                   {comparisonData.insights && comparisonData.insights.length > 0 && (
-                    <div>
-                      <h5 className="font-medium text-blue-900 mb-2">AI Insights</h5>
+                    <div className="mt-6">
+                      <h5 className="font-medium text-blue-900 mb-2">Additional Insights</h5>
                       <ul className="space-y-1">
                         {comparisonData.insights.map((insight: string, index: number) => (
                           <li key={index} className="text-sm text-blue-800">

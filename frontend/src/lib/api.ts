@@ -771,7 +771,7 @@ export const fantasyAPI = {
   },
 
   // Player Analytics
-  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
+  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -784,11 +784,13 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerTrends: async (playerId: number, weeks: string = "8,9,10,11,12", season: number = 2024, token?: string) => {
+  getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
-      params.append('weeks', weeks);
+      if (weeks) {
+        params.append('weeks', weeks);
+      }
       params.append('season', season.toString());
       
       return await apiClient.get(`/api/fantasy/analytics/${playerId}/trends?${params.toString()}`, authToken);
@@ -797,11 +799,13 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerEfficiency: async (playerId: number, weeks: string = "8,9,10,11,12", season: number = 2024, token?: string) => {
+  getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
-      params.append('weeks', weeks);
+      if (weeks) {
+        params.append('weeks', weeks);
+      }
       params.append('season', season.toString());
       
       return await apiClient.get(`/api/fantasy/analytics/${playerId}/efficiency?${params.toString()}`, authToken);
