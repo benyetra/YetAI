@@ -168,12 +168,23 @@ AI-powered sports betting and fantasy sports platform with advanced analytics an
     - Market availability indicators
     - Automatic game state updates
     - Bet placement with dynamic cache population
+    
+- **✅ Live Betting Display Fixes**
+  - **Problem 1**: Live bets showing duplicate entries in "My Active Bets" tab
+  - **Solution**: Modified `/api/bets/history` endpoint to exclude live bets when filtering for pending status
+  - **Problem 2**: Bets displaying generic "LIVE - HOME @ odds" instead of actual team names
+  - **Solution**: 
+    - Fixed `_db_bet_to_model` method to properly retrieve team names from database
+    - Removed duplicate `_get_game_details` method that had hardcoded placeholders
+    - Team names now stored correctly in database and retrieved properly
   - **Current Status**:
     - ✅ Markets endpoint returns 10+ live MLB games with real odds
     - ✅ Moneyline odds working correctly
     - ✅ Bet placement fully functional with cache auto-population
-    - ⚠️ Spread/total odds limited by API (only returning h2h markets)
+    - ✅ Team names display correctly (e.g., "New York Yankees to Win")
+    - ✅ No duplicate bets in active bets display
     - ✅ Complete live betting flow tested and working
+    - ⚠️ Spread/total odds limited by API (only returning h2h markets)
 
 ## Data Population Status ✅
 - **Player Analytics Database**:
@@ -201,6 +212,8 @@ AI-powered sports betting and fantasy sports platform with advanced analytics an
 - [ ] Integration with Multiple Sports Data Providers
 
 ## Recent Commits
+- `2025-09-06`: Fixed live betting display issues - team names and duplicate bets
+- `2025-09-06`: Implemented complete live betting flow with real MLB data
 - `2025-01-06`: Added comprehensive fantasy analytics with historical data integration
 - `2025-01-06`: Implemented Performance vs Expectation (PvE) system with statistical significance
 - `2025-01-06`: Populated 15,639 NFL player records from 2021-2024 seasons
