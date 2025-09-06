@@ -1263,6 +1263,57 @@ async def test_sleeper_user(username: str):
         logger.error(f"Error testing Sleeper integration: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/live-bets/test/active")
+async def test_get_user_live_bets():
+    """Test endpoint to get active live bets without authentication"""
+    try:
+        # Get bets for test user ID 1
+        bets = live_betting_service.get_user_live_bets(1, False)
+        
+        # Convert bets to dict format for JSON response
+        bets_data = []
+        for bet in bets:
+            bet_dict = bet.dict() if hasattr(bet, 'dict') else bet
+            logger.info(f"Bet data: home_team={bet_dict.get('home_team')}, away_team={bet_dict.get('away_team')}")
+            bets_data.append(bet_dict)
+        
+        return {
+            "status": "success",
+            "count": len(bets_data),
+            "bets": bets_data
+        }
+    except Exception as e:
+        logger.error(f"Error in test get active bets: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/live-bets/test/place")
+async def test_place_live_bet(request: PlaceLiveBetRequest):
+    """Test endpoint to place a live bet without authentication"""
+    try:
+        logger.info(f"Test bet placement request: {request}")
+        # First, ensure markets are fetched to populate cache
+        markets = await live_betting_service.get_live_betting_markets(sport="baseball_mlb")
+        logger.info(f"Fetched {len(markets)} markets to populate cache")
+        
+        result = live_betting_service.place_live_bet(1, request)  # Use test user ID 1
+        
+        logger.info(f"Test bet placement result: {result}")
+        
+        return {
+            "success": result.success,
+            "bet": result.bet.dict() if result.bet else None,
+            "error": result.error,
+            "odds_changed": result.odds_changed,
+            "new_odds": result.new_odds
+        }
+    except Exception as e:
+        logger.error(f"Error in test bet placement: {e}")
+        import traceback
+        logger.error(f"Traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/fantasy/test/sleeper-trending")
 async def test_sleeper_trending():
     """Test endpoint for Sleeper trending players"""
@@ -3560,48 +3611,51 @@ async def get_bet_history(
     result = await bet_service.get_bet_history(current_user["id"], query)
     
     if result["success"]:
-        # Also get live bets from database and format them for bet history
-        live_bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled=True)
-        
-        # Convert live bets to bet history format
-        for live_bet in live_bets:
-            # Create a descriptive title for live bets
-            if live_bet.bet_type == "moneyline":
-                if live_bet.selection == "home":
-                    title = f"{live_bet.home_team} to Win"
-                else:
-                    title = f"{live_bet.away_team} to Win"
-            elif live_bet.bet_type == "spread":
-                if live_bet.selection == "home":
-                    title = f"{live_bet.home_team} Spread"
-                else:
-                    title = f"{live_bet.away_team} Spread"
-            elif live_bet.bet_type == "total":
-                if live_bet.selection == "over":
-                    title = f"Over Total ({live_bet.home_team} vs {live_bet.away_team})"
-                else:
-                    title = f"Under Total ({live_bet.home_team} vs {live_bet.away_team})"
-            else:
-                title = f"{live_bet.bet_type.title()} - {live_bet.selection.title()}"
+        # Only include live bets if not specifically filtering for pending status
+        # This prevents duplicate display when frontend fetches both pending regular bets and live bets
+        if query.status != "pending":
+            # Also get live bets from database and format them for bet history
+            live_bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled=True)
             
-            # Add to regular bets list with proper formatting
-            bet_data = {
-                "id": live_bet.id,
-                "bet_type": "Live",
-                "title": title,
-                "status": live_bet.status.title(),
-                "amount": live_bet.amount,
-                "odds": live_bet.original_odds,
-                "potential_win": live_bet.potential_win,
-                "placed_at": live_bet.placed_at.isoformat(),
-                "home_team": live_bet.home_team,
-                "away_team": live_bet.away_team,
-                "sport": live_bet.sport,
-                "current_score": f"{live_bet.current_home_score or 0} - {live_bet.current_away_score or 0}" if live_bet.current_home_score is not None else None,
-                "game_time": live_bet.current_game_status.value if live_bet.current_game_status else None,
-                "selection": live_bet.selection
-            }
-            result["bets"].append(bet_data)
+            # Convert live bets to bet history format
+            for live_bet in live_bets:
+                # Create a descriptive title for live bets
+                if live_bet.bet_type == "moneyline":
+                    if live_bet.selection == "home":
+                        title = f"{live_bet.home_team} to Win"
+                    else:
+                        title = f"{live_bet.away_team} to Win"
+                elif live_bet.bet_type == "spread":
+                    if live_bet.selection == "home":
+                        title = f"{live_bet.home_team} Spread"
+                    else:
+                        title = f"{live_bet.away_team} Spread"
+                elif live_bet.bet_type == "total":
+                    if live_bet.selection == "over":
+                        title = f"Over Total ({live_bet.home_team} vs {live_bet.away_team})"
+                    else:
+                        title = f"Under Total ({live_bet.home_team} vs {live_bet.away_team})"
+                else:
+                    title = f"{live_bet.bet_type.title()} - {live_bet.selection.title()}"
+                
+                # Add to regular bets list with proper formatting
+                bet_data = {
+                    "id": live_bet.id,
+                    "bet_type": "Live",
+                    "title": title,
+                    "status": live_bet.status.title(),
+                    "amount": live_bet.amount,
+                    "odds": live_bet.original_odds,
+                    "potential_win": live_bet.potential_win,
+                    "placed_at": live_bet.placed_at.isoformat(),
+                    "home_team": live_bet.home_team,
+                    "away_team": live_bet.away_team,
+                    "sport": live_bet.sport,
+                    "current_score": f"{live_bet.current_home_score or 0} - {live_bet.current_away_score or 0}" if live_bet.current_home_score is not None else None,
+                    "game_time": live_bet.current_game_status.value if live_bet.current_game_status else None,
+                    "selection": live_bet.selection
+                }
+                result["bets"].append(bet_data)
         
         # Sort by placed_at date (newest first)
         result["bets"].sort(key=lambda x: x["placed_at"], reverse=True)
@@ -3682,7 +3736,7 @@ async def place_live_bet(
             
             return {
                 "status": "success",
-                "bet": result.bet,
+                "bet": result.bet.dict() if result.bet else None,
                 "odds_changed": result.odds_changed,
                 "new_odds": result.new_odds
             }
@@ -3794,10 +3848,16 @@ async def get_user_live_bets(
     try:
         bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled)
         
+        # Convert bets to dict format for JSON response
+        bets_data = []
+        for bet in bets:
+            bet_dict = bet.dict() if hasattr(bet, 'dict') else bet
+            bets_data.append(bet_dict)
+        
         return {
             "status": "success",
-            "count": len(bets),
-            "bets": bets
+            "count": len(bets_data),
+            "bets": bets_data
         }
         
     except Exception as e:
