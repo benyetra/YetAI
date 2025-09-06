@@ -7,16 +7,13 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 import jwt
-from passlib.context import CryptContext
+import bcrypt
 from app.core.config import settings
 from app.services.totp_service import totp_service
 from app.services.email_service import email_service
 import logging
 
 logger = logging.getLogger(__name__)
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 class AuthService:
     """Handle user authentication and session management with in-memory storage"""
@@ -25,8 +22,6 @@ class AuthService:
         # In-memory user storage (replace with database in production)
         self.users = {}
         self.user_id_counter = 1
-        # Add password context to instance
-        self.pwd_context = pwd_context
         
         # Create demo users immediately
         self.create_demo_users()
@@ -37,11 +32,20 @@ class AuthService:
     
     def hash_password(self, password: str) -> str:
         """Hash a password securely"""
-        return pwd_context.hash(password)
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
+        return hashed.decode('utf-8')
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
-        return pwd_context.verify(plain_password, hashed_password)
+        try:
+            return bcrypt.checkpw(
+                plain_password.encode('utf-8'),
+                hashed_password.encode('utf-8')
+            )
+        except Exception as e:
+            logger.error(f"Password verification error: {e}")
+            return False
     
     def generate_token(self, user_id: int, expires_delta: timedelta = None) -> str:
         """Generate a JWT token for user"""

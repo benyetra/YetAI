@@ -32,6 +32,9 @@ from app.services.comprehensive_league_sync import comprehensive_sync_service
 from app.services.sleeper_fantasy_service import SleeperFantasyService
 from app.services.player_analytics_service import PlayerAnalyticsService
 # from app.api.fantasy_v2 import router as fantasy_v2_router  # Has import issues
+from app.api.fantasy import router as fantasy_router
+from app.api.fantasy_analytics import router as fantasy_analytics_router
+from app.api.advanced_analytics import router as advanced_analytics_router
 from app.models.bet_models import *
 from app.models.live_bet_models import *
 from app.models.fantasy_models import FantasyPlatform, FantasyPlayer
@@ -106,8 +109,10 @@ app = FastAPI(
 # Mount static files for avatars
 app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
-# Include V2 API routes (disabled due to import issues)
-# app.include_router(fantasy_v2_router, prefix="/api/fantasy/v2")
+# Include API routers
+app.include_router(fantasy_router, prefix="/api/fantasy", tags=["Fantasy"])
+app.include_router(fantasy_analytics_router, prefix="/api/fantasy/analytics", tags=["Fantasy Analytics"])
+app.include_router(advanced_analytics_router, prefix="/api/advanced", tags=["Advanced Analytics"])
 
 # CORS middleware - MUST be configured properly for OPTIONS requests
 app.add_middleware(

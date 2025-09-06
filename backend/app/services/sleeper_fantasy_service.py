@@ -38,6 +38,10 @@ class SleeperFantasyService(FantasyPlatformInterface):
                 
                 user_data = response.json()
                 
+                # Sleeper API returns null for non-existent users
+                if user_data is None:
+                    raise ValueError(f"Sleeper username '{username}' not found")
+                
                 return {
                     'user_id': user_data['user_id'],
                     'username': user_data['username'],
