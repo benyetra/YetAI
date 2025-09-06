@@ -162,9 +162,9 @@ AI-powered sports betting and fantasy sports platform with advanced analytics an
     - Added robust date/time parsing for game commence times
     - Implemented game state caching for bet placement
   - **Features Added**:
-    - Real-time MLB game data from The Odds API
-    - Live moneyline odds display
-    - Game status tracking (innings, scores, time remaining)
+    - Real-time game data from The Odds API (NFL, NCAAF, NBA, MLB)
+    - Live moneyline, spread, and total odds display
+    - Game status tracking (quarters/innings, scores, time remaining)
     - Market availability indicators
     - Automatic game state updates
     - Bet placement with dynamic cache population
@@ -177,14 +177,29 @@ AI-powered sports betting and fantasy sports platform with advanced analytics an
     - Fixed `_db_bet_to_model` method to properly retrieve team names from database
     - Removed duplicate `_get_game_details` method that had hardcoded placeholders
     - Team names now stored correctly in database and retrieved properly
+  - **Problem 3**: Only moneyline markets showing, not spread/total
+  - **Solution**: Fixed API call parameters - changed from Python lists to comma-separated strings per API documentation
   - **Current Status**:
-    - ✅ Markets endpoint returns 10+ live MLB games with real odds
-    - ✅ Moneyline odds working correctly
+    - ✅ Markets endpoint returns live games with real odds
+    - ✅ All three market types working (moneyline, spread, total)
     - ✅ Bet placement fully functional with cache auto-population
     - ✅ Team names display correctly (e.g., "New York Yankees to Win")
     - ✅ No duplicate bets in active bets display
     - ✅ Complete live betting flow tested and working
-    - ⚠️ Spread/total odds limited by API (only returning h2h markets)
+    - ✅ NCAAF added to sport selection dropdown
+
+- **✅ Automated Bet Resolution System**
+  - **Problem**: Bets never resolved automatically even with manual verification jobs
+  - **Solution**: Implemented dual-layer automated verification system
+  - **Components Added**:
+    - `BetSchedulerService`: Runs every 5 minutes for regular verification
+    - `GameMonitorService`: Monitors active games every minute, triggers immediate verification on completion
+    - Enhanced `BetVerificationService` to update game scores in database
+  - **Features**:
+    - Automatic resolution of wins, losses, pushes, voids
+    - Immediate bet settlement when games complete
+    - Support for both individual and parlay bets
+    - Efficient API usage with game state tracking
 
 ## Data Population Status ✅
 - **Player Analytics Database**:
@@ -212,6 +227,9 @@ AI-powered sports betting and fantasy sports platform with advanced analytics an
 - [ ] Integration with Multiple Sports Data Providers
 
 ## Recent Commits
+- `2025-09-06`: Added NCAAF to live betting dropdown for college football betting
+- `2025-09-06`: Fixed live betting to show all market types (moneyline, spread, total)
+- `2025-09-06`: Implemented automated bet resolution with game monitoring service
 - `2025-09-06`: Fixed live betting display issues - team names and duplicate bets
 - `2025-09-06`: Implemented complete live betting flow with real MLB data
 - `2025-01-06`: Added comprehensive fantasy analytics with historical data integration
