@@ -410,19 +410,20 @@ class LiveBettingServiceDB:
                     sport_mapping = {
                         'americanfootball_nfl': SportKey.AMERICANFOOTBALL_NFL,
                         'basketball_nba': SportKey.BASKETBALL_NBA,
-                        'baseball_mlb': SportKey.BASEBALL_MLB
+                        'baseball_mlb': SportKey.BASEBALL_MLB,
+                        'americanfootball_ncaaf': SportKey.AMERICANFOOTBALL_NCAAF
                     }
                     sports_to_check = [sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)]
                 else:
-                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB]
+                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB, SportKey.AMERICANFOOTBALL_NCAAF]
                 
                 for sport_key in sports_to_check:
                     try:
                         logger.info(f"Fetching odds for sport: {sport_key}")
                         odds_data = await odds_service.get_odds(
                             sport=sport_key.value,
-                            markets=[MarketKey.H2H.value, MarketKey.SPREADS.value, MarketKey.TOTALS.value],
-                            regions=['us'],
+                            markets="h2h,spreads,totals",
+                            regions="us",
                             odds_format=OddsFormat.AMERICAN
                         )
                         
@@ -749,7 +750,7 @@ class LiveBettingServiceDB:
             if is_live:
                 if "baseball" in str(game.sport_key).lower():
                     # Map inning number to status
-                    inning_num = quarter.replace("Inning ", "")
+                    inning_num = str(quarter).replace("Inning ", "")
                     inning_map = {
                         "1": GameStatus.FIRST_INNING,
                         "2": GameStatus.SECOND_INNING,
@@ -775,14 +776,17 @@ class LiveBettingServiceDB:
                     # Default to first quarter for other sports
                     game_status = GameStatus.FIRST_QUARTER
             
-            # Determine available markets
+            # Determine available markets based on what we found
             markets_available = []
-            if moneyline_odds:
+            if moneyline_odds and (moneyline_odds.get('home') or moneyline_odds.get('away')):
                 markets_available.append("moneyline")
-            if spread_odds:
+            if spread_odds and spread_odds.get('point') is not None:
                 markets_available.append("spread")
-            if total_odds:
+            if total_odds and total_odds.get('point') is not None:
                 markets_available.append("total")
+            
+            # Log what markets were found
+            logger.info(f"Markets found for {home_team} vs {away_team}: moneyline={bool(moneyline_odds)}, spread={bool(spread_odds and spread_odds.get('point'))}, total={bool(total_odds and total_odds.get('point'))}")
             
             # Ensure at least one market is available
             if not markets_available:

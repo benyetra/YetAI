@@ -460,6 +460,7 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
           >
             <option value="all">All Sports</option>
             <option value="americanfootball_nfl">NFL</option>
+            <option value="americanfootball_ncaaf">NCAAF</option>
             <option value="basketball_nba">NBA</option>
             <option value="baseball_mlb">MLB</option>
           </select>

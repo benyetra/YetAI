@@ -60,6 +60,7 @@ export default function BetPage() {
           const defaultSport = activeSports.find((s: any) => s.key === 'americanfootball_nfl') || 
                              activeSports.find((s: any) => s.key === 'basketball_nba') ||
                              activeSports.find((s: any) => s.key === 'baseball_mlb') ||
+                             activeSports.find((s: any) => s.key === 'americanfootball_ncaaf') ||
                              activeSports[0];
           if (defaultSport) {
             setSelectedSport(defaultSport.key);

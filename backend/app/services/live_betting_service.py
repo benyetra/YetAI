@@ -249,11 +249,12 @@ class LiveBettingService:
                     sport_mapping = {
                         'americanfootball_nfl': SportKey.AMERICANFOOTBALL_NFL,
                         'basketball_nba': SportKey.BASKETBALL_NBA,
-                        'baseball_mlb': SportKey.BASEBALL_MLB
+                        'baseball_mlb': SportKey.BASEBALL_MLB,
+                        'americanfootball_ncaaf': SportKey.AMERICANFOOTBALL_NCAAF
                     }
                     sports_to_check = [sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)]
                 else:
-                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB]
+                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB, SportKey.AMERICANFOOTBALL_NCAAF]
                 
                 for sport_key in sports_to_check:
                     try:
@@ -357,6 +358,7 @@ class LiveBettingService:
                 'americanfootball_nfl': 'NFL',
                 'basketball_nba': 'NBA', 
                 'baseball_mlb': 'MLB',
+                'americanfootball_ncaaf': 'NCAAF',
                 'icehockey_nhl': 'NHL'
             }
             sport = sport_mapping.get(game.sport_key.lower(), game.sport_key.upper())

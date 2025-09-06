@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from app.services.data_pipeline import sports_pipeline
 from app.services.fantasy_pipeline import fantasy_pipeline
@@ -27,6 +27,7 @@ from app.services.google_oauth_service import google_oauth_service
 from app.services.betting_analytics_service import betting_analytics_service
 from app.services.bet_verification_service import bet_verification_service
 from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cleanup_scheduler
+from app.services.game_monitor_service import game_monitor, init_game_monitor, cleanup_game_monitor
 from app.services.fantasy_service import FantasyService
 from app.services.comprehensive_league_sync import comprehensive_sync_service
 from app.services.sleeper_fantasy_service import SleeperFantasyService
@@ -3820,11 +3821,94 @@ async def execute_cash_out(
 
 @app.get("/api/live-bets/markets")
 async def get_live_betting_markets(
-    sport: Optional[str] = None
+    sport: Optional[str] = None,
+    demo: bool = False  # Add demo parameter for testing
 ):
     """Get available live betting markets with real sports data (public endpoint)"""
     try:
-        print(f"Live betting markets endpoint called with sport: {sport}")
+        print(f"Live betting markets endpoint called with sport: {sport}, demo: {demo}")
+        
+        # If demo mode, return mock data with all market types
+        if demo:
+            from app.models.live_bet_models import LiveBettingMarket, GameStatus
+            demo_markets = [
+                LiveBettingMarket(
+                    game_id="demo_nfl_1",
+                    sport="americanfootball_nfl",
+                    home_team="Kansas City Chiefs",
+                    away_team="Buffalo Bills",
+                    game_status=GameStatus.SECOND_QUARTER,
+                    home_score=14,
+                    away_score=10,
+                    time_remaining="8:23",
+                    commence_time=datetime.utcnow() - timedelta(minutes=30),
+                    markets_available=["moneyline", "spread", "total"],
+                    moneyline_home=-150,
+                    moneyline_away=130,
+                    spread_line=-3.5,
+                    spread_home_odds=-110,
+                    spread_away_odds=-110,
+                    total_line=48.5,
+                    total_over_odds=-105,
+                    total_under_odds=-115,
+                    last_updated=datetime.utcnow()
+                ),
+                LiveBettingMarket(
+                    game_id="demo_nba_1",
+                    sport="basketball_nba",
+                    home_team="Los Angeles Lakers",
+                    away_team="Boston Celtics",
+                    game_status=GameStatus.THIRD_QUARTER,
+                    home_score=78,
+                    away_score=82,
+                    time_remaining="5:12",
+                    commence_time=datetime.utcnow() - timedelta(hours=1),
+                    markets_available=["moneyline", "spread", "total"],
+                    moneyline_home=180,
+                    moneyline_away=-210,
+                    spread_line=5.5,
+                    spread_home_odds=-108,
+                    spread_away_odds=-112,
+                    total_line=228.5,
+                    total_over_odds=-110,
+                    total_under_odds=-110,
+                    last_updated=datetime.utcnow()
+                ),
+                LiveBettingMarket(
+                    game_id="demo_mlb_1",
+                    sport="baseball_mlb",
+                    home_team="New York Yankees",
+                    away_team="Houston Astros",
+                    game_status=GameStatus.FIFTH_INNING,
+                    home_score=3,
+                    away_score=2,
+                    time_remaining="Top",
+                    commence_time=datetime.utcnow() - timedelta(hours=1, minutes=30),
+                    markets_available=["moneyline", "spread", "total"],
+                    moneyline_home=-125,
+                    moneyline_away=105,
+                    spread_line=-1.5,
+                    spread_home_odds=150,
+                    spread_away_odds=-180,
+                    total_line=8.5,
+                    total_over_odds=-120,
+                    total_under_odds=100,
+                    last_updated=datetime.utcnow()
+                )
+            ]
+            
+            # Filter by sport if specified
+            if sport:
+                demo_markets = [m for m in demo_markets if m.sport == sport]
+            
+            return {
+                "status": "success",
+                "count": len(demo_markets),
+                "markets": demo_markets,
+                "demo": True
+            }
+        
+        # Otherwise get real markets
         markets = await live_betting_service.get_live_betting_markets(sport)
         print(f"Service returned {len(markets)} markets")
         
@@ -4792,7 +4876,10 @@ async def startup_event():
     # Start the bet verification scheduler
     init_scheduler()
     
-    logger.info("WebSocket services, sports scheduler, bet verification scheduler, and database started")
+    # Start the game monitor service for immediate bet resolution
+    init_game_monitor()
+    
+    logger.info("WebSocket services, sports scheduler, bet verification scheduler, game monitor, and database started")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -4802,6 +4889,12 @@ async def shutdown_event():
         logger.info("Bet verification scheduler stopped")
     except Exception as e:
         logger.error(f"Error during scheduler cleanup: {e}")
+    
+    try:
+        cleanup_game_monitor()
+        logger.info("Game monitor service stopped")
+    except Exception as e:
+        logger.error(f"Error during game monitor cleanup: {e}")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -4948,10 +5041,23 @@ async def get_verification_stats(current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
-        stats = bet_scheduler.get_stats()
+        scheduler_stats = bet_scheduler.get_stats()
+        
+        # Add game monitor status
+        monitor_status = {
+            "game_monitor": {
+                "running": game_monitor._running,
+                "active_games": len(game_monitor.active_games),
+                "recently_completed": len(game_monitor.recently_completed)
+            }
+        }
+        
         return {
             "status": "success",
-            "data": stats
+            "data": {
+                **scheduler_stats,
+                **monitor_status
+            }
         }
     except Exception as e:
         logger.error(f"Error getting verification stats: {e}")
