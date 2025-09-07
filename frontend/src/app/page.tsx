@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { AuthModal } from '@/components/Auth';
 import { useAuth } from '@/components/Auth';
@@ -11,7 +11,7 @@ import {
   ChevronRight, Star, ArrowRight, DollarSign, Activity 
 } from 'lucide-react';
 
-export default function HomePage() {
+function HomePageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { isAuthenticated } = useAuth();
@@ -157,6 +157,14 @@ export default function HomePage() {
         initialMode={authMode}
       />
     </Layout>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <HomePageContent />
+    </Suspense>
   );
 }
 

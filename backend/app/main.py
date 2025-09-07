@@ -4427,17 +4427,29 @@ async def startup_event():
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
     
-    # Start background tasks for live updates
-    asyncio.create_task(simulate_odds_updates())
-    asyncio.create_task(simulate_score_updates())
+    # Start background tasks for live updates (wrapped in try/except)
+    try:
+        asyncio.create_task(simulate_odds_updates())
+        asyncio.create_task(simulate_score_updates())
+        logger.info("WebSocket simulation tasks started")
+    except Exception as e:
+        logger.error(f"Failed to start WebSocket tasks: {e}")
     
-    # Start the scheduler for live sports data updates
-    await scheduler_service.start()
+    # Start the scheduler for live sports data updates (wrapped in try/except)
+    try:
+        await scheduler_service.start()
+        logger.info("Scheduler service started")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler service: {e}")
     
-    # Start the bet verification scheduler
-    init_scheduler()
+    # Start the bet verification scheduler (wrapped in try/except)
+    try:
+        init_scheduler()
+        logger.info("Bet verification scheduler started")
+    except Exception as e:
+        logger.error(f"Failed to start bet verification scheduler: {e}")
     
-    logger.info("WebSocket services, sports scheduler, bet verification scheduler, and database started")
+    logger.info("Application startup completed (some services may have failed)")
 
 @app.on_event("shutdown")
 async def shutdown_event():

@@ -1,0 +1,203 @@
+name: Backend CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-ci-cd.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'backend/**'
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test_password
+          POSTGRES_USER: test_user
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio pytest-cov httpx
+
+    - name: Set up test environment
+      run: |
+        export DATABASE_URL="postgresql://test_user:test_password@localhost:5432/test_db"
+        export ENVIRONMENT="testing"
+        export SECRET_KEY="test-secret-key"
+        export OPENAI_API_KEY="${{ secrets.OPENAI_API_KEY }}"
+
+    - name: Run linting
+      run: |
+        pip install flake8 black
+        black --check .
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    - name: Run type checking
+      run: |
+        pip install mypy
+        mypy --ignore-missing-imports .
+      continue-on-error: true
+
+    - name: Run tests
+      env:
+        DATABASE_URL: "postgresql://test_user:test_password@localhost:5432/test_db"
+        ENVIRONMENT: "testing"
+        SECRET_KEY: "test-secret-key"
+        OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      run: |
+        pytest --cov=app --cov-report=xml --cov-report=html -v
+
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/coverage.xml
+        flags: backend
+        name: backend-coverage
+
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install security tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit safety
+
+    - name: Run Bandit security scan
+      run: bandit -r . -x tests/
+
+    - name: Check for known security vulnerabilities
+      run: safety check -r requirements.txt
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.ref == 'refs/heads/develop'
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Railway CLI
+      run: |
+        curl -fsSL https://railway.app/install.sh | sh
+        echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+    - name: Deploy to Railway Staging
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+      run: |
+        railway login --token $RAILWAY_TOKEN
+        railway up --service staging-backend --detach
+
+    - name: Run deployment health check
+      run: |
+        sleep 30
+        curl -f https://staging-backend.up.railway.app/health || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, security-scan]
+    if: github.ref == 'refs/heads/main'
+    defaults:
+      run:
+        working-directory: ./backend
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Install Railway CLI
+      run: |
+        curl -fsSL https://railway.app/install.sh | sh
+        echo "$HOME/.railway/bin" >> $GITHUB_PATH
+
+    - name: Deploy to Railway Production
+      env:
+        RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+      run: |
+        railway login --token $RAILWAY_TOKEN
+        railway up --detach
+
+    - name: Run deployment health check
+      run: |
+        sleep 60
+        curl -f https://backend-production-f7af.up.railway.app/health || exit 1
+
+    - name: Test API endpoints
+      run: |
+        # Test core endpoints
+        curl -f https://backend-production-f7af.up.railway.app/api/status
+        curl -f https://backend-production-f7af.up.railway.app/test-db
+        curl -f https://backend-production-f7af.up.railway.app/api/chat/suggestions
+        echo "✅ All API endpoints responding correctly"
+
+    - name: Notify deployment success
+      if: success()
+      run: |
+        echo "🚀 Backend deployment to production successful!"
+        echo "✅ Health checks passed"
+        echo "✅ API endpoints validated"
+
+  notify-failure:
+    name: Notify on Failure
+    runs-on: ubuntu-latest
+    needs: [test, security-scan, deploy-production]
+    if: failure()
+    
+    steps:
+    - name: Notify failure
+      run: |
+        echo "❌ Backend CI/CD pipeline failed"
+        echo "Please check the logs and fix issues before retrying"
