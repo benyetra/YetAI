@@ -1,7 +1,7 @@
 import asyncio
 import random
 from datetime import datetime
-from app.services.live_betting_service import live_betting_service
+from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
 from app.services.websocket_manager import manager
 from app.models.live_bet_models import (
     LiveGameUpdate, LiveOddsUpdate, GameStatus

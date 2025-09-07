@@ -623,6 +623,91 @@ class BetServiceDB:
         except ValueError:
             # Fallback to current time if parsing fails
             return datetime.utcnow()
+    
+    async def cancel_bet(self, user_id: int, bet_id: str) -> Dict:
+        """Cancel a pending bet"""
+        try:
+            db = SessionLocal()
+            try:
+                # Find the bet
+                bet = db.query(Bet).filter(
+                    and_(
+                        Bet.id == bet_id,
+                        Bet.user_id == user_id
+                    )
+                ).first()
+                
+                if not bet:
+                    return {"success": False, "error": "Bet not found"}
+                
+                if bet.status != BetStatus.PENDING:
+                    return {"success": False, "error": "Can only cancel pending bets"}
+                
+                # Check if game has started (would need real game data)
+                # For now, allow cancellation if placed within last 5 minutes
+                time_since_placed = datetime.utcnow() - bet.placed_at.replace(tzinfo=None)
+                if time_since_placed > timedelta(minutes=5):
+                    return {"success": False, "error": "Cancellation window has passed"}
+                
+                # Update bet status
+                bet.status = BetStatus.CANCELLED
+                bet.settled_at = datetime.utcnow()
+                
+                db.commit()
+                
+                return {"success": True, "message": "Bet cancelled successfully"}
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Error cancelling bet: {e}")
+            return {"success": False, "error": str(e)}
+    
+    async def simulate_bet_results(self, user_id: int) -> Dict:
+        """Simulate some bet results for demo purposes"""
+        try:
+            db = SessionLocal()
+            try:
+                # Get pending bets for user
+                pending_bets = db.query(Bet).filter(
+                    and_(
+                        Bet.user_id == user_id,
+                        Bet.status == BetStatus.PENDING
+                    )
+                ).limit(5).all()
+                
+                if not pending_bets:
+                    return {"success": False, "error": "No pending bets found"}
+                
+                import random
+                results_set = 0
+                
+                for bet in pending_bets:
+                    # Randomly set results (70% win rate for demo)
+                    if random.random() < 0.7:
+                        bet.status = BetStatus.WON
+                        bet.result_amount = bet.potential_win
+                    else:
+                        bet.status = BetStatus.LOST
+                        bet.result_amount = 0
+                    
+                    bet.settled_at = datetime.utcnow()
+                    results_set += 1
+                
+                db.commit()
+                
+                return {
+                    "success": True,
+                    "message": f"Simulated results for {results_set} bets"
+                }
+                
+            finally:
+                db.close()
+                
+        except Exception as e:
+            logger.error(f"Error simulating results: {e}")
+            return {"success": False, "error": str(e)}
 
 # Initialize service
 bet_service_db = BetServiceDB()

@@ -24,8 +24,8 @@ logger = logging.getLogger(__name__)
 class ScheduleConfig:
     """Configuration for scheduled verification"""
     enabled: bool = True
-    interval_minutes: int = 5  # Run every 5 minutes for faster bet resolution
-    retry_interval_minutes: int = 2  # Retry failed runs after 2 minutes
+    interval_minutes: int = 15  # Run every 15 minutes
+    retry_interval_minutes: int = 5  # Retry failed runs after 5 minutes
     max_retries: int = 3
     quiet_hours_start: int = 2  # 2 AM
     quiet_hours_end: int = 6    # 6 AM (UTC)

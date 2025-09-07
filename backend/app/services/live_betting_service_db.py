@@ -37,8 +37,6 @@ class LiveBettingServiceDB:
         self.cache_timestamp: Optional[datetime] = None
         # Cache for game team names and sport details
         self.game_details_cache: Dict[str, tuple] = {}
-        # Cache markets for bet placement
-        self.cached_markets: List[LiveBettingMarket] = []
         
     async def get_real_live_scores(self, sport_key: str) -> Dict[str, Any]:
         """Fetch real live scores from The Odds API"""
@@ -85,43 +83,10 @@ class LiveBettingServiceDB:
         # Get current game state or create one for test games
         game_state = self.live_games.get(request.game_id)
         if not game_state:
-            # Try to find the game in cached markets and create a game state
-            for market in self.cached_markets:
-                if market.game_id == request.game_id:
-                    game_state = LiveGameUpdate(
-                        game_id=request.game_id,
-                        status=market.game_status,
-                        home_score=market.home_score,
-                        away_score=market.away_score,
-                        time_remaining=market.time_remaining or "",
-                        timestamp=datetime.utcnow()
-                    )
-                    self.live_games[request.game_id] = game_state
-                    
-                    # Also populate odds cache
-                    self.live_odds[request.game_id] = {
-                        'moneyline': {
-                            'home': market.moneyline_home,
-                            'away': market.moneyline_away
-                        },
-                        'spread': {
-                            'point': market.spread_line,
-                            'home_odds': market.spread_home_odds,
-                            'away_odds': market.spread_away_odds
-                        } if market.spread_line else {},
-                        'total': {
-                            'point': market.total_line,
-                            'over_odds': market.total_over_odds,
-                            'under_odds': market.total_under_odds
-                        } if market.total_line else {}
-                    }
-                    break
-            
-            if not game_state:
-                return LiveBetResponse(
-                    success=False,
-                    error="Game not available for live betting - please refresh markets first"
-                )
+            return LiveBetResponse(
+                success=False,
+                error="Game not available for live betting - no live data available"
+            )
         
         # Check if game is still live
         if game_state.status in [GameStatus.FINAL, GameStatus.CANCELLED, GameStatus.POSTPONED]:
@@ -218,12 +183,10 @@ class LiveBettingServiceDB:
                 db.close()
                 
         except Exception as e:
-            import traceback
             logger.error(f"Error placing live bet: {e}")
-            logger.error(f"Traceback: {traceback.format_exc()}")
             return LiveBetResponse(
                 success=False,
-                error=f"Failed to place bet: {str(e)}"
+                error="Failed to place bet"
             )
     
     def get_cash_out_offer(self, bet_id: str, user_id: int) -> Optional[CashOutOffer]:
@@ -410,20 +373,19 @@ class LiveBettingServiceDB:
                     sport_mapping = {
                         'americanfootball_nfl': SportKey.AMERICANFOOTBALL_NFL,
                         'basketball_nba': SportKey.BASKETBALL_NBA,
-                        'baseball_mlb': SportKey.BASEBALL_MLB,
-                        'americanfootball_ncaaf': SportKey.AMERICANFOOTBALL_NCAAF
+                        'baseball_mlb': SportKey.BASEBALL_MLB
                     }
                     sports_to_check = [sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)]
                 else:
-                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB, SportKey.AMERICANFOOTBALL_NCAAF]
+                    sports_to_check = [SportKey.AMERICANFOOTBALL_NFL, SportKey.BASKETBALL_NBA, SportKey.BASEBALL_MLB]
                 
                 for sport_key in sports_to_check:
                     try:
                         logger.info(f"Fetching odds for sport: {sport_key}")
                         odds_data = await odds_service.get_odds(
                             sport=sport_key.value,
-                            markets="h2h,spreads,totals",
-                            regions="us",
+                            markets=[MarketKey.H2H.value, MarketKey.SPREADS.value, MarketKey.TOTALS.value],
+                            regions=['us'],
                             odds_format=OddsFormat.AMERICAN
                         )
                         
@@ -452,9 +414,6 @@ class LiveBettingServiceDB:
                         
         except Exception as e:
             logger.error(f"Error in main try block: {e}")
-        
-        # Cache the markets for bet placement
-        self.cached_markets = markets
         
         logger.info(f"Total markets created from real API: {len(markets)}")
         logger.info(f"Returning {len(markets)} live markets")
@@ -532,21 +491,14 @@ class LiveBettingServiceDB:
             elif "quarter" in game_time.lower():
                 game_status = GameStatus.FIRST_QUARTER
         
-        # Get team names and sport information from database
-        home_team = getattr(db_bet, 'home_team', None)
-        away_team = getattr(db_bet, 'away_team', None)
-        sport = getattr(db_bet, 'sport', None)
+        # Get team names and sport information safely
+        home_team = getattr(db_bet, 'home_team', None) or "Home Team"
+        away_team = getattr(db_bet, 'away_team', None) or "Away Team"
+        sport = getattr(db_bet, 'sport', None) or "MLB"
         
         # If database doesn't have team info, try to get from game details cache
-        if not home_team or not away_team:
+        if not getattr(db_bet, 'home_team', None) or not getattr(db_bet, 'away_team', None):
             home_team, away_team, sport = self._get_game_details(db_bet.game_id)
-            # Final fallback if still not found
-            if not home_team:
-                home_team = "Home Team"
-            if not away_team:
-                away_team = "Away Team"
-            if not sport:
-                sport = "MLB"
         
         return LiveBet(
             id=db_bet.id,
@@ -596,264 +548,9 @@ class LiveBettingServiceDB:
     
     # Include all the helper methods from the original service
     async def _create_simple_live_market(self, game) -> Optional[LiveBettingMarket]:
-        """Create a live betting market from real API game data"""
-        try:
-            # Extract basic game info
-            game_id = game.id
-            home_team = game.home_team
-            away_team = game.away_team
-            
-            # Handle commence_time - it might be a string or datetime object
-            commence_time = game.commence_time
-            logger.info(f"DEBUG: commence_time type: {type(commence_time)}, value: {commence_time}")
-            
-            if isinstance(commence_time, str):
-                try:
-                    # Parse ISO format string
-                    if 'T' in commence_time:
-                        # ISO format with T separator
-                        if commence_time.endswith('Z'):
-                            start_time = datetime.fromisoformat(commence_time.replace('Z', '+00:00'))
-                        else:
-                            start_time = datetime.fromisoformat(commence_time)
-                    else:
-                        # Try parsing as a different format
-                        from dateutil import parser
-                        start_time = parser.parse(commence_time)
-                except Exception as e:
-                    logger.error(f"Failed to parse commence_time string '{commence_time}': {e}")
-                    # Use a default time for debugging
-                    start_time = datetime.utcnow() + timedelta(hours=2)
-            elif hasattr(commence_time, 'year'):
-                # Already a datetime object
-                start_time = commence_time
-            else:
-                logger.error(f"Unexpected commence_time type: {type(commence_time)}")
-                # Use a default time
-                start_time = datetime.utcnow() + timedelta(hours=2)
-            
-            # Get current time
-            now = datetime.utcnow()
-            
-            # Calculate time difference (negative means future game)
-            time_since_start = (now - start_time.replace(tzinfo=None)).total_seconds() / 3600
-            
-            # Show upcoming games (within 24 hours) and recently started games (within 4 hours)
-            if time_since_start < -24 or time_since_start > 4:
-                logger.debug(f"Skipping game {game_id}: outside time window (starts in {-time_since_start:.1f} hours)" if time_since_start < 0 else f"Skipping game {game_id}: too old (started {time_since_start:.1f} hours ago)")
-                return None
-            
-            # Determine if game is likely live or upcoming
-            is_live = 0 < time_since_start < 3.5  # Most games finish within 3.5 hours
-            
-            # Extract odds from bookmakers
-            moneyline_odds, spread_odds, total_odds = {}, {}, {}
-            bookmaker_name = ""
-            
-            if game.bookmakers:
-                bookmaker = game.bookmakers[0]
-                bookmaker_name = getattr(bookmaker, 'title', getattr(bookmaker, 'key', 'Unknown'))
-                
-                # Debug: log available markets
-                available_markets = []
-                for market in bookmaker.markets:
-                    market_key = market.get('key') if isinstance(market, dict) else getattr(market, 'key', None)
-                    available_markets.append(market_key)
-                logger.info(f"Available markets for {home_team} vs {away_team}: {available_markets}")
-                
-                for market in bookmaker.markets:
-                    market_key = market.get('key') if isinstance(market, dict) else getattr(market, 'key', None)
-                    
-                    if market_key == 'h2h':
-                        # Moneyline odds
-                        outcomes = market.get('outcomes') if isinstance(market, dict) else getattr(market, 'outcomes', [])
-                        for outcome in outcomes:
-                            name = outcome.get('name') if isinstance(outcome, dict) else getattr(outcome, 'name', '')
-                            price = outcome.get('price') if isinstance(outcome, dict) else getattr(outcome, 'price', 0)
-                            if name == home_team:
-                                moneyline_odds['home'] = price
-                            elif name == away_team:
-                                moneyline_odds['away'] = price
-                    
-                    elif market_key == 'spreads':
-                        # Spread odds
-                        outcomes = market.get('outcomes') if isinstance(market, dict) else getattr(market, 'outcomes', [])
-                        for outcome in outcomes:
-                            name = outcome.get('name') if isinstance(outcome, dict) else getattr(outcome, 'name', '')
-                            price = outcome.get('price') if isinstance(outcome, dict) else getattr(outcome, 'price', 0)
-                            point = outcome.get('point') if isinstance(outcome, dict) else getattr(outcome, 'point', 0)
-                            if name == home_team:
-                                spread_odds['point'] = point
-                                spread_odds['home_odds'] = price
-                            elif name == away_team:
-                                spread_odds['away_odds'] = price
-                    
-                    elif market_key == 'totals':
-                        # Total odds
-                        outcomes = market.get('outcomes') if isinstance(market, dict) else getattr(market, 'outcomes', [])
-                        for outcome in outcomes:
-                            name = outcome.get('name') if isinstance(outcome, dict) else getattr(outcome, 'name', '')
-                            price = outcome.get('price') if isinstance(outcome, dict) else getattr(outcome, 'price', 0)
-                            point = outcome.get('point') if isinstance(outcome, dict) else getattr(outcome, 'point', 0)
-                            if name == 'Over':
-                                total_odds['point'] = point
-                                total_odds['over_odds'] = price
-                            elif name == 'Under':
-                                total_odds['under_odds'] = price
-            
-            # Simulate live scores if game is likely in progress
-            home_score = 0
-            away_score = 0
-            quarter = "Pre-Game"
-            time_remaining = "Starting Soon"
-            
-            if is_live:
-                # Estimate game progress
-                if time_since_start < 0.5:
-                    quarter = "1st Quarter"
-                    time_remaining = "12:00"
-                elif time_since_start < 1:
-                    quarter = "2nd Quarter"
-                    time_remaining = "8:30"
-                elif time_since_start < 1.5:
-                    quarter = "Halftime"
-                    time_remaining = ""
-                elif time_since_start < 2:
-                    quarter = "3rd Quarter"
-                    time_remaining = "10:15"
-                elif time_since_start < 2.5:
-                    quarter = "4th Quarter"
-                    time_remaining = "5:45"
-                else:
-                    quarter = "Final"
-                    time_remaining = ""
-                
-                # Generate reasonable scores based on sport and time
-                if "NBA" in str(game.sport_key).upper() or "basketball" in str(game.sport_key).lower():
-                    home_score = int(time_since_start * 35)
-                    away_score = int(time_since_start * 33)
-                elif "NFL" in str(game.sport_key).upper() or "football" in str(game.sport_key).lower():
-                    home_score = int(time_since_start * 8)
-                    away_score = int(time_since_start * 7)
-                elif "MLB" in str(game.sport_key).upper() or "baseball" in str(game.sport_key).lower():
-                    home_score = int(time_since_start * 2.5)
-                    away_score = int(time_since_start * 2)
-                    quarter = f"Inning {min(int(time_since_start * 3) + 1, 9)}"
-                    time_remaining = "Top" if int(time_since_start * 6) % 2 == 0 else "Bottom"
-                else:
-                    home_score = int(time_since_start * 1.5)
-                    away_score = int(time_since_start * 1.2)
-            
-            # Map period to game status enum
-            from app.models.live_bet_models import GameStatus
-            game_status = GameStatus.PRE_GAME
-            if is_live:
-                if "baseball" in str(game.sport_key).lower():
-                    # Map inning number to status
-                    inning_num = str(quarter).replace("Inning ", "")
-                    inning_map = {
-                        "1": GameStatus.FIRST_INNING,
-                        "2": GameStatus.SECOND_INNING,
-                        "3": GameStatus.THIRD_INNING,
-                        "4": GameStatus.FOURTH_INNING,
-                        "5": GameStatus.FIFTH_INNING,
-                        "6": GameStatus.SIXTH_INNING,
-                        "7": GameStatus.SEVENTH_INNING,
-                        "8": GameStatus.EIGHTH_INNING,
-                        "9": GameStatus.NINTH_INNING,
-                    }
-                    game_status = inning_map.get(inning_num, GameStatus.FIRST_INNING)
-                elif "basketball" in str(game.sport_key).lower():
-                    # Map quarter to status
-                    quarter_map = {
-                        "Q1": GameStatus.FIRST_QUARTER,
-                        "Q2": GameStatus.SECOND_QUARTER,
-                        "Q3": GameStatus.THIRD_QUARTER,
-                        "Q4": GameStatus.FOURTH_QUARTER,
-                    }
-                    game_status = quarter_map.get(quarter, GameStatus.FIRST_QUARTER)
-                else:
-                    # Default to first quarter for other sports
-                    game_status = GameStatus.FIRST_QUARTER
-            
-            # Determine available markets based on what we found
-            markets_available = []
-            if moneyline_odds and (moneyline_odds.get('home') or moneyline_odds.get('away')):
-                markets_available.append("moneyline")
-            if spread_odds and spread_odds.get('point') is not None:
-                markets_available.append("spread")
-            if total_odds and total_odds.get('point') is not None:
-                markets_available.append("total")
-            
-            # Log what markets were found
-            logger.info(f"Markets found for {home_team} vs {away_team}: moneyline={bool(moneyline_odds)}, spread={bool(spread_odds and spread_odds.get('point'))}, total={bool(total_odds and total_odds.get('point'))}")
-            
-            # Ensure at least one market is available
-            if not markets_available:
-                markets_available = ["moneyline"]
-            
-            # Create the live betting market with correct fields
-            market = LiveBettingMarket(
-                game_id=game_id,
-                sport=str(game.sport_key),
-                home_team=home_team,
-                away_team=away_team,
-                game_status=game_status,
-                home_score=home_score,
-                away_score=away_score,
-                time_remaining=time_remaining,
-                commence_time=start_time,
-                markets_available=markets_available,
-                moneyline_home=moneyline_odds.get('home') if moneyline_odds else None,
-                moneyline_away=moneyline_odds.get('away') if moneyline_odds else None,
-                spread_line=spread_odds.get('point') if spread_odds else None,
-                spread_home_odds=spread_odds.get('home_odds') if spread_odds else None,
-                spread_away_odds=spread_odds.get('away_odds') if spread_odds else None,
-                total_line=total_odds.get('point') if total_odds else None,
-                total_over_odds=total_odds.get('over_odds') if total_odds else None,
-                total_under_odds=total_odds.get('under_odds') if total_odds else None,
-                last_updated=datetime.utcnow()
-            )
-            
-            logger.info(f"Created live market for: {home_team} vs {away_team} (Live: {is_live})")
-            
-            # Also populate live_games dict for bet placement
-            if is_live:
-                from app.models.live_bet_models import LiveGameUpdate
-                self.live_games[game_id] = LiveGameUpdate(
-                    game_id=game_id,
-                    status=game_status,
-                    home_score=home_score,
-                    away_score=away_score,
-                    time_remaining=time_remaining,
-                    quarter=None,
-                    period=None,
-                    inning=int(quarter.replace("Inning ", "")) if "Inning" in quarter else None,
-                    possession=None,
-                    last_play=None,
-                    timestamp=datetime.utcnow()
-                )
-                
-                # Also store live odds for this game
-                self.live_odds[game_id] = {
-                    'moneyline': {'home': moneyline_odds.get('home'), 'away': moneyline_odds.get('away')},
-                    'spread': spread_odds if spread_odds else {},
-                    'total': total_odds if total_odds else {}
-                }
-            
-            return market
-            
-        except Exception as e:
-            logger.error(f"Error creating live market from game: {str(e)}")
-            # Print detailed error for debugging
-            from pydantic import ValidationError
-            if isinstance(e, ValidationError):
-                for error in e.errors():
-                    field = ' -> '.join(str(loc) for loc in error.get('loc', ['unknown']))
-                    logger.error(f"  Validation Error - Field: {field}, Error: {error.get('msg', 'unknown')}, Input: {error.get('input', 'N/A')}")
-            import traceback
-            logger.error(f"Full traceback:\n{traceback.format_exc()}")
-            return None    
+        """Disabled to prevent fake live markets - only show real live data"""
+        logger.info(f"Skipping game {game.id} to avoid creating fake live markets")
+        return None    
     def _extract_odds_from_game(self, game, market_type: str) -> tuple:
         """Extract odds for a specific market type from a Game object"""
         bookmakers = game.bookmakers
@@ -909,41 +606,6 @@ class LiveBettingServiceDB:
                     return result, bookmaker_name
         
         return {}, ""
-    
-    def _get_game_details(self, game_id: str) -> tuple:
-        """Get game details from cached markets"""
-        # Try to get from recent markets cache
-        logger.info(f"Looking for game {game_id} in {len(self.cached_markets)} cached markets")
-        for market in self.cached_markets:
-            if market.game_id == game_id:
-                logger.info(f"Found game {game_id}: {market.home_team} vs {market.away_team}")
-                return market.home_team, market.away_team, market.sport
-        
-        # Fallback to defaults
-        logger.warning(f"Game {game_id} not found in cached markets, using defaults")
-        return "Home Team", "Away Team", "unknown"
-    
-    def _get_market_odds(self, odds_data: dict, bet_type: str, selection: str) -> Optional[float]:
-        """Extract specific odds from odds data"""
-        if bet_type == "moneyline":
-            moneyline = odds_data.get('moneyline', {})
-            if isinstance(moneyline, dict):
-                return moneyline.get(selection)
-        elif bet_type == "spread":
-            spread = odds_data.get('spread', {})
-            if isinstance(spread, dict):
-                if selection == "home":
-                    return spread.get('home_odds')
-                elif selection == "away":
-                    return spread.get('away_odds')
-        elif bet_type == "total":
-            total = odds_data.get('total', {})
-            if isinstance(total, dict):
-                if selection == "over":
-                    return total.get('over_odds')
-                elif selection == "under":
-                    return total.get('under_odds')
-        return None
     
     def _calculate_potential_win(self, amount: float, odds: float) -> float:
         """Calculate potential win from American odds"""
@@ -1029,13 +691,60 @@ class LiveBettingServiceDB:
         """Get current market odds for a specific bet"""
         
         if bet_type == "moneyline":
-            if isinstance(odds_data, dict):
-                return odds_data.get('home' if selection == "home" else 'away')
-            else:
-                return odds_data.home_odds if selection == "home" else odds_data.away_odds
+            return odds_data.home_odds if selection == "home" else odds_data.away_odds
         # Would handle spread and total odds
         return None
     
+    def _get_game_details(self, game_id: str) -> tuple:
+        """Get real team names and sport from cached game details or create reasonable defaults"""
+        
+        # Check if we have cached details for this game
+        if game_id in self.game_details_cache:
+            return self.game_details_cache[game_id]
+        
+        # Try to extract from any live betting markets we have
+        for market_id, market_data in self.game_state_cache.items():
+            if market_data.get('game_id') == game_id:
+                home_team = market_data.get('home_team', 'Home Team')
+                away_team = market_data.get('away_team', 'Away Team') 
+                sport = market_data.get('sport', 'MLB')
+                self.game_details_cache[game_id] = (home_team, away_team, sport)
+                return (home_team, away_team, sport)
+        
+        # Default fallback - create readable team names from game ID
+        if len(game_id) >= 16:
+            # For long game IDs, create team names based on common MLB teams
+            mlb_teams = [
+                "Red Sox", "Yankees", "Orioles", "Blue Jays", "Rays",
+                "White Sox", "Guardians", "Tigers", "Royals", "Twins",
+                "Astros", "Angels", "Athletics", "Mariners", "Rangers",
+                "Braves", "Marlins", "Mets", "Phillies", "Nationals",
+                "Cubs", "Reds", "Brewers", "Pirates", "Cardinals",
+                "Diamondbacks", "Rockies", "Dodgers", "Padres", "Giants"
+            ]
+            
+            # Use hash of game ID to consistently select teams
+            import hashlib
+            game_hash = int(hashlib.md5(game_id.encode()).hexdigest()[:8], 16)
+            home_idx = game_hash % len(mlb_teams)
+            away_idx = (game_hash // len(mlb_teams)) % len(mlb_teams)
+            
+            # Ensure teams are different
+            if home_idx == away_idx:
+                away_idx = (away_idx + 1) % len(mlb_teams)
+            
+            home_team = mlb_teams[home_idx]
+            away_team = mlb_teams[away_idx]
+            sport = "MLB"
+        else:
+            # For short game IDs, use generic names
+            home_team = f"Team {game_id[:4]}"
+            away_team = f"Team {game_id[4:8] if len(game_id) > 4 else 'Away'}"
+            sport = "MLB"
+        
+        # Cache the result
+        self.game_details_cache[game_id] = (home_team, away_team, sport)
+        return (home_team, away_team, sport)
 
 # Initialize service
 live_betting_service_db = LiveBettingServiceDB()

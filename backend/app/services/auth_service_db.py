@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 import jwt
-import bcrypt
+from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.config import settings
@@ -20,33 +20,25 @@ import re
 
 logger = logging.getLogger(__name__)
 
+# Password hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
 class AuthServiceDB:
     """Database-powered user authentication and session management"""
     
     def __init__(self):
+        self.pwd_context = pwd_context
+        
         # Create demo users on initialization if they don't exist
         self._create_demo_users()
         
     def hash_password(self, password: str) -> str:
         """Hash a password securely"""
-        salt = bcrypt.gensalt()
-        hashed = bcrypt.hashpw(password.encode('utf-8'), salt)
-        return hashed.decode('utf-8')
+        return pwd_context.hash(password)
     
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash"""
-        try:
-            # Check if the password matches the hash
-            return bcrypt.checkpw(
-                plain_password.encode('utf-8'),
-                hashed_password.encode('utf-8')
-            )
-        except Exception as e:
-            logger.error(f"Password verification error: {e}")
-            # Fallback for demo account during migration
-            if plain_password == "demo123":
-                return True
-            return False
+        return pwd_context.verify(plain_password, hashed_password)
     
     def validate_username(self, username: str) -> Dict[str, str]:
         """Validate username format and availability"""

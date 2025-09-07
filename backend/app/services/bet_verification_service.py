@@ -263,32 +263,11 @@ class BetVerificationService:
                         game_results[score.id] = game_result
                         logger.info(f"Game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score}")
                         
-                        # Update the game in our database with the final score
-                        await self._update_game_in_database(score)
-                        
             except Exception as e:
                 logger.error(f"Error fetching scores for sport {sport}: {e}")
                 continue
         
         return game_results
-    
-    async def _update_game_in_database(self, score: Score) -> None:
-        """Update game record in database with final score"""
-        db = SessionLocal()
-        try:
-            game = db.query(Game).filter(Game.id == score.id).first()
-            if game:
-                game.home_score = score.home_score
-                game.away_score = score.away_score
-                game.status = GameStatus.FINAL if score.completed else GameStatus.IN_PROGRESS
-                game.last_update = datetime.utcnow()
-                db.commit()
-                logger.info(f"Updated game {score.id} in database with final score")
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error updating game {score.id} in database: {e}")
-        finally:
-            db.close()
     
     def _infer_sport_from_game_id(self, game_id: str) -> str:
         """Infer sport from game ID pattern"""

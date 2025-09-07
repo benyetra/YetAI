@@ -5,7 +5,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.services.data_pipeline import sports_pipeline
 from app.services.fantasy_pipeline import fantasy_pipeline
@@ -21,26 +21,20 @@ from app.services.live_betting_simulator import live_betting_simulator
 from app.services.bet_sharing_service_db import bet_sharing_service_db as bet_sharing_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
-from app.services.live_nfl_service import live_nfl_service
-from app.services.nfl_live_betting_service import nfl_live_betting_service
 from app.services.cache_service import cache_service
 from app.services.scheduler_service import scheduler_service
 from app.services.google_oauth_service import google_oauth_service
 from app.services.betting_analytics_service import betting_analytics_service
 from app.services.bet_verification_service import bet_verification_service
 from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cleanup_scheduler
-from app.services.game_monitor_service import game_monitor, init_game_monitor, cleanup_game_monitor
 from app.services.fantasy_service import FantasyService
 from app.services.comprehensive_league_sync import comprehensive_sync_service
 from app.services.sleeper_fantasy_service import SleeperFantasyService
 from app.services.player_analytics_service import PlayerAnalyticsService
 # from app.api.fantasy_v2 import router as fantasy_v2_router  # Has import issues
-from app.api.fantasy import router as fantasy_router
-from app.api.fantasy_analytics import router as fantasy_analytics_router
-from app.api.advanced_analytics import router as advanced_analytics_router
 from app.models.bet_models import *
 from app.models.live_bet_models import *
-from app.models.fantasy_models import FantasyPlatform, FantasyPlayer
+from app.models.fantasy_models import FantasyPlatform
 from app.core.config import settings
 from app.core.database import init_db, check_db_connection, SessionLocal
 from sqlalchemy.orm import Session
@@ -112,10 +106,8 @@ app = FastAPI(
 # Mount static files for avatars
 app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
-# Include API routers
-app.include_router(fantasy_router, prefix="/api/fantasy", tags=["Fantasy"])
-app.include_router(fantasy_analytics_router, prefix="/api/fantasy/analytics", tags=["Fantasy Analytics"])
-app.include_router(advanced_analytics_router, prefix="/api/advanced", tags=["Advanced Analytics"])
+# Include V2 API routes (disabled due to import issues)
+# app.include_router(fantasy_v2_router, prefix="/api/fantasy/v2")
 
 # CORS middleware - MUST be configured properly for OPTIONS requests
 app.add_middleware(
@@ -269,146 +261,6 @@ async def get_daily_predictions():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating predictions: {str(e)}")
-
-# Enhanced Live NFL Data Endpoints
-@app.get("/api/nfl/live/games")
-async def get_live_nfl_games():
-    """Get live NFL games with real-time scores and status"""
-    try:
-        games = await live_nfl_service.get_live_games()
-        return {
-            "status": "success",
-            "count": len(games),
-            "games": games,
-            "last_updated": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error fetching live NFL games: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching live games: {str(e)}")
-
-@app.get("/api/nfl/live/odds")
-async def get_live_nfl_odds():
-    """Get live NFL betting odds with real-time updates"""
-    try:
-        odds = await live_nfl_service.get_live_odds()
-        return {
-            "status": "success",
-            "count": len(odds),
-            "odds": odds,
-            "last_updated": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error fetching live NFL odds: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching live odds: {str(e)}")
-
-@app.get("/api/nfl/live/game/{game_id}")
-async def get_live_nfl_game(game_id: str):
-    """Get specific live NFL game by ID"""
-    try:
-        game = await live_nfl_service.get_game_by_id(game_id)
-        if not game:
-            raise HTTPException(status_code=404, detail="Game not found")
-        
-        return {
-            "status": "success",
-            "game": game
-        }
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error fetching live NFL game {game_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching game: {str(e)}")
-
-@app.get("/api/nfl/live/betting-markets")
-async def get_nfl_live_betting_markets():
-    """Get NFL-specific live betting markets with enhanced features"""
-    try:
-        markets = await nfl_live_betting_service.get_nfl_live_markets()
-        return {
-            "status": "success",
-            "count": len(markets),
-            "markets": markets,
-            "features": [
-                "Real-time scores and game state",
-                "NFL-specific betting markets",
-                "Next score predictions",
-                "Drive outcome betting",
-                "Player props (when available)",
-                "Intelligent market suspension"
-            ],
-            "last_updated": datetime.now().isoformat()
-        }
-    except Exception as e:
-        logger.error(f"Error fetching NFL live betting markets: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching betting markets: {str(e)}")
-
-@app.post("/api/nfl/live/bet")
-async def place_nfl_live_bet(
-    request: PlaceLiveBetRequest,
-    current_user = Depends(get_current_user)
-):
-    """Place a live bet on NFL-specific markets"""
-    try:
-        user_id = current_user["id"]
-        response = await nfl_live_betting_service.place_nfl_live_bet(user_id, request)
-        
-        if not response.success:
-            return {"success": False, "error": response.error}
-        
-        return {
-            "success": True,
-            "bet": response.bet.__dict__ if response.bet else None,
-            "message": response.message
-        }
-    except Exception as e:
-        logger.error(f"Error placing NFL live bet: {e}")
-        raise HTTPException(status_code=500, detail=f"Error placing bet: {str(e)}")
-
-@app.get("/api/nfl/live/my-bets")
-async def get_my_nfl_live_bets(current_user = Depends(get_current_user)):
-    """Get user's NFL live betting history"""
-    try:
-        user_id = current_user["id"]
-        bets = await nfl_live_betting_service.get_nfl_bet_history(user_id)
-        
-        return {
-            "status": "success",
-            "count": len(bets),
-            "bets": bets
-        }
-    except Exception as e:
-        logger.error(f"Error fetching user's NFL bets: {e}")
-        raise HTTPException(status_code=500, detail=f"Error fetching bets: {str(e)}")
-
-@app.post("/api/nfl/live/start-updates")
-async def start_nfl_live_updates():
-    """Start live NFL data updates (admin/system endpoint)"""
-    try:
-        # Start the live data service in background
-        asyncio.create_task(live_nfl_service.start_live_updates())
-        
-        return {
-            "status": "success",
-            "message": "Live NFL data updates started",
-            "update_interval": f"{live_nfl_service.update_interval} seconds"
-        }
-    except Exception as e:
-        logger.error(f"Error starting NFL live updates: {e}")
-        raise HTTPException(status_code=500, detail=f"Error starting updates: {str(e)}")
-
-@app.post("/api/nfl/live/stop-updates")
-async def stop_nfl_live_updates():
-    """Stop live NFL data updates (admin/system endpoint)"""
-    try:
-        await live_nfl_service.stop_live_updates()
-        
-        return {
-            "status": "success",
-            "message": "Live NFL data updates stopped"
-        }
-    except Exception as e:
-        logger.error(f"Error stopping NFL live updates: {e}")
-        raise HTTPException(status_code=500, detail=f"Error stopping updates: {str(e)}")
 
 @app.get("/api/data/status")
 async def get_data_status():
@@ -728,7 +580,7 @@ async def get_weather_impact():
 
 # Fantasy League Integration Endpoints
 from app.core.database import get_db
-from app.models.database_models import SleeperLeague, SleeperRoster, SleeperPlayer
+from app.models.database_models import User, SleeperLeague, SleeperRoster, SleeperPlayer
 
 # Global fantasy service instance
 fantasy_service_instance = None
@@ -1406,57 +1258,6 @@ async def test_sleeper_user(username: str):
         logger.error(f"Error testing Sleeper integration: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.get("/api/live-bets/test/active")
-async def test_get_user_live_bets():
-    """Test endpoint to get active live bets without authentication"""
-    try:
-        # Get bets for test user ID 1
-        bets = live_betting_service.get_user_live_bets(1, False)
-        
-        # Convert bets to dict format for JSON response
-        bets_data = []
-        for bet in bets:
-            bet_dict = bet.dict() if hasattr(bet, 'dict') else bet
-            logger.info(f"Bet data: home_team={bet_dict.get('home_team')}, away_team={bet_dict.get('away_team')}")
-            bets_data.append(bet_dict)
-        
-        return {
-            "status": "success",
-            "count": len(bets_data),
-            "bets": bets_data
-        }
-    except Exception as e:
-        logger.error(f"Error in test get active bets: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/live-bets/test/place")
-async def test_place_live_bet(request: PlaceLiveBetRequest):
-    """Test endpoint to place a live bet without authentication"""
-    try:
-        logger.info(f"Test bet placement request: {request}")
-        # First, ensure markets are fetched to populate cache
-        markets = await live_betting_service.get_live_betting_markets(sport="baseball_mlb")
-        logger.info(f"Fetched {len(markets)} markets to populate cache")
-        
-        result = live_betting_service.place_live_bet(1, request)  # Use test user ID 1
-        
-        logger.info(f"Test bet placement result: {result}")
-        
-        return {
-            "success": result.success,
-            "bet": result.bet.dict() if result.bet else None,
-            "error": result.error,
-            "odds_changed": result.odds_changed,
-            "new_odds": result.new_odds
-        }
-    except Exception as e:
-        logger.error(f"Error in test bet placement: {e}")
-        import traceback
-        logger.error(f"Traceback: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=str(e))
-
 @app.get("/api/fantasy/test/sleeper-trending")
 async def test_sleeper_trending():
     """Test endpoint for Sleeper trending players"""
@@ -1783,232 +1584,46 @@ async def compare_players(
         
         compared_players = []
         
-        # Get database session for analytics
-        db = SessionLocal()
-        analytics_service = PlayerAnalyticsService(db)
-        
-        try:
-            for player_id in player_ids:
-                if player_id not in all_players:
-                    continue
-                
-                player_data = all_players[player_id]
-                name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
-                
-                # Get player's recent performance stats
-                stats = player_data.get("stats", {})
-                # Try multiple season IDs - 52 for 2025, 0 for all time, 1 for 2024
-                season_stats = stats.get("52", {}) or stats.get("0", {}) or stats.get("1", {})
-                recent_stats = stats.get("51", {})
-                
-                # Calculate performance metrics from stats
-                games_played = float(season_stats.get("gp", 0) or 0)
-                
-                # Common stats - define ppg at the outer scope
-                total_points = float(season_stats.get("pts_ppr", 0) or 0)
-                ppg = total_points / games_played if games_played > 0 else 0
-                
-                # Calculate analytics based on position and available stats
-                analytics = {}
-                position = player_data.get("position", "")
-                
-                # If we have real game data, use it
-                if games_played > 0:
-                    
-                    # Position-specific analytics
-                    if position in ["WR", "TE"]:
-                        targets = float(season_stats.get("rec_tgt", 0) or 0)
-                        receptions = float(season_stats.get("rec", 0) or 0)
-                        yards = float(season_stats.get("rec_yd", 0) or 0)
-                        tds = float(season_stats.get("rec_td", 0) or 0)
-                        
-                        analytics = {
-                            "snap_percentage": 75.5,  # Mock data - would need actual snap data
-                            "target_share": targets / (games_played * 30) if games_played > 0 else 0,  # Estimate team targets
-                            "red_zone_share": 0.15 if tds > games_played * 0.3 else 0.08,  # Estimate RZ share
-                            "points_per_snap": ppg / 60 if games_played > 0 else 0,  # Estimate snaps per game
-                            "points_per_target": total_points / targets if targets > 0 else 0,
-                            "floor_score": ppg * 0.7,
-                            "ceiling_score": ppg * 1.5,
-                            "consistency_score": 0.75,  # Would calculate from weekly variance
-                            "targets_per_game": targets / games_played if games_played > 0 else 0,
-                            "receptions_per_game": receptions / games_played if games_played > 0 else 0,
-                            "yards_per_game": yards / games_played if games_played > 0 else 0,
-                            "catch_rate": receptions / targets if targets > 0 else 0,
-                            "yards_per_reception": yards / receptions if receptions > 0 else 0
-                        }
-                    elif position == "RB":
-                        carries = float(season_stats.get("rush_att", 0) or 0)
-                        rush_yards = float(season_stats.get("rush_yd", 0) or 0)
-                        rush_tds = float(season_stats.get("rush_td", 0) or 0)
-                        targets = float(season_stats.get("rec_tgt", 0) or 0)
-                        receptions = float(season_stats.get("rec", 0) or 0)
-                        rec_yards = float(season_stats.get("rec_yd", 0) or 0)
-                        
-                        analytics = {
-                            "snap_percentage": 65.5,  # Mock data
-                            "target_share": targets / (games_played * 30) if games_played > 0 else 0,
-                            "red_zone_share": 0.20 if rush_tds > games_played * 0.4 else 0.10,
-                            "points_per_snap": ppg / 50 if games_played > 0 else 0,
-                            "points_per_touch": total_points / (carries + receptions) if (carries + receptions) > 0 else 0,
-                            "floor_score": ppg * 0.7,
-                            "ceiling_score": ppg * 1.5,
-                            "consistency_score": 0.70,
-                            "touches_per_game": (carries + receptions) / games_played if games_played > 0 else 0,
-                            "rush_yards_per_game": rush_yards / games_played if games_played > 0 else 0,
-                            "yards_per_carry": rush_yards / carries if carries > 0 else 0,
-                            "target_share_rb": targets / (games_played * 30) if games_played > 0 else 0,
-                            "total_yards_per_game": (rush_yards + rec_yards) / games_played if games_played > 0 else 0
-                        }
-                    elif position == "QB":
-                        pass_att = float(season_stats.get("pass_att", 0) or 0)
-                        pass_cmp = float(season_stats.get("pass_cmp", 0) or 0)
-                        pass_yards = float(season_stats.get("pass_yd", 0) or 0)
-                        pass_tds = float(season_stats.get("pass_td", 0) or 0)
-                        pass_int = float(season_stats.get("pass_int", 0) or 0)
-                        
-                        analytics = {
-                            "snap_percentage": 100.0,
-                            "red_zone_share": 0.95,
-                            "points_per_snap": ppg / 65 if games_played > 0 else 0,
-                            "floor_score": ppg * 0.75,
-                            "ceiling_score": ppg * 1.4,
-                            "consistency_score": 0.80,
-                            "pass_attempts_per_game": pass_att / games_played if games_played > 0 else 0,
-                            "completion_percentage": (pass_cmp / pass_att * 100) if pass_att > 0 else 0,
-                            "yards_per_attempt": pass_yards / pass_att if pass_att > 0 else 0,
-                            "td_percentage": (pass_tds / pass_att * 100) if pass_att > 0 else 0,
-                            "int_percentage": (pass_int / pass_att * 100) if pass_att > 0 else 0,
-                            "passer_rating": 0.0  # Would calculate NFL passer rating
-                        }
-                else:
-                    # Provide demo/mock data when no real stats are available
-                    # This helps demonstrate the feature during offseason
-                    import random
-                    random.seed(hash(player_id))  # Consistent random data per player
-                    
-                    if position == "RB":
-                        # Mock RB stats based on typical ranges
-                        mock_touches = 15 + random.randint(-5, 10)
-                        mock_yards = mock_touches * (4.0 + random.random() * 2)
-                        mock_ppg = 12 + random.random() * 8
-                        
-                        analytics = {
-                            "snap_percentage": 55 + random.randint(0, 30),
-                            "target_share": 0.08 + random.random() * 0.12,
-                            "red_zone_share": 0.15 + random.random() * 0.15,
-                            "points_per_snap": mock_ppg / 55,
-                            "points_per_touch": mock_ppg / mock_touches,
-                            "floor_score": mock_ppg * 0.7,
-                            "ceiling_score": mock_ppg * 1.5,
-                            "consistency_score": 0.65 + random.random() * 0.25,
-                            "touches_per_game": mock_touches,
-                            "rush_yards_per_game": mock_yards * 0.85,
-                            "yards_per_carry": 3.5 + random.random() * 2,
-                            "total_yards_per_game": mock_yards,
-                            "demo_data": True  # Flag to indicate this is demo data
-                        }
-                        
-                        # Mock season stats
-                        games_played = 17
-                        ppg = mock_ppg
-                        total_points = ppg * games_played
-                        
-                    elif position in ["WR", "TE"]:
-                        # Mock WR/TE stats
-                        mock_targets = 6 + random.randint(0, 4) if position == "WR" else 4 + random.randint(0, 3)
-                        mock_receptions = mock_targets * (0.6 + random.random() * 0.25)
-                        mock_yards = mock_receptions * (10 + random.random() * 5)
-                        mock_ppg = 10 + random.random() * 8 if position == "WR" else 8 + random.random() * 6
-                        
-                        analytics = {
-                            "snap_percentage": 70 + random.randint(0, 25) if position == "WR" else 60 + random.randint(0, 20),
-                            "target_share": 0.15 + random.random() * 0.15 if position == "WR" else 0.10 + random.random() * 0.10,
-                            "red_zone_share": 0.10 + random.random() * 0.10,
-                            "points_per_snap": mock_ppg / 65,
-                            "points_per_target": mock_ppg / mock_targets if mock_targets > 0 else 0,
-                            "floor_score": mock_ppg * 0.6,
-                            "ceiling_score": mock_ppg * 1.6,
-                            "consistency_score": 0.60 + random.random() * 0.30,
-                            "targets_per_game": mock_targets,
-                            "receptions_per_game": mock_receptions,
-                            "yards_per_game": mock_yards,
-                            "catch_rate": mock_receptions / mock_targets if mock_targets > 0 else 0,
-                            "yards_per_reception": mock_yards / mock_receptions if mock_receptions > 0 else 0,
-                            "demo_data": True
-                        }
-                        
-                        # Mock season stats
-                        games_played = 17
-                        ppg = mock_ppg
-                        total_points = ppg * games_played
-                    
-                    elif position == "QB":
-                        # Mock QB stats
-                        mock_ppg = 18 + random.random() * 10
-                        
-                        analytics = {
-                            "snap_percentage": 100.0,
-                            "red_zone_share": 0.95,
-                            "points_per_snap": mock_ppg / 65,
-                            "floor_score": mock_ppg * 0.75,
-                            "ceiling_score": mock_ppg * 1.4,
-                            "consistency_score": 0.75 + random.random() * 0.20,
-                            "pass_attempts_per_game": 30 + random.randint(0, 10),
-                            "completion_percentage": 60 + random.random() * 15,
-                            "yards_per_attempt": 6.5 + random.random() * 2,
-                            "td_percentage": 4 + random.random() * 2,
-                            "int_percentage": 1 + random.random() * 2,
-                            "passer_rating": 85 + random.random() * 20,
-                            "demo_data": True
-                        }
-                        
-                        # Mock season stats
-                        games_played = 17
-                        ppg = mock_ppg
-                        total_points = ppg * games_played
-                
-                # Enhanced comparison metrics
-                comparison_data = {
-                    "player_id": player_id,
-                    "name": name,
-                    "position": player_data.get("position", ""),
-                    "team": player_data.get("team", ""),
-                    "age": player_data.get("age"),
-                    "experience": player_data.get("years_exp"),
-                    "injury_status": player_data.get("injury_status", "Healthy"),
-                    "physical_stats": {
-                        "height": player_data.get("height"),
-                        "weight": player_data.get("weight")
-                    },
-                    "career_info": {
-                        "college": player_data.get("college"),
-                        "draft_year": player_data.get("draft_year"),
-                        "draft_round": player_data.get("draft_round"),
-                        "draft_pick": player_data.get("draft_pick")
-                    },
-                    "team_context": {
-                        "depth_chart_order": player_data.get("depth_chart_order"),
-                        "search_rank": player_data.get("search_rank", 999)
-                    },
-                    "trending": trending_lookup.get(player_id, {"type": "normal", "count": 0}),
-                    "fantasy_positions": player_data.get("fantasy_positions", []),
-                    "analytics": analytics,  # Add the calculated analytics
-                    "season_stats": {
-                        "games_played": games_played,
-                        "points_per_game": ppg,
-                        "total_points": total_points
-                    }
-                }
-                
-                # Add league-specific analysis if available
-                if league_context:
-                    league_analysis = _calculate_detailed_league_analysis(player_data, league_context)
-                    comparison_data["league_analysis"] = league_analysis
-                
-                compared_players.append(comparison_data)
-        finally:
-            db.close()
+        for player_id in player_ids:
+            if player_id not in all_players:
+                continue
+            
+            player_data = all_players[player_id]
+            name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+            
+            # Enhanced comparison metrics
+            comparison_data = {
+                "player_id": player_id,
+                "name": name,
+                "position": player_data.get("position", ""),
+                "team": player_data.get("team", ""),
+                "age": player_data.get("age"),
+                "experience": player_data.get("years_exp"),
+                "injury_status": player_data.get("injury_status", "Healthy"),
+                "physical_stats": {
+                    "height": player_data.get("height"),
+                    "weight": player_data.get("weight")
+                },
+                "career_info": {
+                    "college": player_data.get("college"),
+                    "draft_year": player_data.get("draft_year"),
+                    "draft_round": player_data.get("draft_round"),
+                    "draft_pick": player_data.get("draft_pick")
+                },
+                "team_context": {
+                    "depth_chart_order": player_data.get("depth_chart_order"),
+                    "search_rank": player_data.get("search_rank", 999)
+                },
+                "trending": trending_lookup.get(player_id, {"type": "normal", "count": 0}),
+                "fantasy_positions": player_data.get("fantasy_positions", [])
+            }
+            
+            # Add league-specific analysis if available
+            if league_context:
+                league_analysis = _calculate_detailed_league_analysis(player_data, league_context)
+                comparison_data["league_analysis"] = league_analysis
+            
+            compared_players.append(comparison_data)
         
         # Generate comparison insights
         insights = _generate_comparison_insights(compared_players, league_context)
@@ -2111,66 +1726,6 @@ def _generate_comparison_insights(players: List[Dict], league_context: Optional[
         if oldest - youngest >= 3:
             insights.append(f"Age gap: {oldest - youngest} years - consider upside vs experience")
     
-    # Performance comparison
-    ppgs = []
-    for p in players:
-        if p.get("season_stats", {}).get("points_per_game"):
-            ppgs.append({
-                "name": p.get("name", "").split()[-1],  # Last name only
-                "ppg": p["season_stats"]["points_per_game"]
-            })
-    
-    if len(ppgs) >= 2:
-        ppgs_sorted = sorted(ppgs, key=lambda x: x["ppg"], reverse=True)
-        if ppgs_sorted[0]["ppg"] > 0:
-            diff = ppgs_sorted[0]["ppg"] - ppgs_sorted[-1]["ppg"]
-            if diff > 5:
-                insights.append(f"{ppgs_sorted[0]['name']} averaging {diff:.1f} more PPG than {ppgs_sorted[-1]['name']}")
-    
-    # Target share comparison for WR/TE
-    wr_te_players = [p for p in players if p.get("position") in ["WR", "TE"]]
-    if len(wr_te_players) >= 2:
-        target_shares = []
-        for p in wr_te_players:
-            if p.get("analytics", {}).get("target_share"):
-                target_shares.append({
-                    "name": p.get("name", "").split()[-1],
-                    "share": p["analytics"]["target_share"]
-                })
-        
-        if len(target_shares) >= 2:
-            target_shares_sorted = sorted(target_shares, key=lambda x: x["share"], reverse=True)
-            if target_shares_sorted[0]["share"] > target_shares_sorted[-1]["share"] * 1.5:
-                insights.append(f"{target_shares_sorted[0]['name']} sees significantly higher target share")
-    
-    # Efficiency comparison
-    efficiencies = []
-    for p in players:
-        if p.get("analytics", {}).get("points_per_snap"):
-            efficiencies.append({
-                "name": p.get("name", "").split()[-1],
-                "efficiency": p["analytics"]["points_per_snap"]
-            })
-    
-    if len(efficiencies) >= 2:
-        eff_sorted = sorted(efficiencies, key=lambda x: x["efficiency"], reverse=True)
-        if eff_sorted[0]["efficiency"] > eff_sorted[-1]["efficiency"] * 1.3:
-            insights.append(f"{eff_sorted[0]['name']} is more efficient per snap")
-    
-    # Red zone usage
-    rz_shares = []
-    for p in players:
-        if p.get("analytics", {}).get("red_zone_share"):
-            rz_shares.append({
-                "name": p.get("name", "").split()[-1],
-                "rz": p["analytics"]["red_zone_share"]
-            })
-    
-    if len(rz_shares) >= 2:
-        rz_sorted = sorted(rz_shares, key=lambda x: x["rz"], reverse=True)
-        if rz_sorted[0]["rz"] > 0.15 and rz_sorted[-1]["rz"] < 0.10:
-            insights.append(f"{rz_sorted[0]['name']} dominates red zone opportunities")
-    
     # Position analysis
     positions = [p.get("position") for p in players]
     unique_positions = set(positions)
@@ -2193,29 +1748,6 @@ def _generate_comparison_insights(players: List[Dict], league_context: Optional[
     hot_players = [p for p in players if p.get("trending", {}).get("type") == "hot"]
     if hot_players:
         insights.append(f"{len(hot_players)} player(s) trending up in waiver activity")
-    
-    # Consistency analysis
-    floor_ceiling_ratios = []
-    for p in players:
-        if p.get("analytics", {}).get("floor_score") and p.get("analytics", {}).get("ceiling_score"):
-            ratio = p["analytics"]["floor_score"] / p["analytics"]["ceiling_score"]
-            floor_ceiling_ratios.append({
-                "name": p.get("name", "").split()[-1],
-                "ratio": ratio,
-                "floor": p["analytics"]["floor_score"],
-                "ceiling": p["analytics"]["ceiling_score"]
-            })
-    
-    if len(floor_ceiling_ratios) >= 2:
-        # Find most consistent (highest floor/ceiling ratio)
-        most_consistent = max(floor_ceiling_ratios, key=lambda x: x["ratio"])
-        most_volatile = min(floor_ceiling_ratios, key=lambda x: x["ratio"])
-        
-        if most_consistent["ratio"] > most_volatile["ratio"] * 1.2:
-            insights.append(f"{most_consistent['name']} offers more consistency, {most_volatile['name']} has higher upside")
-    
-    # Add analytics data status
-    insights.append("Analytics based on recent 5 weeks of performance data")
     
     return insights
 
@@ -2265,7 +1797,7 @@ async def sync_league_history(
 ):
     """Sync all league history from 2020-2025"""
     try:
-        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        user = db.query(User).filter(User.id == current_user["id"]).first()
         if not user or not user.sleeper_user_id:
             raise HTTPException(status_code=400, detail="Must connect Sleeper account first")
         
@@ -2309,7 +1841,7 @@ async def sync_nfl_players(
 ):
     """Sync all NFL player data (admin only)"""
     try:
-        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        user = db.query(User).filter(User.id == current_user["id"]).first()
         if not user or not user.is_admin:
             raise HTTPException(status_code=403, detail="Only administrators can trigger full player sync")
         
@@ -2360,7 +1892,7 @@ async def get_sleeper_sync_status(
     try:
         from app.models.database_models import SleeperLeague, SleeperRoster, SleeperPlayer
         
-        user = db.query(auth_service.get_user_model()).filter(auth_service.get_user_model().id == current_user["id"]).first()
+        user = db.query(User).filter(User.id == current_user["id"]).first()
         sleeper_connected = bool(user.sleeper_user_id) if user else False
         
         league_count = db.query(SleeperLeague).filter(SleeperLeague.user_id == current_user["id"]).count()
@@ -3754,51 +3286,48 @@ async def get_bet_history(
     result = await bet_service.get_bet_history(current_user["id"], query)
     
     if result["success"]:
-        # Only include live bets if not specifically filtering for pending status
-        # This prevents duplicate display when frontend fetches both pending regular bets and live bets
-        if query.status != "pending":
-            # Also get live bets from database and format them for bet history
-            live_bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled=True)
-            
-            # Convert live bets to bet history format
-            for live_bet in live_bets:
-                # Create a descriptive title for live bets
-                if live_bet.bet_type == "moneyline":
-                    if live_bet.selection == "home":
-                        title = f"{live_bet.home_team} to Win"
-                    else:
-                        title = f"{live_bet.away_team} to Win"
-                elif live_bet.bet_type == "spread":
-                    if live_bet.selection == "home":
-                        title = f"{live_bet.home_team} Spread"
-                    else:
-                        title = f"{live_bet.away_team} Spread"
-                elif live_bet.bet_type == "total":
-                    if live_bet.selection == "over":
-                        title = f"Over Total ({live_bet.home_team} vs {live_bet.away_team})"
-                    else:
-                        title = f"Under Total ({live_bet.home_team} vs {live_bet.away_team})"
+        # Also get live bets from database and format them for bet history
+        live_bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled=True)
+        
+        # Convert live bets to bet history format
+        for live_bet in live_bets:
+            # Create a descriptive title for live bets
+            if live_bet.bet_type == "moneyline":
+                if live_bet.selection == "home":
+                    title = f"{live_bet.home_team} to Win"
                 else:
-                    title = f"{live_bet.bet_type.title()} - {live_bet.selection.title()}"
-                
-                # Add to regular bets list with proper formatting
-                bet_data = {
-                    "id": live_bet.id,
-                    "bet_type": "Live",
-                    "title": title,
-                    "status": live_bet.status.title(),
-                    "amount": live_bet.amount,
-                    "odds": live_bet.original_odds,
-                    "potential_win": live_bet.potential_win,
-                    "placed_at": live_bet.placed_at.isoformat(),
-                    "home_team": live_bet.home_team,
-                    "away_team": live_bet.away_team,
-                    "sport": live_bet.sport,
-                    "current_score": f"{live_bet.current_home_score or 0} - {live_bet.current_away_score or 0}" if live_bet.current_home_score is not None else None,
-                    "game_time": live_bet.current_game_status.value if live_bet.current_game_status else None,
-                    "selection": live_bet.selection
-                }
-                result["bets"].append(bet_data)
+                    title = f"{live_bet.away_team} to Win"
+            elif live_bet.bet_type == "spread":
+                if live_bet.selection == "home":
+                    title = f"{live_bet.home_team} Spread"
+                else:
+                    title = f"{live_bet.away_team} Spread"
+            elif live_bet.bet_type == "total":
+                if live_bet.selection == "over":
+                    title = f"Over Total ({live_bet.home_team} vs {live_bet.away_team})"
+                else:
+                    title = f"Under Total ({live_bet.home_team} vs {live_bet.away_team})"
+            else:
+                title = f"{live_bet.bet_type.title()} - {live_bet.selection.title()}"
+            
+            # Add to regular bets list with proper formatting
+            bet_data = {
+                "id": live_bet.id,
+                "bet_type": "Live",
+                "title": title,
+                "status": live_bet.status.title(),
+                "amount": live_bet.amount,
+                "odds": live_bet.original_odds,
+                "potential_win": live_bet.potential_win,
+                "placed_at": live_bet.placed_at.isoformat(),
+                "home_team": live_bet.home_team,
+                "away_team": live_bet.away_team,
+                "sport": live_bet.sport,
+                "current_score": f"{live_bet.current_home_score or 0} - {live_bet.current_away_score or 0}" if live_bet.current_home_score is not None else None,
+                "game_time": live_bet.current_game_status.value if live_bet.current_game_status else None,
+                "selection": live_bet.selection
+            }
+            result["bets"].append(bet_data)
         
         # Sort by placed_at date (newest first)
         result["bets"].sort(key=lambda x: x["placed_at"], reverse=True)
@@ -3879,7 +3408,7 @@ async def place_live_bet(
             
             return {
                 "status": "success",
-                "bet": result.bet.dict() if result.bet else None,
+                "bet": result.bet,
                 "odds_changed": result.odds_changed,
                 "new_odds": result.new_odds
             }
@@ -3963,94 +3492,11 @@ async def execute_cash_out(
 
 @app.get("/api/live-bets/markets")
 async def get_live_betting_markets(
-    sport: Optional[str] = None,
-    demo: bool = False  # Add demo parameter for testing
+    sport: Optional[str] = None
 ):
     """Get available live betting markets with real sports data (public endpoint)"""
     try:
-        print(f"Live betting markets endpoint called with sport: {sport}, demo: {demo}")
-        
-        # If demo mode, return mock data with all market types
-        if demo:
-            from app.models.live_bet_models import LiveBettingMarket, GameStatus
-            demo_markets = [
-                LiveBettingMarket(
-                    game_id="demo_nfl_1",
-                    sport="americanfootball_nfl",
-                    home_team="Kansas City Chiefs",
-                    away_team="Buffalo Bills",
-                    game_status=GameStatus.SECOND_QUARTER,
-                    home_score=14,
-                    away_score=10,
-                    time_remaining="8:23",
-                    commence_time=datetime.utcnow() - timedelta(minutes=30),
-                    markets_available=["moneyline", "spread", "total"],
-                    moneyline_home=-150,
-                    moneyline_away=130,
-                    spread_line=-3.5,
-                    spread_home_odds=-110,
-                    spread_away_odds=-110,
-                    total_line=48.5,
-                    total_over_odds=-105,
-                    total_under_odds=-115,
-                    last_updated=datetime.utcnow()
-                ),
-                LiveBettingMarket(
-                    game_id="demo_nba_1",
-                    sport="basketball_nba",
-                    home_team="Los Angeles Lakers",
-                    away_team="Boston Celtics",
-                    game_status=GameStatus.THIRD_QUARTER,
-                    home_score=78,
-                    away_score=82,
-                    time_remaining="5:12",
-                    commence_time=datetime.utcnow() - timedelta(hours=1),
-                    markets_available=["moneyline", "spread", "total"],
-                    moneyline_home=180,
-                    moneyline_away=-210,
-                    spread_line=5.5,
-                    spread_home_odds=-108,
-                    spread_away_odds=-112,
-                    total_line=228.5,
-                    total_over_odds=-110,
-                    total_under_odds=-110,
-                    last_updated=datetime.utcnow()
-                ),
-                LiveBettingMarket(
-                    game_id="demo_mlb_1",
-                    sport="baseball_mlb",
-                    home_team="New York Yankees",
-                    away_team="Houston Astros",
-                    game_status=GameStatus.FIFTH_INNING,
-                    home_score=3,
-                    away_score=2,
-                    time_remaining="Top",
-                    commence_time=datetime.utcnow() - timedelta(hours=1, minutes=30),
-                    markets_available=["moneyline", "spread", "total"],
-                    moneyline_home=-125,
-                    moneyline_away=105,
-                    spread_line=-1.5,
-                    spread_home_odds=150,
-                    spread_away_odds=-180,
-                    total_line=8.5,
-                    total_over_odds=-120,
-                    total_under_odds=100,
-                    last_updated=datetime.utcnow()
-                )
-            ]
-            
-            # Filter by sport if specified
-            if sport:
-                demo_markets = [m for m in demo_markets if m.sport == sport]
-            
-            return {
-                "status": "success",
-                "count": len(demo_markets),
-                "markets": demo_markets,
-                "demo": True
-            }
-        
-        # Otherwise get real markets
+        print(f"Live betting markets endpoint called with sport: {sport}")
         markets = await live_betting_service.get_live_betting_markets(sport)
         print(f"Service returned {len(markets)} markets")
         
@@ -4074,16 +3520,10 @@ async def get_user_live_bets(
     try:
         bets = live_betting_service.get_user_live_bets(current_user["id"], include_settled)
         
-        # Convert bets to dict format for JSON response
-        bets_data = []
-        for bet in bets:
-            bet_dict = bet.dict() if hasattr(bet, 'dict') else bet
-            bets_data.append(bet_dict)
-        
         return {
             "status": "success",
-            "count": len(bets_data),
-            "bets": bets_data
+            "count": len(bets),
+            "bets": bets
         }
         
     except Exception as e:
@@ -5018,10 +4458,7 @@ async def startup_event():
     # Start the bet verification scheduler
     init_scheduler()
     
-    # Start the game monitor service for immediate bet resolution
-    init_game_monitor()
-    
-    logger.info("WebSocket services, sports scheduler, bet verification scheduler, game monitor, and database started")
+    logger.info("WebSocket services, sports scheduler, bet verification scheduler, and database started")
 
 @app.on_event("shutdown")
 async def shutdown_event():
@@ -5031,12 +4468,6 @@ async def shutdown_event():
         logger.info("Bet verification scheduler stopped")
     except Exception as e:
         logger.error(f"Error during scheduler cleanup: {e}")
-    
-    try:
-        cleanup_game_monitor()
-        logger.info("Game monitor service stopped")
-    except Exception as e:
-        logger.error(f"Error during game monitor cleanup: {e}")
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -5183,23 +4614,10 @@ async def get_verification_stats(current_user: dict = Depends(get_current_user))
         raise HTTPException(status_code=403, detail="Admin access required")
     
     try:
-        scheduler_stats = bet_scheduler.get_stats()
-        
-        # Add game monitor status
-        monitor_status = {
-            "game_monitor": {
-                "running": game_monitor._running,
-                "active_games": len(game_monitor.active_games),
-                "recently_completed": len(game_monitor.recently_completed)
-            }
-        }
-        
+        stats = bet_scheduler.get_stats()
         return {
             "status": "success",
-            "data": {
-                **scheduler_stats,
-                **monitor_status
-            }
+            "data": stats
         }
     except Exception as e:
         logger.error(f"Error getting verification stats: {e}")
@@ -5931,7 +5349,7 @@ async def get_dynamic_player_values(
 # Player Analytics API endpoints
 @app.get("/api/fantasy/analytics/{player_id}")
 async def get_player_analytics(
-    player_id: str,  # Changed to string to accept Sleeper IDs
+    player_id: int,
     weeks: Optional[str] = None,  # comma-separated weeks, e.g. "1,2,3"
     season: int = 2025,
     current_user = Depends(get_current_user)
@@ -5939,27 +5357,13 @@ async def get_player_analytics(
     """Get advanced analytics for a specific player"""
     try:
         db = SessionLocal()
-        
-        # Convert Sleeper player_id to internal ID
-        fantasy_player = db.query(FantasyPlayer).filter(
-            FantasyPlayer.platform_player_id == player_id
-        ).first()
-        
-        if not fantasy_player:
-            return {
-                "status": "success",
-                "player_id": player_id,
-                "analytics": []  # Return empty if player not found
-            }
-        
-        internal_player_id = fantasy_player.id
         analytics_service = PlayerAnalyticsService(db)
         
         week_list = None
         if weeks:
             week_list = [int(w.strip()) for w in weeks.split(',')]
             
-        analytics = await analytics_service.get_player_analytics(internal_player_id, week_list, season)
+        analytics = await analytics_service.get_player_analytics(player_id, week_list, season)
         
         return {
             "status": "success",
@@ -5975,40 +5379,18 @@ async def get_player_analytics(
 
 @app.get("/api/fantasy/analytics/{player_id}/trends")
 async def get_player_trends(
-    player_id: str,  # Changed to string to accept Sleeper IDs
-    weeks: Optional[str] = None,  # If None, will use smart week selection
+    player_id: int,
+    weeks: str = "8,9,10,11,12",  # Default to recent 5 weeks
     season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get usage trends for a specific player"""
     try:
         db = SessionLocal()
-        
-        # Convert Sleeper player_id to internal ID
-        fantasy_player = db.query(FantasyPlayer).filter(
-            FantasyPlayer.platform_player_id == player_id
-        ).first()
-        
-        if not fantasy_player:
-            return {
-                "status": "success",
-                "player_id": player_id,
-                "weeks_analyzed": [],
-                "trends": {}  # Return empty if player not found
-            }
-        
-        internal_player_id = fantasy_player.id
         analytics_service = PlayerAnalyticsService(db)
         
-        if weeks:
-            # Use provided weeks
-            week_list = [int(w.strip()) for w in weeks.split(',')]
-            analysis_season = season
-        else:
-            # Use smart week selection
-            week_list, analysis_season = analytics_service.get_available_analysis_weeks(season)
-        
-        trends = await analytics_service.calculate_usage_trends(internal_player_id, week_list, analysis_season)
+        week_list = [int(w.strip()) for w in weeks.split(',')]
+        trends = await analytics_service.calculate_usage_trends(player_id, week_list, season)
         
         return {
             "status": "success",
@@ -6025,40 +5407,18 @@ async def get_player_trends(
 
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency(
-    player_id: str,  # Changed to string to accept Sleeper IDs
-    weeks: Optional[str] = None,  # If None, will use smart week selection
+    player_id: int,
+    weeks: str = "8,9,10,11,12",
     season: int = 2025,
     current_user = Depends(get_current_user)
 ):
     """Get efficiency metrics for a specific player"""
     try:
         db = SessionLocal()
-        
-        # Convert Sleeper player_id to internal ID
-        fantasy_player = db.query(FantasyPlayer).filter(
-            FantasyPlayer.platform_player_id == player_id
-        ).first()
-        
-        if not fantasy_player:
-            return {
-                "status": "success",
-                "player_id": player_id,
-                "weeks_analyzed": [],
-                "efficiency_metrics": {}  # Return empty if player not found
-            }
-        
-        internal_player_id = fantasy_player.id
         analytics_service = PlayerAnalyticsService(db)
         
-        if weeks:
-            # Use provided weeks
-            week_list = [int(w.strip()) for w in weeks.split(',')]
-            analysis_season = season
-        else:
-            # Use smart week selection
-            week_list, analysis_season = analytics_service.get_available_analysis_weeks(season)
-        
-        efficiency = await analytics_service.calculate_efficiency_metrics(internal_player_id, week_list, analysis_season)
+        week_list = [int(w.strip()) for w in weeks.split(',')]
+        efficiency = await analytics_service.calculate_efficiency_metrics(player_id, week_list, season)
         
         return {
             "status": "success",
@@ -6072,34 +5432,6 @@ async def get_player_efficiency(
         raise HTTPException(status_code=500, detail=f"Failed to get player efficiency: {str(e)}")
     finally:
         db.close()
-
-@app.post("/api/admin/populate-analytics")
-async def populate_player_analytics_data(
-    season: int = 2024,
-    weeks: str = "8,9,10,11,12",
-    current_user = Depends(get_current_user)
-):
-    """Admin endpoint to populate player analytics data"""
-    try:
-        from app.services.analytics_data_populator import AnalyticsDataPopulator
-        
-        # Parse weeks
-        week_list = [int(w.strip()) for w in weeks.split(',')]
-        
-        populator = AnalyticsDataPopulator()
-        records_created = await populator.populate_player_analytics(season, week_list)
-        
-        return {
-            "status": "success",
-            "message": f"Created {records_created} analytics records for season {season}",
-            "season": season,
-            "weeks": week_list,
-            "records_created": records_created
-        }
-        
-    except Exception as e:
-        logger.error(f"Failed to populate analytics data: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Failed to populate analytics data: {str(e)}")
 
 @app.get("/api/fantasy/analytics/breakout-candidates/{position}")
 async def get_breakout_candidates(
@@ -6129,7 +5461,7 @@ async def get_breakout_candidates(
 
 @app.get("/api/fantasy/analytics/{player_id}/matchup/{opponent}")
 async def get_matchup_analytics(
-    player_id: str,  # Changed to string to accept Sleeper IDs
+    player_id: int,
     opponent: str,
     season: int = 2025,
     current_user = Depends(get_current_user)
@@ -6137,24 +5469,9 @@ async def get_matchup_analytics(
     """Get player's historical performance against specific opponent"""
     try:
         db = SessionLocal()
-        
-        # Convert Sleeper player_id to internal ID
-        fantasy_player = db.query(FantasyPlayer).filter(
-            FantasyPlayer.platform_player_id == player_id
-        ).first()
-        
-        if not fantasy_player:
-            return {
-                "status": "success",
-                "player_id": player_id,
-                "opponent": opponent,
-                "matchup_analysis": {}  # Return empty if player not found
-            }
-        
-        internal_player_id = fantasy_player.id
         analytics_service = PlayerAnalyticsService(db)
         
-        matchup_data = await analytics_service.get_matchup_specific_analytics(internal_player_id, opponent, season)
+        matchup_data = await analytics_service.get_matchup_specific_analytics(player_id, opponent, season)
         
         return {
             "status": "success",

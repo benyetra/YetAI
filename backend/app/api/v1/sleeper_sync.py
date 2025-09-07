@@ -7,7 +7,7 @@ from typing import Dict, Any
 import logging
 
 from app.core.database import get_db
-from app.services.auth_service import get_current_user
+from app.main import get_current_user
 from app.services.simplified_sleeper_service import SimplifiedSleeperService
 from app.models.database_models import User, SleeperLeague, SleeperRoster, SleeperPlayer
 from pydantic import BaseModel

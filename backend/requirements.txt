@@ -19,7 +19,6 @@ openai==1.3.9
 scikit-learn==1.3.2
 pandas==2.1.4
 numpy==1.25.2
-scipy==1.16.1
 
 # Background Tasks
 celery==5.3.4
@@ -27,7 +26,7 @@ redis==5.0.1
 
 # Authentication & Security
 python-jose[cryptography]==3.3.0
-bcrypt==4.2.1
+passlib[bcrypt]==1.7.4
 python-multipart==0.0.6
 
 # Payment Processing

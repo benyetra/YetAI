@@ -29,31 +29,15 @@ class PlayerAnalyticsService:
             if not player:
                 return []
             
-            # If requesting 2025 data but we don't have it, use 2024 data
-            actual_season = season
-            if season == 2025:
-                # Check if we have 2025 data
-                has_2025 = self.db.query(PlayerAnalytics).filter(
-                    PlayerAnalytics.player_id == player_id,
-                    PlayerAnalytics.season == 2025
-                ).first()
-                
-                if not has_2025:
-                    actual_season = 2024  # Fallback to 2024
-                    if not weeks:
-                        weeks = [8, 9, 10, 11, 12]  # Use the weeks we have data for
-            
             query = self.db.query(PlayerAnalytics).filter(
                 PlayerAnalytics.player_id == player_id,
-                PlayerAnalytics.season == actual_season
+                PlayerAnalytics.season == season
             )
             
             if weeks:
                 query = query.filter(PlayerAnalytics.week.in_(weeks))
                 
             analytics = query.order_by(PlayerAnalytics.week).all()
-            
-            # Return empty list if no analytics data found - we need to populate the database properly
             
             return [self._format_analytics_data(analytic) for analytic in analytics]
         except Exception as e:
@@ -69,19 +53,7 @@ class PlayerAnalyticsService:
     ) -> Dict:
         """Calculate usage trends over specified weeks"""
         try:
-            # If requesting 2025 but we don't have data, fallback to 2024
-            actual_season = season
-            if season == 2025:
-                has_2025 = self.db.query(PlayerAnalytics).filter(
-                    PlayerAnalytics.player_id == player_id,
-                    PlayerAnalytics.season == 2025
-                ).first()
-                if not has_2025:
-                    actual_season = 2024
-                    if weeks == list(range(13, 18)):  # If using default weeks 13-17
-                        weeks = [8, 9, 10, 11, 12]  # Use the weeks we have
-            
-            analytics = await self.get_player_analytics(player_id, weeks, actual_season)
+            analytics = await self.get_player_analytics(player_id, weeks, season)
             
             if len(analytics) < 2:
                 return {}
@@ -120,19 +92,7 @@ class PlayerAnalyticsService:
     ) -> Dict:
         """Calculate advanced efficiency metrics"""
         try:
-            # If requesting 2025 but we don't have data, fallback to 2024
-            actual_season = season
-            if season == 2025:
-                has_2025 = self.db.query(PlayerAnalytics).filter(
-                    PlayerAnalytics.player_id == player_id,
-                    PlayerAnalytics.season == 2025
-                ).first()
-                if not has_2025:
-                    actual_season = 2024
-                    if weeks == list(range(13, 18)):  # If using default weeks 13-17
-                        weeks = [8, 9, 10, 11, 12]  # Use the weeks we have
-            
-            analytics = await self.get_player_analytics(player_id, weeks, actual_season)
+            analytics = await self.get_player_analytics(player_id, weeks, season)
             
             if not analytics:
                 return {}
@@ -391,34 +351,4 @@ class PlayerAnalyticsService:
     def _get_current_week(self) -> int:
         """Get current NFL week (simplified for demo)"""
         # In production, this would calculate based on NFL schedule
-        # Since it's early September 2025, we're likely in week 1-3 of the season
-        from datetime import datetime
-        now = datetime.now()
-        
-        # Simple calculation: if it's early September, we're in early weeks
-        if now.month == 9 and now.day < 15:
-            return 3  # Early season
-        else:
-            return 12  # Late season placeholder
-    
-    def get_available_analysis_weeks(self, season: int = 2025, num_weeks: int = 5) -> Tuple[List[int], int]:
-        """
-        Get available weeks for analysis, falling back to previous season if current season data isn't available.
-        Returns tuple of (week_list, season_to_use)
-        """
-        current_week = self._get_current_week()
-        
-        # Check what data actually exists in the database
-        # For now, we know we have weeks 8-12 of 2024
-        # TODO: Make this dynamic based on actual data availability
-        
-        # If we're early in the season (before week 5), use previous season data
-        if current_week < 5 or season == 2025:  # For 2025, always use 2024 data until we have 2025 data
-            # Use the weeks we actually have data for (8-12 of 2024)
-            prev_season_weeks = [8, 9, 10, 11, 12]  # The weeks we know have data
-            return prev_season_weeks, 2024  # Use 2024 since that's where our data is
-        else:
-            # Use recent weeks from current season
-            start_week = max(1, current_week - num_weeks + 1)
-            current_season_weeks = list(range(start_week, current_week + 1))
-            return current_season_weeks, season
+        return 12  # Current week placeholder
