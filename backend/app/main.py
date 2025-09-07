@@ -21,6 +21,8 @@ from app.services.live_betting_simulator import live_betting_simulator
 from app.services.bet_sharing_service_db import bet_sharing_service_db as bet_sharing_service
 from app.services.websocket_manager import manager, simulate_odds_updates, simulate_score_updates
 from app.services.odds_api_service import OddsAPIService, SportKey, MarketKey, OddsFormat
+from app.services.live_nfl_service import live_nfl_service
+from app.services.nfl_live_betting_service import nfl_live_betting_service
 from app.services.cache_service import cache_service
 from app.services.scheduler_service import scheduler_service
 from app.services.google_oauth_service import google_oauth_service
@@ -267,6 +269,146 @@ async def get_daily_predictions():
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating predictions: {str(e)}")
+
+# Enhanced Live NFL Data Endpoints
+@app.get("/api/nfl/live/games")
+async def get_live_nfl_games():
+    """Get live NFL games with real-time scores and status"""
+    try:
+        games = await live_nfl_service.get_live_games()
+        return {
+            "status": "success",
+            "count": len(games),
+            "games": games,
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching live NFL games: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching live games: {str(e)}")
+
+@app.get("/api/nfl/live/odds")
+async def get_live_nfl_odds():
+    """Get live NFL betting odds with real-time updates"""
+    try:
+        odds = await live_nfl_service.get_live_odds()
+        return {
+            "status": "success",
+            "count": len(odds),
+            "odds": odds,
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching live NFL odds: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching live odds: {str(e)}")
+
+@app.get("/api/nfl/live/game/{game_id}")
+async def get_live_nfl_game(game_id: str):
+    """Get specific live NFL game by ID"""
+    try:
+        game = await live_nfl_service.get_game_by_id(game_id)
+        if not game:
+            raise HTTPException(status_code=404, detail="Game not found")
+        
+        return {
+            "status": "success",
+            "game": game
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching live NFL game {game_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching game: {str(e)}")
+
+@app.get("/api/nfl/live/betting-markets")
+async def get_nfl_live_betting_markets():
+    """Get NFL-specific live betting markets with enhanced features"""
+    try:
+        markets = await nfl_live_betting_service.get_nfl_live_markets()
+        return {
+            "status": "success",
+            "count": len(markets),
+            "markets": markets,
+            "features": [
+                "Real-time scores and game state",
+                "NFL-specific betting markets",
+                "Next score predictions",
+                "Drive outcome betting",
+                "Player props (when available)",
+                "Intelligent market suspension"
+            ],
+            "last_updated": datetime.now().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Error fetching NFL live betting markets: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching betting markets: {str(e)}")
+
+@app.post("/api/nfl/live/bet")
+async def place_nfl_live_bet(
+    request: PlaceLiveBetRequest,
+    current_user = Depends(get_current_user)
+):
+    """Place a live bet on NFL-specific markets"""
+    try:
+        user_id = current_user["id"]
+        response = await nfl_live_betting_service.place_nfl_live_bet(user_id, request)
+        
+        if not response.success:
+            return {"success": False, "error": response.error}
+        
+        return {
+            "success": True,
+            "bet": response.bet.__dict__ if response.bet else None,
+            "message": response.message
+        }
+    except Exception as e:
+        logger.error(f"Error placing NFL live bet: {e}")
+        raise HTTPException(status_code=500, detail=f"Error placing bet: {str(e)}")
+
+@app.get("/api/nfl/live/my-bets")
+async def get_my_nfl_live_bets(current_user = Depends(get_current_user)):
+    """Get user's NFL live betting history"""
+    try:
+        user_id = current_user["id"]
+        bets = await nfl_live_betting_service.get_nfl_bet_history(user_id)
+        
+        return {
+            "status": "success",
+            "count": len(bets),
+            "bets": bets
+        }
+    except Exception as e:
+        logger.error(f"Error fetching user's NFL bets: {e}")
+        raise HTTPException(status_code=500, detail=f"Error fetching bets: {str(e)}")
+
+@app.post("/api/nfl/live/start-updates")
+async def start_nfl_live_updates():
+    """Start live NFL data updates (admin/system endpoint)"""
+    try:
+        # Start the live data service in background
+        asyncio.create_task(live_nfl_service.start_live_updates())
+        
+        return {
+            "status": "success",
+            "message": "Live NFL data updates started",
+            "update_interval": f"{live_nfl_service.update_interval} seconds"
+        }
+    except Exception as e:
+        logger.error(f"Error starting NFL live updates: {e}")
+        raise HTTPException(status_code=500, detail=f"Error starting updates: {str(e)}")
+
+@app.post("/api/nfl/live/stop-updates")
+async def stop_nfl_live_updates():
+    """Stop live NFL data updates (admin/system endpoint)"""
+    try:
+        await live_nfl_service.stop_live_updates()
+        
+        return {
+            "status": "success",
+            "message": "Live NFL data updates stopped"
+        }
+    except Exception as e:
+        logger.error(f"Error stopping NFL live updates: {e}")
+        raise HTTPException(status_code=500, detail=f"Error stopping updates: {str(e)}")
 
 @app.get("/api/data/status")
 async def get_data_status():

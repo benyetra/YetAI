@@ -23,12 +23,17 @@ class InMemoryCache:
     def __init__(self):
         self._cache: Dict[str, Dict[str, Any]] = {}
         self._cleanup_task = None
-        self._start_cleanup_task()
+        self._cleanup_started = False
     
     def _start_cleanup_task(self):
         """Start background task to clean up expired entries"""
-        if not self._cleanup_task:
-            self._cleanup_task = asyncio.create_task(self._cleanup_expired())
+        if not self._cleanup_task and not self._cleanup_started:
+            try:
+                self._cleanup_task = asyncio.create_task(self._cleanup_expired())
+                self._cleanup_started = True
+            except RuntimeError:
+                # No event loop running, will start later when needed
+                pass
     
     async def _cleanup_expired(self):
         """Remove expired entries every 5 minutes"""
@@ -53,6 +58,10 @@ class InMemoryCache:
     
     async def get(self, key: str) -> Optional[str]:
         """Get value from cache"""
+        # Start cleanup task if not already started
+        if not self._cleanup_started:
+            self._start_cleanup_task()
+            
         if key not in self._cache:
             return None
         
@@ -65,6 +74,10 @@ class InMemoryCache:
     
     async def set(self, key: str, value: str, expire_seconds: int = 300):
         """Set value in cache with expiration"""
+        # Start cleanup task if not already started
+        if not self._cleanup_started:
+            self._start_cleanup_task()
+            
         expires_at = datetime.utcnow() + timedelta(seconds=expire_seconds)
         self._cache[key] = {
             "value": value,
