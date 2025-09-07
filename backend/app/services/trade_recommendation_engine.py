@@ -1172,7 +1172,7 @@ class TradeRecommendationEngine:
                     mutual_benefit_score=rec.get("mutual_benefit_score", 0),
                     likelihood_accepted=rec.get("estimated_likelihood", 0),
                     recommendation_reason=rec.get("trade_rationale", ""),
-                    timing_factor=f"Generated for week {league_context.get('current_week', 8)}",
+                    timing_factor=f"Generated for week 8",
                     expires_at=datetime.utcnow() + timedelta(days=7)
                 )
                 

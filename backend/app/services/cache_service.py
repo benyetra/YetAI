@@ -154,7 +154,7 @@ class CacheService:
         param_str = "&".join(f"{k}={v}" for k, v in sorted(kwargs.items()) if v is not None)
         
         # Hash the parameters to keep key length reasonable
-        param_hash = hashlib.md5(param_str.encode()).hexdigest()[:16]
+        param_hash = hashlib.md5(param_str.encode(), usedforsecurity=False).hexdigest()[:16]
         
         return f"odds_api:{prefix}:{param_hash}"
     

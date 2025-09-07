@@ -3,7 +3,7 @@ API endpoints for simplified Sleeper fantasy syncing
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from typing import Dict, Any
+from typing import Dict, Any, List
 import logging
 
 from app.core.database import get_db

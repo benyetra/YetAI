@@ -52,7 +52,7 @@ class AvatarService:
             initials = email[:2].upper()
         
         # Generate color based on email hash
-        email_hash = hashlib.md5(email.encode()).hexdigest()
+        email_hash = hashlib.md5(email.encode(), usedforsecurity=False).hexdigest()
         color_index = int(email_hash[:2], 16) % len(self.default_colors)
         bg_color = self.default_colors[color_index]
         
