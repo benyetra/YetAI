@@ -3,7 +3,7 @@ Test suite for the main application endpoints
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import json
 
 # Import the applications to test
@@ -66,7 +66,7 @@ class TestProductionApp:
                 "date": "2025-09-07T17:00Z"
             }
         ]
-        mock_pipeline.get_nfl_games_today = MagicMock(return_value=mock_games)
+        mock_pipeline.get_nfl_games_today = AsyncMock(return_value=mock_games)
         
         response = client.get("/api/games/nfl")
         assert response.status_code == 200
@@ -101,7 +101,7 @@ class TestProductionApp:
                 "bookmakers": []
             }
         ]
-        mock_pipeline.get_nfl_odds = MagicMock(return_value=mock_odds)
+        mock_pipeline.get_nfl_odds = AsyncMock(return_value=mock_odds)
         
         response = client.get("/api/odds/nfl")
         assert response.status_code == 200
@@ -122,7 +122,7 @@ class TestProductionApp:
             "timestamp": "2025-09-07T15:30:00",
             "context_used": {"games_count": 16}
         }
-        mock_chat_service.get_chat_response = MagicMock(return_value=mock_response)
+        mock_chat_service.get_chat_response = AsyncMock(return_value=mock_response)
         
         chat_request = {
             "message": "What are the best bets today?",
