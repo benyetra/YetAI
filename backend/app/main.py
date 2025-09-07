@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
+import json
 import logging
 from datetime import datetime
 
@@ -190,28 +191,6 @@ async def health_check():
 
 
 # Test endpoints for development
-@app.get("/test/odds")
-async def test_odds():
-    # Mock odds data for testing
-    return {
-        "game": "Team A vs Team B",
-        "odds": {
-            "moneyline": {"home": -110, "away": +120},
-            "spread": {"line": -3.5, "odds": -110}
-        },
-        "recommendation": "Value bet on away team moneyline"
-    }
-
-@app.get("/test/fantasy")
-async def test_fantasy():
-    # Mock fantasy data
-    return {
-        "player": "John Doe",
-        "position": "QB",
-        "projected_points": 24.5,
-        "recommendation": "Strong start this week"
-    }
-
 # Real API endpoints
 @app.get("/api/games/nfl")
 async def get_nfl_games():
@@ -4941,10 +4920,17 @@ async def get_simple_team_analysis(
         if not current_league:
             raise HTTPException(status_code=404, detail="No leagues found for user")
         
-        # Find the user's roster in the current league
+        # Find the user's roster in the current league that matches the requested team_id
         roster = db.query(SleeperRoster).filter(
-            SleeperRoster.league_id == current_league.id
+            SleeperRoster.league_id == current_league.id,
+            SleeperRoster.sleeper_roster_id == str(team_id)
         ).first()
+        
+        # If not found by sleeper_roster_id, try to find by roster owner matching the user
+        if not roster:
+            roster = db.query(SleeperRoster).filter(
+                SleeperRoster.league_id == current_league.id
+            ).first()
         
         # Check if roster data is stale and needs refresh
         if roster and roster.last_synced:
@@ -4974,6 +4960,56 @@ async def get_simple_team_analysis(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Team not found"
             )
+        
+        # Get real team name from Sleeper API if needed (similar to standings logic)
+        team_name = roster.team_name or f"Team {roster.sleeper_roster_id}"
+        owner_name = roster.owner_name or "Unknown"
+        
+        # Check if we need to fetch real data from Sleeper API (if we have generic team names)
+        if roster.team_name and roster.team_name.startswith("Team ") or roster.owner_name == "Unknown":
+            try:
+                import httpx
+                logger.info(f"Fetching real roster data from Sleeper API for league {current_league.sleeper_league_id}")
+                with httpx.Client() as client:
+                    # Fetch real roster data from Sleeper
+                    rosters_response = client.get(f"https://api.sleeper.app/v1/league/{current_league.sleeper_league_id}/rosters")
+                    rosters_response.raise_for_status()
+                    sleeper_rosters = rosters_response.json()
+                    
+                    # Fetch league users for owner names
+                    users_response = client.get(f"https://api.sleeper.app/v1/league/{current_league.sleeper_league_id}/users")
+                    users_response.raise_for_status()
+                    sleeper_users = users_response.json()
+                    
+                    # Create mapping from owner_id to user data  
+                    user_map = {}
+                    for user in sleeper_users:
+                        user_id = user["user_id"]
+                        display_name = user.get("display_name", user.get("username", "Unknown"))
+                        # Check if user has a custom team name in metadata
+                        user_team_name = user.get("metadata", {}).get("team_name")
+                        if not user_team_name:
+                            user_team_name = f"{display_name}'s Team"
+                        
+                        user_map[user_id] = {
+                            "display_name": display_name,
+                            "team_name": user_team_name
+                        }
+                    
+                    # Find the specific roster and get real data
+                    for sleeper_roster in sleeper_rosters:
+                        if str(sleeper_roster["roster_id"]) == str(team_id):
+                            owner_id = sleeper_roster["owner_id"]
+                            if owner_id in user_map:
+                                user_data = user_map[owner_id]
+                                team_name = user_data["team_name"] 
+                                owner_name = user_data["display_name"]
+                            break
+                        
+            except Exception as e:
+                logger.error(f"Failed to fetch real roster data from Sleeper: {e}")
+                # Continue with existing data
+                pass
         
         # Get player details
         players = []
@@ -5091,8 +5127,8 @@ async def get_simple_team_analysis(
             "team_analysis": {
                 "team_info": {
                     "team_id": team_id,
-                    "team_name": roster.team_name or f"Team {roster.sleeper_roster_id}",
-                    "owner_name": roster.owner_name or "Unknown",
+                    "team_name": team_name,
+                    "owner_name": owner_name,
                     "record": f"{roster.wins}-{roster.losses}-{roster.ties}",
                     "points_for": roster.points_for,
                     "points_against": roster.points_against,
@@ -5714,96 +5750,6 @@ async def find_mutual_benefit_trades(
     finally:
         db.close()
 
-@app.get("/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}")
-async def get_team_trade_analysis(
-    team_id: int,
-    league_id: int,
-    current_user = Depends(get_current_user)
-):
-    """Get comprehensive team analysis for trade purposes"""
-    try:
-        db = SessionLocal()
-        from app.models.fantasy_models import FantasyTeam
-        from app.models.database_models import SleeperRoster, SleeperLeague
-        
-        # Verify team exists - check both FantasyTeam and SleeperRoster
-        team = db.query(FantasyTeam).filter(
-            FantasyTeam.id == team_id,
-            FantasyTeam.league_id == league_id
-        ).first()
-        
-        # If not found, try SleeperRoster (new system)
-        if not team:
-            roster = db.query(SleeperRoster).join(SleeperLeague).filter(
-                SleeperRoster.id == team_id,
-                SleeperLeague.id == league_id,
-                SleeperLeague.user_id == current_user["id"]
-            ).first()
-            
-            if not roster:
-                raise HTTPException(status_code=404, detail="League not found")
-        
-        recommendation_engine = TradeRecommendationEngine(db)
-        
-        # Get comprehensive team context
-        team_context = recommendation_engine._get_comprehensive_team_context(team_id, league_id)
-        league_context = recommendation_engine._get_league_context(league_id)
-        
-        def get_recommended_approach(team_context):
-            tier = team_context["competitive_analysis"]["competitive_tier"]
-            
-            if tier == "championship":
-                return "Consolidate talent for playoff push. Trade depth for star players."
-            elif tier == "competitive":
-                return "Make targeted upgrades without sacrificing future. Focus on position needs."
-            elif tier == "bubble":
-                return "Cautious improvements. Don't mortgage future for marginal gains."
-            else:
-                return "Rebuild mode. Sell aging players for youth and draft picks."
-        
-        return {
-            "success": True,
-            "team_analysis": {
-                "team_info": {
-                    "team_id": team_context["team_id"],
-                    "team_name": team_context["team_name"],
-                    "record": team_context["record"],
-                    "points_for": team_context["points_for"],
-                    "team_rank": team_context["competitive_analysis"]["team_rank"],
-                    "competitive_tier": team_context["competitive_analysis"]["competitive_tier"]
-                },
-                "roster_analysis": {
-                    "position_strengths": team_context["position_strength"],
-                    "position_needs": team_context["position_needs"],
-                    "surplus_positions": team_context["surplus_positions"]
-                },
-                "tradeable_assets": {
-                    "surplus_players": team_context["tradeable_players"]["surplus"],
-                    "expendable_players": team_context["tradeable_players"]["expendable"],
-                    "valuable_players": team_context["tradeable_players"]["valuable"],
-                    "tradeable_picks": team_context["tradeable_picks"]
-                },
-                "trade_strategy": {
-                    "competitive_analysis": team_context["competitive_analysis"],
-                    "trade_preferences": team_context["trade_preferences"],
-                    "recommended_approach": get_recommended_approach(team_context)
-                }
-            },
-            "league_context": {
-                "scoring_type": league_context["scoring_type"],
-                "current_week": league_context["current_week"],
-                "trade_deadline_weeks": league_context["trade_deadline_weeks"],
-                "playoff_implications": league_context["current_week"] >= 10
-            }
-        }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Failed to get team analysis for {team_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to get team analysis")
-    finally:
-        db.close()
 
 @app.post("/api/v1/fantasy/trade-analyzer/quick-analysis")
 async def quick_trade_analysis(
@@ -5826,6 +5772,8 @@ async def quick_trade_analysis(
             team1_gives = trade_data.get("team1_gives", {}).get("players", [])
             team2_gives = trade_data.get("team2_gives", {}).get("players", [])
         
+        logger.info(f"Quick trade analysis - team1_gives: {team1_gives}, team2_gives: {team2_gives}")
+        
         if not team1_gives or not team2_gives:
             raise HTTPException(status_code=400, detail="Both teams must give players")
         
@@ -5847,6 +5795,11 @@ async def quick_trade_analysis(
                     "team": sleeper_player.team,
                     "value": value
                 })
+                logger.info(f"Found team1 player: {sleeper_player.full_name} (ID: {player_id}, value: {value})")
+            else:
+                logger.warning(f"Player not found in database: {player_id}")
+        
+        logger.info(f"Team1 gives - Found {len(team1_players)} players, total value: {team1_gives_value}")
         
         # Calculate values for team2 gives (what team2 is trading away)
         team2_gives_value = 0
