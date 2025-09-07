@@ -267,53 +267,95 @@ const BetHistory: React.FC = () => {
 
   const formatBetTitle = (bet: Bet) => {
     // Handle parlay bets specially
-    if (bet.bet_type === 'parlay') {
+    if (bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay') {
       const legCount = bet.leg_count || bet.legs?.length || 0;
       return `${legCount}-Leg Parlay`;
     }
     
-    // If we have team information, show a proper game description
+    const cleanBetType = bet.bet_type?.replace('live_', '') || 'bet';
+    
+    // If we have team information, use the ActiveLiveBets formatting logic
     if (bet.home_team && bet.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
       
-      if (bet.bet_type === 'moneyline') {
-        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
-        return `${team} to Win (${gameInfo})`;
-      } else if (bet.bet_type === 'spread') {
-        const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
-        return `${team} Spread (${gameInfo})`;
-      } else if (bet.bet_type === 'total') {
-        return `${(bet.selection || '').toUpperCase()} (${gameInfo})`;
+      if (cleanBetType.toLowerCase() === 'moneyline') {
+        // For moneyline, check if selection is home/away or team name
+        if (bet.selection === 'home' || bet.selection === 'away') {
+          const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+          return `${team} to Win (${gameInfo})`;
+        } else if (bet.selection === bet.home_team || bet.selection === bet.away_team) {
+          // Selection is the actual team name
+          return `${bet.selection} to Win (${gameInfo})`;
+        } else {
+          // Fallback to MONEYLINE - TEAM format if selection is team name
+          return `MONEYLINE - ${bet.selection}`;
+        }
+      } else if (cleanBetType.toLowerCase() === 'spread') {
+        // For spread, check if selection is home/away or team name
+        if (bet.selection === 'home' || bet.selection === 'away') {
+          const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+          return `${team} Spread (${gameInfo})`;
+        } else if (bet.selection === bet.home_team || bet.selection === bet.away_team) {
+          // Selection is the actual team name
+          return `${bet.selection} Spread (${gameInfo})`;
+        } else {
+          // Fallback
+          return `${bet.selection} Spread (${gameInfo})`;
+        }
+      } else if (cleanBetType.toLowerCase() === 'total') {
+        return `${bet.selection?.toUpperCase() || 'TOTAL'} (${gameInfo})`;
       }
     }
     
-    // Fallback to generic description
-    return `${(bet.bet_type || 'BET').toUpperCase()} - ${(bet.selection || 'UNKNOWN').toUpperCase()}`;
+    // Fallback for cases without team info - match the ActiveLiveBets format
+    if (bet.selection) {
+      return `${cleanBetType.toUpperCase()} - ${bet.selection.toUpperCase()}`;
+    }
+    
+    return `${cleanBetType.toUpperCase()} Bet`;
   };
 
   const formatBetSubtitle = (bet: Bet) => {
     const parts = [];
     
-    if (bet.sport) {
-      parts.push(bet.sport);
+    // Add team information if available and not already in title
+    if (bet.home_team && bet.away_team) {
+      parts.push(`${bet.away_team} @ ${bet.home_team}`);
     }
     
+    // Add sport if available  
+    if (bet.sport && bet.sport !== 'unknown') {
+      // Format sport nicely - e.g., "BASEBALL_MLB" -> "BASEBALL • MLB"
+      const formattedSport = bet.sport.replace('_', ' • ').toUpperCase();
+      parts.push(formattedSport);
+    }
+    
+    // Add game time if available
     if (bet.commence_time) {
-      const gameTime = new Date(bet.commence_time).toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      parts.push(gameTime);
+      try {
+        const gameTime = new Date(bet.commence_time).toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        });
+        parts.push(gameTime);
+      } catch (e) {
+        // Ignore invalid dates
+      }
+    }
+    
+    // If no meaningful subtitle can be created, return empty string
+    if (parts.length === 0) {
+      return '';
     }
     
     return parts.join(' • ');
   };
 
   // Convert live bets to the same format as regular bets for display
-  const normalizedLiveBets = liveBets.map(liveBet => ({
-    id: liveBet.id,
+  const normalizedLiveBets = liveBets.map((liveBet, index) => ({
+    id: `live_${liveBet.id}`, // Prefix with 'live_' to avoid duplicate keys
     user_id: liveBet.user_id,
     game_id: liveBet.game_id,
     bet_type: `live_${liveBet.bet_type}`, // Mark as live bet
@@ -326,6 +368,10 @@ const BetHistory: React.FC = () => {
     settled_at: liveBet.settled_at,
     result_amount: liveBet.result_amount,
     parlay_id: null,
+    // Include team information from live bets
+    home_team: liveBet.home_team,
+    away_team: liveBet.away_team,
+    sport: liveBet.sport,
     // Additional live bet fields for display
     current_odds: liveBet.current_odds,
     cash_out_value: liveBet.cash_out_value,
@@ -524,13 +570,13 @@ const BetHistory: React.FC = () => {
             </div>
           ) : (
             <div className="divide-y divide-gray-200">
-              {filteredBets.map((bet) => (
+              {filteredBets.map((bet, index) => (
                 <div 
-                  key={bet.id} 
+                  key={`${bet.id}-${index}`} 
                   className={`p-6 transition-colors ${
-                    bet.bet_type === 'parlay' ? 'hover:bg-gray-50 cursor-pointer' : 'hover:bg-gray-50'
+                    (bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay') ? 'hover:bg-gray-50 cursor-pointer' : 'hover:bg-gray-50'
                   }`}
-                  onClick={() => bet.bet_type === 'parlay' && handleParlayClick(bet.id)}
+                  onClick={() => (bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay') && handleParlayClick(bet.id.replace('live_', ''))}
                 >
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
@@ -548,7 +594,7 @@ const BetHistory: React.FC = () => {
                             <span>Live</span>
                           </span>
                         )}
-                        {bet.bet_type === 'parlay' && (
+                        {(bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay') && (
                           <span className="px-2 py-1 bg-purple-100 text-purple-800 rounded-full text-xs font-medium flex items-center space-x-1">
                             <Layers className="w-3 h-3" />
                             <span>Parlay</span>
@@ -566,10 +612,10 @@ const BetHistory: React.FC = () => {
                       )}
                       
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
-                        <span>Odds: {formatOdds(bet.bet_type === 'parlay' ? bet.total_odds : bet.odds)}</span>
+                        <span>Odds: {formatOdds(bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay' ? bet.total_odds : bet.odds)}</span>
                         <span>•</span>
                         <span>{formatDate(bet.placed_at)}</span>
-                        {bet.game_id && (
+                        {bet.game_id && !bet.home_team && !bet.away_team && (
                           <>
                             <span>•</span>
                             <span>Game: {bet.game_id}</span>
@@ -577,7 +623,7 @@ const BetHistory: React.FC = () => {
                         )}
                       </div>
                       
-                      {bet.bet_type === 'parlay' && (
+                      {(bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay') && (
                         <p className="text-sm text-blue-600 mt-2">
                           Click to view parlay details
                         </p>
