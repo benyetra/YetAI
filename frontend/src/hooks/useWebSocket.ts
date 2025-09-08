@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { useAuth } from '@/components/Auth';
+import { getWsUrl } from '@/lib/api-config';
 
 interface WebSocketMessage {
   type: string;
@@ -44,9 +45,8 @@ export function useWebSocket() {
     return;
 
     try {
-      // WebSocket URL - update with your actual domain in production
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`;
-      const wsUrl = apiUrl.replace(/^https?:/, 'ws:').replace(/^http:/, 'ws:') + `/ws/${user.id}`;
+      // WebSocket URL using centralized configuration
+      const wsUrl = getWsUrl(`/ws/${user.id}`);
       console.log('WebSocket: Attempting to connect to', wsUrl);
       ws.current = new WebSocket(wsUrl);
 

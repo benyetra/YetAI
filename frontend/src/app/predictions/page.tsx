@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
@@ -80,7 +81,7 @@ export default function YetAIBetsPage() {
     try {
       setLoadingBets(true);
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/yetai-bets', {
+      const response = await fetch(getApiUrl('/api/yetai-bets'), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -135,7 +136,7 @@ export default function YetAIBetsPage() {
     try {
       setDeletingBetId(betId);
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`http://localhost:8000/api/admin/yetai-bets/${betId}`, {
+      const response = await fetch(getApiUrl(`/api/admin/yetai-bets/${betId}`), {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${token}`,

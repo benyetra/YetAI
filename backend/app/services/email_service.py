@@ -9,6 +9,7 @@ from typing import Optional
 import logging
 from datetime import datetime, timedelta
 import secrets
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ class EmailService:
         self.smtp_password = os.getenv("SMTP_PASSWORD", "")
         self.from_email = os.getenv("FROM_EMAIL", "noreply@yetai.com")
         self.from_name = "YetAI Sports Betting"
-        self.app_url = os.getenv("APP_URL", "http://localhost:3000")
+        # Use environment-aware frontend URL
+        frontend_urls = settings.get_frontend_urls()
+        self.app_url = frontend_urls[0] if frontend_urls else "http://localhost:3000"
         
         # For development - simulate email sending
         self.dev_mode = not self.smtp_user or not self.smtp_password

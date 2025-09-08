@@ -10,6 +10,7 @@ import base64
 from PIL import Image
 import io
 import secrets
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -159,8 +160,17 @@ class AvatarService:
             logger.error(f"Error deleting avatar: {e}")
             return False
     
-    def get_avatar_url(self, user: dict, base_url: str = "http://localhost:8000") -> str:
+    def get_avatar_url(self, user: dict, base_url: str = None) -> str:
         """Get user avatar URL or generate default"""
+        if base_url is None:
+            # Use environment-aware backend URL
+            if settings.ENVIRONMENT == "production":
+                base_url = "https://backend-production-f7af.up.railway.app"
+            elif settings.ENVIRONMENT == "staging":
+                base_url = "https://staging-backend.up.railway.app"
+            else:
+                base_url = "http://localhost:8000"
+        
         if user.get('avatar_url'):
             # Return custom avatar
             if user['avatar_url'].startswith('http'):

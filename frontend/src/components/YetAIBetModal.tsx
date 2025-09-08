@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import {
   X,
   DollarSign,
@@ -125,7 +126,7 @@ export default function YetAIBetModal({
 
       const normalizedBetType = betTypeMapping[bet.bet_type.toLowerCase()] || 'total';
       
-      const response = await fetch('http://localhost:8000/api/bets/place', {
+      const response = await fetch(getApiUrl('/api/bets/place'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

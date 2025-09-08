@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { X, Plus, Calculator, Trash2, AlertCircle } from 'lucide-react';
 
 interface ParlayLeg {
@@ -280,7 +281,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
         amount: parseFloat(amount)
       };
 
-      const response = await fetch('http://localhost:8000/api/bets/parlay', {
+      const response = await fetch(getApiUrl('/api/bets/parlay'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

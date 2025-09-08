@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { Layers, Clock, CheckCircle, XCircle, DollarSign, Calendar, Share2 } from 'lucide-react';
 import BetShareModal from './BetShareModal';
 
@@ -43,7 +44,7 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
       setLoading(true);
       const token = localStorage.getItem('auth_token');
       
-      const response = await fetch('http://localhost:8000/api/bets/parlays', {
+      const response = await fetch(getApiUrl('/api/bets/parlays'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

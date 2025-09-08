@@ -2,14 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Award, BarChart3, Clock, CheckCircle } from 'lucide-react';
+import { apiRequest } from '@/lib/api-config';
 
 // API client
 const api = {
-  baseURL: process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`,
-  
   async get(endpoint) {
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`);
+      const response = await apiRequest(endpoint, { method: 'GET' });
       return await response.json();
     } catch (error) {
       console.error(`API Error: ${endpoint}`, error);
@@ -19,9 +18,8 @@ const api = {
   
   async post(endpoint, data = {}) {
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, {
+      const response = await apiRequest(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
       return await response.json();

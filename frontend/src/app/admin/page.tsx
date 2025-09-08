@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
@@ -61,7 +62,7 @@ export default function AdminPage() {
       const fetchVerificationStats = async () => {
         try {
           const token = localStorage.getItem('auth_token');
-          const response = await fetch('http://localhost:8000/api/admin/bets/verification/stats', {
+          const response = await fetch(getApiUrl('/api/admin/bets/verification/stats'), {
             method: 'GET',
             headers: {
               'Authorization': `Bearer ${token}`,
@@ -104,7 +105,7 @@ export default function AdminPage() {
     
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/admin/yetai-bets', {
+      const response = await fetch(getApiUrl('/api/admin/yetai-bets'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -269,7 +270,7 @@ export default function AdminPage() {
   const fetchVerificationStats = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/admin/bets/verification/stats', {
+      const response = await fetch(getApiUrl('/api/admin/bets/verification/stats'), {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -293,7 +294,7 @@ export default function AdminPage() {
     setIsVerifying(true);
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/admin/bets/verify', {
+      const response = await fetch(getApiUrl('/api/admin/bets/verify'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

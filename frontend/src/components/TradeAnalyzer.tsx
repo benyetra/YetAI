@@ -4,6 +4,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { getApiUrl, apiRequest } from '@/lib/api-config';
 import { 
   Users, 
   TrendingUp, 
@@ -280,7 +281,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       
       // Call our backend API instead of directly calling Sleeper
       const token = localStorage.getItem('auth_token');
-      const response = await fetch(`http://localhost:8000/api/fantasy/roster/${platformLeagueId}`, {
+      const response = await apiRequest(`/api/fantasy/roster/${platformLeagueId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -541,7 +542,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         
         let tradeValues: { [key: string]: number } = {};
         try {
-          const valueResponse = await fetch(`http://localhost:8000/api/v1/fantasy/trade-analyzer/player-values?limit=200`);
+          const valueResponse = await apiRequest(`/api/v1/fantasy/trade-analyzer/player-values?limit=200`, { method: 'GET' });
           if (valueResponse.ok) {
             const valueData = await valueResponse.json();
             if (valueData.success) {
@@ -618,7 +619,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       try {
         const token = localStorage.getItem('auth_token');
         // Use internal league ID for backend API call and correct URL structure
-        const response = await fetch(`http://localhost:8000/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${leagueId}`, {
+        const response = await apiRequest(`/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${leagueId}`, {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -743,7 +744,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       try {
         const token = localStorage.getItem('auth_token');
         // Use internal league ID for backend API call and correct URL structure
-        const response = await fetch(`http://localhost:8000/api/v1/fantasy/trade-analyzer/recommendations`, {
+        const response = await apiRequest(`/api/v1/fantasy/trade-analyzer/recommendations`, {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -806,7 +807,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     try {
       setLoading(true);
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/v1/fantasy/trade-analyzer/quick-analysis', {
+      const response = await apiRequest('/api/v1/fantasy/trade-analyzer/quick-analysis', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,

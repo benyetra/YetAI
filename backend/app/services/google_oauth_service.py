@@ -12,7 +12,7 @@ class GoogleOAuthService:
         # Use centralized settings
         self.client_id = settings.GOOGLE_CLIENT_ID or 'your-google-client-id'
         self.client_secret = settings.GOOGLE_CLIENT_SECRET or 'your-google-client-secret'
-        self.redirect_uri = settings.GOOGLE_REDIRECT_URI or 'http://localhost:8000/api/auth/google/callback'
+        self.redirect_uri = settings.get_google_redirect_uri()
         
         # OAuth 2.0 scopes - use full URLs for consistency
         self.scopes = [

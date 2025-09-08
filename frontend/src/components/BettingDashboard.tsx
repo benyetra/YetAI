@@ -7,6 +7,7 @@ import PerformanceDashboard from './PerformanceDashboard';
 import { useAuth } from './Auth';
 import BetModal from './BetModal';
 import { oddsUtils } from '../lib/api';
+import { getApiUrl, apiRequest } from '@/lib/api-config';
 import { 
   formatSportName, 
   formatLocalDateTime, 
@@ -97,14 +98,16 @@ export default function BettingDashboard() {
   const { user, token, isAuthenticated } = useAuth();
 
   const api = {
-    baseURL: process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`,
     get: async (endpoint: string): Promise<any> => {
       try {
-        const headers: any = { 'Content-Type': 'application/json' };
+        const headers: any = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const response = await fetch(`${api.baseURL}${endpoint}`, { headers });
+        const response = await apiRequest(endpoint, { 
+          method: 'GET', 
+          headers 
+        });
         return await response.json();
       } catch (error) {
         console.error(`API Error: ${endpoint}`, error);
@@ -113,11 +116,11 @@ export default function BettingDashboard() {
     },
     post: async (endpoint: string, data: any): Promise<any> => {
       try {
-        const headers: any = { 'Content-Type': 'application/json' };
+        const headers: any = {};
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
-        const response = await fetch(`${api.baseURL}${endpoint}`, {
+        const response = await apiRequest(endpoint, {
           method: 'POST',
           headers,
           body: JSON.stringify(data)

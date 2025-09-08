@@ -3,6 +3,7 @@
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import { User, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import { getApiUrl, apiRequest } from '@/lib/api-config';
 
 // Auth Context
 const AuthContext = createContext<any>(null);
@@ -15,15 +16,12 @@ export const useAuth = () => {
   return context;
 };
 
-// API client
+// API client using centralized configuration
 const authAPI = {
-  baseURL: process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`,
-  
   async post(endpoint: string, data: any) {
     try {
-      const response = await fetch(`${this.baseURL}${endpoint}`, {
+      const response = await apiRequest(endpoint, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
       });
       
@@ -35,7 +33,7 @@ const authAPI = {
     } catch (error: any) {
       console.error(`API Error: ${endpoint}`, error);
       if (error.message === 'Failed to fetch') {
-        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running on port 8000.' };
+        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running.' };
       }
       return { status: 'error', message: error.message };
     }
@@ -43,12 +41,15 @@ const authAPI = {
   
   async get(endpoint: string, token: string | null = null) {
     try {
-      const headers: any = { 'Content-Type': 'application/json' };
+      const headers: any = {};
       if (token) {
         headers['Authorization'] = `Bearer ${token}`;
       }
       
-      const response = await fetch(`${this.baseURL}${endpoint}`, { headers });
+      const response = await apiRequest(endpoint, { 
+        method: 'GET',
+        headers 
+      });
       
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -58,7 +59,7 @@ const authAPI = {
     } catch (error: any) {
       console.error(`API Error: ${endpoint}`, error);
       if (error.message === 'Failed to fetch') {
-        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running on port 8000.' };
+        return { status: 'error', message: 'Unable to connect to server. Please check if the backend is running.' };
       }
       return { status: 'error', message: error.message };
     }

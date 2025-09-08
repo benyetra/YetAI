@@ -2,6 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { useAuth } from './Auth';
+import { getWsUrl } from '@/lib/api-config';
 
 export interface Notification {
   id: string;
@@ -71,8 +72,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     try {
       setWsStatus(prev => ({ ...prev, reconnecting: true }));
       
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//localhost:8000/ws/${user.id}`;
+      const wsUrl = getWsUrl(`/ws/${user.id}`);
       
       const websocket = new WebSocket(wsUrl);
       

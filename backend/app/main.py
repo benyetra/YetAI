@@ -61,28 +61,8 @@ class UserPreferences(BaseModel):
 
 # Environment-aware CORS configuration
 def get_cors_origins():
-    """Get CORS origins based on environment"""
-    if settings.ENVIRONMENT == "production":
-        return [
-            "https://yetai.app",
-            "https://yetai.vercel.app", 
-            "https://*.vercel.app",
-            "http://localhost:3000",  # For local testing
-        ]
-    elif settings.ENVIRONMENT == "staging":
-        return [
-            "https://staging.yetai.app",
-            "https://*.vercel.app",
-            "http://localhost:3000",
-            "http://localhost:8080",
-        ]
-    else:  # development
-        return [
-            "http://localhost:3000",
-            "http://localhost:8080",
-            "http://127.0.0.1:3000",
-            "http://127.0.0.1:8080",
-        ]
+    """Get CORS origins based on environment using centralized configuration"""
+    return settings.get_frontend_urls()
 
 # Create FastAPI app
 app = FastAPI(

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { TrendingUp, TrendingDown, DollarSign, Target, Brain, Cloud, Crown, ArrowUpRight, Calendar, Users, Wifi, WifiOff, Activity, Zap } from 'lucide-react';
@@ -282,7 +283,7 @@ const Dashboard: React.FC = () => {
       setLoading(true);
       try {
         // Fetch user stats
-        const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`;
+        const apiUrl = getApiUrl('');
         const statsResponse = await fetch(`${apiUrl}/api/user/performance`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
@@ -38,7 +39,7 @@ export default function ParlaysPage() {
   const fetchParlayStats = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-      const response = await fetch('http://localhost:8000/api/bets/parlays', {
+      const response = await fetch(getApiUrl('/api/bets/parlays'), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

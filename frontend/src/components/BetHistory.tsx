@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { 
   Calendar, 
   TrendingUp, 
@@ -172,7 +173,7 @@ const BetHistory: React.FC = () => {
   const fetchParlayDetails = async (parlayId: string) => {
     try {
       setParlayModalLoading(true);
-      const response = await fetch(`http://localhost:8000/api/bets/parlay/${parlayId}`, {
+      const response = await fetch(`${getApiUrl(`/api/bets/parlay/${parlayId}`)}`, {
         headers: {
           'Authorization': `Bearer ${token}`
         }

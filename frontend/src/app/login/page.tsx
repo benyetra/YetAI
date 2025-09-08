@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { Eye, EyeOff, Mail, Lock, TrendingUp, DollarSign, Activity, Users } from 'lucide-react';
@@ -81,7 +82,7 @@ export default function LoginPage() {
         // Alternative: window.google.accounts.id.renderButton(buttonElement, options);
       } else {
         // Fallback: redirect to backend OAuth URL
-        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-f7af.up.railway.app'}/api/auth/google/url`);
+        const response = await fetch(getApiUrl('/api/auth/google/url'));
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -102,7 +103,7 @@ export default function LoginPage() {
       setIsLoading(true);
       setError('');
       
-      const result = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-f7af.up.railway.app'}/api/auth/google/verify`, {
+      const result = await fetch(getApiUrl('/api/auth/google/verify'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_token: response.credential })
