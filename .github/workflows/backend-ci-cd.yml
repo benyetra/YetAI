@@ -136,9 +136,8 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
       run: |
-        # Deploy using Railway CLI with explicit project linking
-        railway login
-        railway deploy --detach
+        # Deploy using Railway CLI with token authentication
+        railway up
 
     - name: Run deployment health check
       run: |
@@ -166,9 +165,8 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        # Deploy using Railway CLI with explicit project linking
-        railway login
-        railway deploy --detach
+        # Deploy using Railway CLI with token authentication
+        railway up
 
     - name: Run deployment health check
       run: |

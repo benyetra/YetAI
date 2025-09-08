@@ -167,7 +167,7 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: [test, accessibility-test, security-scan]
-    if: github.ref == 'refs/heads/develop'
+    if: false # Temporarily disabled until Vercel project is configured correctly
     defaults:
       run:
         working-directory: ./frontend
@@ -208,7 +208,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [test, accessibility-test, security-scan]
-    if: github.ref == 'refs/heads/main'
+    if: false # Temporarily disabled until Vercel project is configured correctly
     defaults:
       run:
         working-directory: ./frontend
@@ -264,7 +264,7 @@ jobs:
     name: Lighthouse Audit
     runs-on: ubuntu-latest
     needs: [deploy-production]
-    if: github.ref == 'refs/heads/main'
+    if: false # Temporarily disabled until Vercel deployment is configured
     
     steps:
     - name: Checkout code
