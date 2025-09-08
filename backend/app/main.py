@@ -458,28 +458,48 @@ async def get_chat_suggestions():
 # Test endpoint for database connectivity
 @app.get("/test-db")
 async def test_database():
-    """Test database connection"""
+    """Test database connection with detailed debugging"""
+    debug_info = {
+        "environment": settings.ENVIRONMENT,
+        "database_url": settings.DATABASE_URL[:50] + "..." if len(settings.DATABASE_URL) > 50 else settings.DATABASE_URL,
+        "service_available": is_service_available("database")
+    }
+    
     if not is_service_available("database"):
         return {
             "status": "unavailable",
             "message": "Database service not loaded",
-            "environment": settings.ENVIRONMENT
+            "debug": debug_info
         }
     
     try:
         database_service = get_service("database")
-        if database_service and database_service["check_db_connection"]:
+        debug_info["service_loaded"] = database_service is not None
+        
+        if database_service and database_service.get("check_db_connection"):
+            debug_info["check_function_available"] = True
             connected = database_service["check_db_connection"]()
+            debug_info["connection_result"] = connected
+            
             return {
                 "status": "connected" if connected else "disconnected",
                 "message": "Database connection successful" if connected else "Database connection failed",
-                "environment": settings.ENVIRONMENT
+                "debug": debug_info
+            }
+        else:
+            debug_info["check_function_available"] = False
+            return {
+                "status": "error",
+                "message": "Database check function not available",
+                "debug": debug_info
             }
     except Exception as e:
+        debug_info["exception"] = str(e)
+        debug_info["exception_type"] = str(type(e))
         return {
-            "status": "error",
+            "status": "error", 
             "message": f"Database test failed: {str(e)}",
-            "environment": settings.ENVIRONMENT
+            "debug": debug_info
         }
 
 if __name__ == "__main__":
