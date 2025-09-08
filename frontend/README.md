@@ -4,6 +4,8 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 Frontend for the AI-powered sports betting platform, built with Next.js and Tailwind CSS.
 
+**Latest Update**: Fixed API URL configuration and CORS issues for production deployment. Backend now uses consolidated environment-aware architecture.
+
 ## Getting Started
 
 First, run the development server:
