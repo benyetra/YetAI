@@ -137,7 +137,6 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
       run: |
-        railway login --token $RAILWAY_TOKEN
         railway up --service staging-backend --detach
 
     - name: Run deployment health check
@@ -167,7 +166,6 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        railway login --token $RAILWAY_TOKEN
         railway up --detach
 
     - name: Run deployment health check
