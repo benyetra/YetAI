@@ -164,7 +164,7 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        railway up --detach
+        railway deploy --detach
 
     - name: Run deployment health check
       run: |
