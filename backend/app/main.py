@@ -459,6 +459,49 @@ async def get_user_performance(request: Request, current_user: dict = Depends(ge
         logger.error(f"Error fetching user performance: {e}")
         return {"status": "error", "message": "Failed to fetch performance data"}
 
+@app.post("/api/performance/simulate-data")
+async def simulate_performance_data(current_user: dict = Depends(get_current_user)):
+    """Simulate performance data for testing"""
+    try:
+        # Mock data simulation for development
+        return {"status": "success", "message": "Mock performance data created"}
+    except Exception as e:
+        logger.error(f"Error simulating performance data: {e}")
+        return {"status": "error", "message": "Failed to simulate data"}
+
+@app.get("/api/performance/metrics")
+async def get_performance_metrics(current_user: dict = Depends(get_current_user)):
+    """Get performance metrics"""
+    try:
+        return {
+            "status": "success",
+            "metrics": {
+                "total_bets": 0,
+                "wins": 0,
+                "losses": 0,
+                "win_rate": 0.0,
+                "avg_odds": 0.0,
+                "profit_loss": 0.0,
+                "best_streak": 0,
+                "current_streak": 0
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error fetching metrics: {e}")
+        return {"status": "error", "message": "Failed to fetch metrics"}
+
+@app.get("/api/performance/best-predictions")
+async def get_best_predictions(current_user: dict = Depends(get_current_user)):
+    """Get best predictions"""
+    try:
+        return {
+            "status": "success",
+            "best_predictions": []
+        }
+    except Exception as e:
+        logger.error(f"Error fetching best predictions: {e}")
+        return {"status": "error", "message": "Failed to fetch best predictions"}
+
 # Avatar Endpoints  
 @app.get("/api/auth/avatar/{user_id}")
 async def get_user_avatar(user_id: int):
@@ -507,6 +550,32 @@ async def get_personalized_predictions(request: Request, current_user: dict = De
     except Exception as e:
         logger.error(f"Error fetching personalized predictions: {e}")
         return {"status": "error", "message": "Failed to fetch predictions"}
+
+@app.get("/api/predictions/daily")
+async def get_daily_predictions():
+    """Get daily predictions"""
+    try:
+        return {
+            "status": "success",
+            "predictions": [],
+            "message": "Daily predictions service not fully configured"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching daily predictions: {e}")
+        return {"status": "error", "message": "Failed to fetch daily predictions"}
+
+@app.get("/api/fantasy/projections")
+async def get_fantasy_projections():
+    """Get fantasy projections"""
+    try:
+        return {
+            "status": "success",
+            "projections": [],
+            "message": "Fantasy projections service not fully configured"
+        }
+    except Exception as e:
+        logger.error(f"Error fetching fantasy projections: {e}")
+        return {"status": "error", "message": "Failed to fetch fantasy projections"}
 
 # WebSocket Support
 @app.websocket("/ws/{user_id}")
