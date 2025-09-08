@@ -136,10 +136,9 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
       run: |
-        # Set Railway token as environment variable for authentication
-        export RAILWAY_TOKEN=$RAILWAY_TOKEN
-        # Deploy to staging (Railway will use the railway.toml config)
-        railway deploy
+        # Deploy using Railway CLI with explicit project linking
+        railway login
+        railway deploy --detach
 
     - name: Run deployment health check
       run: |
@@ -167,10 +166,9 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        # Set Railway token as environment variable for authentication
-        export RAILWAY_TOKEN=$RAILWAY_TOKEN
-        # Deploy to production (Railway will use the railway.toml config)
-        railway deploy
+        # Deploy using Railway CLI with explicit project linking
+        railway login
+        railway deploy --detach
 
     - name: Run deployment health check
       run: |
