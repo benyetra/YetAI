@@ -1,5 +1,9 @@
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
+## YetAI Sports Betting MVP Frontend
+
+Frontend for the AI-powered sports betting platform, built with Next.js and Tailwind CSS.
+
 ## Getting Started
 
 First, run the development server:
