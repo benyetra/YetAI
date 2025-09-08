@@ -304,6 +304,60 @@ async def get_chat_suggestions():
         ]
     }
 
+# Odds API endpoints
+@app.get("/api/odds/popular")
+async def get_popular_sports_odds():
+    """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
+    # Return mock data for production since odds API is not configured
+    return {
+        "status": "success",
+        "data": [
+            {
+                "id": "mock_game_1",
+                "sport_title": "NFL",
+                "home_team": "Kansas City Chiefs", 
+                "away_team": "Buffalo Bills",
+                "commence_time": "2025-01-12T21:00:00Z",
+                "bookmakers": [
+                    {
+                        "title": "DraftKings",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Kansas City Chiefs", "price": -110},
+                                    {"name": "Buffalo Bills", "price": -110}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            },
+            {
+                "id": "mock_game_2", 
+                "sport_title": "NBA",
+                "home_team": "Los Angeles Lakers",
+                "away_team": "Boston Celtics",
+                "commence_time": "2025-01-12T22:00:00Z",
+                "bookmakers": [
+                    {
+                        "title": "FanDuel",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Los Angeles Lakers", "price": 105},
+                                    {"name": "Boston Celtics", "price": -125}
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ],
+        "message": "Mock data - Odds API integration not fully configured in production"
+    }
+
 # Authentication API endpoints
 @app.get("/api/auth/status")
 async def auth_status():
