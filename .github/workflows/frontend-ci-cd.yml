@@ -57,7 +57,7 @@ jobs:
         NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: frontend-build
         path: frontend/.next/

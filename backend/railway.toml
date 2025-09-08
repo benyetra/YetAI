@@ -1,17 +1,9 @@
-# Railway Configuration
 [build]
-builder = "NIXPACKS"
-buildCommand = "pip install -r requirements.txt"
+builder = "nixpacks"
 
 [deploy]
 numReplicas = 1
-sleepApplication = false
 restartPolicyType = "ON_FAILURE"
 startCommand = "python production_main.py"
-
-# Environment variables
-[deploy.healthcheckPath]
-path = "/health"
-
-[deploy.healthcheckTimeout]
-timeout = 300
+healthcheckPath = "/health"
+healthcheckTimeout = 300
