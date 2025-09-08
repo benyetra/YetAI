@@ -136,8 +136,8 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
       run: |
-        # Deploy using Railway CLI with token authentication
-        railway up
+        # Deploy using Railway CLI with token authentication and service specification
+        railway up --service backend
 
     - name: Run deployment health check
       run: |
@@ -165,8 +165,8 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        # Deploy using Railway CLI with token authentication
-        railway up
+        # Deploy using Railway CLI with token authentication and service specification
+        railway up --service backend
 
     - name: Run deployment health check
       run: |
