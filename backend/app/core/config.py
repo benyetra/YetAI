@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     # App
     APP_NAME: str = "AI Sports Betting MVP"
     DEBUG: bool = True
+    ENVIRONMENT: str = "development"  # development, staging, production
     
     # Database
     DATABASE_URL: str = "postgresql://sports_user:sports_pass@localhost:5432/sports_betting_ai"

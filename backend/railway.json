@@ -8,6 +8,6 @@
     "numReplicas": 1,
     "sleepApplication": false,
     "restartPolicyType": "ON_FAILURE",
-    "startCommand": "python production_main.py"
+    "startCommand": "python -m app.main"
   }
 }
