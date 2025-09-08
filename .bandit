@@ -1,0 +1,18 @@
+[bandit]
+# Bandit configuration for YetAI Sports Betting MVP
+# https://bandit.readthedocs.io/en/latest/config.html
+
+# Skip certain directories
+exclude_dirs = ["*/tests/*", "*/venv/*", "*/node_modules/*"]
+
+# Skip certain tests that are false positives for our use case
+skips = ["B311", "B110", "B112", "B104"]
+
+# B311: Standard pseudo-random generators are not suitable for security/cryptographic purposes
+#       - We use random for generating mock sports data and demo content, not for security
+# B110: Try, Except, Pass detected 
+#       - Used intentionally for graceful degradation in data fetching
+# B112: Try, Except, Continue detected
+#       - Used intentionally for processing data pipelines
+# B104: Possible binding to all interfaces
+#       - Intentional for containerized deployment
