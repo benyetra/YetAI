@@ -97,7 +97,7 @@ export default function BettingDashboard() {
   const { user, token, isAuthenticated } = useAuth();
 
   const api = {
-    baseURL: 'http://localhost:8000',
+    baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
     get: async (endpoint: string): Promise<any> => {
       try {
         const headers: any = { 'Content-Type': 'application/json' };

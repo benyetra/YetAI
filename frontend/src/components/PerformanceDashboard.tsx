@@ -5,7 +5,7 @@ import { TrendingUp, Target, Award, BarChart3, Clock, CheckCircle } from 'lucide
 
 // API client
 const api = {
-  baseURL: 'http://localhost:8000',
+  baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000',
   
   async get(endpoint) {
     try {

@@ -73,9 +73,15 @@ app = FastAPI(
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure properly for production
+    allow_origins=[
+        "https://yetai.app",
+        "https://yetai.vercel.app", 
+        "https://*.vercel.app",
+        "http://localhost:3000",  # For local development
+        "http://localhost:8080"   # For local development
+    ],
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
