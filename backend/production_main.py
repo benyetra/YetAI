@@ -28,6 +28,7 @@ class ChatRequest(BaseModel):
 DATABASE_AVAILABLE = False
 SPORTS_PIPELINE_AVAILABLE = False
 AI_CHAT_SERVICE_AVAILABLE = False
+AUTH_SERVICE_AVAILABLE = False
 
 # Database imports - with error handling
 try:
@@ -53,6 +54,14 @@ try:
     logger.info("AI chat service loaded successfully")
 except Exception as e:
     logger.warning(f"AI chat service not available: {e}")
+
+# Auth service imports - with error handling
+try:
+    from app.services.auth_service_db import auth_service_db as auth_service
+    AUTH_SERVICE_AVAILABLE = True
+    logger.info("Auth service loaded successfully")
+except Exception as e:
+    logger.warning(f"Auth service not available: {e}")
 
 # Create FastAPI app
 app = FastAPI(
@@ -98,7 +107,8 @@ async def root():
         "services": {
             "database": DATABASE_AVAILABLE,
             "sports_pipeline": SPORTS_PIPELINE_AVAILABLE,
-            "ai_chat": AI_CHAT_SERVICE_AVAILABLE
+            "ai_chat": AI_CHAT_SERVICE_AVAILABLE,
+            "auth": AUTH_SERVICE_AVAILABLE
         },
         "timestamp": datetime.now().isoformat()
     }
@@ -286,6 +296,89 @@ async def get_chat_suggestions():
             "Give me fantasy football advice for this week",
             "What should I know about tonight's matchup?"
         ]
+    }
+
+# Authentication API endpoints
+@app.get("/api/auth/status")
+async def auth_status():
+    """Check authentication status"""
+    return {
+        "authenticated": False,
+        "auth_available": AUTH_SERVICE_AVAILABLE,
+        "message": "Authentication service ready" if AUTH_SERVICE_AVAILABLE else "Authentication service unavailable"
+    }
+
+@app.post("/api/auth/register")
+async def register(user_data: dict):
+    """Register a new user"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="Authentication service is currently unavailable"
+        )
+    
+    try:
+        result = await auth_service.create_user(
+            email=user_data.get("email"),
+            password=user_data.get("password"),
+            username=user_data.get("email"),  # Use email as username
+            first_name=user_data.get("full_name", "").split(" ")[0] if user_data.get("full_name") else "",
+            last_name=" ".join(user_data.get("full_name", "").split(" ")[1:]) if user_data.get("full_name") and len(user_data.get("full_name", "").split(" ")) > 1 else ""
+        )
+        return {
+            "status": "success",
+            "message": "User registered successfully",
+            "user_id": result.get("user_id")
+        }
+    except Exception as e:
+        logger.error(f"Registration error: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.post("/api/auth/login")
+async def login(credentials: dict):
+    """Login user"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503, 
+            detail="Authentication service is currently unavailable"
+        )
+    
+    try:
+        result = await auth_service.authenticate_user(
+            email_or_username=credentials.get("email"),
+            password=credentials.get("password")
+        )
+        return {
+            "status": "success",
+            "message": "Login successful",
+            "token": result.get("token"),
+            "user": result.get("user")
+        }
+    except Exception as e:
+        logger.error(f"Login error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+
+@app.post("/api/auth/logout")
+async def logout():
+    """Logout user"""
+    return {
+        "status": "success",
+        "message": "Logged out successfully"
+    }
+
+@app.get("/api/auth/me")
+async def get_current_user():
+    """Get current user info"""
+    if not AUTH_SERVICE_AVAILABLE:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently unavailable"
+        )
+    
+    return {
+        "status": "success",
+        "message": "Authentication endpoint available but token validation not implemented in production version",
+        "user": None
     }
 
 if __name__ == "__main__":
