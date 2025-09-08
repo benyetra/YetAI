@@ -435,6 +435,111 @@ async def get_chat_suggestions():
         ]
     }
 
+# User Performance Endpoints
+@app.get("/api/user/performance")
+async def get_user_performance(request: Request, current_user: dict = Depends(get_current_user)):
+    """Get user performance metrics"""
+    try:
+        if not is_service_available("performance_tracker"):
+            return {
+                "status": "success",
+                "data": {
+                    "total_bets": 0,
+                    "win_rate": 0,
+                    "profit_loss": 0,
+                    "recent_performance": []
+                },
+                "message": "Performance tracking service not available - showing mock data"
+            }
+        
+        performance_service = get_service("performance_tracker")
+        metrics = await performance_service.get_user_performance(current_user["id"])
+        return {"status": "success", "data": metrics}
+    except Exception as e:
+        logger.error(f"Error fetching user performance: {e}")
+        return {"status": "error", "message": "Failed to fetch performance data"}
+
+# Avatar Endpoints  
+@app.get("/api/auth/avatar/{user_id}")
+async def get_user_avatar(user_id: int):
+    """Get user avatar"""
+    try:
+        if not is_service_available("auth_service"):
+            return {"status": "error", "message": "Avatar service not available"}
+        
+        # Get user from database
+        from app.core.database import SessionLocal
+        from app.models.database_models import User
+        
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return {"status": "error", "message": "User not found"}
+            
+            return {
+                "status": "success", 
+                "avatar_url": user.avatar_url,
+                "avatar_thumbnail": user.avatar_thumbnail
+            }
+        finally:
+            db.close()
+            
+    except Exception as e:
+        logger.error(f"Error fetching avatar: {e}")
+        return {"status": "error", "message": "Failed to fetch avatar"}
+
+# Personalized Predictions Endpoint
+@app.get("/api/predictions/personalized")
+async def get_personalized_predictions(request: Request, current_user: dict = Depends(get_current_user)):
+    """Get personalized predictions for the user"""
+    try:
+        if not is_service_available("yetai_bets_service"):
+            return {
+                "status": "success",
+                "predictions": [],
+                "message": "Personalized predictions service not available"
+            }
+        
+        yetai_service = get_service("yetai_bets_service")  
+        predictions = await yetai_service.get_personalized_bets(current_user["id"])
+        return {"status": "success", "predictions": predictions}
+    except Exception as e:
+        logger.error(f"Error fetching personalized predictions: {e}")
+        return {"status": "error", "message": "Failed to fetch predictions"}
+
+# WebSocket Support
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
+    """WebSocket endpoint for real-time updates"""
+    await websocket.accept()
+    
+    try:
+        if is_service_available("websocket_manager"):
+            # Use the websocket manager if available
+            websocket_manager = get_service("websocket_manager")
+            await websocket_manager.handle_connection(websocket, user_id)
+        else:
+            # Basic WebSocket handling without manager
+            try:
+                while True:
+                    # Keep connection alive and send periodic updates
+                    await asyncio.sleep(30)
+                    await websocket.send_json({
+                        "type": "ping",
+                        "timestamp": datetime.utcnow().isoformat(),
+                        "message": "Connection alive"
+                    })
+            except WebSocketDisconnect:
+                logger.info(f"WebSocket disconnected for user {user_id}")
+                
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user_id}: {e}")
+        try:
+            await websocket.close()
+        except:
+            pass
+
 # Test endpoint for database connectivity
 @app.get("/test-db")
 async def test_database():
