@@ -209,15 +209,22 @@ async def register(user_data: dict):
         result = await auth_service.create_user(
             email=user_data.get("email"),
             password=user_data.get("password"),
-            username=user_data.get("email"),  # Use email as username
-            first_name=user_data.get("full_name", "").split(" ")[0] if user_data.get("full_name") else "",
-            last_name=" ".join(user_data.get("full_name", "").split(" ")[1:]) if user_data.get("full_name") and len(user_data.get("full_name", "").split(" ")) > 1 else ""
+            username=user_data.get("username", user_data.get("email")),  # Use username or fallback to email
+            first_name=user_data.get("first_name", ""),
+            last_name=user_data.get("last_name", "")
         )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Registration failed"))
+            
         return {
             "status": "success",
             "message": "User registered successfully",
-            "user_id": result.get("user_id")
+            "user": result.get("user"),
+            "access_token": result.get("access_token")
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Registration error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
@@ -234,15 +241,21 @@ async def login(credentials: dict):
     try:
         auth_service = get_service("auth_service")
         result = await auth_service.authenticate_user(
-            email_or_username=credentials.get("email"),
+            email_or_username=credentials.get("email_or_username"),
             password=credentials.get("password")
         )
+        
+        if not result.get("success"):
+            raise HTTPException(status_code=401, detail=result.get("error", "Invalid credentials"))
+            
         return {
             "status": "success",
             "message": "Login successful",
-            "token": result.get("token"),
+            "access_token": result.get("access_token"),
             "user": result.get("user")
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")

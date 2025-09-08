@@ -98,16 +98,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         return { success: true };
       } else {
-        return { success: false, error: response.detail || 'Login failed' };
+        return { success: false, message: response.detail || response.message || 'Login failed' };
       }
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, message: error.message };
     }
   };
 
   const signup = async (email: string, username: string, password: string, firstName = '', lastName = '') => {
     try {
-      const response = await authAPI.post('/api/auth/signup', {
+      const response = await authAPI.post('/api/auth/register', {
         email,
         username,
         password,
@@ -126,10 +126,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         
         return { success: true };
       } else {
-        return { success: false, error: response.detail || response.message || 'Signup failed' };
+        return { success: false, message: response.detail || response.message || 'Signup failed' };
       }
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, message: error.message };
     }
   };
 
@@ -151,10 +151,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         localStorage.setItem('user_data', JSON.stringify(response.user));
         return { success: true };
       } else {
-        return { success: false, error: response.detail || 'Failed to refresh user data' };
+        return { success: false, message: response.detail || 'Failed to refresh user data' };
       }
     } catch (error: any) {
-      return { success: false, error: error.message };
+      return { success: false, message: error.message };
     }
   };
 

@@ -81,7 +81,7 @@ export default function LoginPage() {
         // Alternative: window.google.accounts.id.renderButton(buttonElement, options);
       } else {
         // Fallback: redirect to backend OAuth URL
-        const response = await fetch('http://localhost:8000/api/auth/google/url');
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-f7af.up.railway.app'}/api/auth/google/url`);
         const data = await response.json();
         
         if (data.status === 'success') {
@@ -102,7 +102,7 @@ export default function LoginPage() {
       setIsLoading(true);
       setError('');
       
-      const result = await fetch('http://localhost:8000/api/auth/google/verify', {
+      const result = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://backend-production-f7af.up.railway.app'}/api/auth/google/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_token: response.credential })
