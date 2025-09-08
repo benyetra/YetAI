@@ -45,7 +45,8 @@ export function useWebSocket() {
 
     try {
       // WebSocket URL - update with your actual domain in production
-      const wsUrl = `ws://localhost:8000/ws/${user.id}`;
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`;
+      const wsUrl = apiUrl.replace(/^https?:/, 'ws:').replace(/^http:/, 'ws:') + `/ws/${user.id}`;
       console.log('WebSocket: Attempting to connect to', wsUrl);
       ws.current = new WebSocket(wsUrl);
 

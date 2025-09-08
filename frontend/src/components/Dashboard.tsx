@@ -282,7 +282,8 @@ const Dashboard: React.FC = () => {
       setLoading(true);
       try {
         // Fetch user stats
-        const statsResponse = await fetch('http://localhost:8000/api/user/performance', {
+        const apiUrl = process.env.NEXT_PUBLIC_API_URL || `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}`;
+        const statsResponse = await fetch(`${apiUrl}/api/user/performance`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (statsResponse.ok) {
@@ -298,8 +299,8 @@ const Dashboard: React.FC = () => {
 
         // Fetch games and personalized predictions
         const [gamesResponse, predictionsResponse] = await Promise.all([
-          fetch('http://localhost:8000/api/games/nfl'),
-          fetch('http://localhost:8000/api/predictions/personalized', {
+          fetch(`${apiUrl}/api/games/nfl`),
+          fetch(`${apiUrl}/api/predictions/personalized`, {
             headers: { 'Authorization': `Bearer ${token}` }
           })
         ]);
