@@ -167,7 +167,7 @@ jobs:
     name: Deploy to Staging
     runs-on: ubuntu-latest
     needs: [test, accessibility-test, security-scan]
-    if: false # Temporarily disabled until Vercel project is configured correctly
+    if: github.ref == 'refs/heads/develop' && github.event_name == 'push'
     defaults:
       run:
         working-directory: ./frontend
@@ -187,16 +187,16 @@ jobs:
       run: npm install --global vercel@latest
 
     - name: Pull Vercel Environment Information
-      run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+      run: vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
 
     - name: Build Project Artifacts
-      run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+      run: vercel build --token=${{ secrets.VERCEL_TOKEN }}
       env:
         NEXT_PUBLIC_API_URL: "https://staging-backend.up.railway.app"
 
     - name: Deploy Project Artifacts to Vercel Staging
       run: |
-        url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
+        url=$(vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }})
         echo "Staging URL: $url"
 
     - name: Run staging health check
@@ -208,7 +208,7 @@ jobs:
     name: Deploy to Production
     runs-on: ubuntu-latest
     needs: [test, accessibility-test, security-scan]
-    if: false # Temporarily disabled until Vercel project is configured correctly
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     defaults:
       run:
         working-directory: ./frontend
@@ -264,7 +264,7 @@ jobs:
     name: Lighthouse Audit
     runs-on: ubuntu-latest
     needs: [deploy-production]
-    if: false # Temporarily disabled until Vercel deployment is configured
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     
     steps:
     - name: Checkout code
