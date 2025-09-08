@@ -8,6 +8,8 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  // Fix workspace root detection for CI/CD environments
+  outputFileTracingRoot: process.env.NODE_ENV === 'production' && process.env.CI ? process.cwd() : undefined,
 };
 
 export default nextConfig;

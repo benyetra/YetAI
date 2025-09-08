@@ -37,6 +37,9 @@ jobs:
 
     - name: Install dependencies
       run: npm ci
+      
+    - name: Clean previous builds
+      run: rm -rf .next && rm -rf node_modules/.cache
 
     - name: Run linting
       run: npm run lint || echo "Linting completed with warnings/errors - continuing build"
@@ -52,10 +55,18 @@ jobs:
         CI: true
         NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
 
+    - name: Verify TypeScript paths
+      run: |
+        echo "Checking TypeScript configuration..."
+        cat tsconfig.json | grep -A 5 "paths"
+        echo "Verifying api-config exists..."
+        ls -la src/lib/api-config.ts
+        
     - name: Run build test
       run: npm run build
       env:
         NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NODE_ENV: "production"
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v4
