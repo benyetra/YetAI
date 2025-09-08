@@ -2,7 +2,7 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
-from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
