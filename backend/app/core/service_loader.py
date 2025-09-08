@@ -74,11 +74,20 @@ def initialize_services():
     
     logger.info("🚀 Initializing services...")
     
-    # Database services
-    service_loader.load_service(
-        "database", 
-        "app.core.database"
-    )
+    # Database services - load database functions individually
+    try:
+        from app.core.database import check_db_connection, init_db, SessionLocal
+        service_loader.services["database"] = True
+        service_loader.instances["database"] = {
+            "check_db_connection": check_db_connection,
+            "init_db": init_db,
+            "SessionLocal": SessionLocal
+        }
+        logger.info("✅ database service loaded successfully")
+    except Exception as e:
+        service_loader.services["database"] = False
+        service_loader.instances["database"] = None
+        logger.warning(f"⚠️  database service not available: {e}")
     
     # Auth service
     service_loader.load_service(

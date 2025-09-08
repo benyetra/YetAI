@@ -109,12 +109,11 @@ async def startup_event():
     # Initialize database if available
     if is_service_available("database"):
         try:
-            database_module = get_service("database")
-            if hasattr(database_module, 'check_db_connection') and database_module.check_db_connection():
+            database_service = get_service("database")
+            if database_service and database_service["check_db_connection"]():
                 logger.info("✅ Database connected successfully")
-                if hasattr(database_module, 'init_db'):
-                    database_module.init_db()
-                    logger.info("✅ Database tables initialized")
+                database_service["init_db"]()
+                logger.info("✅ Database tables initialized")
         except Exception as e:
             logger.warning(f"⚠️  Database initialization failed: {e}")
     
@@ -468,9 +467,9 @@ async def test_database():
         }
     
     try:
-        database_module = get_service("database")
-        if hasattr(database_module, 'check_db_connection'):
-            connected = database_module.check_db_connection()
+        database_service = get_service("database")
+        if database_service and database_service["check_db_connection"]:
+            connected = database_service["check_db_connection"]()
             return {
                 "status": "connected" if connected else "disconnected",
                 "message": "Database connection successful" if connected else "Database connection failed",
