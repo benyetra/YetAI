@@ -248,19 +248,26 @@ async def logout():
     }
 
 @app.get("/api/auth/me")
-async def get_current_user():
-    """Get current user info"""
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Get current user from JWT token"""
     if not is_service_available("auth_service"):
         raise HTTPException(
             status_code=503,
             detail="Authentication service is currently unavailable"
         )
     
-    return {
-        "status": "success",
-        "message": "Authentication endpoint available but token validation not fully implemented",
-        "user": None
-    }
+    auth_service = get_service("auth_service")
+    token = credentials.credentials
+    user = await auth_service.get_user_by_token(token)
+    
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid authentication credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    return user
 
 # Sports data endpoints
 @app.get("/api/games/nfl")
