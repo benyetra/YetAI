@@ -110,7 +110,7 @@ jobs:
         pip install bandit safety
 
     - name: Run Bandit security scan
-      run: bandit -r . -x tests/ --configfile ../.bandit
+      run: bandit -r . -x tests/ --configfile .bandit
 
     - name: Check for known security vulnerabilities
       run: safety check -r requirements.txt
