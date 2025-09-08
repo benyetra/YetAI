@@ -1,5 +1,5 @@
 # Core Framework
-fastapi==0.104.1
+fastapi==0.115.6
 uvicorn[standard]==0.24.0
 pydantic==2.5.0
 pydantic-settings==2.1.0
@@ -11,7 +11,7 @@ alembic==1.13.1
 
 # API Clients
 httpx==0.25.2
-aiohttp==3.9.4
+aiohttp==3.12.14
 requests==2.32.4
 
 # AI/ML
@@ -25,7 +25,7 @@ celery==5.3.4
 redis==5.0.1
 
 # Authentication & Security
-pyjwt[crypto]==2.8.0
+pyjwt[crypto]==2.10.1
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.18
 pyotp==2.9.0
