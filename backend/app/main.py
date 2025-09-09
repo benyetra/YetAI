@@ -14,7 +14,7 @@ from typing import List, Optional, Dict, Any
 
 # Import core configuration and service loader
 from app.core.config import settings
-from app.core.service_loader import initialize_services, get_service, is_service_available, require_service
+from app.core.service_loader import initialize_services, get_service, is_service_available
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -128,7 +128,7 @@ def get_cors_origins():
     return settings.get_frontend_urls()
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
+async def lifespan(_app: FastAPI):
     """Application lifespan manager"""
     # Startup
     logger.info(f"🚀 Starting YetAI Sports Betting MVP - {settings.ENVIRONMENT.upper()} Environment")
@@ -211,29 +211,13 @@ async def options_user_performance():
 @app.get("/api/user/performance")
 async def get_user_performance(current_user: dict = Depends(get_current_user)):
     """Get user performance metrics"""
-    if is_service_available("performance_tracker"):
-        try:
-            performance_service = get_service("performance_tracker")
-            metrics = await performance_service.get_user_metrics(current_user["user_id"])
-            return {"status": "success", "metrics": metrics}
-        except Exception as e:
-            logger.error(f"Error fetching user performance: {e}")
-    
-    # Mock performance data
-    return {
-        "status": "success",
-        "metrics": {
-            "total_predictions": 25,
-            "accuracy_rate": 0.68,
-            "win_streak": 4,
-            "total_earnings": 450.50,
-            "roi": 0.125,
-            "favorite_sport": "NFL",
-            "predictions_this_week": 3,
-            "weekly_accuracy": 0.75
-        },
-        "message": "Mock performance data - performance tracker unavailable"
-    }
+    try:
+        performance_service = get_service("performance_tracker")
+        metrics = await performance_service.get_performance_metrics(days=30, user_id=current_user["user_id"])
+        return {"status": "success", "metrics": metrics, "user_id": current_user["user_id"]}
+    except Exception as e:
+        logger.error(f"Error fetching user performance: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user performance metrics")
 
 # Simple endpoints for bets and odds that frontend might expect
 @app.options("/api/bets")
@@ -244,31 +228,13 @@ async def options_simple_bets():
 @app.get("/api/bets")
 async def get_simple_bets(current_user: dict = Depends(get_current_user)):
     """Get user's bets - simplified endpoint"""
-    # Redirect to the proper bet history endpoint
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            bets = await bet_service.get_user_bets(current_user["user_id"])
-            return {"status": "success", "bets": bets}
-        except Exception as e:
-            logger.error(f"Error fetching user bets: {e}")
-    
-    # Mock bet data
-    return {
-        "status": "success", 
-        "bets": [
-            {
-                "id": "bet_1",
-                "type": "moneyline", 
-                "selection": "Kansas City Chiefs",
-                "odds": -150,
-                "amount": 100.0,
-                "status": "pending",
-                "created_at": datetime.now(timezone.utc).isoformat()
-            }
-        ],
-        "message": "Mock bet data - bet service unavailable"
-    }
+    try:
+        bet_service = get_service("bet_service")
+        bets = await bet_service.get_user_bets(current_user["user_id"])
+        return {"status": "success", "bets": bets}
+    except Exception as e:
+        logger.error(f"Error fetching user bets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user bets")
 
 @app.options("/api/odds")
 async def options_simple_odds():
@@ -280,6 +246,105 @@ async def get_simple_odds():
     """Get current odds - simplified endpoint"""
     # Redirect to popular odds endpoint
     return await get_popular_sports_odds()
+
+# Predictions endpoints
+@app.options("/api/predictions/personalized")
+async def options_personalized_predictions():
+    """Handle CORS preflight for personalized predictions"""
+    return {}
+
+@app.get("/api/predictions/personalized")
+async def get_personalized_predictions(current_user: dict = Depends(get_current_user)):
+    """Get personalized predictions for the user"""
+    try:
+        yetai_service = get_service("yetai_bets_service")
+        user_tier = current_user.get("subscription_tier", "free")
+        
+        # Get user's bets based on their tier
+        bets = await yetai_service.get_active_bets(user_tier)
+        
+        # Transform bets into predictions format
+        predictions = []
+        for bet in bets:
+            prediction = {
+                "id": bet.get("id"),
+                "title": bet.get("title"),
+                "description": bet.get("description"),
+                "sport": bet.get("sport", "NFL"),
+                "confidence": bet.get("confidence", 0.75),
+                "bet_type": bet.get("bet_type"),
+                "selection": bet.get("selection"),
+                "odds": bet.get("odds"),
+                "game_date": bet.get("commence_time"),
+                "reason": f"AI analysis with {bet.get('confidence', 75)}% confidence based on historical data"
+            }
+            predictions.append(prediction)
+        
+        return {
+            "status": "success",
+            "predictions": predictions,
+            "user_tier": user_tier
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching personalized predictions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch personalized predictions")
+
+# Avatar endpoints
+@app.options("/api/user/avatar")
+async def options_user_avatar():
+    """Handle CORS preflight for user avatar"""
+    return {}
+
+@app.get("/api/user/avatar")
+async def get_user_avatar(current_user: dict = Depends(get_current_user)):
+    """Get user avatar URL"""
+    try:
+        auth_service = get_service("auth_service")
+        user_data = await auth_service.get_user_profile(current_user["user_id"])
+        avatar_url = user_data.get("avatar_url")
+        
+        if avatar_url:
+            return {"status": "success", "avatar_url": avatar_url}
+        else:
+            # Generate default avatar URL using avatar service
+            from app.services.avatar_service import avatar_service
+            default_avatar = avatar_service.get_avatar_url(user_data)
+            return {"status": "success", "avatar_url": default_avatar}
+            
+    except Exception as e:
+        logger.error(f"Error fetching user avatar: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
+
+@app.post("/api/user/avatar") 
+async def upload_user_avatar(_current_user: dict = Depends(get_current_user)):
+    """Upload user avatar"""
+    if is_service_available("auth_service"):
+        try:
+            # In a real implementation, handle file upload here
+            return {"status": "success", "message": "Avatar upload endpoint ready"}
+        except Exception as e:
+            logger.error(f"Error uploading avatar: {e}")
+            raise HTTPException(status_code=500, detail="Failed to upload avatar")
+    
+    return {"status": "error", "message": "Avatar upload service unavailable"}
+
+# Sports list endpoint
+@app.options("/api/sports")
+async def options_sports_list():
+    """Handle CORS preflight for sports list"""
+    return {}
+
+@app.get("/api/sports")
+async def get_sports_list():
+    """Get available sports"""
+    try:
+        sports_service = get_service("sports_pipeline")
+        sports = await sports_service.get_available_sports()
+        return {"status": "success", "sports": sports}
+    except Exception as e:
+        logger.error(f"Error fetching sports list: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch sports list")
 
 @app.get("/")
 async def root():
