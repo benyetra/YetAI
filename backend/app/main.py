@@ -403,6 +403,11 @@ async def get_popular_sports_odds():
     }
 
 # Live Betting endpoints
+@app.options("/api/live-bets/markets")
+async def options_live_betting_markets():
+    """Handle CORS preflight for live betting markets"""
+    return {}
+
 @app.get("/api/live-bets/markets")
 async def get_live_betting_markets(sport: str = None):
     """Get live betting markets"""
@@ -444,6 +449,11 @@ async def get_live_betting_markets(sport: str = None):
         logger.error(f"Error fetching live betting markets: {e}")
         return {"status": "error", "message": "Failed to fetch live betting markets"}
 
+@app.options("/api/live-bets/active")
+async def options_active_live_bets():
+    """Handle CORS preflight for active live bets"""
+    return {}
+
 @app.get("/api/live-bets/active")
 async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
     """Get user's active live bets"""
@@ -478,6 +488,11 @@ async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching active live bets: {e}")
         return {"status": "error", "message": "Failed to fetch active live bets"}
+
+@app.options("/api/bets/history")
+async def options_bet_history():
+    """Handle CORS preflight for bet history"""
+    return {}
 
 @app.post("/api/bets/history")
 async def get_bet_history(request: Request, current_user: dict = Depends(get_current_user)):
