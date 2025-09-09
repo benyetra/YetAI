@@ -88,7 +88,9 @@ export const apiConfig = getApiConfig();
 export function getApiUrl(endpoint: string): string {
   // Ensure endpoint starts with /
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${apiConfig.baseURL}${normalizedEndpoint}`;
+  // Remove trailing slash from baseURL to prevent double slashes
+  const baseURL = apiConfig.baseURL.replace(/\/$/, '');
+  return `${baseURL}${normalizedEndpoint}`;
 }
 
 /**
@@ -97,7 +99,9 @@ export function getApiUrl(endpoint: string): string {
 export function getWsUrl(endpoint: string): string {
   // Ensure endpoint starts with /
   const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  return `${apiConfig.wsURL}${normalizedEndpoint}`;
+  // Remove trailing slash from wsURL to prevent double slashes
+  const wsURL = apiConfig.wsURL.replace(/\/$/, '');
+  return `${wsURL}${normalizedEndpoint}`;
 }
 
 /**
