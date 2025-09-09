@@ -2,7 +2,7 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
-from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
@@ -14,6 +14,7 @@ import os
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, Field
 from typing import List, Optional, Dict, Any
+from datetime import datetime
 
 # Import core configuration and service loader
 from app.core.config import settings
@@ -58,6 +59,71 @@ class UserPreferences(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
+
+# Betting Models
+class PlaceBetRequest(BaseModel):
+    bet_type: str
+    selection: str
+    odds: float
+    amount: float
+    game_id: Optional[str] = None
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
+    commence_time: Optional[str] = None
+
+class ParlayLeg(BaseModel):
+    bet_type: str
+    selection: str
+    odds: float
+    game_id: Optional[str] = None
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    sport: Optional[str] = None
+    commence_time: Optional[str] = None
+
+class PlaceParlayRequest(BaseModel):
+    amount: float
+    legs: List[ParlayLeg]
+
+class BetHistoryQuery(BaseModel):
+    status: Optional[str] = None
+    bet_type: Optional[str] = None
+    start_date: Optional[str] = None
+    end_date: Optional[str] = None
+    offset: int = 0
+    limit: int = 50
+
+# Fantasy Models
+class FantasyConnectRequest(BaseModel):
+    platform: str
+    credentials: Dict[str, Any]
+
+# Share Models
+class ShareBetRequest(BaseModel):
+    bet_id: str
+    message: Optional[str] = None
+
+# JWT Helper Functions
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Extract user from JWT token - simplified for now"""
+    try:
+        # In a real implementation, you'd decode and validate the JWT token here
+        # For now, return a mock user or handle the token validation
+        token = credentials.credentials
+        
+        # Basic validation (in production, decode JWT properly)
+        if not token or token == "invalid":
+            raise HTTPException(status_code=401, detail="Invalid token")
+            
+        # Mock user for development
+        return {
+            "user_id": "mock_user_123",
+            "email": "user@example.com",
+            "subscription_tier": "pro"  # or "free"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="Authentication failed")
 
 # Environment-aware CORS configuration
 def get_cors_origins():
@@ -164,82 +230,6 @@ async def get_api_status():
         "timestamp": datetime.utcnow().isoformat()
     }
 
-@app.get("/api/endpoints/health")
-async def get_endpoints_health():
-    """Get health status of all API endpoints"""
-    endpoints_status = {
-        "core_endpoints": {
-            "status": "operational",
-            "endpoints": ["/health", "/", "/api/status", "/api/auth/status"]
-        },
-        "authentication": {
-            "status": "operational" if is_service_available("auth_service") else "degraded",
-            "endpoints": ["/api/auth/register", "/api/auth/login", "/api/auth/logout", "/api/auth/me"]
-        },
-        "sports_data": {
-            "status": "operational" if is_service_available("sports_pipeline") else "degraded",
-            "endpoints": ["/api/games/nfl", "/api/odds/popular", "/api/odds/nfl"]
-        },
-        "odds_markets": {
-            "status": "operational" if settings.ODDS_API_KEY else "degraded",
-            "endpoints": [
-                "/api/odds/americanfootball_nfl", "/api/odds/basketball_nba", 
-                "/api/odds/baseball_mlb", "/api/odds/icehockey_nhl", "/api/odds/hockey"
-            ]
-        },
-        "betting": {
-            "status": "operational" if is_service_available("bet_service") else "degraded",
-            "endpoints": [
-                "/api/bets/place", "/api/bets/parlay", "/api/bets/parlays", "/api/bets/stats",
-                "/api/bets/share", "/api/bets/shared", "/api/bets/simulate", "/api/bets/history"
-            ]
-        },
-        "parlays": {
-            "status": "operational" if is_service_available("bet_service") else "degraded",
-            "endpoints": ["/api/parlays/markets", "/api/parlays/popular"]
-        },
-        "fantasy": {
-            "status": "operational" if (is_service_available("fantasy_pipeline") or is_service_available("real_fantasy_pipeline")) else "degraded",
-            "endpoints": [
-                "/api/fantasy/accounts", "/api/fantasy/leagues", "/api/fantasy/connect", 
-                "/api/fantasy/roster/{league_id}", "/api/fantasy/projections"
-            ]
-        },
-        "yetai_bets": {
-            "status": "operational" if is_service_available("yetai_bets_service") else "degraded",
-            "endpoints": ["/api/yetai-bets", "/api/admin/yetai-bets/{bet_id}"]
-        },
-        "live_betting": {
-            "status": "operational" if is_service_available("bet_service") else "degraded",
-            "endpoints": ["/api/live-bets/markets", "/api/live-bets/active"]
-        },
-        "profile": {
-            "status": "operational" if is_service_available("auth_service") else "degraded",
-            "endpoints": ["/api/profile/sports", "/api/profile/status"]
-        },
-        "ai_chat": {
-            "status": "operational" if is_service_available("ai_chat_service") else "degraded",
-            "endpoints": ["/api/chat/message", "/api/chat/suggestions"]
-        }
-    }
-    
-    # Calculate overall health
-    operational_categories = len([cat for cat in endpoints_status.values() if cat["status"] == "operational"])
-    total_categories = len(endpoints_status)
-    overall_health = "healthy" if operational_categories >= total_categories * 0.7 else "degraded"
-    
-    return {
-        "status": overall_health,
-        "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
-        "categories": endpoints_status,
-        "summary": {
-            "operational_categories": operational_categories,
-            "total_categories": total_categories,
-            "health_percentage": round((operational_categories / total_categories) * 100, 1)
-        }
-    }
-
 # Authentication API endpoints
 @app.get("/api/auth/status")
 async def auth_status():
@@ -324,7 +314,7 @@ async def logout():
     }
 
 @app.get("/api/auth/me")
-async def get_current_user():
+async def get_current_user_info():
     """Get current user info"""
     if not is_service_available("auth_service"):
         raise HTTPException(
@@ -338,73 +328,805 @@ async def get_current_user():
         "user": None
     }
 
-# Sports data endpoints
-@app.get("/api/games/nfl")
-async def get_nfl_games():
-    """Get NFL games and scores"""
-    if is_service_available("sports_pipeline"):
+# YetAI Bets endpoints
+@app.options("/api/yetai-bets")
+async def options_yetai_bets():
+    """Handle CORS preflight for YetAI bets endpoint"""
+    return {}
+
+@app.get("/api/yetai-bets")
+async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
+    """Get YetAI bets for user based on subscription tier"""
+    if is_service_available("yetai_bets_service"):
         try:
-            sports_pipeline = get_service("sports_pipeline")
-            games = await sports_pipeline.get_nfl_games()
-            return {"status": "success", "games": games}
+            yetai_service = get_service("yetai_bets_service")
+            
+            # Get user's subscription tier from the authenticated user
+            user_tier = current_user.get("subscription_tier", "free")
+            
+            # Fetch bets based on user tier
+            bets = await yetai_service.get_bets_for_tier(user_tier)
+            
+            return {
+                "status": "success",
+                "bets": bets,
+                "user_tier": user_tier,
+                "message": f"YetAI bets for {user_tier} tier user"
+            }
         except Exception as e:
-            logger.error(f"Error fetching NFL games: {e}")
+            logger.error(f"Error fetching YetAI bets: {e}")
             # Fall through to mock data
     
     # Return mock data when service unavailable
+    user_tier = current_user.get("subscription_tier", "free")
+    mock_bets = [
+        {
+            "id": "mock_yetai_1",
+            "title": "Chiefs ML Lock",
+            "description": "AI algorithm predicts 78% confidence on Chiefs moneyline",
+            "bet_type": "moneyline",
+            "selection": "Kansas City Chiefs",
+            "odds": -150,
+            "confidence": 0.78,
+            "tier_requirement": "free" if user_tier == "free" else "pro",
+            "created_at": datetime.utcnow().isoformat()
+        }
+    ]
+    
+    # Pro users get more bets
+    if user_tier == "pro":
+        mock_bets.append({
+            "id": "mock_yetai_2", 
+            "title": "Lakers Spread Value",
+            "description": "Advanced analytics show Lakers covering the spread at 85% confidence",
+            "bet_type": "spread",
+            "selection": "Los Angeles Lakers -3.5", 
+            "odds": -110,
+            "confidence": 0.85,
+            "tier_requirement": "pro",
+            "created_at": datetime.utcnow().isoformat()
+        })
+    
     return {
-        "status": "success", 
-        "games": [
-            {
-                "id": "mock_nfl_1",
-                "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills", 
-                "start_time": "2025-01-12T21:00:00Z",
-                "status": "scheduled"
-            }
-        ],
-        "message": "Mock data - Sports pipeline not fully configured"
+        "status": "success",
+        "bets": mock_bets,
+        "user_tier": user_tier,
+        "message": f"Mock YetAI bets for {user_tier} tier user - service unavailable"
     }
 
-@app.get("/api/odds/nfl")
+@app.options("/api/admin/yetai-bets/{bet_id}")
+async def options_admin_delete_yetai_bet():
+    """Handle CORS preflight for admin YetAI bet deletion"""
+    return {}
+
+@app.delete("/api/admin/yetai-bets/{bet_id}")
+async def delete_yetai_bet(bet_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete YetAI bet (Admin only)"""
+    # Check if user is admin (in real implementation)
+    if not current_user.get("is_admin", False):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    if is_service_available("yetai_bets_service"):
+        try:
+            yetai_service = get_service("yetai_bets_service")
+            result = await yetai_service.delete_bet(bet_id)
+            
+            return {
+                "status": "success",
+                "message": f"YetAI bet {bet_id} deleted successfully",
+                "result": result
+            }
+        except Exception as e:
+            logger.error(f"Error deleting YetAI bet {bet_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete bet")
+    
+    # Mock response when service unavailable
+    return {
+        "status": "success",
+        "message": f"Mock deletion of YetAI bet {bet_id} - service unavailable"
+    }
+
+# Sports Betting API Endpoints
+@app.options("/api/bets/place")
+async def options_place_bet():
+    """Handle CORS preflight for bet placement"""
+    return {}
+
+@app.post("/api/bets/place")
+async def place_bet(bet_request: PlaceBetRequest, current_user: dict = Depends(get_current_user)):
+    """Place a single sports bet"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            result = await bet_service.place_bet(
+                user_id=current_user["user_id"],
+                bet_type=bet_request.bet_type,
+                selection=bet_request.selection,
+                odds=bet_request.odds,
+                amount=bet_request.amount,
+                game_id=bet_request.game_id,
+                home_team=bet_request.home_team,
+                away_team=bet_request.away_team,
+                sport=bet_request.sport,
+                commence_time=bet_request.commence_time
+            )
+            return {"status": "success", "bet": result}
+        except Exception as e:
+            logger.error(f"Error placing bet: {e}")
+            raise HTTPException(status_code=500, detail="Failed to place bet")
+    
+    # Mock response when service unavailable
+    return {
+        "status": "success",
+        "bet": {
+            "id": "mock_bet_123",
+            "user_id": current_user["user_id"],
+            "bet_type": bet_request.bet_type,
+            "selection": bet_request.selection,
+            "odds": bet_request.odds,
+            "amount": bet_request.amount,
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat()
+        },
+        "message": "Mock bet placed - bet service unavailable"
+    }
+
+@app.options("/api/bets/parlay")
+async def options_place_parlay():
+    """Handle CORS preflight for parlay placement"""
+    return {}
+
+@app.post("/api/bets/parlay")
+async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = Depends(get_current_user)):
+    """Place a parlay bet with multiple legs"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            result = await bet_service.place_parlay(
+                user_id=current_user["user_id"],
+                amount=parlay_request.amount,
+                legs=[leg.dict() for leg in parlay_request.legs]
+            )
+            return {"status": "success", "parlay": result}
+        except Exception as e:
+            logger.error(f"Error placing parlay: {e}")
+            raise HTTPException(status_code=500, detail="Failed to place parlay")
+    
+    # Calculate mock total odds
+    total_odds = 1
+    for leg in parlay_request.legs:
+        if leg.odds > 0:
+            total_odds *= (leg.odds / 100 + 1)
+        else:
+            total_odds *= (100 / abs(leg.odds) + 1)
+    
+    american_odds = int((total_odds - 1) * 100) if total_odds >= 2 else int(-100 / (total_odds - 1))
+    
+    return {
+        "status": "success", 
+        "parlay": {
+            "id": "mock_parlay_456",
+            "user_id": current_user["user_id"],
+            "amount": parlay_request.amount,
+            "total_odds": american_odds,
+            "legs": [leg.dict() for leg in parlay_request.legs],
+            "status": "pending",
+            "created_at": datetime.utcnow().isoformat()
+        },
+        "message": "Mock parlay placed - bet service unavailable"
+    }
+
+@app.options("/api/bets/parlays")
+async def options_get_parlays():
+    """Handle CORS preflight for getting parlays"""
+    return {}
+
+@app.get("/api/bets/parlays")
+async def get_parlays(current_user: dict = Depends(get_current_user)):
+    """Get user's parlay bets"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            parlays = await bet_service.get_user_parlays(current_user["user_id"])
+            return {"status": "success", "parlays": parlays}
+        except Exception as e:
+            logger.error(f"Error fetching parlays: {e}")
+    
+    # Mock parlay data
+    return {
+        "status": "success",
+        "parlays": [
+            {
+                "id": "mock_parlay_1",
+                "amount": 50.0,
+                "total_odds": 350,
+                "status": "pending",
+                "legs": [
+                    {"selection": "Chiefs ML", "odds": -150},
+                    {"selection": "Lakers -3.5", "odds": -110}
+                ],
+                "created_at": datetime.utcnow().isoformat()
+            }
+        ],
+        "message": "Mock parlays - bet service unavailable"
+    }
+
+@app.get("/api/bets/parlay/{parlay_id}")
+async def get_parlay_details(parlay_id: str, current_user: dict = Depends(get_current_user)):
+    """Get specific parlay details"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            parlay = await bet_service.get_parlay_by_id(parlay_id, current_user["user_id"])
+            return {"status": "success", "parlay": parlay}
+        except Exception as e:
+            logger.error(f"Error fetching parlay {parlay_id}: {e}")
+    
+    # Mock parlay details
+    return {
+        "status": "success",
+        "parlay": {
+            "id": parlay_id,
+            "amount": 50.0,
+            "total_odds": 350,
+            "status": "pending",
+            "legs": [
+                {
+                    "selection": "Kansas City Chiefs ML",
+                    "odds": -150,
+                    "bet_type": "moneyline",
+                    "game_id": "nfl_game_1"
+                },
+                {
+                    "selection": "Los Angeles Lakers -3.5",
+                    "odds": -110,
+                    "bet_type": "spread", 
+                    "game_id": "nba_game_1"
+                }
+            ],
+            "created_at": datetime.utcnow().isoformat()
+        },
+        "message": "Mock parlay details - bet service unavailable"
+    }
+
+@app.options("/api/bets/history")
+async def options_bet_history():
+    """Handle CORS preflight for bet history"""
+    return {}
+
+@app.post("/api/bets/history")
+async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(get_current_user)):
+    """Get user bet history with filtering"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            history = await bet_service.get_bet_history(
+                user_id=current_user["user_id"],
+                status=query.status,
+                bet_type=query.bet_type,
+                start_date=query.start_date,
+                end_date=query.end_date,
+                offset=query.offset,
+                limit=query.limit
+            )
+            return {"status": "success", "history": history}
+        except Exception as e:
+            logger.error(f"Error fetching bet history: {e}")
+    
+    # Mock bet history
+    return {
+        "status": "success",
+        "history": [
+            {
+                "id": "bet_1",
+                "bet_type": "moneyline",
+                "selection": "Kansas City Chiefs",
+                "odds": -150,
+                "amount": 100.0,
+                "status": query.status or "won",
+                "created_at": datetime.utcnow().isoformat()
+            },
+            {
+                "id": "bet_2", 
+                "bet_type": "spread",
+                "selection": "Lakers -3.5",
+                "odds": -110,
+                "amount": 50.0,
+                "status": "pending",
+                "created_at": datetime.utcnow().isoformat()
+            }
+        ],
+        "total": 2,
+        "offset": query.offset,
+        "limit": query.limit,
+        "message": "Mock bet history - bet service unavailable"
+    }
+
+@app.options("/api/bets/stats")
+async def options_bet_stats():
+    """Handle CORS preflight for bet statistics"""
+    return {}
+
+@app.get("/api/bets/stats")
+async def get_bet_stats(current_user: dict = Depends(get_current_user)):
+    """Get comprehensive betting statistics for user"""
+    if is_service_available("betting_analytics_service"):
+        try:
+            analytics_service = get_service("betting_analytics_service")
+            stats = await analytics_service.get_user_stats(current_user["user_id"])
+            return {"status": "success", "stats": stats}
+        except Exception as e:
+            logger.error(f"Error fetching bet stats: {e}")
+    
+    # Mock betting statistics
+    return {
+        "status": "success",
+        "stats": {
+            "total_bets": 25,
+            "total_wagered": 1250.0,
+            "total_winnings": 1375.0,
+            "win_rate": 0.68,
+            "roi": 0.10,
+            "average_odds": -115,
+            "favorite_sport": "NFL",
+            "favorite_bet_type": "moneyline",
+            "current_streak": {
+                "type": "win",
+                "count": 4
+            },
+            "monthly_summary": {
+                "bets": 8,
+                "wagered": 400.0,
+                "winnings": 450.0,
+                "roi": 0.125
+            }
+        },
+        "message": "Mock betting statistics - analytics service unavailable"
+    }
+
+@app.options("/api/bets/share")
+async def options_share_bet():
+    """Handle CORS preflight for bet sharing"""
+    return {}
+
+@app.post("/api/bets/share")
+async def share_bet(share_request: ShareBetRequest, current_user: dict = Depends(get_current_user)):
+    """Share a bet with other users"""
+    if is_service_available("bet_sharing_service_db"):
+        try:
+            sharing_service = get_service("bet_sharing_service_db")
+            result = await sharing_service.share_bet(
+                user_id=current_user["user_id"],
+                bet_id=share_request.bet_id,
+                message=share_request.message
+            )
+            return {"status": "success", "share": result}
+        except Exception as e:
+            logger.error(f"Error sharing bet: {e}")
+            raise HTTPException(status_code=500, detail="Failed to share bet")
+    
+    # Mock sharing response
+    return {
+        "status": "success",
+        "share": {
+            "id": "share_123",
+            "bet_id": share_request.bet_id,
+            "user_id": current_user["user_id"],
+            "message": share_request.message,
+            "share_url": f"https://yetai.com/shared-bet/{share_request.bet_id}",
+            "created_at": datetime.utcnow().isoformat()
+        },
+        "message": "Mock bet shared - sharing service unavailable"
+    }
+
+@app.options("/api/bets/shared")
+async def options_get_shared_bets():
+    """Handle CORS preflight for getting shared bets"""
+    return {}
+
+@app.get("/api/bets/shared")
+async def get_shared_bets(current_user: dict = Depends(get_current_user)):
+    """Get shared bets from other users"""
+    if is_service_available("bet_sharing_service_db"):
+        try:
+            sharing_service = get_service("bet_sharing_service_db")
+            shared_bets = await sharing_service.get_shared_bets()
+            return {"status": "success", "shared_bets": shared_bets}
+        except Exception as e:
+            logger.error(f"Error fetching shared bets: {e}")
+    
+    # Mock shared bets
+    return {
+        "status": "success",
+        "shared_bets": [
+            {
+                "id": "share_1",
+                "bet_id": "bet_789",
+                "user_id": "user_456",
+                "username": "BettingPro23",
+                "message": "Lock of the day! Chiefs are unstoppable.",
+                "bet_details": {
+                    "selection": "Kansas City Chiefs ML",
+                    "odds": -150,
+                    "amount": 200.0
+                },
+                "created_at": datetime.utcnow().isoformat()
+            }
+        ],
+        "message": "Mock shared bets - sharing service unavailable"
+    }
+
+@app.options("/api/bets/shared/{share_id}")
+async def options_delete_shared_bet():
+    """Handle CORS preflight for deleting shared bet"""
+    return {}
+
+@app.delete("/api/bets/shared/{share_id}")
+async def delete_shared_bet(share_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete a shared bet"""
+    if is_service_available("bet_sharing_service_db"):
+        try:
+            sharing_service = get_service("bet_sharing_service_db")
+            result = await sharing_service.delete_shared_bet(share_id, current_user["user_id"])
+            return {"status": "success", "message": f"Shared bet {share_id} deleted"}
+        except Exception as e:
+            logger.error(f"Error deleting shared bet {share_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to delete shared bet")
+    
+    # Mock deletion response
+    return {
+        "status": "success",
+        "message": f"Mock deletion of shared bet {share_id} - sharing service unavailable"
+    }
+
+@app.options("/api/bets/{bet_id}")
+async def options_delete_bet():
+    """Handle CORS preflight for bet deletion"""
+    return {}
+
+@app.delete("/api/bets/{bet_id}")
+async def delete_bet(bet_id: str, current_user: dict = Depends(get_current_user)):
+    """Cancel/delete a bet"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            result = await bet_service.cancel_bet(bet_id, current_user["user_id"])
+            return {"status": "success", "message": f"Bet {bet_id} cancelled", "result": result}
+        except Exception as e:
+            logger.error(f"Error cancelling bet {bet_id}: {e}")
+            raise HTTPException(status_code=500, detail="Failed to cancel bet")
+    
+    # Mock cancellation response
+    return {
+        "status": "success",
+        "message": f"Mock cancellation of bet {bet_id} - bet service unavailable"
+    }
+
+@app.options("/api/bets/simulate")
+async def options_simulate_bet():
+    """Handle CORS preflight for bet simulation"""
+    return {}
+
+@app.post("/api/bets/simulate")
+async def simulate_bet(current_user: dict = Depends(get_current_user)):
+    """Simulate bet results for development/testing"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            result = await bet_service.simulate_bet_outcome()
+            return {"status": "success", "simulation": result}
+        except Exception as e:
+            logger.error(f"Error simulating bet: {e}")
+    
+    # Mock simulation
+    import random
+    return {
+        "status": "success",
+        "simulation": {
+            "outcome": random.choice(["win", "loss", "push"]),
+            "confidence": round(random.uniform(0.5, 0.95), 2),
+            "payout": round(random.uniform(50, 500), 2) if random.choice([True, False]) else 0,
+            "message": "Simulated bet outcome for testing"
+        },
+        "message": "Mock bet simulation - bet service unavailable"
+    }
+
+# Fantasy Sports API Endpoints
+@app.options("/api/fantasy/accounts")
+async def options_fantasy_accounts():
+    """Handle CORS preflight for fantasy accounts"""
+    return {}
+
+@app.get("/api/fantasy/accounts")
+async def get_fantasy_accounts(current_user: dict = Depends(get_current_user)):
+    """Get connected fantasy accounts"""
+    if is_service_available("fantasy_pipeline"):
+        try:
+            fantasy_service = get_service("fantasy_pipeline")
+            accounts = await fantasy_service.get_user_accounts(current_user["user_id"])
+            return {"status": "success", "accounts": accounts}
+        except Exception as e:
+            logger.error(f"Error fetching fantasy accounts: {e}")
+    
+    # Mock fantasy accounts
+    return {
+        "status": "success",
+        "accounts": [
+            {
+                "platform": "sleeper",
+                "username": "YetAI_User",
+                "user_id": "sleeper_123",
+                "connected_at": datetime.utcnow().isoformat(),
+                "status": "active"
+            }
+        ],
+        "message": "Mock fantasy accounts - fantasy service unavailable"
+    }
+
+@app.options("/api/fantasy/leagues")
+async def options_fantasy_leagues():
+    """Handle CORS preflight for fantasy leagues"""
+    return {}
+
+@app.get("/api/fantasy/leagues")
+async def get_fantasy_leagues(current_user: dict = Depends(get_current_user)):
+    """Get fantasy leagues for user"""
+    if is_service_available("fantasy_pipeline"):
+        try:
+            fantasy_service = get_service("fantasy_pipeline")
+            leagues = await fantasy_service.get_user_leagues(current_user["user_id"])
+            return {"status": "success", "leagues": leagues}
+        except Exception as e:
+            logger.error(f"Error fetching fantasy leagues: {e}")
+    
+    # Mock fantasy leagues
+    return {
+        "status": "success",
+        "leagues": [
+            {
+                "league_id": "league_123",
+                "name": "Championship League",
+                "platform": "sleeper",
+                "sport": "nfl",
+                "season": "2025",
+                "total_teams": 12,
+                "scoring_type": "ppr",
+                "status": "active"
+            }
+        ],
+        "message": "Mock fantasy leagues - fantasy service unavailable"
+    }
+
+@app.options("/api/fantasy/connect")
+async def options_fantasy_connect():
+    """Handle CORS preflight for fantasy platform connection"""
+    return {}
+
+@app.post("/api/fantasy/connect")
+async def connect_fantasy_platform(connect_request: FantasyConnectRequest, current_user: dict = Depends(get_current_user)):
+    """Connect to a fantasy platform (Sleeper, ESPN, etc.)"""
+    if is_service_available("fantasy_pipeline"):
+        try:
+            fantasy_service = get_service("fantasy_pipeline")
+            result = await fantasy_service.connect_platform(
+                user_id=current_user["user_id"],
+                platform=connect_request.platform,
+                credentials=connect_request.credentials
+            )
+            return {"status": "success", "connection": result}
+        except Exception as e:
+            logger.error(f"Error connecting to {connect_request.platform}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to connect to {connect_request.platform}")
+    
+    # Mock connection response
+    return {
+        "status": "success",
+        "connection": {
+            "platform": connect_request.platform,
+            "status": "connected",
+            "user_id": f"{connect_request.platform}_user_456",
+            "connected_at": datetime.utcnow().isoformat()
+        },
+        "message": f"Mock connection to {connect_request.platform} - fantasy service unavailable"
+    }
+
+@app.options("/api/fantasy/roster/{league_id}")
+async def options_fantasy_roster():
+    """Handle CORS preflight for fantasy roster"""
+    return {}
+
+@app.get("/api/fantasy/roster/{league_id}")
+async def get_fantasy_roster(league_id: str, current_user: dict = Depends(get_current_user)):
+    """Get fantasy roster for a specific league"""
+    if is_service_available("fantasy_pipeline"):
+        try:
+            fantasy_service = get_service("fantasy_pipeline")
+            roster = await fantasy_service.get_league_roster(league_id, current_user["user_id"])
+            return {"status": "success", "roster": roster}
+        except Exception as e:
+            logger.error(f"Error fetching roster for league {league_id}: {e}")
+    
+    # Mock roster data
+    return {
+        "status": "success",
+        "roster": {
+            "league_id": league_id,
+            "team_name": "YetAI Champions",
+            "players": [
+                {
+                    "player_id": "player_1",
+                    "name": "Josh Allen",
+                    "position": "QB",
+                    "team": "BUF",
+                    "status": "active"
+                },
+                {
+                    "player_id": "player_2", 
+                    "name": "Christian McCaffrey",
+                    "position": "RB",
+                    "team": "SF",
+                    "status": "active"
+                }
+            ]
+        },
+        "message": "Mock fantasy roster - fantasy service unavailable"
+    }
+
+@app.get("/api/fantasy/projections")
+async def get_fantasy_projections():
+    """Get fantasy projections"""
+    if is_service_available("fantasy_pipeline"):
+        try:
+            fantasy_service = get_service("fantasy_pipeline")
+            projections = await fantasy_service.get_projections()
+            return {"status": "success", "projections": projections}
+        except Exception as e:
+            logger.error(f"Error fetching fantasy projections: {e}")
+    
+    return {
+        "status": "success",
+        "projections": [
+            {
+                "player_id": "player_1",
+                "name": "Josh Allen",
+                "position": "QB",
+                "team": "BUF",
+                "projected_points": 24.5,
+                "confidence": 0.82
+            },
+            {
+                "player_id": "player_2",
+                "name": "Christian McCaffrey", 
+                "position": "RB",
+                "team": "SF",
+                "projected_points": 18.3,
+                "confidence": 0.75
+            }
+        ],
+        "message": "Mock fantasy projections - fantasy service unavailable"
+    }
+
+# Odds and Markets API Endpoints
+@app.options("/api/odds/americanfootball_nfl")
+async def options_nfl_odds():
+    """Handle CORS preflight for NFL odds"""
+    return {}
+
+@app.get("/api/odds/americanfootball_nfl")
 async def get_nfl_odds():
-    """Get NFL odds"""
+    """Get NFL odds directly"""
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
-            # Try to use real odds service
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds("americanfootball_nfl")
+                return {"status": "success", "data": games}
+        except Exception as e:
+            logger.error(f"Error fetching NFL odds: {e}")
+            # Fall through to mock data
+    
+    # Return mock NFL data
+    return {
+        "status": "success",
+        "data": [],
+        "message": f"Mock NFL odds - Running in {settings.ENVIRONMENT} mode"
+    }
+
+@app.options("/api/odds/basketball_nba") 
+async def options_nba_odds():
+    """Handle CORS preflight for NBA odds"""
+    return {}
+
+@app.get("/api/odds/basketball_nba")
+async def get_nba_odds():
+    """Get NBA odds directly"""
+    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds("basketball_nba")
+                return {"status": "success", "data": games}
+        except Exception as e:
+            logger.error(f"Error fetching NBA odds: {e}")
+    
+    return {
+        "status": "success", 
+        "data": [],
+        "message": f"Mock NBA odds - Running in {settings.ENVIRONMENT} mode"
+    }
+
+@app.options("/api/odds/baseball_mlb")
+async def options_mlb_odds():
+    """Handle CORS preflight for MLB odds"""
+    return {}
+
+@app.get("/api/odds/baseball_mlb")
+async def get_mlb_odds():
+    """Get MLB odds directly"""
+    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds("baseball_mlb")
+                return {"status": "success", "data": games}
+        except Exception as e:
+            logger.error(f"Error fetching MLB odds: {e}")
+    
+    return {
+        "status": "success",
+        "data": [], 
+        "message": f"Mock MLB odds - Running in {settings.ENVIRONMENT} mode"
+    }
+
+@app.options("/api/odds/icehockey_nhl")
+async def options_nhl_odds():
+    """Handle CORS preflight for NHL odds"""
+    return {}
+
+@app.get("/api/odds/icehockey_nhl")
+async def get_nhl_odds():
+    """Get NHL (Ice Hockey) odds"""
+    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds("icehockey_nhl")
+                return {"status": "success", "data": games}
+        except Exception as e:
+            logger.error(f"Error fetching NHL odds: {e}")
+    
+    return {
+        "status": "success",
+        "data": [],
+        "message": f"Mock NHL odds - Running in {settings.ENVIRONMENT} mode"
+    }
+
+@app.options("/api/odds/hockey")
+async def options_hockey_odds():
+    """Handle CORS preflight for hockey odds"""
+    return {}
+
+@app.get("/api/odds/hockey")
+async def get_hockey_odds():
+    """Get Hockey odds (alias for NHL)"""
+    # Redirect to NHL odds
+    return await get_nhl_odds()
+
+@app.get("/api/odds/nfl")
+async def get_nfl_odds_legacy():
+    """Get NFL odds (legacy endpoint)"""
+    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+        try:
             from app.services.odds_api_service import OddsAPIService
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("americanfootball_nfl")
                 return {"status": "success", "odds": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
-            # Fall through to mock data
     
-    # Return mock data
     return {
         "status": "success",
-        "odds": [
-            {
-                "id": "mock_odds_1",
-                "sport_title": "NFL",
-                "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills",
-                "bookmakers": [
-                    {
-                        "title": "DraftKings",
-                        "markets": [
-                            {
-                                "key": "h2h", 
-                                "outcomes": [
-                                    {"name": "Kansas City Chiefs", "price": -110},
-                                    {"name": "Buffalo Bills", "price": -110}
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ],
+        "odds": [],
         "message": "Mock data - Odds API not configured"
     }
 
@@ -413,15 +1135,12 @@ async def get_popular_sports_odds():
     """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
-            # Try to use real odds service
             from app.services.odds_api_service import get_popular_sports_odds
             games = await get_popular_sports_odds()
             return {"status": "success", "data": games}
         except Exception as e:
             logger.error(f"Error fetching popular sports odds: {e}")
-            # Fall through to mock data
     
-    # Return mock data for production/when services unavailable
     return {
         "status": "success",
         "data": [
@@ -445,227 +1164,253 @@ async def get_popular_sports_odds():
                         ]
                     }
                 ]
-            },
-            {
-                "id": "mock_game_2", 
-                "sport_title": "NBA",
-                "home_team": "Los Angeles Lakers",
-                "away_team": "Boston Celtics",
-                "commence_time": "2025-01-12T22:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "FanDuel",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Los Angeles Lakers", "price": 105},
-                                    {"name": "Boston Celtics", "price": -125}
-                                ]
-                            }
-                        ]
-                    }
-                ]
             }
         ],
         "message": f"Mock data - Running in {settings.ENVIRONMENT} mode"
     }
 
-# Additional odds endpoints for specific sports
-@app.options("/api/odds/americanfootball_nfl")
-async def options_nfl_odds():
-    """Handle CORS preflight for NFL odds endpoint"""
+# Parlay-specific endpoints
+@app.options("/api/parlays/markets")
+async def options_parlay_markets():
+    """Handle CORS preflight for parlay markets"""
     return {}
 
-@app.get("/api/odds/americanfootball_nfl")
-async def get_nfl_odds_direct():
-    """Get NFL odds (direct API endpoint)"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+@app.get("/api/parlays/markets")
+async def get_parlay_markets(sport: Optional[str] = None):
+    """Get available markets for parlay betting"""
+    if is_service_available("bet_service"):
         try:
-            from app.services.odds_api_service import OddsAPIService
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                odds = await service.get_odds("americanfootball_nfl")
-                return {"status": "success", "odds": odds}
+            bet_service = get_service("bet_service")
+            markets = await bet_service.get_parlay_markets(sport=sport)
+            return {"status": "success", "markets": markets}
         except Exception as e:
-            logger.error(f"Error fetching NFL odds: {e}")
+            logger.error(f"Error fetching parlay markets: {e}")
     
-    # Mock NFL odds
+    # Mock parlay markets
+    markets = [
+        {
+            "sport": "nfl",
+            "name": "NFL",
+            "markets": ["h2h", "spreads", "totals", "props"]
+        },
+        {
+            "sport": "nba", 
+            "name": "NBA",
+            "markets": ["h2h", "spreads", "totals", "props"]
+        }
+    ]
+    
+    # Add NHL if specifically requested or show all
+    if sport == "icehockey_nhl" or not sport:
+        markets.append({
+            "sport": "icehockey_nhl",
+            "name": "NHL", 
+            "markets": ["h2h", "spreads", "totals"]
+        })
+    
+    # Filter by sport if specified
+    if sport:
+        markets = [m for m in markets if m["sport"] == sport]
+    
     return {
         "status": "success",
-        "odds": [
+        "markets": markets,
+        "message": "Mock parlay markets - bet service unavailable"
+    }
+
+@app.options("/api/parlays/popular")
+async def options_popular_parlays():
+    """Handle CORS preflight for popular parlays"""
+    return {}
+
+@app.get("/api/parlays/popular")
+async def get_popular_parlays():
+    """Get popular parlay combinations"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            parlays = await bet_service.get_popular_parlays()
+            return {"status": "success", "parlays": parlays}
+        except Exception as e:
+            logger.error(f"Error fetching popular parlays: {e}")
+    
+    # Mock popular parlays including hockey
+    return {
+        "status": "success",
+        "parlays": [
             {
-                "id": "mock_nfl_odds_1",
-                "sport_title": "NFL",
+                "id": "popular_1",
+                "name": "NFL Sunday Special",
+                "legs": [
+                    {"selection": "Chiefs ML", "odds": -150, "sport": "nfl"},
+                    {"selection": "Lakers -3.5", "odds": -110, "sport": "nba"}
+                ],
+                "total_odds": 250,
+                "popularity_score": 0.85
+            },
+            {
+                "id": "popular_2", 
+                "name": "Hockey Hat Trick",
+                "legs": [
+                    {"selection": "Rangers ML", "odds": -130, "sport": "icehockey_nhl"},
+                    {"selection": "Bruins Over 6.5", "odds": -105, "sport": "icehockey_nhl"},
+                    {"selection": "McDavid Anytime Goal", "odds": 180, "sport": "icehockey_nhl"}
+                ],
+                "total_odds": 650,
+                "popularity_score": 0.72
+            }
+        ],
+        "message": "Mock popular parlays - bet service unavailable"
+    }
+
+# Profile and Status endpoints
+@app.options("/api/profile/sports")
+async def options_profile_sports():
+    """Handle CORS preflight for user sports preferences"""
+    return {}
+
+@app.get("/api/profile/sports")
+async def get_profile_sports(current_user: dict = Depends(get_current_user)):
+    """Get user's sports preferences and settings"""
+    if is_service_available("auth_service"):
+        try:
+            auth_service = get_service("auth_service")
+            profile = await auth_service.get_user_profile(current_user["user_id"])
+            return {
+                "status": "success",
+                "sports": profile.get("preferred_sports", []),
+                "favorite_teams": profile.get("favorite_teams", []),
+                "notification_settings": profile.get("notification_settings", {})
+            }
+        except Exception as e:
+            logger.error(f"Error fetching user sports profile: {e}")
+    
+    # Mock sports preferences
+    return {
+        "status": "success",
+        "sports": ["nfl", "nba", "icehockey_nhl"],
+        "favorite_teams": [
+            {"sport": "nfl", "team": "Kansas City Chiefs"},
+            {"sport": "nba", "team": "Los Angeles Lakers"},
+            {"sport": "icehockey_nhl", "team": "New York Rangers"}
+        ],
+        "notification_settings": {
+            "game_updates": True,
+            "bet_results": True,
+            "yetai_predictions": True
+        },
+        "message": "Mock sports preferences - auth service unavailable"
+    }
+
+@app.options("/api/profile/status")
+async def options_profile_status():
+    """Handle CORS preflight for user profile status"""
+    return {}
+
+@app.get("/api/profile/status")
+async def get_profile_status(current_user: dict = Depends(get_current_user)):
+    """Get comprehensive user profile status"""
+    if is_service_available("auth_service"):
+        try:
+            auth_service = get_service("auth_service")
+            status_info = await auth_service.get_user_status(current_user["user_id"])
+            return {"status": "success", "profile_status": status_info}
+        except Exception as e:
+            logger.error(f"Error fetching user profile status: {e}")
+    
+    # Mock profile status
+    return {
+        "status": "success",
+        "profile_status": {
+            "user_id": current_user["user_id"],
+            "subscription_tier": current_user.get("subscription_tier", "free"),
+            "account_status": "active",
+            "profile_completion": 0.85,
+            "last_activity": datetime.utcnow().isoformat(),
+            "stats": {
+                "total_bets": 25,
+                "win_rate": 0.68,
+                "favorite_sport": "nfl"
+            },
+            "connected_platforms": ["sleeper"],
+            "notification_preferences": {
+                "email": True,
+                "push": True
+            }
+        },
+        "message": "Mock profile status - auth service unavailable"
+    }
+
+# Live betting endpoints
+@app.options("/api/live-bets/markets")
+async def options_live_markets():
+    """Handle CORS preflight for live markets"""
+    return {}
+
+@app.get("/api/live-bets/markets")
+async def get_live_markets():
+    """Get live betting markets"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            markets = await bet_service.get_live_markets()
+            return {"status": "success", "markets": markets}
+        except Exception as e:
+            logger.error(f"Error fetching live markets: {e}")
+    
+    return {
+        "status": "success",
+        "markets": [],
+        "message": "Mock live markets - bet service unavailable"
+    }
+
+@app.options("/api/live-bets/active")
+async def options_active_live_bets():
+    """Handle CORS preflight for active live bets"""
+    return {}
+
+@app.get("/api/live-bets/active")
+async def get_active_live_bets():
+    """Get active live bets"""
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            active_bets = await bet_service.get_active_live_bets()
+            return {"status": "success", "active_bets": active_bets}
+        except Exception as e:
+            logger.error(f"Error fetching active live bets: {e}")
+    
+    return {
+        "status": "success",
+        "active_bets": [],
+        "message": "Mock active live bets - bet service unavailable"
+    }
+
+# Sports data endpoints
+@app.get("/api/games/nfl")
+async def get_nfl_games():
+    """Get NFL games and scores"""
+    if is_service_available("sports_pipeline"):
+        try:
+            sports_pipeline = get_service("sports_pipeline")
+            games = await sports_pipeline.get_nfl_games()
+            return {"status": "success", "games": games}
+        except Exception as e:
+            logger.error(f"Error fetching NFL games: {e}")
+    
+    return {
+        "status": "success", 
+        "games": [
+            {
+                "id": "mock_nfl_1",
                 "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills",
-                "commence_time": "2025-01-12T21:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "DraftKings",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Kansas City Chiefs", "price": -125},
-                                    {"name": "Buffalo Bills", "price": 105}
-                                ]
-                            }
-                        ]
-                    }
-                ]
+                "away_team": "Buffalo Bills", 
+                "start_time": "2025-01-12T21:00:00Z",
+                "status": "scheduled"
             }
         ],
-        "message": "Mock NFL odds - Odds API not configured"
+        "message": "Mock data - Sports pipeline not fully configured"
     }
-
-@app.options("/api/odds/basketball_nba")
-async def options_nba_odds():
-    """Handle CORS preflight for NBA odds endpoint"""
-    return {}
-
-@app.get("/api/odds/basketball_nba")
-async def get_nba_odds():
-    """Get NBA odds"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-        try:
-            from app.services.odds_api_service import OddsAPIService
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                odds = await service.get_odds("basketball_nba")
-                return {"status": "success", "odds": odds}
-        except Exception as e:
-            logger.error(f"Error fetching NBA odds: {e}")
-    
-    # Mock NBA odds
-    return {
-        "status": "success",
-        "odds": [
-            {
-                "id": "mock_nba_odds_1",
-                "sport_title": "NBA",
-                "home_team": "Los Angeles Lakers",
-                "away_team": "Boston Celtics",
-                "commence_time": "2025-01-12T22:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "FanDuel",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Los Angeles Lakers", "price": 110},
-                                    {"name": "Boston Celtics", "price": -130}
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ],
-        "message": "Mock NBA odds - Odds API not configured"
-    }
-
-@app.options("/api/odds/baseball_mlb")
-async def options_mlb_odds():
-    """Handle CORS preflight for MLB odds endpoint"""
-    return {}
-
-@app.get("/api/odds/baseball_mlb")
-async def get_mlb_odds():
-    """Get MLB odds"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-        try:
-            from app.services.odds_api_service import OddsAPIService
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                odds = await service.get_odds("baseball_mlb")
-                return {"status": "success", "odds": odds}
-        except Exception as e:
-            logger.error(f"Error fetching MLB odds: {e}")
-    
-    # Mock MLB odds
-    return {
-        "status": "success",
-        "odds": [
-            {
-                "id": "mock_mlb_odds_1",
-                "sport_title": "MLB",
-                "home_team": "New York Yankees",
-                "away_team": "Boston Red Sox",
-                "commence_time": "2025-04-15T19:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "BetMGM",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "New York Yankees", "price": -145},
-                                    {"name": "Boston Red Sox", "price": 125}
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ],
-        "message": "Mock MLB odds - Odds API not configured"
-    }
-
-@app.options("/api/odds/icehockey_nhl")
-async def options_nhl_odds():
-    """Handle CORS preflight for NHL odds endpoint"""
-    return {}
-
-@app.get("/api/odds/icehockey_nhl")
-async def get_nhl_odds():
-    """Get NHL odds"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-        try:
-            from app.services.odds_api_service import OddsAPIService
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                odds = await service.get_odds("icehockey_nhl")
-                return {"status": "success", "odds": odds}
-        except Exception as e:
-            logger.error(f"Error fetching NHL odds: {e}")
-    
-    # Mock NHL odds
-    return {
-        "status": "success",
-        "odds": [
-            {
-                "id": "mock_nhl_odds_1",
-                "sport_title": "NHL",
-                "home_team": "Toronto Maple Leafs",
-                "away_team": "Montreal Canadiens",
-                "commence_time": "2025-01-15T20:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "Bet365",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Toronto Maple Leafs", "price": -115},
-                                    {"name": "Montreal Canadiens", "price": -105}
-                                ]
-                            }
-                        ]
-                    }
-                ]
-            }
-        ],
-        "message": "Mock NHL odds - Odds API not configured"
-    }
-
-@app.options("/api/odds/hockey")
-async def options_hockey_odds():
-    """Handle CORS preflight for hockey odds endpoint (alias for NHL)"""
-    return {}
-
-@app.get("/api/odds/hockey")
-async def get_hockey_odds():
-    """Get hockey odds (alias for NHL)"""
-    # This is an alias that redirects to NHL odds
-    return await get_nhl_odds()
 
 # AI Chat endpoints
 @app.post("/api/chat/message")
@@ -681,9 +1426,7 @@ async def send_chat_message(request: ChatRequest):
             return {"status": "success", "response": response}
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-            # Fall through to mock response
     
-    # Mock response when service unavailable
     return {
         "status": "success",
         "response": {
@@ -707,805 +1450,82 @@ async def get_chat_suggestions():
         ]
     }
 
-# YetAI Bets endpoints
-@app.options("/api/yetai-bets")
-async def options_yetai_bets():
-    """Handle CORS preflight for YetAI bets endpoint"""
-    return {}
-
-@app.get("/api/yetai-bets")
-async def get_yetai_bets():
-    """Get YetAI bets for user"""
-    if is_service_available("yetai_bets_service"):
-        try:
-            yetai_service = get_service("yetai_bets_service")
-            bets = await yetai_service.get_active_bets()
-            return {"status": "success", "bets": bets}
-        except Exception as e:
-            logger.error(f"Error fetching YetAI bets: {e}")
+# Comprehensive endpoint health check
+@app.get("/api/endpoints/health")
+async def endpoint_health_check():
+    """Comprehensive health check for all API endpoints"""
     
-    # Return empty list when service unavailable
-    return {
-        "status": "success",
-        "bets": [],
-        "message": "YetAI bets service unavailable"
-    }
-
-# Betting endpoints
-@app.options("/api/bets/place")
-async def options_place_bet():
-    """Handle CORS preflight for place bet endpoint"""
-    return {}
-
-@app.post("/api/bets/place")
-async def place_bet(bet_data: dict):
-    """Place a single bet"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.place_bet(bet_data)
-            return {"status": "success", "bet": result}
-        except Exception as e:
-            logger.error(f"Error placing bet: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to place bet",
-                "error": str(e)
-            }
-    
-    # Mock response when service unavailable
-    return {
-        "status": "success",
-        "bet": {
-            "id": "mock_bet_123",
-            "bet_type": bet_data.get("bet_type", "moneyline"),
-            "selection": bet_data.get("selection", "Unknown Team"),
-            "odds": bet_data.get("odds", -110),
-            "amount": bet_data.get("amount", 100),
-            "potential_payout": bet_data.get("amount", 100) * 1.91,  # Rough calculation
-            "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+    endpoint_categories = {
+        "Core API": {
+            "endpoints": ["/health", "/", "/api/status"],
+            "operational": True
         },
-        "message": "Mock bet placed - Bet service unavailable"
-    }
-
-@app.options("/api/bets/parlay")
-async def options_place_parlay():
-    """Handle CORS preflight for parlay bet endpoint"""
-    return {}
-
-@app.post("/api/bets/parlay")
-async def place_parlay_bet(parlay_data: dict):
-    """Place a parlay bet"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.place_parlay_bet(parlay_data)
-            return {"status": "success", "parlay": result}
-        except Exception as e:
-            logger.error(f"Error placing parlay bet: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to place parlay bet",
-                "error": str(e)
-            }
-    
-    # Mock response when service unavailable
-    legs = parlay_data.get("legs", [])
-    return {
-        "status": "success",
-        "parlay": {
-            "id": "mock_parlay_123",
-            "amount": parlay_data.get("amount", 50),
-            "legs": legs,
-            "total_odds": 350,  # Mock combined odds
-            "potential_payout": parlay_data.get("amount", 50) * 3.5,
-            "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+        "Authentication": {
+            "endpoints": ["/api/auth/status", "/api/auth/register", "/api/auth/login", "/api/auth/me"],
+            "operational": is_service_available("auth_service")
         },
-        "message": "Mock parlay placed - Bet service unavailable"
-    }
-
-@app.options("/api/bets/parlays")
-async def options_get_parlays():
-    """Handle CORS preflight for get parlays endpoint"""
-    return {}
-
-@app.get("/api/bets/parlays")
-async def get_user_parlays():
-    """Get user's parlay bets"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            parlays = await bet_service.get_user_parlays()
-            return {"status": "success", "parlays": parlays}
-        except Exception as e:
-            logger.error(f"Error fetching parlays: {e}")
-    
-    return {
-        "status": "success",
-        "parlays": [],
-        "message": "Bet service unavailable"
-    }
-
-@app.get("/api/bets/parlay/{parlay_id}")
-async def get_parlay_details(parlay_id: str):
-    """Get specific parlay details"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            parlay = await bet_service.get_parlay_by_id(parlay_id)
-            return {"status": "success", "parlay": parlay}
-        except Exception as e:
-            logger.error(f"Error fetching parlay {parlay_id}: {e}")
-    
-    return {
-        "status": "success",
-        "parlay": {
-            "id": parlay_id,
-            "amount": 50,
-            "legs": [],
-            "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+        "YetAI Bets": {
+            "endpoints": ["/api/yetai-bets", "/api/admin/yetai-bets/{bet_id}"],
+            "operational": is_service_available("yetai_bets_service")
         },
-        "message": "Mock parlay data - Bet service unavailable"
-    }
-
-@app.options("/api/bets/stats")
-async def options_bet_stats():
-    """Handle CORS preflight for bet stats endpoint"""
-    return {}
-
-@app.get("/api/bets/stats")
-async def get_bet_stats():
-    """Get betting statistics for user"""
-    if is_service_available("betting_analytics_service"):
-        try:
-            analytics_service = get_service("betting_analytics_service")
-            stats = await analytics_service.get_user_stats()
-            return {"status": "success", "stats": stats}
-        except Exception as e:
-            logger.error(f"Error fetching bet stats: {e}")
-    elif is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            stats = await bet_service.get_betting_stats()
-            return {"status": "success", "stats": stats}
-        except Exception as e:
-            logger.error(f"Error fetching bet stats from bet service: {e}")
-    
-    # Mock stats when service unavailable
-    return {
-        "status": "success",
-        "stats": {
-            "total_bets": 0,
-            "total_wagered": 0,
-            "total_won": 0,
-            "win_rate": 0,
-            "profit_loss": 0,
-            "average_odds": -110,
-            "favorite_sport": "NFL",
-            "bet_types": {
-                "moneyline": 0,
-                "spread": 0,
-                "over_under": 0,
-                "parlay": 0
-            }
+        "Sports Betting": {
+            "endpoints": [
+                "/api/bets/place", "/api/bets/parlay", "/api/bets/parlays", 
+                "/api/bets/history", "/api/bets/stats", "/api/bets/share",
+                "/api/bets/shared", "/api/bets/simulate"
+            ],
+            "operational": is_service_available("bet_service")
         },
-        "message": "Mock stats - Analytics service unavailable"
-    }
-
-@app.options("/api/bets/share")
-async def options_share_bet():
-    """Handle CORS preflight for share bet endpoint"""
-    return {}
-
-@app.post("/api/bets/share")
-async def share_bet(share_data: dict):
-    """Share a bet with other users"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.share_bet(share_data)
-            return {"status": "success", "shared_bet": result}
-        except Exception as e:
-            logger.error(f"Error sharing bet: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to share bet",
-                "error": str(e)
-            }
-    
-    # Mock response when service unavailable
-    return {
-        "status": "success",
-        "shared_bet": {
-            "share_id": "mock_share_123",
-            "bet_id": share_data.get("bet_id", "unknown"),
-            "message": share_data.get("message", "Check out my bet!"),
-            "shared_at": datetime.utcnow().isoformat(),
-            "expires_at": datetime.utcnow().isoformat()
+        "Fantasy Sports": {
+            "endpoints": [
+                "/api/fantasy/accounts", "/api/fantasy/leagues", 
+                "/api/fantasy/connect", "/api/fantasy/projections"
+            ],
+            "operational": is_service_available("fantasy_pipeline")
         },
-        "message": "Mock share created - Bet service unavailable"
-    }
-
-@app.options("/api/bets/shared")
-async def options_get_shared_bets():
-    """Handle CORS preflight for get shared bets endpoint"""
-    return {}
-
-@app.get("/api/bets/shared")
-async def get_shared_bets():
-    """Get shared bets from other users"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            shared_bets = await bet_service.get_shared_bets()
-            return {"status": "success", "shared_bets": shared_bets}
-        except Exception as e:
-            logger.error(f"Error fetching shared bets: {e}")
-    
-    return {
-        "status": "success",
-        "shared_bets": [],
-        "message": "Bet service unavailable"
-    }
-
-@app.options("/api/bets/shared/{share_id}")
-async def options_delete_shared_bet(share_id: str):
-    """Handle CORS preflight for delete shared bet endpoint"""
-    return {}
-
-@app.delete("/api/bets/shared/{share_id}")
-async def delete_shared_bet(share_id: str):
-    """Delete a shared bet"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.delete_shared_bet(share_id)
-            return {"status": "success", "message": "Shared bet deleted"}
-        except Exception as e:
-            logger.error(f"Error deleting shared bet {share_id}: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to delete shared bet",
-                "error": str(e)
-            }
-    
-    return {
-        "status": "success",
-        "message": f"Mock deletion of shared bet {share_id} - Bet service unavailable"
-    }
-
-@app.options("/api/bets/{bet_id}")
-async def options_cancel_bet(bet_id: str):
-    """Handle CORS preflight for cancel bet endpoint"""
-    return {}
-
-@app.delete("/api/bets/{bet_id}")
-async def cancel_bet(bet_id: str):
-    """Cancel/delete a bet"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.cancel_bet(bet_id)
-            return {"status": "success", "message": "Bet cancelled"}
-        except Exception as e:
-            logger.error(f"Error cancelling bet {bet_id}: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to cancel bet",
-                "error": str(e)
-            }
-    
-    return {
-        "status": "success",
-        "message": f"Mock cancellation of bet {bet_id} - Bet service unavailable"
-    }
-
-@app.options("/api/bets/simulate")
-async def options_simulate_bet():
-    """Handle CORS preflight for simulate bet endpoint"""
-    return {}
-
-@app.post("/api/bets/simulate")
-async def simulate_bet_results(simulation_data: dict = None):
-    """Simulate bet results for testing"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.simulate_bet_results(simulation_data or {})
-            return {"status": "success", "simulation": result}
-        except Exception as e:
-            logger.error(f"Error simulating bet: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to simulate bet",
-                "error": str(e)
-            }
-    
-    # Mock simulation when service unavailable
-    return {
-        "status": "success",
-        "simulation": {
-            "bet_id": "mock_sim_123",
-            "result": "win",
-            "payout": 191.0,
-            "profit": 91.0,
-            "simulated_at": datetime.utcnow().isoformat()
+        "Odds & Markets": {
+            "endpoints": [
+                "/api/odds/americanfootball_nfl", "/api/odds/basketball_nba",
+                "/api/odds/baseball_mlb", "/api/odds/icehockey_nhl", "/api/odds/popular"
+            ],
+            "operational": is_service_available("sports_pipeline")
         },
-        "message": "Mock simulation - Bet service unavailable"
-    }
-
-@app.options("/api/bets/history")
-async def options_bet_history():
-    """Handle CORS preflight for bet history endpoint"""
-    return {}
-
-@app.post("/api/bets/history")
-async def get_bet_history(query: dict):
-    """Get user bet history"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            history = await bet_service.get_bet_history(**query)
-            return {"status": "success", "history": history}
-        except Exception as e:
-            logger.error(f"Error fetching bet history: {e}")
-    
-    return {
-        "status": "success",
-        "history": [],
-        "message": "Bet service unavailable"
-    }
-
-# Fantasy endpoints  
-@app.options("/api/fantasy/accounts")
-async def options_fantasy_accounts():
-    """Handle CORS preflight for fantasy accounts endpoint"""
-    return {}
-
-@app.get("/api/fantasy/accounts")
-async def get_fantasy_accounts():
-    """Get user's fantasy accounts"""
-    if is_service_available("fantasy_pipeline") or is_service_available("real_fantasy_pipeline"):
-        try:
-            # Try real fantasy pipeline first, then fallback to mock
-            fantasy_service = get_service("real_fantasy_pipeline") or get_service("fantasy_pipeline")
-            accounts = await fantasy_service.get_user_accounts()
-            return {"status": "success", "accounts": accounts}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy accounts: {e}")
-    
-    # Mock response when service unavailable
-    return {
-        "status": "success",
-        "accounts": [],
-        "message": "Fantasy service unavailable - Mock data"
-    }
-
-@app.options("/api/fantasy/leagues")
-async def options_fantasy_leagues():
-    """Handle CORS preflight for fantasy leagues endpoint"""
-    return {}
-
-@app.get("/api/fantasy/leagues")
-async def get_fantasy_leagues():
-    """Get user's fantasy leagues"""
-    if is_service_available("fantasy_pipeline") or is_service_available("real_fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("real_fantasy_pipeline") or get_service("fantasy_pipeline")
-            leagues = await fantasy_service.get_user_leagues()
-            return {"status": "success", "leagues": leagues}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy leagues: {e}")
-    
-    # Mock response when service unavailable
-    return {
-        "status": "success",
-        "leagues": [],
-        "message": "Fantasy service unavailable - Mock data"
-    }
-
-@app.options("/api/fantasy/connect")
-async def options_fantasy_connect():
-    """Handle CORS preflight for fantasy connect endpoint"""
-    return {}
-
-@app.post("/api/fantasy/connect")
-async def connect_fantasy_platform(connection_data: dict):
-    """Connect to a fantasy platform (Sleeper, ESPN, etc.)"""
-    if is_service_available("fantasy_pipeline") or is_service_available("real_fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("real_fantasy_pipeline") or get_service("fantasy_pipeline")
-            result = await fantasy_service.connect_platform(
-                platform=connection_data.get("platform"),
-                credentials=connection_data.get("credentials", {})
-            )
-            return {"status": "success", "connection": result}
-        except Exception as e:
-            logger.error(f"Error connecting to fantasy platform: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to connect to fantasy platform",
-                "error": str(e)
-            }
-    
-    # Mock response when service unavailable
-    platform = connection_data.get("platform", "unknown")
-    return {
-        "status": "success",
-        "connection": {
-            "platform": platform,
-            "status": "connected",
-            "connected_at": datetime.utcnow().isoformat(),
-            "username": connection_data.get("credentials", {}).get("username", "mock_user")
+        "Parlays": {
+            "endpoints": ["/api/parlays/markets", "/api/parlays/popular"],
+            "operational": is_service_available("bet_service")
         },
-        "message": f"Mock connection to {platform} - Fantasy service unavailable"
-    }
-
-@app.options("/api/fantasy/roster/{league_id}")
-async def options_fantasy_roster(league_id: str):
-    """Handle CORS preflight for fantasy roster endpoint"""
-    return {}
-
-@app.get("/api/fantasy/roster/{league_id}")
-async def get_fantasy_roster(league_id: str):
-    """Get fantasy roster for a specific league"""
-    if is_service_available("fantasy_pipeline") or is_service_available("real_fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("real_fantasy_pipeline") or get_service("fantasy_pipeline")
-            roster = await fantasy_service.get_roster(league_id)
-            return {"status": "success", "roster": roster}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy roster for league {league_id}: {e}")
-    
-    # Mock roster when service unavailable
-    return {
-        "status": "success",
-        "roster": {
-            "league_id": league_id,
-            "team_name": "Mock Team",
-            "players": [],
-            "starters": [],
-            "bench": [],
-            "total_points": 0
+        "Profile & Status": {
+            "endpoints": ["/api/profile/sports", "/api/profile/status"],
+            "operational": is_service_available("auth_service")
         },
-        "message": f"Mock roster for league {league_id} - Fantasy service unavailable"
-    }
-
-@app.options("/api/fantasy/projections")
-async def options_fantasy_projections():
-    """Handle CORS preflight for fantasy projections endpoint"""
-    return {}
-
-@app.get("/api/fantasy/projections")
-async def get_fantasy_projections():
-    """Get fantasy projections"""
-    if is_service_available("fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("fantasy_pipeline")
-            projections = await fantasy_service.get_projections()
-            return {"status": "success", "projections": projections}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy projections: {e}")
-    
-    return {
-        "status": "success",
-        "projections": [],
-        "message": "Fantasy pipeline unavailable"
-    }
-
-# Live betting endpoints
-@app.options("/api/live-bets/markets")
-async def options_live_markets():
-    """Handle CORS preflight for live markets endpoint"""
-    return {}
-
-@app.get("/api/live-bets/markets")
-async def get_live_markets():
-    """Get live betting markets"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            markets = await bet_service.get_live_markets()
-            return {"status": "success", "markets": markets}
-        except Exception as e:
-            logger.error(f"Error fetching live markets: {e}")
-    
-    return {
-        "status": "success",
-        "markets": [],
-        "message": "Bet service unavailable"
-    }
-
-@app.options("/api/live-bets/active")
-async def options_active_live_bets():
-    """Handle CORS preflight for active live bets endpoint"""
-    return {}
-
-@app.get("/api/live-bets/active")
-async def get_active_live_bets():
-    """Get active live bets"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            active_bets = await bet_service.get_active_live_bets()
-            return {"status": "success", "active_bets": active_bets}
-        except Exception as e:
-            logger.error(f"Error fetching active live bets: {e}")
-    
-    return {
-        "status": "success",
-        "active_bets": [],
-        "message": "Bet service unavailable"
-    }
-
-# Parlay-specific endpoints
-@app.options("/api/parlays/markets")
-async def options_parlay_markets():
-    """Handle CORS preflight for parlay markets endpoint"""
-    return {}
-
-@app.get("/api/parlays/markets")
-async def get_parlay_markets(sport: str = None):
-    """Get parlay markets, optionally filtered by sport"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            markets = await bet_service.get_parlay_markets(sport=sport)
-            return {"status": "success", "markets": markets}
-        except Exception as e:
-            logger.error(f"Error fetching parlay markets: {e}")
-    
-    # Mock parlay markets
-    base_markets = [
-        {
-            "sport": "NFL",
-            "markets": [
-                {"type": "moneyline", "description": "Team to win"},
-                {"type": "spread", "description": "Point spread"},
-                {"type": "total", "description": "Over/Under"},
-                {"type": "player_props", "description": "Player prop bets"}
-            ]
+        "Live Betting": {
+            "endpoints": ["/api/live-bets/markets", "/api/live-bets/active"],
+            "operational": is_service_available("bet_service")
         },
-        {
-            "sport": "NBA",
-            "markets": [
-                {"type": "moneyline", "description": "Team to win"},
-                {"type": "spread", "description": "Point spread"},
-                {"type": "total", "description": "Over/Under"},
-                {"type": "player_props", "description": "Player prop bets"}
-            ]
+        "AI Chat": {
+            "endpoints": ["/api/chat/message", "/api/chat/suggestions"],
+            "operational": is_service_available("ai_chat_service")
         },
-        {
-            "sport": "NHL",
-            "markets": [
-                {"type": "moneyline", "description": "Team to win"},
-                {"type": "puck_line", "description": "Puck line"},
-                {"type": "total", "description": "Over/Under goals"}
-            ]
-        },
-        {
-            "sport": "MLB",
-            "markets": [
-                {"type": "moneyline", "description": "Team to win"},
-                {"type": "run_line", "description": "Run line"},
-                {"type": "total", "description": "Over/Under runs"}
-            ]
-        }
-    ]
-    
-    # Filter by sport if specified
-    if sport:
-        filtered_markets = [m for m in base_markets if m["sport"].lower() == sport.lower() or sport.lower() in m["sport"].lower()]
-        markets = filtered_markets if filtered_markets else base_markets
-    else:
-        markets = base_markets
-    
-    return {
-        "status": "success",
-        "markets": markets,
-        "message": "Mock parlay markets - Bet service unavailable"
-    }
-
-@app.options("/api/parlays/popular")
-async def options_popular_parlays():
-    """Handle CORS preflight for popular parlays endpoint"""
-    return {}
-
-@app.get("/api/parlays/popular")
-async def get_popular_parlays():
-    """Get popular parlay combinations"""
-    if is_service_available("betting_analytics_service"):
-        try:
-            analytics_service = get_service("betting_analytics_service")
-            popular = await analytics_service.get_popular_parlays()
-            return {"status": "success", "parlays": popular}
-        except Exception as e:
-            logger.error(f"Error fetching popular parlays: {e}")
-    elif is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            popular = await bet_service.get_popular_parlays()
-            return {"status": "success", "parlays": popular}
-        except Exception as e:
-            logger.error(f"Error fetching popular parlays from bet service: {e}")
-    
-    # Mock popular parlays
-    return {
-        "status": "success",
-        "parlays": [
-            {
-                "id": "popular_parlay_1",
-                "name": "NFL Sunday Special",
-                "legs": [
-                    {"selection": "Chiefs ML", "odds": -150},
-                    {"selection": "Bills -3.5", "odds": -110},
-                    {"selection": "Over 45.5 points", "odds": -105}
-                ],
-                "combined_odds": 450,
-                "popularity_score": 85,
-                "recent_wins": 7,
-                "recent_attempts": 10
-            },
-            {
-                "id": "popular_parlay_2",
-                "name": "NBA Triple Threat",
-                "legs": [
-                    {"selection": "Lakers ML", "odds": -120},
-                    {"selection": "Celtics -2.5", "odds": -110},
-                    {"selection": "LeBron Over 25.5 points", "odds": -115}
-                ],
-                "combined_odds": 380,
-                "popularity_score": 78,
-                "recent_wins": 6,
-                "recent_attempts": 12
-            }
-        ],
-        "message": "Mock popular parlays - Analytics service unavailable"
-    }
-
-# Admin endpoints
-@app.options("/api/admin/yetai-bets/{bet_id}")
-async def options_admin_delete_yetai_bet(bet_id: str):
-    """Handle CORS preflight for admin YetAI bet deletion endpoint"""
-    return {}
-
-@app.delete("/api/admin/yetai-bets/{bet_id}")
-async def admin_delete_yetai_bet(bet_id: str):
-    """Admin endpoint to delete a YetAI bet"""
-    # This would typically require admin authentication
-    if is_service_available("yetai_bets_service"):
-        try:
-            yetai_service = get_service("yetai_bets_service")
-            result = await yetai_service.admin_delete_bet(bet_id)
-            return {
-                "status": "success",
-                "message": f"YetAI bet {bet_id} deleted by admin",
-                "deleted_bet": result
-            }
-        except Exception as e:
-            logger.error(f"Error deleting YetAI bet {bet_id}: {e}")
-            return {
-                "status": "error",
-                "message": "Failed to delete YetAI bet",
-                "error": str(e)
-            }
-    
-    # Mock admin deletion when service unavailable
-    return {
-        "status": "success",
-        "message": f"Mock admin deletion of YetAI bet {bet_id} - YetAI bets service unavailable",
-        "deleted_bet": {
-            "id": bet_id,
-            "deleted_at": datetime.utcnow().isoformat(),
-            "deleted_by": "admin"
+        "Sports Data": {
+            "endpoints": ["/api/games/nfl"],
+            "operational": is_service_available("sports_pipeline")
         }
     }
-
-# Profile endpoints
-@app.options("/api/profile/sports")
-async def options_profile_sports():
-    """Handle CORS preflight for profile sports endpoint"""
-    return {}
-
-@app.get("/api/profile/sports")
-async def get_user_sports_preferences():
-    """Get user's sports preferences"""
-    if is_service_available("auth_service"):
-        try:
-            auth_service = get_service("auth_service")
-            preferences = await auth_service.get_user_preferences()
-            return {
-                "status": "success", 
-                "sports_preferences": preferences.get("preferred_sports", [])
-            }
-        except Exception as e:
-            logger.error(f"Error fetching sports preferences: {e}")
     
-    # Mock sports preferences
-    return {
-        "status": "success",
-        "sports_preferences": [
-            {
-                "sport": "NFL",
-                "favorite_teams": ["Kansas City Chiefs", "Buffalo Bills"],
-                "interest_level": "high",
-                "notification_enabled": True
-            },
-            {
-                "sport": "NBA",
-                "favorite_teams": ["Los Angeles Lakers", "Boston Celtics"],
-                "interest_level": "medium",
-                "notification_enabled": True
-            },
-            {
-                "sport": "NHL",
-                "favorite_teams": ["Toronto Maple Leafs"],
-                "interest_level": "low",
-                "notification_enabled": False
-            }
-        ],
-        "message": "Mock sports preferences - Auth service unavailable"
-    }
-
-@app.options("/api/profile/status")
-async def options_profile_status():
-    """Handle CORS preflight for profile status endpoint"""
-    return {}
-
-@app.get("/api/profile/status")
-async def get_user_profile_status():
-    """Get user's profile status and statistics"""
-    if is_service_available("auth_service"):
-        try:
-            auth_service = get_service("auth_service")
-            profile = await auth_service.get_user_profile()
-            
-            # Get betting stats if available
-            betting_stats = {}
-            if is_service_available("betting_analytics_service"):
-                analytics_service = get_service("betting_analytics_service")
-                betting_stats = await analytics_service.get_user_stats()
-            elif is_service_available("bet_service"):
-                bet_service = get_service("bet_service")
-                betting_stats = await bet_service.get_betting_stats()
-            
-            return {
-                "status": "success",
-                "profile": {
-                    "user_id": profile.get("id"),
-                    "username": profile.get("username"),
-                    "email": profile.get("email"),
-                    "joined_date": profile.get("created_at"),
-                    "betting_stats": betting_stats,
-                    "account_status": "active",
-                    "verification_status": "verified"
-                }
-            }
-        except Exception as e:
-            logger.error(f"Error fetching profile status: {e}")
+    operational_count = sum(1 for cat in endpoint_categories.values() if cat["operational"])
+    total_count = len(endpoint_categories)
     
-    # Mock profile status
     return {
-        "status": "success",
-        "profile": {
-            "user_id": "mock_user_123",
-            "username": "demo_user",
-            "email": "demo@yetai.com",
-            "joined_date": "2025-01-01T00:00:00Z",
-            "betting_stats": {
-                "total_bets": 0,
-                "total_wagered": 0,
-                "total_won": 0,
-                "win_rate": 0,
-                "profit_loss": 0
-            },
-            "account_status": "active",
-            "verification_status": "pending"
+        "status": "healthy",
+        "timestamp": datetime.utcnow().isoformat(),
+        "categories": endpoint_categories,
+        "summary": {
+            "operational_categories": operational_count,
+            "total_categories": total_count,
+            "health_percentage": round((operational_count / total_count) * 100, 1)
         },
-        "message": "Mock profile status - Auth service unavailable"
+        "services": service_loader.get_status(),
+        "environment": settings.ENVIRONMENT
     }
 
 # Test endpoint for database connectivity
