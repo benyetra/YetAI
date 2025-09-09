@@ -1,0 +1,507 @@
+{
+  "test_run": {
+    "timestamp": "2025-09-09T10:27:02.562187",
+    "base_url": "http://localhost:8000",
+    "total_tests": 62,
+    "successful_tests": 5,
+    "failed_tests": 57
+  },
+  "results": [
+    {
+      "endpoint": "/api/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:27:02.363696"
+    },
+    {
+      "endpoint": "/api/auth/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Authentication service ready",
+      "timestamp": "2025-09-09T10:27:02.364449"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:27:02.365092"
+    },
+    {
+      "endpoint": "/",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "YetAI Sports Betting MVP - Development API",
+      "timestamp": "2025-09-09T10:27:02.365683"
+    },
+    {
+      "endpoint": "/api/endpoints/health",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.366421"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.367008"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.367861"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.368481"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "DELETE",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.369112"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.369758"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.370340"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.370947"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.371548"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.372090"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.372626"
+    },
+    {
+      "endpoint": "/api/bets/parlay/test-parlay-id",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.373178"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.373718"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.374334"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.374912"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.375426"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.375929"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.376437"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.376923"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.377388"
+    },
+    {
+      "endpoint": "/api/bets/shared/test-share-id",
+      "method": "DELETE",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.377864"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.378346"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "DELETE",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.378834"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.379345"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.379820"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.380261"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.380690"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.381131"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.381585"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.382063"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "POST",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.382538"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.383086"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.383624"
+    },
+    {
+      "endpoint": "/api/fantasy/projections",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.384176"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.384749"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.385513"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.386104"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.386606"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.387127"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.387599"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.388080"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.388580"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.389093"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.389607"
+    },
+    {
+      "endpoint": "/api/odds/popular",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:27:02.554266"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.555211"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.555833"
+    },
+    {
+      "endpoint": "/api/parlays/markets?sport=icehockey_nhl",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.556401"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.556988"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.557551"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.558094"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.558677"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.559228"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.559824"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.560358"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.560876"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "OPTIONS",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.561454"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "GET",
+      "status_code": 404,
+      "success": false,
+      "message": "404 Not Found",
+      "timestamp": "2025-09-09T10:27:02.561971"
+    }
+  ]
+}

@@ -1,0 +1,507 @@
+{
+  "test_run": {
+    "timestamp": "2025-09-09T10:43:50.427308",
+    "base_url": "http://localhost:8000",
+    "total_tests": 62,
+    "successful_tests": 62,
+    "failed_tests": 0
+  },
+  "results": [
+    {
+      "endpoint": "/api/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.299811"
+    },
+    {
+      "endpoint": "/api/auth/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Authentication service ready",
+      "timestamp": "2025-09-09T10:43:49.300584"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.301218"
+    },
+    {
+      "endpoint": "/",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "YetAI Sports Betting MVP - Development API",
+      "timestamp": "2025-09-09T10:43:49.301815"
+    },
+    {
+      "endpoint": "/api/endpoints/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.302453"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.303021"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.305359"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.306032"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "DELETE",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to delete YetAI bet",
+      "timestamp": "2025-09-09T10:43:49.306619"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.307200"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to place bet",
+      "timestamp": "2025-09-09T10:43:49.307804"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.308317"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to place parlay bet",
+      "timestamp": "2025-09-09T10:43:49.308855"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.309438"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:49.309971"
+    },
+    {
+      "endpoint": "/api/bets/parlay/test-parlay-id",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock parlay data - Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:49.310696"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.311301"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:49.311925"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.312593"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock stats - Analytics service unavailable",
+      "timestamp": "2025-09-09T10:43:49.313166"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.313681"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to share bet",
+      "timestamp": "2025-09-09T10:43:49.314270"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.314793"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:49.315327"
+    },
+    {
+      "endpoint": "/api/bets/shared/test-share-id",
+      "method": "DELETE",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to delete shared bet",
+      "timestamp": "2025-09-09T10:43:49.315965"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.316502"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "DELETE",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to cancel bet",
+      "timestamp": "2025-09-09T10:43:49.317032"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.317547"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.318709"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.319253"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Fantasy service unavailable - Mock data",
+      "timestamp": "2025-09-09T10:43:49.319812"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.320433"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Fantasy service unavailable - Mock data",
+      "timestamp": "2025-09-09T10:43:49.321005"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.321490"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "POST",
+      "status_code": 200,
+      "success": true,
+      "message": "Failed to connect to fantasy platform",
+      "timestamp": "2025-09-09T10:43:49.322037"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.322534"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock roster for league test-league-id - Fantasy service unavailable",
+      "timestamp": "2025-09-09T10:43:49.323053"
+    },
+    {
+      "endpoint": "/api/fantasy/projections",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Fantasy pipeline unavailable",
+      "timestamp": "2025-09-09T10:43:49.323578"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.324110"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.541441"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.542620"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.713189"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.714138"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.945530"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:49.947333"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.116107"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.117016"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.243647"
+    },
+    {
+      "endpoint": "/api/odds/popular",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.417947"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.419058"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock parlay markets - Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:50.419905"
+    },
+    {
+      "endpoint": "/api/parlays/markets?sport=icehockey_nhl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock parlay markets - Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:50.420664"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.421286"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock popular parlays - Analytics service unavailable",
+      "timestamp": "2025-09-09T10:43:50.421939"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.422568"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock sports preferences - Auth service unavailable",
+      "timestamp": "2025-09-09T10:43:50.423247"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.423993"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Mock profile status - Auth service unavailable",
+      "timestamp": "2025-09-09T10:43:50.424698"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.425312"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:50.425905"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T10:43:50.426476"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Bet service unavailable",
+      "timestamp": "2025-09-09T10:43:50.427114"
+    }
+  ]
+}
