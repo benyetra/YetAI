@@ -2,19 +2,15 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
-from fastapi import FastAPI, HTTPException, Depends, status, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import asyncio
-import json
+from contextlib import asynccontextmanager
 import logging
 import os
-from datetime import datetime
-from pydantic import BaseModel, EmailStr, Field
+from datetime import datetime, timezone
+from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
-from datetime import datetime
 
 # Import core configuration and service loader
 from app.core.config import settings
@@ -122,7 +118,7 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
             "email": "user@example.com",
             "subscription_tier": "pro"  # or "free"
         }
-    except Exception as e:
+    except Exception:
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 # Environment-aware CORS configuration
@@ -130,26 +126,10 @@ def get_cors_origins():
     """Get CORS origins based on environment using centralized configuration"""
     return settings.get_frontend_urls()
 
-# Create FastAPI app
-app = FastAPI(
-    title="YetAI Sports Betting MVP",
-    description=f"AI-Powered Sports Betting Platform - {settings.ENVIRONMENT.title()} Environment",
-    version="1.2.0",
-    debug=settings.DEBUG
-)
-
-# Add CORS middleware with environment-aware origins
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=get_cors_origins(),
-    allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["*"],
-)
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize application on startup"""
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Application lifespan manager"""
+    # Startup
     logger.info(f"🚀 Starting YetAI Sports Betting MVP - {settings.ENVIRONMENT.upper()} Environment")
     
     # Initialize database if available
@@ -176,10 +156,10 @@ async def startup_event():
     # Log service summary
     available_services = [name for name in service_loader.get_status() if service_loader.is_available(name)]
     logger.info(f"✅ Services online: {len(available_services)}/{len(service_loader.get_status())}")
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
+    
+    yield
+    
+    # Shutdown
     logger.info("🛑 Shutting down YetAI Sports Betting MVP")
     
     # Cleanup scheduler if available
@@ -192,6 +172,24 @@ async def shutdown_event():
         except Exception as e:
             logger.warning(f"⚠️  Scheduler cleanup failed: {e}")
 
+# Create FastAPI app
+app = FastAPI(
+    title="YetAI Sports Betting MVP",
+    description=f"AI-Powered Sports Betting Platform - {settings.ENVIRONMENT.title()} Environment",
+    version="1.2.0",
+    debug=settings.DEBUG,
+    lifespan=lifespan
+)
+
+# Add CORS middleware with environment-aware origins
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 # Health and status endpoints
 @app.get("/health")
 async def health_check():
@@ -199,7 +197,7 @@ async def health_check():
     return {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": service_loader.get_status()
     }
 
@@ -227,7 +225,7 @@ async def get_api_status():
         "auth_available": is_service_available("auth_service"),
         "sports_data_available": is_service_available("sports_pipeline"),
         "ai_chat_available": is_service_available("ai_chat_service"),
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
 # Authentication API endpoints
@@ -369,7 +367,7 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             "odds": -150,
             "confidence": 0.78,
             "tier_requirement": "free" if user_tier == "free" else "pro",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
     ]
     
@@ -384,7 +382,7 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             "odds": -110,
             "confidence": 0.85,
             "tier_requirement": "pro",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         })
     
     return {
@@ -466,7 +464,7 @@ async def place_bet(bet_request: PlaceBetRequest, current_user: dict = Depends(g
             "odds": bet_request.odds,
             "amount": bet_request.amount,
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Mock bet placed - bet service unavailable"
     }
@@ -485,7 +483,7 @@ async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = 
             result = await bet_service.place_parlay(
                 user_id=current_user["user_id"],
                 amount=parlay_request.amount,
-                legs=[leg.dict() for leg in parlay_request.legs]
+                legs=[leg.model_dump() for leg in parlay_request.legs]
             )
             return {"status": "success", "parlay": result}
         except Exception as e:
@@ -509,9 +507,9 @@ async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = 
             "user_id": current_user["user_id"],
             "amount": parlay_request.amount,
             "total_odds": american_odds,
-            "legs": [leg.dict() for leg in parlay_request.legs],
+            "legs": [leg.model_dump() for leg in parlay_request.legs],
             "status": "pending",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Mock parlay placed - bet service unavailable"
     }
@@ -545,7 +543,7 @@ async def get_parlays(current_user: dict = Depends(get_current_user)):
                     {"selection": "Chiefs ML", "odds": -150},
                     {"selection": "Lakers -3.5", "odds": -110}
                 ],
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             }
         ],
         "message": "Mock parlays - bet service unavailable"
@@ -584,7 +582,7 @@ async def get_parlay_details(parlay_id: str, current_user: dict = Depends(get_cu
                     "game_id": "nba_game_1"
                 }
             ],
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Mock parlay details - bet service unavailable"
     }
@@ -624,7 +622,7 @@ async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(g
                 "odds": -150,
                 "amount": 100.0,
                 "status": query.status or "won",
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             },
             {
                 "id": "bet_2", 
@@ -633,7 +631,7 @@ async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(g
                 "odds": -110,
                 "amount": 50.0,
                 "status": "pending",
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             }
         ],
         "total": 2,
@@ -714,7 +712,7 @@ async def share_bet(share_request: ShareBetRequest, current_user: dict = Depends
             "user_id": current_user["user_id"],
             "message": share_request.message,
             "share_url": f"https://yetai.com/shared-bet/{share_request.bet_id}",
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         },
         "message": "Mock bet shared - sharing service unavailable"
     }
@@ -725,7 +723,7 @@ async def options_get_shared_bets():
     return {}
 
 @app.get("/api/bets/shared")
-async def get_shared_bets(current_user: dict = Depends(get_current_user)):
+async def get_shared_bets():
     """Get shared bets from other users"""
     if is_service_available("bet_sharing_service_db"):
         try:
@@ -750,7 +748,7 @@ async def get_shared_bets(current_user: dict = Depends(get_current_user)):
                     "odds": -150,
                     "amount": 200.0
                 },
-                "created_at": datetime.utcnow().isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat()
             }
         ],
         "message": "Mock shared bets - sharing service unavailable"
@@ -767,7 +765,7 @@ async def delete_shared_bet(share_id: str, current_user: dict = Depends(get_curr
     if is_service_available("bet_sharing_service_db"):
         try:
             sharing_service = get_service("bet_sharing_service_db")
-            result = await sharing_service.delete_shared_bet(share_id, current_user["user_id"])
+            await sharing_service.delete_shared_bet(share_id, current_user["user_id"])
             return {"status": "success", "message": f"Shared bet {share_id} deleted"}
         except Exception as e:
             logger.error(f"Error deleting shared bet {share_id}: {e}")
@@ -808,7 +806,7 @@ async def options_simulate_bet():
     return {}
 
 @app.post("/api/bets/simulate")
-async def simulate_bet(current_user: dict = Depends(get_current_user)):
+async def simulate_bet():
     """Simulate bet results for development/testing"""
     if is_service_available("bet_service"):
         try:
@@ -856,7 +854,7 @@ async def get_fantasy_accounts(current_user: dict = Depends(get_current_user)):
                 "platform": "sleeper",
                 "username": "YetAI_User",
                 "user_id": "sleeper_123",
-                "connected_at": datetime.utcnow().isoformat(),
+                "connected_at": datetime.now(timezone.utc).isoformat(),
                 "status": "active"
             }
         ],
@@ -925,7 +923,7 @@ async def connect_fantasy_platform(connect_request: FantasyConnectRequest, curre
             "platform": connect_request.platform,
             "status": "connected",
             "user_id": f"{connect_request.platform}_user_456",
-            "connected_at": datetime.utcnow().isoformat()
+            "connected_at": datetime.now(timezone.utc).isoformat()
         },
         "message": f"Mock connection to {connect_request.platform} - fantasy service unavailable"
     }
@@ -1326,7 +1324,7 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
             "subscription_tier": current_user.get("subscription_tier", "free"),
             "account_status": "active",
             "profile_completion": 0.85,
-            "last_activity": datetime.utcnow().isoformat(),
+            "last_activity": datetime.now(timezone.utc).isoformat(),
             "stats": {
                 "total_bets": 25,
                 "win_rate": 0.68,
@@ -1432,7 +1430,7 @@ async def send_chat_message(request: ChatRequest):
         "response": {
             "role": "assistant",
             "content": f"I'm currently in {settings.ENVIRONMENT} mode with limited AI capabilities. Here's some general sports betting advice: Always bet responsibly and never wager more than you can afford to lose!",
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         },
         "message": "Mock response - AI chat service not fully configured"
     }
@@ -1517,7 +1515,7 @@ async def endpoint_health_check():
     
     return {
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "categories": endpoint_categories,
         "summary": {
             "operational_categories": operational_count,
