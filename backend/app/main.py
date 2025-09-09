@@ -504,6 +504,63 @@ async def get_icehockey_nhl_odds(regions: str = "us", markets: str = "h2h,spread
         logger.error(f"Error fetching NHL odds: {e}")
         return {"status": "error", "message": str(e)}
 
+@app.options("/api/sports")
+async def options_sports():
+    """Handle CORS preflight for sports endpoint"""
+    return {}
+
+@app.get("/api/sports")
+async def get_sports():
+    """Get list of available sports for betting"""
+    return {
+        "status": "success",
+        "sports": [
+            {
+                "key": "americanfootball_nfl",
+                "name": "NFL",
+                "full_name": "National Football League",
+                "active": True,
+                "category": "american_football"
+            },
+            {
+                "key": "basketball_nba", 
+                "name": "NBA",
+                "full_name": "National Basketball Association",
+                "active": True,
+                "category": "basketball"
+            },
+            {
+                "key": "baseball_mlb",
+                "name": "MLB", 
+                "full_name": "Major League Baseball",
+                "active": True,
+                "category": "baseball"
+            },
+            {
+                "key": "icehockey_nhl",
+                "name": "NHL",
+                "full_name": "National Hockey League", 
+                "active": True,
+                "category": "ice_hockey"
+            },
+            {
+                "key": "americanfootball_ncaaf",
+                "name": "NCAAF",
+                "full_name": "NCAA College Football",
+                "active": True,
+                "category": "american_football"
+            },
+            {
+                "key": "basketball_ncaab",
+                "name": "NCAAB",
+                "full_name": "NCAA College Basketball",
+                "active": False,
+                "category": "basketball"
+            }
+        ],
+        "message": "Available sports for betting"
+    }
+
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
     """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
@@ -1806,6 +1863,113 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         logger.error(f"Error fetching profile status: {e}")
         return {"status": "error", "message": "Failed to fetch profile status"}
+
+# ============================================================================
+# PROFILE - AVATAR AND PREFERENCES ENDPOINTS
+# ============================================================================
+
+@app.options("/api/profile/avatar")
+async def options_profile_avatar():
+    """Handle CORS preflight for profile avatar endpoint"""
+    return {}
+
+@app.get("/api/profile/avatar")
+async def get_profile_avatar(current_user: dict = Depends(get_current_user)):
+    """Get user profile avatar information"""
+    try:
+        # Try to get avatar from user service
+        if is_service_available("user_service"):
+            user_service = get_service("user_service")
+            avatar_data = await user_service.get_user_avatar(current_user["user_id"])
+            
+            return {
+                "status": "success",
+                "avatar": avatar_data,
+                "message": "Retrieved user avatar"
+            }
+        
+        # Mock data when service unavailable
+        avatar_data = {
+            "avatar_url": None,
+            "initials": current_user.get("username", "U")[:2].upper() if current_user.get("username") else "U",
+            "background_color": "#3B82F6",
+            "has_custom_avatar": False,
+            "upload_enabled": True,
+            "supported_formats": ["jpg", "jpeg", "png", "webp"],
+            "max_file_size": "5MB"
+        }
+        
+        return {
+            "status": "success", 
+            "avatar": avatar_data,
+            "message": "User avatar service not configured - showing defaults"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching profile avatar: {e}")
+        return {"status": "error", "message": "Failed to fetch profile avatar"}
+
+@app.options("/api/profile/preferences")
+async def options_profile_preferences():
+    """Handle CORS preflight for profile preferences endpoint"""
+    return {}
+
+@app.get("/api/profile/preferences")
+async def get_profile_preferences(current_user: dict = Depends(get_current_user)):
+    """Get user preferences and settings"""
+    try:
+        # Try to get preferences from user service
+        if is_service_available("user_service"):
+            user_service = get_service("user_service")
+            preferences = await user_service.get_user_preferences(current_user["user_id"])
+            
+            return {
+                "status": "success",
+                "preferences": preferences,
+                "message": "Retrieved user preferences"
+            }
+        
+        # Mock preferences data when service unavailable
+        preferences = {
+            "betting": {
+                "default_stake": 25.0,
+                "auto_cash_out": False,
+                "risk_level": "medium",
+                "favorite_sports": ["americanfootball_nfl", "basketball_nba"],
+                "notifications": {
+                    "bet_placed": True,
+                    "bet_settled": True,
+                    "promotions": False,
+                    "odds_changes": True
+                }
+            },
+            "display": {
+                "theme": "light",
+                "odds_format": "american",
+                "timezone": "America/New_York",
+                "language": "en"
+            },
+            "privacy": {
+                "show_public_bets": False,
+                "allow_friend_requests": True,
+                "share_win_loss": False
+            },
+            "fantasy": {
+                "connected_platforms": [],
+                "auto_sync": True,
+                "notifications": True
+            }
+        }
+        
+        return {
+            "status": "success",
+            "preferences": preferences,
+            "message": "User preferences service not configured - showing defaults"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching profile preferences: {e}")
+        return {"status": "error", "message": "Failed to fetch profile preferences"}
 
 # ============================================================================
 # API ENDPOINT HEALTH CHECK
