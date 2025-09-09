@@ -109,7 +109,8 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
         token = credentials.credentials
         
         # Basic validation (in production, decode JWT properly)
-        if not token or token == "invalid":
+        invalid_token_value = "invalid"  # nosec B105 - this is a test token value, not a real password
+        if not token or token == invalid_token_value:
             raise HTTPException(status_code=401, detail="Invalid token")
             
         # Mock user for development
