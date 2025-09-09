@@ -339,6 +339,103 @@ async def get_nfl_odds():
         "message": "Mock data - Odds API not configured"
     }
 
+# Sport-specific odds endpoints with CORS support
+@app.options("/api/odds/americanfootball_nfl")
+async def options_americanfootball_nfl_odds():
+    """Handle CORS preflight for NFL odds"""
+    return {}
+
+@app.get("/api/odds/americanfootball_nfl")
+async def get_americanfootball_nfl_odds(regions: str = "us", markets: str = "h2h,spreads,totals", odds_format: str = "american"):
+    """Get NFL odds"""
+    try:
+        if settings.ODDS_API_KEY:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(
+                    sport="americanfootball_nfl",
+                    markets=markets.split(","),
+                    regions=regions.split(",")
+                )
+                return {"status": "success", "data": games}
+        else:
+            return {"status": "success", "data": [], "message": "Odds API not configured"}
+    except Exception as e:
+        logger.error(f"Error fetching NFL odds: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.options("/api/odds/americanfootball_ncaaf")
+async def options_americanfootball_ncaaf_odds():
+    """Handle CORS preflight for NCAAF odds"""
+    return {}
+
+@app.get("/api/odds/americanfootball_ncaaf")
+async def get_americanfootball_ncaaf_odds(regions: str = "us", markets: str = "h2h,spreads,totals", odds_format: str = "american"):
+    """Get NCAAF odds"""
+    try:
+        if settings.ODDS_API_KEY:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(
+                    sport="americanfootball_ncaaf",
+                    markets=markets.split(","),
+                    regions=regions.split(",")
+                )
+                return {"status": "success", "data": games}
+        else:
+            return {"status": "success", "data": [], "message": "Odds API not configured"}
+    except Exception as e:
+        logger.error(f"Error fetching NCAAF odds: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.options("/api/odds/basketball_nba")
+async def options_basketball_nba_odds():
+    """Handle CORS preflight for NBA odds"""
+    return {}
+
+@app.get("/api/odds/basketball_nba")
+async def get_basketball_nba_odds(regions: str = "us", markets: str = "h2h,spreads,totals", odds_format: str = "american"):
+    """Get NBA odds"""
+    try:
+        if settings.ODDS_API_KEY:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(
+                    sport="basketball_nba",
+                    markets=markets.split(","),
+                    regions=regions.split(",")
+                )
+                return {"status": "success", "data": games}
+        else:
+            return {"status": "success", "data": [], "message": "Odds API not configured"}
+    except Exception as e:
+        logger.error(f"Error fetching NBA odds: {e}")
+        return {"status": "error", "message": str(e)}
+
+@app.options("/api/odds/baseball_mlb")
+async def options_baseball_mlb_odds():
+    """Handle CORS preflight for MLB odds"""
+    return {}
+
+@app.get("/api/odds/baseball_mlb")
+async def get_baseball_mlb_odds(regions: str = "us", markets: str = "h2h,spreads,totals", odds_format: str = "american"):
+    """Get MLB odds"""
+    try:
+        if settings.ODDS_API_KEY:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(
+                    sport="baseball_mlb",
+                    markets=markets.split(","),
+                    regions=regions.split(",")
+                )
+                return {"status": "success", "data": games}
+        else:
+            return {"status": "success", "data": [], "message": "Odds API not configured"}
+    except Exception as e:
+        logger.error(f"Error fetching MLB odds: {e}")
+        return {"status": "error", "message": str(e)}
+
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
     """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
