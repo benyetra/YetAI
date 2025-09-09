@@ -173,7 +173,7 @@ const BetHistory: React.FC = () => {
   const fetchParlayDetails = async (parlayId: string) => {
     try {
       setParlayModalLoading(true);
-      const response = await fetch(`${getApiUrl(`/api/bets/parlay/${parlayId}`)}`, {
+      const response = await fetch(getApiUrl(`/api/bets/parlay/${parlayId}`), {
         headers: {
           'Authorization': `Bearer ${token}`
         }

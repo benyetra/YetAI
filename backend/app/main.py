@@ -402,6 +402,185 @@ async def get_popular_sports_odds():
         "message": f"Mock data - Running in {settings.ENVIRONMENT} mode"
     }
 
+# Live Betting endpoints
+@app.get("/api/live-bets/markets")
+async def get_live_betting_markets(sport: str = None):
+    """Get live betting markets"""
+    try:
+        if not is_service_available("bet_service"):
+            return {
+                "status": "success",
+                "markets": [],
+                "message": "Live betting service not available - showing mock data"
+            }
+        
+        # Mock data for now
+        markets = []
+        if sport == "baseball_mlb":
+            markets = [
+                {
+                    "id": "mlb_live_1",
+                    "sport": "baseball_mlb",
+                    "home_team": "New York Yankees",
+                    "away_team": "Boston Red Sox",
+                    "status": "live",
+                    "inning": 7,
+                    "home_score": 4,
+                    "away_score": 3,
+                    "markets": [
+                        {"type": "moneyline", "home_odds": 150, "away_odds": -170},
+                        {"type": "run_line", "home_spread": 1.5, "home_odds": -140, "away_odds": 120}
+                    ]
+                }
+            ]
+        
+        return {
+            "status": "success",
+            "markets": markets,
+            "message": "Mock data - Live betting service not fully configured"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching live betting markets: {e}")
+        return {"status": "error", "message": "Failed to fetch live betting markets"}
+
+@app.get("/api/live-bets/active")
+async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
+    """Get user's active live bets"""
+    try:
+        if not is_service_available("bet_service"):
+            return {
+                "status": "success",
+                "active_bets": [],
+                "message": "Bet service not available - showing mock data"
+            }
+        
+        # Mock data for now
+        return {
+            "status": "success",
+            "active_bets": [
+                {
+                    "id": "bet_live_1",
+                    "user_id": current_user["id"],
+                    "game_id": "mlb_live_1",
+                    "bet_type": "moneyline",
+                    "selection": "New York Yankees",
+                    "odds": 150,
+                    "amount": 25.00,
+                    "potential_payout": 62.50,
+                    "status": "active",
+                    "placed_at": "2025-01-09T01:30:00Z"
+                }
+            ],
+            "message": "Mock data - Bet service not fully configured"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching active live bets: {e}")
+        return {"status": "error", "message": "Failed to fetch active live bets"}
+
+@app.post("/api/bets/history")
+async def get_bet_history(request: Request, current_user: dict = Depends(get_current_user)):
+    """Get user's betting history"""
+    try:
+        if not is_service_available("bet_service"):
+            return {
+                "status": "success",
+                "bets": [],
+                "message": "Bet service not available - showing mock data"
+            }
+        
+        # Mock data for now
+        return {
+            "status": "success",
+            "bets": [
+                {
+                    "id": "bet_hist_1",
+                    "user_id": current_user["id"],
+                    "game_id": "nfl_game_1",
+                    "bet_type": "spread",
+                    "selection": "Kansas City Chiefs -3.5",
+                    "odds": -110,
+                    "amount": 50.00,
+                    "potential_payout": 95.45,
+                    "status": "won",
+                    "placed_at": "2025-01-08T18:00:00Z",
+                    "settled_at": "2025-01-09T00:30:00Z"
+                },
+                {
+                    "id": "bet_hist_2", 
+                    "user_id": current_user["id"],
+                    "game_id": "nfl_game_2",
+                    "bet_type": "moneyline",
+                    "selection": "Buffalo Bills",
+                    "odds": 120,
+                    "amount": 25.00,
+                    "potential_payout": 55.00,
+                    "status": "lost",
+                    "placed_at": "2025-01-07T15:30:00Z",
+                    "settled_at": "2025-01-07T22:15:00Z"
+                }
+            ],
+            "total_bets": 2,
+            "message": "Mock data - Bet service not fully configured"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching bet history: {e}")
+        return {"status": "error", "message": "Failed to fetch bet history"}
+
+@app.get("/api/bets/parlay/{parlay_id}")
+async def get_parlay_details(parlay_id: str, current_user: dict = Depends(get_current_user)):
+    """Get details for a specific parlay bet"""
+    try:
+        if not is_service_available("bet_service"):
+            return {
+                "status": "success",
+                "parlay": {
+                    "id": parlay_id,
+                    "user_id": current_user["id"],
+                    "bets": [],
+                    "total_odds": 100,
+                    "amount": 0,
+                    "potential_payout": 0,
+                    "status": "pending"
+                },
+                "message": "Bet service not available - showing mock data"
+            }
+        
+        # Mock parlay data
+        return {
+            "status": "success",
+            "parlay": {
+                "id": parlay_id,
+                "user_id": current_user["id"],
+                "bets": [
+                    {
+                        "id": "bet_1",
+                        "selection": "Kansas City Chiefs -3.5",
+                        "odds": -110,
+                        "game": "Chiefs vs Bills"
+                    },
+                    {
+                        "id": "bet_2", 
+                        "selection": "Lakers ML",
+                        "odds": 120,
+                        "game": "Lakers vs Celtics"
+                    }
+                ],
+                "total_odds": 264,
+                "amount": 50.00,
+                "potential_payout": 182.00,
+                "status": "pending",
+                "placed_at": "2025-01-09T01:00:00Z"
+            },
+            "message": "Mock data - Bet service not fully configured"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error fetching parlay details: {e}")
+        return {"status": "error", "message": "Failed to fetch parlay details"}
+
 # AI Chat endpoints
 @app.post("/api/chat/message")
 async def send_chat_message(request: ChatRequest):
