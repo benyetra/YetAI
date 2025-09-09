@@ -202,6 +202,85 @@ async def health_check():
         "services": service_loader.get_status()
     }
 
+# User endpoints that frontend expects
+@app.options("/api/user/performance")
+async def options_user_performance():
+    """Handle CORS preflight for user performance endpoint"""
+    return {}
+
+@app.get("/api/user/performance")
+async def get_user_performance(current_user: dict = Depends(get_current_user)):
+    """Get user performance metrics"""
+    if is_service_available("performance_tracker"):
+        try:
+            performance_service = get_service("performance_tracker")
+            metrics = await performance_service.get_user_metrics(current_user["user_id"])
+            return {"status": "success", "metrics": metrics}
+        except Exception as e:
+            logger.error(f"Error fetching user performance: {e}")
+    
+    # Mock performance data
+    return {
+        "status": "success",
+        "metrics": {
+            "total_predictions": 25,
+            "accuracy_rate": 0.68,
+            "win_streak": 4,
+            "total_earnings": 450.50,
+            "roi": 0.125,
+            "favorite_sport": "NFL",
+            "predictions_this_week": 3,
+            "weekly_accuracy": 0.75
+        },
+        "message": "Mock performance data - performance tracker unavailable"
+    }
+
+# Simple endpoints for bets and odds that frontend might expect
+@app.options("/api/bets")
+async def options_simple_bets():
+    """Handle CORS preflight for simple bets endpoint"""
+    return {}
+
+@app.get("/api/bets")
+async def get_simple_bets(current_user: dict = Depends(get_current_user)):
+    """Get user's bets - simplified endpoint"""
+    # Redirect to the proper bet history endpoint
+    if is_service_available("bet_service"):
+        try:
+            bet_service = get_service("bet_service")
+            bets = await bet_service.get_user_bets(current_user["user_id"])
+            return {"status": "success", "bets": bets}
+        except Exception as e:
+            logger.error(f"Error fetching user bets: {e}")
+    
+    # Mock bet data
+    return {
+        "status": "success", 
+        "bets": [
+            {
+                "id": "bet_1",
+                "type": "moneyline", 
+                "selection": "Kansas City Chiefs",
+                "odds": -150,
+                "amount": 100.0,
+                "status": "pending",
+                "created_at": datetime.now(timezone.utc).isoformat()
+            }
+        ],
+        "message": "Mock bet data - bet service unavailable"
+    }
+
+@app.options("/api/odds")
+async def options_simple_odds():
+    """Handle CORS preflight for simple odds endpoint"""
+    return {}
+
+@app.get("/api/odds")  
+async def get_simple_odds():
+    """Get current odds - simplified endpoint"""
+    # Redirect to popular odds endpoint
+    return await get_popular_sports_odds()
+
 @app.get("/")
 async def root():
     """Root endpoint"""
