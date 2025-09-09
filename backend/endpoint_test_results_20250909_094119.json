@@ -1,0 +1,507 @@
+{
+  "test_run": {
+    "timestamp": "2025-09-09T09:41:19.528938",
+    "base_url": "http://localhost:8000",
+    "total_tests": 62,
+    "successful_tests": 62,
+    "failed_tests": 0
+  },
+  "results": [
+    {
+      "endpoint": "/api/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.304305"
+    },
+    {
+      "endpoint": "/api/auth/status",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Authentication service ready",
+      "timestamp": "2025-09-09T09:41:18.305097"
+    },
+    {
+      "endpoint": "/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.305751"
+    },
+    {
+      "endpoint": "/",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "YetAI Sports Betting MVP - Development API",
+      "timestamp": "2025-09-09T09:41:18.306298"
+    },
+    {
+      "endpoint": "/api/endpoints/health",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "All endpoint categories available",
+      "timestamp": "2025-09-09T09:41:18.306945"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.307477"
+    },
+    {
+      "endpoint": "/api/yetai-bets",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.308014"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.308569"
+    },
+    {
+      "endpoint": "/api/admin/yetai-bets/test-id",
+      "method": "DELETE",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.309149"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.309783"
+    },
+    {
+      "endpoint": "/api/bets/place",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.310373"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.310890"
+    },
+    {
+      "endpoint": "/api/bets/parlay",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.311447"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.311958"
+    },
+    {
+      "endpoint": "/api/bets/parlays",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.312444"
+    },
+    {
+      "endpoint": "/api/bets/parlay/test-parlay-id",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.312932"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.313465"
+    },
+    {
+      "endpoint": "/api/bets/history",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.314032"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.314808"
+    },
+    {
+      "endpoint": "/api/bets/stats",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.315486"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.316156"
+    },
+    {
+      "endpoint": "/api/bets/share",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.316737"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.317278"
+    },
+    {
+      "endpoint": "/api/bets/shared",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.318022"
+    },
+    {
+      "endpoint": "/api/bets/shared/test-share-id",
+      "method": "DELETE",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.318683"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.319294"
+    },
+    {
+      "endpoint": "/api/bets/test-bet-id",
+      "method": "DELETE",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.319901"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.320506"
+    },
+    {
+      "endpoint": "/api/bets/simulate",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.321066"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.321617"
+    },
+    {
+      "endpoint": "/api/fantasy/accounts",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.322156"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.322691"
+    },
+    {
+      "endpoint": "/api/fantasy/leagues",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.323229"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.323762"
+    },
+    {
+      "endpoint": "/api/fantasy/connect",
+      "method": "POST",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.324481"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.325110"
+    },
+    {
+      "endpoint": "/api/fantasy/roster/test-league-id",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:18.325723"
+    },
+    {
+      "endpoint": "/api/fantasy/projections",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Fantasy projections service not fully configured",
+      "timestamp": "2025-09-09T09:41:18.326296"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.326851"
+    },
+    {
+      "endpoint": "/api/odds/americanfootball_nfl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.564633"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.565708"
+    },
+    {
+      "endpoint": "/api/odds/basketball_nba",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.735035"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.737807"
+    },
+    {
+      "endpoint": "/api/odds/baseball_mlb",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.914973"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:18.916106"
+    },
+    {
+      "endpoint": "/api/odds/icehockey_nhl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.062505"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.063752"
+    },
+    {
+      "endpoint": "/api/odds/hockey",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.215888"
+    },
+    {
+      "endpoint": "/api/odds/popular",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.380251"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.381202"
+    },
+    {
+      "endpoint": "/api/parlays/markets",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Retrieved all available parlay markets",
+      "timestamp": "2025-09-09T09:41:19.381856"
+    },
+    {
+      "endpoint": "/api/parlays/markets?sport=icehockey_nhl",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Retrieved 4 markets for icehockey_nhl",
+      "timestamp": "2025-09-09T09:41:19.382467"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.383055"
+    },
+    {
+      "endpoint": "/api/parlays/popular",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Popular parlay combinations",
+      "timestamp": "2025-09-09T09:41:19.383754"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.384537"
+    },
+    {
+      "endpoint": "/api/profile/sports",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:19.385242"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.385928"
+    },
+    {
+      "endpoint": "/api/profile/status",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:19.386541"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.387117"
+    },
+    {
+      "endpoint": "/api/live-bets/markets",
+      "method": "GET",
+      "status_code": 200,
+      "success": true,
+      "message": "Real data from The Odds API - 10 markets available",
+      "timestamp": "2025-09-09T09:41:19.526350"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "OPTIONS",
+      "status_code": 200,
+      "success": true,
+      "message": "",
+      "timestamp": "2025-09-09T09:41:19.527624"
+    },
+    {
+      "endpoint": "/api/live-bets/active",
+      "method": "GET",
+      "status_code": 403,
+      "success": true,
+      "message": "Auth required (expected)",
+      "timestamp": "2025-09-09T09:41:19.528673"
+    }
+  ]
+}
