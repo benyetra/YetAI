@@ -2,7 +2,7 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
@@ -213,7 +213,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
     """Get user performance metrics"""
     try:
         performance_service = get_service("performance_tracker")
-        metrics = await performance_service.get_performance_metrics(days=30, user_id=current_user["user_id"])
+        metrics = await performance_service.get_performance_metrics(days=30)
         return {"status": "success", "metrics": metrics, "user_id": current_user["user_id"]}
     except Exception as e:
         logger.error(f"Error fetching user performance: {e}")
@@ -470,6 +470,34 @@ async def get_current_user_info():
         "message": "Authentication endpoint available but token validation not fully implemented",
         "user": None
     }
+
+@app.get("/api/auth/avatar/{user_id}")
+async def get_auth_user_avatar(user_id: int):
+    """Get user avatar by user ID for auth purposes"""
+    try:
+        if is_service_available("auth_service"):
+            auth_service = get_service("auth_service")
+            user_data = await auth_service.get_user_by_id(user_id)
+            
+            if not user_data:
+                raise HTTPException(status_code=404, detail="User not found")
+            
+            # Use avatar service to get avatar URL
+            from app.services.avatar_service import avatar_service
+            avatar_url = avatar_service.get_avatar_url(user_data)
+            return {"status": "success", "avatar_url": avatar_url}
+        else:
+            # Return default avatar when service unavailable
+            from app.services.avatar_service import avatar_service
+            default_avatar = avatar_service.generate_default_avatar(
+                f"user{user_id}@example.com", f"User {user_id}"
+            )
+            return {"status": "success", "avatar_url": default_avatar}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching auth user avatar: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
 
 # YetAI Bets endpoints
 @app.options("/api/yetai-bets")
@@ -1491,20 +1519,54 @@ async def options_live_markets():
     return {}
 
 @app.get("/api/live-bets/markets")
-async def get_live_markets():
+async def get_live_markets(sport: Optional[str] = None):
     """Get live betting markets"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            markets = await bet_service.get_live_markets()
+    try:
+        # Use sports pipeline to get live odds/markets
+        if is_service_available("sports_pipeline"):
+            sports_service = get_service("sports_pipeline")
+            
+            # Get live games for the sport
+            if sport:
+                live_games = await sports_service.get_live_games(sport)
+            else:
+                # Get live games for popular sports
+                live_games = []
+                popular_sports = ["americanfootball_nfl", "basketball_nba", "baseball_mlb", "icehockey_nhl"]
+                for s in popular_sports:
+                    try:
+                        games = await sports_service.get_live_games(s)
+                        live_games.extend(games)
+                    except:
+                        continue
+            
+            # Convert games to market format
+            markets = []
+            for game in live_games[:50]:  # Limit to 50 games
+                if game.get("completed", False):
+                    continue
+                    
+                market = {
+                    "id": game.get("id"),
+                    "sport": game.get("sport_key"),
+                    "home_team": game.get("home_team"),
+                    "away_team": game.get("away_team"),
+                    "commence_time": game.get("commence_time"),
+                    "bookmakers": game.get("bookmakers", []),
+                    "live": not game.get("completed", True),
+                    "markets": ["h2h", "spreads", "totals"]  # Common live betting markets
+                }
+                markets.append(market)
+            
             return {"status": "success", "markets": markets}
-        except Exception as e:
-            logger.error(f"Error fetching live markets: {e}")
+            
+    except Exception as e:
+        logger.error(f"Error fetching live markets: {e}")
     
     return {
         "status": "success",
         "markets": [],
-        "message": "Mock live markets - bet service unavailable"
+        "message": "No live markets available"
     }
 
 @app.options("/api/live-bets/active")
@@ -1717,6 +1779,71 @@ async def test_database():
             "message": f"Database test failed: {str(e)}",
             "debug": debug_info
         }
+
+# WebSocket connection manager
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: Dict[int, WebSocket] = {}
+
+    async def connect(self, websocket: WebSocket, user_id: int):
+        await websocket.accept()
+        self.active_connections[user_id] = websocket
+
+    def disconnect(self, user_id: int):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+
+    async def send_personal_message(self, message: str, user_id: int):
+        if user_id in self.active_connections:
+            try:
+                await self.active_connections[user_id].send_text(message)
+            except:
+                self.disconnect(user_id)
+
+    async def broadcast(self, message: str):
+        disconnected = []
+        for user_id, connection in self.active_connections.items():
+            try:
+                await connection.send_text(message)
+            except:
+                disconnected.append(user_id)
+        
+        for user_id in disconnected:
+            self.disconnect(user_id)
+
+# WebSocket manager instance
+ws_manager = ConnectionManager()
+
+@app.websocket("/ws/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: int):
+    """WebSocket endpoint for real-time updates"""
+    try:
+        await ws_manager.connect(websocket, user_id)
+        logger.info(f"WebSocket connected for user {user_id}")
+        
+        # Send welcome message
+        await ws_manager.send_personal_message(
+            f'{{"type": "connection", "message": "Connected to YetAI real-time updates"}}',
+            user_id
+        )
+        
+        while True:
+            # Keep connection alive and handle incoming messages
+            try:
+                data = await websocket.receive_text()
+                # Echo back received data (can be extended for specific functionality)
+                await ws_manager.send_personal_message(
+                    f'{{"type": "echo", "data": {data}}}',
+                    user_id
+                )
+            except WebSocketDisconnect:
+                break
+    except WebSocketDisconnect:
+        ws_manager.disconnect(user_id)
+        logger.info(f"WebSocket disconnected for user {user_id}")
+    except Exception as e:
+        logger.error(f"WebSocket error for user {user_id}: {e}")
+        ws_manager.disconnect(user_id)
 
 if __name__ == "__main__":
     import uvicorn
