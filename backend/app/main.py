@@ -1521,31 +1521,35 @@ async def options_live_markets():
 
 @app.get("/api/live-bets/markets")
 async def get_live_markets(sport: Optional[str] = None, regions: Optional[str] = "us", markets: Optional[str] = "h2h,spreads,totals", odds_format: Optional[str] = "american"):
-    """Get live betting markets - returns same format as odds endpoint"""
+    """Get live betting markets - returns same format as odds endpoints"""
     # If no sport specified, default to NFL
     if not sport:
         sport = "americanfootball_nfl"
     
-    # For now, redirect to the working NFL odds endpoint if requesting NFL
+    # For NFL, use the proven working endpoint
     if sport == "americanfootball_nfl":
         return await get_nfl_odds()
-    
-    # Use the same OddsAPIService that the working endpoints use for other sports
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-        try:
-            from app.services.odds_api_service import OddsAPIService
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds(sport, regions=regions, markets=markets, odds_format=odds_format)
-                return {"status": "success", "data": games}
-        except Exception as e:
-            logger.error(f"Error fetching live markets for {sport}: {e}")
-            # Fall through to mock data
-    
-    return {
-        "status": "success", 
-        "data": [],
-        "message": f"Mock live markets for {sport} - Running in {settings.ENVIRONMENT} mode"
-    }
+    else:
+        # For other sports, use the same pattern as working odds endpoints
+        if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+            try:
+                from app.services.odds_api_service import OddsAPIService
+                async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                    games = await service.get_odds(sport, regions=regions, markets=markets, odds_format=odds_format)
+                    return {"status": "success", "data": games}
+            except Exception as e:
+                logger.error(f"Error fetching live markets for {sport}: {e}")
+                return {
+                    "status": "success", 
+                    "data": [],
+                    "message": f"Mock live markets for {sport} - bet service unavailable"
+                }
+        else:
+            return {
+                "status": "success", 
+                "data": [],
+                "message": f"Mock live markets - bet service unavailable"
+            }
 
 @app.options("/api/live-bets/active")
 async def options_active_live_bets():
