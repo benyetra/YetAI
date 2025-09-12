@@ -35,8 +35,8 @@ export default function LiveBettingPage() {
       const marketsResponse = await apiClient.get('/api/live-bets/markets', token);
       
       if (activeBetsResponse.status === 'success') {
-        const activeLiveBets = activeBetsResponse.bets || [];
-        const pendingRegularBets = pendingBetsResponse.status === 'success' ? pendingBetsResponse.bets || [] : [];
+        const activeLiveBets = activeBetsResponse.active_bets || [];
+        const pendingRegularBets = pendingBetsResponse.status === 'success' ? pendingBetsResponse.history || [] : [];
         
         const totalActiveBets = activeLiveBets.length + pendingRegularBets.length;
         const livePotentialWins = activeLiveBets.reduce((sum: number, bet: any) => 
