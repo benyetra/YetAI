@@ -650,6 +650,18 @@ class LiveBettingServiceDB:
                 last_updated=datetime.utcnow()
             )
             
+            # Add this game to the live_games cache so live betting can work
+            from app.models.live_bet_models import LiveGameUpdate, GameStatus
+            live_game = LiveGameUpdate(
+                game_id=game.id,
+                status=status,
+                home_score=home_score,
+                away_score=away_score,
+                time_remaining=f"{status.value}" if hasattr(status, 'value') else str(status),
+                last_updated=datetime.utcnow()
+            )
+            self.live_games[game.id] = live_game
+            
             logger.info(f"✓ Created market: {market.home_team} vs {market.away_team} with {len(markets_available)} market types")
             return market
             

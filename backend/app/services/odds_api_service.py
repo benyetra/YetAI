@@ -12,7 +12,7 @@ import aiohttp
 import asyncio
 import time
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -285,9 +285,9 @@ class OddsAPIService:
         if bookmakers:
             params["bookmakers"] = bookmakers
         if commence_time_from:
-            params["commenceTimeFrom"] = commence_time_from.isoformat()
+            params["commenceTimeFrom"] = commence_time_from.strftime('%Y-%m-%dT%H:%M:%SZ')
         if commence_time_to:
-            params["commenceTimeTo"] = commence_time_to.isoformat()
+            params["commenceTimeTo"] = commence_time_to.strftime('%Y-%m-%dT%H:%M:%SZ')
         
         try:
             data = await self._make_request(f"/sports/{sport}/odds", params)
@@ -566,7 +566,7 @@ async def get_live_games() -> List[Game]:
     """
     from ..core.config import settings
     
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc)
     two_hours_from_now = now + timedelta(hours=2)
     
     # Use same filtered sports list

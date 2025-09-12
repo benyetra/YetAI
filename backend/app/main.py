@@ -19,6 +19,9 @@ from app.core.service_loader import initialize_services, get_service, is_service
 # Import live betting service
 from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
 
+# Import live betting models
+from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1575,6 +1578,38 @@ async def get_active_live_bets():
         "active_bets": [],
         "message": "Mock active live bets - bet service unavailable"
     }
+
+@app.options("/api/live-bets/place")
+async def options_place_live_bet():
+    """Handle CORS preflight for live bet placement"""
+    return {}
+
+@app.post("/api/live-bets/place")
+async def place_live_bet(bet_request: PlaceLiveBetRequest, current_user: dict = Depends(get_current_user)):
+    """Place a live bet during active game"""
+    try:
+        # Use the live betting service directly
+        result = live_betting_service.place_live_bet(
+            user_id=current_user["user_id"],
+            request=bet_request
+        )
+        
+        # Convert LiveBetResponse to dict for JSON response
+        if result.success:
+            return {
+                "status": "success",
+                "bet": result.model_dump()
+            }
+        else:
+            return {
+                "status": "error", 
+                "error": result.error,
+                "odds_changed": result.odds_changed
+            }
+            
+    except Exception as e:
+        logger.error(f"Error placing live bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to place live bet")
 
 # Sports data endpoints
 @app.get("/api/games/nfl")
