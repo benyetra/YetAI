@@ -89,7 +89,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
       const response = await apiClient.get('/api/live-bets/active', token);
       
       if (response.status === 'success') {
-        const activeBets = response.bets || [];
+        const activeBets = response.active_bets || [];
         setBets(activeBets);
         
         // Load cash out offers for active bets
@@ -112,7 +112,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
       }, token);
       
       if (response.status === 'success') {
-        setPendingBets(response.bets || []);
+        setPendingBets(response.history || []);
       }
     } catch (error) {
       console.error('Failed to load pending bets:', error);
