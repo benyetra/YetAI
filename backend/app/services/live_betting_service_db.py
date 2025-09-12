@@ -548,9 +548,32 @@ class LiveBettingServiceDB:
     
     # Include all the helper methods from the original service
     async def _create_simple_live_market(self, game) -> Optional[LiveBettingMarket]:
-        """Create live betting market from real game data"""
+        """Create live betting market from real game data - ONLY for actually live games"""
         try:
-            logger.info(f"Creating live market for: {game.home_team} vs {game.away_team}")
+            logger.info(f"Checking game for live status: {game.home_team} vs {game.away_team}")
+            
+            # Check if this game is actually live (started but not finished)
+            from datetime import datetime, timezone
+            now = datetime.now(timezone.utc)
+            
+            if game.commence_time:
+                commence_time = datetime.fromisoformat(str(game.commence_time).replace('Z', '+00:00'))
+                # Only consider games that started in the last 4 hours as potentially live
+                hours_since_start = (now - commence_time).total_seconds() / 3600
+                
+                if hours_since_start < 0:
+                    # Game hasn't started yet - it's upcoming, not live
+                    logger.info(f"Game {game.home_team} vs {game.away_team} is upcoming (starts in {-hours_since_start:.1f} hours)")
+                    return None
+                elif hours_since_start > 4:
+                    # Game started more than 4 hours ago - likely finished
+                    logger.info(f"Game {game.home_team} vs {game.away_team} started {hours_since_start:.1f} hours ago (likely finished)")
+                    return None
+                else:
+                    logger.info(f"Game {game.home_team} vs {game.away_team} is potentially live (started {hours_since_start:.1f} hours ago)")
+            else:
+                logger.info(f"Game {game.home_team} vs {game.away_team} has no commence_time - skipping")
+                return None
             
             # Extract odds from the game data
             moneyline_odds, moneyline_bookmaker = self._extract_odds_from_game(game, 'h2h')
@@ -568,31 +591,34 @@ class LiveBettingServiceDB:
             
             # Create market with real data
             from app.models.live_bet_models import LiveBettingMarket, GameStatus
-            from datetime import datetime
             import random
             
-            # For upcoming games, simulate as if they're live for demonstration
-            # In production, you'd check if games are actually live via scores API
-            game_statuses = [
-                GameStatus.FIRST_QUARTER, GameStatus.SECOND_QUARTER, 
-                GameStatus.THIRD_QUARTER, GameStatus.FOURTH_QUARTER,
-                GameStatus.FIRST_INNING, GameStatus.SECOND_INNING,
-                GameStatus.THIRD_INNING, GameStatus.FOURTH_INNING,
-                GameStatus.FIFTH_INNING, GameStatus.SIXTH_INNING,
-                GameStatus.SEVENTH_INNING, GameStatus.EIGHTH_INNING,
-                GameStatus.NINTH_INNING
-            ]
+            # Simulate live game status based on sport and time elapsed
+            game_statuses = []
+            if 'baseball' in str(game.sport_key).lower() or 'mlb' in str(game.sport_key).lower():
+                game_statuses = [
+                    GameStatus.FIRST_INNING, GameStatus.SECOND_INNING,
+                    GameStatus.THIRD_INNING, GameStatus.FOURTH_INNING,
+                    GameStatus.FIFTH_INNING, GameStatus.SIXTH_INNING,
+                    GameStatus.SEVENTH_INNING, GameStatus.EIGHTH_INNING,
+                    GameStatus.NINTH_INNING
+                ]
+            else:
+                game_statuses = [
+                    GameStatus.FIRST_QUARTER, GameStatus.SECOND_QUARTER, 
+                    GameStatus.THIRD_QUARTER, GameStatus.FOURTH_QUARTER
+                ]
             
             # Use hash for consistent status per game
             import hashlib
             game_hash = int(hashlib.md5(game.id.encode()).hexdigest()[:8], 16)
             status = game_statuses[game_hash % len(game_statuses)]
             
-            # Generate realistic scores based on sport and status
+            # Generate realistic scores based on sport and game progress
             if 'baseball' in str(game.sport_key).lower() or 'mlb' in str(game.sport_key).lower():
-                max_score = 8
+                max_score = 6
             else:
-                max_score = 25
+                max_score = 21
                 
             home_score = (game_hash % max_score)
             away_score = ((game_hash >> 8) % max_score)

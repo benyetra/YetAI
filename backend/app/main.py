@@ -16,6 +16,9 @@ from typing import List, Optional, Dict, Any
 from app.core.config import settings
 from app.core.service_loader import initialize_services, get_service, is_service_available
 
+# Import live betting service
+from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1192,7 +1195,7 @@ async def get_nfl_odds():
             from app.services.odds_api_service import OddsAPIService
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("americanfootball_nfl")
-                return {"status": "success", "data": games}
+                return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
             # Fall through to mock data
@@ -1200,7 +1203,7 @@ async def get_nfl_odds():
     # Return mock NFL data
     return {
         "status": "success",
-        "data": [],
+        "games": [],
         "message": f"Mock NFL odds - Running in {settings.ENVIRONMENT} mode"
     }
 
@@ -1217,13 +1220,13 @@ async def get_nba_odds():
             from app.services.odds_api_service import OddsAPIService
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("basketball_nba")
-                return {"status": "success", "data": games}
+                return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NBA odds: {e}")
     
     return {
         "status": "success", 
-        "data": [],
+        "games": [],
         "message": f"Mock NBA odds - Running in {settings.ENVIRONMENT} mode"
     }
 
@@ -1240,13 +1243,13 @@ async def get_mlb_odds():
             from app.services.odds_api_service import OddsAPIService
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("baseball_mlb")
-                return {"status": "success", "data": games}
+                return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching MLB odds: {e}")
     
     return {
         "status": "success",
-        "data": [], 
+        "games": [], 
         "message": f"Mock MLB odds - Running in {settings.ENVIRONMENT} mode"
     }
 
@@ -1263,13 +1266,13 @@ async def get_nhl_odds():
             from app.services.odds_api_service import OddsAPIService
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("icehockey_nhl")
-                return {"status": "success", "data": games}
+                return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NHL odds: {e}")
     
     return {
         "status": "success",
-        "data": [],
+        "games": [],
         "message": f"Mock NHL odds - Running in {settings.ENVIRONMENT} mode"
     }
 
@@ -1520,167 +1523,25 @@ async def options_live_markets():
     return {}
 
 @app.get("/api/live-bets/markets")
-async def get_live_markets(sport: Optional[str] = None, regions: Optional[str] = "us", markets: Optional[str] = "h2h,spreads,totals", odds_format: Optional[str] = "american"):
-    """Get live betting markets - transforms real odds data to LiveMarket format"""
-    # If no sport specified, default to NFL
-    if not sport:
-        sport = "americanfootball_nfl"
-    
-    # Get real odds data from the working endpoint
-    if sport == "americanfootball_nfl":
-        try:
-            base_response = await get_nfl_odds()
-            # If the response doesn't have data or failed, use fallback
-            if not base_response or not base_response.get("data"):
-                base_response = {"status": "success", "data": []}
-        except Exception as e:
-            logger.error(f"Error fetching NFL odds for live markets: {e}")
-            base_response = {"status": "success", "data": []}
-    else:
-        # For other sports, use the same pattern as working odds endpoints
-        if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-            try:
-                from app.services.odds_api_service import OddsAPIService
-                async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                    games = await service.get_odds(sport, regions=regions, markets=markets, odds_format=odds_format)
-                    base_response = {"status": "success", "data": games}
-            except Exception as e:
-                logger.error(f"Error fetching live markets for {sport}: {e}")
-                base_response = {
-                    "status": "success", 
-                    "data": [],
-                    "message": f"Mock live markets for {sport} - bet service unavailable"
-                }
-        else:
-            base_response = {
-                "status": "success", 
-                "data": [],
-                "message": f"Mock live markets - bet service unavailable"
-            }
-    
-    # Transform real data to LiveMarket format expected by frontend
-    transformed_markets = []
-    
-    if base_response.get("data") and len(base_response["data"]) > 0:
-        for game in base_response["data"]:
-            # Extract best odds from bookmakers
-            moneyline_home = None
-            moneyline_away = None
-            spread_line = None
-            spread_home_odds = None
-            spread_away_odds = None
-            total_line = None
-            total_over_odds = None
-            total_under_odds = None
-            
-            bookmaker_info = {"moneyline": "", "spread": "", "total": ""}
-            
-            # Parse bookmaker data
-            for bookmaker in game.bookmakers:
-                for market in bookmaker.markets:
-                    if market["key"] == "h2h":
-                        for outcome in market.get("outcomes", []):
-                            if outcome["name"] == game.home_team:
-                                moneyline_home = outcome["price"]
-                                bookmaker_info["moneyline"] = bookmaker.title
-                            elif outcome["name"] == game.away_team:
-                                moneyline_away = outcome["price"]
-                    elif market["key"] == "spreads":
-                        for outcome in market.get("outcomes", []):
-                            if outcome["name"] == game.home_team and outcome.get("point"):
-                                spread_line = outcome["point"]
-                                spread_home_odds = outcome["price"]
-                                bookmaker_info["spread"] = bookmaker.title
-                            elif outcome["name"] == game.away_team and outcome.get("point"):
-                                spread_away_odds = outcome["price"]
-                    elif market["key"] == "totals":
-                        for outcome in market.get("outcomes", []):
-                            if outcome["name"] == "Over" and outcome.get("point"):
-                                total_line = outcome["point"]
-                                total_over_odds = outcome["price"]
-                                bookmaker_info["total"] = bookmaker.title
-                            elif outcome["name"] == "Under":
-                                total_under_odds = outcome["price"]
-            
-            # Determine if this is a live game or upcoming game
-            # For now, all games are "upcoming" since we don't have live scoring data
-            game_status = "upcoming"
-            home_score = 0
-            away_score = 0
-            time_remaining = None
-            
-            # Create LiveMarket format expected by frontend
-            live_market = {
-                "game_id": game.id,
-                "sport": getattr(game, 'sport_title', "NFL"),
-                "home_team": game.home_team,
-                "away_team": game.away_team,
-                "game_status": game_status,
-                "home_score": home_score,
-                "away_score": away_score,
-                "time_remaining": time_remaining,
-                "commence_time": game.commence_time,
-                "markets_available": ["moneyline", "spread", "total"],
-                "moneyline_home": moneyline_home,
-                "moneyline_away": moneyline_away,
-                "spread_line": spread_line,
-                "spread_home_odds": spread_home_odds,
-                "spread_away_odds": spread_away_odds,
-                "total_line": total_line,
-                "total_over_odds": total_over_odds,
-                "total_under_odds": total_under_odds,
-                "moneyline_bookmaker": bookmaker_info["moneyline"],
-                "spread_bookmaker": bookmaker_info["spread"],
-                "total_bookmaker": bookmaker_info["total"],
-                "is_suspended": False,
-                "suspension_reason": None,
-                "last_updated": datetime.now().isoformat()
-            }
-            transformed_markets.append(live_market)
-    else:
-        # No real data available, provide sample games for UI testing
-        sample_teams = [
-            {"home": "Kansas City Chiefs", "away": "Buffalo Bills"},
-            {"home": "San Francisco 49ers", "away": "Philadelphia Eagles"},
-            {"home": "Baltimore Ravens", "away": "Cincinnati Bengals"},
-            {"home": "Miami Dolphins", "away": "New York Jets"},
-            {"home": "Green Bay Packers", "away": "Detroit Lions"}
-        ]
+async def get_live_betting_markets(
+    sport: Optional[str] = None
+):
+    """Get available live betting markets with real sports data (public endpoint)"""
+    try:
+        print(f"Live betting markets endpoint called with sport: {sport}")
+        markets = await live_betting_service.get_live_betting_markets(sport)
+        print(f"Service returned {len(markets)} markets")
         
-        for i, teams in enumerate(sample_teams):
-            sample_market = {
-                "game_id": f"sample_game_{i+1}",
-                "sport": "NFL",
-                "home_team": teams["home"],
-                "away_team": teams["away"],
-                "game_status": "upcoming",
-                "home_score": 0,
-                "away_score": 0,
-                "time_remaining": None,
-                "commence_time": "2025-01-16T01:15:00Z",
-                "markets_available": ["moneyline", "spread", "total"],
-                "moneyline_home": -140 - (i * 10),
-                "moneyline_away": 120 + (i * 10),
-                "spread_line": -2.5 + (i * 0.5),
-                "spread_home_odds": -110,
-                "spread_away_odds": -110,
-                "total_line": 47.5 + (i * 1.5),
-                "total_over_odds": -110,
-                "total_under_odds": -110,
-                "moneyline_bookmaker": "DraftKings",
-                "spread_bookmaker": "FanDuel",
-                "total_bookmaker": "BetMGM",
-                "is_suspended": False,
-                "suspension_reason": None,
-                "last_updated": datetime.now().isoformat()
-            }
-            transformed_markets.append(sample_market)
-    
-    return {
-        "status": "success",
-        "markets": transformed_markets,  # Use 'markets' key as expected by frontend
-        "count": len(transformed_markets)
-    }
+        return {
+            "status": "success",
+            "count": len(markets),
+            "markets": markets
+        }
+        
+    except Exception as e:
+        print(f"Exception in live betting endpoint: {e}")
+        logger.error(f"Error getting live markets: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get live markets")
 
 @app.options("/api/live-bets/active")
 async def options_active_live_bets():
