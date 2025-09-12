@@ -317,12 +317,13 @@ async def get_user_avatar(current_user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
 
 @app.post("/api/user/avatar") 
-async def upload_user_avatar(_current_user: dict = Depends(get_current_user)):
+async def upload_user_avatar(current_user: dict = Depends(get_current_user)):
     """Upload user avatar"""
     if is_service_available("auth_service"):
         try:
             # In a real implementation, handle file upload here
-            return {"status": "success", "message": "Avatar upload endpoint ready"}
+            user_id = current_user["user_id"]
+            return {"status": "success", "message": "Avatar upload endpoint ready", "user_id": user_id}
         except Exception as e:
             logger.error(f"Error uploading avatar: {e}")
             raise HTTPException(status_code=500, detail="Failed to upload avatar")
@@ -1519,54 +1520,31 @@ async def options_live_markets():
     return {}
 
 @app.get("/api/live-bets/markets")
-async def get_live_markets(sport: Optional[str] = None):
-    """Get live betting markets"""
-    try:
-        # Use sports pipeline to get live odds/markets
-        if is_service_available("sports_pipeline"):
-            sports_service = get_service("sports_pipeline")
-            
-            # Get live games for the sport
-            if sport:
-                live_games = await sports_service.get_live_games(sport)
-            else:
-                # Get live games for popular sports
-                live_games = []
-                popular_sports = ["americanfootball_nfl", "basketball_nba", "baseball_mlb", "icehockey_nhl"]
-                for s in popular_sports:
-                    try:
-                        games = await sports_service.get_live_games(s)
-                        live_games.extend(games)
-                    except:
-                        continue
-            
-            # Convert games to market format
-            markets = []
-            for game in live_games[:50]:  # Limit to 50 games
-                if game.get("completed", False):
-                    continue
-                    
-                market = {
-                    "id": game.get("id"),
-                    "sport": game.get("sport_key"),
-                    "home_team": game.get("home_team"),
-                    "away_team": game.get("away_team"),
-                    "commence_time": game.get("commence_time"),
-                    "bookmakers": game.get("bookmakers", []),
-                    "live": not game.get("completed", True),
-                    "markets": ["h2h", "spreads", "totals"]  # Common live betting markets
-                }
-                markets.append(market)
-            
-            return {"status": "success", "markets": markets}
-            
-    except Exception as e:
-        logger.error(f"Error fetching live markets: {e}")
+async def get_live_markets(sport: Optional[str] = None, regions: Optional[str] = "us", markets: Optional[str] = "h2h,spreads,totals", odds_format: Optional[str] = "american"):
+    """Get live betting markets - returns same format as odds endpoint"""
+    # If no sport specified, default to NFL
+    if not sport:
+        sport = "americanfootball_nfl"
+    
+    # For now, redirect to the working NFL odds endpoint if requesting NFL
+    if sport == "americanfootball_nfl":
+        return await get_nfl_odds()
+    
+    # Use the same OddsAPIService that the working endpoints use for other sports
+    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(sport, regions=regions, markets=markets, odds_format=odds_format)
+                return {"status": "success", "data": games}
+        except Exception as e:
+            logger.error(f"Error fetching live markets for {sport}: {e}")
+            # Fall through to mock data
     
     return {
-        "status": "success",
-        "markets": [],
-        "message": "No live markets available"
+        "status": "success", 
+        "data": [],
+        "message": f"Mock live markets for {sport} - Running in {settings.ENVIRONMENT} mode"
     }
 
 @app.options("/api/live-bets/active")
