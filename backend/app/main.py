@@ -1563,20 +1563,21 @@ async def options_active_live_bets():
     return {}
 
 @app.get("/api/live-bets/active")
-async def get_active_live_bets():
-    """Get active live bets"""
+async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
+    """Get active live bets for the current user"""
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            active_bets = await bet_service.get_active_live_bets()
+            active_bets = await bet_service.get_active_live_bets(current_user["user_id"])
             return {"status": "success", "active_bets": active_bets}
         except Exception as e:
             logger.error(f"Error fetching active live bets: {e}")
+            return {"status": "error", "error": str(e), "active_bets": []}
     
     return {
-        "status": "success",
-        "active_bets": [],
-        "message": "Mock active live bets - bet service unavailable"
+        "status": "error",
+        "error": "Bet service is currently unavailable",
+        "active_bets": []
     }
 
 @app.options("/api/live-bets/place")
