@@ -1521,35 +1521,95 @@ async def options_live_markets():
 
 @app.get("/api/live-bets/markets")
 async def get_live_markets(sport: Optional[str] = None, regions: Optional[str] = "us", markets: Optional[str] = "h2h,spreads,totals", odds_format: Optional[str] = "american"):
-    """Get live betting markets - returns same format as odds endpoints"""
-    # If no sport specified, default to NFL
-    if not sport:
-        sport = "americanfootball_nfl"
+    """Get live betting markets - returns sample data in LiveMarket format for UI testing"""
     
-    # For NFL, use the proven working endpoint
-    if sport == "americanfootball_nfl":
-        return await get_nfl_odds()
-    else:
-        # For other sports, use the same pattern as working odds endpoints
-        if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
-            try:
-                from app.services.odds_api_service import OddsAPIService
-                async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                    games = await service.get_odds(sport, regions=regions, markets=markets, odds_format=odds_format)
-                    return {"status": "success", "data": games}
-            except Exception as e:
-                logger.error(f"Error fetching live markets for {sport}: {e}")
-                return {
-                    "status": "success", 
-                    "data": [],
-                    "message": f"Mock live markets for {sport} - bet service unavailable"
-                }
-        else:
-            return {
-                "status": "success", 
-                "data": [],
-                "message": f"Mock live markets - bet service unavailable"
-            }
+    # Generate sample live markets data in the format expected by the frontend
+    sample_markets = [
+        {
+            "game_id": "game_1",
+            "sport": "NFL",
+            "home_team": "Kansas City Chiefs",
+            "away_team": "Buffalo Bills",
+            "game_status": "upcoming",
+            "home_score": 0,
+            "away_score": 0,
+            "time_remaining": None,
+            "commence_time": "2025-01-15T21:00:00Z",
+            "markets_available": ["moneyline", "spread", "total"],
+            "moneyline_home": -150,
+            "moneyline_away": +125,
+            "spread_line": -2.5,
+            "spread_home_odds": -110,
+            "spread_away_odds": -110,
+            "total_line": 47.5,
+            "total_over_odds": -110,
+            "total_under_odds": -110,
+            "moneyline_bookmaker": "DraftKings",
+            "spread_bookmaker": "FanDuel",
+            "total_bookmaker": "BetMGM",
+            "is_suspended": False,
+            "suspension_reason": None,
+            "last_updated": datetime.now().isoformat()
+        },
+        {
+            "game_id": "game_2",
+            "sport": "NFL",
+            "home_team": "San Francisco 49ers",
+            "away_team": "Green Bay Packers",
+            "game_status": "upcoming",
+            "home_score": 0,
+            "away_score": 0,
+            "time_remaining": None,
+            "commence_time": "2025-01-15T18:00:00Z",
+            "markets_available": ["moneyline", "spread", "total"],
+            "moneyline_home": -120,
+            "moneyline_away": +100,
+            "spread_line": -1.5,
+            "spread_home_odds": -105,
+            "spread_away_odds": -115,
+            "total_line": 44.5,
+            "total_over_odds": -108,
+            "total_under_odds": -112,
+            "moneyline_bookmaker": "Caesars",
+            "spread_bookmaker": "DraftKings",
+            "total_bookmaker": "FanDuel",
+            "is_suspended": False,
+            "suspension_reason": None,
+            "last_updated": datetime.now().isoformat()
+        },
+        {
+            "game_id": "game_3",
+            "sport": "NFL",
+            "home_team": "Baltimore Ravens",
+            "away_team": "Pittsburgh Steelers",
+            "game_status": "upcoming",
+            "home_score": 0,
+            "away_score": 0,
+            "time_remaining": None,
+            "commence_time": "2025-01-16T20:30:00Z",
+            "markets_available": ["moneyline", "spread", "total"],
+            "moneyline_home": -135,
+            "moneyline_away": +115,
+            "spread_line": -3.0,
+            "spread_home_odds": -110,
+            "spread_away_odds": -110,
+            "total_line": 41.5,
+            "total_over_odds": -105,
+            "total_under_odds": -115,
+            "moneyline_bookmaker": "BetMGM",
+            "spread_bookmaker": "Caesars",
+            "total_bookmaker": "DraftKings",
+            "is_suspended": False,
+            "suspension_reason": None,
+            "last_updated": datetime.now().isoformat()
+        }
+    ]
+    
+    return {
+        "status": "success",
+        "markets": sample_markets,  # Use 'markets' key as expected by frontend
+        "count": len(sample_markets)
+    }
 
 @app.options("/api/live-bets/active")
 async def options_active_live_bets():
