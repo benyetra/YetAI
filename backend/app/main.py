@@ -789,46 +789,43 @@ async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(g
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            history = await bet_service.get_bet_history(
-                user_id=current_user["user_id"],
-                status=query.status,
-                bet_type=query.bet_type,
-                start_date=query.start_date,
-                end_date=query.end_date,
-                offset=query.offset,
-                limit=query.limit
-            )
-            return {"status": "success", "history": history}
+            result = await bet_service.get_bet_history(current_user["user_id"], query)
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "history": result["bets"],
+                    "total": result["total"],
+                    "offset": result["offset"], 
+                    "limit": result["limit"]
+                }
+            else:
+                logger.error(f"Bet service returned error: {result.get('error')}")
+                return {
+                    "status": "error",
+                    "error": result.get("error", "Unknown error"),
+                    "history": [],
+                    "total": 0,
+                    "offset": query.offset,
+                    "limit": query.limit
+                }
         except Exception as e:
             logger.error(f"Error fetching bet history: {e}")
-    
-    # Mock bet history
-    return {
-        "status": "success",
-        "history": [
-            {
-                "id": "bet_1",
-                "bet_type": "moneyline",
-                "selection": "Kansas City Chiefs",
-                "odds": -150,
-                "amount": 100.0,
-                "status": query.status or "won",
-                "created_at": datetime.now(timezone.utc).isoformat()
-            },
-            {
-                "id": "bet_2", 
-                "bet_type": "spread",
-                "selection": "Lakers -3.5",
-                "odds": -110,
-                "amount": 50.0,
-                "status": "pending",
-                "created_at": datetime.now(timezone.utc).isoformat()
+            return {
+                "status": "error", 
+                "error": str(e),
+                "history": [],
+                "total": 0,
+                "offset": query.offset,
+                "limit": query.limit
             }
-        ],
-        "total": 2,
+    
+    return {
+        "status": "error",
+        "error": "Bet service is currently unavailable",
+        "history": [],
+        "total": 0,
         "offset": query.offset,
-        "limit": query.limit,
-        "message": "Mock bet history - bet service unavailable"
+        "limit": query.limit
     }
 
 @app.options("/api/bets/stats")
