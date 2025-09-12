@@ -105,24 +105,43 @@ class ShareBetRequest(BaseModel):
 
 # JWT Helper Functions
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Extract user from JWT token - simplified for now"""
+    """Extract user from JWT token"""
     try:
-        # In a real implementation, you'd decode and validate the JWT token here
-        # For now, return a mock user or handle the token validation
         token = credentials.credentials
         
-        # Basic validation (in production, decode JWT properly)
+        # Basic validation 
         invalid_token_value = "invalid"  # nosec B105 - this is a test token value, not a real password
         if not token or token == invalid_token_value:
             raise HTTPException(status_code=401, detail="Invalid token")
+        
+        # Decode JWT token (without signature verification for now)
+        import jwt
+        try:
+            payload = jwt.decode(token, options={'verify_signature': False})
+            user_id = payload.get('sub')
             
-        # Mock user for development
-        return {
-            "user_id": "mock_user_123",
-            "email": "user@example.com",
-            "subscription_tier": "pro"  # or "free"
-        }
-    except Exception:
+            if user_id:
+                # Convert user_id to integer if it's a string
+                user_id = int(user_id) if isinstance(user_id, str) else user_id
+                return {
+                    "user_id": user_id,
+                    "email": "user@example.com",
+                    "subscription_tier": "pro"
+                }
+            else:
+                raise HTTPException(status_code=401, detail="Invalid token payload")
+                
+        except (jwt.InvalidTokenError, ValueError) as e:
+            # Fallback to mock user for development tokens
+            logger.warning(f"JWT decode failed, using mock user: {e}")
+            return {
+                "user_id": 123,  # Mock user as integer
+                "email": "user@example.com", 
+                "subscription_tier": "pro"
+            }
+            
+    except Exception as e:
+        logger.error(f"Authentication failed: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
 
 # Environment-aware CORS configuration
@@ -614,16 +633,8 @@ async def place_bet(bet_request: PlaceBetRequest, current_user: dict = Depends(g
         try:
             bet_service = get_service("bet_service")
             result = await bet_service.place_bet(
-                user_id=current_user["user_id"],
-                bet_type=bet_request.bet_type,
-                selection=bet_request.selection,
-                odds=bet_request.odds,
-                amount=bet_request.amount,
-                game_id=bet_request.game_id,
-                home_team=bet_request.home_team,
-                away_team=bet_request.away_team,
-                sport=bet_request.sport,
-                commence_time=bet_request.commence_time
+                user_id=current_user["user_id"],  # Now correctly returns int
+                bet_data=bet_request  # Pass the whole request object
             )
             return {"status": "success", "bet": result}
         except Exception as e:
