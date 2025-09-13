@@ -285,7 +285,7 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
 
   const formatGameTime = (market: LiveMarket) => {
     // If it's a live game with time remaining, show that
-    if (market.time_remaining && ['1st_quarter', '2nd_quarter', '3rd_quarter', '4th_quarter', 'halftime', '1st_inning', '2nd_inning', '3rd_inning', '4th_inning', '5th_inning', '6th_inning', '7th_inning', '8th_inning', '9th_inning'].includes(market.game_status)) {
+    if (market.time_remaining && market.game_status && ['1st_quarter', '2nd_quarter', '3rd_quarter', '4th_quarter', 'halftime', '1st_inning', '2nd_inning', '3rd_inning', '4th_inning', '5th_inning', '6th_inning', '7th_inning', '8th_inning', '9th_inning'].includes(market.game_status)) {
       return market.time_remaining;
     }
     

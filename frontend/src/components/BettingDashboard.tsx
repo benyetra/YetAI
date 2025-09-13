@@ -841,7 +841,7 @@ export default function BettingDashboard() {
                   {games
                     .filter(game => {
                       const favoriteTeams = JSON.parse(user.favorite_teams || '[]');
-                      return favoriteTeams.includes(game.home_team) || favoriteTeams.includes(game.away_team);
+                      return favoriteTeams.includes(game.home_team || '') || favoriteTeams.includes(game.away_team || '');
                     })
                     .map((game, idx) => (
                       <div key={idx} className="border border-gray-200 rounded-lg p-4">
@@ -876,7 +876,7 @@ export default function BettingDashboard() {
                     ))}
                   {games.filter(game => {
                     const favoriteTeams = JSON.parse(user.favorite_teams || '[]');
-                    return favoriteTeams.includes(game.home_team) || favoriteTeams.includes(game.away_team);
+                    return favoriteTeams.includes(game.home_team || '') || favoriteTeams.includes(game.away_team || '');
                   }).length === 0 && (
                     <p className="text-gray-500">None of your favorite teams are playing today.</p>
                   )}
