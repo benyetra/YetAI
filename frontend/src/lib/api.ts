@@ -196,48 +196,62 @@ export const enhancedApiClient = {
   ...apiClient,
   
   async getWithFallback<T>(
-    endpoint: string, 
-    fallbackData: T, 
+    endpoint: string,
+    fallbackData: T,
     token?: string,
     useCache: boolean = true
   ): Promise<T> {
     try {
-      return await apiCircuitBreaker.execute(async () => {
-        const result = await withRetry(() => this.get(endpoint, token));
-        
-        // Cache successful results
-        if (useCache && typeof window !== 'undefined') {
-          const cacheKey = `api_cache_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}`;
-          localStorage.setItem(cacheKey, JSON.stringify({
-            data: result,
-            timestamp: Date.now(),
-            ttl: 300000 // 5 minutes
-          }));
+      const result = await apiCircuitBreaker.execute(async () => {
+        const response = await withRetry(() => this.get(endpoint, token));
+
+        // Check if the response indicates an error
+        if (response && response.status === 'error') {
+          throw new Error(response.detail || 'API request failed');
         }
-        
-        return result;
+
+        return response;
       });
+
+      // Cache successful results
+      if (useCache && typeof window !== 'undefined') {
+        const cacheKey = `api_cache_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}`;
+        localStorage.setItem(cacheKey, JSON.stringify({
+          data: result,
+          timestamp: Date.now(),
+          ttl: 300000 // 5 minutes
+        }));
+      }
+
+      return result;
     } catch (error) {
       console.warn(`API call failed for ${endpoint}, using fallback:`, error);
-      
+
       // Try to use cached data first
       if (useCache && typeof window !== 'undefined') {
         const cacheKey = `api_cache_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}`;
         const cached = localStorage.getItem(cacheKey);
-        
+
         if (cached) {
           try {
             const { data, timestamp, ttl } = JSON.parse(cached);
-            if (Date.now() - timestamp < ttl) {
+            if (Date.now() - timestamp < ttl && data && data.status === 'success') {
               console.info(`Using cached data for ${endpoint}`);
               return data;
+            } else {
+              console.warn(`Cached data for ${endpoint} is invalid or expired, using fallback`);
+              // Clear invalid cache
+              localStorage.removeItem(cacheKey);
             }
           } catch (cacheError) {
             console.warn('Failed to parse cached data:', cacheError);
+            // Clear corrupted cache
+            localStorage.removeItem(cacheKey);
           }
         }
       }
-      
+
+      console.info(`Using fallback data for ${endpoint}:`, fallbackData);
       return fallbackData;
     }
   }
