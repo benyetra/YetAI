@@ -139,7 +139,7 @@ const BetHistory: React.FC = () => {
 
       const response = await apiClient.post('/api/bets/history', filters, token);
       if (response.status === 'success') {
-        setBets(response.bets || []);
+        setBets(response.history || response.bets || []);
       }
     } catch (error) {
       console.error('Error fetching bet history:', error);
@@ -478,16 +478,16 @@ const BetHistory: React.FC = () => {
             />
             <StatCard
               title="Net Profit"
-              value={`$${stats.net_profit}`}
+              value={`$${(stats.net_profit || 0).toFixed(2)}`}
               icon={<DollarSign className="w-6 h-6 text-green-600" />}
-              trend={stats.net_profit >= 0 ? 'up' : 'down'}
+              trend={(stats.net_profit || 0) >= 0 ? 'up' : 'down'}
             />
             <StatCard
               title="Current Streak"
-              value={Math.abs(stats.current_streak)}
+              value={String(Math.abs(stats.current_streak || 0))}
               icon={<BarChart3 className="w-6 h-6 text-purple-600" />}
-              subtitle={stats.current_streak >= 0 ? 'Win streak' : 'Loss streak'}
-              trend={stats.current_streak >= 0 ? 'up' : 'down'}
+              subtitle={(stats.current_streak || 0) >= 0 ? 'Win streak' : 'Loss streak'}
+              trend={(stats.current_streak || 0) >= 0 ? 'up' : 'down'}
             />
           </div>
         )}
