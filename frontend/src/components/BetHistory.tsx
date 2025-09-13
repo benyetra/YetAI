@@ -484,10 +484,28 @@ const BetHistory: React.FC = () => {
             />
             <StatCard
               title="Current Streak"
-              value={String(Math.abs(stats.current_streak || 0))}
+              value={(() => {
+                const streak = stats.current_streak;
+                if (streak == null || Number.isNaN(streak) || typeof streak !== 'number') {
+                  return '0';
+                }
+                return String(Math.abs(streak));
+              })()}
               icon={<BarChart3 className="w-6 h-6 text-purple-600" />}
-              subtitle={(stats.current_streak || 0) >= 0 ? 'Win streak' : 'Loss streak'}
-              trend={(stats.current_streak || 0) >= 0 ? 'up' : 'down'}
+              subtitle={(() => {
+                const streak = stats.current_streak;
+                if (streak == null || Number.isNaN(streak) || typeof streak !== 'number') {
+                  return 'No streak';
+                }
+                return streak >= 0 ? 'Win streak' : 'Loss streak';
+              })()}
+              trend={(() => {
+                const streak = stats.current_streak;
+                if (streak == null || Number.isNaN(streak) || typeof streak !== 'number') {
+                  return 'up';
+                }
+                return streak >= 0 ? 'up' : 'down';
+              })()}
             />
           </div>
         )}
