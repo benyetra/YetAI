@@ -53,7 +53,7 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
       const result = await response.json();
 
       if (result.status === 'success') {
-        setParlays(result.parlays || []);
+        setParlays(Array.isArray(result.parlays) ? result.parlays : []);
       } else {
         setError('Failed to fetch parlays');
       }
@@ -121,10 +121,10 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
     setShareModalOpen(false);
   };
 
-  const filteredParlays = parlays.filter(parlay => {
+  const filteredParlays = Array.isArray(parlays) ? parlays.filter(parlay => {
     if (filter === 'all') return true;
     return parlay.status === filter;
-  });
+  }) : [];
 
   if (loading) {
     return (
@@ -217,7 +217,7 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
 
               {/* Legs */}
               <div className="space-y-2 mb-4">
-                {parlay.legs.map((leg, index) => (
+                {Array.isArray(parlay.legs) ? parlay.legs.map((leg, index) => (
                   <div key={leg.id || index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                     <div className="flex-1">
                       <div className="flex items-center space-x-2">
@@ -232,7 +232,11 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
                       <span className="text-sm font-mono">{formatOdds(leg.odds)}</span>
                     </div>
                   </div>
-                ))}
+                )) : (
+                  <div className="p-3 bg-gray-50 rounded-lg text-center text-gray-500">
+                    No leg details available
+                  </div>
+                )}
               </div>
 
               {/* Parlay Summary */}

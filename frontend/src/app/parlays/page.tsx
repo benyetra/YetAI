@@ -47,7 +47,7 @@ export default function ParlaysPage() {
 
       const result = await response.json();
       if (result.status === 'success') {
-        const parlays = result.parlays || [];
+        const parlays = Array.isArray(result.parlays) ? result.parlays : [];
         const activeParlays = parlays.filter((p: any) => p.status === 'pending').length;
         const wonParlays = parlays.filter((p: any) => p.status === 'won').length;
         const totalParlays = parlays.length;
