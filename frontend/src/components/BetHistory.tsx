@@ -139,7 +139,7 @@ const BetHistory: React.FC = () => {
 
       const response = await apiClient.post('/api/bets/history', filters, token);
       if (response.status === 'success') {
-        setBets(response.bets);
+        setBets(response.bets || []);
       }
     } catch (error) {
       console.error('Error fetching bet history:', error);
@@ -380,7 +380,7 @@ const BetHistory: React.FC = () => {
   }));
 
   // Combine regular bets and live bets
-  const allBets = [...bets, ...normalizedLiveBets];
+  const allBets = [...(bets || []), ...(normalizedLiveBets || [])];
 
   const filteredBets = allBets.filter(bet => {
     // Status filter
