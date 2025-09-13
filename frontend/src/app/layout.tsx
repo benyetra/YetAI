@@ -132,7 +132,7 @@ export default function RootLayout({
                           select.style.setProperty('border', '1px solid #d1d5db', 'important');
                           select.style.setProperty('-webkit-appearance', 'none', 'important');
                         });
-                        
+
                         // Style any new inputs
                         const inputs = node.querySelectorAll ? node.querySelectorAll('input[type="text"], input[type="email"], input[type="password"], input[type="search"], input[type="number"], input:not([type])') : [];
                         inputs.forEach(input => {
@@ -141,7 +141,7 @@ export default function RootLayout({
                           input.style.setProperty('border', '1px solid #d1d5db', 'important');
                           input.style.setProperty('-webkit-appearance', 'none', 'important');
                         });
-                        
+
                         // Style any new textareas
                         const textareas = node.querySelectorAll ? node.querySelectorAll('textarea') : [];
                         textareas.forEach(textarea => {
@@ -155,11 +155,20 @@ export default function RootLayout({
                   }
                 });
               });
-              
-              observer.observe(document.body, {
-                childList: true,
-                subtree: true
-              });
+
+              // Only observe if document.body exists
+              function startObserver() {
+                if (document.body) {
+                  observer.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                  });
+                } else {
+                  // Wait for body to be available
+                  setTimeout(startObserver, 100);
+                }
+              }
+              startObserver();
             `,
           }}
         />

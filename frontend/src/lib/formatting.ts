@@ -125,6 +125,11 @@ export function formatSpread(spread: number): string {
  * Format game status for display
  */
 export function formatGameStatus(status: string): string {
+  // Handle null/undefined status
+  if (!status) {
+    return 'Unknown';
+  }
+
   const statusMap: Record<string, string> = {
     'STATUS_SCHEDULED': 'Scheduled',
     'STATUS_LIVE': 'Live',

@@ -214,7 +214,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
   };
 
   const formatPendingBetTitle = (bet: any) => {
-    if (bet.home_team && bet.away_team) {
+    if (bet?.home_team && bet?.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
       if (bet.bet_type === 'moneyline') {
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
@@ -226,23 +226,23 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
         return `${(bet.selection || '').toUpperCase()} (${gameInfo})`;
       }
     }
-    return `${(bet.bet_type || '').toUpperCase()} - ${(bet.selection || '').toUpperCase()}`;
+    return `${(bet?.bet_type || '').toUpperCase()} - ${(bet?.selection || '').toUpperCase()}`;
   };
 
   const formatLiveBetTitle = (bet: LiveBet) => {
-    if (bet.home_team && bet.away_team) {
+    if (bet?.home_team && bet?.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
-      if (bet.bet_type.toLowerCase() === 'moneyline') {
+      if (bet.bet_type?.toLowerCase() === 'moneyline') {
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} to Win (${gameInfo})`;
-      } else if (bet.bet_type.toLowerCase() === 'spread') {
+      } else if (bet.bet_type?.toLowerCase() === 'spread') {
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} Spread (${gameInfo})`;
-      } else if (bet.bet_type.toLowerCase() === 'total') {
-        return `${bet.selection.toUpperCase()} Total (${gameInfo})`;
+      } else if (bet.bet_type?.toLowerCase() === 'total') {
+        return `${(bet.selection || '').toUpperCase()} Total (${gameInfo})`;
       }
     }
-    return `${bet.bet_type.toUpperCase()} - ${bet.selection.toUpperCase()}`;
+    return `${(bet?.bet_type || '').toUpperCase()} - ${(bet?.selection || '').toUpperCase()}`;
   };
 
   const openShareModal = (bet: any) => {
