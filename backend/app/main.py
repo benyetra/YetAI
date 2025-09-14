@@ -668,42 +668,28 @@ async def options_place_parlay():
 @app.post("/api/bets/parlay")
 async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = Depends(get_current_user)):
     """Place a parlay bet with multiple legs"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.place_parlay(
-                user_id=current_user["user_id"],
-                amount=parlay_request.amount,
-                legs=[leg.model_dump() for leg in parlay_request.legs]
-            )
-            return {"status": "success", "parlay": result}
-        except Exception as e:
-            logger.error(f"Error placing parlay: {e}")
-            raise HTTPException(status_code=500, detail="Failed to place parlay")
-    
-    # Calculate mock total odds
-    total_odds = 1
-    for leg in parlay_request.legs:
-        if leg.odds > 0:
-            total_odds *= (leg.odds / 100 + 1)
+    try:
+        # Import and use the database service directly
+        from app.services.bet_service_db import bet_service_db
+
+        result = await bet_service_db.place_parlay(
+            user_id=current_user["user_id"],
+            parlay_data=parlay_request
+        )
+
+        if result.get("success"):
+            return {
+                "status": "success",
+                "parlay": result.get("parlay"),
+                "legs": result.get("legs", []),
+                "message": result.get("message", "Parlay placed successfully")
+            }
         else:
-            total_odds *= (100 / abs(leg.odds) + 1)
-    
-    american_odds = int((total_odds - 1) * 100) if total_odds >= 2 else int(-100 / (total_odds - 1))
-    
-    return {
-        "status": "success", 
-        "parlay": {
-            "id": "mock_parlay_456",
-            "user_id": current_user["user_id"],
-            "amount": parlay_request.amount,
-            "total_odds": american_odds,
-            "legs": [leg.model_dump() for leg in parlay_request.legs],
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        "message": "Mock parlay placed - bet service unavailable"
-    }
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to place parlay"))
+
+    except Exception as e:
+        logger.error(f"Error placing parlay: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to place parlay: {str(e)}")
 
 @app.options("/api/bets/parlays")
 async def options_get_parlays():
@@ -713,70 +699,44 @@ async def options_get_parlays():
 @app.get("/api/bets/parlays")
 async def get_parlays(current_user: dict = Depends(get_current_user)):
     """Get user's parlay bets"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            parlays = await bet_service.get_user_parlays(current_user["user_id"])
-            return {"status": "success", "parlays": parlays}
-        except Exception as e:
-            logger.error(f"Error fetching parlays: {e}")
-    
-    # Mock parlay data
-    return {
-        "status": "success",
-        "parlays": [
-            {
-                "id": "mock_parlay_1",
-                "amount": 50.0,
-                "total_odds": 350,
-                "status": "pending",
-                "legs": [
-                    {"selection": "Chiefs ML", "odds": -150},
-                    {"selection": "Lakers -3.5", "odds": -110}
-                ],
-                "created_at": datetime.now(timezone.utc).isoformat()
+    try:
+        from app.services.bet_service_db import bet_service_db
+
+        result = await bet_service_db.get_user_parlays(current_user["user_id"])
+
+        if result.get("success"):
+            return {
+                "status": "success",
+                "parlays": result.get("parlays", [])
             }
-        ],
-        "message": "Mock parlays - bet service unavailable"
-    }
+        else:
+            raise HTTPException(status_code=500, detail=result.get("error", "Failed to fetch parlays"))
+
+    except Exception as e:
+        logger.error(f"Error fetching parlays: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch parlays: {str(e)}")
 
 @app.get("/api/bets/parlay/{parlay_id}")
 async def get_parlay_details(parlay_id: str, current_user: dict = Depends(get_current_user)):
     """Get specific parlay details"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            parlay = await bet_service.get_parlay_by_id(parlay_id, current_user["user_id"])
-            return {"status": "success", "parlay": parlay}
-        except Exception as e:
-            logger.error(f"Error fetching parlay {parlay_id}: {e}")
-    
-    # Mock parlay details
-    return {
-        "status": "success",
-        "parlay": {
-            "id": parlay_id,
-            "amount": 50.0,
-            "total_odds": 350,
-            "status": "pending",
-            "legs": [
-                {
-                    "selection": "Kansas City Chiefs ML",
-                    "odds": -150,
-                    "bet_type": "moneyline",
-                    "game_id": "nfl_game_1"
-                },
-                {
-                    "selection": "Los Angeles Lakers -3.5",
-                    "odds": -110,
-                    "bet_type": "spread", 
-                    "game_id": "nba_game_1"
-                }
-            ],
-            "created_at": datetime.now(timezone.utc).isoformat()
-        },
-        "message": "Mock parlay details - bet service unavailable"
-    }
+    try:
+        from app.services.bet_service_db import bet_service_db
+
+        result = await bet_service_db.get_parlay_by_id(current_user["user_id"], parlay_id)
+
+        if result.get("success"):
+            return {
+                "status": "success",
+                "parlay": result.get("parlay")
+            }
+        else:
+            raise HTTPException(status_code=404, detail=result.get("error", "Parlay not found"))
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching parlay {parlay_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch parlay details: {str(e)}")
 
 @app.options("/api/bets/history")
 async def options_bet_history():

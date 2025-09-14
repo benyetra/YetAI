@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { apiClient } from '@/lib/api';
 import { X, Plus, Calculator, Trash2, AlertCircle } from 'lucide-react';
 
 interface ParlayLeg {
@@ -267,32 +268,21 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     setError('');
 
     try {
+      // Match the working bet format - minimal data structure
       const parlayData = {
         legs: legs.map(leg => ({
           game_id: leg.gameId,
-          bet_type: leg.betType.toLowerCase(),
+          bet_type: leg.betType,
           selection: leg.selection,
-          odds: leg.odds,
-          home_team: leg.home_team,
-          away_team: leg.away_team,
-          sport: leg.sport,
-          commence_time: leg.commence_time
+          odds: leg.odds
         })),
         amount: parseFloat(amount)
       };
 
-      const response = await fetch(getApiUrl('/api/bets/parlay'), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`
-        },
-        body: JSON.stringify(parlayData)
-      });
+      // Use apiClient like the working BetModal
+      const response = await apiClient.post('/api/bets/parlay', parlayData, localStorage.getItem('auth_token'));
 
-      const result = await response.json();
-
-      if (result.status === 'success') {
+      if (response.status === 'success') {
         // Reset form
         setLegs([]);
         setAmount('');
@@ -302,7 +292,12 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
         }
         onClose();
       } else {
-        setError(result.detail || 'Failed to place parlay');
+        // Provide more helpful error message while backend is being fixed
+        setError(
+          response.detail === 'Failed to place parlay'
+            ? 'Parlay placement is temporarily unavailable. Please try individual bets instead.'
+            : (response.detail || 'Failed to place parlay')
+        );
       }
     } catch (error) {
       setError('Failed to place parlay. Please try again.');
