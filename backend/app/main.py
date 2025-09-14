@@ -986,28 +986,13 @@ async def options_fantasy_accounts():
 @app.get("/api/fantasy/accounts")
 async def get_fantasy_accounts(current_user: dict = Depends(get_current_user)):
     """Get connected fantasy accounts"""
-    if is_service_available("fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("fantasy_pipeline")
-            accounts = await fantasy_service.get_user_accounts(current_user["user_id"])
-            return {"status": "success", "accounts": accounts}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy accounts: {e}")
-    
-    # Mock fantasy accounts
-    return {
-        "status": "success",
-        "accounts": [
-            {
-                "platform": "sleeper",
-                "username": "YetAI_User",
-                "user_id": "sleeper_123",
-                "connected_at": datetime.now(timezone.utc).isoformat(),
-                "status": "active"
-            }
-        ],
-        "message": "Mock fantasy accounts - fantasy service unavailable"
-    }
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+        result = await fantasy_connection_service.get_user_connections(current_user["user_id"])
+        return result
+    except Exception as e:
+        logger.error(f"Error getting fantasy accounts for user {current_user['user_id']}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get fantasy accounts")
 
 @app.options("/api/fantasy/leagues")
 async def options_fantasy_leagues():
@@ -1017,31 +1002,13 @@ async def options_fantasy_leagues():
 @app.get("/api/fantasy/leagues")
 async def get_fantasy_leagues(current_user: dict = Depends(get_current_user)):
     """Get fantasy leagues for user"""
-    if is_service_available("fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("fantasy_pipeline")
-            leagues = await fantasy_service.get_user_leagues(current_user["user_id"])
-            return {"status": "success", "leagues": leagues}
-        except Exception as e:
-            logger.error(f"Error fetching fantasy leagues: {e}")
-    
-    # Mock fantasy leagues
-    return {
-        "status": "success",
-        "leagues": [
-            {
-                "league_id": "league_123",
-                "name": "Championship League",
-                "platform": "sleeper",
-                "sport": "nfl",
-                "season": "2025",
-                "total_teams": 12,
-                "scoring_type": "ppr",
-                "status": "active"
-            }
-        ],
-        "message": "Mock fantasy leagues - fantasy service unavailable"
-    }
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+        result = await fantasy_connection_service.get_user_leagues(current_user["user_id"])
+        return result
+    except Exception as e:
+        logger.error(f"Error getting fantasy leagues for user {current_user['user_id']}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get fantasy leagues")
 
 @app.options("/api/fantasy/connect")
 async def options_fantasy_connect():
@@ -1051,30 +1018,20 @@ async def options_fantasy_connect():
 @app.post("/api/fantasy/connect")
 async def connect_fantasy_platform(connect_request: FantasyConnectRequest, current_user: dict = Depends(get_current_user)):
     """Connect to a fantasy platform (Sleeper, ESPN, etc.)"""
-    if is_service_available("fantasy_pipeline"):
-        try:
-            fantasy_service = get_service("fantasy_pipeline")
-            result = await fantasy_service.connect_platform(
-                user_id=current_user["user_id"],
-                platform=connect_request.platform,
-                credentials=connect_request.credentials
-            )
-            return {"status": "success", "connection": result}
-        except Exception as e:
-            logger.error(f"Error connecting to {connect_request.platform}: {e}")
-            raise HTTPException(status_code=500, detail=f"Failed to connect to {connect_request.platform}")
-    
-    # Mock connection response
-    return {
-        "status": "success",
-        "connection": {
-            "platform": connect_request.platform,
-            "status": "connected",
-            "user_id": f"{connect_request.platform}_user_456",
-            "connected_at": datetime.now(timezone.utc).isoformat()
-        },
-        "message": f"Mock connection to {connect_request.platform} - fantasy service unavailable"
-    }
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+        result = await fantasy_connection_service.connect_platform(
+            user_id=current_user["user_id"],
+            platform=connect_request.platform,
+            credentials=connect_request.credentials
+        )
+        return result
+    except ValueError as e:
+        logger.error(f"Validation error connecting to {connect_request.platform}: {e}")
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error connecting to {connect_request.platform}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to connect to {connect_request.platform}: {str(e)}")
 
 @app.options("/api/fantasy/roster/{league_id}")
 async def options_fantasy_roster():
@@ -1151,6 +1108,345 @@ async def get_fantasy_projections():
         ],
         "message": "Mock fantasy projections - fantasy service unavailable"
     }
+
+@app.options("/api/fantasy/disconnect/{fantasy_user_id}")
+async def options_disconnect_fantasy_account():
+    """Handle CORS preflight for fantasy account disconnect"""
+    return {}
+
+@app.delete("/api/fantasy/disconnect/{fantasy_user_id}")
+async def disconnect_fantasy_account(
+    fantasy_user_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    """Disconnect a fantasy sports account"""
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+        result = await fantasy_connection_service.disconnect_platform(
+            user_id=current_user["user_id"],
+            platform_user_id=fantasy_user_id
+        )
+        return result
+    except Exception as e:
+        logger.error(f"Error disconnecting fantasy account {fantasy_user_id} for user {current_user['user_id']}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to disconnect fantasy account")
+
+@app.get("/api/v1/fantasy/standings/{league_id}")
+async def get_fantasy_standings(league_id: str, current_user: dict = Depends(get_current_user)):
+    """Get fantasy league standings"""
+    try:
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+
+        # Get league teams (which includes standings data)
+        teams = await sleeper_service.get_league_teams(league_id)
+
+        # Sort teams by wins, then points for
+        standings = sorted(teams, key=lambda x: (x.get('wins', 0), x.get('points_for', 0)), reverse=True)
+
+        # Add ranking
+        for i, team in enumerate(standings):
+            team['rank'] = i + 1
+
+        return {
+            "status": "success",
+            "standings": standings,
+            "message": f"Retrieved standings for {len(standings)} teams"
+        }
+    except Exception as e:
+        logger.error(f"Error getting standings for league {league_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get fantasy standings")
+
+@app.get("/api/fantasy/players/search")
+async def search_fantasy_players(q: str = None, current_user: dict = Depends(get_current_user)):
+    """Search for fantasy players"""
+    try:
+        if not q or len(q.strip()) < 2:
+            return {
+                "status": "success",
+                "players": [],
+                "message": "Please enter at least 2 characters to search"
+            }
+
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+        sleeper_service = SleeperFantasyService()
+
+        # Get all players and filter by search query
+        all_players = await sleeper_service._get_all_players()
+
+        search_query = q.lower().strip()
+        matching_players = []
+
+        # Search through players for name matches
+        for player_id, player_data in all_players.items():
+            if not player_data:
+                continue
+
+            # Check if search query matches first name, last name, or full name
+            first_name = (player_data.get("first_name") or "").lower()
+            last_name = (player_data.get("last_name") or "").lower()
+            full_name = f"{first_name} {last_name}".strip()
+
+            if (search_query in first_name or
+                search_query in last_name or
+                search_query in full_name):
+
+                # Format player data for frontend
+                formatted_player = {
+                    "player_id": player_id,
+                    "name": full_name.title() if full_name else player_data.get("full_name", "Unknown"),
+                    "first_name": player_data.get("first_name", ""),
+                    "last_name": player_data.get("last_name", ""),
+                    "position": player_data.get("position", "N/A"),
+                    "team": player_data.get("team", "N/A"),
+                    "age": player_data.get("age"),
+                    "years_exp": player_data.get("years_exp"),
+                    "fantasy_positions": player_data.get("fantasy_positions", []),
+                    "status": player_data.get("status", ""),
+                    "injury_status": player_data.get("injury_status")
+                }
+                matching_players.append(formatted_player)
+
+        # Sort by relevance (exact matches first, then partial matches)
+        matching_players.sort(key=lambda x: (
+            search_query != x["name"].lower(),  # Exact matches first
+            x["name"].lower().find(search_query)  # Then by position in name
+        ))
+
+        # Limit to top 50 results for performance
+        matching_players = matching_players[:50]
+
+        return {
+            "status": "success",
+            "players": matching_players,
+            "message": f"Found {len(matching_players)} players matching '{q}'"
+        }
+
+    except Exception as e:
+        logger.error(f"Error searching players with query '{q}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to search fantasy players")
+
+@app.get("/api/fantasy/recommendations/start-sit/{week}")
+async def get_start_sit_recommendations(week: int, current_user: dict = Depends(get_current_user)):
+    """Get start/sit recommendations for a given week"""
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+
+        # Get user's connected leagues
+        user_leagues = await fantasy_connection_service.get_user_leagues(current_user["user_id"])
+
+        if not user_leagues.get("leagues"):
+            return {
+                "status": "success",
+                "recommendations": [],
+                "message": "No connected fantasy leagues found"
+            }
+
+        recommendations = []
+
+        # Process each league
+        for league in user_leagues["leagues"][:3]:  # Limit to first 3 leagues for performance
+            try:
+                league_id = league.get("league_id") or league.get("id")
+                if not league_id:
+                    continue
+
+                # Get available players for waiver considerations
+                trending_players = await sleeper_service.get_trending_players("add")
+
+                # Create start/sit recommendations based on trending players
+                for i, player in enumerate(trending_players[:5]):  # Top 5 trending players
+                    trend_count = player.get("trend_count", 0)
+                    # Use trend count to determine recommendation strength
+                    confidence_score = min(90, max(50, 50 + (trend_count / 5000)))
+                    is_start = trend_count > 40000  # High trend count = START recommendation
+
+                    recommendation = {
+                        "player_id": player.get("player_id"),
+                        "player_name": player.get("name", player.get("full_name", "Unknown Player")),
+                        "position": player.get("position", "N/A"),
+                        "team": player.get("team", "N/A"),
+                        "recommendation": "START" if is_start else "SIT",
+                        "confidence": round(confidence_score),
+                        "projected_points": round(10.0 + (trend_count / 10000), 1),  # Based on trending activity
+                        "rank_in_position": i + 1,
+                        "total_in_position": len([p for p in trending_players if p.get("position") == player.get("position", "N/A")]),
+                        "reason": f"Trending {player.get('trend_type', 'addition')} with {trend_count:,} adds/drops",
+                        "league_context": {
+                            "league_id": league_id,
+                            "league_name": league.get("name", "Unknown League")
+                        }
+                    }
+                    recommendations.append(recommendation)
+
+            except Exception as league_error:
+                logger.warning(f"Failed to get recommendations for league {league.get('league_id')}: {league_error}")
+                continue
+
+        return {
+            "status": "success",
+            "recommendations": recommendations,
+            "message": f"Generated {len(recommendations)} start/sit recommendations for week {week}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting start/sit recommendations for week {week}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get start/sit recommendations")
+
+@app.get("/api/fantasy/recommendations/waiver-wire/{week}")
+async def get_waiver_wire_recommendations(week: int, current_user: dict = Depends(get_current_user)):
+    """Get waiver wire recommendations for a given week"""
+    try:
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+
+        # Get trending players being added
+        trending_adds = await sleeper_service.get_trending_players("add")
+
+        # Get trending players being dropped for additional context
+        trending_drops = await sleeper_service.get_trending_players("drop")
+
+        # Format recommendations with both adds and drops
+        recommendations = []
+
+        # Add top trending additions
+        for player in trending_adds[:10]:  # Top 10 trending adds
+            trend_count = player.get("trend_count", 0)
+            # Calculate priority score based on trend count (normalize to 0-10 scale)
+            priority_score = min(10.0, max(1.0, trend_count / 10000))
+            is_high_priority = trend_count > 50000
+            faab_percentage = min(20, max(3, int(trend_count / 10000)))
+
+            recommendations.append({
+                **player,
+                "recommendation_type": "add",
+                "priority": "high" if is_high_priority else "medium",
+                "priority_score": round(priority_score, 1),
+                "trend_count": trend_count,
+                "waiver_suggestion": {
+                    "suggestion_type": "FAAB",
+                    "faab_percentage": faab_percentage,
+                    "claim_advice": f"Top waiver priority" if is_high_priority else "Medium priority"
+                },
+                "suggested_fab_percentage": faab_percentage
+            })
+
+        # Add context about trending drops
+        for player in trending_drops[:5]:  # Top 5 trending drops
+            recommendations.append({
+                **player,
+                "recommendation_type": "drop",
+                "priority": "low",
+                "priority_score": 1.0,
+                "trend_count": player.get("trend_count", 0),
+                "waiver_suggestion": {
+                    "suggestion_type": "DROP",
+                    "claim_advice": "Consider dropping"
+                },
+                "suggested_fab_percentage": 0
+            })
+
+        return {
+            "status": "success",
+            "recommendations": recommendations,
+            "message": f"Retrieved {len(recommendations)} waiver wire recommendations for week {week}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting waiver wire recommendations for week {week}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get waiver wire recommendations")
+
+@app.get("/api/fantasy/leagues/{league_id}/rules")
+async def get_league_rules(league_id: str, current_user: dict = Depends(get_current_user)):
+    """Get fantasy league rules and settings"""
+    try:
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+
+        # Get detailed league information
+        league_details = await sleeper_service.get_league_details(league_id)
+
+        # Get the raw scoring settings from Sleeper
+        raw_scoring = league_details.get("scoring_settings", {})
+
+        # Structure the scoring settings to match frontend expectations
+        structured_scoring = {
+            "passing": {
+                "touchdowns": raw_scoring.get("pass_td", 6),
+                "yards_per_point": 1.0 / raw_scoring.get("pass_yd", 25) if raw_scoring.get("pass_yd", 0) > 0 else 0,
+                "interceptions": raw_scoring.get("pass_int", -2)
+            },
+            "rushing": {
+                "touchdowns": raw_scoring.get("rush_td", 6),
+                "yards_per_point": 1.0 / raw_scoring.get("rush_yd", 10) if raw_scoring.get("rush_yd", 0) > 0 else 0,
+                "fumbles": raw_scoring.get("fum_lost", -2)
+            },
+            "receiving": {
+                "touchdowns": raw_scoring.get("rec_td", 6),
+                "yards_per_point": 1.0 / raw_scoring.get("rec_yd", 10) if raw_scoring.get("rec_yd", 0) > 0 else 0,
+                "receptions": raw_scoring.get("rec", 1),
+                "fumbles": raw_scoring.get("fum_lost", -2)
+            },
+            "kicking": {
+                "field_goals": raw_scoring.get("fgm", 3),
+                "extra_points": raw_scoring.get("xpm", 1),
+                "field_goal_misses": raw_scoring.get("fgmiss", 0)
+            },
+            "defense": {
+                "sacks": raw_scoring.get("sack", 1),
+                "interceptions": raw_scoring.get("def_int", 2),
+                "fumble_recoveries": raw_scoring.get("fum_rec", 2),
+                "touchdowns": raw_scoring.get("def_td", 6)
+            },
+            "special_scoring": []  # Add empty special scoring to prevent frontend error
+        }
+
+        # Extract rules and settings from league details
+        rules = {
+            "league_name": league_details.get("name", "Unknown League"),
+            "total_rosters": league_details.get("total_rosters", 0),
+            "scoring_type": league_details.get("scoring_type", "unknown"),
+            "roster_positions": league_details.get("roster_positions", []),
+            "scoring_settings": structured_scoring,
+            "waiver_settings": league_details.get("waiver_settings", {}),
+            "playoff_settings": {
+                "playoff_week_start": league_details.get("playoff_week_start"),
+                "playoff_teams": league_details.get("playoff_teams"),
+                "playoff_rounds": league_details.get("playoff_rounds")
+            },
+            "draft_settings": {
+                "draft_type": league_details.get("draft_type"),
+                "draft_order": league_details.get("draft_order"),
+                "draft_rounds": league_details.get("draft_rounds")
+            },
+            "season": league_details.get("season"),
+            "status": league_details.get("status")
+        }
+
+        return {
+            "status": "success",
+            "rules": rules,
+            "message": f"Retrieved rules for league {league_details.get('name', league_id)}"
+        }
+    except Exception as e:
+        logger.error(f"Error getting rules for league {league_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get league rules")
+
+@app.delete("/api/fantasy/leagues/{league_id}")
+async def delete_fantasy_league(league_id: str, current_user: dict = Depends(get_current_user)):
+    """Delete/leave a fantasy league"""
+    try:
+        return {
+            "status": "success",
+            "message": "Fantasy league deletion endpoint - implementation in progress"
+        }
+    except Exception as e:
+        logger.error(f"Error deleting league {league_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete fantasy league")
 
 # Odds and Markets API Endpoints
 @app.options("/api/odds/americanfootball_nfl")
