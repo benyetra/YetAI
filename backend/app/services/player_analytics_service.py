@@ -3,7 +3,7 @@ Player Analytics Service - Advanced player usage and performance analytics
 """
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, func, desc
+from sqlalchemy import and_, func, desc, text
 from datetime import datetime, timedelta
 import statistics
 from app.models.fantasy_models import (
@@ -17,29 +17,61 @@ class PlayerAnalyticsService:
         self.db = db
         
     async def get_player_analytics(
-        self, 
-        player_id: int, 
+        self,
+        player_id: int,
         weeks: Optional[List[int]] = None,
-        season: int = 2025
+        season: int = 2024
     ) -> List[Dict]:
         """Get analytics data for a specific player"""
         try:
-            # First check if the player exists
-            player = self.db.query(FantasyPlayer).filter(FantasyPlayer.id == player_id).first()
-            if not player:
-                return []
-            
-            query = self.db.query(PlayerAnalytics).filter(
-                PlayerAnalytics.player_id == player_id,
-                PlayerAnalytics.season == season
-            )
-            
+            print(f"DEBUG: Querying PlayerAnalytics for player_id={player_id}, season={season}")
+
+            # Use raw SQL to bypass SQLAlchemy type processing issues
+            sql_query = """
+                SELECT
+                    week, season, ppr_points, snap_percentage, target_share,
+                    red_zone_share, points_per_snap, points_per_target,
+                    boom_rate, bust_rate, floor_score, ceiling_score,
+                    opponent, injury_designation, game_script
+                FROM player_analytics
+                WHERE player_id = :player_id AND season = :season
+            """
+
+            params = {"player_id": player_id, "season": season}
+
             if weeks:
-                query = query.filter(PlayerAnalytics.week.in_(weeks))
-                
-            analytics = query.order_by(PlayerAnalytics.week).all()
-            
-            return [self._format_analytics_data(analytic) for analytic in analytics]
+                placeholders = ",".join([f":week_{i}" for i in range(len(weeks))])
+                sql_query += f" AND week IN ({placeholders})"
+                for i, week in enumerate(weeks):
+                    params[f"week_{i}"] = week
+
+            sql_query += " ORDER BY week"
+
+            result = self.db.execute(text(sql_query), params)
+            rows = result.fetchall()
+            print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}")
+
+            analytics = []
+            for row in rows:
+                analytics.append({
+                    'week': row[0],
+                    'season': row[1],
+                    'ppr_points': row[2],
+                    'snap_percentage': row[3],
+                    'target_share': row[4],
+                    'red_zone_share': row[5],
+                    'points_per_snap': row[6],
+                    'points_per_target': row[7],
+                    'boom_rate': row[8],
+                    'bust_rate': row[9],
+                    'floor_score': row[10],
+                    'ceiling_score': row[11],
+                    'opponent': row[12],
+                    'injury_designation': row[13],
+                    'game_script': row[14]
+                })
+
+            return analytics
         except Exception as e:
             # For debugging - return empty list instead of crashing
             print(f"Error in get_player_analytics: {str(e)}")

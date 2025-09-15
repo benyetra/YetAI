@@ -435,9 +435,9 @@ class CompetitorAnalysis(Base):
 class PlayerAnalytics(Base):
     """Advanced player usage and performance analytics"""
     __tablename__ = "player_analytics"
-    
+
     id = Column(Integer, primary_key=True, index=True)
-    player_id = Column(Integer, ForeignKey("fantasy_players.id"), nullable=False)
+    player_id = Column(Integer, nullable=False)
     
     # Time period
     week = Column(Integer, nullable=False)
@@ -518,11 +518,8 @@ class PlayerAnalytics(Base):
     injury_designation = Column(String(20))  # Healthy, Questionable, Doubtful, Out
     snaps_missed_injury = Column(Integer, default=0)
     games_missed_season = Column(Integer, default=0)
-    
+
     created_at = Column(DateTime, default=datetime.utcnow)
-    
-    # Relationships
-    player = relationship("FantasyPlayer")
 
 class PlayerTrends(Base):
     """Track player performance trends over time"""

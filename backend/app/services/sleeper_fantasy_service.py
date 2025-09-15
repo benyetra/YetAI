@@ -201,6 +201,51 @@ class SleeperFantasyService(FantasyPlatformInterface):
         # For now, return empty - this method would be used differently in practice
         logger.warning("get_team_roster called without league context - not fully supported")
         return []
+
+    async def get_league_standings(self, league_id: str) -> List[Dict[str, Any]]:
+        """Get league standings (team rankings) for a league"""
+        try:
+            league_details = await self.get_league_details(league_id)
+            teams = league_details.get('teams', [])
+
+            # Sort teams by wins (descending), then by points_for (descending)
+            standings = sorted(teams, key=lambda x: (-x['wins'], -x['points_for']))
+
+            # Add rank to each team
+            for i, team in enumerate(standings):
+                team['rank'] = i + 1
+
+            logger.info(f"Generated standings for league {league_id}: {len(standings)} teams")
+            return standings
+
+        except Exception as e:
+            logger.error(f"Failed to get league standings for {league_id}: {str(e)}")
+            return []
+
+    async def get_roster_by_owner(self, league_id: str, owner_id: str) -> List[str]:
+        """Get roster player IDs for a specific owner in a league"""
+        try:
+            league_details = await self.get_league_details(league_id)
+            teams = league_details.get('teams', [])
+
+            # Find the team belonging to this owner
+            user_team = None
+            for team in teams:
+                if team.get('owner_id') == owner_id:
+                    user_team = team
+                    break
+
+            if user_team:
+                roster = user_team.get('roster', [])
+                logger.info(f"Found roster for owner {owner_id} in league {league_id}: {len(roster)} players")
+                return roster
+            else:
+                logger.warning(f"No team found for owner {owner_id} in league {league_id}")
+                return []
+
+        except Exception as e:
+            logger.error(f"Failed to get roster for owner {owner_id} in league {league_id}: {str(e)}")
+            return []
     
     async def get_league_matchups(self, league_id: str, week: int) -> List[Dict[str, Any]]:
         """Get matchups for specific week"""

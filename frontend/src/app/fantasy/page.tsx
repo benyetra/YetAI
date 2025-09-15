@@ -1322,7 +1322,7 @@ export default function FantasyPage() {
                           <div className="flex items-center space-x-3">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold">{rec.player_name}</span>
+                                <span className="font-semibold">{rec.name}</span>
                                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
                                   {rec.position}
                                 </span>
