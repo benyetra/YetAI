@@ -761,7 +761,9 @@ export const fantasyAPI = {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
         if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
+          // Map 'query' to 'q' for backend compatibility
+          const paramKey = key === 'query' ? 'q' : key;
+          params.append(paramKey, value.toString());
         }
       });
       return await apiClient.get(`/api/fantasy/players/search?${params.toString()}`, authToken);
