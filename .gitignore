@@ -72,4 +72,4 @@ coverage/
 *.lcov
 
 # nyc test coverage
-.nyc_output
+.nyc_output.env
