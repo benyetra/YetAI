@@ -1163,9 +1163,7 @@ async def get_fantasy_standings(league_id: str, current_user: dict = Depends(get
 async def search_fantasy_players(q: str = None, current_user: dict = Depends(get_current_user)):
     """Search for fantasy players"""
     try:
-        logger.info(f"Search request received with query: '{q}' (type: {type(q)})")
         if not q or len(q.strip()) < 2:
-            logger.info(f"Query too short or empty: '{q}'")
             return {
                 "status": "success",
                 "players": [],
@@ -1177,7 +1175,6 @@ async def search_fantasy_players(q: str = None, current_user: dict = Depends(get
 
         # Get all players and filter by search query
         all_players = await sleeper_service._get_all_players()
-        logger.info(f"Retrieved {len(all_players) if all_players else 0} total players from service")
 
         search_query = q.lower().strip()
         matching_players = []
@@ -1220,7 +1217,6 @@ async def search_fantasy_players(q: str = None, current_user: dict = Depends(get
 
         # Limit to top 50 results for performance
         matching_players = matching_players[:50]
-        logger.info(f"Found {len(matching_players)} players matching '{search_query}'")
 
         return {
             "status": "success",
