@@ -1939,7 +1939,7 @@ export default function FantasyPage() {
                           </div>
 
                           {/* Trending Status */}
-                          {player.trending_status !== 'normal' && (
+                          {player.trending_status && player.trending_status !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
                               player.trending_status === 'hot'
                                 ? 'bg-orange-100 text-orange-700'
@@ -2010,13 +2010,13 @@ export default function FantasyPage() {
                           }`}>
                             {player.injury_status}
                           </div>
-                          {player.trending?.type !== 'normal' && (
+                          {player.trending?.type && player.trending.type !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
-                              player.trending?.type === 'hot'
+                              player.trending.type === 'hot'
                                 ? 'bg-orange-500 bg-opacity-20 text-orange-100'
                                 : 'bg-blue-300 bg-opacity-20 text-blue-100'
                             }`}>
-                              {player.trending?.type === 'hot' ? '🔥 Hot' : '❄️ Cold'}
+                              {player.trending.type === 'hot' ? '🔥 Hot' : '❄️ Cold'}
                             </div>
                           )}
                         </div>
