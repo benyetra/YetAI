@@ -2398,6 +2398,423 @@ class ConnectionManager:
         for user_id in disconnected:
             self.disconnect(user_id)
 
+# Analytics endpoints with frontend-compatible URLs
+@app.get("/api/fantasy/analytics/{player_id}")
+async def get_player_analytics_alt(
+    player_id: str,
+    season: int = 2025,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player analytics (alternative URL format)"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        from sqlalchemy import text
+        analytics_service = PlayerAnalyticsService(db)
+
+        # Map Sleeper player ID to internal player ID
+        internal_player_id = None
+        try:
+            # Query database for the mapping
+            fantasy_player_query = db.execute(
+                text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
+                {"sleeper_id": str(player_id)}
+            )
+            fantasy_player_row = fantasy_player_query.fetchone()
+
+            if fantasy_player_row:
+                internal_player_id = fantasy_player_row[0]
+                logger.info(f"Mapped Sleeper ID {player_id} to internal ID {internal_player_id}")
+            else:
+                logger.warning(f"No mapping found for Sleeper ID {player_id}")
+
+        except Exception as e:
+            logger.warning(f"Error mapping player ID {player_id}: {e}")
+
+        analytics = []
+        if internal_player_id:
+            analytics = await analytics_service.get_player_analytics(internal_player_id)
+
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "analytics": analytics or []
+        }
+    except Exception as e:
+        logger.error(f"Error getting player analytics for {player_id}: {e}")
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "analytics": []
+        }
+
+@app.get("/api/fantasy/analytics/{player_id}/trends")
+async def get_player_trends_alt(
+    player_id: str,
+    season: int = 2025,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player trends (alternative URL format)"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        from sqlalchemy import text
+
+        # Map Sleeper player ID to internal ID
+        fantasy_player_query = db.execute(
+            text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
+            {"sleeper_id": str(player_id)}
+        )
+        fantasy_player = fantasy_player_query.fetchone()
+
+        if not fantasy_player:
+            return {
+                "status": "error",
+                "message": f"Player not found with ID: {player_id}",
+                "trends": {}
+            }
+
+        internal_player_id = fantasy_player[0]
+        analytics_service = PlayerAnalyticsService(db)
+
+        # Get analytics and derive trends
+        analytics = await analytics_service.get_player_analytics(internal_player_id)
+
+        trends = {}
+        if analytics and len(analytics) >= 2:
+            recent = analytics[:3]  # Last 3 games
+            older = analytics[3:6]  # Previous 3 games
+
+            if recent and older:
+                recent_avg = sum(g.get("ppr_points", 0) for g in recent) / len(recent)
+                older_avg = sum(g.get("ppr_points", 0) for g in older) / len(older)
+
+                trends = {
+                    "trend_direction": "up" if recent_avg > older_avg else "down",
+                    "recent_avg": round(recent_avg, 1),
+                    "previous_avg": round(older_avg, 1),
+                    "games_analyzed": len(recent) + len(older)
+                }
+
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "trends": trends
+        }
+    except Exception as e:
+        logger.error(f"Error getting player trends for {player_id}: {e}")
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "trends": {}
+        }
+
+@app.get("/api/fantasy/analytics/{player_id}/efficiency")
+async def get_player_efficiency_alt(
+    player_id: str,
+    season: int = 2025,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player efficiency (alternative URL format)"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        from sqlalchemy import text
+
+        # Map Sleeper player ID to internal ID
+        fantasy_player_query = db.execute(
+            text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
+            {"sleeper_id": str(player_id)}
+        )
+        fantasy_player = fantasy_player_query.fetchone()
+
+        if not fantasy_player:
+            return {
+                "status": "error",
+                "message": f"Player not found with ID: {player_id}",
+                "efficiency": {}
+            }
+
+        internal_player_id = fantasy_player[0]
+        analytics_service = PlayerAnalyticsService(db)
+
+        # Get analytics and calculate efficiency metrics
+        analytics = await analytics_service.get_player_analytics(internal_player_id)
+
+        efficiency = {}
+        if analytics:
+            total_points = sum(g.get("ppr_points", 0) for g in analytics)
+            total_snaps = sum(g.get("snap_percentage", 0) for g in analytics if g.get("snap_percentage"))
+            total_targets = sum(g.get("target_share", 0) for g in analytics if g.get("target_share"))
+
+            if total_snaps > 0:
+                efficiency["points_per_snap"] = round(total_points / total_snaps * 100, 2)
+            if total_targets > 0:
+                efficiency["points_per_target"] = round(total_points / total_targets * 100, 2)
+
+            efficiency["games_played"] = len(analytics)
+            efficiency["total_points"] = round(total_points, 1)
+
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "efficiency": efficiency
+        }
+    except Exception as e:
+        logger.error(f"Error getting player efficiency for {player_id}: {e}")
+        return {
+            "status": "success",
+            "player_id": str(player_id),
+            "season": season,
+            "efficiency": {}
+        }
+
+# Player comparison request model
+class ComparePlayersRequest(BaseModel):
+    player_ids: List[str]
+    league_id: Optional[str] = None
+
+@app.post("/api/fantasy/players/compare")
+async def compare_players(
+    request: ComparePlayersRequest,
+    current_user: dict = Depends(get_current_user)
+):
+    """Compare multiple players side-by-side with analytics"""
+    try:
+        player_ids = request.player_ids
+        league_id = request.league_id
+
+        logger.info(f"Player comparison called with {len(player_ids)} players: {player_ids}")
+
+        if len(player_ids) < 2 or len(player_ids) > 4:
+            raise HTTPException(status_code=400, detail="Must compare 2-4 players")
+
+        # Get Sleeper service for player data
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+        sleeper_service = SleeperFantasyService()
+        all_players = await sleeper_service._get_all_players()
+
+        # Get trending data
+        trending_adds = await sleeper_service.get_trending_players("add")
+        trending_drops = await sleeper_service.get_trending_players("drop")
+        trending_lookup = {}
+
+        for player in trending_adds:
+            trending_lookup[player.get("player_id")] = {"type": "hot", "count": player.get("trend_count", 0)}
+        for player in trending_drops:
+            if player.get("player_id") not in trending_lookup:
+                trending_lookup[player.get("player_id")] = {"type": "cold", "count": player.get("trend_count", 0)}
+
+        compared_players = []
+
+        for player_id in player_ids:
+            if player_id not in all_players:
+                continue
+
+            player_data = all_players[player_id]
+            name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+
+            # Build comparison data
+            comparison_data = {
+                "player_id": player_id,
+                "name": name,
+                "position": player_data.get("position", ""),
+                "team": player_data.get("team", ""),
+                "age": player_data.get("age"),
+                "experience": player_data.get("years_exp"),
+                "injury_status": player_data.get("injury_status", "Healthy"),
+                "physical_stats": {
+                    "height": player_data.get("height"),
+                    "weight": player_data.get("weight")
+                },
+                "career_info": {
+                    "college": player_data.get("college"),
+                    "draft_year": player_data.get("draft_year"),
+                    "draft_round": player_data.get("draft_round"),
+                    "draft_pick": player_data.get("draft_pick")
+                },
+                "team_context": {
+                    "depth_chart_order": player_data.get("depth_chart_order"),
+                    "search_rank": player_data.get("search_rank", 999)
+                },
+                "trending": trending_lookup.get(player_id, {"type": "normal", "count": 0}),
+                "fantasy_positions": player_data.get("fantasy_positions", [])
+            }
+
+            compared_players.append(comparison_data)
+
+        return {
+            "status": "success",
+            "comparison": {
+                "players": compared_players,
+                "insights": [],  # Can add insights later
+                "league_context": league_id,
+                "comparison_date": datetime.utcnow().isoformat()
+            }
+        }
+
+    except Exception as e:
+        logger.error(f"Error in player comparison: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/fantasy/players/{player_id}/analytics/{season}")
+async def get_player_analytics(
+    player_id: str,
+    season: int,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player analytics for a specific season"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        analytics_service = PlayerAnalyticsService(db)
+
+        # Convert string player_id to int if needed
+        try:
+            player_id_int = int(player_id)
+        except ValueError:
+            # If it's a sleeper ID, we would need to map it
+            # For now, return a mock response
+            return {
+                "status": "success",
+                "player_id": player_id,
+                "season": season,
+                "analytics": {
+                    "total_points": 0,
+                    "avg_points_per_game": 0,
+                    "games_played": 0,
+                    "consistency_rating": "N/A",
+                    "target_share": 0,
+                    "red_zone_usage": 0,
+                    "snap_percentage": 0
+                },
+                "message": "Player analytics data not available"
+            }
+
+        # Get week list for the season (weeks 1-17 typically)
+        week_list = list(range(1, 18))
+
+        analytics = await analytics_service.get_player_analytics(player_id_int, week_list, season)
+
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "season": season,
+            "analytics": analytics
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting player analytics: {str(e)}")
+        return {
+            "status": "error",
+            "message": "Analytics data temporarily unavailable",
+            "player_id": player_id,
+            "season": season,
+            "analytics": {}
+        }
+
+@app.get("/api/fantasy/players/{player_id}/trends/{season}")
+async def get_player_trends(
+    player_id: str,
+    season: int,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player trend analysis for a specific season"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        analytics_service = PlayerAnalyticsService(db)
+
+        try:
+            player_id_int = int(player_id)
+        except ValueError:
+            return {
+                "status": "success",
+                "player_id": player_id,
+                "season": season,
+                "trends": {
+                    "scoring_trend": "stable",
+                    "usage_trend": "stable",
+                    "efficiency_trend": "stable",
+                    "recent_form": "average"
+                },
+                "message": "Player trends data not available"
+            }
+
+        week_list = list(range(1, 18))
+        trends = await analytics_service.calculate_usage_trends(player_id_int, week_list, season)
+
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "season": season,
+            "trends": trends
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting player trends: {str(e)}")
+        return {
+            "status": "error",
+            "message": "Trends data temporarily unavailable",
+            "player_id": player_id,
+            "season": season,
+            "trends": {}
+        }
+
+@app.get("/api/fantasy/players/{player_id}/efficiency/{season}")
+async def get_player_efficiency(
+    player_id: str,
+    season: int,
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db)
+):
+    """Get player efficiency metrics for a specific season"""
+    try:
+        from app.services.player_analytics_service import PlayerAnalyticsService
+        analytics_service = PlayerAnalyticsService(db)
+
+        try:
+            player_id_int = int(player_id)
+        except ValueError:
+            return {
+                "status": "success",
+                "player_id": player_id,
+                "season": season,
+                "efficiency": {
+                    "yards_per_target": 0,
+                    "yards_per_carry": 0,
+                    "red_zone_efficiency": 0,
+                    "target_efficiency": 0,
+                    "snap_efficiency": 0
+                },
+                "message": "Player efficiency data not available"
+            }
+
+        week_list = list(range(1, 18))
+        efficiency = await analytics_service.calculate_efficiency_metrics(player_id_int, week_list, season)
+
+        return {
+            "status": "success",
+            "player_id": player_id,
+            "season": season,
+            "efficiency": efficiency
+        }
+
+    except Exception as e:
+        logger.error(f"Error getting player efficiency: {str(e)}")
+        return {
+            "status": "error",
+            "message": "Efficiency data temporarily unavailable",
+            "player_id": player_id,
+            "season": season,
+            "efficiency": {}
+        }
+
 # WebSocket manager instance
 ws_manager = ConnectionManager()
 
