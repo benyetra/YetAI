@@ -1424,6 +1424,7 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                             projected_points = total_points / len(recent_games) if recent_games else 0.0
 
                             # Calculate confidence based on data quality and consistency
+                            position = player.get("position", "")
                             confidence = calculate_confidence(game_points, len(analytics), position)
                             logger.info(f"Player {player.get('name')} analytics: {len(analytics)} games, projected: {projected_points:.1f}, confidence: {confidence}%")
                         else:
