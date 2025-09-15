@@ -1950,7 +1950,7 @@ export default function FantasyPage() {
                           )}
 
                           {/* League Context */}
-                          {player.league_metrics.position_value && (
+                          {player.league_metrics?.position_value && (
                             <div className="text-xs text-gray-500">
                               {player.league_metrics.position_value}
                             </div>
@@ -2012,11 +2012,11 @@ export default function FantasyPage() {
                           </div>
                           {player.trending?.type !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
-                              player.trending.type === 'hot'
+                              player.trending?.type === 'hot'
                                 ? 'bg-orange-500 bg-opacity-20 text-orange-100'
                                 : 'bg-blue-300 bg-opacity-20 text-blue-100'
                             }`}>
-                              {player.trending.type === 'hot' ? '🔥 Hot' : '❄️ Cold'}
+                              {player.trending?.type === 'hot' ? '🔥 Hot' : '❄️ Cold'}
                             </div>
                           )}
                         </div>
