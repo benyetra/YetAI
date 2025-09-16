@@ -4468,6 +4468,104 @@ async def debug_analytics_status(db=Depends(get_db)):
             "debug_timestamp": datetime.utcnow().isoformat()
         }
 
+
+@app.post("/api/admin/migrate-data")
+async def migrate_production_data(db=Depends(get_db)):
+    """Migration endpoint to populate production database with fantasy players and analytics data"""
+    from sqlalchemy import text
+    from datetime import datetime
+    import os
+
+    try:
+        # Check current state
+        analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+        players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+
+        migration_log = []
+        migration_log.append(f"Starting migration - Players: {players_count}, Analytics: {analytics_count}")
+
+        # Fantasy players data (INSERT statements)
+        fantasy_players_inserts = [
+            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team, age, bye_week, injury_status, injury_designation, depth_chart_position, target_share, snap_count_percentage, created_at) VALUES (1, '4866', 'Saquon Barkley', 'RB', 'PHI', 27, 5, 'healthy', NULL, 'starter', 0.0, 0.0, '2024-09-16 17:29:23.892271');",
+            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team, age, bye_week, injury_status, injury_designation, depth_chart_position, target_share, snap_count_percentage, created_at) VALUES (2, '7588', 'Justin Jefferson', 'WR', 'MIN', 25, 6, 'healthy', NULL, 'starter', 0.0, 0.0, '2024-09-16 17:29:23.892271');"
+        ]
+
+        # Player analytics sample data
+        analytics_inserts = [
+            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (1, 4866, 1, 2024, 18.5, 65.2, 8.5, 15.0, 0.28, 1.85, 35.0, 10.0, 12.0, 25.0, 'GB', NULL, 2.1);",
+            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (2, 4866, 2, 2024, 22.3, 68.1, 10.2, 18.5, 0.33, 2.18, 40.0, 8.0, 15.0, 28.0, 'ATL', NULL, 1.8);",
+            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (3, 7588, 1, 2024, 24.7, 92.3, 28.5, 12.0, 0.27, 1.73, 60.0, 5.0, 18.0, 32.0, 'NYG', NULL, -1.2);",
+            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (4, 7588, 2, 2024, 19.4, 89.7, 25.2, 8.5, 0.22, 1.55, 45.0, 8.0, 16.0, 28.0, 'SF', NULL, -2.8);"
+        ]
+
+        if players_count == 0:
+            migration_log.append("Inserting fantasy players data...")
+            for insert_sql in fantasy_players_inserts:
+                db.execute(text(insert_sql))
+            db.commit()
+
+            # Check new count
+            new_players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+            migration_log.append(f"Fantasy players inserted: {new_players_count}")
+        else:
+            migration_log.append("Fantasy players already exist, skipping...")
+
+        if analytics_count == 0:
+            migration_log.append("Inserting player analytics data...")
+            for insert_sql in analytics_inserts:
+                db.execute(text(insert_sql))
+            db.commit()
+
+            # Check new count
+            new_analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+            migration_log.append(f"Player analytics inserted: {new_analytics_count}")
+        else:
+            migration_log.append("Player analytics already exist, skipping...")
+
+        # Final verification
+        final_players = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+        final_analytics = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+
+        migration_log.append(f"Migration complete - Players: {final_players}, Analytics: {final_analytics}")
+
+        # Test query to verify data linkage
+        test_query = """
+            SELECT fp.name, fp.position, fp.team, pa.week, pa.season, pa.ppr_points
+            FROM fantasy_players fp
+            JOIN player_analytics pa ON fp.platform_player_id::integer = pa.player_id
+            ORDER BY fp.name, pa.week
+            LIMIT 10
+        """
+        test_results = db.execute(text(test_query)).fetchall()
+        sample_data = []
+        for row in test_results:
+            sample_data.append({
+                "name": row[0],
+                "position": row[1],
+                "team": row[2],
+                "week": row[3],
+                "season": row[4],
+                "ppr_points": row[5]
+            })
+
+        return {
+            "success": True,
+            "migration_log": migration_log,
+            "final_counts": {
+                "fantasy_players": final_players,
+                "player_analytics": final_analytics
+            },
+            "sample_data": sample_data,
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "timestamp": datetime.utcnow().isoformat()
+        }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
