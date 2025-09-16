@@ -661,6 +661,41 @@ class BetServiceDB:
             logger.error(f"Error cancelling bet: {e}")
             return {"success": False, "error": str(e)}
     
+    async def get_user_bets(self, user_id: int) -> List[Dict]:
+        """Get all user bets (combined single bets and parlays)"""
+        try:
+            db = SessionLocal()
+            try:
+                # Get single bets (not parlay legs)
+                single_bets = db.query(Bet).filter(
+                    and_(
+                        Bet.user_id == user_id,
+                        Bet.parlay_id.is_(None)
+                    )
+                ).order_by(desc(Bet.placed_at)).all()
+
+                # Get parlay bets
+                parlay_bets = db.query(ParlayBet).filter(
+                    ParlayBet.user_id == user_id
+                ).order_by(desc(ParlayBet.placed_at)).all()
+
+                # Convert to response format
+                bet_list = [self._bet_to_dict(bet) for bet in single_bets]
+                parlay_list = [self._parlay_to_dict(parlay, db) for parlay in parlay_bets]
+
+                # Combine and sort by placed_at
+                all_bets = bet_list + parlay_list
+                all_bets.sort(key=lambda x: x["placed_at"], reverse=True)
+
+                return all_bets
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error fetching user bets: {e}")
+            return []
+
     async def get_active_live_bets(self, user_id: int) -> List[Dict]:
         """Get user's active live bets (pending bets for live games)"""
         try:
@@ -675,7 +710,7 @@ class BetServiceDB:
                         Bet.parlay_id.is_(None)  # Exclude parlay legs
                     )
                 ).order_by(desc(Bet.placed_at)).all()
-                
+
                 # Also get active parlay bets
                 active_parlays = db.query(ParlayBet).filter(
                     and_(
@@ -683,20 +718,20 @@ class BetServiceDB:
                         ParlayBet.status == BetStatus.PENDING
                     )
                 ).order_by(desc(ParlayBet.placed_at)).all()
-                
+
                 # Convert to response format
                 bet_list = [self._bet_to_dict(bet) for bet in active_bets]
                 parlay_list = [self._parlay_to_dict(parlay, db) for parlay in active_parlays]
-                
+
                 # Combine and sort by placed_at
                 all_active = bet_list + parlay_list
                 all_active.sort(key=lambda x: x["placed_at"], reverse=True)
-                
+
                 return all_active
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error fetching active live bets: {e}")
             return []

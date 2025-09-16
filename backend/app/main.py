@@ -280,11 +280,12 @@ async def options_user_performance():
 
 @app.get("/api/user/performance")
 async def get_user_performance(current_user: dict = Depends(get_current_user)):
-    """Get user performance metrics"""
+    """Get user performance metrics based on real bet data"""
     try:
         performance_service = get_service("performance_tracker")
-        metrics = await performance_service.get_performance_metrics(days=30)
-        return {"status": "success", "metrics": metrics, "user_id": current_user["user_id"]}
+        user_id = current_user["user_id"]
+        metrics = await performance_service.get_performance_metrics(days=30, user_id=user_id)
+        return {"status": "success", "metrics": metrics, "user_id": user_id}
     except Exception as e:
         logger.error(f"Error fetching user performance: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user performance metrics")

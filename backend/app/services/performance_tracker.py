@@ -1,6 +1,6 @@
 """
 Performance Tracker Service
-Tracks prediction accuracy and provides performance analytics
+Tracks prediction accuracy and provides performance analytics based on real bet data
 """
 
 import asyncio
@@ -9,6 +9,7 @@ import random
 from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 import logging
+from app.core.service_loader import get_service
 
 logger = logging.getLogger(__name__)
 
@@ -46,77 +47,122 @@ class PerformanceTracker:
         except Exception as e:
             logger.error(f"Error recording prediction: {e}")
     
-    async def get_performance_metrics(self, days: int = 30) -> Dict[str, Any]:
-        """Get performance metrics for the specified time period"""
+    async def get_performance_metrics(self, days: int = 30, user_id: Optional[int] = None) -> Dict[str, Any]:
+        """Get performance metrics based on real user bet data"""
         try:
-            cutoff_date = datetime.now() - timedelta(days=days)
-            
-            # Filter recent predictions
-            recent_predictions = [
-                p for p in self.predictions_db 
-                if datetime.fromisoformat(p['timestamp']) >= cutoff_date
-            ]
-            
-            # Calculate metrics
-            total_predictions = len(recent_predictions)
-            resolved_predictions = [p for p in recent_predictions if p['status'] == 'resolved']
-            
-            if not resolved_predictions:
-                # Generate mock metrics if no real data
-                return self._generate_mock_metrics(total_predictions)
-            
-            # Calculate accuracy metrics
-            accuracy_scores = [p['accuracy_score'] for p in resolved_predictions if p['accuracy_score'] is not None]
-            avg_accuracy = sum(accuracy_scores) / len(accuracy_scores) if accuracy_scores else 0
-            
-            # By type metrics
-            type_metrics = {}
-            for pred_type in ['fantasy', 'betting', 'game']:
-                type_preds = [p for p in resolved_predictions if p['type'] == pred_type]
-                if type_preds:
-                    type_scores = [p['accuracy_score'] for p in type_preds if p['accuracy_score'] is not None]
-                    type_metrics[pred_type] = {
-                        'count': len(type_preds),
-                        'avg_accuracy': sum(type_scores) / len(type_scores) if type_scores else 0,
-                        'success_rate': len([p for p in type_preds if p['accuracy_score'] >= 70]) / len(type_preds)
+            if not user_id:
+                # Return empty metrics if no user provided
+                return {
+                    'period_days': days,
+                    'total_predictions': 0,
+                    'resolved_predictions': 0,
+                    'pending_predictions': 0,
+                    'overall_accuracy': 0,
+                    'success_rate': 0,
+                    'by_type': {},
+                    'by_confidence': {},
+                    'trends': {
+                        'last_7_days_accuracy': 0,
+                        'improvement_trend': 'stable'
                     }
-            
-            # Confidence calibration
-            high_conf = [p for p in resolved_predictions if p['confidence'] >= 80]
-            med_conf = [p for p in resolved_predictions if 60 <= p['confidence'] < 80]
-            low_conf = [p for p in resolved_predictions if p['confidence'] < 60]
-            
+                }
+
+            # Get bet service to fetch real user data
+            bet_service = get_service("bet_service")
+            if not bet_service:
+                logger.error("Bet service not available")
+                return self._generate_empty_metrics(days)
+
+            # Get user's bet statistics
+            stats_result = await bet_service.get_bet_stats(user_id)
+            if not stats_result.get("success"):
+                logger.error(f"Failed to get bet stats: {stats_result.get('error')}")
+                return self._generate_empty_metrics(days)
+
+            stats = stats_result.get("stats", {})
+
+            # Get user's recent bets for trend analysis
+            all_bets = await bet_service.get_user_bets(user_id)
+            cutoff_date = datetime.now() - timedelta(days=days)
+
+            # Filter recent bets
+            recent_bets = []
+            for bet in all_bets:
+                try:
+                    placed_at = datetime.fromisoformat(bet["placed_at"].replace('Z', '+00:00'))
+                    if placed_at >= cutoff_date:
+                        recent_bets.append(bet)
+                except (ValueError, KeyError):
+                    continue
+
+            # Calculate metrics from real bet data
+            total_bets = len(recent_bets)
+            resolved_bets = [bet for bet in recent_bets if bet["status"] in ["won", "lost"]]
+            pending_bets = [bet for bet in recent_bets if bet["status"] == "pending"]
+            won_bets = [bet for bet in resolved_bets if bet["status"] == "won"]
+
+            # Calculate success rate and accuracy
+            success_rate = len(won_bets) / len(resolved_bets) if resolved_bets else 0
+            overall_accuracy = success_rate * 100  # Convert to percentage
+
+            # Group by bet type
+            type_metrics = {}
+            for bet_type in ["moneyline", "spread", "total", "parlay"]:
+                type_bets = [bet for bet in resolved_bets if bet.get("bet_type") == bet_type]
+                if type_bets:
+                    type_won = [bet for bet in type_bets if bet["status"] == "won"]
+                    type_metrics[bet_type] = {
+                        'count': len(type_bets),
+                        'avg_accuracy': (len(type_won) / len(type_bets)) * 100,
+                        'success_rate': len(type_won) / len(type_bets)
+                    }
+
+            # Calculate trends for last 7 days
+            week_cutoff = datetime.now() - timedelta(days=7)
+            week_bets = []
+            for bet in recent_bets:
+                try:
+                    placed_at = datetime.fromisoformat(bet["placed_at"].replace('Z', '+00:00'))
+                    if placed_at >= week_cutoff:
+                        week_bets.append(bet)
+                except (ValueError, KeyError):
+                    continue
+
+            week_resolved = [bet for bet in week_bets if bet["status"] in ["won", "lost"]]
+            week_won = [bet for bet in week_resolved if bet["status"] == "won"]
+            week_accuracy = (len(week_won) / len(week_resolved) * 100) if week_resolved else overall_accuracy
+
+            # Determine trend
+            if week_accuracy > overall_accuracy + 5:
+                trend = "improving"
+            elif week_accuracy < overall_accuracy - 5:
+                trend = "declining"
+            else:
+                trend = "stable"
+
             return {
                 'period_days': days,
-                'total_predictions': total_predictions,
-                'resolved_predictions': len(resolved_predictions),
-                'pending_predictions': total_predictions - len(resolved_predictions),
-                'overall_accuracy': round(avg_accuracy, 1),
-                'success_rate': round(len([p for p in resolved_predictions if p['accuracy_score'] >= 70]) / len(resolved_predictions), 2) if resolved_predictions else 0,
+                'total_predictions': total_bets,
+                'resolved_predictions': len(resolved_bets),
+                'pending_predictions': len(pending_bets),
+                'overall_accuracy': round(overall_accuracy, 1),
+                'success_rate': round(success_rate, 2),
                 'by_type': type_metrics,
-                'by_confidence': {
-                    'high_confidence': {
-                        'count': len(high_conf),
-                        'avg_accuracy': round(sum(p['accuracy_score'] for p in high_conf) / len(high_conf), 1) if high_conf else 0
-                    },
-                    'medium_confidence': {
-                        'count': len(med_conf),
-                        'avg_accuracy': round(sum(p['accuracy_score'] for p in med_conf) / len(med_conf), 1) if med_conf else 0
-                    },
-                    'low_confidence': {
-                        'count': len(low_conf),
-                        'avg_accuracy': round(sum(p['accuracy_score'] for p in low_conf) / len(low_conf), 1) if low_conf else 0
-                    }
-                },
+                'by_confidence': {},  # Not available from bet data
                 'trends': {
-                    'last_7_days_accuracy': round(avg_accuracy + random.uniform(-5, 5), 1),
-                    'improvement_trend': random.choice(['improving', 'stable', 'declining'])
-                }
+                    'last_7_days_accuracy': round(week_accuracy, 1),
+                    'improvement_trend': trend
+                },
+                # Additional fields for compatibility
+                'total_wagered': stats.get('total_wagered', 0),
+                'total_won': stats.get('total_won', 0),
+                'net_profit': stats.get('net_profit', 0),
+                'win_rate': stats.get('win_rate', 0)
             }
-            
+
         except Exception as e:
             logger.error(f"Error calculating metrics: {e}")
-            return self._generate_mock_metrics(0)
+            return self._generate_empty_metrics(days)
     
     async def get_best_predictions(self, limit: int = 15) -> List[Dict[str, Any]]:
         """Get the most accurate recent predictions"""
@@ -223,45 +269,25 @@ class PerformanceTracker:
         except Exception as e:
             logger.error(f"Error simulating data: {e}")
     
-    def _generate_mock_metrics(self, total_predictions: int) -> Dict[str, Any]:
-        """Generate mock performance metrics for demo"""
+    def _generate_empty_metrics(self, days: int) -> Dict[str, Any]:
+        """Generate empty performance metrics when no user data is available"""
         return {
-            'period_days': 30,
-            'total_predictions': max(total_predictions, 45),
-            'resolved_predictions': 38,
-            'pending_predictions': max(total_predictions - 38, 7),
-            'overall_accuracy': round(random.uniform(72, 85), 1),
-            'success_rate': round(random.uniform(0.65, 0.80), 2),
-            'by_type': {
-                'fantasy': {
-                    'count': 25,
-                    'avg_accuracy': round(random.uniform(75, 83), 1),
-                    'success_rate': round(random.uniform(0.70, 0.85), 2)
-                },
-                'betting': {
-                    'count': 13,
-                    'avg_accuracy': round(random.uniform(68, 78), 1),
-                    'success_rate': round(random.uniform(0.60, 0.75), 2)
-                }
-            },
-            'by_confidence': {
-                'high_confidence': {
-                    'count': 18,
-                    'avg_accuracy': round(random.uniform(82, 90), 1)
-                },
-                'medium_confidence': {
-                    'count': 15,
-                    'avg_accuracy': round(random.uniform(70, 80), 1)
-                },
-                'low_confidence': {
-                    'count': 5,
-                    'avg_accuracy': round(random.uniform(60, 72), 1)
-                }
-            },
+            'period_days': days,
+            'total_predictions': 0,
+            'resolved_predictions': 0,
+            'pending_predictions': 0,
+            'overall_accuracy': 0,
+            'success_rate': 0,
+            'by_type': {},
+            'by_confidence': {},
             'trends': {
-                'last_7_days_accuracy': round(random.uniform(78, 88), 1),
-                'improvement_trend': random.choice(['improving', 'stable'])
-            }
+                'last_7_days_accuracy': 0,
+                'improvement_trend': 'stable'
+            },
+            'total_wagered': 0,
+            'total_won': 0,
+            'net_profit': 0,
+            'win_rate': 0
         }
     
     def _generate_mock_best_predictions(self, limit: int) -> List[Dict[str, Any]]:
