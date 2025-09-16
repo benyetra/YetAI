@@ -4576,6 +4576,14 @@ async def migrate_production_data(db=Depends(get_db)):
             "timestamp": datetime.utcnow().isoformat()
         }
 
+# Include Fantasy Analytics Routes
+try:
+    from app.api.fantasy_analytics import router as analytics_router
+    app.include_router(analytics_router, prefix="/api/v1", tags=["fantasy-analytics"])
+    logger.info("✅ Fantasy analytics routes loaded")
+except ImportError as e:
+    logger.warning(f"⚠️ Fantasy analytics routes not available: {e}")
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
