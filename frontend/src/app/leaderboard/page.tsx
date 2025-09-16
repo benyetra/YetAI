@@ -60,7 +60,7 @@ export default function LeaderboardPage() {
         return;
       }
 
-      const response = await fetch(`http://localhost:8001/api/leaderboard?period=${selectedPeriod}`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/leaderboard?period=${selectedPeriod}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',

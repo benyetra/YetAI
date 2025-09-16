@@ -22,6 +22,9 @@ from app.core.database import get_db
 # Import live betting service
 from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
 
+# Import bet scheduler service
+from app.services.bet_scheduler_service import bet_scheduler
+
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
 from app.models.bet_models import CreateYetAIBetRequest
@@ -1274,6 +1277,83 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
     except Exception as e:
         logger.error(f"Error deleting bets for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete user bets")
+
+# Admin Bet Verification Endpoints
+@app.options("/api/admin/bets/verification/stats")
+async def options_verification_stats():
+    """Handle CORS preflight for verification stats"""
+    return {}
+
+@app.get("/api/admin/bets/verification/stats")
+async def get_verification_stats(admin_user: dict = Depends(require_admin)):
+    """Get bet verification statistics (Admin only)"""
+    try:
+        stats = bet_scheduler.get_stats()
+        return {"status": "success", "stats": stats}
+    except Exception as e:
+        logger.error(f"Error getting verification stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get verification stats")
+
+@app.options("/api/admin/bets/verify")
+async def options_verify_bets():
+    """Handle CORS preflight for verify bets"""
+    return {}
+
+@app.post("/api/admin/bets/verify")
+async def run_verification_now(admin_user: dict = Depends(require_admin)):
+    """Run bet verification now (Admin only)"""
+    try:
+        result = await bet_scheduler.run_verification_now()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"Error running verification: {e}")
+        raise HTTPException(status_code=500, detail="Failed to run verification")
+
+@app.options("/api/admin/bets/verification/config")
+async def options_verification_config():
+    """Handle CORS preflight for verification config"""
+    return {}
+
+@app.post("/api/admin/bets/verification/config")
+async def update_verification_config(config: dict, admin_user: dict = Depends(require_admin)):
+    """Update bet verification configuration (Admin only)"""
+    try:
+        result = bet_scheduler.update_config(config)
+        return {"status": "success", "config": result}
+    except Exception as e:
+        logger.error(f"Error updating verification config: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update verification config")
+
+@app.options("/api/admin/bets/verification/reset-stats")
+async def options_reset_verification_stats():
+    """Handle CORS preflight for reset verification stats"""
+    return {}
+
+@app.post("/api/admin/bets/verification/reset-stats")
+async def reset_verification_stats(admin_user: dict = Depends(require_admin)):
+    """Reset bet verification statistics (Admin only)"""
+    try:
+        result = bet_scheduler.reset_stats()
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"Error resetting verification stats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset verification stats")
+
+@app.options("/api/admin/games/sync")
+async def options_sync_games():
+    """Handle CORS preflight for game sync"""
+    return {}
+
+@app.post("/api/admin/games/sync")
+async def sync_games(admin_user: dict = Depends(require_admin)):
+    """Manually sync game data from Odds API (Admin only)"""
+    try:
+        from app.services.game_sync_service import game_sync_service
+        result = await game_sync_service.sync_game_scores(days_back=3)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"Error syncing games: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync games")
 
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")

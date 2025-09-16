@@ -497,55 +497,58 @@ class BetVerificationService:
     async def _verify_parlay(self, parlay: ParlayBet, game_results: Dict[str, GameResult]) -> Optional[BetResult]:
         """
         Verify a parlay bet (all legs must win)
-        
+
         Returns:
-            BetResult for the entire parlay
+            BetResult for the entire parlay, and settles individual legs
         """
         if not hasattr(parlay, 'legs') or not parlay.legs:
             return None
-        
+
         leg_results = []
         pending_legs = 0
         won_legs = 0
         lost_legs = 0
         pushed_legs = 0
-        
+
         for leg in parlay.legs:
             if leg.game_id not in game_results:
                 pending_legs += 1
                 continue
-            
+
             game_result = game_results[leg.game_id]
             if not game_result.is_final:
                 pending_legs += 1
                 continue
-            
+
             leg_result = await self._verify_single_bet(leg, game_result)
             if not leg_result:
                 pending_legs += 1
                 continue
-            
+
             leg_results.append(leg_result)
-            
+
+            # Settle individual leg with its actual outcome
+            await self._settle_bet(leg, leg_result)
+
             if leg_result.status == BetStatus.WON:
                 won_legs += 1
             elif leg_result.status == BetStatus.LOST:
                 lost_legs += 1
             elif leg_result.status == BetStatus.PUSHED:
                 pushed_legs += 1
-        
+
         # If any legs are still pending, don't settle the parlay yet
         if pending_legs > 0:
             return None
-        
+
         total_legs = len(parlay.legs)
         active_legs = total_legs - pushed_legs  # Pushes reduce the number of legs needed
-        
+
         # Parlay rules:
         # - If any leg loses, entire parlay loses
         # - If all remaining legs (after pushes) win, parlay wins
         # - If all legs push, parlay pushes
-        
+
         if lost_legs > 0:
             # Parlay lost
             return BetResult(
@@ -631,7 +634,7 @@ class BetVerificationService:
             db.close()
     
     async def _settle_parlay(self, parlay: ParlayBet, result: BetResult) -> None:
-        """Update database with parlay result"""
+        """Update database with parlay result and individual leg outcomes"""
         db = SessionLocal()
         try:
             # Update parlay status
@@ -639,18 +642,14 @@ class BetVerificationService:
             if not db_parlay:
                 logger.error(f"Parlay {parlay.id} not found for settlement")
                 return
-            
+
             old_status = db_parlay.status
             db_parlay.status = result.status
             db_parlay.result_amount = result.result_amount
             db_parlay.settled_at = datetime.utcnow()
-            
-            # Update all legs to match parlay status
-            leg_bets = db.query(Bet).filter(Bet.parlay_id == parlay.id).all()
-            for leg in leg_bets:
-                if leg.status == BetStatus.PENDING:
-                    leg.status = result.status
-                    leg.settled_at = datetime.utcnow()
+
+            # Don't automatically update leg statuses - they should be settled individually
+            # based on their actual game outcomes, not the parlay result
             
             # Log parlay history
             history = BetHistory(

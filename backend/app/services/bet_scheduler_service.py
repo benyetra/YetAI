@@ -133,9 +133,17 @@ class BetSchedulerService:
                 if retries > 0:
                     await asyncio.sleep(self.config.rate_limit_delay)
                 
+                # First sync game data from Odds API
+                from app.services.game_sync_service import game_sync_service
+                sync_result = await game_sync_service.sync_game_scores(days_back=3)
+                logger.info(f"Game sync result: {sync_result.get('message', 'No message')}")
+
                 # Run the verification
                 async with BetVerificationService() as verification_service:
                     result = await verification_service.verify_all_pending_bets()
+
+                    # Add sync info to result
+                    result["game_sync"] = sync_result
                 
                 if result.get("success", False):
                     # Success
