@@ -4443,10 +4443,10 @@ async def debug_analytics_status(db=Depends(get_db)):
                     "name": sample_result[2]
                 }
 
-                # Check if this player has analytics
+                # Check if this player has analytics (use fantasy_id, not platform_id)
                 if player_analytics_count > 0:
                     analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics WHERE player_id = :pid"),
-                                                {"pid": sample_result[1]}).fetchone()[0]
+                                                {"pid": sample_result[0]}).fetchone()[0]
                     sample_player["analytics_records"] = analytics_count
 
         return {
