@@ -4477,17 +4477,27 @@ async def migrate_production_data(db=Depends(get_db)):
     import os
 
     try:
+        # First check the schema
+        schema_query = """
+            SELECT column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE table_name = 'fantasy_players'
+            ORDER BY ordinal_position
+        """
+        columns_result = db.execute(text(schema_query)).fetchall()
+
         # Check current state
         analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
         players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
 
         migration_log = []
         migration_log.append(f"Starting migration - Players: {players_count}, Analytics: {analytics_count}")
+        migration_log.append(f"Schema: {[(col[0], col[1], col[2]) for col in columns_result]}")
 
-        # Fantasy players data (including required platform column)
+        # Fantasy players data (without id - let it auto-increment)
         fantasy_players_inserts = [
-            "INSERT INTO fantasy_players (id, platform, platform_player_id, name, position, team) VALUES (1, 'sleeper', '4866', 'Saquon Barkley', 'RB', 'PHI');",
-            "INSERT INTO fantasy_players (id, platform, platform_player_id, name, position, team) VALUES (2, 'sleeper', '7588', 'Justin Jefferson', 'WR', 'MIN');"
+            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('sleeper', '4866', 'Saquon Barkley', 'RB', 'PHI');",
+            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('sleeper', '7588', 'Justin Jefferson', 'WR', 'MIN');"
         ]
 
         # Player analytics sample data
