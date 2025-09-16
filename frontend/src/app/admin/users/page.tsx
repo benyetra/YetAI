@@ -218,9 +218,10 @@ export default function AdminUsersPage() {
     try {
       const response = await apiClient.delete(`/api/admin/users/${userId}/bets`, token);
       if (response.status === 'success') {
-        setMessage({ 
-          type: 'success', 
-          text: `Successfully deleted ${response.deleted_counts.regular_bets} regular bets, ${response.deleted_counts.live_bets} live bets, ${response.deleted_counts.parlay_bets} parlay bets, and ${response.deleted_counts.yetai_bets} YetAI bets for ${username}` 
+        const totalDeleted = (response.bets_deleted || 0) + (response.parlay_bets_deleted || 0);
+        setMessage({
+          type: 'success',
+          text: `Successfully deleted ${totalDeleted} bets for ${username} (${response.bets_deleted || 0} regular bets, ${response.parlay_bets_deleted || 0} parlay bets)`
         });
       }
     } catch (error: any) {

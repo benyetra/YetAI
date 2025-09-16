@@ -1007,6 +1007,274 @@ async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict 
         logger.error(f"Error creating YetAI bet: {e}")
         raise HTTPException(status_code=500, detail="Failed to create bet")
 
+@app.options("/api/admin/users")
+async def options_admin_get_users():
+    """Handle CORS preflight for admin get users"""
+    return {}
+
+@app.get("/api/admin/users")
+async def get_admin_users(admin_user: dict = Depends(require_admin)):
+    """Get all users (Admin only)"""
+    try:
+        if is_service_available("auth_service"):
+            from app.services.auth_service_db import auth_service_db
+            users = await auth_service_db.get_all_users()
+
+            return {
+                "status": "success",
+                "users": users
+            }
+        else:
+            # Mock response when service unavailable
+            mock_users = [
+                {
+                    "id": 1,
+                    "email": "admin@example.com",
+                    "first_name": "Admin",
+                    "last_name": "User",
+                    "is_admin": True,
+                    "created_at": "2024-01-01T00:00:00Z"
+                },
+                {
+                    "id": 2,
+                    "email": "user@example.com",
+                    "first_name": "Regular",
+                    "last_name": "User",
+                    "is_admin": False,
+                    "created_at": "2024-01-02T00:00:00Z"
+                }
+            ]
+            return {
+                "status": "success",
+                "users": mock_users,
+                "message": "Mock users - service unavailable"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching users: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch users")
+
+@app.options("/api/admin/users/{user_id}")
+async def options_admin_update_user():
+    """Handle CORS preflight for admin update user"""
+    return {}
+
+@app.put("/api/admin/users/{user_id}")
+async def update_admin_user(user_id: int, update_data: dict, admin_user: dict = Depends(require_admin)):
+    """Update user information (Admin only)"""
+    try:
+        if is_service_available("auth_service"):
+            from app.services.auth_service_db import auth_service_db
+
+            updated_user = await auth_service_db.update_user(user_id, update_data)
+
+            if updated_user:
+                return {
+                    "status": "success",
+                    "user": updated_user,
+                    "message": f"User {user_id} updated successfully"
+                }
+            else:
+                raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+        else:
+            # Mock response when service unavailable
+            return {
+                "status": "success",
+                "user": {
+                    "id": user_id,
+                    **update_data,
+                    "updated_at": "2024-01-01T00:00:00Z"
+                },
+                "message": f"Mock update of user {user_id} - service unavailable"
+            }
+
+    except ValueError as e:
+        # Validation errors from the service
+        raise HTTPException(status_code=400, detail=str(e))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to update user")
+
+@app.post("/api/admin/users")
+async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_admin)):
+    """Create a new user (Admin only)"""
+    try:
+        if is_service_available("auth_service"):
+            from app.services.auth_service_db import auth_service_db
+
+            # Extract required fields
+            email = user_data.get("email")
+            password = user_data.get("password")
+            username = user_data.get("username")
+            first_name = user_data.get("first_name")
+            last_name = user_data.get("last_name")
+            subscription_tier = user_data.get("subscription_tier", "free")
+            is_admin = user_data.get("is_admin", False)
+            is_verified = user_data.get("is_verified", False)
+
+            if not email or not password or not username:
+                raise HTTPException(status_code=400, detail="Email, password, and username are required")
+
+            result = await auth_service_db.create_user(
+                email=email,
+                password=password,
+                username=username,
+                first_name=first_name,
+                last_name=last_name
+            )
+
+            if result.get("success"):
+                # Update additional fields if provided
+                user_id = result.get("user_id")
+                if user_id and (subscription_tier != "free" or is_admin or is_verified):
+                    update_data = {}
+                    if subscription_tier != "free":
+                        update_data["subscription_tier"] = subscription_tier
+                    if is_admin:
+                        update_data["is_admin"] = is_admin
+                    if is_verified:
+                        update_data["is_verified"] = is_verified
+
+                    if update_data:
+                        await auth_service_db.update_user(user_id, update_data)
+
+                return {
+                    "status": "success",
+                    "message": "User created successfully",
+                    "user_id": result.get("user_id")
+                }
+            else:
+                raise HTTPException(status_code=400, detail=result.get("error", "Failed to create user"))
+        else:
+            # Mock response when service unavailable
+            return {
+                "status": "success",
+                "message": "Mock user creation - service unavailable",
+                "user_id": 999
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating user: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create user")
+
+@app.options("/api/admin/users/{user_id}/reset-password")
+async def options_admin_reset_password():
+    """Handle CORS preflight for admin reset password"""
+    return {}
+
+@app.post("/api/admin/users/{user_id}/reset-password")
+async def reset_user_password(user_id: int, admin_user: dict = Depends(require_admin)):
+    """Reset user password (Admin only)"""
+    try:
+        if is_service_available("auth_service"):
+            from app.services.auth_service_db import auth_service_db
+            import secrets
+            import string
+
+            # Generate a new temporary password
+            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+
+            # Update the user's password
+            hashed_password = auth_service_db.hash_password(temp_password)
+            update_data = {"password_hash": hashed_password}
+
+            # We need to directly update the password_hash field since update_user doesn't handle passwords
+            # For now, let's create a simple implementation
+            from app.core.database import SessionLocal
+            from app.models.database_models import User
+
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+                user.password_hash = hashed_password
+                db.commit()
+
+                return {
+                    "status": "success",
+                    "message": f"Password reset for user {user_id}",
+                    "temporary_password": temp_password,
+                    "note": "User should change this password on next login"
+                }
+            finally:
+                db.close()
+        else:
+            # Mock response when service unavailable
+            return {
+                "status": "success",
+                "message": f"Mock password reset for user {user_id} - service unavailable",
+                "temporary_password": "temp123456",
+                "note": "This is a mock response"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error resetting password for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset password")
+
+@app.options("/api/admin/users/{user_id}/bets")
+async def options_admin_delete_user_bets():
+    """Handle CORS preflight for admin delete user bets"""
+    return {}
+
+@app.delete("/api/admin/users/{user_id}/bets")
+async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admin)):
+    """Delete all user bets (Admin only)"""
+    try:
+        if is_service_available("bet_service"):
+            # Since there's no specific method to delete all user bets, we'll implement a basic version
+            from app.core.database import SessionLocal
+            from app.models.database_models import User, Bet, ParlayBet
+
+            db = SessionLocal()
+            try:
+                # Verify user exists
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+
+                # Delete user's regular bets
+                bets_deleted = db.query(Bet).filter(Bet.user_id == user_id).delete()
+
+                # Delete user's parlay bets
+                parlay_bets_deleted = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).delete()
+
+                db.commit()
+
+                total_deleted = bets_deleted + parlay_bets_deleted
+
+                return {
+                    "status": "success",
+                    "message": f"Deleted {total_deleted} bets for user {user_id}",
+                    "bets_deleted": bets_deleted,
+                    "parlay_bets_deleted": parlay_bets_deleted
+                }
+            finally:
+                db.close()
+        else:
+            # Mock response when service unavailable
+            return {
+                "status": "success",
+                "message": f"Mock deletion of bets for user {user_id} - service unavailable",
+                "bets_deleted": 5,
+                "parlay_bets_deleted": 2
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting bets for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete user bets")
+
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")
 async def options_place_bet():
