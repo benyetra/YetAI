@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, forwardRef, useImperativeHandle } from 'react';
 import { apiClient } from '@/lib/api';
 import { User } from 'lucide-react';
 
@@ -17,11 +17,24 @@ interface AvatarProps {
   showFallback?: boolean;
 }
 
-export function Avatar({ user, size = 'md', className = '', showFallback = true }: AvatarProps) {
+export interface AvatarRef {
+  refresh: () => void;
+}
+
+export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
+  { user, size = 'md', className = '', showFallback = true },
+  ref
+) {
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [forceRefresh, setForceRefresh] = useState(0);
+
+  useImperativeHandle(ref, () => ({
+    refresh: () => {
+      setForceRefresh(prev => prev + 1);
+    }
+  }));
 
   // Size mappings
   const sizeClasses = {
@@ -56,7 +69,7 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     if (user?.id) {
       loadAvatar();
     }
-  }, [user?.id, forceRefresh]);
+  }, [user?.id, user?.avatar_url, forceRefresh]);
 
   const loadAvatar = async () => {
     if (!user?.id) return;
@@ -65,7 +78,12 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
     try {
       const response = await apiClient.get(`/api/auth/avatar/${user.id}`);
       if (response.status === 'success') {
-        setAvatarUrl(response.avatar_url || '');
+        let avatarUrl = response.avatar_url || '';
+        // Add cache busting parameter for uploaded avatars
+        if (avatarUrl && avatarUrl.includes('/uploads/')) {
+          avatarUrl += `?t=${Date.now()}`;
+        }
+        setAvatarUrl(avatarUrl);
         setError(false);
       }
     } catch (error) {
@@ -157,6 +175,6 @@ export function Avatar({ user, size = 'md', className = '', showFallback = true 
   }
 
   return null;
-}
+});
 
 export default Avatar;

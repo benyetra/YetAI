@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import { useNotifications } from '@/components/NotificationProvider';
 import { DetailedWebSocketStatus } from '@/components/WebSocketIndicator';
 import { sportsAPI, apiClient } from '@/lib/api';
-import Avatar from '@/components/Avatar';
+import Avatar, { AvatarRef } from '@/components/Avatar';
 import { 
   User, 
   Mail, 
@@ -56,6 +56,7 @@ export default function ProfilePage() {
   // Avatar state
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const avatarRef = useRef<AvatarRef>(null);
   
   // Settings state
   const [isLoading, setIsLoading] = useState(false);
@@ -403,7 +404,7 @@ export default function ProfilePage() {
         
         localStorage.setItem('app_theme', appPreferences.theme);
         localStorage.setItem('default_sport', appPreferences.default_sport);
-        
+
         await refreshUser();
       }
     } catch (error) {
@@ -437,6 +438,8 @@ export default function ProfilePage() {
             setAvatarUrl(response.avatar_url);
             // Force refresh user data to update avatar display
             refreshUser();
+            // Force refresh both avatar components
+            avatarRef.current?.refresh();
             setMessage({ type: 'success', text: 'Avatar updated successfully' });
           }
         } catch (error: any) {
@@ -677,8 +680,9 @@ export default function ProfilePage() {
 
                 <div className="flex items-center space-x-6">
                   <div className="relative">
-                    <Avatar 
-                      user={user} 
+                    <Avatar
+                      ref={avatarRef}
+                      user={user}
                       size="xl"
                       key={`avatar-${user?.id}-${avatarUrl}`}
                     />

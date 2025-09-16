@@ -169,7 +169,7 @@ class AvatarService:
             elif settings.ENVIRONMENT == "staging":
                 base_url = "https://staging-backend.up.railway.app"
             else:
-                base_url = "http://localhost:8000"
+                base_url = "http://localhost:8001"
         
         if user.get('avatar_url'):
             # Return custom avatar

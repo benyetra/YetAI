@@ -72,8 +72,8 @@ function getApiConfig(): ApiConfig {
     case 'development':
     default:
       return {
-        baseURL: 'http://localhost:8000',
-        wsURL: 'ws://localhost:8000',
+        baseURL: 'http://localhost:8001',
+        wsURL: 'ws://localhost:8001',
         environment
       };
   }

@@ -69,10 +69,17 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   const connectWebSocket = useCallback(() => {
     if (!isAuthenticated || !user) return;
 
+    // Get user ID - it might be 'id' or 'user_id' depending on the source
+    const userId = user.id || user.user_id;
+    if (!userId) {
+      console.warn('No user ID found for WebSocket connection');
+      return;
+    }
+
     try {
       setWsStatus(prev => ({ ...prev, reconnecting: true }));
-      
-      const wsUrl = getWsUrl(`/ws/${user.id}`);
+
+      const wsUrl = getWsUrl(`/ws/${userId}`);
       
       const websocket = new WebSocket(wsUrl);
       
@@ -173,7 +180,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       console.error('Failed to connect WebSocket:', error);
       setWsStatus(prev => ({ ...prev, reconnecting: false }));
     }
-  }, [isAuthenticated, user, wsStatus.reconnectAttempts]);
+  }, [isAuthenticated, user?.id, user?.user_id, wsStatus.reconnectAttempts]);
 
   // Connect WebSocket when authenticated
   useEffect(() => {

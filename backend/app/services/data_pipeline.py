@@ -256,5 +256,41 @@ class SportsDataPipeline:
         logger.info(f"Generated {len(predictions)} predictions using real odds data")
         return predictions
 
+    async def get_available_sports(self) -> List[Dict]:
+        """Get list of available sports"""
+        AVAILABLE_SPORTS = [
+            {
+                'key': 'americanfootball_nfl',
+                'title': 'NFL',
+                'description': 'National Football League',
+                'active': True,
+                'has_outrights': False
+            },
+            {
+                'key': 'basketball_nba',
+                'title': 'NBA',
+                'description': 'National Basketball Association',
+                'active': True,
+                'has_outrights': False
+            },
+            {
+                'key': 'baseball_mlb',
+                'title': 'MLB',
+                'description': 'Major League Baseball',
+                'active': True,
+                'has_outrights': False
+            },
+            {
+                'key': 'icehockey_nhl',
+                'title': 'NHL',
+                'description': 'National Hockey League',
+                'active': True,
+                'has_outrights': False
+            }
+        ]
+
+        logger.info(f"Returning {len(AVAILABLE_SPORTS)} available sports")
+        return AVAILABLE_SPORTS
+
 # Service instance
 sports_pipeline = SportsDataPipeline()

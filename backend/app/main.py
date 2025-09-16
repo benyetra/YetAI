@@ -3,6 +3,7 @@ Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
@@ -261,6 +262,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Mount static files for avatars
+app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
+
 # Health and status endpoints
 @app.get("/health")
 async def health_check():
@@ -509,6 +513,102 @@ async def upload_user_avatar(current_user: dict = Depends(get_current_user)):
     
     return {"status": "error", "message": "Avatar upload service unavailable"}
 
+@app.post("/api/auth/avatar")
+async def upload_auth_avatar(
+    avatar_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Upload user avatar via auth endpoint"""
+    try:
+        if not is_service_available("auth_service"):
+            raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+        auth_service = get_service("auth_service")
+        user = await auth_service.get_user_by_id(current_user["user_id"])
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        image_data = avatar_data.get("image_data")
+        if not image_data:
+            raise HTTPException(status_code=400, detail="No image data provided")
+
+        # Delete old avatar if exists
+        if user.get("avatar_url"):
+            from app.services.avatar_service import avatar_service
+            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+
+        # Save new avatar
+        from app.services.avatar_service import avatar_service
+        success, result = avatar_service.save_avatar(current_user["user_id"], image_data)
+
+        if success:
+            # Update user record with avatar URLs in database
+            update_result = await auth_service.update_user_avatar(
+                current_user["user_id"],
+                result["avatar"],
+                result["thumbnail"]
+            )
+
+            if update_result.get("success"):
+                return {
+                    "status": "success",
+                    "message": "Avatar uploaded successfully",
+                    "avatar_url": result["avatar"],
+                    "thumbnail_url": result["thumbnail"]
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+        else:
+            raise HTTPException(status_code=400, detail=result)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error uploading avatar: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to upload avatar: {str(e)}")
+
+@app.delete("/api/auth/avatar")
+async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
+    """Delete user avatar via auth endpoint"""
+    try:
+        if not is_service_available("auth_service"):
+            raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+        auth_service = get_service("auth_service")
+        user = await auth_service.get_user_by_id(current_user["user_id"])
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Delete avatar files
+        if user.get("avatar_url"):
+            from app.services.avatar_service import avatar_service
+            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+
+            # Clear avatar URLs from database
+            update_result = await auth_service.update_user_avatar(
+                current_user["user_id"],
+                None,
+                None
+            )
+
+            if update_result.get("success"):
+                return {
+                    "status": "success",
+                    "message": "Avatar deleted successfully"
+                }
+            else:
+                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+        else:
+            raise HTTPException(status_code=400, detail="No avatar to delete")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting avatar: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete avatar: {str(e)}")
+
 # Sports list endpoint
 @app.options("/api/sports")
 async def options_sports_list():
@@ -637,19 +737,37 @@ async def logout():
     }
 
 @app.get("/api/auth/me")
-async def get_current_user_info():
+async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Get current user info"""
     if not is_service_available("auth_service"):
         raise HTTPException(
             status_code=503,
             detail="Authentication service is currently unavailable"
         )
-    
-    return {
-        "status": "success",
-        "message": "Authentication endpoint available but token validation not fully implemented",
-        "user": None
-    }
+
+    # Get auth service to fetch full user data
+    auth_service = get_service("auth_service")
+    try:
+        # Get full user data from database using user_id
+        user_data = await auth_service.get_user_by_id(current_user["user_id"])
+        if user_data:
+            return {
+                "status": "success",
+                "user": user_data
+            }
+        else:
+            # Fallback to basic user info from token
+            return {
+                "status": "success",
+                "user": current_user
+            }
+    except Exception as e:
+        logger.error(f"Error fetching user data: {e}")
+        # Fallback to basic user info from token
+        return {
+            "status": "success",
+            "user": current_user
+        }
 
 @app.get("/api/auth/avatar/{user_id}")
 async def get_auth_user_avatar(user_id: int):
@@ -678,6 +796,68 @@ async def get_auth_user_avatar(user_id: int):
     except Exception as e:
         logger.error(f"Error fetching auth user avatar: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
+
+@app.get("/api/auth/2fa/status")
+async def get_2fa_status(current_user: dict = Depends(get_current_user)):
+    """Get 2FA status for current user"""
+    try:
+        if is_service_available("auth_service"):
+            auth_service = get_service("auth_service")
+            result = await auth_service.get_2fa_status(current_user["user_id"])
+
+            if result["success"]:
+                return {
+                    "status": "success",
+                    "enabled": result["enabled"],
+                    "backup_codes_remaining": result["backup_codes_remaining"],
+                    "setup_in_progress": result["setup_in_progress"]
+                }
+            else:
+                raise HTTPException(status_code=400, detail=result["error"])
+        else:
+            # Return default 2FA status when service unavailable
+            return {
+                "status": "success",
+                "enabled": False,
+                "backup_codes_remaining": 0,
+                "setup_in_progress": False
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching 2FA status: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get 2FA status: {str(e)}")
+
+@app.put("/api/auth/preferences")
+async def update_preferences(
+    preferences: UserPreferences,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user preferences"""
+    try:
+        if not is_service_available("auth_service"):
+            raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.update_user_preferences(
+            current_user["user_id"],
+            preferences=preferences.dict(exclude_unset=True)
+        )
+
+        if result["success"]:
+            return {
+                "status": "success",
+                "message": "Preferences updated successfully"
+            }
+        else:
+            raise HTTPException(status_code=400, detail=result["error"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating preferences: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
 
 # YetAI Bets endpoints
 @app.options("/api/yetai-bets")
