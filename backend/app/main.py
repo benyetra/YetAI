@@ -4484,10 +4484,10 @@ async def migrate_production_data(db=Depends(get_db)):
         migration_log = []
         migration_log.append(f"Starting migration - Players: {players_count}, Analytics: {analytics_count}")
 
-        # Fantasy players data (INSERT statements)
+        # Fantasy players data (using basic columns only)
         fantasy_players_inserts = [
-            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team, age, bye_week, injury_status, injury_designation, depth_chart_position, target_share, snap_count_percentage, created_at) VALUES (1, '4866', 'Saquon Barkley', 'RB', 'PHI', 27, 5, 'healthy', NULL, 'starter', 0.0, 0.0, '2024-09-16 17:29:23.892271');",
-            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team, age, bye_week, injury_status, injury_designation, depth_chart_position, target_share, snap_count_percentage, created_at) VALUES (2, '7588', 'Justin Jefferson', 'WR', 'MIN', 25, 6, 'healthy', NULL, 'starter', 0.0, 0.0, '2024-09-16 17:29:23.892271');"
+            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team) VALUES (1, '4866', 'Saquon Barkley', 'RB', 'PHI');",
+            "INSERT INTO fantasy_players (id, platform_player_id, name, position, team) VALUES (2, '7588', 'Justin Jefferson', 'WR', 'MIN');"
         ]
 
         # Player analytics sample data
