@@ -57,7 +57,7 @@ class PlayerAnalyticsService:
                     week, season, ppr_points, snap_percentage, target_share,
                     red_zone_share, points_per_snap, points_per_target,
                     boom_rate, bust_rate, floor_score, ceiling_score,
-                    opponent, injury_designation, game_script,
+                    CAST(opponent AS TEXT), CAST(injury_designation AS TEXT), CAST(game_script AS TEXT),
                     CASE
                         WHEN season = 2025 THEN 1.0
                         WHEN season = 2024 THEN 0.6
