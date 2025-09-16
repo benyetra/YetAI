@@ -1,0 +1,4 @@
+Fantasy analytics fixes applied - version 1.2.2
+- PlayerAnalyticsService uses correct player_id
+- Season defaults to 2024
+- Deployment marker for Railway

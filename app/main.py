@@ -29,9 +29,6 @@ from app.services.bet_scheduler_service import bet_scheduler
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
 from app.models.bet_models import CreateYetAIBetRequest
 
-# Import fantasy analytics router
-from app.api.fantasy_analytics import router as fantasy_analytics_router
-
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -290,9 +287,6 @@ app.add_middleware(
 
 # Mount static files for avatars
 app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
-
-# Include API routers
-app.include_router(fantasy_analytics_router, prefix="/api/fantasy", tags=["fantasy-analytics"])
 
 # Health and status endpoints
 @app.get("/health")
@@ -3178,7 +3172,7 @@ class ConnectionManager:
 @app.get("/api/fantasy/analytics/{player_id}")
 async def get_player_analytics_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3229,7 +3223,7 @@ async def get_player_analytics_alt(
 @app.get("/api/fantasy/analytics/{player_id}/trends")
 async def get_player_trends_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3292,7 +3286,7 @@ async def get_player_trends_alt(
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
