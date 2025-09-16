@@ -492,20 +492,35 @@ class BetServiceDB:
         """Get or create game record"""
         if not bet_data.game_id:
             return None
-            
+
         game = db.query(Game).filter(Game.id == bet_data.game_id).first()
-        
-        if not game and bet_data.home_team and bet_data.away_team:
-            game = Game(
-                id=bet_data.game_id,
-                sport_key=bet_data.sport or "unknown",
-                sport_title=bet_data.sport or "Unknown",
-                home_team=bet_data.home_team,
-                away_team=bet_data.away_team,
-                commence_time=bet_data.commence_time or datetime.utcnow()
-            )
-            db.add(game)
-            
+
+        if not game:
+            # Try to create game with provided data first
+            if bet_data.home_team and bet_data.away_team:
+                game = Game(
+                    id=bet_data.game_id,
+                    sport_key=bet_data.sport or "unknown",
+                    sport_title=bet_data.sport or "Unknown",
+                    home_team=bet_data.home_team,
+                    away_team=bet_data.away_team,
+                    commence_time=bet_data.commence_time or datetime.utcnow()
+                )
+                db.add(game)
+            else:
+                # If no game details provided, create a minimal game record with placeholder data
+                # This ensures we have a game record for the bet to reference
+                game = Game(
+                    id=bet_data.game_id,
+                    sport_key="unknown",
+                    sport_title="Unknown Sport",
+                    home_team="TBD",
+                    away_team="TBD",
+                    commence_time=datetime.utcnow()
+                )
+                db.add(game)
+                logger.warning(f"Created minimal game record for game_id {bet_data.game_id} - consider updating with actual game details")
+
         return game
     
     async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:

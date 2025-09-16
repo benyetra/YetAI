@@ -20,11 +20,23 @@ class PlayerAnalyticsService:
         self,
         player_id: int,
         weeks: Optional[List[int]] = None,
-        season: int = 2024
+        season: int = 2025
     ) -> List[Dict]:
         """Get analytics data for a specific player"""
         try:
             print(f"DEBUG: Querying PlayerAnalytics for player_id={player_id}, season={season}")
+
+            # First check if the table has any data at all
+            count_query = "SELECT COUNT(*) FROM player_analytics"
+            count_result = self.db.execute(text(count_query))
+            total_records = count_result.fetchone()[0]
+            print(f"DEBUG: Total records in player_analytics table: {total_records}")
+
+            # Check what seasons exist
+            season_query = "SELECT DISTINCT season FROM player_analytics ORDER BY season"
+            season_result = self.db.execute(text(season_query))
+            available_seasons = [row[0] for row in season_result.fetchall()]
+            print(f"DEBUG: Available seasons: {available_seasons}")
 
             # Use raw SQL to bypass SQLAlchemy type processing issues
             sql_query = """
@@ -49,7 +61,15 @@ class PlayerAnalyticsService:
 
             result = self.db.execute(text(sql_query), params)
             rows = result.fetchall()
-            print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}")
+            print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}, season {season}")
+
+            # If no data for 2025, try 2024 as fallback
+            if len(rows) == 0 and season == 2025:
+                print(f"DEBUG: No data for 2025, trying 2024 as fallback")
+                params["season"] = 2024
+                result = self.db.execute(text(sql_query), params)
+                rows = result.fetchall()
+                print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}, season 2024 (fallback)")
 
             analytics = []
             for row in rows:
