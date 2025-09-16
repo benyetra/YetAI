@@ -4494,10 +4494,10 @@ async def migrate_production_data(db=Depends(get_db)):
         migration_log.append(f"Starting migration - Players: {players_count}, Analytics: {analytics_count}")
         migration_log.append(f"Schema: {[(col[0], col[1], col[2]) for col in columns_result]}")
 
-        # Fantasy players data (without id - let it auto-increment)
+        # Fantasy players data (try SLEEPER enum value)
         fantasy_players_inserts = [
-            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('sleeper', '4866', 'Saquon Barkley', 'RB', 'PHI');",
-            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('sleeper', '7588', 'Justin Jefferson', 'WR', 'MIN');"
+            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('SLEEPER', '4866', 'Saquon Barkley', 'RB', 'PHI');",
+            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('SLEEPER', '7588', 'Justin Jefferson', 'WR', 'MIN');"
         ]
 
         # Player analytics sample data
