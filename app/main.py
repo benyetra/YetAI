@@ -3286,7 +3286,7 @@ async def get_player_trends_alt(
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency_alt(
     player_id: str,
-    season: int = 2024,
+    season: int = 2025,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3328,8 +3328,8 @@ async def get_player_efficiency_alt(
             avg_target_share = sum(target_values) / len(target_values) if target_values else 0
             avg_red_zone_share = sum(red_zone_values) / len(red_zone_values) if red_zone_values else 0
 
-            # Store realistic percentages (multiply by 100 to convert decimals to percentages)
-            efficiency["avg_snap_percentage"] = round(avg_snap_percentage, 1)
+            # Store realistic percentages (snap_percentage already in %, others need conversion)
+            efficiency["avg_snap_percentage"] = round(avg_snap_percentage, 1)  # Already a percentage
             efficiency["avg_target_share"] = round(avg_target_share * 100, 1)  # Convert 0.13 to 13%
             efficiency["avg_red_zone_share"] = round(avg_red_zone_share * 100, 1)  # Convert 0.44 to 44%
             efficiency["games_played"] = len(analytics)
