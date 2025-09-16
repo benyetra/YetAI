@@ -3172,7 +3172,7 @@ class ConnectionManager:
 @app.get("/api/fantasy/analytics/{player_id}")
 async def get_player_analytics_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3223,7 +3223,7 @@ async def get_player_analytics_alt(
 @app.get("/api/fantasy/analytics/{player_id}/trends")
 async def get_player_trends_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3286,7 +3286,7 @@ async def get_player_trends_alt(
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency_alt(
     player_id: str,
-    season: int = 2025,
+    season: int = 2024,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):

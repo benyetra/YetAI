@@ -61,7 +61,7 @@ class PlayerAnalyticsService:
                 WHERE player_id = :player_id AND season = :season
             """
 
-            params = {"player_id": platform_player_id, "season": season}
+            params = {"player_id": player_id, "season": season}
 
             if weeks:
                 placeholders = ",".join([f":week_{i}" for i in range(len(weeks))])
@@ -73,7 +73,7 @@ class PlayerAnalyticsService:
 
             result = self.db.execute(text(sql_query), params)
             rows = result.fetchall()
-            print(f"DEBUG: Found {len(rows)} analytics records for platform_player_id {platform_player_id}, season {season}")
+            print(f"DEBUG: Found {len(rows)} analytics records for player_id {player_id}, season {season}")
 
             # If no data for current season, try previous season as fallback
             if len(rows) == 0 and season > 2021:

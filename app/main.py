@@ -274,7 +274,7 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="YetAI Sports Betting MVP",
     description=f"AI-Powered Sports Betting Platform - {settings.ENVIRONMENT.title()} Environment",
-    version="1.2.0",
+    version="1.2.1",
     debug=settings.DEBUG,
     lifespan=lifespan
 )
