@@ -1,0 +1,12 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+numReplicas = 1
+restartPolicyType = "ON_FAILURE"
+startCommand = "python -m app.main"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+
+[env]
+ENVIRONMENT = "production"
