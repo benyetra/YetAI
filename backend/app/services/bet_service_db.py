@@ -57,11 +57,11 @@ class BetServiceDB:
                     potential_win=potential_win,
                     status=BetStatus.PENDING,
                     placed_at=datetime.utcnow(),
-                    # Include game details for better display
-                    home_team=bet_data.home_team,
-                    away_team=bet_data.away_team,
-                    sport=bet_data.sport,
-                    commence_time=bet_data.commence_time
+                    # Include game details - prefer game data over bet_data
+                    home_team=game.home_team if game else bet_data.home_team,
+                    away_team=game.away_team if game else bet_data.away_team,
+                    sport=game.sport_key if game else bet_data.sport,
+                    commence_time=game.commence_time if game else bet_data.commence_time
                 )
                 
                 db.add(bet)

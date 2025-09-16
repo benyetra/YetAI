@@ -676,6 +676,46 @@ async def get_api_status():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+@app.put("/api/auth/profile")
+async def update_profile(
+    profile_data: dict,
+    current_user: dict = Depends(get_current_user)
+):
+    """Update user profile including email and password"""
+    try:
+        if not is_service_available("auth_service"):
+            raise HTTPException(status_code=503, detail="Auth service unavailable")
+
+        auth_service = get_service("auth_service")
+
+        # If changing password, verify current password first
+        if "current_password" in profile_data and "new_password" in profile_data:
+            user = await auth_service.get_user_by_id(current_user["user_id"])
+            if not user or not auth_service.verify_password(profile_data["current_password"], user["password_hash"]):
+                raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+            # Update password
+            profile_data["password"] = profile_data["new_password"]
+            del profile_data["current_password"]
+            del profile_data["new_password"]
+
+        # Update user
+        updated_user = await auth_service.update_user(current_user["user_id"], profile_data)
+
+        if updated_user:
+            return {
+                "status": "success",
+                "message": "Profile updated successfully",
+                "user": updated_user
+            }
+        else:
+            raise HTTPException(status_code=400, detail="Failed to update profile")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")
+
 # Authentication API endpoints
 @app.get("/api/auth/status")
 async def auth_status():
@@ -2134,7 +2174,7 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                                 logger.info(f"Mapped Sleeper ID {sleeper_player_id} to fantasy_players.id {fantasy_player_id}")
 
                                 # Now get analytics using the correct ID
-                                analytics = await analytics_service.get_player_analytics(fantasy_player_id)
+                                analytics = await analytics_service.get_player_analytics(fantasy_player_id, season=2025)
                                 logger.info(f"Analytics result for {player.get('name')}: {len(analytics) if analytics else 0} records")
                             else:
                                 logger.warning(f"No fantasy_players mapping found for Sleeper ID {sleeper_player_id}")
@@ -3163,7 +3203,7 @@ async def get_player_analytics_alt(
 
         analytics = []
         if internal_player_id:
-            analytics = await analytics_service.get_player_analytics(internal_player_id)
+            analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
 
         return {
             "status": "success",
@@ -3210,7 +3250,7 @@ async def get_player_trends_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and derive trends
-        analytics = await analytics_service.get_player_analytics(internal_player_id)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
 
         trends = {}
         if analytics and len(analytics) >= 2:
@@ -3273,7 +3313,7 @@ async def get_player_efficiency_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and calculate efficiency metrics
-        analytics = await analytics_service.get_player_analytics(internal_player_id)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
 
         efficiency = {}
         if analytics:
