@@ -2174,7 +2174,7 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                                 logger.info(f"Mapped Sleeper ID {sleeper_player_id} to fantasy_players.id {fantasy_player_id}")
 
                                 # Now get analytics using the correct ID
-                                analytics = await analytics_service.get_player_analytics(fantasy_player_id, season=2025)
+                                analytics = await analytics_service.get_player_analytics(fantasy_player_id, season=2024)
                                 logger.info(f"Analytics result for {player.get('name')}: {len(analytics) if analytics else 0} records")
                             else:
                                 logger.warning(f"No fantasy_players mapping found for Sleeper ID {sleeper_player_id}")
@@ -3203,7 +3203,7 @@ async def get_player_analytics_alt(
 
         analytics = []
         if internal_player_id:
-            analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
+            analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
 
         return {
             "status": "success",
@@ -3250,7 +3250,7 @@ async def get_player_trends_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and derive trends
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
 
         trends = {}
         if analytics and len(analytics) >= 2:
@@ -3313,7 +3313,7 @@ async def get_player_efficiency_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and calculate efficiency metrics
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2025)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
 
         efficiency = {}
         if analytics:

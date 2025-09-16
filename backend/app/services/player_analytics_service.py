@@ -20,11 +20,23 @@ class PlayerAnalyticsService:
         self,
         player_id: int,
         weeks: Optional[List[int]] = None,
-        season: int = 2025
+        season: int = 2024
     ) -> List[Dict]:
         """Get analytics data for a specific player"""
         try:
             print(f"DEBUG: Querying PlayerAnalytics for player_id={player_id}, season={season}")
+
+            # Convert fantasy_players.id to platform_player_id for analytics lookup
+            platform_id_query = "SELECT platform_player_id FROM fantasy_players WHERE id = :player_id"
+            platform_result = self.db.execute(text(platform_id_query), {"player_id": player_id})
+            platform_row = platform_result.fetchone()
+
+            if not platform_row:
+                print(f"DEBUG: No platform_player_id found for fantasy_players.id={player_id}")
+                return []
+
+            platform_player_id = int(platform_row[0])
+            print(f"DEBUG: Using platform_player_id={platform_player_id} for analytics lookup")
 
             # First check if the table has any data at all
             count_query = "SELECT COUNT(*) FROM player_analytics"
@@ -49,7 +61,7 @@ class PlayerAnalyticsService:
                 WHERE player_id = :player_id AND season = :season
             """
 
-            params = {"player_id": player_id, "season": season}
+            params = {"player_id": platform_player_id, "season": season}
 
             if weeks:
                 placeholders = ",".join([f":week_{i}" for i in range(len(weeks))])
@@ -61,15 +73,16 @@ class PlayerAnalyticsService:
 
             result = self.db.execute(text(sql_query), params)
             rows = result.fetchall()
-            print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}, season {season}")
+            print(f"DEBUG: Found {len(rows)} analytics records for platform_player_id {platform_player_id}, season {season}")
 
-            # If no data for 2025, try 2024 as fallback
-            if len(rows) == 0 and season == 2025:
-                print(f"DEBUG: No data for 2025, trying 2024 as fallback")
-                params["season"] = 2024
+            # If no data for current season, try previous season as fallback
+            if len(rows) == 0 and season > 2021:
+                fallback_season = season - 1
+                print(f"DEBUG: No data for {season}, trying {fallback_season} as fallback")
+                params["season"] = fallback_season
                 result = self.db.execute(text(sql_query), params)
                 rows = result.fetchall()
-                print(f"DEBUG: Found {len(rows)} analytics records for player {player_id}, season 2024 (fallback)")
+                print(f"DEBUG: Found {len(rows)} analytics records for platform_player_id {platform_player_id}, season {fallback_season} (fallback)")
 
             analytics = []
             for row in rows:
@@ -101,7 +114,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         weeks: List[int],
-        season: int = 2025
+        season: int = 2024
     ) -> Dict:
         """Calculate usage trends over specified weeks"""
         try:
@@ -140,7 +153,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         weeks: List[int],
-        season: int = 2025
+        season: int = 2024
     ) -> Dict:
         """Calculate advanced efficiency metrics"""
         try:
@@ -184,7 +197,7 @@ class PlayerAnalyticsService:
     async def identify_breakout_candidates(
         self, 
         position: str,
-        season: int = 2025,
+        season: int = 2024,
         min_weeks: int = 3
     ) -> List[Dict]:
         """Identify players with increasing usage trends (breakout candidates)"""
@@ -228,7 +241,7 @@ class PlayerAnalyticsService:
         self, 
         player_id: int, 
         opponent_team: str,
-        season: int = 2025
+        season: int = 2024
     ) -> Dict:
         """Get player's historical performance against specific opponent"""
         
