@@ -6,10 +6,37 @@ import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import { Trophy, Medal, Crown, TrendingUp, Users, Star } from 'lucide-react';
 
+interface LeaderboardEntry {
+  rank: number;
+  user_id: number;
+  username: string;
+  profit: number;
+  win_rate: number;
+  roi: number;
+  total_bets: number;
+  total_wagered: number;
+  is_current_user: boolean;
+}
+
+interface LeaderboardData {
+  status: string;
+  period: string;
+  leaderboard: LeaderboardEntry[];
+  current_user_rank: number | null;
+  stats: {
+    total_players: number;
+    active_players: number;
+    current_user_points: number;
+  };
+}
+
 export default function LeaderboardPage() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, token } = useAuth();
   const router = useRouter();
   const [selectedPeriod, setSelectedPeriod] = useState('weekly');
+  const [leaderboardData, setLeaderboardData] = useState<LeaderboardData | null>(null);
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -17,7 +44,50 @@ export default function LeaderboardPage() {
     }
   }, [isAuthenticated, loading, router]);
 
-  if (loading) {
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchLeaderboardData();
+    }
+  }, [isAuthenticated, selectedPeriod]);
+
+  const fetchLeaderboardData = async () => {
+    try {
+      setIsLoadingData(true);
+      setError(null);
+
+      if (!token) {
+        setError('Authentication required');
+        return;
+      }
+
+      const response = await fetch(`http://localhost:8001/api/leaderboard?period=${selectedPeriod}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Leaderboard API response:', data);
+
+      if (data.status === 'success') {
+        setLeaderboardData(data);
+      } else {
+        setError('Failed to load leaderboard data');
+      }
+    } catch (error) {
+      console.error('Error fetching leaderboard data:', error);
+      setError('Failed to load leaderboard data');
+    } finally {
+      setIsLoadingData(false);
+    }
+  };
+
+  if (loading || isLoadingData) {
     return (
       <Layout>
         <div className="min-h-screen flex items-center justify-center">
@@ -31,14 +101,6 @@ export default function LeaderboardPage() {
     return null;
   }
 
-  const mockLeaderboard = [
-    { rank: 1, name: 'BetMaster2024', profit: '+$3,245', winRate: '78%', roi: '22.5%' },
-    { rank: 2, name: 'SportsPro', profit: '+$2,890', winRate: '74%', roi: '18.9%' },
-    { rank: 3, name: 'AnalyticsKing', profit: '+$2,567', winRate: '71%', roi: '17.2%' },
-    { rank: 4, name: 'LuckyStreak', profit: '+$2,234', winRate: '69%', roi: '15.8%' },
-    { rank: 5, name: 'DataDriven', profit: '+$1,998', winRate: '67%', roi: '14.3%' },
-  ];
-
   const getRankIcon = (rank: number) => {
     switch (rank) {
       case 1: return <Crown className="w-6 h-6 text-yellow-500" />;
@@ -47,6 +109,43 @@ export default function LeaderboardPage() {
       default: return <span className="w-6 h-6 flex items-center justify-center text-gray-500 font-bold">{rank}</span>;
     }
   };
+
+  const formatCurrency = (amount: number) => {
+    const sign = amount >= 0 ? '+' : '';
+    return `${sign}$${Math.abs(amount).toLocaleString()}`;
+  };
+
+  if (error || !leaderboardData) {
+    return (
+      <Layout requiresAuth>
+        <div className="space-y-6">
+          <h1 className="text-3xl font-bold text-gray-900">Leaderboard</h1>
+
+          {error ? (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+              <p className="text-red-600 mb-4">{error}</p>
+              <button
+                onClick={fetchLeaderboardData}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+              >
+                Try Again
+              </button>
+            </div>
+          ) : (
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
+              <p className="text-gray-600 mb-4">No leaderboard data available</p>
+              <button
+                onClick={fetchLeaderboardData}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Load Leaderboard
+              </button>
+            </div>
+          )}
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout requiresAuth>
@@ -58,10 +157,9 @@ export default function LeaderboardPage() {
             onChange={(e) => setSelectedPeriod(e.target.value)}
             className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
           >
-            <option value="daily">Daily</option>
             <option value="weekly">Weekly</option>
             <option value="monthly">Monthly</option>
-            <option value="alltime">All Time</option>
+            <option value="all_time">All Time</option>
           </select>
         </div>
 
@@ -72,33 +170,41 @@ export default function LeaderboardPage() {
               <span className="text-2xl font-bold text-yellow-500">#1</span>
             </div>
             <h3 className="font-semibold text-gray-900">Your Best Rank</h3>
-            <p className="text-sm text-gray-600">Last month</p>
+            <p className="text-sm text-gray-600">
+              {leaderboardData.current_user_rank ? `Currently #${leaderboardData.current_user_rank}` : 'No ranking yet'}
+            </p>
           </div>
-          
+
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <Users className="w-8 h-8 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">2,847</span>
+              <span className="text-2xl font-bold text-blue-600">
+                {leaderboardData.stats.active_players.toLocaleString()}
+              </span>
             </div>
             <h3 className="font-semibold text-gray-900">Total Players</h3>
-            <p className="text-sm text-gray-600">Active this week</p>
+            <p className="text-sm text-gray-600">Active this {selectedPeriod}</p>
           </div>
 
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <TrendingUp className="w-8 h-8 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">#47</span>
+              <span className="text-2xl font-bold text-green-600">
+                {leaderboardData.current_user_rank ? `#${leaderboardData.current_user_rank}` : 'N/A'}
+              </span>
             </div>
             <h3 className="font-semibold text-gray-900">Current Rank</h3>
-            <p className="text-sm text-gray-600">This week</p>
+            <p className="text-sm text-gray-600">This {selectedPeriod}</p>
           </div>
 
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <Star className="w-8 h-8 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">1,250</span>
+              <span className="text-2xl font-bold text-purple-600">
+                {formatCurrency(leaderboardData.stats.current_user_points)}
+              </span>
             </div>
-            <h3 className="font-semibold text-gray-900">Points</h3>
+            <h3 className="font-semibold text-gray-900">Profit</h3>
             <p className="text-sm text-gray-600">Current total</p>
           </div>
         </div>
@@ -109,65 +215,58 @@ export default function LeaderboardPage() {
           </div>
           
           <div className="p-6">
-            <div className="space-y-4">
-              {mockLeaderboard.map((user) => (
-                <div key={user.rank} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-                  <div className="flex items-center space-x-4">
-                    <div className="flex items-center justify-center w-10 h-10">
-                      {getRankIcon(user.rank)}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-gray-900">{user.name}</div>
-                      <div className="text-sm text-gray-500">Rank #{user.rank}</div>
-                    </div>
-                  </div>
-                  
-                  <div className="flex items-center space-x-8 text-right">
-                    <div>
-                      <div className="font-semibold text-green-600">{user.profit}</div>
-                      <div className="text-xs text-gray-500">Profit</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold">{user.winRate}</div>
-                      <div className="text-xs text-gray-500">Win Rate</div>
-                    </div>
-                    <div>
-                      <div className="font-semibold text-blue-600">{user.roi}</div>
-                      <div className="text-xs text-gray-500">ROI</div>
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-4">
-                  <div className="flex items-center justify-center w-10 h-10 bg-blue-100 rounded-full">
-                    <span className="font-bold text-blue-600">47</span>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-gray-900">You</div>
-                    <div className="text-sm text-gray-500">Your current position</div>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-8 text-right">
-                  <div>
-                    <div className="font-semibold text-green-600">+$487</div>
-                    <div className="text-xs text-gray-500">Profit</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold">64%</div>
-                    <div className="text-xs text-gray-500">Win Rate</div>
-                  </div>
-                  <div>
-                    <div className="font-semibold text-blue-600">12.3%</div>
-                    <div className="text-xs text-gray-500">ROI</div>
-                  </div>
-                </div>
+            {leaderboardData.leaderboard.length === 0 ? (
+              <div className="text-center py-12">
+                <Users className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+                <p className="text-gray-500 text-lg mb-2">No active players yet</p>
+                <p className="text-gray-400">Be the first to place some bets and climb the leaderboard!</p>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-4">
+                {leaderboardData.leaderboard.map((user) => (
+                  <div
+                    key={user.user_id}
+                    className={`flex items-center justify-between p-4 rounded-lg ${
+                      user.is_current_user ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-4">
+                      <div className="flex items-center justify-center w-10 h-10">
+                        {getRankIcon(user.rank)}
+                      </div>
+                      <div>
+                        <div className={`font-semibold ${user.is_current_user ? 'text-blue-900' : 'text-gray-900'}`}>
+                          {user.username}
+                          {user.is_current_user && <span className="ml-2 text-sm text-blue-600">(You)</span>}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          Rank #{user.rank} • {user.total_bets} bets
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-8 text-right">
+                      <div>
+                        <div className={`font-semibold ${user.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {formatCurrency(user.profit)}
+                        </div>
+                        <div className="text-xs text-gray-500">Profit</div>
+                      </div>
+                      <div>
+                        <div className="font-semibold">{user.win_rate}%</div>
+                        <div className="text-xs text-gray-500">Win Rate</div>
+                      </div>
+                      <div>
+                        <div className={`font-semibold ${user.roi >= 0 ? 'text-blue-600' : 'text-red-600'}`}>
+                          {user.roi >= 0 ? '+' : ''}{user.roi}%
+                        </div>
+                        <div className="text-xs text-gray-500">ROI</div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

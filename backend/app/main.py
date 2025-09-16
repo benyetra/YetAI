@@ -290,6 +290,114 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         logger.error(f"Error fetching user performance: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user performance metrics")
 
+@app.options("/api/leaderboard")
+async def options_leaderboard():
+    """Handle CORS preflight for leaderboard endpoint"""
+    return {}
+
+@app.get("/api/leaderboard")
+async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(get_current_user)):
+    """Get leaderboard with real user betting statistics"""
+    try:
+        bet_service = get_service("bet_service")
+        if not bet_service:
+            raise HTTPException(status_code=500, detail="Bet service not available")
+
+        # Get all users from database
+        from app.core.database import SessionLocal
+        from app.models.database_models import User
+
+        db = SessionLocal()
+        try:
+            users = db.query(User).all()
+            leaderboard_data = []
+
+            # Calculate days for period
+            days = {"weekly": 7, "monthly": 30, "all_time": 365}.get(period, 7)
+
+            for user in users:
+                try:
+                    # Get user bet stats
+                    stats_result = await bet_service.get_bet_stats(user.id)
+                    if stats_result.get("success"):
+                        stats = stats_result.get("stats", {})
+
+                        # Calculate metrics
+                        total_wagered = stats.get('total_wagered', 0)
+                        net_profit = stats.get('net_profit', 0)
+                        win_rate = stats.get('win_rate', 0)
+                        total_bets = stats.get('total_bets', 0)
+
+                        # Only include users who have placed bets
+                        if total_bets > 0:
+                            roi = (net_profit / total_wagered * 100) if total_wagered > 0 else 0
+
+                            leaderboard_data.append({
+                                'user_id': user.id,
+                                'username': user.username or f"User{user.id}",
+                                'profit': net_profit,
+                                'win_rate': win_rate,
+                                'roi': roi,
+                                'total_bets': total_bets,
+                                'total_wagered': total_wagered
+                            })
+                except Exception as e:
+                    logger.error(f"Error calculating stats for user {user.id}: {e}")
+                    continue
+
+            # Sort by profit (descending)
+            leaderboard_data.sort(key=lambda x: x['profit'], reverse=True)
+
+            # Add rank and format data
+            ranked_leaderboard = []
+            for i, user_data in enumerate(leaderboard_data):
+                ranked_leaderboard.append({
+                    'rank': i + 1,
+                    'user_id': user_data['user_id'],
+                    'username': user_data['username'],
+                    'profit': user_data['profit'],
+                    'win_rate': round(user_data['win_rate'], 1),
+                    'roi': round(user_data['roi'], 1),
+                    'total_bets': user_data['total_bets'],
+                    'total_wagered': user_data['total_wagered'],
+                    'is_current_user': user_data['user_id'] == current_user["user_id"]
+                })
+
+            # Get current user's position
+            current_user_rank = None
+            for entry in ranked_leaderboard:
+                if entry['is_current_user']:
+                    current_user_rank = entry['rank']
+                    break
+
+            # Stats for the summary section
+            total_players = len(users)
+            active_players = len(leaderboard_data)
+
+            # Get current user's profit
+            current_user_profit = 0
+            if current_user_rank and current_user_rank <= len(leaderboard_data):
+                current_user_profit = leaderboard_data[current_user_rank - 1]['profit']
+
+            return {
+                "status": "success",
+                "period": period,
+                "leaderboard": ranked_leaderboard[:50],  # Top 50
+                "current_user_rank": current_user_rank,
+                "stats": {
+                    "total_players": total_players,
+                    "active_players": active_players,
+                    "current_user_points": current_user_profit
+                }
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error fetching leaderboard: {e}")
+        raise HTTPException(status_code=500, detail="Failed to fetch leaderboard")
+
 # Simple endpoints for bets and odds that frontend might expect
 @app.options("/api/bets")
 async def options_simple_bets():
