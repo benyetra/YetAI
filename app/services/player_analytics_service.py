@@ -80,8 +80,8 @@ class PlayerAnalyticsService:
                 for i, week in enumerate(weeks):
                     params[f"week_{i}"] = week
             elif season:
-                # If season specified but no weeks, include recent seasons with weights
-                sql_query += " AND season <= :season"
+                # If season specified but no weeks, focus on that season only
+                sql_query += " AND season = :season"
                 params["season"] = season
 
             sql_query += " ORDER BY season DESC, week DESC"
@@ -130,10 +130,10 @@ class PlayerAnalyticsService:
             if len(analytics) < 2:
                 return {}
 
-            # Calculate weighted trends for key metrics
-            snap_data = [(a['snap_percentage'], a['season_weight']) for a in analytics if a['snap_percentage']]
-            target_data = [(a['target_share'], a['season_weight']) for a in analytics if a['target_share']]
-            red_zone_data = [(a['red_zone_share'], a['season_weight']) for a in analytics if a['red_zone_share']]
+            # Calculate weighted trends for key metrics (convert to float to handle Decimals)
+            snap_data = [(float(a['snap_percentage']), float(a['season_weight'])) for a in analytics if a['snap_percentage']]
+            target_data = [(float(a['target_share']), float(a['season_weight'])) for a in analytics if a['target_share']]
+            red_zone_data = [(float(a['red_zone_share']), float(a['season_weight'])) for a in analytics if a['red_zone_share']]
 
             trends = {}
 
@@ -184,15 +184,15 @@ class PlayerAnalyticsService:
             }
 
             for week_data in analytics:
-                weight = week_data.get('season_weight', 1.0)
+                weight = float(week_data.get('season_weight', 1.0))
                 if week_data.get('points_per_snap'):
-                    efficiency_data['points_per_snap'].append((week_data['points_per_snap'], weight))
+                    efficiency_data['points_per_snap'].append((float(week_data['points_per_snap']), weight))
                 if week_data.get('points_per_target'):
-                    efficiency_data['points_per_target'].append((week_data['points_per_target'], weight))
+                    efficiency_data['points_per_target'].append((float(week_data['points_per_target']), weight))
                 if week_data.get('points_per_touch'):
-                    efficiency_data['points_per_touch'].append((week_data['points_per_touch'], weight))
+                    efficiency_data['points_per_touch'].append((float(week_data['points_per_touch']), weight))
                 if week_data.get('red_zone_efficiency'):
-                    efficiency_data['red_zone_efficiency'].append((week_data['red_zone_efficiency'], weight))
+                    efficiency_data['red_zone_efficiency'].append((float(week_data['red_zone_efficiency']), weight))
 
             # Calculate weighted averages and trends
             result = {}
@@ -375,7 +375,7 @@ class PlayerAnalyticsService:
         if not values or not weights or len(values) != len(weights):
             return 0
 
-        total_weighted_sum = sum(value * weight for value, weight in zip(values, weights))
+        total_weighted_sum = sum(float(value) * float(weight) for value, weight in zip(values, weights))
         total_weights = sum(weights)
 
         if total_weights == 0:
