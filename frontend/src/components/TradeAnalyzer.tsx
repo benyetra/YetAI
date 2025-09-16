@@ -152,6 +152,36 @@ interface TradeAnalyzerProps {
   teams: StandingsTeam[];
 }
 
+// Helper function to calculate realistic trade value on frontend
+const calculateFrontendTradeValue = (position: string, age: number = 27) => {
+  const baseValues = {
+    "QB": [20, 45],
+    "RB": [15, 40],
+    "WR": [12, 38],
+    "TE": [8, 25],
+    "K": [2, 6],
+    "DEF": [3, 8]
+  };
+
+  const [min, max] = baseValues[position] || [8, 15];
+  let ageMultiplier = 1.0;
+
+  if (age <= 24) ageMultiplier = 1.1;
+  else if (age <= 27) ageMultiplier = 1.0;
+  else if (age <= 30) ageMultiplier = 0.95;
+  else ageMultiplier = 0.8;
+
+  const baseValue = min + Math.random() * (max - min);
+  return Math.round(baseValue * ageMultiplier * 10) / 10;
+};
+
+// Helper function for Sleeper player data
+const calculateTradeValue = (player: any) => {
+  const position = player.position || 'UNKNOWN';
+  const age = player.age || 27;
+  return calculateFrontendTradeValue(position, age);
+};
+
 export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standingsTeams }: TradeAnalyzerProps) {
   // State management - validate initialLeagueId exists in leagues
   const getValidInitialLeague = () => {
@@ -172,6 +202,8 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   const [activeTab, setActiveTab] = useState<'analyzer' | 'recommendations' | 'builder'>('analyzer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterLoaded, setRosterLoaded] = useState(false);
 
   // Trade builder state
   const [targetTeam, setTargetTeam] = useState<number | null>(null);
@@ -188,20 +220,22 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     if (selectedLeague && standingsTeams) {
       // Convert standings teams to the format expected by the component
       const formattedTeams = standingsTeams.map(team => ({
-        id: team.team_id,
+        id: parseInt(team.team_id.toString()), // Ensure ID is always a number
         name: team.name,
         owner_name: team.owner_name
       }));
       setTeams(formattedTeams);
+      console.log('Formatted teams from standings:', formattedTeams.map(t => ({ id: t.id, type: typeof t.id, name: t.name })));
     }
   }, [selectedLeague, standingsTeams]);
 
+  // Trigger team analysis and recommendations only after roster is loaded
   useEffect(() => {
-    if (selectedTeam && selectedLeague) {
+    if (selectedTeam && selectedLeague && rosterLoaded) {
       loadTeamAnalysis(selectedTeam, selectedLeague);
       loadTradeRecommendations(selectedTeam, selectedLeague);
     }
-  }, [selectedTeam, selectedLeague]);
+  }, [selectedTeam, selectedLeague, rosterLoaded]);
 
   // Update selectedLeague when leagues change or if current selection is invalid
   useEffect(() => {
@@ -216,6 +250,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   useEffect(() => {
     if (selectedTeam && selectedLeague && leagues && teams && teams.length > 0) {
       console.log('Loading roster for selected team:', selectedTeam);
+      setRosterLoaded(false);
       loadTeamRoster(selectedTeam, selectedLeague);
     }
   }, [selectedTeam, selectedLeague, leagues, teams]);
@@ -245,13 +280,15 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         { id: 12, name: "Team Mu", owner_name: "Owner 12" }
       ];
       setTeams(mockTeams);
-      console.log('Created mock teams for testing');
+      console.log('Created mock teams for testing:', mockTeams.map(t => ({ id: t.id, type: typeof t.id, name: t.name })));
     }
   }, [selectedLeague, standingsTeams]);
 
   // API calls
   const loadTeamRoster = async (teamId: number, leagueId: number) => {
     try {
+      setRosterLoading(true);
+      setRosterLoaded(false);
       if (!leagues || !teams) {
         console.log('Missing leagues or teams data');
         return;
@@ -278,42 +315,9 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       }
       
       console.log('Loading roster for team', teamId, 'in league', platformLeagueId);
-      
-      // Call our backend API instead of directly calling Sleeper
-      const token = localStorage.getItem('auth_token');
-      const response = await apiRequest(`/api/fantasy/roster/${platformLeagueId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Backend roster response:', data);
-        
-        if (data.status === 'success' && data.roster) {
-          // Convert backend roster format to frontend format
-          const formattedPlayers = data.roster.map((player: any) => ({
-            id: parseInt(player.player_id) || Math.random(),
-            name: player.name,
-            position: player.position || 'Unknown',
-            team: player.team || 'Unknown',
-            age: player.age || 0,
-            trade_value: player.trade_value || 25 // Use backend value or fallback
-          }));
-          
-          setSelectedTeamPlayers(formattedPlayers);
-          console.log('Loaded', formattedPlayers.length, 'players from backend');
-        } else {
-          console.log('No roster data in backend response');
-          setSelectedTeamPlayers([]);
-        }
-      } else {
-        console.error('Backend roster API failed:', response.status);
-        // Fallback to direct Sleeper API call if backend fails
-        await loadTeamRosterFallback(platformLeagueId, teamId);
-      }
+
+      // Use fallback approach directly since we need to load any team's roster, not just current user's
+      await loadTeamRosterFallback(platformLeagueId, teamId);
     } catch (error) {
       console.error('Failed to load team roster:', error);
       // Try fallback if main approach fails
@@ -321,6 +325,8 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       if (league?.platform_league_id) {
         await loadTeamRosterFallback(league.platform_league_id, teamId);
       }
+    } finally {
+      setRosterLoading(false);
     }
   };
 
@@ -341,10 +347,23 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         console.log('Fallback: Successfully loaded', rosters?.length, 'rosters and', users?.length, 'users');
         
         if (teamId) {
-          // Find the team name based on teamId
-          const selectedTeam = teams.find(t => t.id === teamId);
+          // Find the team name based on teamId - handle all type conversions
+          console.log('Looking for selected team with ID:', teamId, 'type:', typeof teamId);
+
+          const selectedTeam = teams.find(t => {
+            // Try exact match first
+            if (t.id === teamId) return true;
+            // Try number conversion
+            if (typeof teamId === 'string' && t.id === parseInt(teamId)) return true;
+            if (typeof t.id === 'string' && parseInt(t.id) === teamId) return true;
+            // Try string conversion
+            if (t.id.toString() === teamId.toString()) return true;
+            return false;
+          });
+
           if (!selectedTeam) {
-            console.error('Selected team not found with ID:', teamId);
+            console.error('Selected team not found with ID:', teamId, 'type:', typeof teamId);
+            console.error('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
             setSelectedTeamPlayers([]);
             return;
           }
@@ -370,7 +389,10 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
             if (selectedRoster && selectedRoster.players && selectedRoster.players.length > 0) {
               const playersData = await fetchPlayerDetails(selectedRoster.players);
               setSelectedTeamPlayers(playersData);
+              setRosterLoaded(true);
               console.log('Fallback: Loaded', playersData?.length, 'players via fallback');
+            } else {
+              setRosterLoaded(true);
             }
             return;
           }
@@ -388,22 +410,27 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           if (selectedRoster && selectedRoster.players && selectedRoster.players.length > 0) {
             const playersData = await fetchPlayerDetails(selectedRoster.players);
             setSelectedTeamPlayers(playersData);
+            setRosterLoaded(true);
             console.log('Fallback: Loaded', playersData?.length, 'players');
           } else {
             console.log('Fallback: Selected roster has no players');
             setSelectedTeamPlayers([]);
+            setRosterLoaded(true);
           }
         } else {
           console.log('Fallback: No rosters found in API response');
           setSelectedTeamPlayers([]);
+          setRosterLoaded(true);
         }
       } else {
         console.error('Fallback: Failed to fetch rosters:', response.status);
         setSelectedTeamPlayers([]);
+        setRosterLoaded(true);
       }
     } catch (error) {
       console.error('Fallback: Failed to load team roster:', error);
       setSelectedTeamPlayers([]);
+      setRosterLoaded(true);
     }
   };
 
@@ -462,10 +489,24 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         const users = await usersResponse.json();
         console.log('Successfully loaded', rosters?.length, 'rosters and', users?.length, 'users');
         
-        // Find the team name based on teamId
-        const targetTeam = teams.find(t => t.id === teamId);
+        // Find the team name based on teamId - handle all type conversions
+        console.log('Looking for target team with ID:', teamId, 'type:', typeof teamId);
+        console.log('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
+
+        const targetTeam = teams.find(t => {
+          // Try exact match first
+          if (t.id === teamId) return true;
+          // Try number conversion
+          if (typeof teamId === 'string' && t.id === parseInt(teamId)) return true;
+          if (typeof t.id === 'string' && parseInt(t.id) === teamId) return true;
+          // Try string conversion
+          if (t.id.toString() === teamId.toString()) return true;
+          return false;
+        });
+
         if (!targetTeam) {
-          console.error('Target team not found with ID:', teamId);
+          console.error('Target team not found with ID:', teamId, 'type:', typeof teamId);
+          console.error('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
           setTargetTeamPlayers([]);
           return;
         }
@@ -566,7 +607,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           
           if (player) {
             const playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
-            const trade_value = tradeValues[playerName] || 20; // Use API value or fallback
+            const trade_value = tradeValues[playerName] || calculateTradeValue(player); // Use API value or calculate realistic value
             
             return {
               id: numericId,
@@ -694,7 +735,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
             })),
             valuable_players: selectedTeamPlayers.slice(0, 3).map(p => ({
               ...p,
-              trade_value: p.trade_value || 25
+              trade_value: p.trade_value || calculateFrontendTradeValue(p.position, p.age)
             })),
             tradeable_picks: [
               { pick_id: 1, season: 2025, round: 1, description: '2025 1st Round Pick', trade_value: 35 },
@@ -824,19 +865,33 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       
       if (response.ok) {
         const data = await response.json();
-        setTradeEvaluation({
-          trade_id: 0,
-          grades: {
-            team1_grade: data.quick_analysis.team1_grade,
-            team2_grade: data.quick_analysis.team2_grade
-          },
-          values: data.value_breakdown,
-          analysis: { team1_analysis: {}, team2_analysis: {} },
-          fairness_score: data.quick_analysis.fairness_score,
-          ai_summary: data.quick_analysis.ai_summary,
-          key_factors: data.quick_analysis.key_factors,
-          confidence: data.quick_analysis.confidence
-        });
+        console.log('Quick analysis response:', data);
+
+        if (data.success && data.analysis) {
+          setTradeEvaluation({
+            trade_id: data.analysis.trade_id || 0,
+            grades: {
+              team1_grade: data.analysis.fairness?.verdict || 'N/A',
+              team2_grade: data.analysis.fairness?.verdict || 'N/A'
+            },
+            values: {
+              team1_total: data.analysis.team1_gives?.total_value || 0,
+              team2_total: data.analysis.team2_gives?.total_value || 0,
+              difference: data.analysis.fairness?.value_difference || 0
+            },
+            analysis: {
+              team1_analysis: data.analysis.team1_gives || {},
+              team2_analysis: data.analysis.team2_gives || {}
+            },
+            fairness_score: data.analysis.fairness?.percentage || 0,
+            ai_summary: `Trade Analysis: ${data.analysis.fairness?.verdict || 'Unknown'}`,
+            key_factors: data.analysis.insights || [],
+            confidence: data.analysis.fairness?.percentage || 0
+          });
+        } else {
+          console.error('Invalid API response:', data);
+          setError('Invalid trade analysis response');
+        }
       }
     } catch (error) {
       console.error('Failed to analyze trade:', error);
@@ -1189,9 +1244,17 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         
         <div className="grid grid-cols-2 gap-6 mb-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Your Team: {teams.find(t => t.id === selectedTeam)?.name}
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Your Team</label>
+            <select
+              value={selectedTeam || ''}
+              onChange={(e) => setSelectedTeam(e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+            >
+              <option value="">Select your team</option>
+              {teams.map(team => (
+                <option key={team.id} value={team.id}>{team.name}</option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -1202,7 +1265,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
               className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
             >
               <option value="">Select target team</option>
-              {teams.filter(t => t.id !== selectedTeam).map(team => (
+              {teams.filter(t => t.id !== selectedTeam && t.id !== parseInt(selectedTeam?.toString() || '0')).map(team => (
                 <option key={team.id} value={team.id}>{team.name}</option>
               ))}
             </select>
