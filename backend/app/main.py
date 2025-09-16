@@ -4406,6 +4406,68 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         logger.error(f"WebSocket error for user {user_id}: {e}")
         ws_manager.disconnect(user_id)
 
+@app.get("/api/debug/analytics-status")
+async def debug_analytics_status(db=Depends(get_db)):
+    """Debug endpoint to check analytics table status in production"""
+    from sqlalchemy import text
+    from datetime import datetime
+
+    try:
+        # Check if tables exist
+        tables_check = db.execute(text("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema = 'public'
+            AND table_name IN ('player_analytics', 'player_trends', 'fantasy_players')
+            ORDER BY table_name
+        """)).fetchall()
+
+        # Count records in each table
+        player_analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0] if any(t[0] == 'player_analytics' for t in tables_check) else 0
+        player_trends_count = db.execute(text("SELECT COUNT(*) FROM player_trends")).fetchone()[0] if any(t[0] == 'player_trends' for t in tables_check) else 0
+        fantasy_players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0] if any(t[0] == 'fantasy_players' for t in tables_check) else 0
+
+        # Check seasons available
+        seasons = []
+        if player_analytics_count > 0:
+            seasons_result = db.execute(text("SELECT DISTINCT season FROM player_analytics ORDER BY season")).fetchall()
+            seasons = [row[0] for row in seasons_result]
+
+        # Test sample player lookup
+        sample_player = None
+        if fantasy_players_count > 0:
+            sample_result = db.execute(text("SELECT id, platform_player_id, name FROM fantasy_players LIMIT 1")).fetchone()
+            if sample_result:
+                sample_player = {
+                    "fantasy_id": sample_result[0],
+                    "platform_id": sample_result[1],
+                    "name": sample_result[2]
+                }
+
+                # Check if this player has analytics
+                if player_analytics_count > 0:
+                    analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics WHERE player_id = :pid"),
+                                                {"pid": sample_result[1]}).fetchone()[0]
+                    sample_player["analytics_records"] = analytics_count
+
+        return {
+            "database_connected": True,
+            "tables_exist": [t[0] for t in tables_check],
+            "record_counts": {
+                "player_analytics": player_analytics_count,
+                "player_trends": player_trends_count,
+                "fantasy_players": fantasy_players_count
+            },
+            "available_seasons": seasons,
+            "sample_player": sample_player,
+            "debug_timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "database_connected": False,
+            "debug_timestamp": datetime.utcnow().isoformat()
+        }
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
