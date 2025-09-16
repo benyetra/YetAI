@@ -86,7 +86,7 @@ class FantasyAnalyticsService:
                     {
                         "week": g.week,
                         "season": g.season,
-                        "opponent": g.opponent,
+                        "opponent": str(g.opponent) if g.opponent is not None else None,
                         "ppr_points": g.ppr_points,
                         "targets": g.targets,
                         "snap_percentage": g.snap_percentage
