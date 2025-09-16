@@ -97,24 +97,32 @@ export default function PerformancePage() {
           status: response.status,
           period_days: response.metrics?.period_days || 30,
           overview: {
-            total_bets: response.metrics?.resolved_predictions || 0,
-            total_wagered: 0, // Not available in this API
-            total_profit: 0, // Not available in this API
+            total_bets: response.metrics?.total_predictions || 0,
+            total_wagered: response.metrics?.total_wagered || 0,
+            total_profit: response.metrics?.net_profit || 0,
             win_rate: Math.round(response.metrics?.overall_accuracy || 0),
-            roi: 0, // Not available in this API
+            roi: response.metrics?.total_wagered > 0 ? Math.round((response.metrics?.net_profit / response.metrics?.total_wagered) * 100) : 0,
             won_bets: Math.round((response.metrics?.resolved_predictions || 0) * (response.metrics?.success_rate || 0)),
             lost_bets: (response.metrics?.resolved_predictions || 0) - Math.round((response.metrics?.resolved_predictions || 0) * (response.metrics?.success_rate || 0)),
             pending_bets: response.metrics?.pending_predictions || 0
           },
-          sport_breakdown: [], // Not available in this API
+          sport_breakdown: response.metrics?.by_sport ? Object.entries(response.metrics.by_sport).map(([sport, data]: [string, any]) => ({
+            sport: sport,
+            sport_name: sport.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            total_bets: data.count || 0,
+            total_wagered: data.total_wagered || 0,
+            profit_loss: data.net_profit || 0,
+            win_rate: Math.round(data.win_rate || 0),
+            roi: data.total_wagered > 0 ? Math.round((data.net_profit / data.total_wagered) * 100) : 0
+          })) : [],
           bet_type_breakdown: response.metrics?.by_type ? Object.entries(response.metrics.by_type).map(([type, data]: [string, any]) => ({
             bet_type: type,
             bet_type_name: type.charAt(0).toUpperCase() + type.slice(1),
             total_bets: data.count || 0,
-            total_wagered: 0,
-            profit_loss: 0,
-            win_rate: Math.round(data.avg_accuracy || 0),
-            roi: 0
+            total_wagered: data.total_wagered || 0,
+            profit_loss: data.net_profit || 0,
+            win_rate: Math.round(data.win_rate || 0),
+            roi: data.total_wagered > 0 ? Math.round((data.net_profit / data.total_wagered) * 100) : 0
           })) : [],
           performance_trend: response.metrics?.trends ? {
             recent_period: {

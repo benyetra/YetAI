@@ -60,11 +60,16 @@ class PerformanceTracker:
                     'overall_accuracy': 0,
                     'success_rate': 0,
                     'by_type': {},
+                    'by_sport': {},
                     'by_confidence': {},
                     'trends': {
                         'last_7_days_accuracy': 0,
                         'improvement_trend': 'stable'
-                    }
+                    },
+                    'total_wagered': 0,
+                    'total_won': 0,
+                    'net_profit': 0,
+                    'win_rate': 0
                 }
 
             # Get bet service to fetch real user data
@@ -105,17 +110,62 @@ class PerformanceTracker:
             success_rate = len(won_bets) / len(resolved_bets) if resolved_bets else 0
             overall_accuracy = success_rate * 100  # Convert to percentage
 
-            # Group by bet type
+            # Group by bet type for all recent bets (not just resolved)
             type_metrics = {}
-            for bet_type in ["moneyline", "spread", "total", "parlay"]:
-                type_bets = [bet for bet in resolved_bets if bet.get("bet_type") == bet_type]
-                if type_bets:
-                    type_won = [bet for bet in type_bets if bet["status"] == "won"]
-                    type_metrics[bet_type] = {
-                        'count': len(type_bets),
-                        'avg_accuracy': (len(type_won) / len(type_bets)) * 100,
-                        'success_rate': len(type_won) / len(type_bets)
+            bet_type_mapping = {
+                "moneyline": "Moneyline",
+                "spread": "Spread",
+                "total": "Over/Under",
+                "parlay": "Parlay"
+            }
+
+            for bet_type_key, bet_type_name in bet_type_mapping.items():
+                type_all_bets = [bet for bet in recent_bets if bet.get("bet_type") == bet_type_key]
+                type_resolved_bets = [bet for bet in type_all_bets if bet["status"] in ["won", "lost"]]
+                type_won = [bet for bet in type_resolved_bets if bet["status"] == "won"]
+
+                if type_all_bets:
+                    total_wagered = sum(bet.get("amount", 0) for bet in type_all_bets)
+                    total_won = sum(bet.get("result_amount", 0) for bet in type_won)
+
+                    type_metrics[bet_type_name] = {
+                        'count': len(type_all_bets),
+                        'resolved_count': len(type_resolved_bets),
+                        'wins': len(type_won),
+                        'losses': len(type_resolved_bets) - len(type_won),
+                        'win_rate': (len(type_won) / len(type_resolved_bets)) * 100 if type_resolved_bets else 0,
+                        'total_wagered': round(total_wagered, 2),
+                        'total_won': round(total_won, 2),
+                        'net_profit': round(total_won - sum(bet.get("amount", 0) for bet in [b for b in type_resolved_bets if b["status"] == "lost"]), 2)
                     }
+
+            # Group by sport
+            sport_metrics = {}
+            for bet in recent_bets:
+                sport = bet.get("sport", "Unknown")
+                if sport and sport != "Unknown":
+                    if sport not in sport_metrics:
+                        sport_metrics[sport] = []
+                    sport_metrics[sport].append(bet)
+
+            # Calculate sport breakdown
+            sport_breakdown = {}
+            for sport, sport_bets in sport_metrics.items():
+                sport_resolved = [bet for bet in sport_bets if bet["status"] in ["won", "lost"]]
+                sport_won = [bet for bet in sport_resolved if bet["status"] == "won"]
+                total_wagered = sum(bet.get("amount", 0) for bet in sport_bets)
+                total_won = sum(bet.get("result_amount", 0) for bet in sport_won)
+
+                sport_breakdown[sport] = {
+                    'count': len(sport_bets),
+                    'resolved_count': len(sport_resolved),
+                    'wins': len(sport_won),
+                    'losses': len(sport_resolved) - len(sport_won),
+                    'win_rate': (len(sport_won) / len(sport_resolved)) * 100 if sport_resolved else 0,
+                    'total_wagered': round(total_wagered, 2),
+                    'total_won': round(total_won, 2),
+                    'net_profit': round(total_won - sum(bet.get("amount", 0) for bet in [b for b in sport_resolved if b["status"] == "lost"]), 2)
+                }
 
             # Calculate trends for last 7 days
             week_cutoff = datetime.now() - timedelta(days=7)
@@ -148,6 +198,7 @@ class PerformanceTracker:
                 'overall_accuracy': round(overall_accuracy, 1),
                 'success_rate': round(success_rate, 2),
                 'by_type': type_metrics,
+                'by_sport': sport_breakdown,
                 'by_confidence': {},  # Not available from bet data
                 'trends': {
                     'last_7_days_accuracy': round(week_accuracy, 1),
@@ -279,6 +330,7 @@ class PerformanceTracker:
             'overall_accuracy': 0,
             'success_rate': 0,
             'by_type': {},
+            'by_sport': {},
             'by_confidence': {},
             'trends': {
                 'last_7_days_accuracy': 0,
