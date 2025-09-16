@@ -50,39 +50,45 @@ class PlayerAnalyticsService:
             available_seasons = [row[0] for row in season_result.fetchall()]
             print(f"DEBUG: Available seasons: {available_seasons}")
 
-            # Use raw SQL to bypass SQLAlchemy type processing issues
+            # Use weighted query prioritizing recent data
+            # Current season (2025): weight 1.0, 2024: weight 0.6, 2023: weight 0.3, older: weight 0.1
             sql_query = """
                 SELECT
                     week, season, ppr_points, snap_percentage, target_share,
                     red_zone_share, points_per_snap, points_per_target,
                     boom_rate, bust_rate, floor_score, ceiling_score,
-                    opponent, injury_designation, game_script
+                    opponent, injury_designation, game_script,
+                    CASE
+                        WHEN season = 2025 THEN 1.0
+                        WHEN season = 2024 THEN 0.6
+                        WHEN season = 2023 THEN 0.3
+                        ELSE 0.1
+                    END as season_weight
                 FROM player_analytics
-                WHERE player_id = :player_id AND season = :season
+                WHERE player_id = :player_id
+                AND season >= 2022
             """
 
-            params = {"player_id": player_id, "season": season}
+            params = {"player_id": player_id}
 
-            if weeks:
+            if weeks and season:
+                # If specific weeks requested, focus on that season
+                sql_query += " AND season = :season"
+                params["season"] = season
                 placeholders = ",".join([f":week_{i}" for i in range(len(weeks))])
                 sql_query += f" AND week IN ({placeholders})"
                 for i, week in enumerate(weeks):
                     params[f"week_{i}"] = week
+            elif season:
+                # If season specified but no weeks, include recent seasons with weights
+                sql_query += " AND season <= :season"
+                params["season"] = season
 
-            sql_query += " ORDER BY week"
+            sql_query += " ORDER BY season DESC, week DESC"
 
             result = self.db.execute(text(sql_query), params)
             rows = result.fetchall()
-            print(f"DEBUG: Found {len(rows)} analytics records for player_id {player_id}, season {season}")
-
-            # If no data for current season, try previous season as fallback
-            if len(rows) == 0 and season > 2021:
-                fallback_season = season - 1
-                print(f"DEBUG: No data for {season}, trying {fallback_season} as fallback")
-                params["season"] = fallback_season
-                result = self.db.execute(text(sql_query), params)
-                rows = result.fetchall()
-                print(f"DEBUG: Found {len(rows)} analytics records for platform_player_id {platform_player_id}, season {fallback_season} (fallback)")
+            print(f"DEBUG: Found {len(rows)} analytics records for player_id {player_id} across multiple seasons")
 
             analytics = []
             for row in rows:
@@ -101,7 +107,8 @@ class PlayerAnalyticsService:
                     'ceiling_score': row[11],
                     'opponent': row[12],
                     'injury_designation': row[13],
-                    'game_script': row[14]
+                    'game_script': row[14],
+                    'season_weight': row[15]
                 })
 
             return analytics
@@ -111,84 +118,92 @@ class PlayerAnalyticsService:
             return []
     
     async def calculate_usage_trends(
-        self, 
-        player_id: int, 
+        self,
+        player_id: int,
         weeks: List[int],
         season: int = 2024
     ) -> Dict:
-        """Calculate usage trends over specified weeks"""
+        """Calculate usage trends over specified weeks with season weighting"""
         try:
             analytics = await self.get_player_analytics(player_id, weeks, season)
-            
+
             if len(analytics) < 2:
                 return {}
-                
-            # Calculate trends for key metrics
-            snap_shares = [a['snap_percentage'] for a in analytics if a['snap_percentage']]
-            target_shares = [a['target_share'] for a in analytics if a['target_share']]
-            red_zone_shares = [a['red_zone_share'] for a in analytics if a['red_zone_share']]
-            
+
+            # Calculate weighted trends for key metrics
+            snap_data = [(a['snap_percentage'], a['season_weight']) for a in analytics if a['snap_percentage']]
+            target_data = [(a['target_share'], a['season_weight']) for a in analytics if a['target_share']]
+            red_zone_data = [(a['red_zone_share'], a['season_weight']) for a in analytics if a['red_zone_share']]
+
             trends = {}
-            
-            if snap_shares:
-                trends['snap_share_trend'] = self._calculate_trend(snap_shares)
-                trends['avg_snap_share'] = statistics.mean(snap_shares)
-                trends['snap_share_consistency'] = statistics.stdev(snap_shares) if len(snap_shares) > 1 else 0
-                
-            if target_shares:
-                trends['target_share_trend'] = self._calculate_trend(target_shares)
-                trends['avg_target_share'] = statistics.mean(target_shares)
-                trends['target_share_consistency'] = statistics.stdev(target_shares) if len(target_shares) > 1 else 0
-                
-            if red_zone_shares:
-                trends['red_zone_usage_trend'] = self._calculate_trend(red_zone_shares)
-                trends['avg_red_zone_share'] = statistics.mean(red_zone_shares)
-                
+
+            if snap_data:
+                snap_values = [d[0] for d in snap_data]
+                snap_weights = [d[1] for d in snap_data]
+                trends['snap_share_trend'] = self._calculate_trend(snap_values)
+                trends['avg_snap_share'] = self._calculate_weighted_average(snap_values, snap_weights)
+                trends['snap_share_consistency'] = statistics.stdev(snap_values) if len(snap_values) > 1 else 0
+
+            if target_data:
+                target_values = [d[0] for d in target_data]
+                target_weights = [d[1] for d in target_data]
+                trends['target_share_trend'] = self._calculate_trend(target_values)
+                trends['avg_target_share'] = self._calculate_weighted_average(target_values, target_weights)
+                trends['target_share_consistency'] = statistics.stdev(target_values) if len(target_values) > 1 else 0
+
+            if red_zone_data:
+                rz_values = [d[0] for d in red_zone_data]
+                rz_weights = [d[1] for d in red_zone_data]
+                trends['red_zone_usage_trend'] = self._calculate_trend(rz_values)
+                trends['avg_red_zone_share'] = self._calculate_weighted_average(rz_values, rz_weights)
+
             return trends
         except Exception as e:
             print(f"Error in calculate_usage_trends: {str(e)}")
             return {}
     
     async def calculate_efficiency_metrics(
-        self, 
-        player_id: int, 
+        self,
+        player_id: int,
         weeks: List[int],
         season: int = 2024
     ) -> Dict:
-        """Calculate advanced efficiency metrics"""
+        """Calculate advanced efficiency metrics with season weighting"""
         try:
             analytics = await self.get_player_analytics(player_id, weeks, season)
-            
+
             if not analytics:
                 return {}
-                
-            # Calculate efficiency metrics
-            efficiency = {
+
+            # Calculate weighted efficiency metrics
+            efficiency_data = {
                 'points_per_snap': [],
                 'points_per_target': [],
                 'points_per_touch': [],
-                'red_zone_efficiency': [],
-                'consistency_metrics': {}
+                'red_zone_efficiency': []
             }
-            
+
             for week_data in analytics:
+                weight = week_data.get('season_weight', 1.0)
                 if week_data.get('points_per_snap'):
-                    efficiency['points_per_snap'].append(week_data['points_per_snap'])
+                    efficiency_data['points_per_snap'].append((week_data['points_per_snap'], weight))
                 if week_data.get('points_per_target'):
-                    efficiency['points_per_target'].append(week_data['points_per_target'])
+                    efficiency_data['points_per_target'].append((week_data['points_per_target'], weight))
                 if week_data.get('points_per_touch'):
-                    efficiency['points_per_touch'].append(week_data['points_per_touch'])
+                    efficiency_data['points_per_touch'].append((week_data['points_per_touch'], weight))
                 if week_data.get('red_zone_efficiency'):
-                    efficiency['red_zone_efficiency'].append(week_data['red_zone_efficiency'])
-            
-            # Calculate averages and trends
+                    efficiency_data['red_zone_efficiency'].append((week_data['red_zone_efficiency'], weight))
+
+            # Calculate weighted averages and trends
             result = {}
-            for metric, values in efficiency.items():
-                if values and metric != 'consistency_metrics':
-                    result[f'avg_{metric}'] = statistics.mean(values)
+            for metric, data_points in efficiency_data.items():
+                if data_points:
+                    values = [d[0] for d in data_points]
+                    weights = [d[1] for d in data_points]
+                    result[f'avg_{metric}'] = self._calculate_weighted_average(values, weights)
                     result[f'{metric}_trend'] = self._calculate_trend(values)
                     result[f'{metric}_variance'] = statistics.stdev(values) if len(values) > 1 else 0
-                    
+
             return result
         except Exception as e:
             print(f"Error in calculate_efficiency_metrics: {str(e)}")
@@ -355,24 +370,37 @@ class PlayerAnalyticsService:
             'injury_designation': analytics.injury_designation
         }
     
+    def _calculate_weighted_average(self, values: List[float], weights: List[float]) -> float:
+        """Calculate weighted average with season weights"""
+        if not values or not weights or len(values) != len(weights):
+            return 0
+
+        total_weighted_sum = sum(value * weight for value, weight in zip(values, weights))
+        total_weights = sum(weights)
+
+        if total_weights == 0:
+            return 0
+
+        return round(total_weighted_sum / total_weights, 2)
+
     def _calculate_trend(self, values: List[float]) -> float:
         """Calculate trend (slope) for a series of values"""
         if len(values) < 2:
             return 0
-            
+
         n = len(values)
         x = list(range(n))
-        
+
         # Simple linear regression slope
         x_mean = sum(x) / n
         y_mean = sum(values) / n
-        
+
         numerator = sum((x[i] - x_mean) * (values[i] - y_mean) for i in range(n))
         denominator = sum((x[i] - x_mean) ** 2 for i in range(n))
-        
+
         if denominator == 0:
             return 0
-            
+
         slope = numerator / denominator
         return round(slope, 2)
     
