@@ -787,7 +787,7 @@ export const fantasyAPI = {
   },
 
   // Player Analytics
-  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
+  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -800,7 +800,7 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
+  getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -815,7 +815,7 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
+  getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
