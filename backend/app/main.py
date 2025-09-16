@@ -24,6 +24,7 @@ from app.services.live_betting_service_db import live_betting_service_db as live
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
+from app.models.bet_models import CreateYetAIBetRequest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -149,6 +150,25 @@ def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(securit
     except Exception as e:
         logger.error(f"Authentication failed: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
+async def require_admin(current_user: dict = Depends(get_current_user)):
+    """Require admin privileges"""
+    # Check if user has admin privileges from the database
+    if is_service_available("auth_service"):
+        auth_service = get_service("auth_service")
+        try:
+            user_data = await auth_service.get_user_by_id(current_user["user_id"])
+            if not user_data or not user_data.get("is_admin", False):
+                raise HTTPException(status_code=403, detail="Admin privileges required")
+            return user_data
+        except Exception as e:
+            logger.error(f"Error checking admin privileges: {e}")
+            raise HTTPException(status_code=403, detail="Admin privileges required")
+    else:
+        # Fallback: assume user 8 is admin for development
+        if current_user["user_id"] == 8:
+            return current_user
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
 def calculate_realistic_trade_value(player: Dict[str, Any]) -> float:
     """Calculate realistic player trade value based on Sleeper data"""
@@ -876,7 +896,7 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             user_tier = current_user.get("subscription_tier", "free")
             
             # Fetch bets based on user tier
-            bets = await yetai_service.get_bets_for_tier(user_tier)
+            bets = await yetai_service.get_active_bets(user_tier)
             
             return {
                 "status": "success",
@@ -931,16 +951,13 @@ async def options_admin_delete_yetai_bet():
     return {}
 
 @app.delete("/api/admin/yetai-bets/{bet_id}")
-async def delete_yetai_bet(bet_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin)):
     """Delete YetAI bet (Admin only)"""
-    # Check if user is admin (in real implementation)
-    if not current_user.get("is_admin", False):
-        raise HTTPException(status_code=403, detail="Admin access required")
     
     if is_service_available("yetai_bets_service"):
         try:
             yetai_service = get_service("yetai_bets_service")
-            result = await yetai_service.delete_bet(bet_id)
+            result = await yetai_service.delete_bet(bet_id, admin_user["id"])
             
             return {
                 "status": "success",
@@ -956,6 +973,39 @@ async def delete_yetai_bet(bet_id: str, current_user: dict = Depends(get_current
         "status": "success",
         "message": f"Mock deletion of YetAI bet {bet_id} - service unavailable"
     }
+
+@app.post("/api/admin/yetai-bets")
+async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict = Depends(require_admin)):
+    """Create a new YetAI Bet (Admin only)"""
+    try:
+        if is_service_available("yetai_bets_service"):
+            yetai_service = get_service("yetai_bets_service")
+            result = await yetai_service.create_bet(bet_request, admin_user["id"])
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "message": result.get("message", "Bet created successfully"),
+                    "bet_id": result.get("bet_id")
+                }
+            else:
+                raise HTTPException(status_code=400, detail=result.get("error", "Failed to create bet"))
+        else:
+            # Mock response when service unavailable
+            import uuid
+            mock_bet_id = str(uuid.uuid4())
+            return {
+                "status": "success",
+                "message": "Mock YetAI bet created successfully - service unavailable",
+                "bet_id": mock_bet_id,
+                "bet_data": bet_request.dict()
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating YetAI bet: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create bet")
 
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")
