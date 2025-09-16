@@ -85,6 +85,7 @@ interface TradeRecommendation {
   priority_score: number;
   estimated_likelihood: number;
   target_player_info?: any;
+  trade_partner?: string; // Team name from backend
 }
 
 interface TeamAnalysis {
@@ -1097,8 +1098,19 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
 
             <div className="space-y-4">
               {recs.slice(0, 3).map((rec, index) => {
-                const targetTeamName = teams.find(t => t.id === rec.target_team_id)?.name || `Team ${rec.target_team_id}`;
-                
+                // Use trade_partner from API response or fallback to team lookup
+                const apiResponse = rec as any; // Cast to access all API fields
+                let targetTeamName = apiResponse.trade_partner;
+
+                // If no trade_partner, try to look up team by ID
+                if (!targetTeamName) {
+                  const foundTeam = teams.find(t =>
+                    String(t.id) === String(rec.target_team_id) ||
+                    t.id === parseInt(String(rec.target_team_id))
+                  );
+                  targetTeamName = foundTeam?.name || `Team ${rec.target_team_id}`;
+                }
+
                 return (
                   <div key={index} className="border rounded-lg p-4">
                     <div className="flex items-center justify-between mb-2">
