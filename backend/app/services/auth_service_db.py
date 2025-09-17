@@ -343,6 +343,10 @@ class AuthServiceDB:
             logger.error(f"Error getting user by ID: {e}")
             return None
 
+    async def get_user_profile(self, user_id: int) -> Optional[Dict]:
+        """Get user profile information by ID - alias for get_user_by_id"""
+        return await self.get_user_by_id(user_id)
+
     async def update_user_avatar(
         self, user_id: int, avatar_url: str, thumbnail_url: str
     ) -> Dict:
