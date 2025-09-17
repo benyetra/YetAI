@@ -302,10 +302,39 @@ class BetVerificationService:
                 logger.info(f"Fetching scores for {sport}: {sport_game_ids}")
                 scores = await self.odds_api_service.get_scores(sport, days_from=3)
 
+                # Get game details for team-based matching
+                db = SessionLocal()
+                try:
+                    games_info = {}
+                    for game_id in sport_game_ids:
+                        game = db.query(Game).filter(Game.id == game_id).first()
+                        if game:
+                            games_info[game_id] = {
+                                'home_team': game.home_team,
+                                'away_team': game.away_team,
+                                'sport': game.sport_key
+                            }
+                finally:
+                    db.close()
+
                 for score in scores:
+                    matched_game_id = None
+
+                    # First try direct ID match
                     if score.id in sport_game_ids and score.completed:
+                        matched_game_id = score.id
+                    elif score.completed:
+                        # Try team name matching for UUID game IDs
+                        for game_id, game_info in games_info.items():
+                            if (game_info['home_team'] == score.home_team and
+                                game_info['away_team'] == score.away_team):
+                                matched_game_id = game_id
+                                logger.info(f"Matched game by teams: {game_id} -> {score.id} ({score.away_team} @ {score.home_team})")
+                                break
+
+                    if matched_game_id:
                         game_result = GameResult(
-                            game_id=score.id,
+                            game_id=matched_game_id,  # Use our internal game_id for mapping back to bets
                             sport=score.sport_key,
                             home_team=score.home_team,
                             away_team=score.away_team,
@@ -318,7 +347,7 @@ class BetVerificationService:
                             total_score=(score.home_score or 0)
                             + (score.away_score or 0),
                         )
-                        game_results[score.id] = game_result
+                        game_results[matched_game_id] = game_result  # Key by our internal game_id
                         logger.info(
                             f"Game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score}"
                         )
