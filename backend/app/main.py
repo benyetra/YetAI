@@ -385,13 +385,13 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             "total_winnings": stats["total_winnings"],
             "favorite_sport": stats["favorite_sport"],
             "favorite_bet_type": stats["favorite_bet_type"],
-            "win_streak": stats.get("current_streak", 0)
+            "win_streak": stats.get("current_streak", 0),
         }
 
         return {
             "status": "success",
             "personal_stats": personal_stats,
-            "user_id": user_id
+            "user_id": user_id,
         }
     except Exception as e:
         logger.error(f"Error fetching user performance: {e}")
@@ -409,9 +409,9 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "total_winnings": 0,
                 "favorite_sport": "N/A",
                 "favorite_bet_type": "N/A",
-                "win_streak": 0
+                "win_streak": 0,
             },
-            "user_id": user_id
+            "user_id": user_id,
         }
 
 
@@ -3553,7 +3553,9 @@ async def get_featured_games():
         # Get games from NFL and NBA as they're most popular
         for sport in ["nfl", "nba"]:
             try:
-                response = await fetch_odds_api_games(sport, False, include_live_scores=False)
+                response = await fetch_odds_api_games(
+                    sport, False, include_live_scores=False
+                )
                 if response["status"] == "success" and "games" in response:
                     games = response["games"]
                     # Take top 2 games from each sport
@@ -3578,7 +3580,7 @@ async def set_featured_games(request: dict):
         return {
             "status": "success",
             "message": f"Featured games updated with {len(game_ids)} games",
-            "game_ids": game_ids
+            "game_ids": game_ids,
         }
     except Exception as e:
         logger.error(f"Error setting featured games: {e}")
@@ -3597,7 +3599,9 @@ async def get_todays_insights():
         for league in leagues:
             try:
                 # Get games for this league
-                response = await fetch_odds_api_games(league, False, include_live_scores=False)
+                response = await fetch_odds_api_games(
+                    league, False, include_live_scores=False
+                )
 
                 if response["status"] == "success" and "games" in response:
                     games = response["games"]
@@ -3606,13 +3610,16 @@ async def get_todays_insights():
                     if games and len(games) > 0:
                         # Filter for today's games only
                         from datetime import datetime, timezone
+
                         today = datetime.now(timezone.utc).date()
 
                         todays_games = []
                         for game in games:
                             if game.get("commence_time"):
                                 try:
-                                    game_date = datetime.fromisoformat(game["commence_time"].replace('Z', '+00:00')).date()
+                                    game_date = datetime.fromisoformat(
+                                        game["commence_time"].replace("Z", "+00:00")
+                                    ).date()
                                     if game_date == today:
                                         todays_games.append(game)
                                 except:
@@ -3625,37 +3632,45 @@ async def get_todays_insights():
 
                             # Different insights based on league
                             if league == "nfl":
-                                insights.append({
-                                    "title": f"{league_name} Week Analysis",
-                                    "content": f"Today features {game_count} NFL games. Weather conditions and injury reports will be key factors. Focus on divisional matchups for higher unpredictability.",
-                                    "confidence": 85,
-                                    "category": "trend",
-                                    "league": league_name
-                                })
+                                insights.append(
+                                    {
+                                        "title": f"{league_name} Week Analysis",
+                                        "content": f"Today features {game_count} NFL games. Weather conditions and injury reports will be key factors. Focus on divisional matchups for higher unpredictability.",
+                                        "confidence": 85,
+                                        "category": "trend",
+                                        "league": league_name,
+                                    }
+                                )
                             elif league == "nba":
-                                insights.append({
-                                    "title": f"{league_name} Daily Slate",
-                                    "content": f"{game_count} NBA games today. Look for back-to-back situations and rest advantages. Pace and total scoring trends favor overs in recent weeks.",
-                                    "confidence": 78,
-                                    "category": "trend",
-                                    "league": league_name
-                                })
+                                insights.append(
+                                    {
+                                        "title": f"{league_name} Daily Slate",
+                                        "content": f"{game_count} NBA games today. Look for back-to-back situations and rest advantages. Pace and total scoring trends favor overs in recent weeks.",
+                                        "confidence": 78,
+                                        "category": "trend",
+                                        "league": league_name,
+                                    }
+                                )
                             elif league == "nhl":
-                                insights.append({
-                                    "title": f"{league_name} Ice Analysis",
-                                    "content": f"{game_count} NHL games scheduled. Goalie matchups and recent form are crucial. Home ice advantage more pronounced in cold weather months.",
-                                    "confidence": 82,
-                                    "category": "trend",
-                                    "league": league_name
-                                })
+                                insights.append(
+                                    {
+                                        "title": f"{league_name} Ice Analysis",
+                                        "content": f"{game_count} NHL games scheduled. Goalie matchups and recent form are crucial. Home ice advantage more pronounced in cold weather months.",
+                                        "confidence": 82,
+                                        "category": "trend",
+                                        "league": league_name,
+                                    }
+                                )
                             elif league == "mlb":
-                                insights.append({
-                                    "title": f"{league_name} Diamond Insights",
-                                    "content": f"{game_count} MLB games today. Weather and wind conditions significantly impact totals. Starting pitcher form and bullpen usage patterns are key.",
-                                    "confidence": 80,
-                                    "category": "weather",
-                                    "league": league_name
-                                })
+                                insights.append(
+                                    {
+                                        "title": f"{league_name} Diamond Insights",
+                                        "content": f"{game_count} MLB games today. Weather and wind conditions significantly impact totals. Starting pitcher form and bullpen usage patterns are key.",
+                                        "confidence": 80,
+                                        "category": "weather",
+                                        "league": league_name,
+                                    }
+                                )
 
                             # Add game-specific insight for leagues with fewer games
                             if game_count <= 3 and todays_games:
@@ -3663,13 +3678,15 @@ async def get_todays_insights():
                                 home_team = best_game.get("home_team", "Home")
                                 away_team = best_game.get("away_team", "Away")
 
-                                insights.append({
-                                    "title": f"Featured {league_name} Matchup",
-                                    "content": f"{away_team} @ {home_team} stands out as today's most intriguing matchup with strong betting value potential.",
-                                    "confidence": 75,
-                                    "category": "value",
-                                    "league": league_name
-                                })
+                                insights.append(
+                                    {
+                                        "title": f"Featured {league_name} Matchup",
+                                        "content": f"{away_team} @ {home_team} stands out as today's most intriguing matchup with strong betting value potential.",
+                                        "confidence": 75,
+                                        "category": "value",
+                                        "league": league_name,
+                                    }
+                                )
 
             except Exception as e:
                 logger.warning(f"Error getting insights for {league}: {e}")
@@ -3677,13 +3694,15 @@ async def get_todays_insights():
 
         # If no insights were generated, add a general insight
         if not insights:
-            insights.append({
-                "title": "Market Analysis",
-                "content": "Limited game slate today. Focus on quality over quantity and look for value in lesser-followed markets.",
-                "confidence": 70,
-                "category": "trend",
-                "league": "GENERAL"
-            })
+            insights.append(
+                {
+                    "title": "Market Analysis",
+                    "content": "Limited game slate today. Focus on quality over quantity and look for value in lesser-followed markets.",
+                    "confidence": 70,
+                    "category": "trend",
+                    "league": "GENERAL",
+                }
+            )
 
         return {"status": "success", "insights": insights}
 
@@ -3691,13 +3710,15 @@ async def get_todays_insights():
         logger.error(f"Error generating today's insights: {e}")
         return {
             "status": "success",
-            "insights": [{
-                "title": "System Update",
-                "content": "Insights service temporarily unavailable. Check back shortly for today's analysis.",
-                "confidence": 60,
-                "category": "trend",
-                "league": "SYSTEM"
-            }]
+            "insights": [
+                {
+                    "title": "System Update",
+                    "content": "Insights service temporarily unavailable. Check back shortly for today's analysis.",
+                    "confidence": 60,
+                    "category": "trend",
+                    "league": "SYSTEM",
+                }
+            ],
         }
 
 
