@@ -3722,7 +3722,9 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
                             "home_team": game_data.get("home_team"),
                             "away_team": game_data.get("away_team"),
                             "start_time": game_data.get("start_time"),
-                            "sport_key": game_data.get("sport_key", "americanfootball_nfl"),
+                            "sport_key": game_data.get(
+                                "sport_key", "americanfootball_nfl"
+                            ),
                             "explanation": game_data.get("explanation", ""),
                             "admin_notes": game_data.get("admin_notes", ""),
                         },
