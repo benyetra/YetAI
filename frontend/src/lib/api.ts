@@ -787,7 +787,7 @@ export const fantasyAPI = {
   },
 
   // Player Analytics
-  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
+  getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -800,7 +800,7 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
+  getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -815,7 +815,7 @@ export const fantasyAPI = {
     }
   },
 
-  getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2024, token?: string) => {
+  getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -830,7 +830,7 @@ export const fantasyAPI = {
     }
   },
 
-  getBreakoutCandidates: async (position: string, season: number = 2024, minWeeks: number = 3, token?: string) => {
+  getBreakoutCandidates: async (position: string, season: number = 2025, minWeeks: number = 3, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
@@ -843,7 +843,7 @@ export const fantasyAPI = {
     }
   },
 
-  getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2024, token?: string) => {
+  getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2025, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
       const params = new URLSearchParams();
