@@ -188,7 +188,9 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
     if is_service_available("auth_service"):
         auth_service = get_service("auth_service")
         try:
-            user_data = await auth_service.get_user_by_id(current_user["user_id"])
+            user_data = await auth_service.get_user_by_id(
+                current_user.get("id") or current_user.get("user_id")
+            )
             if not user_data or not user_data.get("is_admin", False):
                 raise HTTPException(status_code=403, detail="Admin privileges required")
             return user_data
@@ -197,7 +199,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=403, detail="Admin privileges required")
     else:
         # Fallback: assume user 8 is admin for development
-        if current_user["user_id"] == 8:
+        if (current_user.get("id") or current_user.get("user_id")) == 8:
             return current_user
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
@@ -368,7 +370,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
     """Get user performance metrics based on real bet data"""
     try:
         performance_service = get_service("performance_tracker")
-        user_id = current_user["user_id"]
+        user_id = current_user.get("id") or current_user.get("user_id")
         metrics = await performance_service.get_performance_metrics(
             days=30, user_id=user_id
         )
@@ -461,7 +463,7 @@ async def get_leaderboard(
                         "total_bets": user_data["total_bets"],
                         "total_wagered": user_data["total_wagered"],
                         "is_current_user": user_data["user_id"]
-                        == current_user["user_id"],
+                        == (current_user.get("id") or current_user.get("user_id")),
                     }
                 )
 
@@ -513,7 +515,9 @@ async def get_simple_bets(current_user: dict = Depends(get_current_user)):
     """Get user's bets - simplified endpoint"""
     try:
         bet_service = get_service("bet_service")
-        bets = await bet_service.get_user_bets(current_user["user_id"])
+        bets = await bet_service.get_user_bets(
+            current_user.get("id") or current_user.get("user_id")
+        )
         return {"status": "success", "bets": bets}
     except Exception as e:
         logger.error(f"Error fetching user bets: {e}")
@@ -588,7 +592,9 @@ async def get_user_avatar(current_user: dict = Depends(get_current_user)):
     """Get user avatar URL"""
     try:
         auth_service = get_service("auth_service")
-        user_data = await auth_service.get_user_profile(current_user["user_id"])
+        user_data = await auth_service.get_user_profile(
+            current_user.get("id") or current_user.get("user_id")
+        )
         avatar_url = user_data.get("avatar_url")
 
         if avatar_url:
@@ -611,7 +617,7 @@ async def upload_user_avatar(current_user: dict = Depends(get_current_user)):
     if is_service_available("auth_service"):
         try:
             # In a real implementation, handle file upload here
-            user_id = current_user["user_id"]
+            user_id = current_user.get("id") or current_user.get("user_id")
             return {
                 "status": "success",
                 "message": "Avatar upload endpoint ready",
@@ -634,7 +640,9 @@ async def upload_auth_avatar(
             raise HTTPException(status_code=503, detail="Auth service unavailable")
 
         auth_service = get_service("auth_service")
-        user = await auth_service.get_user_by_id(current_user["user_id"])
+        user = await auth_service.get_user_by_id(
+            current_user.get("id") or current_user.get("user_id")
+        )
 
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -655,13 +663,15 @@ async def upload_auth_avatar(
         from app.services.avatar_service import avatar_service
 
         success, result = avatar_service.save_avatar(
-            current_user["user_id"], image_data
+            current_user.get("id") or current_user.get("user_id"), image_data
         )
 
         if success:
             # Update user record with avatar URLs in database
             update_result = await auth_service.update_user_avatar(
-                current_user["user_id"], result["avatar"], result["thumbnail"]
+                current_user.get("id") or current_user.get("user_id"),
+                result["avatar"],
+                result["thumbnail"],
             )
 
             if update_result.get("success"):
@@ -695,7 +705,9 @@ async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=503, detail="Auth service unavailable")
 
         auth_service = get_service("auth_service")
-        user = await auth_service.get_user_by_id(current_user["user_id"])
+        user = await auth_service.get_user_by_id(
+            current_user.get("id") or current_user.get("user_id")
+        )
 
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -710,7 +722,7 @@ async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
 
             # Clear avatar URLs from database
             update_result = await auth_service.update_user_avatar(
-                current_user["user_id"], None, None
+                current_user.get("id") or current_user.get("user_id"), None, None
             )
 
             if update_result.get("success"):
@@ -794,7 +806,9 @@ async def update_profile(
 
         # If changing password, verify current password first
         if "current_password" in profile_data and "new_password" in profile_data:
-            user = await auth_service.get_user_by_id(current_user["user_id"])
+            user = await auth_service.get_user_by_id(
+                current_user.get("id") or current_user.get("user_id")
+            )
             if not user or not auth_service.verify_password(
                 profile_data["current_password"], user["password_hash"]
             ):
@@ -809,7 +823,7 @@ async def update_profile(
 
         # Update user
         updated_user = await auth_service.update_user(
-            current_user["user_id"], profile_data
+            current_user.get("id") or current_user.get("user_id"), profile_data
         )
 
         if updated_user:
@@ -931,7 +945,9 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     auth_service = get_service("auth_service")
     try:
         # Get full user data from database using user_id
-        user_data = await auth_service.get_user_by_id(current_user["user_id"])
+        user_data = await auth_service.get_user_by_id(
+            current_user.get("id") or current_user.get("user_id")
+        )
         if user_data:
             return {"status": "success", "user": user_data}
         else:
@@ -980,7 +996,9 @@ async def get_2fa_status(current_user: dict = Depends(get_current_user)):
     try:
         if is_service_available("auth_service"):
             auth_service = get_service("auth_service")
-            result = await auth_service.get_2fa_status(current_user["user_id"])
+            result = await auth_service.get_2fa_status(
+                current_user.get("id") or current_user.get("user_id")
+            )
 
             if result["success"]:
                 return {
@@ -1020,7 +1038,8 @@ async def update_preferences(
 
         auth_service = get_service("auth_service")
         result = await auth_service.update_user_preferences(
-            current_user["user_id"], preferences=preferences.dict(exclude_unset=True)
+            current_user.get("id") or current_user.get("user_id"),
+            preferences=preferences.dict(exclude_unset=True),
         )
 
         if result["success"]:
@@ -1576,7 +1595,8 @@ async def place_bet(
         try:
             bet_service = get_service("bet_service")
             result = await bet_service.place_bet(
-                user_id=current_user["user_id"],  # Now correctly returns int
+                user_id=current_user.get("id")
+                or current_user.get("user_id"),  # Now correctly returns int
                 bet_data=bet_request,  # Pass the whole request object
             )
             return {"status": "success", "bet": result}
@@ -1589,7 +1609,7 @@ async def place_bet(
         "status": "success",
         "bet": {
             "id": "mock_bet_123",
-            "user_id": current_user["user_id"],
+            "user_id": current_user.get("id") or current_user.get("user_id"),
             "bet_type": bet_request.bet_type,
             "selection": bet_request.selection,
             "odds": bet_request.odds,
@@ -1617,7 +1637,8 @@ async def place_parlay(
         from app.services.bet_service_db import bet_service_db
 
         result = await bet_service_db.place_parlay(
-            user_id=current_user["user_id"], parlay_data=parlay_request
+            user_id=current_user.get("id") or current_user.get("user_id"),
+            parlay_data=parlay_request,
         )
 
         if result.get("success"):
@@ -1649,7 +1670,9 @@ async def get_parlays(current_user: dict = Depends(get_current_user)):
     try:
         from app.services.bet_service_db import bet_service_db
 
-        result = await bet_service_db.get_user_parlays(current_user["user_id"])
+        result = await bet_service_db.get_user_parlays(
+            current_user.get("id") or current_user.get("user_id")
+        )
 
         if result.get("success"):
             return {"status": "success", "parlays": result.get("parlays", [])}
@@ -1674,7 +1697,7 @@ async def get_parlay_details(
         from app.services.bet_service_db import bet_service_db
 
         result = await bet_service_db.get_parlay_by_id(
-            current_user["user_id"], parlay_id
+            current_user.get("id") or current_user.get("user_id"), parlay_id
         )
 
         if result.get("success"):
@@ -1807,7 +1830,7 @@ async def share_bet(
         try:
             sharing_service = get_service("bet_sharing_service_db")
             result = await sharing_service.share_bet(
-                user_id=current_user["user_id"],
+                user_id=current_user.get("id") or current_user.get("user_id"),
                 bet_id=share_request.bet_id,
                 message=share_request.message,
             )
@@ -1822,7 +1845,7 @@ async def share_bet(
         "share": {
             "id": "share_123",
             "bet_id": share_request.bet_id,
-            "user_id": current_user["user_id"],
+            "user_id": current_user.get("id") or current_user.get("user_id"),
             "message": share_request.message,
             "share_url": f"https://yetai.com/shared-bet/{share_request.bet_id}",
             "created_at": datetime.now(timezone.utc).isoformat(),
@@ -1884,7 +1907,9 @@ async def delete_shared_bet(
     if is_service_available("bet_sharing_service_db"):
         try:
             sharing_service = get_service("bet_sharing_service_db")
-            await sharing_service.delete_shared_bet(share_id, current_user["user_id"])
+            await sharing_service.delete_shared_bet(
+                share_id, current_user.get("id") or current_user.get("user_id")
+            )
             return {"status": "success", "message": f"Shared bet {share_id} deleted"}
         except Exception as e:
             logger.error(f"Error deleting shared bet {share_id}: {e}")
@@ -1909,7 +1934,9 @@ async def delete_bet(bet_id: str, current_user: dict = Depends(get_current_user)
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            result = await bet_service.cancel_bet(bet_id, current_user["user_id"])
+            result = await bet_service.cancel_bet(
+                bet_id, current_user.get("id") or current_user.get("user_id")
+            )
             return {
                 "status": "success",
                 "message": f"Bet {bet_id} cancelled",
@@ -1974,7 +2001,7 @@ async def get_fantasy_accounts(current_user: dict = Depends(get_current_user)):
         from app.services.fantasy_connection_service import fantasy_connection_service
 
         result = await fantasy_connection_service.get_user_connections(
-            current_user["user_id"]
+            current_user.get("id") or current_user.get("user_id")
         )
         return result
     except Exception as e:
@@ -1997,7 +2024,7 @@ async def get_fantasy_leagues(current_user: dict = Depends(get_current_user)):
         from app.services.fantasy_connection_service import fantasy_connection_service
 
         result = await fantasy_connection_service.get_user_leagues(
-            current_user["user_id"]
+            current_user.get("id") or current_user.get("user_id")
         )
         return result
     except Exception as e:
@@ -2023,7 +2050,7 @@ async def connect_fantasy_platform(
         from app.services.fantasy_connection_service import fantasy_connection_service
 
         result = await fantasy_connection_service.connect_platform(
-            user_id=current_user["user_id"],
+            user_id=current_user.get("id") or current_user.get("user_id"),
             platform=connect_request.platform,
             credentials=connect_request.credentials,
         )
@@ -2069,7 +2096,7 @@ async def get_fantasy_roster(
             f"🔍 CALLING get_league_roster with league_id={league_id}, user_id={current_user['user_id']}"
         )
         roster = await fantasy_service.get_league_roster(
-            league_id, current_user["user_id"]
+            league_id, current_user.get("id") or current_user.get("user_id")
         )
         logger.info(f"🔍 ROSTER RETRIEVED: {len(roster)} players")
 
@@ -2152,7 +2179,8 @@ async def disconnect_fantasy_account(
         from app.services.fantasy_connection_service import fantasy_connection_service
 
         result = await fantasy_connection_service.disconnect_platform(
-            user_id=current_user["user_id"], platform_user_id=fantasy_user_id
+            user_id=current_user.get("id") or current_user.get("user_id"),
+            platform_user_id=fantasy_user_id,
         )
         return result
     except Exception as e:
@@ -2347,7 +2375,7 @@ async def get_start_sit_recommendations(
 
         # Get user's connected leagues
         user_leagues = await fantasy_connection_service.get_user_leagues(
-            current_user["user_id"]
+            current_user.get("id") or current_user.get("user_id")
         )
 
         if not user_leagues.get("leagues"):
@@ -3258,7 +3286,9 @@ async def get_profile_sports(current_user: dict = Depends(get_current_user)):
     if is_service_available("auth_service"):
         try:
             auth_service = get_service("auth_service")
-            profile = await auth_service.get_user_profile(current_user["user_id"])
+            profile = await auth_service.get_user_profile(
+                current_user.get("id") or current_user.get("user_id")
+            )
             return {
                 "status": "success",
                 "sports": profile.get("preferred_sports", []),
@@ -3298,7 +3328,9 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
     if is_service_available("auth_service"):
         try:
             auth_service = get_service("auth_service")
-            status_info = await auth_service.get_user_status(current_user["user_id"])
+            status_info = await auth_service.get_user_status(
+                current_user.get("id") or current_user.get("user_id")
+            )
             return {"status": "success", "profile_status": status_info}
         except Exception as e:
             logger.error(f"Error fetching user profile status: {e}")
@@ -3307,7 +3339,7 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
     return {
         "status": "success",
         "profile_status": {
-            "user_id": current_user["user_id"],
+            "user_id": current_user.get("id") or current_user.get("user_id"),
             "subscription_tier": current_user.get("subscription_tier", "free"),
             "account_status": "active",
             "profile_completion": 0.85,
@@ -3356,7 +3388,7 @@ async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
         try:
             bet_service = get_service("bet_service")
             active_bets = await bet_service.get_active_live_bets(
-                current_user["user_id"]
+                current_user.get("id") or current_user.get("user_id")
             )
             return {"status": "success", "active_bets": active_bets}
         except Exception as e:
@@ -3384,7 +3416,8 @@ async def place_live_bet(
     try:
         # Use the live betting service directly
         result = live_betting_service.place_live_bet(
-            user_id=current_user["user_id"], request=bet_request
+            user_id=current_user.get("id") or current_user.get("user_id"),
+            request=bet_request,
         )
 
         # Convert LiveBetResponse to dict for JSON response
