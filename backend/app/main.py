@@ -30,7 +30,11 @@ from app.services.live_betting_service_db import (
 )
 
 # Import bet scheduler service
-from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cleanup_scheduler
+from app.services.bet_scheduler_service import (
+    bet_scheduler,
+    init_scheduler,
+    cleanup_scheduler,
+)
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
