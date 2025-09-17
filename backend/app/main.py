@@ -3207,6 +3207,120 @@ async def get_popular_sports_odds():
     }
 
 
+@app.get("/api/popular-games")
+async def get_popular_games(sport: Optional[str] = None):
+    """Get popular games based on national TV broadcast coverage"""
+    try:
+        if not is_service_available("espn_api_service"):
+            # Return mock data if ESPN service not available
+            return {
+                "status": "success",
+                "popular_games": {
+                    "nfl": [
+                        {
+                            "id": "mock_nfl_1",
+                            "home_team": "Kansas City Chiefs",
+                            "away_team": "Buffalo Bills",
+                            "start_time": "2025-01-12T21:00:00Z",
+                            "sport": "nfl",
+                            "broadcast": {
+                                "network": "NBC",
+                                "is_national": True,
+                                "is_prime_time": True,
+                                "popularity_score": 90,
+                            },
+                            "popularity_score": 90,
+                        }
+                    ],
+                    "nba": [],
+                    "mlb": [],
+                    "nhl": [],
+                },
+                "message": f"Mock data - ESPN service not available in {settings.ENVIRONMENT} mode",
+            }
+
+        espn_service = get_service("espn_api_service")
+
+        if sport:
+            # Get popular games for specific sport
+            from app.services.espn_api_service import ESPNSport
+
+            try:
+                espn_sport = ESPNSport(sport.lower())
+                games = await espn_service.get_popular_games_for_sport(espn_sport)
+
+                return {
+                    "status": "success",
+                    "popular_games": {
+                        sport: [
+                            {
+                                "id": game.id,
+                                "home_team": game.home_team,
+                                "away_team": game.away_team,
+                                "start_time": game.start_time.isoformat(),
+                                "sport": game.sport,
+                                "broadcast": {
+                                    "network": game.broadcast.network,
+                                    "is_national": game.broadcast.is_national,
+                                    "is_prime_time": game.broadcast.is_prime_time,
+                                    "popularity_score": game.broadcast.popularity_score,
+                                },
+                                "popularity_score": game.popularity_score,
+                            }
+                            for game in games
+                        ]
+                    },
+                    "count": len(games),
+                }
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail=f"Unsupported sport: {sport}"
+                )
+        else:
+            # Get popular games for all sports
+            all_games = await espn_service.get_all_popular_games()
+
+            formatted_games = {}
+            total_count = 0
+
+            for sport_key, games in all_games.items():
+                formatted_games[sport_key] = [
+                    {
+                        "id": game.id,
+                        "home_team": game.home_team,
+                        "away_team": game.away_team,
+                        "start_time": game.start_time.isoformat(),
+                        "sport": game.sport,
+                        "broadcast": {
+                            "network": game.broadcast.network,
+                            "is_national": game.broadcast.is_national,
+                            "is_prime_time": game.broadcast.is_prime_time,
+                            "popularity_score": game.broadcast.popularity_score,
+                        },
+                        "popularity_score": game.popularity_score,
+                    }
+                    for game in games
+                ]
+                total_count += len(games)
+
+            return {
+                "status": "success",
+                "popular_games": formatted_games,
+                "total_count": total_count,
+                "message": f"Found {total_count} popular games across all sports",
+            }
+
+    except Exception as e:
+        logger.error(f"Error fetching popular games: {e}")
+        raise HTTPException(status_code=500, detail="Error fetching popular games")
+
+
+@app.get("/api/popular-games/{sport}")
+async def get_popular_games_by_sport(sport: str):
+    """Get popular games for a specific sport"""
+    return await get_popular_games(sport=sport)
+
+
 # Parlay-specific endpoints
 @app.options("/api/parlays/markets")
 async def options_parlay_markets():

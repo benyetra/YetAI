@@ -154,6 +154,11 @@ def initialize_services():
         "google_oauth_service", "app.services.google_oauth_service.google_oauth_service"
     )
 
+    # ESPN API service for popular games
+    service_loader.load_service(
+        "espn_api_service", "app.services.espn_api_service.espn_api_service"
+    )
+
     # Log summary
     available_services = [
         name for name, available in service_loader.get_status().items() if available

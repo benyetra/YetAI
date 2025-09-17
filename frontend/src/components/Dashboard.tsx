@@ -9,6 +9,7 @@ import { useAuth } from './Auth';
 import BetModal from './BetModal';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { LiveOdds } from './LiveOdds';
+import { PopularGames } from './PopularGames';
 import { sportsAPI, oddsUtils } from '../lib/api';
 import { formatSpread, formatTotal, formatGameStatus } from '../lib/formatting';
 
@@ -557,23 +558,11 @@ const Dashboard: React.FC = () => {
 
             {/* Live Odds Section */}
             <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold text-gray-900 section-subtitle flex items-center">
-                  <Activity className="w-5 h-5 mr-2 text-[#A855F7]" />
-                  Live Odds & Games
-                </h2>
-                <Link 
-                  href="/odds"
-                  className="text-[#A855F7] hover:text-[#A855F7]/80 font-medium text-sm flex items-center"
-                >
-                  View All <ArrowUpRight className="w-4 h-4 ml-1" />
-                </Link>
-              </div>
-              <LiveOdds 
-                showPopular={true}
+              <PopularGames
                 autoRefresh={true}
-                refreshInterval={300000} // 5 minutes
-                maxGames={6}
+                refreshInterval={600000} // 10 minutes
+                maxGamesPerSport={3}
+                onPlaceBet={handlePlaceBet}
               />
             </div>
 

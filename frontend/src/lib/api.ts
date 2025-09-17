@@ -318,7 +318,7 @@ export const sportsAPI = {
     );
   },
 
-  // Get popular sports odds
+  // Get popular sports odds (legacy - uses odds-based popularity)
   getPopularOdds: async (useCache: boolean = true) => {
     const fallbackData = {
       status: 'success',
@@ -328,8 +328,26 @@ export const sportsAPI = {
       cached: false,
       last_updated: new Date().toISOString()
     };
-    
+
     return enhancedApiClient.getWithFallback('/api/odds/popular', fallbackData, undefined, useCache);
+  },
+
+  // Get popular games based on national TV broadcast coverage (ESPN API)
+  getPopularGames: async (sport?: string, useCache: boolean = true) => {
+    const endpoint = sport ? `/api/popular-games/${sport}` : '/api/popular-games';
+    const fallbackData = {
+      status: 'success',
+      popular_games: {
+        nfl: [],
+        nba: [],
+        mlb: [],
+        nhl: []
+      },
+      total_count: 0,
+      message: 'No popular games available'
+    };
+
+    return enhancedApiClient.getWithFallback(endpoint, fallbackData, undefined, useCache);
   },
 
   // Get live games
