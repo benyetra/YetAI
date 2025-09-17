@@ -236,7 +236,6 @@ export function SportsSelector({
               </span>
               <div className="text-left">
                 <div className="font-medium text-gray-900">{selectedSportInfo.title}</div>
-                <div className="text-sm text-gray-500">{selectedSportInfo.category || selectedSportInfo.key}</div>
               </div>
             </>
           ) : (
@@ -318,7 +317,6 @@ export function SportsSelector({
                         <div className={`font-medium ${selectedSport === sport.key ? 'text-[#A855F7]' : 'text-gray-900'}`}>
                           {sport.title}
                         </div>
-                        <div className="text-sm text-gray-500">{sport.category || sport.key}</div>
                       </div>
                     </div>
                     
@@ -338,16 +336,6 @@ export function SportsSelector({
             )}
           </div>
 
-          {/* Footer */}
-          <div className="p-3 border-t border-gray-200 bg-gray-50">
-            <div className="flex items-center justify-between text-xs text-gray-500">
-              <span>{filteredSports.length} sport{filteredSports.length !== 1 ? 's' : ''} available</span>
-              <div className="flex items-center space-x-1">
-                <Activity className="w-3 h-3" />
-                <span>Updated {sportsData ? new Date(sportsData.last_updated).toLocaleTimeString() : 'never'}</span>
-              </div>
-            </div>
-          </div>
         </div>
       )}
 
