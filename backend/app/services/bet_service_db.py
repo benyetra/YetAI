@@ -610,13 +610,18 @@ class BetServiceDB:
 
     async def _fetch_game_details_from_api(self, game_id: str) -> Optional[Dict]:
         """Fetch game details from Odds API using game_id"""
+        logger.info(f"Attempting to fetch game details for {game_id}")
         try:
             from app.services.odds_api_service import OddsAPIService
             from app.core.config import settings
 
             if not settings.ODDS_API_KEY:
-                logger.warning("No Odds API key available for game lookup")
+                logger.error("No Odds API key available for game lookup")
                 return None
+
+            logger.info(
+                f"Using Odds API key ending in ...{settings.ODDS_API_KEY[-4:] if len(settings.ODDS_API_KEY) > 4 else 'SHORT'}"
+            )
 
             # Try common sports to find the game
             sports_to_try = [
@@ -631,12 +636,17 @@ class BetServiceDB:
             async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
                 for sport in sports_to_try:
                     try:
+                        logger.info(f"Checking sport {sport} for game {game_id}")
                         # Get current odds/games for this sport
                         games = await odds_service.get_odds(sport)
+                        logger.info(f"Found {len(games)} games in {sport}")
 
                         # Look for our game ID
                         for game in games:
                             if game.id == game_id:
+                                logger.info(
+                                    f"FOUND GAME: {game.away_team} @ {game.home_team} in {sport}"
+                                )
                                 return {
                                     "sport_key": game.sport_key,
                                     "sport_title": game.sport_title,
@@ -645,16 +655,21 @@ class BetServiceDB:
                                     "commence_time": game.commence_time,
                                 }
                     except Exception as e:
-                        logger.debug(
-                            f"Failed to check sport {sport} for game {game_id}: {e}"
+                        logger.error(
+                            f"Error checking sport {sport} for game {game_id}: {e}"
                         )
                         continue
 
-            logger.warning(f"Game {game_id} not found in any sport via Odds API")
+            logger.error(f"Game {game_id} not found in any sport via Odds API")
             return None
 
         except Exception as e:
-            logger.error(f"Error fetching game details from API for {game_id}: {e}")
+            logger.error(
+                f"Critical error fetching game details from API for {game_id}: {e}"
+            )
+            import traceback
+
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return None
 
     async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
