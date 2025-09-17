@@ -24,31 +24,6 @@ class PlayerAnalyticsService:
     ) -> List[Dict]:
         """Get analytics data for a specific player"""
         try:
-            print(f"DEBUG: Querying PlayerAnalytics for player_id={player_id}, season={season}")
-
-            # Convert fantasy_players.id to platform_player_id for analytics lookup
-            platform_id_query = "SELECT platform_player_id FROM fantasy_players WHERE id = :player_id"
-            platform_result = self.db.execute(text(platform_id_query), {"player_id": player_id})
-            platform_row = platform_result.fetchone()
-
-            if not platform_row:
-                print(f"DEBUG: No platform_player_id found for fantasy_players.id={player_id}")
-                return []
-
-            platform_player_id = int(platform_row[0])
-            print(f"DEBUG: Using platform_player_id={platform_player_id} for analytics lookup")
-
-            # First check if the table has any data at all
-            count_query = "SELECT COUNT(*) FROM player_analytics"
-            count_result = self.db.execute(text(count_query))
-            total_records = count_result.fetchone()[0]
-            print(f"DEBUG: Total records in player_analytics table: {total_records}")
-
-            # Check what seasons exist
-            season_query = "SELECT DISTINCT season FROM player_analytics ORDER BY season"
-            season_result = self.db.execute(text(season_query))
-            available_seasons = [row[0] for row in season_result.fetchall()]
-            print(f"DEBUG: Available seasons: {available_seasons}")
 
             # Use raw SQL to bypass SQLAlchemy type processing issues
             sql_query = """
@@ -56,7 +31,9 @@ class PlayerAnalyticsService:
                     week, season, ppr_points, snap_percentage, target_share,
                     red_zone_share, points_per_snap, points_per_target,
                     boom_rate, bust_rate, floor_score, ceiling_score,
-                    opponent, injury_designation, game_script
+                    opponent, injury_designation, game_script,
+                    carries, rushing_yards, receptions, receiving_yards,
+                    targets, half_ppr_points, standard_points
                 FROM player_analytics
                 WHERE player_id = :player_id AND season = :season
             """
@@ -73,16 +50,13 @@ class PlayerAnalyticsService:
 
             result = self.db.execute(text(sql_query), params)
             rows = result.fetchall()
-            print(f"DEBUG: Found {len(rows)} analytics records for player_id {player_id}, season {season}")
 
             # If no data for current season, try previous season as fallback
             if len(rows) == 0 and season > 2021:
                 fallback_season = season - 1
-                print(f"DEBUG: No data for {season}, trying {fallback_season} as fallback")
                 params["season"] = fallback_season
                 result = self.db.execute(text(sql_query), params)
                 rows = result.fetchall()
-                print(f"DEBUG: Found {len(rows)} analytics records for platform_player_id {platform_player_id}, season {fallback_season} (fallback)")
 
             analytics = []
             for row in rows:
@@ -101,7 +75,14 @@ class PlayerAnalyticsService:
                     'ceiling_score': row[11],
                     'opponent': row[12],
                     'injury_designation': row[13],
-                    'game_script': row[14]
+                    'game_script': row[14],
+                    'carries': row[15],
+                    'rushing_yards': row[16],
+                    'receptions': row[17],
+                    'receiving_yards': row[18],
+                    'targets': row[19],
+                    'half_ppr_points': row[20],
+                    'standard_points': row[21]
                 })
 
             return analytics

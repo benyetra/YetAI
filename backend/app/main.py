@@ -3172,7 +3172,7 @@ class ConnectionManager:
 @app.get("/api/fantasy/analytics/{player_id}")
 async def get_player_analytics_alt(
     player_id: str,
-    season: int = 2024,
+    season: int = 2025,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3203,7 +3203,7 @@ async def get_player_analytics_alt(
 
         analytics = []
         if internal_player_id:
-            analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
+            analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
 
         return {
             "status": "success",
@@ -3223,7 +3223,7 @@ async def get_player_analytics_alt(
 @app.get("/api/fantasy/analytics/{player_id}/trends")
 async def get_player_trends_alt(
     player_id: str,
-    season: int = 2024,
+    season: int = 2025,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3250,7 +3250,7 @@ async def get_player_trends_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and derive trends
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
 
         trends = {}
         if analytics and len(analytics) >= 2:
@@ -3286,7 +3286,7 @@ async def get_player_trends_alt(
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency_alt(
     player_id: str,
-    season: int = 2024,
+    season: int = 2025,
     current_user: dict = Depends(get_current_user),
     db=Depends(get_db)
 ):
@@ -3313,7 +3313,7 @@ async def get_player_efficiency_alt(
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and calculate efficiency metrics
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=2024)
+        analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
 
         efficiency = {}
         if analytics:
