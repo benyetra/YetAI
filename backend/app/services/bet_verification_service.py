@@ -242,7 +242,7 @@ class BetVerificationService:
                 game = db.query(Game).filter(Game.id == game_id).first()
                 if (
                     game
-                    and game.status == GameStatus.FINAL
+                    and game.status.upper() in ["FINAL", "COMPLETED"]
                     and game.home_score is not None
                     and game.away_score is not None
                 ):
