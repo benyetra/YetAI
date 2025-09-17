@@ -662,11 +662,26 @@ export default function FantasyPage() {
 
               // Calculate average analytics from recent weeks
               let avgAnalytics = {};
+              let seasonStats = {};
               if (analyticsResponse.status === 'success' && analyticsResponse.analytics && analyticsResponse.analytics.length > 0) {
                 const analytics = analyticsResponse.analytics;
                 const validAnalytics = analytics.filter((a: any) => a !== null && a !== undefined);
-                
+
                 if (validAnalytics.length > 0) {
+                  // Calculate per-game averages and totals
+                  const gamesPlayed = validAnalytics.length;
+                  const totalPPR = validAnalytics.reduce((sum: number, a: any) => sum + (a.ppr_points || 0), 0);
+                  const totalCarries = validAnalytics.reduce((sum: number, a: any) => sum + (a.carries || 0), 0);
+                  const totalTargets = validAnalytics.reduce((sum: number, a: any) => sum + (a.targets || 0), 0);
+                  const totalRushYards = validAnalytics.reduce((sum: number, a: any) => sum + (a.rushing_yards || 0), 0);
+                  const totalTouches = totalCarries + totalTargets;
+
+                  // Calculate variance for consistency score
+                  const pprValues = validAnalytics.map((a: any) => a.ppr_points || 0);
+                  const meanPPR = totalPPR / gamesPlayed;
+                  const variance = pprValues.reduce((sum: number, val: number) => sum + Math.pow(val - meanPPR, 2), 0) / gamesPlayed;
+                  const consistencyScore = meanPPR > 0 ? Math.max(0, 1 - (Math.sqrt(variance) / meanPPR)) : 0;
+
                   avgAnalytics = {
                     snap_percentage: validAnalytics.reduce((sum: number, a: any) => sum + (a.snap_percentage || 0), 0) / validAnalytics.length,
                     target_share: validAnalytics.reduce((sum: number, a: any) => sum + (a.target_share || 0), 0) / validAnalytics.length,
@@ -678,6 +693,18 @@ export default function FantasyPage() {
                     weekly_variance: validAnalytics.reduce((sum: number, a: any) => sum + (a.weekly_variance || 0), 0) / validAnalytics.length,
                     floor_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.floor_score || 0), 0) / validAnalytics.length,
                     ceiling_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.ceiling_score || 0), 0) / validAnalytics.length,
+                    // Add missing calculated fields
+                    points_per_touch: totalTouches > 0 ? totalPPR / totalTouches : 0,
+                    touches_per_game: totalTouches / gamesPlayed,
+                    rush_yards_per_game: totalRushYards / gamesPlayed,
+                    yards_per_carry: totalCarries > 0 ? totalRushYards / totalCarries : 0,
+                    consistency_score: consistencyScore
+                  };
+
+                  seasonStats = {
+                    points_per_game: totalPPR / gamesPlayed,
+                    games_played: gamesPlayed,
+                    total_points: totalPPR
                   };
                 }
               }
@@ -685,6 +712,7 @@ export default function FantasyPage() {
               return {
                 ...player,
                 analytics: avgAnalytics,
+                season_stats: seasonStats,
                 trends: trendsResponse.status === 'success' ? trendsResponse.trends : {},
                 efficiency: efficiencyResponse.status === 'success' ? efficiencyResponse.efficiency_metrics : {}
               };
@@ -694,6 +722,7 @@ export default function FantasyPage() {
               return {
                 ...player,
                 analytics: {},
+                season_stats: {},
                 trends: {},
                 efficiency: {}
               };
