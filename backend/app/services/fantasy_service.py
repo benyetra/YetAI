@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from datetime import datetime, timedelta
 import logging
+import statistics
 from abc import ABC, abstractmethod
 
 from app.models.fantasy_models import (
