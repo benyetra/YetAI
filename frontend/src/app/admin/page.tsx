@@ -68,6 +68,11 @@ export default function AdminPage() {
   });
   const [isSavingFeatured, setIsSavingFeatured] = useState(false);
 
+  // Game selection states
+  const [availableTodaysGames, setAvailableTodaysGames] = useState<any[]>([]);
+  const [loadingTodaysGames, setLoadingTodaysGames] = useState(false);
+  const [selectedGameForFeatured, setSelectedGameForFeatured] = useState<any>(null);
+
   useEffect(() => {
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
       router.push('/dashboard');
@@ -145,6 +150,7 @@ export default function AdminPage() {
           explanation: '',
           admin_notes: ''
         });
+        setSelectedGameForFeatured(null);
         await loadFeaturedGames();
       } else {
         setMessage({ type: 'error', text: 'Failed to save featured games' });
@@ -166,8 +172,69 @@ export default function AdminPage() {
   useEffect(() => {
     if (activeTab === 'featured') {
       loadFeaturedGames();
+      loadTodaysGames();
     }
   }, [activeTab]);
+
+  // Load today's games from all sports
+  const loadTodaysGames = async () => {
+    setLoadingTodaysGames(true);
+    try {
+      const sports = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'icehockey_nhl', 'soccer_epl'];
+      const allGames: any[] = [];
+
+      for (const sport of sports) {
+        try {
+          const result = await sportsAPI.getOdds(sport);
+          if (result.status === 'success' && result.games) {
+            // Add sport info to each game and filter for today's games
+            const today = new Date();
+            const todaysGames = result.games
+              .filter((game: any) => {
+                const gameDate = new Date(game.commence_time);
+                return gameDate.toDateString() === today.toDateString();
+              })
+              .map((game: any) => ({
+                ...game,
+                sport_key: sport,
+                sport_name: sport.replace('_', ' ').toUpperCase()
+              }));
+            allGames.push(...todaysGames);
+          }
+        } catch (error) {
+          console.warn(`Failed to load games for ${sport}:`, error);
+        }
+      }
+
+      // Sort by start time
+      allGames.sort((a, b) => new Date(a.commence_time).getTime() - new Date(b.commence_time).getTime());
+      setAvailableTodaysGames(allGames);
+    } catch (error) {
+      console.error('Error loading today\'s games:', error);
+      setMessage({ type: 'error', text: 'Failed to load today\'s games' });
+    } finally {
+      setLoadingTodaysGames(false);
+    }
+  };
+
+  // Handle game selection for featured games
+  const handleGameSelectionForFeatured = (gameId: string) => {
+    const game = availableTodaysGames.find(g => g.id === gameId);
+    if (!game) return;
+
+    setSelectedGameForFeatured(game);
+
+    // Auto-fill the form with game details
+    setNewFeaturedGame({
+      game_id: game.id,
+      home_team: game.home_team,
+      away_team: game.away_team,
+      start_time: new Date(game.commence_time).toISOString().slice(0, 16), // Format for datetime-local input
+      sport_key: game.sport_key,
+      explanation: '',
+      admin_notes: ''
+    });
+  };
 
   if (loading) {
     return (
@@ -967,65 +1034,67 @@ export default function AdminPage() {
                 Add New Featured Game
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Game ID</label>
-                  <input
-                    type="text"
-                    value={newFeaturedGame.game_id}
-                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, game_id: e.target.value})}
-                    placeholder="Unique game identifier"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
+              {/* Game Selector */}
+              <div className="mb-6">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Game from Today's Schedule
+                  {loadingTodaysGames && <span className="text-xs text-blue-600 ml-2">(Loading...)</span>}
+                </label>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Sport</label>
+                {availableTodaysGames.length > 0 ? (
                   <select
-                    value={newFeaturedGame.sport_key}
-                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, sport_key: e.target.value})}
+                    value={selectedGameForFeatured?.id || ''}
+                    onChange={(e) => handleGameSelectionForFeatured(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
-                    <option value="americanfootball_nfl">NFL</option>
-                    <option value="basketball_nba">NBA</option>
-                    <option value="baseball_mlb">MLB</option>
-                    <option value="icehockey_nhl">NHL</option>
-                    <option value="soccer_epl">Soccer (EPL)</option>
+                    <option value="">Select a game from today's schedule...</option>
+                    {availableTodaysGames.map((game) => (
+                      <option key={game.id} value={game.id}>
+                        {game.sport_name} - {game.away_team} @ {game.home_team} ({new Date(game.commence_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})
+                      </option>
+                    ))}
                   </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Home Team</label>
-                  <input
-                    type="text"
-                    value={newFeaturedGame.home_team}
-                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, home_team: e.target.value})}
-                    placeholder="Home team name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Away Team</label>
-                  <input
-                    type="text"
-                    value={newFeaturedGame.away_team}
-                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, away_team: e.target.value})}
-                    placeholder="Away team name"
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-
-                <div className="md:col-span-2">
-                  <label className="block text-sm font-medium text-gray-700 mb-2">Game Start Time</label>
-                  <input
-                    type="datetime-local"
-                    value={newFeaturedGame.start_time}
-                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, start_time: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
+                ) : loadingTodaysGames ? (
+                  <div className="flex items-center justify-center py-4 text-gray-500">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
+                    Loading today's games...
+                  </div>
+                ) : (
+                  <div className="text-center py-4 text-gray-500 bg-gray-100 rounded-lg">
+                    <Trophy className="w-8 h-8 text-gray-300 mx-auto mb-2" />
+                    <p>No games found for today</p>
+                    <p className="text-sm">Games typically load closer to game day</p>
+                  </div>
+                )}
               </div>
+
+              {/* Auto-filled Game Details (Read-only) */}
+              {selectedGameForFeatured && (
+                <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="text-sm font-medium text-blue-900 mb-3 flex items-center">
+                    <Crown className="w-4 h-4 mr-2" />
+                    Selected Game Details (Auto-filled)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium text-blue-800">Game ID:</span>
+                      <span className="ml-2 text-blue-700">{selectedGameForFeatured.id}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Sport:</span>
+                      <span className="ml-2 text-blue-700">{selectedGameForFeatured.sport_name}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Matchup:</span>
+                      <span className="ml-2 text-blue-700">{selectedGameForFeatured.away_team} @ {selectedGameForFeatured.home_team}</span>
+                    </div>
+                    <div>
+                      <span className="font-medium text-blue-800">Start Time:</span>
+                      <span className="ml-2 text-blue-700">{new Date(selectedGameForFeatured.commence_time).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="mb-4">
                 <label className="block text-sm font-medium text-gray-700 mb-2">Professional Explanation</label>
@@ -1125,7 +1194,7 @@ export default function AdminPage() {
             <div className="flex justify-end">
               <button
                 onClick={saveFeaturedGames}
-                disabled={isSavingFeatured || !newFeaturedGame.game_id || !newFeaturedGame.home_team || !newFeaturedGame.away_team}
+                disabled={isSavingFeatured || !selectedGameForFeatured || !newFeaturedGame.explanation.trim()}
                 className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
               >
                 {isSavingFeatured ? (
@@ -1136,6 +1205,17 @@ export default function AdminPage() {
                 {isSavingFeatured ? 'Saving...' : 'Save Featured Game'}
               </button>
             </div>
+
+            {!selectedGameForFeatured && (
+              <p className="text-sm text-gray-600 text-right mt-2">
+                Select a game from today's schedule to continue
+              </p>
+            )}
+            {selectedGameForFeatured && !newFeaturedGame.explanation.trim() && (
+              <p className="text-sm text-gray-600 text-right mt-2">
+                Add a professional explanation to save the featured game
+              </p>
+            )}
           </div>
         )}
       </div>
