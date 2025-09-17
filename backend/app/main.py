@@ -1781,17 +1781,24 @@ async def options_bet_stats():
 @app.get("/api/bets/stats")
 async def get_bet_stats(current_user: dict = Depends(get_current_user)):
     """Get comprehensive betting statistics for user"""
+    user_id = current_user.get("id") or current_user.get("user_id")
+    logger.info(f"Getting bet stats for user {user_id}")
+
     if is_service_available("betting_analytics_service"):
         try:
+            logger.info("Betting analytics service is available, attempting to get stats")
             analytics_service = get_service("betting_analytics_service")
-            stats = await analytics_service.get_user_stats(
-                current_user.get("id") or current_user.get("user_id")
-            )
+            stats = await analytics_service.get_user_stats(user_id)
+            logger.info(f"Successfully retrieved stats: {stats}")
             return {"status": "success", "stats": stats}
         except Exception as e:
             logger.error(f"Error fetching bet stats: {e}")
+            logger.exception("Full exception details:")
+    else:
+        logger.warning("Betting analytics service not available")
 
     # Mock betting statistics
+    logger.info("Falling back to mock betting statistics")
     return {
         "status": "success",
         "stats": {
@@ -1813,6 +1820,8 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
         },
         "message": "Mock betting statistics - analytics service unavailable",
     }
+
+
 
 
 @app.options("/api/bets/share")

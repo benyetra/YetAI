@@ -22,6 +22,192 @@ class BettingAnalyticsService:
     def __init__(self):
         pass
 
+    async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
+        """Get user betting statistics in the format expected by the frontend dashboard"""
+        try:
+            db = SessionLocal()
+            try:
+                # Get all user bets
+                user_bets = db.query(Bet).filter(Bet.user_id == user_id).all()
+                parlay_bets = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
+
+                if not user_bets and not parlay_bets:
+                    return {
+                        "total_bets": 0,
+                        "total_wagered": 0.0,
+                        "total_winnings": 0.0,
+                        "win_rate": 0.0,
+                        "roi": 0.0,
+                        "average_odds": 0,
+                        "favorite_sport": "N/A",
+                        "favorite_bet_type": "N/A",
+                        "current_streak": {"type": "none", "count": 0},
+                        "monthly_summary": {
+                            "bets": 0,
+                            "wagered": 0.0,
+                            "winnings": 0.0,
+                            "roi": 0.0,
+                        },
+                    }
+
+                # Calculate basic stats
+                all_bets = user_bets + parlay_bets
+                total_bets = len(all_bets)
+                total_wagered = sum(bet.amount for bet in all_bets)
+
+                # Calculate wins/losses
+                won_bets = [bet for bet in all_bets if bet.status == "won"]
+                lost_bets = [bet for bet in all_bets if bet.status == "lost"]
+                resolved_bets = len(won_bets) + len(lost_bets)
+
+                # Calculate win rate
+                win_rate = (len(won_bets) / resolved_bets) if resolved_bets > 0 else 0.0
+
+                # Calculate total winnings and ROI
+                total_winnings = sum(
+                    bet.result_amount or 0 for bet in won_bets
+                )
+                profit = total_winnings - sum(bet.amount for bet in won_bets)
+                roi = (profit / total_wagered) if total_wagered > 0 else 0.0
+
+                # Calculate average odds (approximation from potential wins)
+                odds_sum = 0
+                odds_count = 0
+                for bet in user_bets:
+                    if bet.odds:
+                        odds_sum += bet.odds
+                        odds_count += 1
+                average_odds = int(odds_sum / odds_count) if odds_count > 0 else -110
+
+                # Find favorite sport
+                sport_counts = {}
+                for bet in user_bets:
+                    sport = bet.sport or "Unknown"
+                    sport_counts[sport] = sport_counts.get(sport, 0) + 1
+                favorite_sport = max(sport_counts, key=sport_counts.get) if sport_counts else "N/A"
+                favorite_sport = self._format_sport_name(favorite_sport)
+
+                # Find favorite bet type
+                bet_type_counts = {}
+                for bet in user_bets:
+                    bet_type = bet.bet_type or "Unknown"
+                    bet_type_counts[bet_type] = bet_type_counts.get(bet_type, 0) + 1
+                favorite_bet_type = max(bet_type_counts, key=bet_type_counts.get) if bet_type_counts else "N/A"
+                favorite_bet_type = self._format_bet_type_name(favorite_bet_type)
+
+                # Calculate current streak
+                current_streak = self._calculate_current_streak(all_bets)
+
+                # Calculate monthly summary (last 30 days)
+                monthly_summary = await self._calculate_monthly_summary(user_id, db)
+
+                return {
+                    "total_bets": total_bets,
+                    "total_wagered": round(total_wagered, 2),
+                    "total_winnings": round(total_winnings, 2),
+                    "win_rate": round(win_rate, 3),  # 0.68 format
+                    "roi": round(roi, 3),  # 0.10 format
+                    "average_odds": average_odds,
+                    "favorite_sport": favorite_sport,
+                    "favorite_bet_type": favorite_bet_type,
+                    "current_streak": current_streak,
+                    "monthly_summary": monthly_summary,
+                }
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error getting user stats: {e}")
+            # Return empty stats instead of failing
+            return {
+                "total_bets": 0,
+                "total_wagered": 0.0,
+                "total_winnings": 0.0,
+                "win_rate": 0.0,
+                "roi": 0.0,
+                "average_odds": 0,
+                "favorite_sport": "N/A",
+                "favorite_bet_type": "N/A",
+                "current_streak": {"type": "none", "count": 0},
+                "monthly_summary": {
+                    "bets": 0,
+                    "wagered": 0.0,
+                    "winnings": 0.0,
+                    "roi": 0.0,
+                },
+            }
+
+    def _calculate_current_streak(self, bets: List) -> Dict[str, Any]:
+        """Calculate the current win/loss streak"""
+        if not bets:
+            return {"type": "none", "count": 0}
+
+        # Sort by date (most recent first)
+        resolved_bets = [bet for bet in bets if bet.status in ["won", "lost"]]
+        if not resolved_bets:
+            return {"type": "none", "count": 0}
+
+        resolved_bets.sort(key=lambda x: x.placed_at or datetime.min, reverse=True)
+
+        if not resolved_bets:
+            return {"type": "none", "count": 0}
+
+        current_status = resolved_bets[0].status
+        streak_count = 1
+
+        for bet in resolved_bets[1:]:
+            if bet.status == current_status:
+                streak_count += 1
+            else:
+                break
+
+        streak_type = "win" if current_status == "won" else "loss"
+        return {"type": streak_type, "count": streak_count}
+
+    async def _calculate_monthly_summary(self, user_id: int, db: Session) -> Dict[str, Any]:
+        """Calculate monthly summary (last 30 days)"""
+        try:
+            cutoff_date = datetime.now() - timedelta(days=30)
+
+            monthly_bets = (
+                db.query(Bet)
+                .filter(and_(Bet.user_id == user_id, Bet.placed_at >= cutoff_date))
+                .all()
+            )
+
+            monthly_parlays = (
+                db.query(ParlayBet)
+                .filter(and_(ParlayBet.user_id == user_id, ParlayBet.placed_at >= cutoff_date))
+                .all()
+            )
+
+            all_monthly_bets = monthly_bets + monthly_parlays
+            monthly_bets_count = len(all_monthly_bets)
+            monthly_wagered = sum(bet.amount for bet in all_monthly_bets)
+
+            won_monthly = [bet for bet in all_monthly_bets if bet.status == "won"]
+            monthly_winnings = sum(bet.result_amount or 0 for bet in won_monthly)
+
+            monthly_profit = monthly_winnings - sum(bet.amount for bet in won_monthly)
+            monthly_roi = (monthly_profit / monthly_wagered) if monthly_wagered > 0 else 0.0
+
+            return {
+                "bets": monthly_bets_count,
+                "wagered": round(monthly_wagered, 2),
+                "winnings": round(monthly_winnings, 2),
+                "roi": round(monthly_roi, 3),
+            }
+
+        except Exception as e:
+            logger.error(f"Error calculating monthly summary: {e}")
+            return {
+                "bets": 0,
+                "wagered": 0.0,
+                "winnings": 0.0,
+                "roi": 0.0,
+            }
+
     async def get_user_performance_analytics(
         self, user_id: int, days: int = 30
     ) -> Dict[str, Any]:
