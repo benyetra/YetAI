@@ -5,16 +5,20 @@ import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
-import { 
-  Shield, 
-  Plus, 
-  Target, 
-  Layers, 
-  Clock, 
+import {
+  Shield,
+  Plus,
+  Target,
+  Layers,
+  Clock,
   Save,
   Lock,
   Unlock,
-  Users
+  Users,
+  Crown,
+  Trash2,
+  Calendar,
+  Football
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 
@@ -50,6 +54,20 @@ export default function AdminPage() {
   const [loadingGames, setLoadingGames] = useState(false);
   const [selectedGame, setSelectedGame] = useState<any>(null);
 
+  // Featured Games states
+  const [activeTab, setActiveTab] = useState<'bets' | 'featured'>('bets');
+  const [featuredGames, setFeaturedGames] = useState<any[]>([]);
+  const [newFeaturedGame, setNewFeaturedGame] = useState({
+    game_id: '',
+    home_team: '',
+    away_team: '',
+    start_time: '',
+    sport_key: 'americanfootball_nfl',
+    explanation: '',
+    admin_notes: ''
+  });
+  const [isSavingFeatured, setIsSavingFeatured] = useState(false);
+
   useEffect(() => {
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
       router.push('/dashboard');
@@ -84,6 +102,72 @@ export default function AdminPage() {
       fetchVerificationStats();
     }
   }, [showVerificationPanel, verificationStats]);
+
+  // Featured Games Functions
+  const loadFeaturedGames = async () => {
+    try {
+      const response = await fetch(getApiUrl('/api/admin/featured-games'));
+      if (response.ok) {
+        const data = await response.json();
+        setFeaturedGames(data.featured_games || []);
+      }
+    } catch (error) {
+      console.error('Error loading featured games:', error);
+      setMessage({ type: 'error', text: 'Failed to load featured games' });
+    }
+  };
+
+  const saveFeaturedGames = async () => {
+    setIsSavingFeatured(true);
+    try {
+      const updatedGames = [...featuredGames, newFeaturedGame].filter(game =>
+        game.game_id && game.home_team && game.away_team
+      );
+
+      const response = await fetch(getApiUrl('/api/admin/featured-games'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          featured_games: updatedGames
+        })
+      });
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Featured games updated successfully!' });
+        setNewFeaturedGame({
+          game_id: '',
+          home_team: '',
+          away_team: '',
+          start_time: '',
+          sport_key: 'americanfootball_nfl',
+          explanation: '',
+          admin_notes: ''
+        });
+        await loadFeaturedGames();
+      } else {
+        setMessage({ type: 'error', text: 'Failed to save featured games' });
+      }
+    } catch (error) {
+      console.error('Error saving featured games:', error);
+      setMessage({ type: 'error', text: 'Failed to save featured games' });
+    } finally {
+      setIsSavingFeatured(false);
+    }
+  };
+
+  const removeFeaturedGame = (index: number) => {
+    const updated = featuredGames.filter((_, i) => i !== index);
+    setFeaturedGames(updated);
+  };
+
+  // Load featured games when tab switches
+  useEffect(() => {
+    if (activeTab === 'featured') {
+      loadFeaturedGames();
+    }
+  }, [activeTab]);
 
   if (loading) {
     return (
@@ -381,7 +465,35 @@ export default function AdminPage() {
           </div>
         )}
 
-        {/* Bet Constructor */}
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-6">
+          <button
+            onClick={() => setActiveTab('bets')}
+            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'bets'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-700 hover:text-gray-900'
+            }`}
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Create Bets
+          </button>
+          <button
+            onClick={() => setActiveTab('featured')}
+            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'featured'
+                ? 'bg-white text-blue-600 shadow-sm'
+                : 'text-gray-700 hover:text-gray-900'
+            }`}
+          >
+            <Crown className="w-4 h-4 mr-2" />
+            Featured Games
+          </button>
+        </div>
+
+        {activeTab === 'bets' && (
+          <>
+            {/* Bet Constructor */}
         <div className="bg-white rounded-lg border border-gray-200 p-6">
           <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
             <Plus className="w-5 h-5 mr-2" />
@@ -832,6 +944,195 @@ export default function AdminPage() {
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'featured' && (
+          <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+              <Crown className="w-5 h-5 mr-2 text-yellow-600" />
+              Manage Featured Games
+            </h2>
+            <p className="text-gray-600 mb-6">
+              Create curated featured games with professional explanations that will be highlighted on the dashboard.
+            </p>
+
+            {/* Add New Featured Game Form */}
+            <div className="bg-gray-50 rounded-lg p-6 mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                <Plus className="w-4 h-4 mr-2" />
+                Add New Featured Game
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Game ID</label>
+                  <input
+                    type="text"
+                    value={newFeaturedGame.game_id}
+                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, game_id: e.target.value})}
+                    placeholder="Unique game identifier"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Sport</label>
+                  <select
+                    value={newFeaturedGame.sport_key}
+                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, sport_key: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="americanfootball_nfl">NFL</option>
+                    <option value="basketball_nba">NBA</option>
+                    <option value="baseball_mlb">MLB</option>
+                    <option value="icehockey_nhl">NHL</option>
+                    <option value="soccer_epl">Soccer (EPL)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Home Team</label>
+                  <input
+                    type="text"
+                    value={newFeaturedGame.home_team}
+                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, home_team: e.target.value})}
+                    placeholder="Home team name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Away Team</label>
+                  <input
+                    type="text"
+                    value={newFeaturedGame.away_team}
+                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, away_team: e.target.value})}
+                    placeholder="Away team name"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Game Start Time</label>
+                  <input
+                    type="datetime-local"
+                    value={newFeaturedGame.start_time}
+                    onChange={(e) => setNewFeaturedGame({...newFeaturedGame, start_time: e.target.value})}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Professional Explanation</label>
+                <textarea
+                  value={newFeaturedGame.explanation}
+                  onChange={(e) => setNewFeaturedGame({...newFeaturedGame, explanation: e.target.value})}
+                  placeholder="Provide a detailed analysis explaining why this game is featured. Include key factors, player insights, statistical analysis, etc."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">Admin Notes (Internal)</label>
+                <textarea
+                  value={newFeaturedGame.admin_notes}
+                  onChange={(e) => setNewFeaturedGame({...newFeaturedGame, admin_notes: e.target.value})}
+                  placeholder="Internal notes for other admins (not shown to users)"
+                  rows={2}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            {/* Current Featured Games List */}
+            <div className="mb-6">
+              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+                <Crown className="w-4 h-4 mr-2 text-yellow-600" />
+                Current Featured Games ({featuredGames.length})
+              </h3>
+
+              {featuredGames.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  <Football className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <p>No featured games configured</p>
+                  <p className="text-sm">Add your first featured game above</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {featuredGames.map((game, index) => (
+                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center mb-2">
+                            <Crown className="w-4 h-4 text-yellow-600 mr-2" />
+                            <h4 className="font-semibold text-gray-900">
+                              {game.away_team} @ {game.home_team}
+                            </h4>
+                            <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
+                              {game.sport_key?.replace('_', ' ').toUpperCase() || 'Unknown Sport'}
+                            </span>
+                          </div>
+
+                          {game.start_time && (
+                            <div className="flex items-center text-sm text-gray-600 mb-2">
+                              <Calendar className="w-4 h-4 mr-1" />
+                              {new Date(game.start_time).toLocaleString()}
+                            </div>
+                          )}
+
+                          <div className="text-sm text-gray-700 mb-2">
+                            <strong>Game ID:</strong> {game.game_id}
+                          </div>
+
+                          {game.explanation && (
+                            <div className="bg-white p-3 rounded border border-gray-200">
+                              <p className="text-sm text-gray-800">
+                                <strong>Explanation:</strong> {game.explanation}
+                              </p>
+                            </div>
+                          )}
+
+                          {game.admin_notes && (
+                            <div className="mt-2 bg-yellow-50 p-2 rounded border border-yellow-200">
+                              <p className="text-xs text-yellow-800">
+                                <strong>Admin Notes:</strong> {game.admin_notes}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <button
+                          onClick={() => removeFeaturedGame(index)}
+                          className="ml-4 p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Remove featured game"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Save Button */}
+            <div className="flex justify-end">
+              <button
+                onClick={saveFeaturedGames}
+                disabled={isSavingFeatured || !newFeaturedGame.game_id || !newFeaturedGame.home_team || !newFeaturedGame.away_team}
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+              >
+                {isSavingFeatured ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                ) : (
+                  <Save className="w-5 h-5 mr-2" />
+                )}
+                {isSavingFeatured ? 'Saving...' : 'Save Featured Game'}
+              </button>
             </div>
           </div>
         )}
