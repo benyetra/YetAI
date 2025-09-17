@@ -565,26 +565,97 @@ class BetServiceDB:
                     sport_title=bet_data.sport or "Unknown",
                     home_team=bet_data.home_team,
                     away_team=bet_data.away_team,
-                    commence_time=bet_data.commence_time or datetime.utcnow(),
+                    commence_time=(
+                        self._parse_datetime(bet_data.commence_time)
+                        if bet_data.commence_time
+                        else datetime.utcnow()
+                    ),
                 )
                 db.add(game)
+                logger.info(
+                    f"Created game record with provided data for {bet_data.game_id}"
+                )
             else:
-                # If no game details provided, create a minimal game record with placeholder data
-                # This ensures we have a game record for the bet to reference
-                game = Game(
-                    id=bet_data.game_id,
-                    sport_key="unknown",
-                    sport_title="Unknown Sport",
-                    home_team="TBD",
-                    away_team="TBD",
-                    commence_time=datetime.utcnow(),
-                )
-                db.add(game)
-                logger.warning(
-                    f"Created minimal game record for game_id {bet_data.game_id} - consider updating with actual game details"
-                )
+                # If no game details provided, try to fetch from Odds API
+                game_details = await self._fetch_game_details_from_api(bet_data.game_id)
+                if game_details:
+                    game = Game(
+                        id=bet_data.game_id,
+                        sport_key=game_details["sport_key"],
+                        sport_title=game_details["sport_title"],
+                        home_team=game_details["home_team"],
+                        away_team=game_details["away_team"],
+                        commence_time=game_details["commence_time"],
+                    )
+                    db.add(game)
+                    logger.info(
+                        f"Created game record with API data for {bet_data.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
+                    )
+                else:
+                    # Fall back to minimal game record if API lookup fails
+                    game = Game(
+                        id=bet_data.game_id,
+                        sport_key="unknown",
+                        sport_title="Unknown Sport",
+                        home_team="TBD",
+                        away_team="TBD",
+                        commence_time=datetime.utcnow(),
+                    )
+                    db.add(game)
+                    logger.warning(
+                        f"Created minimal game record for game_id {bet_data.game_id} - API lookup failed"
+                    )
 
         return game
+
+    async def _fetch_game_details_from_api(self, game_id: str) -> Optional[Dict]:
+        """Fetch game details from Odds API using game_id"""
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            from app.core.config import settings
+
+            if not settings.ODDS_API_KEY:
+                logger.warning("No Odds API key available for game lookup")
+                return None
+
+            # Try common sports to find the game
+            sports_to_try = [
+                "baseball_mlb",
+                "americanfootball_nfl",
+                "basketball_nba",
+                "icehockey_nhl",
+                "americanfootball_ncaaf",
+                "basketball_ncaab",
+            ]
+
+            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+                for sport in sports_to_try:
+                    try:
+                        # Get current odds/games for this sport
+                        games = await odds_service.get_odds(sport)
+
+                        # Look for our game ID
+                        for game in games:
+                            if game.id == game_id:
+                                return {
+                                    "sport_key": game.sport_key,
+                                    "sport_title": game.sport_title,
+                                    "home_team": game.home_team,
+                                    "away_team": game.away_team,
+                                    "commence_time": game.commence_time,
+                                }
+                    except Exception as e:
+                        logger.debug(
+                            f"Failed to check sport {sport} for game {game_id}: {e}"
+                        )
+                        continue
+
+            logger.warning(f"Game {game_id} not found in any sport via Odds API")
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching game details from API for {game_id}: {e}")
+            return None
 
     async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
         """Get or create game record from parlay leg"""
