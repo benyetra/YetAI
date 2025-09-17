@@ -12,7 +12,9 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 
 
-async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> Dict:
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+) -> Dict:
     """
     Extract and validate current user from JWT token
     """
