@@ -3650,6 +3650,54 @@ async def test_database():
         }
 
 
+# Scheduler status endpoint for debugging
+@app.get("/scheduler-status")
+async def get_scheduler_status():
+    """Get bet verification scheduler status (for debugging)"""
+    try:
+        stats = bet_scheduler.get_stats()
+        return {
+            "status": "success",
+            "scheduler_stats": stats,
+            "scheduler_running": bet_scheduler._running,
+            "scheduler_enabled": bet_scheduler.config.enabled,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "scheduler_running": False,
+        }
+
+
+# Manual scheduler restart endpoint
+@app.post("/restart-scheduler")
+async def restart_scheduler():
+    """Restart the bet verification scheduler (for debugging)"""
+    try:
+        # Stop current scheduler if running
+        bet_scheduler.stop()
+
+        # Wait a moment
+        import asyncio
+        await asyncio.sleep(2)
+
+        # Start scheduler
+        bet_scheduler.start()
+
+        return {
+            "status": "success",
+            "message": "Scheduler restarted successfully",
+            "scheduler_running": bet_scheduler._running,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "message": "Failed to restart scheduler",
+        }
+
+
 # WebSocket connection manager
 class ConnectionManager:
     def __init__(self):
