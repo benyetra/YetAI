@@ -3544,42 +3544,40 @@ async def get_chat_suggestions():
 
 
 @app.get("/api/admin/featured-games")
-async def get_featured_games():
+async def get_featured_games(db=Depends(get_db)):
     """Get admin-selected featured games"""
     try:
-        # For now, return games from the most popular sports
-        featured_games = []
+        from sqlalchemy import text
 
-        # Get games from NFL as it's most popular
-        try:
-            if is_service_available("sports_pipeline"):
-                sports_pipeline = get_service("sports_pipeline")
-                nfl_games = await sports_pipeline.get_nfl_games()
-                # Take top 4 NFL games as featured
-                featured_games.extend(nfl_games[:4])
-        except Exception as e:
-            logger.warning(f"Error fetching NFL games for featured: {e}")
-            # Add mock featured games as fallback
-            featured_games = [
-                {
-                    "id": "featured_1",
-                    "home_team": "Kansas City Chiefs",
-                    "away_team": "Buffalo Bills",
-                    "start_time": "2025-01-19T21:00:00Z",
-                    "status": "scheduled",
-                    "sport_key": "americanfootball_nfl",
-                    "commence_time": "2025-01-19T21:00:00Z",
-                },
-                {
-                    "id": "featured_2",
-                    "home_team": "Philadelphia Eagles",
-                    "away_team": "Washington Commanders",
-                    "start_time": "2025-01-19T18:00:00Z",
-                    "status": "scheduled",
-                    "sport_key": "americanfootball_nfl",
-                    "commence_time": "2025-01-19T18:00:00Z",
-                },
-            ]
+        # First, try to get featured games from database
+        query = text("""
+            SELECT game_id, home_team, away_team, start_time,
+                   sport_key, explanation, admin_notes, created_at
+            FROM featured_games
+            ORDER BY created_at DESC
+        """)
+
+        result = db.execute(query)
+        rows = result.fetchall()
+
+        featured_games = []
+        for row in rows:
+            featured_games.append({
+                "id": row.game_id,
+                "game_id": row.game_id,
+                "home_team": row.home_team,
+                "away_team": row.away_team,
+                "start_time": row.start_time.isoformat() if row.start_time else None,
+                "commence_time": row.start_time.isoformat() if row.start_time else None,
+                "sport_key": row.sport_key,
+                "status": "scheduled",
+                "explanation": row.explanation,
+                "admin_notes": row.admin_notes
+            })
+
+        # If no featured games in database, return empty
+        if not featured_games:
+            logger.info("No featured games found in database")
 
         return {"status": "success", "featured_games": featured_games}
     except Exception as e:
@@ -3588,20 +3586,48 @@ async def get_featured_games():
 
 
 @app.post("/api/admin/featured-games")
-async def set_featured_games(request: dict):
-    """Set admin-selected featured games - placeholder for admin portal"""
+async def set_featured_games(request: dict, db=Depends(get_db)):
+    """Set admin-selected featured games with explanations"""
     try:
-        game_ids = request.get("game_ids", [])
-        # In a real implementation, this would save to database
-        # For now, just return success
+        from sqlalchemy import text
+
+        featured_games_data = request.get("featured_games", [])
+
+        # Clear existing featured games
+        db.execute(text("DELETE FROM featured_games"))
+
+        # Insert new featured games
+        for game_data in featured_games_data:
+            insert_query = text("""
+                INSERT INTO featured_games (
+                    game_id, home_team, away_team, start_time,
+                    sport_key, explanation, admin_notes, created_at
+                ) VALUES (
+                    :game_id, :home_team, :away_team, :start_time,
+                    :sport_key, :explanation, :admin_notes, NOW()
+                )
+            """)
+
+            db.execute(insert_query, {
+                "game_id": game_data.get("game_id"),
+                "home_team": game_data.get("home_team"),
+                "away_team": game_data.get("away_team"),
+                "start_time": game_data.get("start_time"),
+                "sport_key": game_data.get("sport_key", "americanfootball_nfl"),
+                "explanation": game_data.get("explanation", ""),
+                "admin_notes": game_data.get("admin_notes", "")
+            })
+
+        db.commit()
+
         return {
             "status": "success",
-            "message": f"Featured games updated with {len(game_ids)} games",
-            "game_ids": game_ids,
+            "message": f"Featured games updated with {len(featured_games_data)} games",
+            "count": len(featured_games_data)
         }
     except Exception as e:
         logger.error(f"Error setting featured games: {e}")
-        return {"status": "error", "message": "Failed to update featured games"}
+        return {"status": "error", "message": f"Failed to update featured games: {str(e)}"}
 
 
 @app.get("/api/insights/today")
@@ -5555,6 +5581,40 @@ async def debug_analytics_status(db=Depends(get_db)):
             "database_connected": False,
             "debug_timestamp": datetime.utcnow().isoformat(),
         }
+
+
+@app.post("/api/admin/setup-featured-games")
+async def setup_featured_games_table(db=Depends(get_db)):
+    """Create featured_games table for admin curation"""
+    try:
+        from sqlalchemy import text
+
+        # Create featured_games table
+        create_table_sql = text("""
+            CREATE TABLE IF NOT EXISTS featured_games (
+                id SERIAL PRIMARY KEY,
+                game_id VARCHAR(255) NOT NULL,
+                home_team VARCHAR(255) NOT NULL,
+                away_team VARCHAR(255) NOT NULL,
+                start_time TIMESTAMP,
+                sport_key VARCHAR(100) DEFAULT 'americanfootball_nfl',
+                explanation TEXT,
+                admin_notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        db.execute(create_table_sql)
+        db.commit()
+
+        return {
+            "status": "success",
+            "message": "Featured games table created successfully"
+        }
+    except Exception as e:
+        logger.error(f"Error creating featured games table: {e}")
+        return {"status": "error", "message": f"Failed to create table: {str(e)}"}
 
 
 @app.post("/api/admin/migrate-data")
