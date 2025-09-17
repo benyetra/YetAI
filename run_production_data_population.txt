@@ -1,0 +1,17 @@
+PRODUCTION DATA POPULATION INSTRUCTIONS:
+
+1. SSH/Connect to Railway deployment
+2. Run: python populate_production_analytics.py
+
+This will populate the production player_analytics table with 13,404+ real NFL records for seasons 2021-2025.
+
+The script uses the DATABASE_URL environment variable which should be automatically available in the Railway environment.
+
+Expected results:
+- 2021: ~213 players, ~2,963 records
+- 2022: ~246 players, ~3,308 records
+- 2023: ~253 players, ~3,481 records
+- 2024: ~247 players, ~3,290 records
+- 2025: ~187 players, ~362 records
+
+Total: ~13,404 real NFL analytics records across all seasons

@@ -109,10 +109,52 @@ async def test_top_wr_analytics():
     finally:
         db.close()
 
+async def test_historical_coverage():
+    """Test analytics across all historical seasons"""
+    db = SessionLocal()
+
+    try:
+        print("\n=== Testing Historical Data Coverage ===")
+
+        # Test data availability across seasons
+        for season in [2021, 2022, 2023, 2024, 2025]:
+            result = db.execute(text("SELECT COUNT(DISTINCT player_id) FROM player_analytics WHERE season = :season"), {"season": season})
+            player_count = result.fetchone()[0]
+            print(f"{season}: {player_count} players with analytics data")
+
+        # Test a few sample players across multiple seasons
+        test_players = [
+            (88, "Nick Chubb"),
+            (191, "Amon-Ra St. Brown"),
+            (7, "Josh Allen")  # QB test
+        ]
+
+        for player_id, name in test_players:
+            analytics_service = PlayerAnalyticsService(db)
+
+            print(f"\n=== {name} Multi-Season Analytics ===")
+            for season in [2022, 2023, 2024]:
+                try:
+                    analytics = await analytics_service.get_player_analytics(player_id, season=season)
+                    if analytics:
+                        avg_target_share = sum(w['target_share'] or 0 for w in analytics) / len(analytics) * 100
+                        avg_rz_share = sum(w['red_zone_share'] or 0 for w in analytics) / len(analytics) * 100
+                        print(f"  {season}: {len(analytics)} weeks, {avg_target_share:.1f}% target share, {avg_rz_share:.1f}% RZ share")
+                    else:
+                        print(f"  {season}: No data available")
+                except Exception as e:
+                    print(f"  {season}: Error - {e}")
+
+    except Exception as e:
+        print(f"Error testing historical coverage: {e}")
+    finally:
+        db.close()
+
 async def main():
-    print("Testing analytics calculations with 2025 data...")
+    print("Testing analytics calculations with complete historical data...")
     await test_nick_chubb_analytics()
     await test_top_wr_analytics()
+    await test_historical_coverage()
 
 if __name__ == "__main__":
     asyncio.run(main())

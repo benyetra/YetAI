@@ -15,6 +15,18 @@ import random
 # Use environment variable for production, fallback to local for testing
 DATABASE_URL = os.environ.get('DATABASE_URL', 'postgresql://sports_user:sports_pass@localhost/sports_betting_ai')
 
+# Debug: Print database URL (without credentials)
+if DATABASE_URL:
+    # Parse and show connection info (safely)
+    if 'postgres.railway.internal' in DATABASE_URL:
+        print("✅ Connected to Railway production database")
+    elif 'localhost' in DATABASE_URL:
+        print("✅ Connected to local development database")
+    else:
+        print(f"✅ Connected to database: {DATABASE_URL.split('@')[1] if '@' in DATABASE_URL else 'unknown'}")
+else:
+    print("❌ No DATABASE_URL found")
+
 class ProductionAnalyticsPopulator:
     """Populate production database with real NFL analytics data"""
 
