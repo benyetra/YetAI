@@ -37,16 +37,75 @@ interface SportsSelectorProps {
 }
 
 const SPORT_ICONS: Record<string, string> = {
-  'Football': '🏈',
-  'Basketball': '🏀',
-  'Baseball': '⚾',
-  'Hockey': '🏒',
-  'Soccer': '⚽',
-  'Tennis': '🎾',
-  'Golf': '⛳',
-  'Combat Sports': '🥊',
-  'Other': '🏆'
+  // NFL, College Football
+  'americanfootball_nfl': '🏈',
+  'americanfootball_ncaaf': '🏈',
+  // NBA, College Basketball
+  'basketball_nba': '🏀',
+  'basketball_ncaab': '🏀',
+  'basketball_wnba': '🏀',
+  // MLB, College Baseball
+  'baseball_mlb': '⚾',
+  'baseball_ncaa': '⚾',
+  // NHL, Hockey
+  'icehockey_nhl': '🏒',
+  'icehockey_ncaa': '🏒',
+  // Soccer
+  'soccer_epl': '⚽',
+  'soccer_uefa_champ_league': '⚽',
+  'soccer_fifa_world_cup': '⚽',
+  'soccer_uefa_european_championship': '⚽',
+  'soccer_conmebol_copa_america': '⚽',
+  'soccer_brazil_campeonato': '⚽',
+  'soccer_conmebol_copa_libertadores': '⚽',
+  'soccer_germany_bundesliga': '⚽',
+  'soccer_italy_serie_a': '⚽',
+  'soccer_spain_la_liga': '⚽',
+  'soccer_france_ligue_one': '⚽',
+  'soccer_netherlands_eredivisie': '⚽',
+  'soccer_usa_mls': '⚽',
+  // Tennis
+  'tennis_wta_aus_open_singles': '🎾',
+  'tennis_atp_aus_open': '🎾',
+  'tennis_wta_french_open': '🎾',
+  'tennis_atp_french_open': '🎾',
+  'tennis_wta_wimbledon': '🎾',
+  'tennis_atp_wimbledon': '🎾',
+  'tennis_wta_us_open': '🎾',
+  'tennis_atp_us_open': '🎾',
+  // Golf
+  'golf_pga_championship': '⛳',
+  'golf_masters_tournament': '⛳',
+  'golf_us_open': '⛳',
+  'golf_the_open_championship': '⛳',
+  // Combat Sports
+  'mma_mixed_martial_arts': '🥊',
+  'boxing_heavyweight': '🥊',
+  // Fallback
+  'other': '🏆'
 };
+
+// Function to get sport icon by key, with fallbacks
+function getSportIcon(sport: Sport): string {
+  // Direct key match
+  if (SPORT_ICONS[sport.key]) {
+    return SPORT_ICONS[sport.key];
+  }
+
+  // Fallback patterns based on sport key
+  const key = sport.key.toLowerCase();
+  if (key.includes('football')) return '🏈';
+  if (key.includes('basketball')) return '🏀';
+  if (key.includes('baseball')) return '⚾';
+  if (key.includes('hockey')) return '🏒';
+  if (key.includes('soccer')) return '⚽';
+  if (key.includes('tennis')) return '🎾';
+  if (key.includes('golf')) return '⛳';
+  if (key.includes('mma') || key.includes('boxing')) return '🥊';
+
+  // Ultimate fallback
+  return '🏆';
+}
 
 export function SportsSelector({
   selectedSport,
@@ -173,11 +232,11 @@ export function SportsSelector({
           {selectedSportInfo ? (
             <>
               <span className="text-lg">
-                {SPORT_ICONS[selectedSportInfo.category] || SPORT_ICONS['Other']}
+                {getSportIcon(selectedSportInfo)}
               </span>
               <div className="text-left">
                 <div className="font-medium text-gray-900">{selectedSportInfo.title}</div>
-                <div className="text-sm text-gray-500">{selectedSportInfo.category}</div>
+                <div className="text-sm text-gray-500">{selectedSportInfo.category || selectedSportInfo.key}</div>
               </div>
             </>
           ) : (
@@ -228,7 +287,7 @@ export function SportsSelector({
                         : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                     }`}
                   >
-                    {category} {category !== 'All' && SPORT_ICONS[category]}
+                    {category}
                   </button>
                 ))}
               </div>
@@ -253,13 +312,13 @@ export function SportsSelector({
                   >
                     <div className="flex items-center space-x-3">
                       <span className="text-lg">
-                        {SPORT_ICONS[sport.category] || SPORT_ICONS['Other']}
+                        {getSportIcon(sport)}
                       </span>
                       <div className="text-left">
                         <div className={`font-medium ${selectedSport === sport.key ? 'text-[#A855F7]' : 'text-gray-900'}`}>
                           {sport.title}
                         </div>
-                        <div className="text-sm text-gray-500">{sport.category}</div>
+                        <div className="text-sm text-gray-500">{sport.category || sport.key}</div>
                       </div>
                     </div>
                     
