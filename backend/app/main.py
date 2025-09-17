@@ -30,7 +30,7 @@ from app.services.live_betting_service_db import (
 )
 
 # Import bet scheduler service
-from app.services.bet_scheduler_service import bet_scheduler
+from app.services.bet_scheduler_service import bet_scheduler, init_scheduler, cleanup_scheduler
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
@@ -278,6 +278,13 @@ async def lifespan(_app: FastAPI):
         except Exception as e:
             logger.warning(f"⚠️  Scheduler initialization failed: {e}")
 
+    # Start the bet verification scheduler
+    try:
+        init_scheduler()
+        logger.info("✅ Bet verification scheduler started")
+    except Exception as e:
+        logger.warning(f"⚠️  Bet verification scheduler initialization failed: {e}")
+
     # Log service summary
     available_services = [
         name
@@ -302,6 +309,13 @@ async def lifespan(_app: FastAPI):
                 logger.info("✅ Scheduler service stopped")
         except Exception as e:
             logger.warning(f"⚠️  Scheduler cleanup failed: {e}")
+
+    # Stop the bet verification scheduler
+    try:
+        cleanup_scheduler()
+        logger.info("✅ Bet verification scheduler stopped")
+    except Exception as e:
+        logger.warning(f"⚠️  Bet verification scheduler cleanup failed: {e}")
 
 
 # Create FastAPI app
