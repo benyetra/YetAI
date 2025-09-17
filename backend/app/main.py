@@ -3255,9 +3255,76 @@ async def get_popular_games(sport: Optional[str] = None):
 
 
 def _generate_enhanced_popular_games():
-    """Generate realistic popular games with proper broadcast data"""
+    """Generate realistic popular games for TODAY ONLY with proper broadcast data"""
     import random
     from datetime import datetime, timezone, timedelta
+
+    # Get today's date
+    today = datetime.now(timezone.utc).date()
+    current_month = today.month
+    current_weekday = today.weekday()  # 0=Monday, 6=Sunday
+
+    # Season and day filters
+    def is_in_season(sport, month):
+        if sport == "nfl":
+            return month in [9, 10, 11, 12, 1, 2]  # Sep-Feb
+        elif sport == "nba":
+            return month in [10, 11, 12, 1, 2, 3, 4, 5, 6]  # Oct-Jun
+        elif sport == "mlb":
+            return month in [3, 4, 5, 6, 7, 8, 9, 10]  # Mar-Oct
+        elif sport == "nhl":
+            return month in [10, 11, 12, 1, 2, 3, 4, 5, 6]  # Oct-Jun
+        return False
+
+    def should_have_games_today(sport, weekday):
+        if sport == "nfl":
+            return weekday in [6, 0, 3]  # Sunday, Monday, Thursday
+        elif sport == "nba":
+            return weekday in [0, 1, 2, 3, 4, 5, 6]  # Any day
+        elif sport == "mlb":
+            return weekday in [0, 1, 2, 3, 4, 5, 6]  # Any day
+        elif sport == "nhl":
+            return weekday in [0, 1, 2, 3, 4, 5, 6]  # Any day
+        return False
+
+    # Sport-specific TV time slots for today
+    def get_tv_times(sport, today_date):
+        base_today = datetime.combine(today_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+
+        if sport == "nfl":
+            # Sunday: 1pm, 4:25pm, 8:20pm ET / Monday: 8:15pm ET / Thursday: 8:15pm ET
+            if current_weekday == 6:  # Sunday
+                return [
+                    base_today + timedelta(hours=18),      # 1pm ET = 6pm UTC
+                    base_today + timedelta(hours=21, minutes=25),  # 4:25pm ET
+                    base_today + timedelta(hours=25, minutes=20)   # 8:20pm ET
+                ]
+            else:  # Monday/Thursday
+                return [base_today + timedelta(hours=25, minutes=15)]  # 8:15pm ET
+        elif sport == "nba":
+            # Typical: 7pm, 7:30pm, 8pm, 10pm ET
+            return [
+                base_today + timedelta(hours=24),      # 7pm ET
+                base_today + timedelta(hours=24, minutes=30),  # 7:30pm ET
+                base_today + timedelta(hours=25),      # 8pm ET
+                base_today + timedelta(hours=27)       # 10pm ET
+            ]
+        elif sport == "mlb":
+            # Typical: 1pm, 4pm, 7pm, 8pm ET
+            return [
+                base_today + timedelta(hours=18),      # 1pm ET
+                base_today + timedelta(hours=21),      # 4pm ET
+                base_today + timedelta(hours=24),      # 7pm ET
+                base_today + timedelta(hours=25)       # 8pm ET
+            ]
+        elif sport == "nhl":
+            # Typical: 7pm, 8pm, 10pm ET
+            return [
+                base_today + timedelta(hours=24),      # 7pm ET
+                base_today + timedelta(hours=25),      # 8pm ET
+                base_today + timedelta(hours=27)       # 10pm ET
+            ]
+        return []
 
     # Current popular matchups by sport
     popular_matchups = {
@@ -3288,15 +3355,24 @@ def _generate_enhanced_popular_games():
     }
 
     games = []
-    base_time = datetime.now(timezone.utc)
 
     for sport, matchups in popular_matchups.items():
-        for i, (away, home, network, score) in enumerate(matchups):
-            # Vary game times realistically
-            hours_offset = 2 + (i * 3) + random.randint(-1, 1)
-            game_time = base_time + timedelta(hours=hours_offset)
+        # Skip sports not in season or not playing today
+        if not is_in_season(sport, current_month) or not should_have_games_today(sport, current_weekday):
+            continue
 
-            # Determine if prime time
+        tv_times = get_tv_times(sport, today)
+        if not tv_times:
+            continue
+
+        # Limit games to available TV slots
+        games_today = min(len(matchups), len(tv_times))
+
+        for i in range(games_today):
+            away, home, network, score = matchups[i]
+            game_time = tv_times[i]
+
+            # Determine if prime time (7-11 PM ET)
             et_hour = (game_time.hour - 5) % 24
             is_prime_time = 19 <= et_hour <= 23
 
