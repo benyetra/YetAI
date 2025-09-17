@@ -1707,7 +1707,7 @@ async def get_bet_history(
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            result = await bet_service.get_bet_history(current_user["user_id"], query)
+            result = await bet_service.get_bet_history(current_user["id"], query)
             if result.get("success"):
                 return {
                     "status": "success",
