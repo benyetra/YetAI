@@ -1707,7 +1707,9 @@ async def get_bet_history(
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            result = await bet_service.get_bet_history(current_user.get("id") or current_user.get("user_id"), query)
+            result = await bet_service.get_bet_history(
+                current_user.get("id") or current_user.get("user_id"), query
+            )
             if result.get("success"):
                 return {
                     "status": "success",
@@ -1759,7 +1761,9 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
     if is_service_available("betting_analytics_service"):
         try:
             analytics_service = get_service("betting_analytics_service")
-            stats = await analytics_service.get_user_stats(current_user.get("id") or current_user.get("user_id"))
+            stats = await analytics_service.get_user_stats(
+                current_user.get("id") or current_user.get("user_id")
+            )
             return {"status": "success", "stats": stats}
         except Exception as e:
             logger.error(f"Error fetching bet stats: {e}")
