@@ -12,8 +12,9 @@ BASE_URL = "http://localhost:8000"
 ENDPOINTS = [
     "/api/fantasy/players/123/analytics/2024",
     "/api/fantasy/players/456/trends/2024",
-    "/api/fantasy/players/789/efficiency/2024"
+    "/api/fantasy/players/789/efficiency/2024",
 ]
+
 
 def test_endpoint(endpoint):
     """Test a single endpoint"""
@@ -43,6 +44,7 @@ def test_endpoint(endpoint):
         print()
         return False
 
+
 def main():
     """Run tests on all endpoints"""
     print("Testing Restored Fantasy Analytics Endpoints")
@@ -61,6 +63,7 @@ def main():
         print("⚠ Some endpoints are responding")
     else:
         print("✗ No endpoints are responding (server may not be running)")
+
 
 if __name__ == "__main__":
     main()

@@ -10,31 +10,34 @@ from psycopg2.extras import execute_values
 import json
 from typing import List, Dict
 
+
 def get_db_connection():
     """Get database connection using Railway DATABASE_URL"""
-    database_url = os.getenv('DATABASE_URL')
+    database_url = os.getenv("DATABASE_URL")
     if not database_url:
         raise ValueError("DATABASE_URL environment variable not found")
 
     return psycopg2.connect(database_url)
 
+
 def load_sql_file(filepath: str) -> str:
     """Load SQL file contents"""
-    with open(filepath, 'r') as f:
+    with open(filepath, "r") as f:
         return f.read()
+
 
 def execute_sql_file(cursor, sql_content: str, description: str):
     """Execute SQL file contents"""
     print(f"Executing {description}...")
 
     # Split by individual INSERT statements
-    statements = [stmt.strip() for stmt in sql_content.split(';\n') if stmt.strip()]
+    statements = [stmt.strip() for stmt in sql_content.split(";\n") if stmt.strip()]
 
     executed = 0
     for statement in statements:
-        if statement.startswith('INSERT'):
+        if statement.startswith("INSERT"):
             try:
-                cursor.execute(statement + ';')
+                cursor.execute(statement + ";")
                 executed += 1
                 if executed % 100 == 0:
                     print(f"  Executed {executed} INSERT statements...")
@@ -44,6 +47,7 @@ def execute_sql_file(cursor, sql_content: str, description: str):
                 continue
 
     print(f"Successfully executed {executed} INSERT statements for {description}")
+
 
 def main():
     print("Starting production database migration...")
@@ -65,7 +69,7 @@ def main():
         if players_count == 0:
             # Load and execute fantasy players data
             print("Loading fantasy players data...")
-            players_sql = load_sql_file('fantasy_players_data.sql')
+            players_sql = load_sql_file("fantasy_players_data.sql")
             execute_sql_file(cursor, players_sql, "fantasy players data")
             conn.commit()
 
@@ -79,7 +83,7 @@ def main():
         if analytics_count == 0:
             # Load and execute analytics data
             print("Loading player analytics data...")
-            analytics_sql = load_sql_file('player_analytics_data.sql')
+            analytics_sql = load_sql_file("player_analytics_data.sql")
             execute_sql_file(cursor, analytics_sql, "player analytics data")
             conn.commit()
 
@@ -105,7 +109,8 @@ def main():
         print(f"Available seasons: {seasons}")
 
         # Test a sample query
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT fp.name, fp.position, fp.team, COUNT(pa.id) as analytics_records
             FROM fantasy_players fp
             LEFT JOIN player_analytics pa ON fp.platform_player_id::text = pa.player_id::text
@@ -113,7 +118,8 @@ def main():
             HAVING COUNT(pa.id) > 0
             ORDER BY COUNT(pa.id) DESC
             LIMIT 5;
-        """)
+        """
+        )
         sample_data = cursor.fetchall()
 
         print(f"\nSample players with analytics data:")
@@ -130,6 +136,7 @@ def main():
         return 1
 
     return 0
+
 
 if __name__ == "__main__":
     exit(main())

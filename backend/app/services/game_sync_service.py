@@ -21,12 +21,13 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class GameSyncService:
     """Service for syncing games from The Odds API"""
 
     def __init__(self):
         # Initialize with API key from settings
-        api_key = getattr(settings, 'ODDS_API_KEY', None)
+        api_key = getattr(settings, "ODDS_API_KEY", None)
         self.odds_api_service = OddsAPIService(api_key=api_key) if api_key else None
 
         # Major sports to sync
@@ -51,9 +52,12 @@ class GameSyncService:
         db = SessionLocal()
         try:
             # Find some scheduled games to mark as completed
-            scheduled_games = db.query(Game).filter(
-                Game.status == GameStatus.SCHEDULED
-            ).limit(3).all()
+            scheduled_games = (
+                db.query(Game)
+                .filter(Game.status == GameStatus.SCHEDULED)
+                .limit(3)
+                .all()
+            )
 
             updated_count = 0
             for game in scheduled_games:
@@ -64,7 +68,9 @@ class GameSyncService:
                 game.last_update = datetime.utcnow()
                 updated_count += 1
 
-                logger.info(f"Mock updated: {game.away_team} @ {game.home_team} -> Final")
+                logger.info(
+                    f"Mock updated: {game.away_team} @ {game.home_team} -> Final"
+                )
 
             db.commit()
 
@@ -74,7 +80,7 @@ class GameSyncService:
                 "games_updated": updated_count,
                 "games_created": 0,
                 "sports_synced": ["mock"],
-                "mock_mode": True
+                "mock_mode": True,
             }
 
         except Exception as e:
@@ -84,7 +90,7 @@ class GameSyncService:
                 "success": False,
                 "message": f"Mock sync failed: {str(e)}",
                 "games_updated": 0,
-                "games_created": 0
+                "games_created": 0,
             }
         finally:
             db.close()
@@ -114,8 +120,7 @@ class GameSyncService:
 
                     # Fetch scores from Odds API
                     scores = await self.odds_api_service.get_scores(
-                        sport=sport_key.value,
-                        days_from=days_back
+                        sport=sport_key.value, days_from=days_back
                     )
 
                     if not scores:
@@ -123,12 +128,16 @@ class GameSyncService:
                         continue
 
                     # Update database with scores
-                    updated, created = await self._update_games_from_scores(scores, sport_key.value)
+                    updated, created = await self._update_games_from_scores(
+                        scores, sport_key.value
+                    )
                     total_updated += updated
                     total_created += created
                     sports_synced.append(sport_key.value)
 
-                    logger.info(f"Synced {sport_key}: {updated} updated, {created} created")
+                    logger.info(
+                        f"Synced {sport_key}: {updated} updated, {created} created"
+                    )
 
                     # Small delay between API calls to respect rate limits
                     await asyncio.sleep(1)
@@ -142,7 +151,7 @@ class GameSyncService:
                 "message": f"Synced {len(sports_synced)} sports: {', '.join(sports_synced)}",
                 "games_updated": total_updated,
                 "games_created": total_created,
-                "sports_synced": sports_synced
+                "sports_synced": sports_synced,
             }
 
         except Exception as e:
@@ -151,10 +160,12 @@ class GameSyncService:
                 "success": False,
                 "message": f"Game sync failed: {str(e)}",
                 "games_updated": total_updated,
-                "games_created": total_created
+                "games_created": total_created,
             }
 
-    async def _update_games_from_scores(self, scores, sport_key: str) -> tuple[int, int]:
+    async def _update_games_from_scores(
+        self, scores, sport_key: str
+    ) -> tuple[int, int]:
         """
         Update games in database from API scores
 
@@ -180,11 +191,17 @@ class GameSyncService:
                         needs_update = True
 
                     # Update scores if available
-                    if score.home_score is not None and existing_game.home_score != score.home_score:
+                    if (
+                        score.home_score is not None
+                        and existing_game.home_score != score.home_score
+                    ):
                         existing_game.home_score = score.home_score
                         needs_update = True
 
-                    if score.away_score is not None and existing_game.away_score != score.away_score:
+                    if (
+                        score.away_score is not None
+                        and existing_game.away_score != score.away_score
+                    ):
                         existing_game.away_score = score.away_score
                         needs_update = True
 
@@ -200,7 +217,9 @@ class GameSyncService:
                     if needs_update:
                         existing_game.last_update = datetime.utcnow()
                         updated_count += 1
-                        logger.debug(f"Updated game: {score.away_team} @ {score.home_team}")
+                        logger.debug(
+                            f"Updated game: {score.away_team} @ {score.home_team}"
+                        )
 
                 else:
                     # Create new game
@@ -211,10 +230,14 @@ class GameSyncService:
                         home_team=score.home_team,
                         away_team=score.away_team,
                         commence_time=score.commence_time,
-                        status=GameStatus.FINAL if score.completed else GameStatus.SCHEDULED,
+                        status=(
+                            GameStatus.FINAL
+                            if score.completed
+                            else GameStatus.SCHEDULED
+                        ),
                         home_score=score.home_score or 0,
                         away_score=score.away_score or 0,
-                        last_update=datetime.utcnow()
+                        last_update=datetime.utcnow(),
                     )
                     db.add(new_game)
                     created_count += 1
@@ -245,15 +268,20 @@ class GameSyncService:
 
         db = SessionLocal()
         try:
-            outdated_games = db.query(Game.id).filter(
-                Game.last_update < cutoff_time,
-                Game.status.in_([GameStatus.SCHEDULED, GameStatus.LIVE])
-            ).all()
+            outdated_games = (
+                db.query(Game.id)
+                .filter(
+                    Game.last_update < cutoff_time,
+                    Game.status.in_([GameStatus.SCHEDULED, GameStatus.LIVE]),
+                )
+                .all()
+            )
 
             return [game.id for game in outdated_games]
 
         finally:
             db.close()
+
 
 # Global service instance
 game_sync_service = GameSyncService()

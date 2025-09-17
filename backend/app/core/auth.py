@@ -2,6 +2,7 @@
 Temporary auth module - TODO: Implement proper authentication
 """
 
+
 def get_current_user():
     """
     Temporary function that returns a mock user
@@ -12,5 +13,5 @@ def get_current_user():
         "email": "demo@example.com",
         "username": "demo_user",
         "is_active": True,
-        "subscription_tier": "FREE"
+        "subscription_tier": "FREE",
     }

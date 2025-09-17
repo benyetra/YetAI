@@ -2,6 +2,7 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
+
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,11 +17,17 @@ from typing import List, Optional, Dict, Any
 
 # Import core configuration and service loader
 from app.core.config import settings
-from app.core.service_loader import initialize_services, get_service, is_service_available
+from app.core.service_loader import (
+    initialize_services,
+    get_service,
+    is_service_available,
+)
 from app.core.database import get_db
 
 # Import live betting service
-from app.services.live_betting_service_db import live_betting_service_db as live_betting_service
+from app.services.live_betting_service_db import (
+    live_betting_service_db as live_betting_service,
+)
 
 # Import bet scheduler service
 from app.services.bet_scheduler_service import bet_scheduler
@@ -36,18 +43,22 @@ logger = logging.getLogger(__name__)
 # Initialize services with graceful degradation
 service_loader = initialize_services()
 
+
 # Chat Models
 class ChatMessage(BaseModel):
     role: str
     content: str
     timestamp: Optional[str] = None
 
+
 class ChatRequest(BaseModel):
     message: str
     conversation_history: Optional[List[ChatMessage]] = None
 
+
 # Security scheme
 security = HTTPBearer()
+
 
 # Auth Request/Response models
 class UserSignup(BaseModel):
@@ -57,9 +68,11 @@ class UserSignup(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
 
+
 class UserLogin(BaseModel):
     email_or_username: str
     password: str
+
 
 class UserPreferences(BaseModel):
     favorite_teams: Optional[list] = None
@@ -68,6 +81,7 @@ class UserPreferences(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
+
 
 # Betting Models
 class PlaceBetRequest(BaseModel):
@@ -81,6 +95,7 @@ class PlaceBetRequest(BaseModel):
     sport: Optional[str] = None
     commence_time: Optional[str] = None
 
+
 class ParlayLeg(BaseModel):
     bet_type: str
     selection: str
@@ -91,9 +106,11 @@ class ParlayLeg(BaseModel):
     sport: Optional[str] = None
     commence_time: Optional[str] = None
 
+
 class PlaceParlayRequest(BaseModel):
     amount: float
     legs: List[ParlayLeg]
+
 
 class BetHistoryQuery(BaseModel):
     status: Optional[str] = None
@@ -103,56 +120,63 @@ class BetHistoryQuery(BaseModel):
     offset: int = 0
     limit: int = 50
 
+
 # Fantasy Models
 class FantasyConnectRequest(BaseModel):
     platform: str
     credentials: Dict[str, Any]
+
 
 # Share Models
 class ShareBetRequest(BaseModel):
     bet_id: str
     message: Optional[str] = None
 
+
 # JWT Helper Functions
 def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """Extract user from JWT token"""
     try:
         token = credentials.credentials
-        
-        # Basic validation 
-        invalid_token_value = "invalid"  # nosec B105 - this is a test token value, not a real password
+
+        # Basic validation
+        invalid_token_value = (
+            "invalid"  # nosec B105 - this is a test token value, not a real password
+        )
         if not token or token == invalid_token_value:
             raise HTTPException(status_code=401, detail="Invalid token")
-        
+
         # Decode JWT token (without signature verification for now)
         import jwt
+
         try:
-            payload = jwt.decode(token, options={'verify_signature': False})
-            user_id = payload.get('sub')
-            
+            payload = jwt.decode(token, options={"verify_signature": False})
+            user_id = payload.get("sub")
+
             if user_id:
                 # Convert user_id to integer if it's a string
                 user_id = int(user_id) if isinstance(user_id, str) else user_id
                 return {
                     "user_id": user_id,
                     "email": "user@example.com",
-                    "subscription_tier": "pro"
+                    "subscription_tier": "pro",
                 }
             else:
                 raise HTTPException(status_code=401, detail="Invalid token payload")
-                
+
         except (jwt.InvalidTokenError, ValueError) as e:
             # Fallback to mock user for development tokens
             logger.warning(f"JWT decode failed, using mock user: {e}")
             return {
                 "user_id": 123,  # Mock user as integer
-                "email": "user@example.com", 
-                "subscription_tier": "pro"
+                "email": "user@example.com",
+                "subscription_tier": "pro",
             }
-            
+
     except Exception as e:
         logger.error(f"Authentication failed: {e}")
         raise HTTPException(status_code=401, detail="Authentication failed")
+
 
 async def require_admin(current_user: dict = Depends(get_current_user)):
     """Require admin privileges"""
@@ -173,20 +197,21 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
             return current_user
         raise HTTPException(status_code=403, detail="Admin privileges required")
 
+
 def calculate_realistic_trade_value(player: Dict[str, Any]) -> float:
     """Calculate realistic player trade value based on Sleeper data"""
-    position = player.get('position', 'UNKNOWN')
-    age = player.get('age', 27)
-    team = player.get('team', '')
+    position = player.get("position", "UNKNOWN")
+    age = player.get("age", 27)
+    team = player.get("team", "")
 
     # Base values by position (realistic ranges from trade_analyzer_service.py)
     base_values = {
-        "QB": (20.0, 45.0),   # QB range 20-45
-        "RB": (15.0, 40.0),   # RB range 15-40
-        "WR": (12.0, 38.0),   # WR range 12-38
-        "TE": (8.0, 25.0),    # TE range 8-25
-        "K": (2.0, 6.0),      # K range 2-6
-        "DEF": (3.0, 8.0)     # DEF range 3-8
+        "QB": (20.0, 45.0),  # QB range 20-45
+        "RB": (15.0, 40.0),  # RB range 15-40
+        "WR": (12.0, 38.0),  # WR range 12-38
+        "TE": (8.0, 25.0),  # TE range 8-25
+        "K": (2.0, 6.0),  # K range 2-6
+        "DEF": (3.0, 8.0),  # DEF range 3-8
     }
 
     min_val, max_val = base_values.get(position, (8.0, 15.0))
@@ -200,33 +225,38 @@ def calculate_realistic_trade_value(player: Dict[str, Any]) -> float:
     elif age <= 30:
         age_multiplier = 0.95  # Slight decline
     else:
-        age_multiplier = 0.8   # Aging player discount
+        age_multiplier = 0.8  # Aging player discount
 
     # Team quality impact (simplified based on team name)
     team_multiplier = 1.0
-    if team in ['KC', 'BUF', 'DAL', 'SF', 'PHI', 'MIA', 'LAR']:
+    if team in ["KC", "BUF", "DAL", "SF", "PHI", "MIA", "LAR"]:
         team_multiplier = 1.05  # Good offense teams
-    elif team in ['WAS', 'CHI', 'NYG', 'CAR']:
+    elif team in ["WAS", "CHI", "NYG", "CAR"]:
         team_multiplier = 0.95  # Weaker offense teams
 
     # Calculate final value with some variance
     import random
+
     base_value = random.uniform(min_val, max_val)
     final_value = base_value * age_multiplier * team_multiplier
 
     return round(final_value, 1)
+
 
 # Environment-aware CORS configuration
 def get_cors_origins():
     """Get CORS origins based on environment using centralized configuration"""
     return settings.get_frontend_urls()
 
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     """Application lifespan manager"""
     # Startup
-    logger.info(f"🚀 Starting YetAI Sports Betting MVP - {settings.ENVIRONMENT.upper()} Environment")
-    
+    logger.info(
+        f"🚀 Starting YetAI Sports Betting MVP - {settings.ENVIRONMENT.upper()} Environment"
+    )
+
     # Initialize database if available
     if is_service_available("database"):
         try:
@@ -237,35 +267,42 @@ async def lifespan(_app: FastAPI):
                 logger.info("✅ Database tables initialized")
         except Exception as e:
             logger.warning(f"⚠️  Database initialization failed: {e}")
-    
+
     # Initialize scheduler if available
     if is_service_available("scheduler_service"):
         try:
             scheduler = get_service("scheduler_service")
-            if hasattr(scheduler, 'start'):
+            if hasattr(scheduler, "start"):
                 await scheduler.start()
                 logger.info("✅ Scheduler service started")
         except Exception as e:
             logger.warning(f"⚠️  Scheduler initialization failed: {e}")
-    
+
     # Log service summary
-    available_services = [name for name in service_loader.get_status() if service_loader.is_available(name)]
-    logger.info(f"✅ Services online: {len(available_services)}/{len(service_loader.get_status())}")
-    
+    available_services = [
+        name
+        for name in service_loader.get_status()
+        if service_loader.is_available(name)
+    ]
+    logger.info(
+        f"✅ Services online: {len(available_services)}/{len(service_loader.get_status())}"
+    )
+
     yield
-    
+
     # Shutdown
     logger.info("🛑 Shutting down YetAI Sports Betting MVP")
-    
+
     # Cleanup scheduler if available
     if is_service_available("scheduler_service"):
         try:
             scheduler = get_service("scheduler_service")
-            if hasattr(scheduler, 'stop'):
+            if hasattr(scheduler, "stop"):
                 await scheduler.stop()
                 logger.info("✅ Scheduler service stopped")
         except Exception as e:
             logger.warning(f"⚠️  Scheduler cleanup failed: {e}")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -273,7 +310,7 @@ app = FastAPI(
     description=f"AI-Powered Sports Betting Platform - {settings.ENVIRONMENT.title()} Environment",
     version="1.2.0",
     debug=settings.DEBUG,
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
 # Add CORS middleware with environment-aware origins
@@ -288,6 +325,7 @@ app.add_middleware(
 # Mount static files for avatars
 app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
+
 # Health and status endpoints
 @app.get("/health")
 async def health_check():
@@ -296,8 +334,9 @@ async def health_check():
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "services": service_loader.get_status()
+        "services": service_loader.get_status(),
     }
+
 
 # User endpoints that frontend expects
 @app.options("/api/user/performance")
@@ -305,25 +344,34 @@ async def options_user_performance():
     """Handle CORS preflight for user performance endpoint"""
     return {}
 
+
 @app.get("/api/user/performance")
 async def get_user_performance(current_user: dict = Depends(get_current_user)):
     """Get user performance metrics based on real bet data"""
     try:
         performance_service = get_service("performance_tracker")
         user_id = current_user["user_id"]
-        metrics = await performance_service.get_performance_metrics(days=30, user_id=user_id)
+        metrics = await performance_service.get_performance_metrics(
+            days=30, user_id=user_id
+        )
         return {"status": "success", "metrics": metrics, "user_id": user_id}
     except Exception as e:
         logger.error(f"Error fetching user performance: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch user performance metrics")
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch user performance metrics"
+        )
+
 
 @app.options("/api/leaderboard")
 async def options_leaderboard():
     """Handle CORS preflight for leaderboard endpoint"""
     return {}
 
+
 @app.get("/api/leaderboard")
-async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(get_current_user)):
+async def get_leaderboard(
+    period: str = "weekly", current_user: dict = Depends(get_current_user)
+):
     """Get leaderboard with real user betting statistics"""
     try:
         bet_service = get_service("bet_service")
@@ -350,51 +398,60 @@ async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(g
                         stats = stats_result.get("stats", {})
 
                         # Calculate metrics
-                        total_wagered = stats.get('total_wagered', 0)
-                        net_profit = stats.get('net_profit', 0)
-                        win_rate = stats.get('win_rate', 0)
-                        total_bets = stats.get('total_bets', 0)
+                        total_wagered = stats.get("total_wagered", 0)
+                        net_profit = stats.get("net_profit", 0)
+                        win_rate = stats.get("win_rate", 0)
+                        total_bets = stats.get("total_bets", 0)
 
                         # Only include users who have placed bets
                         if total_bets > 0:
-                            roi = (net_profit / total_wagered * 100) if total_wagered > 0 else 0
+                            roi = (
+                                (net_profit / total_wagered * 100)
+                                if total_wagered > 0
+                                else 0
+                            )
 
-                            leaderboard_data.append({
-                                'user_id': user.id,
-                                'username': user.username or f"User{user.id}",
-                                'profit': net_profit,
-                                'win_rate': win_rate,
-                                'roi': roi,
-                                'total_bets': total_bets,
-                                'total_wagered': total_wagered
-                            })
+                            leaderboard_data.append(
+                                {
+                                    "user_id": user.id,
+                                    "username": user.username or f"User{user.id}",
+                                    "profit": net_profit,
+                                    "win_rate": win_rate,
+                                    "roi": roi,
+                                    "total_bets": total_bets,
+                                    "total_wagered": total_wagered,
+                                }
+                            )
                 except Exception as e:
                     logger.error(f"Error calculating stats for user {user.id}: {e}")
                     continue
 
             # Sort by profit (descending)
-            leaderboard_data.sort(key=lambda x: x['profit'], reverse=True)
+            leaderboard_data.sort(key=lambda x: x["profit"], reverse=True)
 
             # Add rank and format data
             ranked_leaderboard = []
             for i, user_data in enumerate(leaderboard_data):
-                ranked_leaderboard.append({
-                    'rank': i + 1,
-                    'user_id': user_data['user_id'],
-                    'username': user_data['username'],
-                    'profit': user_data['profit'],
-                    'win_rate': round(user_data['win_rate'], 1),
-                    'roi': round(user_data['roi'], 1),
-                    'total_bets': user_data['total_bets'],
-                    'total_wagered': user_data['total_wagered'],
-                    'is_current_user': user_data['user_id'] == current_user["user_id"]
-                })
+                ranked_leaderboard.append(
+                    {
+                        "rank": i + 1,
+                        "user_id": user_data["user_id"],
+                        "username": user_data["username"],
+                        "profit": user_data["profit"],
+                        "win_rate": round(user_data["win_rate"], 1),
+                        "roi": round(user_data["roi"], 1),
+                        "total_bets": user_data["total_bets"],
+                        "total_wagered": user_data["total_wagered"],
+                        "is_current_user": user_data["user_id"]
+                        == current_user["user_id"],
+                    }
+                )
 
             # Get current user's position
             current_user_rank = None
             for entry in ranked_leaderboard:
-                if entry['is_current_user']:
-                    current_user_rank = entry['rank']
+                if entry["is_current_user"]:
+                    current_user_rank = entry["rank"]
                     break
 
             # Stats for the summary section
@@ -404,7 +461,7 @@ async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(g
             # Get current user's profit
             current_user_profit = 0
             if current_user_rank and current_user_rank <= len(leaderboard_data):
-                current_user_profit = leaderboard_data[current_user_rank - 1]['profit']
+                current_user_profit = leaderboard_data[current_user_rank - 1]["profit"]
 
             return {
                 "status": "success",
@@ -414,8 +471,8 @@ async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(g
                 "stats": {
                     "total_players": total_players,
                     "active_players": active_players,
-                    "current_user_points": current_user_profit
-                }
+                    "current_user_points": current_user_profit,
+                },
             }
 
         finally:
@@ -425,11 +482,13 @@ async def get_leaderboard(period: str = "weekly", current_user: dict = Depends(g
         logger.error(f"Error fetching leaderboard: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch leaderboard")
 
+
 # Simple endpoints for bets and odds that frontend might expect
 @app.options("/api/bets")
 async def options_simple_bets():
     """Handle CORS preflight for simple bets endpoint"""
     return {}
+
 
 @app.get("/api/bets")
 async def get_simple_bets(current_user: dict = Depends(get_current_user)):
@@ -442,16 +501,19 @@ async def get_simple_bets(current_user: dict = Depends(get_current_user)):
         logger.error(f"Error fetching user bets: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user bets")
 
+
 @app.options("/api/odds")
 async def options_simple_odds():
     """Handle CORS preflight for simple odds endpoint"""
     return {}
 
-@app.get("/api/odds")  
+
+@app.get("/api/odds")
 async def get_simple_odds():
     """Get current odds - simplified endpoint"""
     # Redirect to popular odds endpoint
     return await get_popular_sports_odds()
+
 
 # Predictions endpoints
 @app.options("/api/predictions/personalized")
@@ -459,16 +521,17 @@ async def options_personalized_predictions():
     """Handle CORS preflight for personalized predictions"""
     return {}
 
+
 @app.get("/api/predictions/personalized")
 async def get_personalized_predictions(current_user: dict = Depends(get_current_user)):
     """Get personalized predictions for the user"""
     try:
         yetai_service = get_service("yetai_bets_service")
         user_tier = current_user.get("subscription_tier", "free")
-        
+
         # Get user's bets based on their tier
         bets = await yetai_service.get_active_bets(user_tier)
-        
+
         # Transform bets into predictions format
         predictions = []
         for bet in bets:
@@ -482,25 +545,25 @@ async def get_personalized_predictions(current_user: dict = Depends(get_current_
                 "selection": bet.get("selection"),
                 "odds": bet.get("odds"),
                 "game_date": bet.get("commence_time"),
-                "reason": f"AI analysis with {bet.get('confidence', 75)}% confidence based on historical data"
+                "reason": f"AI analysis with {bet.get('confidence', 75)}% confidence based on historical data",
             }
             predictions.append(prediction)
-        
-        return {
-            "status": "success",
-            "predictions": predictions,
-            "user_tier": user_tier
-        }
-        
+
+        return {"status": "success", "predictions": predictions, "user_tier": user_tier}
+
     except Exception as e:
         logger.error(f"Error fetching personalized predictions: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch personalized predictions")
+        raise HTTPException(
+            status_code=500, detail="Failed to fetch personalized predictions"
+        )
+
 
 # Avatar endpoints
 @app.options("/api/user/avatar")
 async def options_user_avatar():
     """Handle CORS preflight for user avatar"""
     return {}
+
 
 @app.get("/api/user/avatar")
 async def get_user_avatar(current_user: dict = Depends(get_current_user)):
@@ -509,37 +572,43 @@ async def get_user_avatar(current_user: dict = Depends(get_current_user)):
         auth_service = get_service("auth_service")
         user_data = await auth_service.get_user_profile(current_user["user_id"])
         avatar_url = user_data.get("avatar_url")
-        
+
         if avatar_url:
             return {"status": "success", "avatar_url": avatar_url}
         else:
             # Generate default avatar URL using avatar service
             from app.services.avatar_service import avatar_service
+
             default_avatar = avatar_service.get_avatar_url(user_data)
             return {"status": "success", "avatar_url": default_avatar}
-            
+
     except Exception as e:
         logger.error(f"Error fetching user avatar: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
 
-@app.post("/api/user/avatar") 
+
+@app.post("/api/user/avatar")
 async def upload_user_avatar(current_user: dict = Depends(get_current_user)):
     """Upload user avatar"""
     if is_service_available("auth_service"):
         try:
             # In a real implementation, handle file upload here
             user_id = current_user["user_id"]
-            return {"status": "success", "message": "Avatar upload endpoint ready", "user_id": user_id}
+            return {
+                "status": "success",
+                "message": "Avatar upload endpoint ready",
+                "user_id": user_id,
+            }
         except Exception as e:
             logger.error(f"Error uploading avatar: {e}")
             raise HTTPException(status_code=500, detail="Failed to upload avatar")
-    
+
     return {"status": "error", "message": "Avatar upload service unavailable"}
+
 
 @app.post("/api/auth/avatar")
 async def upload_auth_avatar(
-    avatar_data: dict,
-    current_user: dict = Depends(get_current_user)
+    avatar_data: dict, current_user: dict = Depends(get_current_user)
 ):
     """Upload user avatar via auth endpoint"""
     try:
@@ -559,18 +628,22 @@ async def upload_auth_avatar(
         # Delete old avatar if exists
         if user.get("avatar_url"):
             from app.services.avatar_service import avatar_service
-            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+
+            avatar_service.delete_avatar(
+                user["avatar_url"], user.get("avatar_thumbnail")
+            )
 
         # Save new avatar
         from app.services.avatar_service import avatar_service
-        success, result = avatar_service.save_avatar(current_user["user_id"], image_data)
+
+        success, result = avatar_service.save_avatar(
+            current_user["user_id"], image_data
+        )
 
         if success:
             # Update user record with avatar URLs in database
             update_result = await auth_service.update_user_avatar(
-                current_user["user_id"],
-                result["avatar"],
-                result["thumbnail"]
+                current_user["user_id"], result["avatar"], result["thumbnail"]
             )
 
             if update_result.get("success"):
@@ -578,10 +651,12 @@ async def upload_auth_avatar(
                     "status": "success",
                     "message": "Avatar uploaded successfully",
                     "avatar_url": result["avatar"],
-                    "thumbnail_url": result["thumbnail"]
+                    "thumbnail_url": result["thumbnail"],
                 }
             else:
-                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+                raise HTTPException(
+                    status_code=500, detail="Failed to update user avatar"
+                )
         else:
             raise HTTPException(status_code=400, detail=result)
 
@@ -589,7 +664,10 @@ async def upload_auth_avatar(
         raise
     except Exception as e:
         logger.error(f"Error uploading avatar: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to upload avatar: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to upload avatar: {str(e)}"
+        )
+
 
 @app.delete("/api/auth/avatar")
 async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
@@ -607,22 +685,22 @@ async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
         # Delete avatar files
         if user.get("avatar_url"):
             from app.services.avatar_service import avatar_service
-            avatar_service.delete_avatar(user["avatar_url"], user.get("avatar_thumbnail"))
+
+            avatar_service.delete_avatar(
+                user["avatar_url"], user.get("avatar_thumbnail")
+            )
 
             # Clear avatar URLs from database
             update_result = await auth_service.update_user_avatar(
-                current_user["user_id"],
-                None,
-                None
+                current_user["user_id"], None, None
             )
 
             if update_result.get("success"):
-                return {
-                    "status": "success",
-                    "message": "Avatar deleted successfully"
-                }
+                return {"status": "success", "message": "Avatar deleted successfully"}
             else:
-                raise HTTPException(status_code=500, detail="Failed to update user avatar")
+                raise HTTPException(
+                    status_code=500, detail="Failed to update user avatar"
+                )
         else:
             raise HTTPException(status_code=400, detail="No avatar to delete")
 
@@ -630,13 +708,17 @@ async def delete_auth_avatar(current_user: dict = Depends(get_current_user)):
         raise
     except Exception as e:
         logger.error(f"Error deleting avatar: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to delete avatar: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to delete avatar: {str(e)}"
+        )
+
 
 # Sports list endpoint
 @app.options("/api/sports")
 async def options_sports_list():
     """Handle CORS preflight for sports list"""
     return {}
+
 
 @app.get("/api/sports")
 async def get_sports_list():
@@ -649,6 +731,7 @@ async def get_sports_list():
         logger.error(f"Error fetching sports list: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch sports list")
 
+
 @app.get("/")
 async def root():
     """Root endpoint"""
@@ -658,9 +741,12 @@ async def root():
         "environment": settings.ENVIRONMENT,
         "docs": "/docs",
         "health": "/health",
-        "services_available": len([s for s in service_loader.get_status().values() if s]),
-        "total_services": len(service_loader.get_status())
+        "services_available": len(
+            [s for s in service_loader.get_status().values() if s]
+        ),
+        "total_services": len(service_loader.get_status()),
     }
+
 
 @app.get("/api/status")
 async def get_api_status():
@@ -673,13 +759,13 @@ async def get_api_status():
         "auth_available": is_service_available("auth_service"),
         "sports_data_available": is_service_available("sports_pipeline"),
         "ai_chat_available": is_service_available("ai_chat_service"),
-        "timestamp": datetime.now(timezone.utc).isoformat()
+        "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
 
 @app.put("/api/auth/profile")
 async def update_profile(
-    profile_data: dict,
-    current_user: dict = Depends(get_current_user)
+    profile_data: dict, current_user: dict = Depends(get_current_user)
 ):
     """Update user profile including email and password"""
     try:
@@ -691,8 +777,12 @@ async def update_profile(
         # If changing password, verify current password first
         if "current_password" in profile_data and "new_password" in profile_data:
             user = await auth_service.get_user_by_id(current_user["user_id"])
-            if not user or not auth_service.verify_password(profile_data["current_password"], user["password_hash"]):
-                raise HTTPException(status_code=400, detail="Current password is incorrect")
+            if not user or not auth_service.verify_password(
+                profile_data["current_password"], user["password_hash"]
+            ):
+                raise HTTPException(
+                    status_code=400, detail="Current password is incorrect"
+                )
 
             # Update password
             profile_data["password"] = profile_data["new_password"]
@@ -700,13 +790,15 @@ async def update_profile(
             del profile_data["new_password"]
 
         # Update user
-        updated_user = await auth_service.update_user(current_user["user_id"], profile_data)
+        updated_user = await auth_service.update_user(
+            current_user["user_id"], profile_data
+        )
 
         if updated_user:
             return {
                 "status": "success",
                 "message": "Profile updated successfully",
-                "user": updated_user
+                "user": updated_user,
             }
         else:
             raise HTTPException(status_code=400, detail="Failed to update profile")
@@ -716,6 +808,7 @@ async def update_profile(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error updating profile: {str(e)}")
 
+
 # Authentication API endpoints
 @app.get("/api/auth/status")
 async def auth_status():
@@ -723,36 +816,44 @@ async def auth_status():
     return {
         "authenticated": False,
         "auth_available": is_service_available("auth_service"),
-        "message": "Authentication service ready" if is_service_available("auth_service") else "Authentication service unavailable"
+        "message": (
+            "Authentication service ready"
+            if is_service_available("auth_service")
+            else "Authentication service unavailable"
+        ),
     }
+
 
 @app.post("/api/auth/register")
 async def register(user_data: dict):
     """Register a new user"""
     if not is_service_available("auth_service"):
         raise HTTPException(
-            status_code=503, 
-            detail="Authentication service is currently unavailable"
+            status_code=503, detail="Authentication service is currently unavailable"
         )
-    
+
     try:
         auth_service = get_service("auth_service")
         result = await auth_service.create_user(
             email=user_data.get("email"),
             password=user_data.get("password"),
-            username=user_data.get("username", user_data.get("email")),  # Use username or fallback to email
+            username=user_data.get(
+                "username", user_data.get("email")
+            ),  # Use username or fallback to email
             first_name=user_data.get("first_name", ""),
-            last_name=user_data.get("last_name", "")
+            last_name=user_data.get("last_name", ""),
         )
-        
+
         if not result.get("success"):
-            raise HTTPException(status_code=400, detail=result.get("error", "Registration failed"))
-            
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Registration failed")
+            )
+
         return {
             "status": "success",
             "message": "User registered successfully",
             "user": result.get("user"),
-            "access_token": result.get("access_token")
+            "access_token": result.get("access_token"),
         }
     except HTTPException:
         raise
@@ -760,30 +861,32 @@ async def register(user_data: dict):
         logger.error(f"Registration error: {e}")
         raise HTTPException(status_code=400, detail=str(e))
 
+
 @app.post("/api/auth/login")
 async def login(credentials: dict):
     """Login user"""
     if not is_service_available("auth_service"):
         raise HTTPException(
-            status_code=503, 
-            detail="Authentication service is currently unavailable"
+            status_code=503, detail="Authentication service is currently unavailable"
         )
-    
+
     try:
         auth_service = get_service("auth_service")
         result = await auth_service.authenticate_user(
             email_or_username=credentials.get("email_or_username"),
-            password=credentials.get("password")
+            password=credentials.get("password"),
         )
-        
+
         if not result.get("success"):
-            raise HTTPException(status_code=401, detail=result.get("error", "Invalid credentials"))
-            
+            raise HTTPException(
+                status_code=401, detail=result.get("error", "Invalid credentials")
+            )
+
         return {
             "status": "success",
             "message": "Login successful",
             "access_token": result.get("access_token"),
-            "user": result.get("user")
+            "user": result.get("user"),
         }
     except HTTPException:
         raise
@@ -791,21 +894,19 @@ async def login(credentials: dict):
         logger.error(f"Login error: {e}")
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
+
 @app.post("/api/auth/logout")
 async def logout():
     """Logout user"""
-    return {
-        "status": "success",
-        "message": "Logged out successfully"
-    }
+    return {"status": "success", "message": "Logged out successfully"}
+
 
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Get current user info"""
     if not is_service_available("auth_service"):
         raise HTTPException(
-            status_code=503,
-            detail="Authentication service is currently unavailable"
+            status_code=503, detail="Authentication service is currently unavailable"
         )
 
     # Get auth service to fetch full user data
@@ -814,23 +915,15 @@ async def get_current_user_info(current_user: dict = Depends(get_current_user)):
         # Get full user data from database using user_id
         user_data = await auth_service.get_user_by_id(current_user["user_id"])
         if user_data:
-            return {
-                "status": "success",
-                "user": user_data
-            }
+            return {"status": "success", "user": user_data}
         else:
             # Fallback to basic user info from token
-            return {
-                "status": "success",
-                "user": current_user
-            }
+            return {"status": "success", "user": current_user}
     except Exception as e:
         logger.error(f"Error fetching user data: {e}")
         # Fallback to basic user info from token
-        return {
-            "status": "success",
-            "user": current_user
-        }
+        return {"status": "success", "user": current_user}
+
 
 @app.get("/api/auth/avatar/{user_id}")
 async def get_auth_user_avatar(user_id: int):
@@ -839,17 +932,19 @@ async def get_auth_user_avatar(user_id: int):
         if is_service_available("auth_service"):
             auth_service = get_service("auth_service")
             user_data = await auth_service.get_user_by_id(user_id)
-            
+
             if not user_data:
                 raise HTTPException(status_code=404, detail="User not found")
-            
+
             # Use avatar service to get avatar URL
             from app.services.avatar_service import avatar_service
+
             avatar_url = avatar_service.get_avatar_url(user_data)
             return {"status": "success", "avatar_url": avatar_url}
         else:
             # Return default avatar when service unavailable
             from app.services.avatar_service import avatar_service
+
             default_avatar = avatar_service.generate_default_avatar(
                 f"user{user_id}@example.com", f"User {user_id}"
             )
@@ -859,6 +954,7 @@ async def get_auth_user_avatar(user_id: int):
     except Exception as e:
         logger.error(f"Error fetching auth user avatar: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user avatar")
+
 
 @app.get("/api/auth/2fa/status")
 async def get_2fa_status(current_user: dict = Depends(get_current_user)):
@@ -873,7 +969,7 @@ async def get_2fa_status(current_user: dict = Depends(get_current_user)):
                     "status": "success",
                     "enabled": result["enabled"],
                     "backup_codes_remaining": result["backup_codes_remaining"],
-                    "setup_in_progress": result["setup_in_progress"]
+                    "setup_in_progress": result["setup_in_progress"],
                 }
             else:
                 raise HTTPException(status_code=400, detail=result["error"])
@@ -883,19 +979,21 @@ async def get_2fa_status(current_user: dict = Depends(get_current_user)):
                 "status": "success",
                 "enabled": False,
                 "backup_codes_remaining": 0,
-                "setup_in_progress": False
+                "setup_in_progress": False,
             }
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching 2FA status: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get 2FA status: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get 2FA status: {str(e)}"
+        )
+
 
 @app.put("/api/auth/preferences")
 async def update_preferences(
-    preferences: UserPreferences,
-    current_user: dict = Depends(get_current_user)
+    preferences: UserPreferences, current_user: dict = Depends(get_current_user)
 ):
     """Update user preferences"""
     try:
@@ -904,15 +1002,11 @@ async def update_preferences(
 
         auth_service = get_service("auth_service")
         result = await auth_service.update_user_preferences(
-            current_user["user_id"],
-            preferences=preferences.dict(exclude_unset=True)
+            current_user["user_id"], preferences=preferences.dict(exclude_unset=True)
         )
 
         if result["success"]:
-            return {
-                "status": "success",
-                "message": "Preferences updated successfully"
-            }
+            return {"status": "success", "message": "Preferences updated successfully"}
         else:
             raise HTTPException(status_code=400, detail=result["error"])
 
@@ -920,7 +1014,10 @@ async def update_preferences(
         raise
     except Exception as e:
         logger.error(f"Error updating preferences: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to update preferences: {str(e)}"
+        )
+
 
 # YetAI Bets endpoints
 @app.options("/api/yetai-bets")
@@ -928,29 +1025,30 @@ async def options_yetai_bets():
     """Handle CORS preflight for YetAI bets endpoint"""
     return {}
 
+
 @app.get("/api/yetai-bets")
 async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
     """Get YetAI bets for user based on subscription tier"""
     if is_service_available("yetai_bets_service"):
         try:
             yetai_service = get_service("yetai_bets_service")
-            
+
             # Get user's subscription tier from the authenticated user
             user_tier = current_user.get("subscription_tier", "free")
-            
+
             # Fetch bets based on user tier
             bets = await yetai_service.get_active_bets(user_tier)
-            
+
             return {
                 "status": "success",
                 "bets": bets,
                 "user_tier": user_tier,
-                "message": f"YetAI bets for {user_tier} tier user"
+                "message": f"YetAI bets for {user_tier} tier user",
             }
         except Exception as e:
             logger.error(f"Error fetching YetAI bets: {e}")
             # Fall through to mock data
-    
+
     # Return mock data when service unavailable
     user_tier = current_user.get("subscription_tier", "free")
     mock_bets = [
@@ -963,62 +1061,69 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             "odds": -150,
             "confidence": 0.78,
             "tier_requirement": "free" if user_tier == "free" else "pro",
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
         }
     ]
-    
+
     # Pro users get more bets
     if user_tier == "pro":
-        mock_bets.append({
-            "id": "mock_yetai_2", 
-            "title": "Lakers Spread Value",
-            "description": "Advanced analytics show Lakers covering the spread at 85% confidence",
-            "bet_type": "spread",
-            "selection": "Los Angeles Lakers -3.5", 
-            "odds": -110,
-            "confidence": 0.85,
-            "tier_requirement": "pro",
-            "created_at": datetime.now(timezone.utc).isoformat()
-        })
-    
+        mock_bets.append(
+            {
+                "id": "mock_yetai_2",
+                "title": "Lakers Spread Value",
+                "description": "Advanced analytics show Lakers covering the spread at 85% confidence",
+                "bet_type": "spread",
+                "selection": "Los Angeles Lakers -3.5",
+                "odds": -110,
+                "confidence": 0.85,
+                "tier_requirement": "pro",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+
     return {
         "status": "success",
         "bets": mock_bets,
         "user_tier": user_tier,
-        "message": f"Mock YetAI bets for {user_tier} tier user - service unavailable"
+        "message": f"Mock YetAI bets for {user_tier} tier user - service unavailable",
     }
+
 
 @app.options("/api/admin/yetai-bets/{bet_id}")
 async def options_admin_delete_yetai_bet():
     """Handle CORS preflight for admin YetAI bet deletion"""
     return {}
 
+
 @app.delete("/api/admin/yetai-bets/{bet_id}")
 async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin)):
     """Delete YetAI bet (Admin only)"""
-    
+
     if is_service_available("yetai_bets_service"):
         try:
             yetai_service = get_service("yetai_bets_service")
             result = await yetai_service.delete_bet(bet_id, admin_user["id"])
-            
+
             return {
                 "status": "success",
                 "message": f"YetAI bet {bet_id} deleted successfully",
-                "result": result
+                "result": result,
             }
         except Exception as e:
             logger.error(f"Error deleting YetAI bet {bet_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to delete bet")
-    
+
     # Mock response when service unavailable
     return {
         "status": "success",
-        "message": f"Mock deletion of YetAI bet {bet_id} - service unavailable"
+        "message": f"Mock deletion of YetAI bet {bet_id} - service unavailable",
     }
 
+
 @app.post("/api/admin/yetai-bets")
-async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict = Depends(require_admin)):
+async def create_yetai_bet(
+    bet_request: CreateYetAIBetRequest, admin_user: dict = Depends(require_admin)
+):
     """Create a new YetAI Bet (Admin only)"""
     try:
         if is_service_available("yetai_bets_service"):
@@ -1029,19 +1134,22 @@ async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict 
                 return {
                     "status": "success",
                     "message": result.get("message", "Bet created successfully"),
-                    "bet_id": result.get("bet_id")
+                    "bet_id": result.get("bet_id"),
                 }
             else:
-                raise HTTPException(status_code=400, detail=result.get("error", "Failed to create bet"))
+                raise HTTPException(
+                    status_code=400, detail=result.get("error", "Failed to create bet")
+                )
         else:
             # Mock response when service unavailable
             import uuid
+
             mock_bet_id = str(uuid.uuid4())
             return {
                 "status": "success",
                 "message": "Mock YetAI bet created successfully - service unavailable",
                 "bet_id": mock_bet_id,
-                "bet_data": bet_request.dict()
+                "bet_data": bet_request.dict(),
             }
 
     except HTTPException:
@@ -1050,10 +1158,12 @@ async def create_yetai_bet(bet_request: CreateYetAIBetRequest, admin_user: dict 
         logger.error(f"Error creating YetAI bet: {e}")
         raise HTTPException(status_code=500, detail="Failed to create bet")
 
+
 @app.options("/api/admin/users")
 async def options_admin_get_users():
     """Handle CORS preflight for admin get users"""
     return {}
+
 
 @app.get("/api/admin/users")
 async def get_admin_users(admin_user: dict = Depends(require_admin)):
@@ -1061,12 +1171,10 @@ async def get_admin_users(admin_user: dict = Depends(require_admin)):
     try:
         if is_service_available("auth_service"):
             from app.services.auth_service_db import auth_service_db
+
             users = await auth_service_db.get_all_users()
 
-            return {
-                "status": "success",
-                "users": users
-            }
+            return {"status": "success", "users": users}
         else:
             # Mock response when service unavailable
             mock_users = [
@@ -1076,7 +1184,7 @@ async def get_admin_users(admin_user: dict = Depends(require_admin)):
                     "first_name": "Admin",
                     "last_name": "User",
                     "is_admin": True,
-                    "created_at": "2024-01-01T00:00:00Z"
+                    "created_at": "2024-01-01T00:00:00Z",
                 },
                 {
                     "id": 2,
@@ -1084,13 +1192,13 @@ async def get_admin_users(admin_user: dict = Depends(require_admin)):
                     "first_name": "Regular",
                     "last_name": "User",
                     "is_admin": False,
-                    "created_at": "2024-01-02T00:00:00Z"
-                }
+                    "created_at": "2024-01-02T00:00:00Z",
+                },
             ]
             return {
                 "status": "success",
                 "users": mock_users,
-                "message": "Mock users - service unavailable"
+                "message": "Mock users - service unavailable",
             }
 
     except HTTPException:
@@ -1099,13 +1207,17 @@ async def get_admin_users(admin_user: dict = Depends(require_admin)):
         logger.error(f"Error fetching users: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch users")
 
+
 @app.options("/api/admin/users/{user_id}")
 async def options_admin_update_user():
     """Handle CORS preflight for admin update user"""
     return {}
 
+
 @app.put("/api/admin/users/{user_id}")
-async def update_admin_user(user_id: int, update_data: dict, admin_user: dict = Depends(require_admin)):
+async def update_admin_user(
+    user_id: int, update_data: dict, admin_user: dict = Depends(require_admin)
+):
     """Update user information (Admin only)"""
     try:
         if is_service_available("auth_service"):
@@ -1117,7 +1229,7 @@ async def update_admin_user(user_id: int, update_data: dict, admin_user: dict = 
                 return {
                     "status": "success",
                     "user": updated_user,
-                    "message": f"User {user_id} updated successfully"
+                    "message": f"User {user_id} updated successfully",
                 }
             else:
                 raise HTTPException(status_code=404, detail=f"User {user_id} not found")
@@ -1128,9 +1240,9 @@ async def update_admin_user(user_id: int, update_data: dict, admin_user: dict = 
                 "user": {
                     "id": user_id,
                     **update_data,
-                    "updated_at": "2024-01-01T00:00:00Z"
+                    "updated_at": "2024-01-01T00:00:00Z",
                 },
-                "message": f"Mock update of user {user_id} - service unavailable"
+                "message": f"Mock update of user {user_id} - service unavailable",
             }
 
     except ValueError as e:
@@ -1141,6 +1253,7 @@ async def update_admin_user(user_id: int, update_data: dict, admin_user: dict = 
     except Exception as e:
         logger.error(f"Error updating user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to update user")
+
 
 @app.post("/api/admin/users")
 async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_admin)):
@@ -1160,14 +1273,16 @@ async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_
             is_verified = user_data.get("is_verified", False)
 
             if not email or not password or not username:
-                raise HTTPException(status_code=400, detail="Email, password, and username are required")
+                raise HTTPException(
+                    status_code=400, detail="Email, password, and username are required"
+                )
 
             result = await auth_service_db.create_user(
                 email=email,
                 password=password,
                 username=username,
                 first_name=first_name,
-                last_name=last_name
+                last_name=last_name,
             )
 
             if result.get("success"):
@@ -1188,16 +1303,18 @@ async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_
                 return {
                     "status": "success",
                     "message": "User created successfully",
-                    "user_id": result.get("user_id")
+                    "user_id": result.get("user_id"),
                 }
             else:
-                raise HTTPException(status_code=400, detail=result.get("error", "Failed to create user"))
+                raise HTTPException(
+                    status_code=400, detail=result.get("error", "Failed to create user")
+                )
         else:
             # Mock response when service unavailable
             return {
                 "status": "success",
                 "message": "Mock user creation - service unavailable",
-                "user_id": 999
+                "user_id": 999,
             }
 
     except HTTPException:
@@ -1206,10 +1323,12 @@ async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_
         logger.error(f"Error creating user: {e}")
         raise HTTPException(status_code=500, detail="Failed to create user")
 
+
 @app.options("/api/admin/users/{user_id}/reset-password")
 async def options_admin_reset_password():
     """Handle CORS preflight for admin reset password"""
     return {}
+
 
 @app.post("/api/admin/users/{user_id}/reset-password")
 async def reset_user_password(user_id: int, admin_user: dict = Depends(require_admin)):
@@ -1221,7 +1340,9 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
             import string
 
             # Generate a new temporary password
-            temp_password = ''.join(secrets.choice(string.ascii_letters + string.digits) for _ in range(12))
+            temp_password = "".join(
+                secrets.choice(string.ascii_letters + string.digits) for _ in range(12)
+            )
 
             # Update the user's password
             hashed_password = auth_service_db.hash_password(temp_password)
@@ -1236,7 +1357,9 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
             try:
                 user = db.query(User).filter(User.id == user_id).first()
                 if not user:
-                    raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+                    raise HTTPException(
+                        status_code=404, detail=f"User {user_id} not found"
+                    )
 
                 user.password_hash = hashed_password
                 db.commit()
@@ -1245,7 +1368,7 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
                     "status": "success",
                     "message": f"Password reset for user {user_id}",
                     "temporary_password": temp_password,
-                    "note": "User should change this password on next login"
+                    "note": "User should change this password on next login",
                 }
             finally:
                 db.close()
@@ -1255,7 +1378,7 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
                 "status": "success",
                 "message": f"Mock password reset for user {user_id} - service unavailable",
                 "temporary_password": "temp123456",
-                "note": "This is a mock response"
+                "note": "This is a mock response",
             }
 
     except HTTPException:
@@ -1264,10 +1387,12 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
         logger.error(f"Error resetting password for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to reset password")
 
+
 @app.options("/api/admin/users/{user_id}/bets")
 async def options_admin_delete_user_bets():
     """Handle CORS preflight for admin delete user bets"""
     return {}
+
 
 @app.delete("/api/admin/users/{user_id}/bets")
 async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admin)):
@@ -1283,13 +1408,17 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
                 # Verify user exists
                 user = db.query(User).filter(User.id == user_id).first()
                 if not user:
-                    raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+                    raise HTTPException(
+                        status_code=404, detail=f"User {user_id} not found"
+                    )
 
                 # Delete user's regular bets
                 bets_deleted = db.query(Bet).filter(Bet.user_id == user_id).delete()
 
                 # Delete user's parlay bets
-                parlay_bets_deleted = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).delete()
+                parlay_bets_deleted = (
+                    db.query(ParlayBet).filter(ParlayBet.user_id == user_id).delete()
+                )
 
                 db.commit()
 
@@ -1299,7 +1428,7 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
                     "status": "success",
                     "message": f"Deleted {total_deleted} bets for user {user_id}",
                     "bets_deleted": bets_deleted,
-                    "parlay_bets_deleted": parlay_bets_deleted
+                    "parlay_bets_deleted": parlay_bets_deleted,
                 }
             finally:
                 db.close()
@@ -1309,7 +1438,7 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
                 "status": "success",
                 "message": f"Mock deletion of bets for user {user_id} - service unavailable",
                 "bets_deleted": 5,
-                "parlay_bets_deleted": 2
+                "parlay_bets_deleted": 2,
             }
 
     except HTTPException:
@@ -1318,11 +1447,13 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
         logger.error(f"Error deleting bets for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete user bets")
 
+
 # Admin Bet Verification Endpoints
 @app.options("/api/admin/bets/verification/stats")
 async def options_verification_stats():
     """Handle CORS preflight for verification stats"""
     return {}
+
 
 @app.get("/api/admin/bets/verification/stats")
 async def get_verification_stats(admin_user: dict = Depends(require_admin)):
@@ -1334,10 +1465,12 @@ async def get_verification_stats(admin_user: dict = Depends(require_admin)):
         logger.error(f"Error getting verification stats: {e}")
         raise HTTPException(status_code=500, detail="Failed to get verification stats")
 
+
 @app.options("/api/admin/bets/verify")
 async def options_verify_bets():
     """Handle CORS preflight for verify bets"""
     return {}
+
 
 @app.post("/api/admin/bets/verify")
 async def run_verification_now(admin_user: dict = Depends(require_admin)):
@@ -1349,25 +1482,33 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
         logger.error(f"Error running verification: {e}")
         raise HTTPException(status_code=500, detail="Failed to run verification")
 
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
     return {}
 
+
 @app.post("/api/admin/bets/verification/config")
-async def update_verification_config(config: dict, admin_user: dict = Depends(require_admin)):
+async def update_verification_config(
+    config: dict, admin_user: dict = Depends(require_admin)
+):
     """Update bet verification configuration (Admin only)"""
     try:
         result = bet_scheduler.update_config(config)
         return {"status": "success", "config": result}
     except Exception as e:
         logger.error(f"Error updating verification config: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update verification config")
+        raise HTTPException(
+            status_code=500, detail="Failed to update verification config"
+        )
+
 
 @app.options("/api/admin/bets/verification/reset-stats")
 async def options_reset_verification_stats():
     """Handle CORS preflight for reset verification stats"""
     return {}
+
 
 @app.post("/api/admin/bets/verification/reset-stats")
 async def reset_verification_stats(admin_user: dict = Depends(require_admin)):
@@ -1377,23 +1518,29 @@ async def reset_verification_stats(admin_user: dict = Depends(require_admin)):
         return {"status": "success", "result": result}
     except Exception as e:
         logger.error(f"Error resetting verification stats: {e}")
-        raise HTTPException(status_code=500, detail="Failed to reset verification stats")
+        raise HTTPException(
+            status_code=500, detail="Failed to reset verification stats"
+        )
+
 
 @app.options("/api/admin/games/sync")
 async def options_sync_games():
     """Handle CORS preflight for game sync"""
     return {}
 
+
 @app.post("/api/admin/games/sync")
 async def sync_games(admin_user: dict = Depends(require_admin)):
     """Manually sync game data from Odds API (Admin only)"""
     try:
         from app.services.game_sync_service import game_sync_service
+
         result = await game_sync_service.sync_game_scores(days_back=3)
         return {"status": "success", "result": result}
     except Exception as e:
         logger.error(f"Error syncing games: {e}")
         raise HTTPException(status_code=500, detail="Failed to sync games")
+
 
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")
@@ -1401,21 +1548,24 @@ async def options_place_bet():
     """Handle CORS preflight for bet placement"""
     return {}
 
+
 @app.post("/api/bets/place")
-async def place_bet(bet_request: PlaceBetRequest, current_user: dict = Depends(get_current_user)):
+async def place_bet(
+    bet_request: PlaceBetRequest, current_user: dict = Depends(get_current_user)
+):
     """Place a single sports bet"""
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
             result = await bet_service.place_bet(
                 user_id=current_user["user_id"],  # Now correctly returns int
-                bet_data=bet_request  # Pass the whole request object
+                bet_data=bet_request,  # Pass the whole request object
             )
             return {"status": "success", "bet": result}
         except Exception as e:
             logger.error(f"Error placing bet: {e}")
             raise HTTPException(status_code=500, detail="Failed to place bet")
-    
+
     # Mock response when service unavailable
     return {
         "status": "success",
@@ -1427,26 +1577,29 @@ async def place_bet(bet_request: PlaceBetRequest, current_user: dict = Depends(g
             "odds": bet_request.odds,
             "amount": bet_request.amount,
             "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
         },
-        "message": "Mock bet placed - bet service unavailable"
+        "message": "Mock bet placed - bet service unavailable",
     }
+
 
 @app.options("/api/bets/parlay")
 async def options_place_parlay():
     """Handle CORS preflight for parlay placement"""
     return {}
 
+
 @app.post("/api/bets/parlay")
-async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = Depends(get_current_user)):
+async def place_parlay(
+    parlay_request: PlaceParlayRequest, current_user: dict = Depends(get_current_user)
+):
     """Place a parlay bet with multiple legs"""
     try:
         # Import and use the database service directly
         from app.services.bet_service_db import bet_service_db
 
         result = await bet_service_db.place_parlay(
-            user_id=current_user["user_id"],
-            parlay_data=parlay_request
+            user_id=current_user["user_id"], parlay_data=parlay_request
         )
 
         if result.get("success"):
@@ -1454,19 +1607,23 @@ async def place_parlay(parlay_request: PlaceParlayRequest, current_user: dict = 
                 "status": "success",
                 "parlay": result.get("parlay"),
                 "legs": result.get("legs", []),
-                "message": result.get("message", "Parlay placed successfully")
+                "message": result.get("message", "Parlay placed successfully"),
             }
         else:
-            raise HTTPException(status_code=400, detail=result.get("error", "Failed to place parlay"))
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Failed to place parlay")
+            )
 
     except Exception as e:
         logger.error(f"Error placing parlay: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to place parlay: {str(e)}")
 
+
 @app.options("/api/bets/parlays")
 async def options_get_parlays():
     """Handle CORS preflight for getting parlays"""
     return {}
+
 
 @app.get("/api/bets/parlays")
 async def get_parlays(current_user: dict = Depends(get_current_user)):
@@ -1477,46 +1634,57 @@ async def get_parlays(current_user: dict = Depends(get_current_user)):
         result = await bet_service_db.get_user_parlays(current_user["user_id"])
 
         if result.get("success"):
-            return {
-                "status": "success",
-                "parlays": result.get("parlays", [])
-            }
+            return {"status": "success", "parlays": result.get("parlays", [])}
         else:
-            raise HTTPException(status_code=500, detail=result.get("error", "Failed to fetch parlays"))
+            raise HTTPException(
+                status_code=500, detail=result.get("error", "Failed to fetch parlays")
+            )
 
     except Exception as e:
         logger.error(f"Error fetching parlays: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch parlays: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch parlays: {str(e)}"
+        )
+
 
 @app.get("/api/bets/parlay/{parlay_id}")
-async def get_parlay_details(parlay_id: str, current_user: dict = Depends(get_current_user)):
+async def get_parlay_details(
+    parlay_id: str, current_user: dict = Depends(get_current_user)
+):
     """Get specific parlay details"""
     try:
         from app.services.bet_service_db import bet_service_db
 
-        result = await bet_service_db.get_parlay_by_id(current_user["user_id"], parlay_id)
+        result = await bet_service_db.get_parlay_by_id(
+            current_user["user_id"], parlay_id
+        )
 
         if result.get("success"):
-            return {
-                "status": "success",
-                "parlay": result.get("parlay")
-            }
+            return {"status": "success", "parlay": result.get("parlay")}
         else:
-            raise HTTPException(status_code=404, detail=result.get("error", "Parlay not found"))
+            raise HTTPException(
+                status_code=404, detail=result.get("error", "Parlay not found")
+            )
 
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching parlay {parlay_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch parlay details: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch parlay details: {str(e)}"
+        )
+
 
 @app.options("/api/bets/history")
 async def options_bet_history():
     """Handle CORS preflight for bet history"""
     return {}
 
+
 @app.post("/api/bets/history")
-async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(get_current_user)):
+async def get_bet_history(
+    query: BetHistoryQuery, current_user: dict = Depends(get_current_user)
+):
     """Get user bet history with filtering"""
     if is_service_available("bet_service"):
         try:
@@ -1527,8 +1695,8 @@ async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(g
                     "status": "success",
                     "history": result["bets"],
                     "total": result["total"],
-                    "offset": result["offset"], 
-                    "limit": result["limit"]
+                    "offset": result["offset"],
+                    "limit": result["limit"],
                 }
             else:
                 logger.error(f"Bet service returned error: {result.get('error')}")
@@ -1538,32 +1706,34 @@ async def get_bet_history(query: BetHistoryQuery, current_user: dict = Depends(g
                     "history": [],
                     "total": 0,
                     "offset": query.offset,
-                    "limit": query.limit
+                    "limit": query.limit,
                 }
         except Exception as e:
             logger.error(f"Error fetching bet history: {e}")
             return {
-                "status": "error", 
+                "status": "error",
                 "error": str(e),
                 "history": [],
                 "total": 0,
                 "offset": query.offset,
-                "limit": query.limit
+                "limit": query.limit,
             }
-    
+
     return {
         "status": "error",
         "error": "Bet service is currently unavailable",
         "history": [],
         "total": 0,
         "offset": query.offset,
-        "limit": query.limit
+        "limit": query.limit,
     }
+
 
 @app.options("/api/bets/stats")
 async def options_bet_stats():
     """Handle CORS preflight for bet statistics"""
     return {}
+
 
 @app.get("/api/bets/stats")
 async def get_bet_stats(current_user: dict = Depends(get_current_user)):
@@ -1575,7 +1745,7 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
             return {"status": "success", "stats": stats}
         except Exception as e:
             logger.error(f"Error fetching bet stats: {e}")
-    
+
     # Mock betting statistics
     return {
         "status": "success",
@@ -1588,27 +1758,28 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
             "average_odds": -115,
             "favorite_sport": "NFL",
             "favorite_bet_type": "moneyline",
-            "current_streak": {
-                "type": "win",
-                "count": 4
-            },
+            "current_streak": {"type": "win", "count": 4},
             "monthly_summary": {
                 "bets": 8,
                 "wagered": 400.0,
                 "winnings": 450.0,
-                "roi": 0.125
-            }
+                "roi": 0.125,
+            },
         },
-        "message": "Mock betting statistics - analytics service unavailable"
+        "message": "Mock betting statistics - analytics service unavailable",
     }
+
 
 @app.options("/api/bets/share")
 async def options_share_bet():
     """Handle CORS preflight for bet sharing"""
     return {}
 
+
 @app.post("/api/bets/share")
-async def share_bet(share_request: ShareBetRequest, current_user: dict = Depends(get_current_user)):
+async def share_bet(
+    share_request: ShareBetRequest, current_user: dict = Depends(get_current_user)
+):
     """Share a bet with other users"""
     if is_service_available("bet_sharing_service_db"):
         try:
@@ -1616,13 +1787,13 @@ async def share_bet(share_request: ShareBetRequest, current_user: dict = Depends
             result = await sharing_service.share_bet(
                 user_id=current_user["user_id"],
                 bet_id=share_request.bet_id,
-                message=share_request.message
+                message=share_request.message,
             )
             return {"status": "success", "share": result}
         except Exception as e:
             logger.error(f"Error sharing bet: {e}")
             raise HTTPException(status_code=500, detail="Failed to share bet")
-    
+
     # Mock sharing response
     return {
         "status": "success",
@@ -1632,15 +1803,17 @@ async def share_bet(share_request: ShareBetRequest, current_user: dict = Depends
             "user_id": current_user["user_id"],
             "message": share_request.message,
             "share_url": f"https://yetai.com/shared-bet/{share_request.bet_id}",
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
         },
-        "message": "Mock bet shared - sharing service unavailable"
+        "message": "Mock bet shared - sharing service unavailable",
     }
+
 
 @app.options("/api/bets/shared")
 async def options_get_shared_bets():
     """Handle CORS preflight for getting shared bets"""
     return {}
+
 
 @app.get("/api/bets/shared")
 async def get_shared_bets():
@@ -1652,7 +1825,7 @@ async def get_shared_bets():
             return {"status": "success", "shared_bets": shared_bets}
         except Exception as e:
             logger.error(f"Error fetching shared bets: {e}")
-    
+
     # Mock shared bets
     return {
         "status": "success",
@@ -1666,21 +1839,25 @@ async def get_shared_bets():
                 "bet_details": {
                     "selection": "Kansas City Chiefs ML",
                     "odds": -150,
-                    "amount": 200.0
+                    "amount": 200.0,
                 },
-                "created_at": datetime.now(timezone.utc).isoformat()
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
         ],
-        "message": "Mock shared bets - sharing service unavailable"
+        "message": "Mock shared bets - sharing service unavailable",
     }
+
 
 @app.options("/api/bets/shared/{share_id}")
 async def options_delete_shared_bet():
     """Handle CORS preflight for deleting shared bet"""
     return {}
 
+
 @app.delete("/api/bets/shared/{share_id}")
-async def delete_shared_bet(share_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_shared_bet(
+    share_id: str, current_user: dict = Depends(get_current_user)
+):
     """Delete a shared bet"""
     if is_service_available("bet_sharing_service_db"):
         try:
@@ -1690,17 +1867,19 @@ async def delete_shared_bet(share_id: str, current_user: dict = Depends(get_curr
         except Exception as e:
             logger.error(f"Error deleting shared bet {share_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to delete shared bet")
-    
+
     # Mock deletion response
     return {
         "status": "success",
-        "message": f"Mock deletion of shared bet {share_id} - sharing service unavailable"
+        "message": f"Mock deletion of shared bet {share_id} - sharing service unavailable",
     }
+
 
 @app.options("/api/bets/{bet_id}")
 async def options_delete_bet():
     """Handle CORS preflight for bet deletion"""
     return {}
+
 
 @app.delete("/api/bets/{bet_id}")
 async def delete_bet(bet_id: str, current_user: dict = Depends(get_current_user)):
@@ -1709,21 +1888,27 @@ async def delete_bet(bet_id: str, current_user: dict = Depends(get_current_user)
         try:
             bet_service = get_service("bet_service")
             result = await bet_service.cancel_bet(bet_id, current_user["user_id"])
-            return {"status": "success", "message": f"Bet {bet_id} cancelled", "result": result}
+            return {
+                "status": "success",
+                "message": f"Bet {bet_id} cancelled",
+                "result": result,
+            }
         except Exception as e:
             logger.error(f"Error cancelling bet {bet_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to cancel bet")
-    
+
     # Mock cancellation response
     return {
         "status": "success",
-        "message": f"Mock cancellation of bet {bet_id} - bet service unavailable"
+        "message": f"Mock cancellation of bet {bet_id} - bet service unavailable",
     }
+
 
 @app.options("/api/bets/simulate")
 async def options_simulate_bet():
     """Handle CORS preflight for bet simulation"""
     return {}
+
 
 @app.post("/api/bets/simulate")
 async def simulate_bet():
@@ -1735,19 +1920,23 @@ async def simulate_bet():
             return {"status": "success", "simulation": result}
         except Exception as e:
             logger.error(f"Error simulating bet: {e}")
-    
+
     # Mock simulation
     import random
+
     return {
         "status": "success",
         "simulation": {
             "outcome": random.choice(["win", "loss", "push"]),
             "confidence": round(random.uniform(0.5, 0.95), 2),
-            "payout": round(random.uniform(50, 500), 2) if random.choice([True, False]) else 0,
-            "message": "Simulated bet outcome for testing"
+            "payout": (
+                round(random.uniform(50, 500), 2) if random.choice([True, False]) else 0
+            ),
+            "message": "Simulated bet outcome for testing",
         },
-        "message": "Mock bet simulation - bet service unavailable"
+        "message": "Mock bet simulation - bet service unavailable",
     }
+
 
 # Fantasy Sports API Endpoints
 @app.options("/api/fantasy/accounts")
@@ -1755,47 +1944,66 @@ async def options_fantasy_accounts():
     """Handle CORS preflight for fantasy accounts"""
     return {}
 
+
 @app.get("/api/fantasy/accounts")
 async def get_fantasy_accounts(current_user: dict = Depends(get_current_user)):
     """Get connected fantasy accounts"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
-        result = await fantasy_connection_service.get_user_connections(current_user["user_id"])
+
+        result = await fantasy_connection_service.get_user_connections(
+            current_user["user_id"]
+        )
         return result
     except Exception as e:
-        logger.error(f"Error getting fantasy accounts for user {current_user['user_id']}: {e}")
+        logger.error(
+            f"Error getting fantasy accounts for user {current_user['user_id']}: {e}"
+        )
         raise HTTPException(status_code=500, detail="Failed to get fantasy accounts")
+
 
 @app.options("/api/fantasy/leagues")
 async def options_fantasy_leagues():
     """Handle CORS preflight for fantasy leagues"""
     return {}
 
+
 @app.get("/api/fantasy/leagues")
 async def get_fantasy_leagues(current_user: dict = Depends(get_current_user)):
     """Get fantasy leagues for user"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
-        result = await fantasy_connection_service.get_user_leagues(current_user["user_id"])
+
+        result = await fantasy_connection_service.get_user_leagues(
+            current_user["user_id"]
+        )
         return result
     except Exception as e:
-        logger.error(f"Error getting fantasy leagues for user {current_user['user_id']}: {e}")
+        logger.error(
+            f"Error getting fantasy leagues for user {current_user['user_id']}: {e}"
+        )
         raise HTTPException(status_code=500, detail="Failed to get fantasy leagues")
+
 
 @app.options("/api/fantasy/connect")
 async def options_fantasy_connect():
     """Handle CORS preflight for fantasy platform connection"""
     return {}
 
+
 @app.post("/api/fantasy/connect")
-async def connect_fantasy_platform(connect_request: FantasyConnectRequest, current_user: dict = Depends(get_current_user)):
+async def connect_fantasy_platform(
+    connect_request: FantasyConnectRequest,
+    current_user: dict = Depends(get_current_user),
+):
     """Connect to a fantasy platform (Sleeper, ESPN, etc.)"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
+
         result = await fantasy_connection_service.connect_platform(
             user_id=current_user["user_id"],
             platform=connect_request.platform,
-            credentials=connect_request.credentials
+            credentials=connect_request.credentials,
         )
         return result
     except ValueError as e:
@@ -1803,41 +2011,62 @@ async def connect_fantasy_platform(connect_request: FantasyConnectRequest, curre
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         logger.error(f"Error connecting to {connect_request.platform}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to connect to {connect_request.platform}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to connect to {connect_request.platform}: {str(e)}",
+        )
+
 
 @app.options("/api/fantasy/roster/{league_id}")
 async def options_fantasy_roster():
     """Handle CORS preflight for fantasy roster"""
     return {}
 
+
 @app.get("/api/fantasy/roster/{league_id}")
-async def get_fantasy_roster(league_id: str, current_user: dict = Depends(get_current_user)):
+async def get_fantasy_roster(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
     """Get fantasy roster for a specific league - REAL DATA ONLY"""
-    logger.info(f"🔍 ROSTER ENDPOINT CALLED - League: {league_id}, User: {current_user['user_id']}")
+    logger.info(
+        f"🔍 ROSTER ENDPOINT CALLED - League: {league_id}, User: {current_user['user_id']}"
+    )
 
     service_available = is_service_available("fantasy_pipeline")
     logger.info(f"🔍 FANTASY_PIPELINE SERVICE AVAILABLE: {service_available}")
 
     if not service_available:
         logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(status_code=503, detail="Fantasy pipeline service unavailable")
+        raise HTTPException(
+            status_code=503, detail="Fantasy pipeline service unavailable"
+        )
 
     try:
         fantasy_service = get_service("fantasy_pipeline")
-        logger.info(f"🔍 CALLING get_league_roster with league_id={league_id}, user_id={current_user['user_id']}")
-        roster = await fantasy_service.get_league_roster(league_id, current_user["user_id"])
+        logger.info(
+            f"🔍 CALLING get_league_roster with league_id={league_id}, user_id={current_user['user_id']}"
+        )
+        roster = await fantasy_service.get_league_roster(
+            league_id, current_user["user_id"]
+        )
         logger.info(f"🔍 ROSTER RETRIEVED: {len(roster)} players")
 
         if not roster:
-            logger.error(f"🚨 NO ROSTER DATA FOUND for league {league_id}, user {current_user['user_id']}")
-            raise HTTPException(status_code=404, detail="No roster data found for this league and user")
+            logger.error(
+                f"🚨 NO ROSTER DATA FOUND for league {league_id}, user {current_user['user_id']}"
+            )
+            raise HTTPException(
+                status_code=404, detail="No roster data found for this league and user"
+            )
 
         return {"status": "success", "roster": roster}
     except Exception as e:
         logger.error(f"🚨 ERROR fetching roster for league {league_id}: {e}")
         import traceback
+
         logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=f"Failed to fetch roster: {str(e)}")
+
 
 @app.get("/api/fantasy/projections")
 async def get_fantasy_projections(current_user: dict = Depends(get_current_user)):
@@ -1849,7 +2078,9 @@ async def get_fantasy_projections(current_user: dict = Depends(get_current_user)
 
     if not service_available:
         logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(status_code=503, detail="Fantasy pipeline service unavailable")
+        raise HTTPException(
+            status_code=503, detail="Fantasy pipeline service unavailable"
+        )
 
     try:
         fantasy_service = get_service("fantasy_pipeline")
@@ -1877,33 +2108,44 @@ async def get_fantasy_projections(current_user: dict = Depends(get_current_user)
     except Exception as e:
         logger.error(f"🚨 ERROR fetching fantasy projections: {e}")
         import traceback
+
         logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to fetch projections: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to fetch projections: {str(e)}"
+        )
+
 
 @app.options("/api/fantasy/disconnect/{fantasy_user_id}")
 async def options_disconnect_fantasy_account():
     """Handle CORS preflight for fantasy account disconnect"""
     return {}
 
+
 @app.delete("/api/fantasy/disconnect/{fantasy_user_id}")
 async def disconnect_fantasy_account(
-    fantasy_user_id: str,
-    current_user: dict = Depends(get_current_user)
+    fantasy_user_id: str, current_user: dict = Depends(get_current_user)
 ):
     """Disconnect a fantasy sports account"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
+
         result = await fantasy_connection_service.disconnect_platform(
-            user_id=current_user["user_id"],
-            platform_user_id=fantasy_user_id
+            user_id=current_user["user_id"], platform_user_id=fantasy_user_id
         )
         return result
     except Exception as e:
-        logger.error(f"Error disconnecting fantasy account {fantasy_user_id} for user {current_user['user_id']}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to disconnect fantasy account")
+        logger.error(
+            f"Error disconnecting fantasy account {fantasy_user_id} for user {current_user['user_id']}: {e}"
+        )
+        raise HTTPException(
+            status_code=500, detail="Failed to disconnect fantasy account"
+        )
+
 
 @app.get("/api/v1/fantasy/standings/{league_id}")
-async def get_fantasy_standings(league_id: str, current_user: dict = Depends(get_current_user)):
+async def get_fantasy_standings(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
     """Get fantasy league standings"""
     try:
         from app.services.sleeper_fantasy_service import SleeperFantasyService
@@ -1914,33 +2156,41 @@ async def get_fantasy_standings(league_id: str, current_user: dict = Depends(get
         teams = await sleeper_service.get_league_teams(league_id)
 
         # Sort teams by wins, then points for
-        standings = sorted(teams, key=lambda x: (x.get('wins', 0), x.get('points_for', 0)), reverse=True)
+        standings = sorted(
+            teams,
+            key=lambda x: (x.get("wins", 0), x.get("points_for", 0)),
+            reverse=True,
+        )
 
         # Add ranking
         for i, team in enumerate(standings):
-            team['rank'] = i + 1
+            team["rank"] = i + 1
 
         return {
             "status": "success",
             "standings": standings,
-            "message": f"Retrieved standings for {len(standings)} teams"
+            "message": f"Retrieved standings for {len(standings)} teams",
         }
     except Exception as e:
         logger.error(f"Error getting standings for league {league_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get fantasy standings")
 
+
 @app.get("/api/fantasy/players/search")
-async def search_fantasy_players(q: str = None, current_user: dict = Depends(get_current_user)):
+async def search_fantasy_players(
+    q: str = None, current_user: dict = Depends(get_current_user)
+):
     """Search for fantasy players"""
     try:
         if not q or len(q.strip()) < 2:
             return {
                 "status": "success",
                 "players": [],
-                "message": "Please enter at least 2 characters to search"
+                "message": "Please enter at least 2 characters to search",
             }
 
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
 
         # Get all players and filter by search query
@@ -1959,14 +2209,20 @@ async def search_fantasy_players(q: str = None, current_user: dict = Depends(get
             last_name = (player_data.get("last_name") or "").lower()
             full_name = f"{first_name} {last_name}".strip()
 
-            if (search_query in first_name or
-                search_query in last_name or
-                search_query in full_name):
+            if (
+                search_query in first_name
+                or search_query in last_name
+                or search_query in full_name
+            ):
 
                 # Format player data for frontend
                 formatted_player = {
                     "player_id": player_id,
-                    "name": full_name.title() if full_name else player_data.get("full_name", "Unknown"),
+                    "name": (
+                        full_name.title()
+                        if full_name
+                        else player_data.get("full_name", "Unknown")
+                    ),
                     "first_name": player_data.get("first_name", ""),
                     "last_name": player_data.get("last_name", ""),
                     "position": player_data.get("position", "N/A"),
@@ -1975,15 +2231,17 @@ async def search_fantasy_players(q: str = None, current_user: dict = Depends(get
                     "years_exp": player_data.get("years_exp"),
                     "fantasy_positions": player_data.get("fantasy_positions", []),
                     "status": player_data.get("status", ""),
-                    "injury_status": player_data.get("injury_status")
+                    "injury_status": player_data.get("injury_status"),
                 }
                 matching_players.append(formatted_player)
 
         # Sort by relevance (exact matches first, then partial matches)
-        matching_players.sort(key=lambda x: (
-            search_query != x["name"].lower(),  # Exact matches first
-            x["name"].lower().find(search_query)  # Then by position in name
-        ))
+        matching_players.sort(
+            key=lambda x: (
+                search_query != x["name"].lower(),  # Exact matches first
+                x["name"].lower().find(search_query),  # Then by position in name
+            )
+        )
 
         # Limit to top 50 results for performance
         matching_players = matching_players[:50]
@@ -1991,15 +2249,18 @@ async def search_fantasy_players(q: str = None, current_user: dict = Depends(get
         return {
             "status": "success",
             "players": matching_players,
-            "message": f"Found {len(matching_players)} players matching '{q}'"
+            "message": f"Found {len(matching_players)} players matching '{q}'",
         }
 
     except Exception as e:
         logger.error(f"Error searching players with query '{q}': {e}")
         raise HTTPException(status_code=500, detail="Failed to search fantasy players")
 
+
 @app.get("/api/fantasy/recommendations/start-sit/{week}")
-async def get_start_sit_recommendations(week: int, current_user: dict = Depends(get_current_user), db=Depends(get_db)):
+async def get_start_sit_recommendations(
+    week: int, current_user: dict = Depends(get_current_user), db=Depends(get_db)
+):
     """Get start/sit recommendations for a given week based on user's actual roster"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
@@ -2026,6 +2287,7 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
             # Adjust for consistency (lower variance = higher confidence)
             if len(game_points) > 1:
                 import statistics
+
                 mean_points = statistics.mean(game_points)
                 if mean_points > 0:
                     variance = statistics.stdev(game_points)
@@ -2041,29 +2303,36 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
 
             # Position-specific adjustments
             position_modifiers = {
-                "QB": 5,    # QBs are more predictable
-                "K": 0,     # Kickers are less predictable
+                "QB": 5,  # QBs are more predictable
+                "K": 0,  # Kickers are less predictable
                 "DEF": -5,  # Defenses are least predictable
-                "RB": 2,    # RBs moderately predictable
-                "WR": 0,    # WRs baseline
-                "TE": -2    # TEs slightly less predictable
+                "RB": 2,  # RBs moderately predictable
+                "WR": 0,  # WRs baseline
+                "TE": -2,  # TEs slightly less predictable
             }
             position_adjustment = position_modifiers.get(position, 0)
 
             # Calculate final confidence
-            final_confidence = base_confidence + consistency_adjustment + sample_size_bonus + position_adjustment
+            final_confidence = (
+                base_confidence
+                + consistency_adjustment
+                + sample_size_bonus
+                + position_adjustment
+            )
 
             # Clamp between 35% and 95%
             return int(max(35, min(95, final_confidence)))
 
         # Get user's connected leagues
-        user_leagues = await fantasy_connection_service.get_user_leagues(current_user["user_id"])
+        user_leagues = await fantasy_connection_service.get_user_leagues(
+            current_user["user_id"]
+        )
 
         if not user_leagues.get("leagues"):
             return {
                 "status": "success",
                 "recommendations": [],
-                "message": "No connected fantasy leagues found"
+                "message": "No connected fantasy leagues found",
             }
 
         recommendations = []
@@ -2072,7 +2341,9 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
         for league in user_leagues["leagues"][:1]:  # Focus on first league for now
             try:
                 league_id = league.get("league_id") or league.get("id")
-                logger.info(f"Processing league: {league_id}, name: {league.get('name')}")
+                logger.info(
+                    f"Processing league: {league_id}, name: {league.get('name')}"
+                )
                 if not league_id:
                     logger.warning("No league_id found, skipping league")
                     continue
@@ -2084,9 +2355,14 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
 
                 # Find user's team by matching owner info
                 for team in league_standings:
-                    logger.info(f"Checking team: {team.get('name')} - Owner: {team.get('owner_name')}")
+                    logger.info(
+                        f"Checking team: {team.get('name')} - Owner: {team.get('owner_name')}"
+                    )
                     # Try to match by owner name or other identifiers
-                    if team.get("owner_name") and "byetz" in team.get("owner_name", "").lower():
+                    if (
+                        team.get("owner_name")
+                        and "byetz" in team.get("owner_name", "").lower()
+                    ):
                         user_team = team
                         logger.info(f"Found user team by name match: {user_team}")
                         break
@@ -2095,7 +2371,9 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                     # If we can't find by name, take the first team as fallback
                     if league_standings:
                         user_team = league_standings[0]
-                        logger.info(f"Using first team as fallback: {user_team.get('name')}")
+                        logger.info(
+                            f"Using first team as fallback: {user_team.get('name')}"
+                        )
 
                 if not user_team:
                     logger.warning("No user team found")
@@ -2104,7 +2382,9 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                 # Get user's roster using owner_id
                 owner_id = user_team.get("owner_id")
                 logger.info(f"Getting roster for owner_id: {owner_id}")
-                team_roster_ids = await sleeper_service.get_roster_by_owner(league_id, owner_id)
+                team_roster_ids = await sleeper_service.get_roster_by_owner(
+                    league_id, owner_id
+                )
                 logger.info(f"Team roster player IDs: {team_roster_ids}")
 
                 if not team_roster_ids:
@@ -2117,15 +2397,19 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                 for player_id in team_roster_ids:
                     if player_id in sleeper_players:
                         player_data = sleeper_players[player_id]
-                        team_roster.append({
-                            "player_id": player_id,
-                            "name": f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip(),
-                            "position": player_data.get("position"),
-                            "team": player_data.get("team"),
-                            "fantasy_positions": player_data.get("fantasy_positions", []),
-                            "injury_status": player_data.get("injury_status"),
-                            "status": player_data.get("status")
-                        })
+                        team_roster.append(
+                            {
+                                "player_id": player_id,
+                                "name": f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip(),
+                                "position": player_data.get("position"),
+                                "team": player_data.get("team"),
+                                "fantasy_positions": player_data.get(
+                                    "fantasy_positions", []
+                                ),
+                                "injury_status": player_data.get("injury_status"),
+                                "status": player_data.get("status"),
+                            }
+                        )
 
                 logger.info(f"Processed team roster: {len(team_roster)} players")
 
@@ -2135,10 +2419,15 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
 
                 # Get league roster rules for proper START/SIT decisions
                 from app.services.sleeper_fantasy_service import SleeperFantasyService
+
                 sleeper_service_temp = SleeperFantasyService()
-                league_details = await sleeper_service_temp.get_league_details(league_id)
+                league_details = await sleeper_service_temp.get_league_details(
+                    league_id
+                )
                 roster_positions = league_details.get("roster_positions", [])
-                starting_positions = [pos for pos in roster_positions if pos not in ["BN", "IR"]]
+                starting_positions = [
+                    pos for pos in roster_positions if pos not in ["BN", "IR"]
+                ]
 
                 # Count required starting positions
                 position_requirements = {}
@@ -2154,7 +2443,9 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                 for i, player in enumerate(team_roster[:15]):  # Limit to 15 players
                     try:
                         sleeper_player_id = player.get("player_id")
-                        logger.info(f"Processing player {i+1}: {player.get('name')} ({sleeper_player_id})")
+                        logger.info(
+                            f"Processing player {i+1}: {player.get('name')} ({sleeper_player_id})"
+                        )
                         if not sleeper_player_id:
                             logger.warning(f"No player_id for player: {player}")
                             continue
@@ -2164,22 +2455,36 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                         try:
                             # Query database for the mapping
                             fantasy_player_query = db.execute(
-                                text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
-                                {"sleeper_id": str(sleeper_player_id)}
+                                text(
+                                    "SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"
+                                ),
+                                {"sleeper_id": str(sleeper_player_id)},
                             )
                             fantasy_player_row = fantasy_player_query.fetchone()
 
                             if fantasy_player_row:
                                 fantasy_player_id = fantasy_player_row[0]
-                                logger.info(f"Mapped Sleeper ID {sleeper_player_id} to fantasy_players.id {fantasy_player_id}")
+                                logger.info(
+                                    f"Mapped Sleeper ID {sleeper_player_id} to fantasy_players.id {fantasy_player_id}"
+                                )
 
                                 # Now get analytics using the correct ID
-                                analytics = await analytics_service.get_player_analytics(fantasy_player_id, season=2024)
-                                logger.info(f"Analytics result for {player.get('name')}: {len(analytics) if analytics else 0} records")
+                                analytics = (
+                                    await analytics_service.get_player_analytics(
+                                        fantasy_player_id, season=2024
+                                    )
+                                )
+                                logger.info(
+                                    f"Analytics result for {player.get('name')}: {len(analytics) if analytics else 0} records"
+                                )
                             else:
-                                logger.warning(f"No fantasy_players mapping found for Sleeper ID {sleeper_player_id}")
+                                logger.warning(
+                                    f"No fantasy_players mapping found for Sleeper ID {sleeper_player_id}"
+                                )
                         except Exception as e:
-                            logger.warning(f"Error mapping/fetching analytics for player {sleeper_player_id}: {e}")
+                            logger.warning(
+                                f"Error mapping/fetching analytics for player {sleeper_player_id}: {e}"
+                            )
                             analytics = None
 
                         # Calculate projected points based on recent performance
@@ -2189,23 +2494,41 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                         if analytics and len(analytics) > 0:
                             # Use average of last 3 games
                             recent_games = analytics[:3]
-                            game_points = [game.get("ppr_points", 0) for game in recent_games]
+                            game_points = [
+                                game.get("ppr_points", 0) for game in recent_games
+                            ]
                             total_points = sum(game_points)
-                            projected_points = total_points / len(recent_games) if recent_games else 0.0
+                            projected_points = (
+                                total_points / len(recent_games)
+                                if recent_games
+                                else 0.0
+                            )
 
                             # Calculate confidence based on data quality and consistency
                             position = player.get("position", "")
-                            confidence = calculate_confidence(game_points, len(analytics), position)
-                            logger.info(f"Player {player.get('name')} analytics: {len(analytics)} games, projected: {projected_points:.1f}, confidence: {confidence}%")
+                            confidence = calculate_confidence(
+                                game_points, len(analytics), position
+                            )
+                            logger.info(
+                                f"Player {player.get('name')} analytics: {len(analytics)} games, projected: {projected_points:.1f}, confidence: {confidence}%"
+                            )
                         else:
                             # Fallback projection based on position
                             position_projections = {
-                                "QB": 24.5, "RB": 15.2, "WR": 13.8,
-                                "TE": 9.5, "K": 8.2, "DEF": 7.8
+                                "QB": 24.5,
+                                "RB": 15.2,
+                                "WR": 13.8,
+                                "TE": 9.5,
+                                "K": 8.2,
+                                "DEF": 7.8,
                             }
-                            projected_points = position_projections.get(player.get("position", ""), 8.0)
+                            projected_points = position_projections.get(
+                                player.get("position", ""), 8.0
+                            )
                             confidence = 50  # Lower confidence for projections without recent data
-                            logger.info(f"Player {player.get('name')} using fallback projection: {projected_points}, confidence: {confidence}%")
+                            logger.info(
+                                f"Player {player.get('name')} using fallback projection: {projected_points}, confidence: {confidence}%"
+                            )
 
                         # Store player projection data for later START/SIT assignment
                         position = player.get("position", "BENCH")
@@ -2213,7 +2536,12 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                         # Check injury status
                         injury_status = player.get("injury_status")
                         status = player.get("status")
-                        is_injured = injury_status in ["Out", "IR", "PUP", "Suspended"] or status in ["Inactive", "Injured Reserve"]
+                        is_injured = injury_status in [
+                            "Out",
+                            "IR",
+                            "PUP",
+                            "Suspended",
+                        ] or status in ["Inactive", "Injured Reserve"]
 
                         # Adjust confidence and reason if injured
                         if is_injured:
@@ -2230,27 +2558,38 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                             "team": player.get("team", "N/A"),
                             "confidence": confidence,
                             "projected_points": round(projected_points, 1),
-                            "has_analytics": analytics is not None and len(analytics) > 0,
+                            "has_analytics": analytics is not None
+                            and len(analytics) > 0,
                             "injury_status": injury_status,
                             "status": status,
                             "is_injured": is_injured,
-                            "reason": f"Based on recent performance averaging {projected_points:.1f} pts{injury_reason}" if analytics else f"Projected {projected_points:.1f} pts (no recent data){injury_reason}",
+                            "reason": (
+                                f"Based on recent performance averaging {projected_points:.1f} pts{injury_reason}"
+                                if analytics
+                                else f"Projected {projected_points:.1f} pts (no recent data){injury_reason}"
+                            ),
                             "league_name": league.get("name", "Unknown League"),
                             "league_context": {
                                 "league_id": league_id,
                                 "league_name": league.get("name", "Unknown League"),
-                                "team_name": user_team.get("name", "Your Team")
-                            }
+                                "team_name": user_team.get("name", "Your Team"),
+                            },
                         }
                         player_projections.append(player_data)
-                        logger.info(f"Added projection for {player.get('name')}: {projected_points:.1f} pts, injury_status: {injury_status}, status: {status}, is_injured: {is_injured}")
+                        logger.info(
+                            f"Added projection for {player.get('name')}: {projected_points:.1f} pts, injury_status: {injury_status}, status: {status}, is_injured: {is_injured}"
+                        )
 
                     except Exception as player_error:
-                        logger.warning(f"Failed to analyze player {player.get('player_id')}: {player_error}")
+                        logger.warning(
+                            f"Failed to analyze player {player.get('player_id')}: {player_error}"
+                        )
                         continue
 
                 # Second pass: Assign START/SIT based on projected points and roster requirements
-                logger.info(f"Assigning START/SIT for {len(player_projections)} players")
+                logger.info(
+                    f"Assigning START/SIT for {len(player_projections)} players"
+                )
 
                 # Sort players by position and projected points (highest first)
                 players_by_position = {}
@@ -2262,12 +2601,16 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
 
                 # Sort each position by health first, then projected points (descending)
                 for pos in players_by_position:
-                    players_by_position[pos].sort(key=lambda x: (x["is_injured"], -x["projected_points"]))
+                    players_by_position[pos].sort(
+                        key=lambda x: (x["is_injured"], -x["projected_points"])
+                    )
 
                 # Assign START/SIT based on roster requirements
                 for pos, players in players_by_position.items():
                     required_starters = position_requirements.get(pos, 0)
-                    logger.info(f"Position {pos}: {len(players)} players, {required_starters} starters required")
+                    logger.info(
+                        f"Position {pos}: {len(players)} players, {required_starters} starters required"
+                    )
 
                     for i, player in enumerate(players):
                         rank_in_position = i + 1
@@ -2278,10 +2621,12 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                             **player,  # Include all player data
                             "recommendation": "START" if is_starter else "SIT",
                             "rank_in_position": rank_in_position,
-                            "total_in_position": len(players)
+                            "total_in_position": len(players),
                         }
                         recommendations.append(recommendation)
-                        logger.info(f"{player['player_name']} ({pos}): {player['projected_points']} pts, rank #{rank_in_position}, {'START' if is_starter else 'SIT'}")
+                        logger.info(
+                            f"{player['player_name']} ({pos}): {player['projected_points']} pts, rank #{rank_in_position}, {'START' if is_starter else 'SIT'}"
+                        )
 
                 # Handle FLEX positions (RB/WR/TE can fill FLEX spots)
                 flex_positions = position_requirements.get("FLEX", 0)
@@ -2289,35 +2634,52 @@ async def get_start_sit_recommendations(week: int, current_user: dict = Depends(
                     logger.info(f"Processing {flex_positions} FLEX positions")
 
                     # Get all RB/WR/TE players who are currently marked as SIT
-                    flex_eligible = [r for r in recommendations
-                                   if r["position"] in ["RB", "WR", "TE"] and r["recommendation"] == "SIT"]
+                    flex_eligible = [
+                        r
+                        for r in recommendations
+                        if r["position"] in ["RB", "WR", "TE"]
+                        and r["recommendation"] == "SIT"
+                    ]
 
                     # Sort by health first, then projected points (highest first)
-                    flex_eligible.sort(key=lambda x: (x["is_injured"], -x["projected_points"]))
+                    flex_eligible.sort(
+                        key=lambda x: (x["is_injured"], -x["projected_points"])
+                    )
 
                     # Promote top FLEX-eligible players to START
                     for i in range(min(flex_positions, len(flex_eligible))):
                         flex_eligible[i]["recommendation"] = "START"
-                        logger.info(f"FLEX promotion: {flex_eligible[i]['player_name']} -> START")
+                        logger.info(
+                            f"FLEX promotion: {flex_eligible[i]['player_name']} -> START"
+                        )
 
             except Exception as league_error:
-                logger.warning(f"Failed to get recommendations for league {league.get('league_id')}: {league_error}")
+                logger.warning(
+                    f"Failed to get recommendations for league {league.get('league_id')}: {league_error}"
+                )
                 continue
 
         # Sort recommendations: START players first, then by projected points
-        recommendations.sort(key=lambda x: (x["recommendation"] != "START", -x["projected_points"]))
+        recommendations.sort(
+            key=lambda x: (x["recommendation"] != "START", -x["projected_points"])
+        )
 
         return {
             "status": "success",
             "recommendations": recommendations,
-            "message": f"Generated {len(recommendations)} start/sit recommendations for week {week} based on your roster"
+            "message": f"Generated {len(recommendations)} start/sit recommendations for week {week} based on your roster",
         }
     except Exception as e:
         logger.error(f"Error getting start/sit recommendations for week {week}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get start/sit recommendations")
+        raise HTTPException(
+            status_code=500, detail="Failed to get start/sit recommendations"
+        )
+
 
 @app.get("/api/fantasy/recommendations/waiver-wire/{week}")
-async def get_waiver_wire_recommendations(week: int, current_user: dict = Depends(get_current_user)):
+async def get_waiver_wire_recommendations(
+    week: int, current_user: dict = Depends(get_current_user)
+):
     """Get waiver wire recommendations for a given week"""
     try:
         from app.services.sleeper_fantasy_service import SleeperFantasyService
@@ -2341,46 +2703,59 @@ async def get_waiver_wire_recommendations(week: int, current_user: dict = Depend
             is_high_priority = trend_count > 50000
             faab_percentage = min(20, max(3, int(trend_count / 10000)))
 
-            recommendations.append({
-                **player,
-                "recommendation_type": "add",
-                "priority": "high" if is_high_priority else "medium",
-                "priority_score": round(priority_score, 1),
-                "trend_count": trend_count,
-                "waiver_suggestion": {
-                    "suggestion_type": "FAAB",
-                    "faab_percentage": faab_percentage,
-                    "claim_advice": f"Top waiver priority" if is_high_priority else "Medium priority"
-                },
-                "suggested_fab_percentage": faab_percentage
-            })
+            recommendations.append(
+                {
+                    **player,
+                    "recommendation_type": "add",
+                    "priority": "high" if is_high_priority else "medium",
+                    "priority_score": round(priority_score, 1),
+                    "trend_count": trend_count,
+                    "waiver_suggestion": {
+                        "suggestion_type": "FAAB",
+                        "faab_percentage": faab_percentage,
+                        "claim_advice": (
+                            f"Top waiver priority"
+                            if is_high_priority
+                            else "Medium priority"
+                        ),
+                    },
+                    "suggested_fab_percentage": faab_percentage,
+                }
+            )
 
         # Add context about trending drops
         for player in trending_drops[:5]:  # Top 5 trending drops
-            recommendations.append({
-                **player,
-                "recommendation_type": "drop",
-                "priority": "low",
-                "priority_score": 1.0,
-                "trend_count": player.get("trend_count", 0),
-                "waiver_suggestion": {
-                    "suggestion_type": "DROP",
-                    "claim_advice": "Consider dropping"
-                },
-                "suggested_fab_percentage": 0
-            })
+            recommendations.append(
+                {
+                    **player,
+                    "recommendation_type": "drop",
+                    "priority": "low",
+                    "priority_score": 1.0,
+                    "trend_count": player.get("trend_count", 0),
+                    "waiver_suggestion": {
+                        "suggestion_type": "DROP",
+                        "claim_advice": "Consider dropping",
+                    },
+                    "suggested_fab_percentage": 0,
+                }
+            )
 
         return {
             "status": "success",
             "recommendations": recommendations,
-            "message": f"Retrieved {len(recommendations)} waiver wire recommendations for week {week}"
+            "message": f"Retrieved {len(recommendations)} waiver wire recommendations for week {week}",
         }
     except Exception as e:
         logger.error(f"Error getting waiver wire recommendations for week {week}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get waiver wire recommendations")
+        raise HTTPException(
+            status_code=500, detail="Failed to get waiver wire recommendations"
+        )
+
 
 @app.get("/api/fantasy/leagues/{league_id}/rules")
-async def get_league_rules(league_id: str, current_user: dict = Depends(get_current_user)):
+async def get_league_rules(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
     """Get fantasy league rules and settings"""
     try:
         from app.services.sleeper_fantasy_service import SleeperFantasyService
@@ -2397,9 +2772,12 @@ async def get_league_rules(league_id: str, current_user: dict = Depends(get_curr
         if teams_count == 0:
             # Make a direct API call to get league info
             import httpx
+
             async with httpx.AsyncClient() as client:
                 try:
-                    response = await client.get(f"https://api.sleeper.app/v1/league/{league_id}")
+                    response = await client.get(
+                        f"https://api.sleeper.app/v1/league/{league_id}"
+                    )
                     if response.status_code == 200:
                         raw_league_data = response.json()
                         teams_count = raw_league_data.get("total_rosters", 0)
@@ -2415,42 +2793,58 @@ async def get_league_rules(league_id: str, current_user: dict = Depends(get_curr
         structured_scoring = {
             "passing": {
                 "touchdowns": raw_scoring.get("pass_td", 6),
-                "yards_per_point": 1.0 / raw_scoring.get("pass_yd", 25) if raw_scoring.get("pass_yd", 0) > 0 else 0,
-                "interceptions": raw_scoring.get("pass_int", -2)
+                "yards_per_point": (
+                    1.0 / raw_scoring.get("pass_yd", 25)
+                    if raw_scoring.get("pass_yd", 0) > 0
+                    else 0
+                ),
+                "interceptions": raw_scoring.get("pass_int", -2),
             },
             "rushing": {
                 "touchdowns": raw_scoring.get("rush_td", 6),
-                "yards_per_point": 1.0 / raw_scoring.get("rush_yd", 10) if raw_scoring.get("rush_yd", 0) > 0 else 0,
-                "fumbles": raw_scoring.get("fum_lost", -2)
+                "yards_per_point": (
+                    1.0 / raw_scoring.get("rush_yd", 10)
+                    if raw_scoring.get("rush_yd", 0) > 0
+                    else 0
+                ),
+                "fumbles": raw_scoring.get("fum_lost", -2),
             },
             "receiving": {
                 "touchdowns": raw_scoring.get("rec_td", 6),
-                "yards_per_point": 1.0 / raw_scoring.get("rec_yd", 10) if raw_scoring.get("rec_yd", 0) > 0 else 0,
+                "yards_per_point": (
+                    1.0 / raw_scoring.get("rec_yd", 10)
+                    if raw_scoring.get("rec_yd", 0) > 0
+                    else 0
+                ),
                 "receptions": raw_scoring.get("rec", 1),
-                "fumbles": raw_scoring.get("fum_lost", -2)
+                "fumbles": raw_scoring.get("fum_lost", -2),
             },
             "kicking": {
                 "field_goals": raw_scoring.get("fgm", 3),
                 "extra_points": raw_scoring.get("xpm", 1),
-                "field_goal_misses": raw_scoring.get("fgmiss", 0)
+                "field_goal_misses": raw_scoring.get("fgmiss", 0),
             },
             "defense": {
                 "sacks": raw_scoring.get("sack", 1),
                 "interceptions": raw_scoring.get("def_int", 2),
                 "fumble_recoveries": raw_scoring.get("fum_rec", 2),
-                "touchdowns": raw_scoring.get("def_td", 6)
+                "touchdowns": raw_scoring.get("def_td", 6),
             },
-            "special_scoring": []  # Add empty special scoring to prevent frontend error
+            "special_scoring": [],  # Add empty special scoring to prevent frontend error
         }
 
         # Get roster positions and calculate roster info
         roster_positions = league_details.get("roster_positions", [])
-        starting_positions = [pos for pos in roster_positions if pos not in ["BN", "IR"]]
+        starting_positions = [
+            pos for pos in roster_positions if pos not in ["BN", "IR"]
+        ]
         bench_positions = [pos for pos in roster_positions if pos in ["BN", "IR"]]
 
         # Use the calculated teams count
         total_rosters = teams_count
-        league_type = f"{total_rosters}-Team League" if total_rosters > 0 else "Standard League"
+        league_type = (
+            f"{total_rosters}-Team League" if total_rosters > 0 else "Standard League"
+        )
 
         # Count position requirements
         position_counts = {}
@@ -2472,31 +2866,36 @@ async def get_league_rules(league_id: str, current_user: dict = Depends(get_curr
             "total_rosters": total_rosters,
             "teams_count": total_rosters,
             "platform": "Sleeper",
-            "scoring_type": structured_scoring.get("receiving", {}).get("receptions", 0) > 0 and "PPR" or "Standard",
+            "scoring_type": structured_scoring.get("receiving", {}).get("receptions", 0)
+            > 0
+            and "PPR"
+            or "Standard",
             "roster_positions": roster_positions,
             "scoring_settings": structured_scoring,
             "waiver_settings": {
                 "waiver_type": league_details.get("waiver_type", "waiver_priority"),
                 "waiver_budget": league_details.get("waiver_budget", 100),
                 "waiver_clear_days": league_details.get("waiver_clear_days", 1),
-                **league_details.get("waiver_settings", {})
+                **league_details.get("waiver_settings", {}),
             },
             "playoff_settings": {
                 "playoff_week_start": league_details.get("playoff_week_start", 15),
                 "playoff_teams": league_details.get("playoff_teams", 4),
-                "playoff_rounds": league_details.get("playoff_rounds", 2)
+                "playoff_rounds": league_details.get("playoff_rounds", 2),
             },
             "draft_settings": {
                 "draft_type": league_details.get("draft_type", "snake"),
                 "draft_order": league_details.get("draft_order"),
-                "draft_rounds": league_details.get("draft_rounds", len(roster_positions))
+                "draft_rounds": league_details.get(
+                    "draft_rounds", len(roster_positions)
+                ),
             },
             "roster_config": {
                 "total_spots": len(roster_positions),
                 "starting_spots": len(starting_positions),
                 "bench_spots": len(bench_positions),
                 "starting_lineup": starting_positions,
-                "bench_lineup": bench_positions
+                "bench_lineup": bench_positions,
             },
             "position_requirements": position_requirements,
             "league_features": {
@@ -2504,32 +2903,36 @@ async def get_league_rules(league_id: str, current_user: dict = Depends(get_curr
                 "taxi_slots": league_details.get("taxi_slots", 0),
                 "reserve_slots": league_details.get("reserve_slots", 0),
                 "waiver_type": league_details.get("waiver_type", "waiver_priority"),
-                "daily_waivers": league_details.get("daily_waivers", False)
+                "daily_waivers": league_details.get("daily_waivers", False),
             },
             "season": league_details.get("season", "2024"),
-            "status": league_details.get("status", "pre_draft")
+            "status": league_details.get("status", "pre_draft"),
         }
 
         return {
             "status": "success",
             "rules": rules,
-            "message": f"Retrieved rules for league {league_details.get('name', league_id)}"
+            "message": f"Retrieved rules for league {league_details.get('name', league_id)}",
         }
     except Exception as e:
         logger.error(f"Error getting rules for league {league_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get league rules")
 
+
 @app.delete("/api/fantasy/leagues/{league_id}")
-async def delete_fantasy_league(league_id: str, current_user: dict = Depends(get_current_user)):
+async def delete_fantasy_league(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
     """Delete/leave a fantasy league"""
     try:
         return {
             "status": "success",
-            "message": "Fantasy league deletion endpoint - implementation in progress"
+            "message": "Fantasy league deletion endpoint - implementation in progress",
         }
     except Exception as e:
         logger.error(f"Error deleting league {league_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete fantasy league")
+
 
 # Odds and Markets API Endpoints
 @app.options("/api/odds/americanfootball_nfl")
@@ -2537,30 +2940,34 @@ async def options_nfl_odds():
     """Handle CORS preflight for NFL odds"""
     return {}
 
+
 @app.get("/api/odds/americanfootball_nfl")
 async def get_nfl_odds():
     """Get NFL odds directly"""
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import OddsAPIService
+
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("americanfootball_nfl")
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
             # Fall through to mock data
-    
+
     # Return mock NFL data
     return {
         "status": "success",
         "games": [],
-        "message": f"Mock NFL odds - Running in {settings.ENVIRONMENT} mode"
+        "message": f"Mock NFL odds - Running in {settings.ENVIRONMENT} mode",
     }
 
-@app.options("/api/odds/basketball_nba") 
+
+@app.options("/api/odds/basketball_nba")
 async def options_nba_odds():
     """Handle CORS preflight for NBA odds"""
     return {}
+
 
 @app.get("/api/odds/basketball_nba")
 async def get_nba_odds():
@@ -2568,22 +2975,25 @@ async def get_nba_odds():
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import OddsAPIService
+
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("basketball_nba")
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NBA odds: {e}")
-    
+
     return {
-        "status": "success", 
+        "status": "success",
         "games": [],
-        "message": f"Mock NBA odds - Running in {settings.ENVIRONMENT} mode"
+        "message": f"Mock NBA odds - Running in {settings.ENVIRONMENT} mode",
     }
+
 
 @app.options("/api/odds/baseball_mlb")
 async def options_mlb_odds():
     """Handle CORS preflight for MLB odds"""
     return {}
+
 
 @app.get("/api/odds/baseball_mlb")
 async def get_mlb_odds():
@@ -2591,22 +3001,25 @@ async def get_mlb_odds():
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import OddsAPIService
+
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("baseball_mlb")
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching MLB odds: {e}")
-    
+
     return {
         "status": "success",
-        "games": [], 
-        "message": f"Mock MLB odds - Running in {settings.ENVIRONMENT} mode"
+        "games": [],
+        "message": f"Mock MLB odds - Running in {settings.ENVIRONMENT} mode",
     }
+
 
 @app.options("/api/odds/icehockey_nhl")
 async def options_nhl_odds():
     """Handle CORS preflight for NHL odds"""
     return {}
+
 
 @app.get("/api/odds/icehockey_nhl")
 async def get_nhl_odds():
@@ -2614,22 +3027,25 @@ async def get_nhl_odds():
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import OddsAPIService
+
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("icehockey_nhl")
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NHL odds: {e}")
-    
+
     return {
         "status": "success",
         "games": [],
-        "message": f"Mock NHL odds - Running in {settings.ENVIRONMENT} mode"
+        "message": f"Mock NHL odds - Running in {settings.ENVIRONMENT} mode",
     }
+
 
 @app.options("/api/odds/hockey")
 async def options_hockey_odds():
     """Handle CORS preflight for hockey odds"""
     return {}
+
 
 @app.get("/api/odds/hockey")
 async def get_hockey_odds():
@@ -2637,23 +3053,26 @@ async def get_hockey_odds():
     # Redirect to NHL odds
     return await get_nhl_odds()
 
+
 @app.get("/api/odds/nfl")
 async def get_nfl_odds_legacy():
     """Get NFL odds (legacy endpoint)"""
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import OddsAPIService
+
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("americanfootball_nfl")
                 return {"status": "success", "odds": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
-    
+
     return {
         "status": "success",
         "odds": [],
-        "message": "Mock data - Odds API not configured"
+        "message": "Mock data - Odds API not configured",
     }
+
 
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
@@ -2661,18 +3080,19 @@ async def get_popular_sports_odds():
     if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
         try:
             from app.services.odds_api_service import get_popular_sports_odds
+
             games = await get_popular_sports_odds()
             return {"status": "success", "data": games}
         except Exception as e:
             logger.error(f"Error fetching popular sports odds: {e}")
-    
+
     return {
         "status": "success",
         "data": [
             {
                 "id": "mock_game_1",
                 "sport_title": "NFL",
-                "home_team": "Kansas City Chiefs", 
+                "home_team": "Kansas City Chiefs",
                 "away_team": "Buffalo Bills",
                 "commence_time": "2025-01-12T21:00:00Z",
                 "bookmakers": [
@@ -2683,22 +3103,24 @@ async def get_popular_sports_odds():
                                 "key": "h2h",
                                 "outcomes": [
                                     {"name": "Kansas City Chiefs", "price": -110},
-                                    {"name": "Buffalo Bills", "price": -110}
-                                ]
+                                    {"name": "Buffalo Bills", "price": -110},
+                                ],
                             }
-                        ]
+                        ],
                     }
-                ]
+                ],
             }
         ],
-        "message": f"Mock data - Running in {settings.ENVIRONMENT} mode"
+        "message": f"Mock data - Running in {settings.ENVIRONMENT} mode",
     }
+
 
 # Parlay-specific endpoints
 @app.options("/api/parlays/markets")
 async def options_parlay_markets():
     """Handle CORS preflight for parlay markets"""
     return {}
+
 
 @app.get("/api/parlays/markets")
 async def get_parlay_markets(sport: Optional[str] = None):
@@ -2710,43 +3132,47 @@ async def get_parlay_markets(sport: Optional[str] = None):
             return {"status": "success", "markets": markets}
         except Exception as e:
             logger.error(f"Error fetching parlay markets: {e}")
-    
+
     # Mock parlay markets
     markets = [
         {
             "sport": "nfl",
             "name": "NFL",
-            "markets": ["h2h", "spreads", "totals", "props"]
+            "markets": ["h2h", "spreads", "totals", "props"],
         },
         {
-            "sport": "nba", 
+            "sport": "nba",
             "name": "NBA",
-            "markets": ["h2h", "spreads", "totals", "props"]
-        }
+            "markets": ["h2h", "spreads", "totals", "props"],
+        },
     ]
-    
+
     # Add NHL if specifically requested or show all
     if sport == "icehockey_nhl" or not sport:
-        markets.append({
-            "sport": "icehockey_nhl",
-            "name": "NHL", 
-            "markets": ["h2h", "spreads", "totals"]
-        })
-    
+        markets.append(
+            {
+                "sport": "icehockey_nhl",
+                "name": "NHL",
+                "markets": ["h2h", "spreads", "totals"],
+            }
+        )
+
     # Filter by sport if specified
     if sport:
         markets = [m for m in markets if m["sport"] == sport]
-    
+
     return {
         "status": "success",
         "markets": markets,
-        "message": "Mock parlay markets - bet service unavailable"
+        "message": "Mock parlay markets - bet service unavailable",
     }
+
 
 @app.options("/api/parlays/popular")
 async def options_popular_parlays():
     """Handle CORS preflight for popular parlays"""
     return {}
+
 
 @app.get("/api/parlays/popular")
 async def get_popular_parlays():
@@ -2758,7 +3184,7 @@ async def get_popular_parlays():
             return {"status": "success", "parlays": parlays}
         except Exception as e:
             logger.error(f"Error fetching popular parlays: {e}")
-    
+
     # Mock popular parlays including hockey
     return {
         "status": "success",
@@ -2768,31 +3194,41 @@ async def get_popular_parlays():
                 "name": "NFL Sunday Special",
                 "legs": [
                     {"selection": "Chiefs ML", "odds": -150, "sport": "nfl"},
-                    {"selection": "Lakers -3.5", "odds": -110, "sport": "nba"}
+                    {"selection": "Lakers -3.5", "odds": -110, "sport": "nba"},
                 ],
                 "total_odds": 250,
-                "popularity_score": 0.85
+                "popularity_score": 0.85,
             },
             {
-                "id": "popular_2", 
+                "id": "popular_2",
                 "name": "Hockey Hat Trick",
                 "legs": [
                     {"selection": "Rangers ML", "odds": -130, "sport": "icehockey_nhl"},
-                    {"selection": "Bruins Over 6.5", "odds": -105, "sport": "icehockey_nhl"},
-                    {"selection": "McDavid Anytime Goal", "odds": 180, "sport": "icehockey_nhl"}
+                    {
+                        "selection": "Bruins Over 6.5",
+                        "odds": -105,
+                        "sport": "icehockey_nhl",
+                    },
+                    {
+                        "selection": "McDavid Anytime Goal",
+                        "odds": 180,
+                        "sport": "icehockey_nhl",
+                    },
                 ],
                 "total_odds": 650,
-                "popularity_score": 0.72
-            }
+                "popularity_score": 0.72,
+            },
         ],
-        "message": "Mock popular parlays - bet service unavailable"
+        "message": "Mock popular parlays - bet service unavailable",
     }
+
 
 # Profile and Status endpoints
 @app.options("/api/profile/sports")
 async def options_profile_sports():
     """Handle CORS preflight for user sports preferences"""
     return {}
+
 
 @app.get("/api/profile/sports")
 async def get_profile_sports(current_user: dict = Depends(get_current_user)):
@@ -2805,11 +3241,11 @@ async def get_profile_sports(current_user: dict = Depends(get_current_user)):
                 "status": "success",
                 "sports": profile.get("preferred_sports", []),
                 "favorite_teams": profile.get("favorite_teams", []),
-                "notification_settings": profile.get("notification_settings", {})
+                "notification_settings": profile.get("notification_settings", {}),
             }
         except Exception as e:
             logger.error(f"Error fetching user sports profile: {e}")
-    
+
     # Mock sports preferences
     return {
         "status": "success",
@@ -2817,20 +3253,22 @@ async def get_profile_sports(current_user: dict = Depends(get_current_user)):
         "favorite_teams": [
             {"sport": "nfl", "team": "Kansas City Chiefs"},
             {"sport": "nba", "team": "Los Angeles Lakers"},
-            {"sport": "icehockey_nhl", "team": "New York Rangers"}
+            {"sport": "icehockey_nhl", "team": "New York Rangers"},
         ],
         "notification_settings": {
             "game_updates": True,
             "bet_results": True,
-            "yetai_predictions": True
+            "yetai_predictions": True,
         },
-        "message": "Mock sports preferences - auth service unavailable"
+        "message": "Mock sports preferences - auth service unavailable",
     }
+
 
 @app.options("/api/profile/status")
 async def options_profile_status():
     """Handle CORS preflight for user profile status"""
     return {}
+
 
 @app.get("/api/profile/status")
 async def get_profile_status(current_user: dict = Depends(get_current_user)):
@@ -2842,7 +3280,7 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
             return {"status": "success", "profile_status": status_info}
         except Exception as e:
             logger.error(f"Error fetching user profile status: {e}")
-    
+
     # Mock profile status
     return {
         "status": "success",
@@ -2852,19 +3290,13 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
             "account_status": "active",
             "profile_completion": 0.85,
             "last_activity": datetime.now(timezone.utc).isoformat(),
-            "stats": {
-                "total_bets": 25,
-                "win_rate": 0.68,
-                "favorite_sport": "nfl"
-            },
+            "stats": {"total_bets": 25, "win_rate": 0.68, "favorite_sport": "nfl"},
             "connected_platforms": ["sleeper"],
-            "notification_preferences": {
-                "email": True,
-                "push": True
-            }
+            "notification_preferences": {"email": True, "push": True},
         },
-        "message": "Mock profile status - auth service unavailable"
+        "message": "Mock profile status - auth service unavailable",
     }
+
 
 # Live betting endpoints
 @app.options("/api/live-bets/markets")
@@ -2872,31 +3304,28 @@ async def options_live_markets():
     """Handle CORS preflight for live markets"""
     return {}
 
+
 @app.get("/api/live-bets/markets")
-async def get_live_betting_markets(
-    sport: Optional[str] = None
-):
+async def get_live_betting_markets(sport: Optional[str] = None):
     """Get available live betting markets with real sports data (public endpoint)"""
     try:
         print(f"Live betting markets endpoint called with sport: {sport}")
         markets = await live_betting_service.get_live_betting_markets(sport)
         print(f"Service returned {len(markets)} markets")
-        
-        return {
-            "status": "success",
-            "count": len(markets),
-            "markets": markets
-        }
-        
+
+        return {"status": "success", "count": len(markets), "markets": markets}
+
     except Exception as e:
         print(f"Exception in live betting endpoint: {e}")
         logger.error(f"Error getting live markets: {e}")
         raise HTTPException(status_code=500, detail="Failed to get live markets")
 
+
 @app.options("/api/live-bets/active")
 async def options_active_live_bets():
     """Handle CORS preflight for active live bets"""
     return {}
+
 
 @app.get("/api/live-bets/active")
 async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
@@ -2904,49 +3333,52 @@ async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
-            active_bets = await bet_service.get_active_live_bets(current_user["user_id"])
+            active_bets = await bet_service.get_active_live_bets(
+                current_user["user_id"]
+            )
             return {"status": "success", "active_bets": active_bets}
         except Exception as e:
             logger.error(f"Error fetching active live bets: {e}")
             return {"status": "error", "error": str(e), "active_bets": []}
-    
+
     return {
         "status": "error",
         "error": "Bet service is currently unavailable",
-        "active_bets": []
+        "active_bets": [],
     }
+
 
 @app.options("/api/live-bets/place")
 async def options_place_live_bet():
     """Handle CORS preflight for live bet placement"""
     return {}
 
+
 @app.post("/api/live-bets/place")
-async def place_live_bet(bet_request: PlaceLiveBetRequest, current_user: dict = Depends(get_current_user)):
+async def place_live_bet(
+    bet_request: PlaceLiveBetRequest, current_user: dict = Depends(get_current_user)
+):
     """Place a live bet during active game"""
     try:
         # Use the live betting service directly
         result = live_betting_service.place_live_bet(
-            user_id=current_user["user_id"],
-            request=bet_request
+            user_id=current_user["user_id"], request=bet_request
         )
-        
+
         # Convert LiveBetResponse to dict for JSON response
         if result.success:
-            return {
-                "status": "success",
-                "bet": result.model_dump()
-            }
+            return {"status": "success", "bet": result.model_dump()}
         else:
             return {
-                "status": "error", 
+                "status": "error",
                 "error": result.error,
-                "odds_changed": result.odds_changed
+                "odds_changed": result.odds_changed,
             }
-            
+
     except Exception as e:
         logger.error(f"Error placing live bet: {e}")
         raise HTTPException(status_code=500, detail="Failed to place live bet")
+
 
 # Sports data endpoints
 @app.get("/api/games/nfl")
@@ -2959,20 +3391,21 @@ async def get_nfl_games():
             return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL games: {e}")
-    
+
     return {
-        "status": "success", 
+        "status": "success",
         "games": [
             {
                 "id": "mock_nfl_1",
                 "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills", 
+                "away_team": "Buffalo Bills",
                 "start_time": "2025-01-12T21:00:00Z",
-                "status": "scheduled"
+                "status": "scheduled",
             }
         ],
-        "message": "Mock data - Sports pipeline not fully configured"
+        "message": "Mock data - Sports pipeline not fully configured",
     }
+
 
 # AI Chat endpoints
 @app.post("/api/chat/message")
@@ -2982,22 +3415,22 @@ async def send_chat_message(request: ChatRequest):
         try:
             ai_chat = get_service("ai_chat_service")
             response = await ai_chat.send_message(
-                request.message, 
-                request.conversation_history or []
+                request.message, request.conversation_history or []
             )
             return {"status": "success", "response": response}
         except Exception as e:
             logger.error(f"AI chat error: {e}")
-    
+
     return {
         "status": "success",
         "response": {
             "role": "assistant",
             "content": f"I'm currently in {settings.ENVIRONMENT} mode with limited AI capabilities. Here's some general sports betting advice: Always bet responsibly and never wager more than you can afford to lose!",
-            "timestamp": datetime.now(timezone.utc).isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         },
-        "message": "Mock response - AI chat service not fully configured"
+        "message": "Mock response - AI chat service not fully configured",
     }
+
 
 @app.get("/api/chat/suggestions")
 async def get_chat_suggestions():
@@ -3006,77 +3439,92 @@ async def get_chat_suggestions():
         "status": "success",
         "suggestions": [
             "Show me the latest NFL odds",
-            "What's your prediction for the Chiefs game?", 
+            "What's your prediction for the Chiefs game?",
             "Give me fantasy football advice for this week",
-            "What should I know about tonight's matchup?"
-        ]
+            "What should I know about tonight's matchup?",
+        ],
     }
+
 
 # Comprehensive endpoint health check
 @app.get("/api/endpoints/health")
 async def endpoint_health_check():
     """Comprehensive health check for all API endpoints"""
-    
+
     endpoint_categories = {
-        "Core API": {
-            "endpoints": ["/health", "/", "/api/status"],
-            "operational": True
-        },
+        "Core API": {"endpoints": ["/health", "/", "/api/status"], "operational": True},
         "Authentication": {
-            "endpoints": ["/api/auth/status", "/api/auth/register", "/api/auth/login", "/api/auth/me"],
-            "operational": is_service_available("auth_service")
+            "endpoints": [
+                "/api/auth/status",
+                "/api/auth/register",
+                "/api/auth/login",
+                "/api/auth/me",
+            ],
+            "operational": is_service_available("auth_service"),
         },
         "YetAI Bets": {
             "endpoints": ["/api/yetai-bets", "/api/admin/yetai-bets/{bet_id}"],
-            "operational": is_service_available("yetai_bets_service")
+            "operational": is_service_available("yetai_bets_service"),
         },
         "Sports Betting": {
             "endpoints": [
-                "/api/bets/place", "/api/bets/parlay", "/api/bets/parlays", 
-                "/api/bets/history", "/api/bets/stats", "/api/bets/share",
-                "/api/bets/shared", "/api/bets/simulate"
+                "/api/bets/place",
+                "/api/bets/parlay",
+                "/api/bets/parlays",
+                "/api/bets/history",
+                "/api/bets/stats",
+                "/api/bets/share",
+                "/api/bets/shared",
+                "/api/bets/simulate",
             ],
-            "operational": is_service_available("bet_service")
+            "operational": is_service_available("bet_service"),
         },
         "Fantasy Sports": {
             "endpoints": [
-                "/api/fantasy/accounts", "/api/fantasy/leagues", 
-                "/api/fantasy/connect", "/api/fantasy/projections"
+                "/api/fantasy/accounts",
+                "/api/fantasy/leagues",
+                "/api/fantasy/connect",
+                "/api/fantasy/projections",
             ],
-            "operational": is_service_available("fantasy_pipeline")
+            "operational": is_service_available("fantasy_pipeline"),
         },
         "Odds & Markets": {
             "endpoints": [
-                "/api/odds/americanfootball_nfl", "/api/odds/basketball_nba",
-                "/api/odds/baseball_mlb", "/api/odds/icehockey_nhl", "/api/odds/popular"
+                "/api/odds/americanfootball_nfl",
+                "/api/odds/basketball_nba",
+                "/api/odds/baseball_mlb",
+                "/api/odds/icehockey_nhl",
+                "/api/odds/popular",
             ],
-            "operational": is_service_available("sports_pipeline")
+            "operational": is_service_available("sports_pipeline"),
         },
         "Parlays": {
             "endpoints": ["/api/parlays/markets", "/api/parlays/popular"],
-            "operational": is_service_available("bet_service")
+            "operational": is_service_available("bet_service"),
         },
         "Profile & Status": {
             "endpoints": ["/api/profile/sports", "/api/profile/status"],
-            "operational": is_service_available("auth_service")
+            "operational": is_service_available("auth_service"),
         },
         "Live Betting": {
             "endpoints": ["/api/live-bets/markets", "/api/live-bets/active"],
-            "operational": is_service_available("bet_service")
+            "operational": is_service_available("bet_service"),
         },
         "AI Chat": {
             "endpoints": ["/api/chat/message", "/api/chat/suggestions"],
-            "operational": is_service_available("ai_chat_service")
+            "operational": is_service_available("ai_chat_service"),
         },
         "Sports Data": {
             "endpoints": ["/api/games/nfl"],
-            "operational": is_service_available("sports_pipeline")
-        }
+            "operational": is_service_available("sports_pipeline"),
+        },
     }
-    
-    operational_count = sum(1 for cat in endpoint_categories.values() if cat["operational"])
+
+    operational_count = sum(
+        1 for cat in endpoint_categories.values() if cat["operational"]
+    )
     total_count = len(endpoint_categories)
-    
+
     return {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -3084,11 +3532,12 @@ async def endpoint_health_check():
         "summary": {
             "operational_categories": operational_count,
             "total_categories": total_count,
-            "health_percentage": round((operational_count / total_count) * 100, 1)
+            "health_percentage": round((operational_count / total_count) * 100, 1),
         },
         "services": service_loader.get_status(),
-        "environment": settings.ENVIRONMENT
+        "environment": settings.ENVIRONMENT,
     }
+
 
 # Test endpoint for database connectivity
 @app.get("/test-db")
@@ -3096,46 +3545,55 @@ async def test_database():
     """Test database connection with detailed debugging"""
     debug_info = {
         "environment": settings.ENVIRONMENT,
-        "database_url": settings.DATABASE_URL[:50] + "..." if len(settings.DATABASE_URL) > 50 else settings.DATABASE_URL,
-        "service_available": is_service_available("database")
+        "database_url": (
+            settings.DATABASE_URL[:50] + "..."
+            if len(settings.DATABASE_URL) > 50
+            else settings.DATABASE_URL
+        ),
+        "service_available": is_service_available("database"),
     }
-    
+
     if not is_service_available("database"):
         return {
             "status": "unavailable",
             "message": "Database service not loaded",
-            "debug": debug_info
+            "debug": debug_info,
         }
-    
+
     try:
         database_service = get_service("database")
         debug_info["service_loaded"] = database_service is not None
-        
+
         if database_service and database_service.get("check_db_connection"):
             debug_info["check_function_available"] = True
             connected = database_service["check_db_connection"]()
             debug_info["connection_result"] = connected
-            
+
             return {
                 "status": "connected" if connected else "disconnected",
-                "message": "Database connection successful" if connected else "Database connection failed",
-                "debug": debug_info
+                "message": (
+                    "Database connection successful"
+                    if connected
+                    else "Database connection failed"
+                ),
+                "debug": debug_info,
             }
         else:
             debug_info["check_function_available"] = False
             return {
                 "status": "error",
                 "message": "Database check function not available",
-                "debug": debug_info
+                "debug": debug_info,
             }
     except Exception as e:
         debug_info["exception"] = str(e)
         debug_info["exception_type"] = str(type(e))
         return {
-            "status": "error", 
+            "status": "error",
             "message": f"Database test failed: {str(e)}",
-            "debug": debug_info
+            "debug": debug_info,
         }
+
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -3164,9 +3622,10 @@ class ConnectionManager:
                 await connection.send_text(message)
             except:
                 disconnected.append(user_id)
-        
+
         for user_id in disconnected:
             self.disconnect(user_id)
+
 
 # Analytics endpoints with frontend-compatible URLs
 @app.get("/api/fantasy/analytics/{player_id}")
@@ -3174,12 +3633,13 @@ async def get_player_analytics_alt(
     player_id: str,
     season: int = 2025,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player analytics (alternative URL format)"""
     try:
         from app.services.player_analytics_service import PlayerAnalyticsService
         from sqlalchemy import text
+
         analytics_service = PlayerAnalyticsService(db)
 
         # Map Sleeper player ID to internal player ID
@@ -3187,14 +3647,18 @@ async def get_player_analytics_alt(
         try:
             # Query database for the mapping
             fantasy_player_query = db.execute(
-                text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
-                {"sleeper_id": str(player_id)}
+                text(
+                    "SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"
+                ),
+                {"sleeper_id": str(player_id)},
             )
             fantasy_player_row = fantasy_player_query.fetchone()
 
             if fantasy_player_row:
                 internal_player_id = fantasy_player_row[0]
-                logger.info(f"Mapped Sleeper ID {player_id} to internal ID {internal_player_id}")
+                logger.info(
+                    f"Mapped Sleeper ID {player_id} to internal ID {internal_player_id}"
+                )
             else:
                 logger.warning(f"No mapping found for Sleeper ID {player_id}")
 
@@ -3203,13 +3667,15 @@ async def get_player_analytics_alt(
 
         analytics = []
         if internal_player_id:
-            analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
+            analytics = await analytics_service.get_player_analytics(
+                internal_player_id, season=season
+            )
 
         return {
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "analytics": analytics or []
+            "analytics": analytics or [],
         }
     except Exception as e:
         logger.error(f"Error getting player analytics for {player_id}: {e}")
@@ -3217,15 +3683,16 @@ async def get_player_analytics_alt(
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "analytics": []
+            "analytics": [],
         }
+
 
 @app.get("/api/fantasy/analytics/{player_id}/trends")
 async def get_player_trends_alt(
     player_id: str,
     season: int = 2025,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player trends (alternative URL format)"""
     try:
@@ -3234,8 +3701,10 @@ async def get_player_trends_alt(
 
         # Map Sleeper player ID to internal ID
         fantasy_player_query = db.execute(
-            text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
-            {"sleeper_id": str(player_id)}
+            text(
+                "SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"
+            ),
+            {"sleeper_id": str(player_id)},
         )
         fantasy_player = fantasy_player_query.fetchone()
 
@@ -3243,14 +3712,16 @@ async def get_player_trends_alt(
             return {
                 "status": "error",
                 "message": f"Player not found with ID: {player_id}",
-                "trends": {}
+                "trends": {},
             }
 
         internal_player_id = fantasy_player[0]
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and derive trends
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
+        analytics = await analytics_service.get_player_analytics(
+            internal_player_id, season=season
+        )
 
         trends = {}
         if analytics and len(analytics) >= 2:
@@ -3265,14 +3736,14 @@ async def get_player_trends_alt(
                     "trend_direction": "up" if recent_avg > older_avg else "down",
                     "recent_avg": round(recent_avg, 1),
                     "previous_avg": round(older_avg, 1),
-                    "games_analyzed": len(recent) + len(older)
+                    "games_analyzed": len(recent) + len(older),
                 }
 
         return {
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "trends": trends
+            "trends": trends,
         }
     except Exception as e:
         logger.error(f"Error getting player trends for {player_id}: {e}")
@@ -3280,15 +3751,16 @@ async def get_player_trends_alt(
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "trends": {}
+            "trends": {},
         }
+
 
 @app.get("/api/fantasy/analytics/{player_id}/efficiency")
 async def get_player_efficiency_alt(
     player_id: str,
     season: int = 2025,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player efficiency (alternative URL format)"""
     try:
@@ -3297,8 +3769,10 @@ async def get_player_efficiency_alt(
 
         # Map Sleeper player ID to internal ID
         fantasy_player_query = db.execute(
-            text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
-            {"sleeper_id": str(player_id)}
+            text(
+                "SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"
+            ),
+            {"sleeper_id": str(player_id)},
         )
         fantasy_player = fantasy_player_query.fetchone()
 
@@ -3306,25 +3780,37 @@ async def get_player_efficiency_alt(
             return {
                 "status": "error",
                 "message": f"Player not found with ID: {player_id}",
-                "efficiency": {}
+                "efficiency": {},
             }
 
         internal_player_id = fantasy_player[0]
         analytics_service = PlayerAnalyticsService(db)
 
         # Get analytics and calculate efficiency metrics
-        analytics = await analytics_service.get_player_analytics(internal_player_id, season=season)
+        analytics = await analytics_service.get_player_analytics(
+            internal_player_id, season=season
+        )
 
         efficiency = {}
         if analytics:
             total_points = sum(g.get("ppr_points", 0) for g in analytics)
-            total_snaps = sum(g.get("snap_percentage", 0) for g in analytics if g.get("snap_percentage"))
-            total_targets = sum(g.get("target_share", 0) for g in analytics if g.get("target_share"))
+            total_snaps = sum(
+                g.get("snap_percentage", 0)
+                for g in analytics
+                if g.get("snap_percentage")
+            )
+            total_targets = sum(
+                g.get("target_share", 0) for g in analytics if g.get("target_share")
+            )
 
             if total_snaps > 0:
-                efficiency["points_per_snap"] = round(total_points / total_snaps * 100, 2)
+                efficiency["points_per_snap"] = round(
+                    total_points / total_snaps * 100, 2
+                )
             if total_targets > 0:
-                efficiency["points_per_target"] = round(total_points / total_targets * 100, 2)
+                efficiency["points_per_target"] = round(
+                    total_points / total_targets * 100, 2
+                )
 
             efficiency["games_played"] = len(analytics)
             efficiency["total_points"] = round(total_points, 1)
@@ -3333,7 +3819,7 @@ async def get_player_efficiency_alt(
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "efficiency": efficiency
+            "efficiency": efficiency,
         }
     except Exception as e:
         logger.error(f"Error getting player efficiency for {player_id}: {e}")
@@ -3341,20 +3827,26 @@ async def get_player_efficiency_alt(
             "status": "success",
             "player_id": str(player_id),
             "season": season,
-            "efficiency": {}
+            "efficiency": {},
         }
+
 
 # Trade Analyzer Endpoints
 @app.get("/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}")
-async def get_simple_team_analysis(team_id: int, league_id: int = None, current_user: dict = Depends(get_current_user)):
+async def get_simple_team_analysis(
+    team_id: int, league_id: int = None, current_user: dict = Depends(get_current_user)
+):
     """Get team analysis - REAL DATA ONLY, fetched directly from Sleeper API"""
-    logger.info(f"🔍 TEAM ANALYSIS CALLED - Team: {team_id}, League: {league_id}, User: {current_user['user_id']}")
+    logger.info(
+        f"🔍 TEAM ANALYSIS CALLED - Team: {team_id}, League: {league_id}, User: {current_user['user_id']}"
+    )
 
     if not league_id:
         raise HTTPException(status_code=400, detail="league_id parameter is required")
 
     try:
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
 
         # Get teams and standings data from Sleeper API
@@ -3362,7 +3854,9 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
         teams = await sleeper_service.get_league_teams(str(league_id))
 
         # Get standings data directly from SleeperFantasyService
-        logger.info(f"🔍 GETTING STANDINGS DATA from Sleeper API for league {league_id}")
+        logger.info(
+            f"🔍 GETTING STANDINGS DATA from Sleeper API for league {league_id}"
+        )
         try:
             standings_data = await sleeper_service.get_league_standings(str(league_id))
             logger.info(f"🔍 FOUND {len(standings_data)} teams in standings")
@@ -3376,18 +3870,25 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
 
         # Find team in teams data
         for team in teams:
-            if team.get('team_id') == team_id or str(team.get('team_id')) == str(team_id):
+            if team.get("team_id") == team_id or str(team.get("team_id")) == str(
+                team_id
+            ):
                 team_data = team
                 break
 
         # Find team in standings data
         for team in standings_data:
-            if team.get('team_id') == str(team_id) or int(team.get('team_id', 0)) == team_id:
+            if (
+                team.get("team_id") == str(team_id)
+                or int(team.get("team_id", 0)) == team_id
+            ):
                 standings_team_data = team
                 break
 
         if not team_data:
-            logger.warning(f"Team {team_id} not found in teams data, using first available team")
+            logger.warning(
+                f"Team {team_id} not found in teams data, using first available team"
+            )
             team_data = teams[0] if teams else {}
 
         if not standings_team_data:
@@ -3400,6 +3901,7 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
         try:
             # Use direct HTTP call to get rosters like the roster endpoint does
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 roster_url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
                 async with session.get(roster_url) as response:
@@ -3409,35 +3911,49 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
                         # Find the roster for this team
                         target_roster = None
                         for roster in rosters:
-                            if roster.get('roster_id') == team_id or str(roster.get('roster_id')) == str(team_id):
+                            if roster.get("roster_id") == team_id or str(
+                                roster.get("roster_id")
+                            ) == str(team_id):
                                 target_roster = roster
                                 break
 
-                        if target_roster and target_roster.get('players'):
+                        if target_roster and target_roster.get("players"):
                             # Get player details
-                            player_ids = target_roster['players']
+                            player_ids = target_roster["players"]
                             all_players = await sleeper_service._get_all_players()
 
                             for player_id in player_ids:
                                 if player_id in all_players:
                                     player = all_players[player_id]
                                     # Convert player_id to integer for frontend compatibility
-                                    numeric_id = int(player_id) if player_id.isdigit() else hash(player_id) % 2147483647
+                                    numeric_id = (
+                                        int(player_id)
+                                        if player_id.isdigit()
+                                        else hash(player_id) % 2147483647
+                                    )
 
                                     # Calculate realistic trade value based on player data
-                                    trade_value = calculate_realistic_trade_value(player)
+                                    trade_value = calculate_realistic_trade_value(
+                                        player
+                                    )
 
-                                    roster_data.append({
-                                        'id': numeric_id,  # Frontend expects 'id' field
-                                        'player_id': player_id,  # Keep original for reference
-                                        'name': f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                        'position': player.get('position', 'UNKNOWN'),
-                                        'team': player.get('team', 'UNKNOWN'),
-                                        'age': player.get('age', 0),
-                                        'trade_value': trade_value
-                                    })
+                                    roster_data.append(
+                                        {
+                                            "id": numeric_id,  # Frontend expects 'id' field
+                                            "player_id": player_id,  # Keep original for reference
+                                            "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
+                                            "position": player.get(
+                                                "position", "UNKNOWN"
+                                            ),
+                                            "team": player.get("team", "UNKNOWN"),
+                                            "age": player.get("age", 0),
+                                            "trade_value": trade_value,
+                                        }
+                                    )
 
-                            logger.info(f"🔍 FOUND {len(roster_data)} players for team {team_id}")
+                            logger.info(
+                                f"🔍 FOUND {len(roster_data)} players for team {team_id}"
+                            )
                         else:
                             logger.warning(f"No roster found for team {team_id}")
                     else:
@@ -3448,7 +3964,9 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
             roster_data = []
 
         # Build comprehensive team analysis response
-        logger.info(f"🔍 TEAM ANALYSIS COMPLETE: {len(roster_data)} players for team {team_data.get('name', f'Team {team_id}')}")
+        logger.info(
+            f"🔍 TEAM ANALYSIS COMPLETE: {len(roster_data)} players for team {team_data.get('name', f'Team {team_id}')}"
+        )
 
         # Calculate position analysis
         position_counts = {}
@@ -3456,20 +3974,20 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
         position_needs = {}
 
         for player in roster_data:
-            pos = player['position']
+            pos = player["position"]
             position_counts[pos] = position_counts.get(pos, 0) + 1
 
         # Calculate strengths and needs based on roster composition
-        for pos in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']:
+        for pos in ["QB", "RB", "WR", "TE", "K", "DEF"]:
             count = position_counts.get(pos, 0)
             position_strengths[pos] = count * 20  # Strength based on player count
 
             # Determine need level (higher = more need)
-            if pos == 'QB':
+            if pos == "QB":
                 position_needs[pos] = 3 if count < 2 else 1
-            elif pos in ['RB', 'WR']:
+            elif pos in ["RB", "WR"]:
                 position_needs[pos] = 3 if count < 3 else 1
-            elif pos == 'TE':
+            elif pos == "TE":
                 position_needs[pos] = 3 if count < 2 else 1
             else:
                 position_needs[pos] = 3 if count < 1 else 1
@@ -3477,16 +3995,26 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
         # Identify surplus positions
         surplus_positions = []
         for pos, count in position_counts.items():
-            if (pos == 'WR' and count > 4) or (pos == 'RB' and count > 3) or (pos in ['QB', 'TE'] and count > 2):
+            if (
+                (pos == "WR" and count > 4)
+                or (pos == "RB" and count > 3)
+                or (pos in ["QB", "TE"] and count > 2)
+            ):
                 surplus_positions.append(pos)
 
         # Sort players by trade value (highest to lowest)
-        sorted_players = sorted(roster_data, key=lambda p: p.get('trade_value', 0), reverse=True)
+        sorted_players = sorted(
+            roster_data, key=lambda p: p.get("trade_value", 0), reverse=True
+        )
 
         # Create tradeable assets lists based on actual trade value
         valuable_players = sorted_players[:5]  # Top 5 most valuable players
-        expendable_players = sorted_players[-5:] if len(sorted_players) > 5 else []  # Bottom 5 least valuable players
-        surplus_players = sorted_players[:8]  # Top players that could be traded for good value
+        expendable_players = (
+            sorted_players[-5:] if len(sorted_players) > 5 else []
+        )  # Bottom 5 least valuable players
+        surplus_players = sorted_players[
+            :8
+        ]  # Top players that could be traded for good value
 
         # Merge team data with standings data for complete info
         merged_team_data = {**team_data, **standings_team_data}
@@ -3496,54 +4024,80 @@ async def get_simple_team_analysis(team_id: int, league_id: int = None, current_
                 "team_name": merged_team_data.get("name", f"Team {team_id}"),
                 "record": {
                     "wins": merged_team_data.get("wins", 0),
-                    "losses": merged_team_data.get("losses", 0)
+                    "losses": merged_team_data.get("losses", 0),
                 },
                 "points_for": float(merged_team_data.get("points_for", 0.0)),
                 "team_rank": merged_team_data.get("rank", 0),
-                "competitive_tier": "competitive"  # Could be calculated based on record
+                "competitive_tier": "competitive",  # Could be calculated based on record
             },
             "roster_analysis": {
                 "position_strengths": position_strengths,
                 "position_needs": position_needs,
-                "surplus_positions": surplus_positions
+                "surplus_positions": surplus_positions,
             },
             "tradeable_assets": {
                 "surplus_players": surplus_players,
                 "expendable_players": expendable_players,
                 "valuable_players": valuable_players,
                 "tradeable_picks": [
-                    {"pick_id": 1, "season": 2025, "round": 1, "description": "2025 1st Round Pick", "trade_value": 35},
-                    {"pick_id": 2, "season": 2025, "round": 2, "description": "2025 2nd Round Pick", "trade_value": 18},
-                    {"pick_id": 3, "season": 2025, "round": 3, "description": "2025 3rd Round Pick", "trade_value": 8}
-                ]
+                    {
+                        "pick_id": 1,
+                        "season": 2025,
+                        "round": 1,
+                        "description": "2025 1st Round Pick",
+                        "trade_value": 35,
+                    },
+                    {
+                        "pick_id": 2,
+                        "season": 2025,
+                        "round": 2,
+                        "description": "2025 2nd Round Pick",
+                        "trade_value": 18,
+                    },
+                    {
+                        "pick_id": 3,
+                        "season": 2025,
+                        "round": 3,
+                        "description": "2025 3rd Round Pick",
+                        "trade_value": 8,
+                    },
+                ],
             },
             "trade_strategy": {
                 "competitive_analysis": {},
                 "trade_preferences": {},
-                "recommended_approach": f"Based on roster analysis, consider strengthening {', '.join([pos for pos, need in position_needs.items() if need >= 3])} positions."
-            }
+                "recommended_approach": f"Based on roster analysis, consider strengthening {', '.join([pos for pos, need in position_needs.items() if need >= 3])} positions.",
+            },
         }
 
         return {
             "success": True,
             "team_analysis": team_analysis,
             "roster": roster_data,
-            "message": f"Found {len(roster_data)} players for {team_analysis['team_info']['team_name']}"
+            "message": f"Found {len(roster_data)} players for {team_analysis['team_info']['team_name']}",
         }
 
     except Exception as e:
         logger.error(f"🚨 ERROR getting team analysis: {e}")
         import traceback
+
         logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to get team analysis: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get team analysis: {str(e)}"
+        )
+
 
 @app.post("/api/v1/fantasy/trade-analyzer/recommendations")
-async def generate_trade_recommendations(request: Dict[str, Any], current_user: dict = Depends(get_current_user)):
+async def generate_trade_recommendations(
+    request: Dict[str, Any], current_user: dict = Depends(get_current_user)
+):
     """Generate AI-powered trade recommendations for a team - REAL DATA ONLY"""
     league_id = request.get("league_id")
     team_id = request.get("team_id")
 
-    logger.info(f"🔍 TRADE RECOMMENDATIONS CALLED - League: {league_id}, Team: {team_id}, User: {current_user['user_id']}")
+    logger.info(
+        f"🔍 TRADE RECOMMENDATIONS CALLED - League: {league_id}, Team: {team_id}, User: {current_user['user_id']}"
+    )
 
     if not league_id:
         raise HTTPException(status_code=400, detail="league_id is required")
@@ -3553,7 +4107,9 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
 
     if not service_available:
         logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(status_code=503, detail="Fantasy pipeline service unavailable")
+        raise HTTPException(
+            status_code=503, detail="Fantasy pipeline service unavailable"
+        )
 
     try:
         fantasy_service = get_service("fantasy_pipeline")
@@ -3562,12 +4118,14 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
         logger.info(f"🔍 GETTING ROSTER for team {team_id} in league {league_id}")
 
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
 
         # Get roster data for the specific team
         roster = []
         try:
             import aiohttp
+
             async with aiohttp.ClientSession() as session:
                 roster_url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
                 async with session.get(roster_url) as response:
@@ -3577,29 +4135,39 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
                         # Find the roster for the specified team
                         target_roster = None
                         for roster_data in rosters:
-                            if roster_data.get('roster_id') == team_id or str(roster_data.get('roster_id')) == str(team_id):
+                            if roster_data.get("roster_id") == team_id or str(
+                                roster_data.get("roster_id")
+                            ) == str(team_id):
                                 target_roster = roster_data
                                 break
 
-                        if target_roster and target_roster.get('players'):
+                        if target_roster and target_roster.get("players"):
                             all_players = await sleeper_service._get_all_players()
 
-                            for player_id in target_roster['players']:
+                            for player_id in target_roster["players"]:
                                 if player_id in all_players:
                                     player = all_players[player_id]
                                     # Calculate realistic trade value for this player
-                                    trade_value = calculate_realistic_trade_value(player)
+                                    trade_value = calculate_realistic_trade_value(
+                                        player
+                                    )
 
-                                    roster.append({
-                                        'player_id': player_id,
-                                        'name': f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                        'position': player.get('position', 'UNKNOWN'),
-                                        'team': player.get('team', 'UNKNOWN'),
-                                        'age': player.get('age', 27),
-                                        'trade_value': trade_value
-                                    })
+                                    roster.append(
+                                        {
+                                            "player_id": player_id,
+                                            "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
+                                            "position": player.get(
+                                                "position", "UNKNOWN"
+                                            ),
+                                            "team": player.get("team", "UNKNOWN"),
+                                            "age": player.get("age", 27),
+                                            "trade_value": trade_value,
+                                        }
+                                    )
 
-                            logger.info(f"🔍 FOUND {len(roster)} players for team {team_id}")
+                            logger.info(
+                                f"🔍 FOUND {len(roster)} players for team {team_id}"
+                            )
                         else:
                             logger.warning(f"No roster found for team {team_id}")
                     else:
@@ -3608,8 +4176,12 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
             logger.error(f"Error fetching roster for team {team_id}: {roster_error}")
 
         if not roster:
-            logger.error(f"🚨 NO ROSTER DATA FOUND for team {team_id} in league {league_id}")
-            raise HTTPException(status_code=404, detail=f"No roster data found for team {team_id}")
+            logger.error(
+                f"🚨 NO ROSTER DATA FOUND for team {team_id} in league {league_id}"
+            )
+            raise HTTPException(
+                status_code=404, detail=f"No roster data found for team {team_id}"
+            )
 
         # Get league teams to suggest real trade partners
         try:
@@ -3618,10 +4190,12 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
             # Filter out the selected team (not current user's team)
             other_teams = []
             for team in league_teams:
-                if str(team.get('team_id')) != str(team_id):
+                if str(team.get("team_id")) != str(team_id):
                     other_teams.append(team)
 
-            logger.info(f"🔍 FOUND {len(other_teams)} OTHER TEAMS in league for trade suggestions")
+            logger.info(
+                f"🔍 FOUND {len(other_teams)} OTHER TEAMS in league for trade suggestions"
+            )
 
         except Exception as teams_error:
             logger.warning(f"Could not get league teams: {teams_error}")
@@ -3633,12 +4207,14 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
         # Analyze roster by position
         positions = {}
         for player in roster:
-            pos = player.get('position', 'UNKNOWN')
+            pos = player.get("position", "UNKNOWN")
             if pos not in positions:
                 positions[pos] = []
             positions[pos].append(player)
 
-        logger.info(f"🔍 ROSTER ANALYSIS: {[(pos, len(players)) for pos, players in positions.items()]}")
+        logger.info(
+            f"🔍 ROSTER ANALYSIS: {[(pos, len(players)) for pos, players in positions.items()]}"
+        )
 
         # Generate recommendations based on roster composition
         rec_id = 1
@@ -3650,22 +4226,29 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
             for player_data in player_data_list:
                 if isinstance(player_data, dict):
                     # Real player from roster
-                    players.append({
-                        "id": player_data.get('player_id', f"player_{player_data['name'].replace(' ', '_')}"),
-                        "name": player_data['name'],
-                        "position": player_data.get('position', 'UNKNOWN'),
-                        "team": player_data.get('team', 'UNKNOWN'),
-                        "age": player_data.get('age', 27)
-                    })
+                    players.append(
+                        {
+                            "id": player_data.get(
+                                "player_id",
+                                f"player_{player_data['name'].replace(' ', '_')}",
+                            ),
+                            "name": player_data["name"],
+                            "position": player_data.get("position", "UNKNOWN"),
+                            "team": player_data.get("team", "UNKNOWN"),
+                            "age": player_data.get("age", 27),
+                        }
+                    )
                 else:
                     # Generic player name (string)
-                    players.append({
-                        "id": f"player_{player_data.replace(' ', '_')}",
-                        "name": player_data,
-                        "position": "UNKNOWN",
-                        "team": "UNKNOWN",
-                        "age": 26
-                    })
+                    players.append(
+                        {
+                            "id": f"player_{player_data.replace(' ', '_')}",
+                            "name": player_data,
+                            "position": "UNKNOWN",
+                            "team": "UNKNOWN",
+                            "age": 26,
+                        }
+                    )
             return players
 
         # Helper function to get realistic trade partner
@@ -3673,29 +4256,40 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
             """Get a realistic trade partner from league teams"""
             if other_teams:
                 import random
+
                 partner = random.choice(other_teams)
                 return {
-                    'name': partner.get('name', f"Team {partner.get('team_id', 'Unknown')}"),
-                    'team_id': partner.get('team_id'),
-                    'full_data': partner
+                    "name": partner.get(
+                        "name", f"Team {partner.get('team_id', 'Unknown')}"
+                    ),
+                    "team_id": partner.get("team_id"),
+                    "full_data": partner,
                 }
-            return {
-                'name': "League Team",
-                'team_id': None,
-                'full_data': None
-            }
+            return {"name": "League Team", "team_id": None, "full_data": None}
 
         # Helper function to get real players from target team
         async def get_target_team_players(target_team_id, position_needed):
             """Get real players from target team for the specified position"""
             if not target_team_id:
-                return [{"id": "generic_player", "name": f"Generic {position_needed}", "position": position_needed, "team": "UNK", "age": 27, "trade_value": 20.0}]
+                return [
+                    {
+                        "id": "generic_player",
+                        "name": f"Generic {position_needed}",
+                        "position": position_needed,
+                        "team": "UNK",
+                        "age": 27,
+                        "trade_value": 20.0,
+                    }
+                ]
 
             try:
                 # Get roster for target team
                 import aiohttp
+
                 async with aiohttp.ClientSession() as session:
-                    roster_url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
+                    roster_url = (
+                        f"https://api.sleeper.app/v1/league/{league_id}/rosters"
+                    )
                     async with session.get(roster_url) as response:
                         if response.status == 200:
                             rosters = await response.json()
@@ -3703,148 +4297,199 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
                             # Find target team's roster
                             target_roster = None
                             for roster in rosters:
-                                if str(roster.get('roster_id')) == str(target_team_id):
+                                if str(roster.get("roster_id")) == str(target_team_id):
                                     target_roster = roster
                                     break
 
-                            if target_roster and target_roster.get('players'):
+                            if target_roster and target_roster.get("players"):
                                 all_players = await sleeper_service._get_all_players()
                                 position_players = []
 
-                                for player_id in target_roster['players']:
+                                for player_id in target_roster["players"]:
                                     if player_id in all_players:
                                         player = all_players[player_id]
-                                        if player.get('position') == position_needed:
-                                            trade_value = calculate_realistic_trade_value(player)
-                                            position_players.append({
-                                                "id": player_id,
-                                                "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                                "position": player.get('position', position_needed),
-                                                "team": player.get('team', 'UNKNOWN'),
-                                                "age": player.get('age', 27),
-                                                "trade_value": trade_value
-                                            })
+                                        if player.get("position") == position_needed:
+                                            trade_value = (
+                                                calculate_realistic_trade_value(player)
+                                            )
+                                            position_players.append(
+                                                {
+                                                    "id": player_id,
+                                                    "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
+                                                    "position": player.get(
+                                                        "position", position_needed
+                                                    ),
+                                                    "team": player.get(
+                                                        "team", "UNKNOWN"
+                                                    ),
+                                                    "age": player.get("age", 27),
+                                                    "trade_value": trade_value,
+                                                }
+                                            )
 
                                 if position_players:
                                     # Return best player for that position
-                                    return [max(position_players, key=lambda p: p['trade_value'])]
+                                    return [
+                                        max(
+                                            position_players,
+                                            key=lambda p: p["trade_value"],
+                                        )
+                                    ]
 
                 # Fallback if no players found
-                return [{"id": "backup_player", "name": f"Available {position_needed}", "position": position_needed, "team": "UNKNOWN", "age": 26, "trade_value": 15.0}]
+                return [
+                    {
+                        "id": "backup_player",
+                        "name": f"Available {position_needed}",
+                        "position": position_needed,
+                        "team": "UNKNOWN",
+                        "age": 26,
+                        "trade_value": 15.0,
+                    }
+                ]
 
             except Exception as e:
                 logger.warning(f"Could not get target team players: {e}")
-                return [{"id": "fallback_player", "name": f"Backup {position_needed}", "position": position_needed, "team": "UNKNOWN", "age": 25, "trade_value": 12.0}]
+                return [
+                    {
+                        "id": "fallback_player",
+                        "name": f"Backup {position_needed}",
+                        "position": position_needed,
+                        "team": "UNKNOWN",
+                        "age": 25,
+                        "trade_value": 12.0,
+                    }
+                ]
 
         # Helper function to add trade values to existing players
         def add_trade_values(players_list):
             """Add trade_value field to players that don't have it"""
             for player in players_list:
-                if 'trade_value' not in player:
+                if "trade_value" not in player:
                     # Create mock player data for trade value calculation
                     mock_player = {
-                        'position': player.get('position', 'UNKNOWN'),
-                        'age': player.get('age', 27),  # Use player's actual age or default
-                        'team': player.get('team', 'UNKNOWN')
+                        "position": player.get("position", "UNKNOWN"),
+                        "age": player.get(
+                            "age", 27
+                        ),  # Use player's actual age or default
+                        "team": player.get("team", "UNKNOWN"),
                     }
-                    player['trade_value'] = calculate_realistic_trade_value(mock_player)
+                    player["trade_value"] = calculate_realistic_trade_value(mock_player)
 
                 # Ensure age is present
-                if 'age' not in player:
-                    player['age'] = 27  # Default age if not provided
+                if "age" not in player:
+                    player["age"] = 27  # Default age if not provided
             return players_list
 
         # Check for position weaknesses
-        if len(positions.get('QB', [])) < 2:
-            rb_players = positions.get('RB', [])[:1]
+        if len(positions.get("QB", [])) < 2:
+            rb_players = positions.get("RB", [])[:1]
             trade_partner = get_trade_partner()
 
             # Get real QB from target team
-            target_qb_players = await get_target_team_players(trade_partner['team_id'], 'QB')
+            target_qb_players = await get_target_team_players(
+                trade_partner["team_id"], "QB"
+            )
 
-            recommendations.append({
-                "id": rec_id,
-                "recommendation_type": "QB Depth Needed",
-                "type": "depth_addition",
-                "title": "Add QB Depth",
-                "description": f"Consider trading for a backup quarterback from {trade_partner['name']}",
-                "target_team_id": trade_partner['team_id'],
-                "we_give": {
-                    "players": add_trade_values(format_players(rb_players)),
-                    "picks": []
-                },
-                "we_get": {
-                    "players": target_qb_players,
-                    "picks": ["2025 Late Round Pick"]
-                },
-                "confidence": 75,
-                "estimated_likelihood": 0.75,
-                "priority_score": 60,
-                "reasoning": f"Limited QB depth could be problematic if starter gets injured. {trade_partner['name']} may have QB depth to spare.",
-                "trade_partner": trade_partner['name']
-            })
+            recommendations.append(
+                {
+                    "id": rec_id,
+                    "recommendation_type": "QB Depth Needed",
+                    "type": "depth_addition",
+                    "title": "Add QB Depth",
+                    "description": f"Consider trading for a backup quarterback from {trade_partner['name']}",
+                    "target_team_id": trade_partner["team_id"],
+                    "we_give": {
+                        "players": add_trade_values(format_players(rb_players)),
+                        "picks": [],
+                    },
+                    "we_get": {
+                        "players": target_qb_players,
+                        "picks": ["2025 Late Round Pick"],
+                    },
+                    "confidence": 75,
+                    "estimated_likelihood": 0.75,
+                    "priority_score": 60,
+                    "reasoning": f"Limited QB depth could be problematic if starter gets injured. {trade_partner['name']} may have QB depth to spare.",
+                    "trade_partner": trade_partner["name"],
+                }
+            )
             rec_id += 1
 
-        if len(positions.get('RB', [])) > 4:
-            rb_players = positions.get('RB', [])
-            give_players = rb_players[-2:]  # Trade least important RBs (actual player objects)
+        if len(positions.get("RB", [])) > 4:
+            rb_players = positions.get("RB", [])
+            give_players = rb_players[
+                -2:
+            ]  # Trade least important RBs (actual player objects)
             trade_partner = get_trade_partner()
 
             # Get real players from target team
-            target_wr_players = await get_target_team_players(trade_partner['team_id'], 'WR')
-            target_te_players = await get_target_team_players(trade_partner['team_id'], 'TE')
+            target_wr_players = await get_target_team_players(
+                trade_partner["team_id"], "WR"
+            )
+            target_te_players = await get_target_team_players(
+                trade_partner["team_id"], "TE"
+            )
 
-            recommendations.append({
-                "id": rec_id,
-                "recommendation_type": "RB Surplus Trade",
-                "type": "position_balance",
-                "title": "Trade Excess RB Depth",
-                "description": f"Trade surplus running backs to {trade_partner['name']} for position upgrades",
-                "target_team_id": trade_partner['team_id'],
-                "we_give": {
-                    "players": add_trade_values(format_players(give_players)),
-                    "picks": []
-                },
-                "we_get": {
-                    "players": target_wr_players + target_te_players,
-                    "picks": []
-                },
-                "confidence": 80,
-                "estimated_likelihood": 0.80,
-                "priority_score": 70,
-                "reasoning": f"With {len(rb_players)} RBs, you can afford to trade depth for upgrades at other positions. {trade_partner['name']} may need RB help.",
-                "trade_partner": trade_partner['name']
-            })
+            recommendations.append(
+                {
+                    "id": rec_id,
+                    "recommendation_type": "RB Surplus Trade",
+                    "type": "position_balance",
+                    "title": "Trade Excess RB Depth",
+                    "description": f"Trade surplus running backs to {trade_partner['name']} for position upgrades",
+                    "target_team_id": trade_partner["team_id"],
+                    "we_give": {
+                        "players": add_trade_values(format_players(give_players)),
+                        "picks": [],
+                    },
+                    "we_get": {
+                        "players": target_wr_players + target_te_players,
+                        "picks": [],
+                    },
+                    "confidence": 80,
+                    "estimated_likelihood": 0.80,
+                    "priority_score": 70,
+                    "reasoning": f"With {len(rb_players)} RBs, you can afford to trade depth for upgrades at other positions. {trade_partner['name']} may need RB help.",
+                    "trade_partner": trade_partner["name"],
+                }
+            )
             rec_id += 1
 
-        if len(positions.get('WR', [])) < 4:
-            te_players = positions.get('TE', [])[:1] if len(positions.get('TE', [])) > 1 else []
+        if len(positions.get("WR", [])) < 4:
+            te_players = (
+                positions.get("TE", [])[:1] if len(positions.get("TE", [])) > 1 else []
+            )
             trade_partner = get_trade_partner()
 
             # Get real WR from target team
-            target_wr_players = await get_target_team_players(trade_partner['team_id'], 'WR')
+            target_wr_players = await get_target_team_players(
+                trade_partner["team_id"], "WR"
+            )
 
-            recommendations.append({
-                "id": rec_id,
-                "recommendation_type": "WR Depth Needed",
-                "type": "depth_addition",
-                "title": "Add WR Depth",
-                "description": f"Target wide receiver depth from {trade_partner['name']} for better matchup flexibility",
-                "target_team_id": trade_partner['team_id'],
-                "we_give": {
-                    "players": add_trade_values(format_players(te_players)),
-                    "picks": ["Mid Round Pick"] if not te_players else []
-                },
-                "we_get": {
-                    "players": target_wr_players,
-                    "picks": ["2026 Late Pick"]
-                },
-                "confidence": 70,
-                "estimated_likelihood": 0.70,
-                "priority_score": 55,
-                "reasoning": f"More WR depth provides better weekly lineup flexibility. {trade_partner['name']} may have WR depth to trade.",
-                "trade_partner": trade_partner['name']
-            })
+            recommendations.append(
+                {
+                    "id": rec_id,
+                    "recommendation_type": "WR Depth Needed",
+                    "type": "depth_addition",
+                    "title": "Add WR Depth",
+                    "description": f"Target wide receiver depth from {trade_partner['name']} for better matchup flexibility",
+                    "target_team_id": trade_partner["team_id"],
+                    "we_give": {
+                        "players": add_trade_values(format_players(te_players)),
+                        "picks": ["Mid Round Pick"] if not te_players else [],
+                    },
+                    "we_get": {
+                        "players": target_wr_players,
+                        "picks": ["2026 Late Pick"],
+                    },
+                    "confidence": 70,
+                    "estimated_likelihood": 0.70,
+                    "priority_score": 55,
+                    "reasoning": f"More WR depth provides better weekly lineup flexibility. {trade_partner['name']} may have WR depth to trade.",
+                    "trade_partner": trade_partner["name"],
+                }
+            )
             rec_id += 1
 
         logger.info(f"🔍 GENERATED {len(recommendations)} RECOMMENDATIONS")
@@ -3855,41 +4500,51 @@ async def generate_trade_recommendations(request: Dict[str, Any], current_user: 
             "league_id": league_id,
             "recommendation_type": request.get("recommendation_type", "all"),
             "recommendation_count": len(recommendations),
-            "recommendations": recommendations
+            "recommendations": recommendations,
         }
 
     except Exception as e:
         logger.error(f"🚨 ERROR generating trade recommendations: {e}")
         import traceback
+
         logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
-        raise HTTPException(status_code=500, detail=f"Failed to generate recommendations: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate recommendations: {str(e)}"
+        )
+
 
 @app.get("/api/v1/fantasy/trade-analyzer/player-values")
-async def get_player_values(limit: int = 200, current_user: dict = Depends(get_current_user)):
+async def get_player_values(
+    limit: int = 200, current_user: dict = Depends(get_current_user)
+):
     """Get player trade values for all players"""
     try:
         logger.info(f"Player values called with limit: {limit}")
 
         # Get Sleeper service for player data
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
 
         # Get trending data for popularity boost
         trending_adds = await sleeper_service.get_trending_players("add")
-        trending_lookup = {player.get("player_id"): player.get("trend_count", 0) for player in trending_adds}
+        trending_lookup = {
+            player.get("player_id"): player.get("trend_count", 0)
+            for player in trending_adds
+        }
 
         player_values = []
 
         for player_id, player_data in list(all_players.items())[:limit]:
-            if not player_data.get('active', True):
+            if not player_data.get("active", True):
                 continue
 
             name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
-            position = player_data.get('position', 'UNKNOWN')
+            position = player_data.get("position", "UNKNOWN")
 
             # Skip non-fantasy positions
-            if position not in ['QB', 'RB', 'WR', 'TE', 'K', 'DEF']:
+            if position not in ["QB", "RB", "WR", "TE", "K", "DEF"]:
                 continue
 
             # Calculate trade value
@@ -3898,33 +4553,40 @@ async def get_player_values(limit: int = 200, current_user: dict = Depends(get_c
             # Add trending boost
             trend_count = trending_lookup.get(player_id, 0)
             if trend_count > 0:
-                trade_value *= (1 + (trend_count / 100))  # Small boost for trending players
+                trade_value *= 1 + (
+                    trend_count / 100
+                )  # Small boost for trending players
 
-            player_values.append({
-                "player_id": player_id,
-                "name": name,
-                "position": position,
-                "team": player_data.get('team', 'FA'),
-                "age": player_data.get('age', 27),
-                "trade_value": round(trade_value, 1),
-                "trend_type": "hot" if trend_count > 0 else "neutral",
-                "trend_count": trend_count
-            })
+            player_values.append(
+                {
+                    "player_id": player_id,
+                    "name": name,
+                    "position": position,
+                    "team": player_data.get("team", "FA"),
+                    "age": player_data.get("age", 27),
+                    "trade_value": round(trade_value, 1),
+                    "trend_type": "hot" if trend_count > 0 else "neutral",
+                    "trend_count": trend_count,
+                }
+            )
 
         # Sort by trade value descending
-        player_values.sort(key=lambda p: p['trade_value'], reverse=True)
+        player_values.sort(key=lambda p: p["trade_value"], reverse=True)
 
         logger.info(f"Returning {len(player_values)} player values")
         return {
             "success": True,
             "players": player_values,
             "total": len(player_values),
-            "limit": limit
+            "limit": limit,
         }
 
     except Exception as e:
         logger.error(f"Error getting player values: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get player values: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get player values: {str(e)}"
+        )
+
 
 class QuickAnalysisRequest(BaseModel):
     league_id: str
@@ -3933,14 +4595,20 @@ class QuickAnalysisRequest(BaseModel):
     team1_gives: Dict[str, Any]
     team2_gives: Dict[str, Any]
 
+
 @app.post("/api/v1/fantasy/trade-analyzer/quick-analysis")
-async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict = Depends(get_current_user)):
+async def quick_trade_analysis(
+    request: QuickAnalysisRequest, current_user: dict = Depends(get_current_user)
+):
     """Perform quick analysis of a proposed trade"""
     try:
-        logger.info(f"Quick trade analysis called: {request.team1_id} vs {request.team2_id}")
+        logger.info(
+            f"Quick trade analysis called: {request.team1_id} vs {request.team2_id}"
+        )
 
         # Get Sleeper service for player data
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
 
@@ -3951,7 +4619,7 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
                 "players": [],
                 "total_value": 0,
                 "positions": {},
-                "avg_age": 0
+                "avg_age": 0,
             }
 
             ages = []
@@ -3959,17 +4627,17 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
                 if str(player_id) in all_players:
                     player_data = all_players[str(player_id)]
                     name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
-                    position = player_data.get('position', 'UNKNOWN')
-                    age = player_data.get('age', 27)
+                    position = player_data.get("position", "UNKNOWN")
+                    age = player_data.get("age", 27)
                     trade_value = calculate_realistic_trade_value(player_data)
 
                     player_info = {
                         "player_id": player_id,
                         "name": name,
                         "position": position,
-                        "team": player_data.get('team', 'FA'),
+                        "team": player_data.get("team", "FA"),
                         "age": age,
-                        "trade_value": round(trade_value, 1)
+                        "trade_value": round(trade_value, 1),
                     }
 
                     side_analysis["players"].append(player_info)
@@ -3988,13 +4656,19 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
             return side_analysis
 
         # Analyze both sides
-        team1_gives = analyze_trade_side(request.team1_gives.get("players", []), "Team 1 Gives")
-        team2_gives = analyze_trade_side(request.team2_gives.get("players", []), "Team 2 Gives")
+        team1_gives = analyze_trade_side(
+            request.team1_gives.get("players", []), "Team 1 Gives"
+        )
+        team2_gives = analyze_trade_side(
+            request.team2_gives.get("players", []), "Team 2 Gives"
+        )
 
         # Calculate trade fairness
         value_diff = abs(team1_gives["total_value"] - team2_gives["total_value"])
         total_value = team1_gives["total_value"] + team2_gives["total_value"]
-        fairness_pct = max(0, 100 - (value_diff / total_value * 100)) if total_value > 0 else 0
+        fairness_pct = (
+            max(0, 100 - (value_diff / total_value * 100)) if total_value > 0 else 0
+        )
 
         # Determine trade verdict
         if fairness_pct >= 90:
@@ -4015,22 +4689,34 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
 
         # Age analysis
         if team1_gives["avg_age"] > team2_gives["avg_age"] + 3:
-            insights.append(f"Team 1 trading older players (avg age {team1_gives['avg_age']:.1f} vs {team2_gives['avg_age']:.1f})")
+            insights.append(
+                f"Team 1 trading older players (avg age {team1_gives['avg_age']:.1f} vs {team2_gives['avg_age']:.1f})"
+            )
         elif team2_gives["avg_age"] > team1_gives["avg_age"] + 3:
-            insights.append(f"Team 2 trading older players (avg age {team2_gives['avg_age']:.1f} vs {team1_gives['avg_age']:.1f})")
+            insights.append(
+                f"Team 2 trading older players (avg age {team2_gives['avg_age']:.1f} vs {team1_gives['avg_age']:.1f})"
+            )
 
         # Value differential analysis
         if value_diff > 10:
             if team1_gives["total_value"] > team2_gives["total_value"]:
-                insights.append(f"Team 1 giving up {value_diff:.1f} more value - may need compensation")
+                insights.append(
+                    f"Team 1 giving up {value_diff:.1f} more value - may need compensation"
+                )
             else:
-                insights.append(f"Team 2 giving up {value_diff:.1f} more value - may need compensation")
+                insights.append(
+                    f"Team 2 giving up {value_diff:.1f} more value - may need compensation"
+                )
 
         # Player quantity analysis
         if len(team1_gives["players"]) > len(team2_gives["players"]) + 1:
-            insights.append("Team 1 trading multiple players for fewer elite players (talent consolidation)")
+            insights.append(
+                "Team 1 trading multiple players for fewer elite players (talent consolidation)"
+            )
         elif len(team2_gives["players"]) > len(team1_gives["players"]) + 1:
-            insights.append("Team 2 trading multiple players for fewer elite players (talent consolidation)")
+            insights.append(
+                "Team 2 trading multiple players for fewer elite players (talent consolidation)"
+            )
 
         # Position balance analysis
         team1_positions = list(team1_gives["positions"].keys())
@@ -4049,9 +4735,13 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
         team2_high_value = [p for p in team2_gives["players"] if p["trade_value"] > 25]
 
         if team1_high_value and not team2_high_value:
-            insights.append(f"Team 1 trading elite player ({team1_high_value[0]['name']}) for depth")
+            insights.append(
+                f"Team 1 trading elite player ({team1_high_value[0]['name']}) for depth"
+            )
         elif team2_high_value and not team1_high_value:
-            insights.append(f"Team 2 trading elite player ({team2_high_value[0]['name']}) for depth")
+            insights.append(
+                f"Team 2 trading elite player ({team2_high_value[0]['name']}) for depth"
+            )
         elif team1_high_value and team2_high_value:
             insights.append("Elite players on both sides - star-for-star trade")
 
@@ -4069,9 +4759,13 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
             if fairness_pct >= 85:
                 insights.append("Values are well-matched - good trade balance")
             elif team1_gives["total_value"] > team2_gives["total_value"]:
-                insights.append("Team 1 giving up more value - consider additional compensation")
+                insights.append(
+                    "Team 1 giving up more value - consider additional compensation"
+                )
             else:
-                insights.append("Team 2 giving up more value - consider additional compensation")
+                insights.append(
+                    "Team 2 giving up more value - consider additional compensation"
+                )
 
         # Helper function to convert insight strings to structured objects
         def format_insight(insight_text):
@@ -4101,11 +4795,7 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
                 impact = "medium"
                 category = "position_strategy"
 
-            return {
-                "category": category,
-                "description": insight_text,
-                "impact": impact
-            }
+            return {"category": category, "description": insight_text, "impact": impact}
 
         # Convert insights to structured format
         structured_insights = [format_insight(insight) for insight in insights]
@@ -4120,39 +4810,45 @@ async def quick_trade_analysis(request: QuickAnalysisRequest, current_user: dict
                     "percentage": round(fairness_pct, 1),
                     "verdict": verdict,
                     "verdict_color": verdict_color,
-                    "value_difference": round(value_diff, 1)
+                    "value_difference": round(value_diff, 1),
                 },
                 "insights": structured_insights,
-                "recommendation": verdict
-            }
+                "recommendation": verdict,
+            },
         }
 
     except Exception as e:
         logger.error(f"Error in quick trade analysis: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to analyze trade: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to analyze trade: {str(e)}"
+        )
+
 
 # Player comparison request model
 class ComparePlayersRequest(BaseModel):
     player_ids: List[str]
     league_id: Optional[str] = None
 
+
 @app.post("/api/fantasy/players/compare")
 async def compare_players(
-    request: ComparePlayersRequest,
-    current_user: dict = Depends(get_current_user)
+    request: ComparePlayersRequest, current_user: dict = Depends(get_current_user)
 ):
     """Compare multiple players side-by-side with analytics"""
     try:
         player_ids = request.player_ids
         league_id = request.league_id
 
-        logger.info(f"Player comparison called with {len(player_ids)} players: {player_ids}")
+        logger.info(
+            f"Player comparison called with {len(player_ids)} players: {player_ids}"
+        )
 
         if len(player_ids) < 2 or len(player_ids) > 4:
             raise HTTPException(status_code=400, detail="Must compare 2-4 players")
 
         # Get Sleeper service for player data
         from app.services.sleeper_fantasy_service import SleeperFantasyService
+
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
 
@@ -4162,10 +4858,16 @@ async def compare_players(
         trending_lookup = {}
 
         for player in trending_adds:
-            trending_lookup[player.get("player_id")] = {"type": "hot", "count": player.get("trend_count", 0)}
+            trending_lookup[player.get("player_id")] = {
+                "type": "hot",
+                "count": player.get("trend_count", 0),
+            }
         for player in trending_drops:
             if player.get("player_id") not in trending_lookup:
-                trending_lookup[player.get("player_id")] = {"type": "cold", "count": player.get("trend_count", 0)}
+                trending_lookup[player.get("player_id")] = {
+                    "type": "cold",
+                    "count": player.get("trend_count", 0),
+                }
 
         compared_players = []
 
@@ -4187,20 +4889,22 @@ async def compare_players(
                 "injury_status": player_data.get("injury_status", "Healthy"),
                 "physical_stats": {
                     "height": player_data.get("height"),
-                    "weight": player_data.get("weight")
+                    "weight": player_data.get("weight"),
                 },
                 "career_info": {
                     "college": player_data.get("college"),
                     "draft_year": player_data.get("draft_year"),
                     "draft_round": player_data.get("draft_round"),
-                    "draft_pick": player_data.get("draft_pick")
+                    "draft_pick": player_data.get("draft_pick"),
                 },
                 "team_context": {
                     "depth_chart_order": player_data.get("depth_chart_order"),
-                    "search_rank": player_data.get("search_rank", 999)
+                    "search_rank": player_data.get("search_rank", 999),
                 },
-                "trending": trending_lookup.get(player_id, {"type": "normal", "count": 0}),
-                "fantasy_positions": player_data.get("fantasy_positions", [])
+                "trending": trending_lookup.get(
+                    player_id, {"type": "normal", "count": 0}
+                ),
+                "fantasy_positions": player_data.get("fantasy_positions", []),
             }
 
             compared_players.append(comparison_data)
@@ -4211,24 +4915,26 @@ async def compare_players(
                 "players": compared_players,
                 "insights": [],  # Can add insights later
                 "league_context": league_id,
-                "comparison_date": datetime.utcnow().isoformat()
-            }
+                "comparison_date": datetime.utcnow().isoformat(),
+            },
         }
 
     except Exception as e:
         logger.error(f"Error in player comparison: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
+
 @app.get("/api/fantasy/players/{player_id}/analytics/{season}")
 async def get_player_analytics(
     player_id: str,
     season: int,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player analytics for a specific season"""
     try:
         from app.services.player_analytics_service import PlayerAnalyticsService
+
         analytics_service = PlayerAnalyticsService(db)
 
         # Convert string player_id to int if needed
@@ -4248,21 +4954,23 @@ async def get_player_analytics(
                     "consistency_rating": "N/A",
                     "target_share": 0,
                     "red_zone_usage": 0,
-                    "snap_percentage": 0
+                    "snap_percentage": 0,
                 },
-                "message": "Player analytics data not available"
+                "message": "Player analytics data not available",
             }
 
         # Get week list for the season (weeks 1-17 typically)
         week_list = list(range(1, 18))
 
-        analytics = await analytics_service.get_player_analytics(player_id_int, week_list, season)
+        analytics = await analytics_service.get_player_analytics(
+            player_id_int, week_list, season
+        )
 
         return {
             "status": "success",
             "player_id": player_id,
             "season": season,
-            "analytics": analytics
+            "analytics": analytics,
         }
 
     except Exception as e:
@@ -4272,19 +4980,21 @@ async def get_player_analytics(
             "message": "Analytics data temporarily unavailable",
             "player_id": player_id,
             "season": season,
-            "analytics": {}
+            "analytics": {},
         }
+
 
 @app.get("/api/fantasy/players/{player_id}/trends/{season}")
 async def get_player_trends(
     player_id: str,
     season: int,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player trend analysis for a specific season"""
     try:
         from app.services.player_analytics_service import PlayerAnalyticsService
+
         analytics_service = PlayerAnalyticsService(db)
 
         try:
@@ -4298,19 +5008,21 @@ async def get_player_trends(
                     "scoring_trend": "stable",
                     "usage_trend": "stable",
                     "efficiency_trend": "stable",
-                    "recent_form": "average"
+                    "recent_form": "average",
                 },
-                "message": "Player trends data not available"
+                "message": "Player trends data not available",
             }
 
         week_list = list(range(1, 18))
-        trends = await analytics_service.calculate_usage_trends(player_id_int, week_list, season)
+        trends = await analytics_service.calculate_usage_trends(
+            player_id_int, week_list, season
+        )
 
         return {
             "status": "success",
             "player_id": player_id,
             "season": season,
-            "trends": trends
+            "trends": trends,
         }
 
     except Exception as e:
@@ -4320,19 +5032,21 @@ async def get_player_trends(
             "message": "Trends data temporarily unavailable",
             "player_id": player_id,
             "season": season,
-            "trends": {}
+            "trends": {},
         }
+
 
 @app.get("/api/fantasy/players/{player_id}/efficiency/{season}")
 async def get_player_efficiency(
     player_id: str,
     season: int,
     current_user: dict = Depends(get_current_user),
-    db=Depends(get_db)
+    db=Depends(get_db),
 ):
     """Get player efficiency metrics for a specific season"""
     try:
         from app.services.player_analytics_service import PlayerAnalyticsService
+
         analytics_service = PlayerAnalyticsService(db)
 
         try:
@@ -4347,19 +5061,21 @@ async def get_player_efficiency(
                     "yards_per_carry": 0,
                     "red_zone_efficiency": 0,
                     "target_efficiency": 0,
-                    "snap_efficiency": 0
+                    "snap_efficiency": 0,
                 },
-                "message": "Player efficiency data not available"
+                "message": "Player efficiency data not available",
             }
 
         week_list = list(range(1, 18))
-        efficiency = await analytics_service.calculate_efficiency_metrics(player_id_int, week_list, season)
+        efficiency = await analytics_service.calculate_efficiency_metrics(
+            player_id_int, week_list, season
+        )
 
         return {
             "status": "success",
             "player_id": player_id,
             "season": season,
-            "efficiency": efficiency
+            "efficiency": efficiency,
         }
 
     except Exception as e:
@@ -4369,11 +5085,13 @@ async def get_player_efficiency(
             "message": "Efficiency data temporarily unavailable",
             "player_id": player_id,
             "season": season,
-            "efficiency": {}
+            "efficiency": {},
         }
+
 
 # WebSocket manager instance
 ws_manager = ConnectionManager()
+
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: int):
@@ -4381,21 +5099,20 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
     try:
         await ws_manager.connect(websocket, user_id)
         logger.info(f"WebSocket connected for user {user_id}")
-        
+
         # Send welcome message
         await ws_manager.send_personal_message(
             f'{{"type": "connection", "message": "Connected to YetAI real-time updates"}}',
-            user_id
+            user_id,
         )
-        
+
         while True:
             # Keep connection alive and handle incoming messages
             try:
                 data = await websocket.receive_text()
                 # Echo back received data (can be extended for specific functionality)
                 await ws_manager.send_personal_message(
-                    f'{{"type": "echo", "data": {data}}}',
-                    user_id
+                    f'{{"type": "echo", "data": {data}}}', user_id
                 )
             except WebSocketDisconnect:
                 break
@@ -4406,6 +5123,7 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
         logger.error(f"WebSocket error for user {user_id}: {e}")
         ws_manager.disconnect(user_id)
 
+
 @app.get("/api/debug/analytics-status")
 async def debug_analytics_status(db=Depends(get_db)):
     """Debug endpoint to check analytics table status in production"""
@@ -4414,39 +5132,63 @@ async def debug_analytics_status(db=Depends(get_db)):
 
     try:
         # Check if tables exist
-        tables_check = db.execute(text("""
+        tables_check = db.execute(
+            text(
+                """
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
             AND table_name IN ('player_analytics', 'player_trends', 'fantasy_players')
             ORDER BY table_name
-        """)).fetchall()
+        """
+            )
+        ).fetchall()
 
         # Count records in each table
-        player_analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0] if any(t[0] == 'player_analytics' for t in tables_check) else 0
-        player_trends_count = db.execute(text("SELECT COUNT(*) FROM player_trends")).fetchone()[0] if any(t[0] == 'player_trends' for t in tables_check) else 0
-        fantasy_players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0] if any(t[0] == 'fantasy_players' for t in tables_check) else 0
+        player_analytics_count = (
+            db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+            if any(t[0] == "player_analytics" for t in tables_check)
+            else 0
+        )
+        player_trends_count = (
+            db.execute(text("SELECT COUNT(*) FROM player_trends")).fetchone()[0]
+            if any(t[0] == "player_trends" for t in tables_check)
+            else 0
+        )
+        fantasy_players_count = (
+            db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+            if any(t[0] == "fantasy_players" for t in tables_check)
+            else 0
+        )
 
         # Check seasons available
         seasons = []
         if player_analytics_count > 0:
-            seasons_result = db.execute(text("SELECT DISTINCT season FROM player_analytics ORDER BY season")).fetchall()
+            seasons_result = db.execute(
+                text("SELECT DISTINCT season FROM player_analytics ORDER BY season")
+            ).fetchall()
             seasons = [row[0] for row in seasons_result]
 
         # Test sample player lookup
         sample_player = None
         if fantasy_players_count > 0:
-            sample_result = db.execute(text("SELECT id, platform_player_id, name FROM fantasy_players LIMIT 1")).fetchone()
+            sample_result = db.execute(
+                text("SELECT id, platform_player_id, name FROM fantasy_players LIMIT 1")
+            ).fetchone()
             if sample_result:
                 sample_player = {
                     "fantasy_id": sample_result[0],
                     "platform_id": sample_result[1],
-                    "name": sample_result[2]
+                    "name": sample_result[2],
                 }
 
                 # Check if this player has analytics (use fantasy_id, not platform_id)
                 if player_analytics_count > 0:
-                    analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics WHERE player_id = :pid"),
-                                                {"pid": sample_result[0]}).fetchone()[0]
+                    analytics_count = db.execute(
+                        text(
+                            "SELECT COUNT(*) FROM player_analytics WHERE player_id = :pid"
+                        ),
+                        {"pid": sample_result[0]},
+                    ).fetchone()[0]
                     sample_player["analytics_records"] = analytics_count
 
         return {
@@ -4455,17 +5197,17 @@ async def debug_analytics_status(db=Depends(get_db)):
             "record_counts": {
                 "player_analytics": player_analytics_count,
                 "player_trends": player_trends_count,
-                "fantasy_players": fantasy_players_count
+                "fantasy_players": fantasy_players_count,
             },
             "available_seasons": seasons,
             "sample_player": sample_player,
-            "debug_timestamp": datetime.utcnow().isoformat()
+            "debug_timestamp": datetime.utcnow().isoformat(),
         }
     except Exception as e:
         return {
             "error": str(e),
             "database_connected": False,
-            "debug_timestamp": datetime.utcnow().isoformat()
+            "debug_timestamp": datetime.utcnow().isoformat(),
         }
 
 
@@ -4487,17 +5229,25 @@ async def migrate_production_data(db=Depends(get_db)):
         columns_result = db.execute(text(schema_query)).fetchall()
 
         # Check current state
-        analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
-        players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+        analytics_count = db.execute(
+            text("SELECT COUNT(*) FROM player_analytics")
+        ).fetchone()[0]
+        players_count = db.execute(
+            text("SELECT COUNT(*) FROM fantasy_players")
+        ).fetchone()[0]
 
         migration_log = []
-        migration_log.append(f"Starting migration - Players: {players_count}, Analytics: {analytics_count}")
-        migration_log.append(f"Schema: {[(col[0], col[1], col[2]) for col in columns_result]}")
+        migration_log.append(
+            f"Starting migration - Players: {players_count}, Analytics: {analytics_count}"
+        )
+        migration_log.append(
+            f"Schema: {[(col[0], col[1], col[2]) for col in columns_result]}"
+        )
 
         # Fantasy players data (try SLEEPER enum value)
         fantasy_players_inserts = [
             "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('SLEEPER', '4866', 'Saquon Barkley', 'RB', 'PHI');",
-            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('SLEEPER', '7588', 'Justin Jefferson', 'WR', 'MIN');"
+            "INSERT INTO fantasy_players (platform, platform_player_id, name, position, team) VALUES ('SLEEPER', '7588', 'Justin Jefferson', 'WR', 'MIN');",
         ]
 
         # Player analytics sample data
@@ -4505,7 +5255,7 @@ async def migrate_production_data(db=Depends(get_db)):
             "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (1, 4866, 1, 2024, 18.5, 65.2, 8.5, 15.0, 0.28, 1.85, 35.0, 10.0, 12.0, 25.0, 'GB', NULL, 2.1);",
             "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (2, 4866, 2, 2024, 22.3, 68.1, 10.2, 18.5, 0.33, 2.18, 40.0, 8.0, 15.0, 28.0, 'ATL', NULL, 1.8);",
             "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (3, 7588, 1, 2024, 24.7, 92.3, 28.5, 12.0, 0.27, 1.73, 60.0, 5.0, 18.0, 32.0, 'NYG', NULL, -1.2);",
-            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (4, 7588, 2, 2024, 19.4, 89.7, 25.2, 8.5, 0.22, 1.55, 45.0, 8.0, 16.0, 28.0, 'SF', NULL, -2.8);"
+            "INSERT INTO player_analytics (id, player_id, week, season, ppr_points, snap_percentage, target_share, red_zone_share, points_per_snap, points_per_target, boom_rate, bust_rate, floor_score, ceiling_score, opponent, injury_designation, game_script) VALUES (4, 7588, 2, 2024, 19.4, 89.7, 25.2, 8.5, 0.22, 1.55, 45.0, 8.0, 16.0, 28.0, 'SF', NULL, -2.8);",
         ]
 
         if players_count == 0:
@@ -4515,7 +5265,9 @@ async def migrate_production_data(db=Depends(get_db)):
             db.commit()
 
             # Check new count
-            new_players_count = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
+            new_players_count = db.execute(
+                text("SELECT COUNT(*) FROM fantasy_players")
+            ).fetchone()[0]
             migration_log.append(f"Fantasy players inserted: {new_players_count}")
         else:
             migration_log.append("Fantasy players already exist, skipping...")
@@ -4527,16 +5279,24 @@ async def migrate_production_data(db=Depends(get_db)):
             db.commit()
 
             # Check new count
-            new_analytics_count = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+            new_analytics_count = db.execute(
+                text("SELECT COUNT(*) FROM player_analytics")
+            ).fetchone()[0]
             migration_log.append(f"Player analytics inserted: {new_analytics_count}")
         else:
             migration_log.append("Player analytics already exist, skipping...")
 
         # Final verification
-        final_players = db.execute(text("SELECT COUNT(*) FROM fantasy_players")).fetchone()[0]
-        final_analytics = db.execute(text("SELECT COUNT(*) FROM player_analytics")).fetchone()[0]
+        final_players = db.execute(
+            text("SELECT COUNT(*) FROM fantasy_players")
+        ).fetchone()[0]
+        final_analytics = db.execute(
+            text("SELECT COUNT(*) FROM player_analytics")
+        ).fetchone()[0]
 
-        migration_log.append(f"Migration complete - Players: {final_players}, Analytics: {final_analytics}")
+        migration_log.append(
+            f"Migration complete - Players: {final_players}, Analytics: {final_analytics}"
+        )
 
         # Test query to verify data linkage
         test_query = """
@@ -4549,35 +5309,41 @@ async def migrate_production_data(db=Depends(get_db)):
         test_results = db.execute(text(test_query)).fetchall()
         sample_data = []
         for row in test_results:
-            sample_data.append({
-                "name": row[0],
-                "position": row[1],
-                "team": row[2],
-                "week": row[3],
-                "season": row[4],
-                "ppr_points": row[5]
-            })
+            sample_data.append(
+                {
+                    "name": row[0],
+                    "position": row[1],
+                    "team": row[2],
+                    "week": row[3],
+                    "season": row[4],
+                    "ppr_points": row[5],
+                }
+            )
 
         return {
             "success": True,
             "migration_log": migration_log,
             "final_counts": {
                 "fantasy_players": final_players,
-                "player_analytics": final_analytics
+                "player_analytics": final_analytics,
             },
             "sample_data": sample_data,
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
 
     except Exception as e:
         return {
             "success": False,
             "error": str(e),
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.utcnow().isoformat(),
         }
+
 
 if __name__ == "__main__":
     import uvicorn
+
     port = int(os.getenv("PORT", 8000))
-    logger.info(f"🚀 Starting server on port {port} - {settings.ENVIRONMENT.upper()} mode")
+    logger.info(
+        f"🚀 Starting server on port {port} - {settings.ENVIRONMENT.upper()} mode"
+    )
     uvicorn.run(app, host="0.0.0.0", port=port)
