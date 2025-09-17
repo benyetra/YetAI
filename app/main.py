@@ -2,7 +2,7 @@
 Environment-aware FastAPI application for YetAI Sports Betting MVP
 Consolidates development and production functionality into a single file
 """
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -686,6 +686,17 @@ async def populate_analytics(db = Depends(get_db)):
     except Exception as e:
         logger.error(f"Analytics population failed: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to populate analytics data: {str(e)}")
+
+@app.post("/api/admin/import-csv")
+async def import_csv(file: UploadFile = File(...), db = Depends(get_db)):
+    """Import player analytics from CSV file"""
+    try:
+        from csv_import_endpoint import import_csv_analytics
+        result = await import_csv_analytics(file, db)
+        return result
+    except Exception as e:
+        logger.error(f"CSV import failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to import CSV: {str(e)}")
 
 @app.post("/api/admin/populate-analytics-old")
 async def populate_analytics_old():
