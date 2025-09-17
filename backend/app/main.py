@@ -3590,6 +3590,36 @@ async def get_featured_games(db=Depends(get_db)):
         return {"status": "success", "featured_games": featured_games}
     except Exception as e:
         logger.error(f"Error getting featured games: {e}")
+
+        # If the error is about table not existing, try to create it
+        if "featured_games" in str(e) and "does not exist" in str(e):
+            try:
+                logger.info("Featured games table doesn't exist, creating it...")
+                # Create featured_games table
+                create_table_sql = text(
+                    """
+                    CREATE TABLE IF NOT EXISTS featured_games (
+                        id SERIAL PRIMARY KEY,
+                        game_id VARCHAR(100) NOT NULL,
+                        home_team VARCHAR(100) NOT NULL,
+                        away_team VARCHAR(100) NOT NULL,
+                        start_time TIMESTAMP NOT NULL,
+                        sport_key VARCHAR(50) NOT NULL,
+                        explanation TEXT NOT NULL,
+                        admin_notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
+                )
+                db.execute(create_table_sql)
+                db.commit()
+                logger.info("Featured games table created successfully")
+
+                # Return empty list since table was just created
+                return {"status": "success", "featured_games": []}
+            except Exception as create_error:
+                logger.error(f"Failed to create featured games table: {create_error}")
+
         return {"status": "error", "featured_games": []}
 
 
@@ -3640,6 +3670,74 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
         }
     except Exception as e:
         logger.error(f"Error setting featured games: {e}")
+
+        # If the error is about table not existing, try to create it and retry
+        if "featured_games" in str(e) and "does not exist" in str(e):
+            try:
+                logger.info("Featured games table doesn't exist, creating it...")
+                # Create featured_games table
+                create_table_sql = text(
+                    """
+                    CREATE TABLE IF NOT EXISTS featured_games (
+                        id SERIAL PRIMARY KEY,
+                        game_id VARCHAR(100) NOT NULL,
+                        home_team VARCHAR(100) NOT NULL,
+                        away_team VARCHAR(100) NOT NULL,
+                        start_time TIMESTAMP NOT NULL,
+                        sport_key VARCHAR(50) NOT NULL,
+                        explanation TEXT NOT NULL,
+                        admin_notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """
+                )
+                db.execute(create_table_sql)
+                db.commit()
+                logger.info("Featured games table created successfully")
+
+                # Retry the original operation
+                featured_games_data = request.get("featured_games", [])
+
+                # Clear existing featured games (will be empty since table just created)
+                db.execute(text("DELETE FROM featured_games"))
+
+                # Insert new featured games
+                for game_data in featured_games_data:
+                    insert_query = text(
+                        """
+                        INSERT INTO featured_games (
+                            game_id, home_team, away_team, start_time,
+                            sport_key, explanation, admin_notes, created_at
+                        ) VALUES (
+                            :game_id, :home_team, :away_team, :start_time,
+                            :sport_key, :explanation, :admin_notes, NOW()
+                        )
+                    """
+                    )
+
+                    db.execute(
+                        insert_query,
+                        {
+                            "game_id": game_data.get("game_id"),
+                            "home_team": game_data.get("home_team"),
+                            "away_team": game_data.get("away_team"),
+                            "start_time": game_data.get("start_time"),
+                            "sport_key": game_data.get("sport_key", "americanfootball_nfl"),
+                            "explanation": game_data.get("explanation", ""),
+                            "admin_notes": game_data.get("admin_notes", ""),
+                        },
+                    )
+
+                db.commit()
+
+                return {
+                    "status": "success",
+                    "message": f"Featured games table created and updated with {len(featured_games_data)} games",
+                    "count": len(featured_games_data),
+                }
+            except Exception as create_error:
+                logger.error(f"Failed to create featured games table: {create_error}")
+
         return {
             "status": "error",
             "message": f"Failed to update featured games: {str(e)}",
