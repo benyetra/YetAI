@@ -3550,30 +3550,38 @@ async def get_featured_games(db=Depends(get_db)):
         from sqlalchemy import text
 
         # First, try to get featured games from database
-        query = text("""
+        query = text(
+            """
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation, admin_notes, created_at
             FROM featured_games
             ORDER BY created_at DESC
-        """)
+        """
+        )
 
         result = db.execute(query)
         rows = result.fetchall()
 
         featured_games = []
         for row in rows:
-            featured_games.append({
-                "id": row.game_id,
-                "game_id": row.game_id,
-                "home_team": row.home_team,
-                "away_team": row.away_team,
-                "start_time": row.start_time.isoformat() if row.start_time else None,
-                "commence_time": row.start_time.isoformat() if row.start_time else None,
-                "sport_key": row.sport_key,
-                "status": "scheduled",
-                "explanation": row.explanation,
-                "admin_notes": row.admin_notes
-            })
+            featured_games.append(
+                {
+                    "id": row.game_id,
+                    "game_id": row.game_id,
+                    "home_team": row.home_team,
+                    "away_team": row.away_team,
+                    "start_time": (
+                        row.start_time.isoformat() if row.start_time else None
+                    ),
+                    "commence_time": (
+                        row.start_time.isoformat() if row.start_time else None
+                    ),
+                    "sport_key": row.sport_key,
+                    "status": "scheduled",
+                    "explanation": row.explanation,
+                    "admin_notes": row.admin_notes,
+                }
+            )
 
         # If no featured games in database, return empty
         if not featured_games:
@@ -3598,7 +3606,8 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
 
         # Insert new featured games
         for game_data in featured_games_data:
-            insert_query = text("""
+            insert_query = text(
+                """
                 INSERT INTO featured_games (
                     game_id, home_team, away_team, start_time,
                     sport_key, explanation, admin_notes, created_at
@@ -3606,28 +3615,35 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
                     :game_id, :home_team, :away_team, :start_time,
                     :sport_key, :explanation, :admin_notes, NOW()
                 )
-            """)
+            """
+            )
 
-            db.execute(insert_query, {
-                "game_id": game_data.get("game_id"),
-                "home_team": game_data.get("home_team"),
-                "away_team": game_data.get("away_team"),
-                "start_time": game_data.get("start_time"),
-                "sport_key": game_data.get("sport_key", "americanfootball_nfl"),
-                "explanation": game_data.get("explanation", ""),
-                "admin_notes": game_data.get("admin_notes", "")
-            })
+            db.execute(
+                insert_query,
+                {
+                    "game_id": game_data.get("game_id"),
+                    "home_team": game_data.get("home_team"),
+                    "away_team": game_data.get("away_team"),
+                    "start_time": game_data.get("start_time"),
+                    "sport_key": game_data.get("sport_key", "americanfootball_nfl"),
+                    "explanation": game_data.get("explanation", ""),
+                    "admin_notes": game_data.get("admin_notes", ""),
+                },
+            )
 
         db.commit()
 
         return {
             "status": "success",
             "message": f"Featured games updated with {len(featured_games_data)} games",
-            "count": len(featured_games_data)
+            "count": len(featured_games_data),
         }
     except Exception as e:
         logger.error(f"Error setting featured games: {e}")
-        return {"status": "error", "message": f"Failed to update featured games: {str(e)}"}
+        return {
+            "status": "error",
+            "message": f"Failed to update featured games: {str(e)}",
+        }
 
 
 @app.get("/api/insights/today")
@@ -5590,7 +5606,8 @@ async def setup_featured_games_table(db=Depends(get_db)):
         from sqlalchemy import text
 
         # Create featured_games table
-        create_table_sql = text("""
+        create_table_sql = text(
+            """
             CREATE TABLE IF NOT EXISTS featured_games (
                 id SERIAL PRIMARY KEY,
                 game_id VARCHAR(255) NOT NULL,
@@ -5603,14 +5620,15 @@ async def setup_featured_games_table(db=Depends(get_db)):
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        """
+        )
 
         db.execute(create_table_sql)
         db.commit()
 
         return {
             "status": "success",
-            "message": "Featured games table created successfully"
+            "message": "Featured games table created successfully",
         }
     except Exception as e:
         logger.error(f"Error creating featured games table: {e}")
