@@ -37,6 +37,8 @@ interface Game {
   total?: number;
   over_under?: number;
   weather_impact?: 'low' | 'medium' | 'high';
+  explanation?: string;
+  admin_notes?: string;
 }
 
 interface Prediction {
@@ -185,6 +187,16 @@ const GameCard: React.FC<{
           </div>
           <p className="text-sm text-gray-800 font-medium">{prediction.recommendation}</p>
           <p className="text-xs text-gray-600 mt-1">{prediction.reasoning}</p>
+        </div>
+      )}
+
+      {game.explanation && (
+        <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-200">
+          <div className="flex items-center mb-2">
+            <Crown className="w-4 h-4 text-blue-600 mr-2" />
+            <span className="text-sm font-medium text-blue-900">Featured Game Analysis</span>
+          </div>
+          <p className="text-sm text-blue-800 leading-relaxed">{game.explanation}</p>
         </div>
       )}
       
