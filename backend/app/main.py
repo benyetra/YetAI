@@ -1759,7 +1759,7 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
     if is_service_available("betting_analytics_service"):
         try:
             analytics_service = get_service("betting_analytics_service")
-            stats = await analytics_service.get_user_stats(current_user["user_id"])
+            stats = await analytics_service.get_user_stats(current_user["id"])
             return {"status": "success", "stats": stats}
         except Exception as e:
             logger.error(f"Error fetching bet stats: {e}")
