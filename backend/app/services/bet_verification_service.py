@@ -284,15 +284,34 @@ class BetVerificationService:
             for game_id in remaining_game_ids:
                 # Try to get sport from database first
                 game = db.query(Game).filter(Game.id == game_id).first()
-                if game and game.sport_key:
+                if game and game.sport_key and game.sport_key != "unknown":
                     sport = game.sport_key
                 else:
                     # Try to infer sport from game ID pattern
                     sport = self._infer_sport_from_game_id(game_id)
 
-                if sport not in games_by_sport:
-                    games_by_sport[sport] = []
-                games_by_sport[sport].append(game_id)
+                # If sport is still unknown or default, try all major sports
+                if sport in ["unknown", "americanfootball_nfl"] and (
+                    not game or game.sport_key == "unknown"
+                ):
+                    # For unknown sports, add to multiple sport categories to try them all
+                    major_sports = [
+                        "baseball_mlb",
+                        "americanfootball_nfl",
+                        "basketball_nba",
+                        "icehockey_nhl",
+                    ]
+                    for try_sport in major_sports:
+                        if try_sport not in games_by_sport:
+                            games_by_sport[try_sport] = []
+                        games_by_sport[try_sport].append(game_id)
+                    logger.info(
+                        f"Game {game_id} has unknown sport, will try: {major_sports}"
+                    )
+                else:
+                    if sport not in games_by_sport:
+                        games_by_sport[sport] = []
+                    games_by_sport[sport].append(game_id)
         finally:
             db.close()
 
