@@ -3680,6 +3680,7 @@ async def restart_scheduler():
 
         # Wait a moment
         import asyncio
+
         await asyncio.sleep(2)
 
         # Start scheduler
