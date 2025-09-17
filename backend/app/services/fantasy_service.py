@@ -411,31 +411,146 @@ class FantasyService:
         return sorted(players, key=lambda p: p.get("projected_points", 0), reverse=True)
     
     def _generate_basic_projection(self, player: Dict, week: int) -> Dict:
-        """Generate basic projection when detailed data isn't available"""
+        """Generate analytics-driven projection using real performance data"""
+        position = player.get("position", "")
+        player_id = player.get("player_id")
+        player_name = player.get("name", "Unknown Player")
+
+        # Try to get recent analytics data for the player
+        recent_analytics = None
+        if player_id:
+            # Get last 4 weeks of analytics data
+            from app.models.fantasy_models import PlayerAnalytics
+            recent_analytics = self.db.query(PlayerAnalytics).filter(
+                PlayerAnalytics.player_id == player_id,
+                PlayerAnalytics.season == 2025,
+                PlayerAnalytics.week >= max(1, week - 4)
+            ).order_by(PlayerAnalytics.week.desc()).limit(4).all()
+
+        if recent_analytics and len(recent_analytics) >= 2:
+            # Use real analytics data to generate projection
+            return self._generate_analytics_based_projection(player, recent_analytics, week)
+        else:
+            # Fallback to enhanced baseline with league context
+            return self._generate_enhanced_baseline_projection(player, week)
+
+    def _generate_analytics_based_projection(self, player: Dict, analytics_data, week: int) -> Dict:
+        """Generate projection based on real analytics data"""
+        position = player.get("position", "")
+
+        # Calculate recent performance metrics
+        recent_points = [a.ppr_points for a in analytics_data if a.ppr_points]
+        avg_points = sum(recent_points) / len(recent_points) if recent_points else 0
+
+        # Calculate trend (improving/declining)
+        if len(recent_points) >= 3:
+            trend_score = (recent_points[0] + recent_points[1]) / 2 - (recent_points[-2] + recent_points[-1]) / 2
+        else:
+            trend_score = 0
+
+        # Usage metrics for confidence
+        avg_snap_pct = sum(a.snap_percentage for a in analytics_data if a.snap_percentage) / len(analytics_data)
+        avg_target_share = sum(a.target_share for a in analytics_data if a.target_share) / len(analytics_data) if position in ['WR', 'TE', 'RB'] else 0
+
+        # Efficiency metrics
+        efficiency_scores = []
+        for a in analytics_data:
+            if a.points_per_snap and a.points_per_snap > 0:
+                efficiency_scores.append(a.points_per_snap)
+        avg_efficiency = sum(efficiency_scores) / len(efficiency_scores) if efficiency_scores else 0
+
+        # Calculate consistency (lower variance = higher consistency)
+        consistency_score = 100 - (max(recent_points) - min(recent_points)) * 2 if len(recent_points) > 1 else 70
+
+        # Project points with trend adjustment
+        projected_points = avg_points + (trend_score * 0.3)  # 30% weight on trend
+
+        # Usage-based confidence adjustment
+        confidence = 70  # Base confidence
+        if avg_snap_pct >= 80:
+            confidence += 15  # High snap share = more predictable
+        elif avg_snap_pct >= 60:
+            confidence += 10
+        elif avg_snap_pct < 40:
+            confidence -= 15  # Low snap share = less predictable
+
+        if position in ['WR', 'TE', 'RB'] and avg_target_share >= 0.2:
+            confidence += 10  # High target share
+        elif position in ['WR', 'TE'] and avg_target_share < 0.1:
+            confidence -= 10  # Low target share for pass catchers
+
+        # Consistency bonus
+        if consistency_score >= 90:
+            confidence += 8
+        elif consistency_score <= 60:
+            confidence -= 8
+
+        # Generate reasoning based on analytics
+        reasoning_parts = []
+
+        if trend_score > 1:
+            reasoning_parts.append("trending up")
+        elif trend_score < -1:
+            reasoning_parts.append("trending down")
+        else:
+            reasoning_parts.append("stable recent form")
+
+        if avg_snap_pct >= 80:
+            reasoning_parts.append(f"high usage ({avg_snap_pct:.0f}% snaps)")
+        elif avg_snap_pct < 50:
+            reasoning_parts.append(f"limited usage ({avg_snap_pct:.0f}% snaps)")
+
+        if position in ['WR', 'TE', 'RB'] and avg_target_share >= 0.15:
+            reasoning_parts.append(f"strong target share ({avg_target_share:.1%})")
+        elif position in ['WR', 'TE'] and avg_target_share < 0.08:
+            reasoning_parts.append("limited target share")
+
+        if consistency_score >= 85:
+            reasoning_parts.append("highly consistent")
+        elif consistency_score <= 65:
+            reasoning_parts.append("volatile scorer")
+
+        reasoning = f"Analytics-based: {', '.join(reasoning_parts)}"
+
+        return {
+            "projected_points": round(max(0, projected_points), 1),
+            "confidence": min(95, max(30, int(confidence))),
+            "reasoning": reasoning,
+            "analytics_data": {
+                "avg_recent_points": round(avg_points, 1),
+                "trend_score": round(trend_score, 1),
+                "snap_percentage": round(avg_snap_pct, 1),
+                "target_share": round(avg_target_share, 3) if avg_target_share else None,
+                "consistency": round(consistency_score, 1)
+            }
+        }
+
+    def _generate_enhanced_baseline_projection(self, player: Dict, week: int) -> Dict:
+        """Enhanced baseline projection with improved logic"""
         position = player.get("position", "")
         player_name = player.get("name", "Unknown Player")
-        
-        # Position-based baseline projections
+
+        # More realistic baseline projections based on 2024 NFL averages
         baseline_projections = {
-            "QB": {"points": 18, "floor": 12, "ceiling": 28},
-            "RB": {"points": 12, "floor": 6, "ceiling": 22},
-            "WR": {"points": 11, "floor": 5, "ceiling": 25},
-            "TE": {"points": 8, "floor": 3, "ceiling": 18},
-            "K": {"points": 7, "floor": 2, "ceiling": 15},
-            "DEF": {"points": 8, "floor": 0, "ceiling": 20}
+            "QB": {"points": 16.5, "floor": 8, "ceiling": 32, "variance": 0.25},
+            "RB": {"points": 11.2, "floor": 3, "ceiling": 28, "variance": 0.35},
+            "WR": {"points": 10.8, "floor": 2, "ceiling": 35, "variance": 0.40},
+            "TE": {"points": 7.8, "floor": 1, "ceiling": 25, "variance": 0.30},
+            "K": {"points": 7.5, "floor": 0, "ceiling": 18, "variance": 0.20},
+            "DEF": {"points": 8.2, "floor": -2, "ceiling": 25, "variance": 0.35}
         }
-        
-        baseline = baseline_projections.get(position, {"points": 8, "floor": 0, "ceiling": 15})
-        
-        # Add some variance based on player tier (this could be enhanced with real data)
-        import random
-        variance = random.uniform(-0.2, 0.2)  # ±20% variance
-        projected_points = max(baseline["floor"], baseline["points"] * (1 + variance))
-        
+
+        baseline = baseline_projections.get(position, {"points": 8, "floor": 0, "ceiling": 15, "variance": 0.3})
+
+        # Add realistic variance instead of random
+        variance_factor = baseline["variance"]
+        projected_points = baseline["points"] * (1 + ((week % 3 - 1) * variance_factor * 0.1))  # Week-based variance
+        projected_points = max(baseline["floor"], min(baseline["ceiling"], projected_points))
+
         return {
             "projected_points": round(projected_points, 1),
-            "confidence": 65,  # Medium confidence for basic projections
-            "reasoning": f"Week {week} projection based on position average"
+            "confidence": 50,  # Lower confidence for baseline projections
+            "reasoning": f"Position baseline for {position} (no recent analytics available)"
         }
     
     def _create_position_recommendations(self, league_id: int, league_name: str, 
@@ -1768,3 +1883,425 @@ class FantasyService:
             return 'half_ppr'
         else:
             return 'standard'
+
+    # ============================================================================
+    # COMPREHENSIVE TEAM ANALYTICS
+    # ============================================================================
+
+    async def get_team_analytics(
+        self,
+        user_id: int,
+        league_id: str,
+        season: int = 2025
+    ) -> Dict[str, Any]:
+        """Get comprehensive analytics for all teams in a league"""
+        try:
+            # Get league and verify user access
+            league = self.db.query(FantasyLeague).filter(
+                FantasyLeague.sleeper_league_id == league_id
+            ).first()
+
+            if not league:
+                return {"error": "League not found"}
+
+            # Get user's team
+            user_team = self.db.query(FantasyTeam).filter(
+                FantasyTeam.league_id == league.id,
+                FantasyTeam.user_id == user_id
+            ).first()
+
+            if not user_team:
+                return {"error": "User not found in this league"}
+
+            # Get comprehensive analytics using the enhanced Trade Analyzer service
+            from app.services.trade_analyzer_service import TradeAnalyzerService
+            trade_analyzer = TradeAnalyzerService(self.db)
+
+            # Get analytics for user's team
+            user_team_analytics = await trade_analyzer.get_comprehensive_team_analytics(
+                user_team.id, season
+            )
+
+            # Get analytics for all other teams in the league
+            all_teams = self.db.query(FantasyTeam).filter(
+                FantasyTeam.league_id == league.id
+            ).all()
+
+            league_analytics = []
+            for team in all_teams:
+                team_analytics = await trade_analyzer.get_comprehensive_team_analytics(
+                    team.id, season
+                )
+
+                # Add team info
+                team_analytics["team_name"] = team.name
+                team_analytics["team_id"] = team.id
+                team_analytics["is_user_team"] = team.id == user_team.id
+
+                league_analytics.append(team_analytics)
+
+            # Calculate league-wide insights
+            league_insights = self._calculate_league_insights(league_analytics)
+
+            # Determine user team's competitive position
+            competitive_position = self._analyze_competitive_position(
+                user_team_analytics, league_analytics
+            )
+
+            # Generate personalized recommendations
+            recommendations = self._generate_team_recommendations(
+                user_team_analytics, competitive_position, league_insights
+            )
+
+            return {
+                "success": True,
+                "user_team": {
+                    "analytics": user_team_analytics,
+                    "competitive_position": competitive_position,
+                    "recommendations": recommendations
+                },
+                "league_analytics": league_analytics,
+                "league_insights": league_insights,
+                "season": season,
+                "generated_at": datetime.now().isoformat()
+            }
+
+        except Exception as e:
+            print(f"Error in get_team_analytics: {str(e)}")
+            return {"error": "Failed to generate team analytics"}
+
+    def _calculate_league_insights(self, league_analytics: List[Dict]) -> Dict[str, Any]:
+        """Calculate insights across all teams in the league"""
+        try:
+            if not league_analytics:
+                return {}
+
+            # Extract metrics from all teams
+            overall_grades = []
+            position_grades = {"QB": [], "RB": [], "WR": [], "TE": []}
+            consistency_scores = []
+            efficiency_grades = []
+
+            for team in league_analytics:
+                # Overall grades
+                overall_grade = team.get("overall_team_grade", "F")
+                overall_grades.append(overall_grade)
+
+                # Position grades
+                pos_analytics = team.get("position_analytics", {})
+                for position in position_grades.keys():
+                    if position in pos_analytics:
+                        grade = pos_analytics[position].get("position_grade", "F")
+                        position_grades[position].append(grade)
+
+                # Consistency scores
+                consistency = team.get("team_consistency", {}).get("overall_consistency", 0)
+                consistency_scores.append(consistency)
+
+                # Efficiency grades
+                efficiency = team.get("efficiency_benchmarks", {}).get("overall_efficiency_grade", "F")
+                efficiency_grades.append(efficiency)
+
+            # Calculate league averages and distributions
+            league_insights = {
+                "league_strength_distribution": self._analyze_grade_distribution(overall_grades),
+                "position_competitiveness": self._analyze_position_competitiveness(position_grades),
+                "league_consistency_average": sum(consistency_scores) / len(consistency_scores) if consistency_scores else 0,
+                "most_competitive_positions": self._identify_competitive_positions(position_grades),
+                "league_efficiency_trends": self._analyze_efficiency_trends(efficiency_grades),
+                "championship_contenders": self._identify_championship_contenders(league_analytics),
+                "rebuilding_teams": self._identify_rebuilding_teams(league_analytics)
+            }
+
+            return league_insights
+
+        except Exception as e:
+            print(f"Error calculating league insights: {str(e)}")
+            return {}
+
+    def _analyze_competitive_position(
+        self,
+        user_team_analytics: Dict,
+        league_analytics: List[Dict]
+    ) -> Dict[str, Any]:
+        """Analyze user team's competitive position in the league"""
+        try:
+            if not league_analytics:
+                return {}
+
+            # Convert grades to numeric for comparison
+            grade_values = {'A+': 97, 'A': 93, 'A-': 90, 'B+': 87, 'B': 83, 'B-': 80,
+                           'C+': 77, 'C': 73, 'C-': 70, 'D': 60, 'F': 50}
+
+            # Get user team metrics
+            user_grade = user_team_analytics.get("overall_team_grade", "F")
+            user_grade_value = grade_values.get(user_grade, 50)
+            user_consistency = user_team_analytics.get("team_consistency", {}).get("overall_consistency", 0)
+
+            # Compare to league
+            league_grades = [grade_values.get(team.get("overall_team_grade", "F"), 50) for team in league_analytics]
+            league_consistencies = [team.get("team_consistency", {}).get("overall_consistency", 0) for team in league_analytics]
+
+            # Calculate rankings
+            better_teams = sum(1 for grade in league_grades if grade > user_grade_value)
+            league_rank = better_teams + 1
+
+            # Analyze strengths vs league
+            relative_strengths = []
+            relative_weaknesses = []
+
+            user_positions = user_team_analytics.get("position_analytics", {})
+            for position, analytics in user_positions.items():
+                user_pos_grade = grade_values.get(analytics.get("position_grade", "F"), 50)
+
+                # Compare to league average for this position
+                league_pos_grades = []
+                for team in league_analytics:
+                    team_pos = team.get("position_analytics", {}).get(position, {})
+                    league_pos_grades.append(grade_values.get(team_pos.get("position_grade", "F"), 50))
+
+                if league_pos_grades:
+                    league_pos_avg = sum(league_pos_grades) / len(league_pos_grades)
+
+                    if user_pos_grade > league_pos_avg + 10:
+                        relative_strengths.append(f"{position} depth above league average")
+                    elif user_pos_grade < league_pos_avg - 10:
+                        relative_weaknesses.append(f"{position} depth below league average")
+
+            return {
+                "league_rank": league_rank,
+                "total_teams": len(league_analytics),
+                "percentile": round((len(league_analytics) - league_rank + 1) / len(league_analytics) * 100, 1),
+                "competitive_tier": self._determine_competitive_tier(league_rank, len(league_analytics)),
+                "relative_strengths": relative_strengths,
+                "relative_weaknesses": relative_weaknesses,
+                "championship_odds": self._estimate_championship_odds_from_rank(league_rank, len(league_analytics)),
+                "playoff_probability": self._estimate_playoff_probability(league_rank, len(league_analytics))
+            }
+
+        except Exception as e:
+            print(f"Error analyzing competitive position: {str(e)}")
+            return {}
+
+    def _generate_team_recommendations(
+        self,
+        user_team_analytics: Dict,
+        competitive_position: Dict,
+        league_insights: Dict
+    ) -> List[Dict[str, str]]:
+        """Generate personalized recommendations for team improvement"""
+        recommendations = []
+
+        try:
+            # Strategy recommendations based on competitive position
+            league_rank = competitive_position.get("league_rank", 999)
+            total_teams = competitive_position.get("total_teams", 12)
+
+            if league_rank <= 3:
+                recommendations.append({
+                    "category": "Strategy",
+                    "title": "Championship Push",
+                    "description": "You're in contention! Focus on consolidating talent and targeting proven playoff performers.",
+                    "priority": "High"
+                })
+            elif league_rank >= total_teams - 2:
+                recommendations.append({
+                    "category": "Strategy",
+                    "title": "Rebuild Focus",
+                    "description": "Consider trading aging assets for young talent and future draft picks.",
+                    "priority": "High"
+                })
+            else:
+                recommendations.append({
+                    "category": "Strategy",
+                    "title": "Competitive Balance",
+                    "description": "Make targeted improvements while maintaining long-term flexibility.",
+                    "priority": "Medium"
+                })
+
+            # Position-specific recommendations
+            weaknesses = user_team_analytics.get("strengths_weaknesses", {}).get("key_weaknesses", [])
+            for weakness in weaknesses[:2]:  # Top 2 weaknesses
+                if "QB" in weakness:
+                    recommendations.append({
+                        "category": "Roster",
+                        "title": "Quarterback Upgrade",
+                        "description": "Consider targeting a more consistent QB option through trade or waivers.",
+                        "priority": "High"
+                    })
+                elif "RB" in weakness:
+                    recommendations.append({
+                        "category": "Roster",
+                        "title": "Running Back Depth",
+                        "description": "Look for RBs with increasing snap share and target usage trends.",
+                        "priority": "Medium"
+                    })
+                elif "WR" in weakness:
+                    recommendations.append({
+                        "category": "Roster",
+                        "title": "Wide Receiver Corps",
+                        "description": "Target receivers with high target share and air yards metrics.",
+                        "priority": "Medium"
+                    })
+
+            # Consistency recommendations
+            consistency = user_team_analytics.get("team_consistency", {}).get("overall_consistency", 0)
+            if consistency < 60:
+                recommendations.append({
+                    "category": "Performance",
+                    "title": "Improve Consistency",
+                    "description": "Focus on players with lower variance and more predictable snap counts.",
+                    "priority": "Medium"
+                })
+
+            # Usage distribution recommendations
+            usage_dist = user_team_analytics.get("usage_distribution", {})
+            dependencies = usage_dist.get("team_dependencies", [])
+            if dependencies:
+                recommendations.append({
+                    "category": "Risk Management",
+                    "title": "Reduce Player Dependency",
+                    "description": "Consider acquiring backup options for your highest-usage players.",
+                    "priority": "Low"
+                })
+
+            return recommendations[:5]  # Limit to top 5 recommendations
+
+        except Exception as e:
+            print(f"Error generating recommendations: {str(e)}")
+            return []
+
+    def _analyze_grade_distribution(self, grades: List[str]) -> Dict[str, Any]:
+        """Analyze distribution of team grades in the league"""
+        if not grades:
+            return {}
+
+        grade_counts = {}
+        for grade in grades:
+            grade_counts[grade] = grade_counts.get(grade, 0) + 1
+
+        return {
+            "grade_distribution": grade_counts,
+            "most_common_grade": max(grade_counts.items(), key=lambda x: x[1])[0] if grade_counts else "F",
+            "league_strength": "High" if sum(1 for g in grades if g in ['A+', 'A', 'A-']) > len(grades) * 0.4 else "Average"
+        }
+
+    def _analyze_position_competitiveness(self, position_grades: Dict[str, List[str]]) -> Dict[str, str]:
+        """Analyze competitiveness level for each position"""
+        competitiveness = {}
+
+        for position, grades in position_grades.items():
+            if not grades:
+                competitiveness[position] = "Unknown"
+                continue
+
+            high_grades = sum(1 for g in grades if g in ['A+', 'A', 'A-', 'B+'])
+            competitiveness_ratio = high_grades / len(grades)
+
+            if competitiveness_ratio > 0.6:
+                competitiveness[position] = "Highly Competitive"
+            elif competitiveness_ratio > 0.3:
+                competitiveness[position] = "Moderately Competitive"
+            else:
+                competitiveness[position] = "Wide Open"
+
+        return competitiveness
+
+    def _identify_competitive_positions(self, position_grades: Dict[str, List[str]]) -> List[str]:
+        """Identify which positions are most competitive in the league"""
+        competitiveness_scores = {}
+
+        for position, grades in position_grades.items():
+            if grades:
+                grade_values = {'A+': 97, 'A': 93, 'A-': 90, 'B+': 87, 'B': 83, 'B-': 80,
+                               'C+': 77, 'C': 73, 'C-': 70, 'D': 60, 'F': 50}
+                avg_score = sum(grade_values.get(g, 50) for g in grades) / len(grades)
+                competitiveness_scores[position] = avg_score
+
+        # Return positions sorted by competitiveness
+        sorted_positions = sorted(competitiveness_scores.items(), key=lambda x: x[1], reverse=True)
+        return [pos for pos, score in sorted_positions[:2]]  # Top 2 most competitive
+
+    def _analyze_efficiency_trends(self, efficiency_grades: List[str]) -> Dict[str, Any]:
+        """Analyze league-wide efficiency trends"""
+        if not efficiency_grades:
+            return {}
+
+        high_efficiency_count = sum(1 for grade in efficiency_grades if grade in ['A', 'B'])
+
+        return {
+            "league_efficiency_level": "High" if high_efficiency_count > len(efficiency_grades) * 0.5 else "Moderate",
+            "efficient_teams_count": high_efficiency_count,
+            "efficiency_distribution": {grade: efficiency_grades.count(grade) for grade in set(efficiency_grades)}
+        }
+
+    def _identify_championship_contenders(self, league_analytics: List[Dict]) -> List[Dict[str, str]]:
+        """Identify teams likely to contend for championship"""
+        contenders = []
+
+        for team in league_analytics:
+            overall_grade = team.get("overall_team_grade", "F")
+            consistency = team.get("team_consistency", {}).get("overall_consistency", 0)
+
+            if overall_grade in ['A+', 'A', 'A-'] and consistency > 70:
+                contenders.append({
+                    "team_name": team.get("team_name", "Unknown"),
+                    "reason": f"{overall_grade} grade with {consistency:.1f} consistency"
+                })
+
+        return contenders
+
+    def _identify_rebuilding_teams(self, league_analytics: List[Dict]) -> List[Dict[str, str]]:
+        """Identify teams that should consider rebuilding"""
+        rebuilding = []
+
+        for team in league_analytics:
+            overall_grade = team.get("overall_team_grade", "F")
+            weaknesses = team.get("strengths_weaknesses", {}).get("key_weaknesses", [])
+
+            if overall_grade in ['D', 'F'] and len(weaknesses) >= 3:
+                rebuilding.append({
+                    "team_name": team.get("team_name", "Unknown"),
+                    "reason": f"{overall_grade} grade with {len(weaknesses)} major weaknesses"
+                })
+
+        return rebuilding
+
+    def _determine_competitive_tier(self, rank: int, total_teams: int) -> str:
+        """Determine competitive tier based on league rank"""
+        percentile = (total_teams - rank + 1) / total_teams
+
+        if percentile >= 0.8:
+            return "Elite"
+        elif percentile >= 0.6:
+            return "Contender"
+        elif percentile >= 0.4:
+            return "Competitive"
+        elif percentile >= 0.2:
+            return "Developing"
+        else:
+            return "Rebuilding"
+
+    def _estimate_championship_odds_from_rank(self, rank: int, total_teams: int) -> float:
+        """Estimate championship odds based on league rank"""
+        if rank == 1:
+            return 25.0
+        elif rank <= 3:
+            return 15.0
+        elif rank <= total_teams // 2:
+            return 8.0
+        else:
+            return 2.0
+
+    def _estimate_playoff_probability(self, rank: int, total_teams: int) -> float:
+        """Estimate playoff probability based on league rank"""
+        playoff_spots = max(4, total_teams // 2)  # Assume at least 4 playoff spots
+
+        if rank <= playoff_spots // 2:
+            return 85.0
+        elif rank <= playoff_spots:
+            return 65.0
+        elif rank <= playoff_spots + 2:
+            return 35.0
+        else:
+            return 15.0
