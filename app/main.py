@@ -677,8 +677,19 @@ async def get_api_status():
     }
 
 @app.post("/api/admin/populate-analytics")
-async def populate_analytics():
+async def populate_analytics(db = Depends(get_db)):
     """Populate production database with historical NFL analytics data"""
+    try:
+        from simple_populate_endpoint import populate_analytics_simple
+        result = await populate_analytics_simple(db)
+        return result
+    except Exception as e:
+        logger.error(f"Analytics population failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to populate analytics data: {str(e)}")
+
+@app.post("/api/admin/populate-analytics-old")
+async def populate_analytics_old():
+    """Old complex endpoint - kept for reference"""
     try:
         # Import the population script logic
         import asyncio
