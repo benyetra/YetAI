@@ -29,7 +29,9 @@ class BettingAnalyticsService:
             try:
                 # Get all user bets
                 user_bets = db.query(Bet).filter(Bet.user_id == user_id).all()
-                parlay_bets = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
+                parlay_bets = (
+                    db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
+                )
 
                 if not user_bets and not parlay_bets:
                     return {
@@ -64,9 +66,7 @@ class BettingAnalyticsService:
                 win_rate = (len(won_bets) / resolved_bets) if resolved_bets > 0 else 0.0
 
                 # Calculate total winnings and ROI
-                total_winnings = sum(
-                    bet.result_amount or 0 for bet in won_bets
-                )
+                total_winnings = sum(bet.result_amount or 0 for bet in won_bets)
                 profit = total_winnings - sum(bet.amount for bet in won_bets)
                 roi = (profit / total_wagered) if total_wagered > 0 else 0.0
 
@@ -84,7 +84,9 @@ class BettingAnalyticsService:
                 for bet in user_bets:
                     sport = bet.sport or "Unknown"
                     sport_counts[sport] = sport_counts.get(sport, 0) + 1
-                favorite_sport = max(sport_counts, key=sport_counts.get) if sport_counts else "N/A"
+                favorite_sport = (
+                    max(sport_counts, key=sport_counts.get) if sport_counts else "N/A"
+                )
                 favorite_sport = self._format_sport_name(favorite_sport)
 
                 # Find favorite bet type
@@ -92,7 +94,11 @@ class BettingAnalyticsService:
                 for bet in user_bets:
                     bet_type = bet.bet_type or "Unknown"
                     bet_type_counts[bet_type] = bet_type_counts.get(bet_type, 0) + 1
-                favorite_bet_type = max(bet_type_counts, key=bet_type_counts.get) if bet_type_counts else "N/A"
+                favorite_bet_type = (
+                    max(bet_type_counts, key=bet_type_counts.get)
+                    if bet_type_counts
+                    else "N/A"
+                )
                 favorite_bet_type = self._format_bet_type_name(favorite_bet_type)
 
                 # Calculate current streak
@@ -165,7 +171,9 @@ class BettingAnalyticsService:
         streak_type = "win" if current_status == "won" else "loss"
         return {"type": streak_type, "count": streak_count}
 
-    async def _calculate_monthly_summary(self, user_id: int, db: Session) -> Dict[str, Any]:
+    async def _calculate_monthly_summary(
+        self, user_id: int, db: Session
+    ) -> Dict[str, Any]:
         """Calculate monthly summary (last 30 days)"""
         try:
             cutoff_date = datetime.now() - timedelta(days=30)
@@ -178,7 +186,11 @@ class BettingAnalyticsService:
 
             monthly_parlays = (
                 db.query(ParlayBet)
-                .filter(and_(ParlayBet.user_id == user_id, ParlayBet.placed_at >= cutoff_date))
+                .filter(
+                    and_(
+                        ParlayBet.user_id == user_id, ParlayBet.placed_at >= cutoff_date
+                    )
+                )
                 .all()
             )
 
@@ -190,7 +202,9 @@ class BettingAnalyticsService:
             monthly_winnings = sum(bet.result_amount or 0 for bet in won_monthly)
 
             monthly_profit = monthly_winnings - sum(bet.amount for bet in won_monthly)
-            monthly_roi = (monthly_profit / monthly_wagered) if monthly_wagered > 0 else 0.0
+            monthly_roi = (
+                (monthly_profit / monthly_wagered) if monthly_wagered > 0 else 0.0
+            )
 
             return {
                 "bets": monthly_bets_count,

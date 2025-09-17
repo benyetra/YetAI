@@ -1786,7 +1786,9 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
 
     if is_service_available("betting_analytics_service"):
         try:
-            logger.info("Betting analytics service is available, attempting to get stats")
+            logger.info(
+                "Betting analytics service is available, attempting to get stats"
+            )
             analytics_service = get_service("betting_analytics_service")
             stats = await analytics_service.get_user_stats(user_id)
             logger.info(f"Successfully retrieved stats: {stats}")
@@ -1820,8 +1822,6 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
         },
         "message": "Mock betting statistics - analytics service unavailable",
     }
-
-
 
 
 @app.options("/api/bets/share")
