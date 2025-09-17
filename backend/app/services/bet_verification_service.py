@@ -87,6 +87,11 @@ class BetVerificationService:
         logger.info("Starting bet verification process")
 
         try:
+            # First, check for incorrectly settled bets and revert them
+            reverted_count = await self._revert_premature_settlements()
+            if reverted_count > 0:
+                logger.info(f"Reverted {reverted_count} prematurely settled bets back to pending")
+
             # Get all pending bets
             pending_bets = await self._get_pending_bets()
             pending_parlays = await self._get_pending_parlays()
@@ -224,6 +229,101 @@ class BetVerificationService:
         finally:
             db.close()
 
+    async def _revert_premature_settlements(self) -> int:
+        """
+        Check for bets that were prematurely settled (before game start time)
+        and revert them back to pending status
+
+        Returns:
+            Number of bets reverted
+        """
+        db = SessionLocal()
+        reverted_count = 0
+
+        try:
+            now = datetime.utcnow()
+
+            # Find settled bets where the game hasn't started yet
+            settled_bets = (
+                db.query(Bet)
+                .join(Game, Bet.game_id == Game.id)
+                .filter(
+                    and_(
+                        Bet.status.in_([BetStatus.WON, BetStatus.LOST]),
+                        Game.commence_time > now,  # Game hasn't started yet
+                    )
+                )
+                .all()
+            )
+
+            for bet in settled_bets:
+                game = db.query(Game).filter(Game.id == bet.game_id).first()
+                logger.warning(
+                    f"Reverting prematurely settled bet {bet.id}: "
+                    f"game {game.away_team} @ {game.home_team} "
+                    f"doesn't start until {game.commence_time} (now: {now})"
+                )
+
+                # Revert bet to pending
+                bet.status = BetStatus.PENDING
+                bet.result_amount = None
+                bet.settled_at = None
+
+                # Remove from bet history if exists
+                history_entry = db.query(BetHistory).filter(BetHistory.bet_id == bet.id).first()
+                if history_entry:
+                    db.delete(history_entry)
+
+                reverted_count += 1
+
+            # Do the same for parlay bets
+            settled_parlays = (
+                db.query(ParlayBet)
+                .filter(ParlayBet.status.in_([BetStatus.WON, BetStatus.LOST]))
+                .all()
+            )
+
+            for parlay in settled_parlays:
+                legs = db.query(Bet).filter(Bet.parlay_id == parlay.id).all()
+                should_revert = False
+
+                # Check if any leg game hasn't started
+                for leg in legs:
+                    game = db.query(Game).filter(Game.id == leg.game_id).first()
+                    if game and game.commence_time > now:
+                        should_revert = True
+                        logger.warning(
+                            f"Reverting prematurely settled parlay {parlay.id}: "
+                            f"leg game {game.away_team} @ {game.home_team} "
+                            f"doesn't start until {game.commence_time} (now: {now})"
+                        )
+                        break
+
+                if should_revert:
+                    # Revert parlay to pending
+                    parlay.status = BetStatus.PENDING
+                    parlay.result_amount = None
+                    parlay.settled_at = None
+
+                    # Revert all legs back to pending too
+                    for leg in legs:
+                        leg.status = BetStatus.PENDING
+                        leg.result_amount = None
+                        leg.settled_at = None
+
+                    reverted_count += 1
+
+            if reverted_count > 0:
+                db.commit()
+
+        except Exception as e:
+            logger.error(f"Error reverting premature settlements: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+        return reverted_count
+
     async def _get_game_results(self, game_ids: List[str]) -> Dict[str, GameResult]:
         """
         Fetch game results for specified game IDs from local database and The Odds API
@@ -238,14 +338,21 @@ class BetVerificationService:
         remaining_game_ids = []
 
         try:
+            now = datetime.utcnow()
             for game_id in game_ids:
                 game = db.query(Game).filter(Game.id == game_id).first()
-                if (
+
+                # Check if game is truly completed (status is final AND past start time)
+                game_started = game and game.commence_time and game.commence_time <= now
+                is_game_completed = (
                     game
                     and game.status.upper() in ["FINAL", "COMPLETED"]
                     and game.home_score is not None
                     and game.away_score is not None
-                ):
+                    and game_started  # Must be past the game start time
+                )
+
+                if is_game_completed:
                     # We have a completed game in our database
                     game_result = GameResult(
                         game_id=game.id,
@@ -260,11 +367,16 @@ class BetVerificationService:
                     )
                     game_results[game.id] = game_result
                     logger.info(
-                        f"Found completed game in database: {game.away_team} @ {game.home_team} - {game.away_score}-{game.home_score}"
+                        f"Found completed game in database: {game.away_team} @ {game.home_team} - {game.away_score}-{game.home_score} (started: {game_started})"
                     )
                 else:
                     # Need to check API for this game
                     remaining_game_ids.append(game_id)
+                    if game:
+                        logger.info(
+                            f"Game {game_id} not ready for verification: status={game.status}, "
+                            f"commence_time={game.commence_time}, now={now}, game_started={game_started}"
+                        )
         finally:
             db.close()
 
@@ -339,10 +451,21 @@ class BetVerificationService:
                 for score in scores:
                     matched_game_id = None
 
+                    # Check if game is actually completed and past start time
+                    now = datetime.utcnow()
+                    game_started = score.commence_time <= now
+                    is_truly_completed = score.completed and game_started
+
+                    logger.info(
+                        f"Game {score.id} ({score.away_team} @ {score.home_team}): "
+                        f"completed={score.completed}, commence_time={score.commence_time}, "
+                        f"now={now}, game_started={game_started}, is_truly_completed={is_truly_completed}"
+                    )
+
                     # First try direct ID match
-                    if score.id in sport_game_ids and score.completed:
+                    if score.id in sport_game_ids and is_truly_completed:
                         matched_game_id = score.id
-                    elif score.completed:
+                    elif is_truly_completed:
                         # Try team name matching for UUID game IDs
                         for game_id, game_info in games_info.items():
                             if (
