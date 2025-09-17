@@ -3571,10 +3571,14 @@ async def get_featured_games(db=Depends(get_db)):
                     "home_team": row.home_team,
                     "away_team": row.away_team,
                     "start_time": (
-                        row.start_time.isoformat() if row.start_time else None
+                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
+                        if row.start_time
+                        else None
                     ),
                     "commence_time": (
-                        row.start_time.isoformat() if row.start_time else None
+                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
+                        if row.start_time
+                        else None
                     ),
                     "sport_key": row.sport_key,
                     "status": "scheduled",

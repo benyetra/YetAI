@@ -147,7 +147,11 @@ const GameCard: React.FC<{
           {isFavorite && <span className="text-blue-600 text-xs font-medium">★ Favorite</span>}
         </div>
         <p className="text-xs text-gray-500">
-          {new Date(game.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          {new Date(game.start_time).toLocaleTimeString([], {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZoneName: 'short'
+          })}
         </p>
       </div>
 
@@ -328,37 +332,21 @@ const Dashboard: React.FC = () => {
             away_team: game.away_team || game.away_display_name || 'TBD',
             home_score: game.home_score,
             away_score: game.away_score,
-            status: game.status || 'upcoming',
+            status: game.status || 'scheduled',
             start_time: game.start_time || new Date().toISOString(),
-            spread: game.spread || Math.round((Math.random() * 14 - 7) * 2) / 2,
-            over_under: game.over_under || Math.round((45 + Math.random() * 20) * 2) / 2,
-            home_odds: game.home_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
-            away_odds: game.away_odds || (Math.random() > 0.5 ? -110 - Math.random() * 100 : 100 + Math.random() * 100),
-            weather_impact: ['low', 'medium', 'high'][Math.floor(Math.random() * 3)] as 'low' | 'medium' | 'high'
+            spread: game.spread || null,
+            over_under: game.over_under || null,
+            home_odds: game.home_odds || null,
+            away_odds: game.away_odds || null,
+            weather_impact: game.weather_impact || 'low',
+            explanation: game.explanation,
+            admin_notes: game.admin_notes
           })) || [];
           setGames(enhancedGames);
         }
 
-        // Mock predictions for demonstration - only create if games exist
-        const mockPredictions: Prediction[] = (enhancedGames && enhancedGames.length > 0) ? 
-          enhancedGames.slice(0, 3).map((game, index) => ({
-          id: `pred_${index}`,
-          game_id: game.id,
-          type: ['spread', 'moneyline', 'over_under'][index % 3] as 'spread' | 'moneyline' | 'over_under',
-          recommendation: [
-            `Take ${game.home_team} -3.5`,
-            `Bet ${game.away_team} moneyline`,
-            `Under ${game.over_under || 52.5}`
-          ][index % 3],
-          confidence: 75 + Math.random() * 20,
-          value_rating: 7 + Math.random() * 3,
-          reasoning: [
-            'Strong home field advantage and better recent form',
-            'Away team has favorable matchup against weak defense',
-            'Weather conditions favor under, both teams struggle in rain'
-          ][index % 3]
-        })) : [];
-        setPredictions(mockPredictions);
+        // For now, set empty predictions until we have real AI predictions
+        setPredictions([]);
 
         // Fetch AI insights for today's games
         try {
@@ -601,7 +589,7 @@ const Dashboard: React.FC = () => {
                   return (
                     <GameCard
                       key={game.id}
-                      game={getLiveGameData(game)}
+                      game={game}
                       prediction={prediction}
                       isFavorite={isFavorite}
                       onPlaceBet={handlePlaceBet}
@@ -625,7 +613,7 @@ const Dashboard: React.FC = () => {
                 return (
                   <GameCard
                     key={game.id}
-                    game={getLiveGameData(game)}
+                    game={game}
                     prediction={prediction}
                     isFavorite={isFavorite}
                     onPlaceBet={handlePlaceBet}
