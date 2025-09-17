@@ -310,9 +310,9 @@ class BetVerificationService:
                         game = db.query(Game).filter(Game.id == game_id).first()
                         if game:
                             games_info[game_id] = {
-                                'home_team': game.home_team,
-                                'away_team': game.away_team,
-                                'sport': game.sport_key
+                                "home_team": game.home_team,
+                                "away_team": game.away_team,
+                                "sport": game.sport_key,
                             }
                 finally:
                     db.close()
@@ -326,10 +326,14 @@ class BetVerificationService:
                     elif score.completed:
                         # Try team name matching for UUID game IDs
                         for game_id, game_info in games_info.items():
-                            if (game_info['home_team'] == score.home_team and
-                                game_info['away_team'] == score.away_team):
+                            if (
+                                game_info["home_team"] == score.home_team
+                                and game_info["away_team"] == score.away_team
+                            ):
                                 matched_game_id = game_id
-                                logger.info(f"Matched game by teams: {game_id} -> {score.id} ({score.away_team} @ {score.home_team})")
+                                logger.info(
+                                    f"Matched game by teams: {game_id} -> {score.id} ({score.away_team} @ {score.home_team})"
+                                )
                                 break
 
                     if matched_game_id:
@@ -347,7 +351,9 @@ class BetVerificationService:
                             total_score=(score.home_score or 0)
                             + (score.away_score or 0),
                         )
-                        game_results[matched_game_id] = game_result  # Key by our internal game_id
+                        game_results[matched_game_id] = (
+                            game_result  # Key by our internal game_id
+                        )
                         logger.info(
                             f"Game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score}"
                         )
