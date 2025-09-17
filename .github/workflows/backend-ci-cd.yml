@@ -167,7 +167,7 @@ jobs:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
         # Deploy using Railway CLI with token authentication and service specification
-        railway up --service backend
+        railway up --service backend --detach
 
     - name: Run deployment health check
       run: |
