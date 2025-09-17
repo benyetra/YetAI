@@ -2895,8 +2895,8 @@ export default function FantasyPage() {
                                 <td className="p-2 border border-blue-200 text-gray-700 font-medium">Rush Yds/Game</td>
                                 {comparisonData.players.map((player: any) => (
                                   <td key={player.player_id} className="text-center p-2 border border-blue-200">
-                                    {player.position === 'RB' && player.analytics?.rush_yards_per_game ? 
-                                      <span className="font-medium">
+                                    {player.position === 'RB' && player.analytics?.rush_yards_per_game ?
+                                      <span className={`font-medium ${player.analytics.rush_yards_per_game >= 80 ? 'text-green-600' : player.analytics.rush_yards_per_game >= 60 ? 'text-blue-600' : 'text-gray-600'}`}>
                                         {player.analytics.rush_yards_per_game.toFixed(1)}
                                       </span> : '--'}
                                   </td>
