@@ -18,7 +18,7 @@ import {
   Crown,
   Trash2,
   Calendar,
-  Football
+  Trophy
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 
@@ -947,6 +947,8 @@ export default function AdminPage() {
             </div>
           </div>
         )}
+          </>
+        )}
 
         {activeTab === 'featured' && (
           <div className="bg-white rounded-lg border border-gray-200 p-6">
@@ -1057,7 +1059,7 @@ export default function AdminPage() {
 
               {featuredGames.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
-                  <Football className="w-12 h-12 text-gray-300 mx-auto mb-3" />
+                  <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p>No featured games configured</p>
                   <p className="text-sm">Add your first featured game above</p>
                 </div>
