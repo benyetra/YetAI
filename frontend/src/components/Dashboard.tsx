@@ -289,17 +289,17 @@ const Dashboard: React.FC = () => {
         if (statsResponse.ok) {
           const statsData = await statsResponse.json();
           setStats({
-            total_predictions: statsData.personal_stats?.predictions_made || 25,
-            accuracy_rate: statsData.personal_stats?.accuracy_rate || 78.5,
-            profit_loss: typeof statsData.personal_stats?.total_profit === 'number' ? 
-                         statsData.personal_stats.total_profit : 125.50,
-            win_streak: 5
+            total_predictions: statsData.personal_stats?.predictions_made || 0,
+            accuracy_rate: statsData.personal_stats?.accuracy_rate || 0,
+            profit_loss: typeof statsData.personal_stats?.total_profit === 'number' ?
+                         statsData.personal_stats.total_profit : 0,
+            win_streak: statsData.personal_stats?.win_streak || 0
           });
         }
 
-        // Fetch games and personalized predictions
+        // Fetch featured games and personalized predictions
         const [gamesResponse, predictionsResponse] = await Promise.all([
-          fetch(getApiUrl('/api/games/nfl')),
+          fetch(getApiUrl('/api/admin/featured-games')),
           fetch(getApiUrl('/api/predictions/personalized'), {
             headers: { 'Authorization': `Bearer ${token}` }
           })
@@ -309,8 +309,8 @@ const Dashboard: React.FC = () => {
 
         if (gamesResponse.ok) {
           const gamesData = await gamesResponse.json();
-          // Mock enhance games with additional data
-          enhancedGames = gamesData.games?.map((game: any, index: number) => ({
+          // Process featured games
+          enhancedGames = gamesData.featured_games?.map((game: any, index: number) => ({
             id: game.id || `game_${index}`,
             home_team: game.home_team || game.home_display_name || 'TBD',
             away_team: game.away_team || game.away_display_name || 'TBD',
@@ -348,8 +348,17 @@ const Dashboard: React.FC = () => {
         })) : [];
         setPredictions(mockPredictions);
 
-        // Don't show mock AI insights to avoid fake data
-        setInsights([]);
+        // Fetch AI insights for today's games
+        try {
+          const insightsResponse = await fetch(getApiUrl('/api/insights/today'));
+          if (insightsResponse.ok) {
+            const insightsData = await insightsResponse.json();
+            setInsights(insightsData.insights || []);
+          }
+        } catch (error) {
+          console.error('Error fetching insights:', error);
+          setInsights([]);
+        }
 
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
@@ -531,11 +540,19 @@ const Dashboard: React.FC = () => {
                 <Brain className="w-5 h-5 mr-2 text-purple-600" />
                 AI Insights
               </h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {insights && insights.length > 0 && insights.map((insight, index) => (
-                  <AIInsightCard key={index} insight={insight} />
-                ))}
-              </div>
+              {insights && insights.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {insights.map((insight, index) => (
+                    <AIInsightCard key={index} insight={insight} />
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-6 text-center">
+                  <Brain className="w-8 h-8 mx-auto text-gray-400 mb-2" />
+                  <p className="text-gray-600">No insights available for today's games yet.</p>
+                  <p className="text-sm text-gray-500 mt-1">Check back later for AI analysis of today's slate.</p>
+                </div>
+              )}
             </div>
 
             {/* Live Odds Section */}
