@@ -1547,7 +1547,6 @@ async def options_reset_verification_stats():
     return {}
 
 
-
 @app.post("/api/admin/bets/verification/reset-stats")
 async def reset_verification_stats(admin_user: dict = Depends(require_admin)):
     """Reset bet verification statistics (Admin only)"""

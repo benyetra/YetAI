@@ -90,7 +90,9 @@ class BetVerificationService:
             # First, check for incorrectly settled bets and revert them
             reverted_count = await self._revert_premature_settlements()
             if reverted_count > 0:
-                logger.info(f"Reverted {reverted_count} prematurely settled bets back to pending")
+                logger.info(
+                    f"Reverted {reverted_count} prematurely settled bets back to pending"
+                )
 
             # Get all pending bets
             pending_bets = await self._get_pending_bets()
@@ -270,7 +272,9 @@ class BetVerificationService:
                 bet.settled_at = None
 
                 # Remove from bet history if exists
-                history_entry = db.query(BetHistory).filter(BetHistory.bet_id == bet.id).first()
+                history_entry = (
+                    db.query(BetHistory).filter(BetHistory.bet_id == bet.id).first()
+                )
                 if history_entry:
                     db.delete(history_entry)
 
