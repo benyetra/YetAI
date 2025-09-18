@@ -156,6 +156,54 @@ class OddsAPIService:
             self.monthly_requests = 0
             self.current_month = current_month
 
+    def _get_team_score(self, scores: List[Dict], team_name: str) -> Optional[int]:
+        """
+        Get the score for a specific team from the scores array.
+
+        Args:
+            scores: List of score objects from API
+            team_name: Name of the team to find score for
+
+        Returns:
+            Score for the team or None if not found
+        """
+        if not scores:
+            return None
+
+        for score_obj in scores:
+            if score_obj.get("name") == team_name:
+                return score_obj.get("score")
+
+        # Fallback: if we can't match by name, use the old logic but log a warning
+        logger.warning(
+            f"Could not match team '{team_name}' in scores array, using fallback logic"
+        )
+
+        # For Cardinals vs Reds case - if we have exactly 2 scores
+        if len(scores) >= 2:
+            # Log the available teams for debugging
+            team_names = [score.get("name", "Unknown") for score in scores]
+            logger.warning(f"Available teams in scores: {team_names}")
+
+            # Try to match by partial name comparison
+            for i, score_obj in enumerate(scores):
+                score_team_name = score_obj.get("name", "").lower()
+                target_team_name = team_name.lower()
+
+                # Check if team names have any overlap (e.g., "Cardinals" in "St. Louis Cardinals")
+                if any(
+                    word in score_team_name for word in target_team_name.split()
+                ) or any(word in target_team_name for word in score_team_name.split()):
+                    logger.info(
+                        f"Matched '{team_name}' with '{score_obj.get('name')}' by partial name"
+                    )
+                    return score_obj.get("score")
+
+        logger.error(
+            f"Failed to find score for team '{team_name}' in {len(scores)} score entries"
+        )
+        return None
+
     def _check_rate_limit(self) -> bool:
         """
         Check if we're within rate limits
@@ -395,16 +443,11 @@ class OddsAPIService:
                     home_team=score_data["home_team"],
                     away_team=score_data["away_team"],
                     completed=score_data.get("completed", False),
-                    home_score=(
-                        score_data.get("scores", [{}])[0].get("score")
-                        if score_data.get("scores")
-                        else None
+                    home_score=self._get_team_score(
+                        score_data.get("scores", []), score_data["home_team"]
                     ),
-                    away_score=(
-                        score_data.get("scores", [{}])[1].get("score")
-                        if score_data.get("scores")
-                        and len(score_data.get("scores", [])) > 1
-                        else None
+                    away_score=self._get_team_score(
+                        score_data.get("scores", []), score_data["away_team"]
                     ),
                     last_update=(
                         datetime.fromisoformat(
