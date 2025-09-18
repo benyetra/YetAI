@@ -3255,14 +3255,19 @@ async def get_popular_games(sport: Optional[str] = None):
 
 
 def _generate_enhanced_popular_games():
-    """Generate realistic popular games for TODAY ONLY with proper broadcast data"""
+    """Generate realistic popular games for TODAY ONLY in EST/EDT timezone with proper broadcast data"""
     import random
     from datetime import datetime, timezone, timedelta
+    import pytz
 
-    # Get today's date
-    today = datetime.now(timezone.utc).date()
-    current_month = today.month
-    current_weekday = today.weekday()  # 0=Monday, 6=Sunday
+    # Eastern timezone (handles EST/EDT automatically)
+    eastern_tz = pytz.timezone("US/Eastern")
+
+    # Get today's date in Eastern timezone
+    now_eastern = datetime.now(eastern_tz)
+    today_eastern = now_eastern.date()
+    current_month = today_eastern.month
+    current_weekday = today_eastern.weekday()  # 0=Monday, 6=Sunday
 
     # Season and day filters
     def is_in_season(sport, month):
@@ -3287,44 +3292,47 @@ def _generate_enhanced_popular_games():
             return weekday in [0, 1, 2, 3, 4, 5, 6]  # Any day
         return False
 
-    # Sport-specific TV time slots for today
-    def get_tv_times(sport, today_date):
-        base_today = datetime.combine(today_date, datetime.min.time()).replace(
-            tzinfo=timezone.utc
+    # Sport-specific TV time slots for today in Eastern time
+    def get_tv_times(sport, today_date_eastern):
+        # Create base time for today in Eastern timezone
+        base_today_eastern = eastern_tz.localize(
+            datetime.combine(today_date_eastern, datetime.min.time())
         )
 
         if sport == "nfl":
             # Sunday: 1pm, 4:25pm, 8:20pm ET / Monday: 8:15pm ET / Thursday: 8:15pm ET
             if current_weekday == 6:  # Sunday
                 return [
-                    base_today + timedelta(hours=18),  # 1pm ET = 6pm UTC
-                    base_today + timedelta(hours=21, minutes=25),  # 4:25pm ET
-                    base_today + timedelta(hours=25, minutes=20),  # 8:20pm ET
+                    base_today_eastern + timedelta(hours=13),  # 1pm ET
+                    base_today_eastern + timedelta(hours=16, minutes=25),  # 4:25pm ET
+                    base_today_eastern + timedelta(hours=20, minutes=20),  # 8:20pm ET
                 ]
             else:  # Monday/Thursday
-                return [base_today + timedelta(hours=25, minutes=15)]  # 8:15pm ET
+                return [
+                    base_today_eastern + timedelta(hours=20, minutes=15)
+                ]  # 8:15pm ET
         elif sport == "nba":
             # Typical: 7pm, 7:30pm, 8pm, 10pm ET
             return [
-                base_today + timedelta(hours=24),  # 7pm ET
-                base_today + timedelta(hours=24, minutes=30),  # 7:30pm ET
-                base_today + timedelta(hours=25),  # 8pm ET
-                base_today + timedelta(hours=27),  # 10pm ET
+                base_today_eastern + timedelta(hours=19),  # 7pm ET
+                base_today_eastern + timedelta(hours=19, minutes=30),  # 7:30pm ET
+                base_today_eastern + timedelta(hours=20),  # 8pm ET
+                base_today_eastern + timedelta(hours=22),  # 10pm ET
             ]
         elif sport == "mlb":
             # Typical: 1pm, 4pm, 7pm, 8pm ET
             return [
-                base_today + timedelta(hours=18),  # 1pm ET
-                base_today + timedelta(hours=21),  # 4pm ET
-                base_today + timedelta(hours=24),  # 7pm ET
-                base_today + timedelta(hours=25),  # 8pm ET
+                base_today_eastern + timedelta(hours=13),  # 1pm ET
+                base_today_eastern + timedelta(hours=16),  # 4pm ET
+                base_today_eastern + timedelta(hours=19),  # 7pm ET
+                base_today_eastern + timedelta(hours=20),  # 8pm ET
             ]
         elif sport == "nhl":
             # Typical: 7pm, 8pm, 10pm ET
             return [
-                base_today + timedelta(hours=24),  # 7pm ET
-                base_today + timedelta(hours=25),  # 8pm ET
-                base_today + timedelta(hours=27),  # 10pm ET
+                base_today_eastern + timedelta(hours=19),  # 7pm ET
+                base_today_eastern + timedelta(hours=20),  # 8pm ET
+                base_today_eastern + timedelta(hours=22),  # 10pm ET
             ]
         return []
 
@@ -3365,7 +3373,7 @@ def _generate_enhanced_popular_games():
         ):
             continue
 
-        tv_times = get_tv_times(sport, today)
+        tv_times = get_tv_times(sport, today_eastern)
         if not tv_times:
             continue
 
@@ -3374,10 +3382,14 @@ def _generate_enhanced_popular_games():
 
         for i in range(games_today):
             away, home, network, score = matchups[i]
-            game_time = tv_times[i]
+            game_time_eastern = tv_times[i]
+
+            # Only include games that are actually today in Eastern time
+            if game_time_eastern.date() != today_eastern:
+                continue
 
             # Determine if prime time (7-11 PM ET)
-            et_hour = (game_time.hour - 5) % 24
+            et_hour = game_time_eastern.hour
             is_prime_time = 19 <= et_hour <= 23
 
             # Determine if national
@@ -3387,7 +3399,7 @@ def _generate_enhanced_popular_games():
                 "id": f"{sport}_{i+1}_{random.randint(1000, 9999)}",
                 "home_team": home,
                 "away_team": away,
-                "start_time": game_time.isoformat(),
+                "start_time": game_time_eastern.isoformat(),
                 "sport": sport,
                 "broadcast": {
                     "network": network,

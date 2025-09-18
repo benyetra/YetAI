@@ -128,6 +128,19 @@ export function PopularGames({
 
   const GameCard = ({ game }: { game: PopularGame }) => (
     <div className="bg-white border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+      {/* Date and Time Header */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <Calendar className="w-4 h-4" />
+          <span>{formatFriendlyDate(game.start_time)}</span>
+        </div>
+        <div className="flex items-center space-x-2 text-sm font-medium text-gray-700">
+          <Clock className="w-4 h-4" />
+          <span>{formatLocalTime(game.start_time)}</span>
+        </div>
+      </div>
+
+      {/* Teams and Popularity Badge */}
       <div className="flex justify-between items-start mb-3">
         <div className="flex items-center space-x-2">
           <div className="text-lg font-semibold text-gray-900">
@@ -137,19 +150,17 @@ export function PopularGames({
         {getPopularityBadge(game.popularity_score)}
       </div>
 
+      {/* Network Info */}
       <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
-        <div className="flex items-center space-x-2">
-          <Clock className="w-4 h-4" />
-          <span>{formatLocalTime(game.start_time)}</span>
-        </div>
         <div className="flex items-center space-x-2">
           {getNetworkIcon(game.broadcast.network)}
           {game.broadcast.network && (
-            <span className="text-xs font-medium">{game.broadcast.network}</span>
+            <span className="text-sm font-medium">{game.broadcast.network}</span>
           )}
         </div>
       </div>
 
+      {/* Badges and Actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3 text-xs text-gray-500">
           {game.broadcast.is_national && (
