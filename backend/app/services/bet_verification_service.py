@@ -867,6 +867,8 @@ class BetVerificationService:
                 return
 
             old_status = db_bet.status
+
+            # Update the main bet record
             db_bet.status = result.status
             db_bet.result_amount = result.result_amount
             db_bet.settled_at = datetime.utcnow()
@@ -883,18 +885,25 @@ class BetVerificationService:
             )
             db.add(history)
 
+            # Commit both updates atomically
             db.commit()
 
-            # Send real-time notification
-            await self._send_bet_notification(db_bet, result)
-
             logger.info(
-                f"Settled bet {bet.id}: {result.status.value} - ${result.result_amount}"
+                f"✅ Successfully settled bet {bet.id}: {old_status.value} → {result.status.value} - ${result.result_amount}"
             )
+
+            # Send real-time notification (after successful DB update)
+            try:
+                await self._send_bet_notification(db_bet, result)
+            except Exception as notify_error:
+                logger.warning(f"Failed to send notification for bet {bet.id}: {notify_error}")
 
         except Exception as e:
             db.rollback()
-            logger.error(f"Error settling bet {bet.id}: {e}")
+            logger.error(f"❌ Error settling bet {bet.id}: {e}")
+            logger.error(f"   - Bet details: user_id={bet.user_id}, status={bet.status}, amount={bet.amount}")
+            logger.error(f"   - Result details: status={result.status}, amount={result.result_amount}")
+            raise  # Re-raise to ensure calling code knows the settlement failed
         finally:
             db.close()
 
