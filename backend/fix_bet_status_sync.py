@@ -8,11 +8,12 @@ but the main bets table still shows PENDING status.
 
 import sys
 import asyncio
-from sqlalchemy import text
+import os
+from sqlalchemy import text, create_engine
+from sqlalchemy.orm import sessionmaker
 
 sys.path.append("/Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend")
 
-from app.core.database import SessionLocal
 from app.models.database_models import Bet, BetStatus
 
 
@@ -22,6 +23,17 @@ async def fix_bet_status_sync():
     and sync the status from bet_history to bets table
     """
     print("🔧 Fixing bet status sync issue...")
+
+    # Get database URL from environment or use default
+    database_url = os.getenv(
+        "DATABASE_URL",
+        "postgresql://sports_user:sports_pass@localhost:5432/sports_betting_ai",
+    )
+    print(f"Connecting to database: {database_url[:30]}...")
+
+    # Create engine and session
+    engine = create_engine(database_url, pool_pre_ping=True)
+    SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
     db = SessionLocal()
     try:
@@ -93,6 +105,7 @@ async def fix_bet_status_sync():
         raise
     finally:
         db.close()
+        engine.dispose()
 
 
 if __name__ == "__main__":
