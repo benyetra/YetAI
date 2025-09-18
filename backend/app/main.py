@@ -1553,6 +1553,106 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=500, detail="Failed to run verification")
 
 
+@app.post("/api/admin/bets/sync-status")
+async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
+    """Fix bet status sync between bets and bet_history tables (Admin only)"""
+    try:
+        logger.info("🔧 Bet status sync fix triggered via admin endpoint")
+
+        from sqlalchemy import text
+        from app.models.database_models import Bet, BetStatus, BetHistory
+        from app.core.database import SessionLocal
+        from datetime import datetime
+
+        db = SessionLocal()
+        try:
+            # Find all bets that are PENDING in bets table but have settlement
+            # records in bet_history
+            query = """
+            SELECT DISTINCT
+                b.id,
+                b.user_id,
+                b.status as current_status,
+                bh.new_status as history_status,
+                bh.amount as result_amount,
+                bh.timestamp as settled_at
+            FROM bets b
+            JOIN bet_history bh ON b.id = bh.bet_id
+            WHERE b.status = 'PENDING'
+            AND bh.action = 'settled'
+            AND bh.new_status IN ('won', 'lost', 'cancelled')
+            ORDER BY bh.timestamp DESC
+            """
+
+            result = db.execute(text(query))
+            mismatched_bets = result.fetchall()
+
+            if not mismatched_bets:
+                logger.info("✅ No bet status mismatches found - all good!")
+                return {
+                    "success": True,
+                    "message": "No bet status mismatches found",
+                    "synced_count": 0
+                }
+
+            logger.info(f"🔍 Found {len(mismatched_bets)} bets with status mismatches")
+
+            synced_count = 0
+            for bet_row in mismatched_bets:
+                bet_id = bet_row[0]
+                user_id = bet_row[1]
+                current_status = bet_row[2]
+                history_status = bet_row[3]
+                result_amount = bet_row[4]
+                settled_at = bet_row[5]
+
+                logger.info(
+                    f"Syncing bet {bet_id[:8]}... (user {user_id}): "
+                    f"{current_status} → {history_status}"
+                )
+
+                # Update the bet record to match bet_history
+                bet = db.query(Bet).filter(Bet.id == bet_id).first()
+                if bet:
+                    # Map string status to enum
+                    if history_status.lower() == "won":
+                        bet.status = BetStatus.WON
+                    elif history_status.lower() == "lost":
+                        bet.status = BetStatus.LOST
+                    elif history_status.lower() == "cancelled":
+                        bet.status = BetStatus.CANCELLED
+
+                    bet.result_amount = result_amount or 0
+                    bet.settled_at = settled_at
+
+                    synced_count += 1
+                    logger.info(f"✅ Updated bet {bet_id[:8]}... to {bet.status.value}")
+                else:
+                    logger.error(f"❌ Bet {bet_id[:8]}... not found in bets table")
+
+            # Commit all changes
+            db.commit()
+            logger.info(f"🎉 Successfully synced {synced_count} bet statuses!")
+
+            return {
+                "success": True,
+                "message": f"Successfully synced {synced_count} bet statuses",
+                "synced_count": synced_count,
+                "total_found": len(mismatched_bets)
+            }
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"❌ Error fixing bet status sync: {e}")
+            raise
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Bet status sync fix failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Bet status sync fix failed: {str(e)}")
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
