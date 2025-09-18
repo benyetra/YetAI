@@ -2038,6 +2038,102 @@ async def manual_verify_bet(request: dict, admin_user: dict = Depends(require_ad
         )
 
 
+@app.post("/api/admin/games/manual-update")
+async def manual_update_game(request: dict, admin_user: dict = Depends(require_admin)):
+    """Manually update game result (Admin only)"""
+    try:
+        home_team = request.get("home_team")
+        away_team = request.get("away_team")
+        home_score = request.get("home_score")
+        away_score = request.get("away_score")
+
+        if not all(
+            [home_team, away_team, home_score is not None, away_score is not None]
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail="home_team, away_team, home_score, and away_score are required",
+            )
+
+        logger.info(
+            f"🔧 Manual game update: {home_team} {home_score} - {away_score} {away_team}"
+        )
+
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            # Find the game
+            game_query = """
+            SELECT id, home_team, away_team, status, home_score, away_score
+            FROM games
+            WHERE home_team = :home_team AND away_team = :away_team
+            ORDER BY commence_time DESC
+            LIMIT 1
+            """
+            result = db.execute(
+                text(game_query), {"home_team": home_team, "away_team": away_team}
+            )
+            game = result.fetchone()
+
+            if not game:
+                raise HTTPException(status_code=404, detail="Game not found")
+
+            game_id = game[0]
+            current_status = game[3]
+            current_home_score = game[4]
+            current_away_score = game[5]
+
+            # Update the game
+            update_query = """
+            UPDATE games
+            SET home_score = :home_score,
+                away_score = :away_score,
+                status = 'completed',
+                updated_at = CURRENT_TIMESTAMP
+            WHERE id = :game_id
+            """
+
+            db.execute(
+                text(update_query),
+                {
+                    "game_id": game_id,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                },
+            )
+
+            db.commit()
+
+            logger.info(
+                f"✅ Updated game {game_id[:8]}... to completed with final score"
+            )
+
+            return {
+                "success": True,
+                "message": f"Game updated successfully",
+                "game_info": {
+                    "game_id": game_id[:8] + "...",
+                    "teams": f"{home_team} vs {away_team}",
+                    "old_status": current_status,
+                    "new_status": "completed",
+                    "old_score": f"{current_home_score or 0}-{current_away_score or 0}",
+                    "new_score": f"{home_score}-{away_score}",
+                    "final_result": f"{home_team} {home_score} - {away_score} {away_team}",
+                },
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Manual game update failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Manual game update failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
