@@ -1894,6 +1894,150 @@ async def debug_bet_status(admin_user: dict = Depends(require_admin)):
         )
 
 
+@app.post("/api/admin/bets/manual-verify")
+async def manual_verify_bet(request: dict, admin_user: dict = Depends(require_admin)):
+    """Manually verify and settle a specific bet (Admin only)"""
+    try:
+        bet_id = request.get("bet_id")
+        if not bet_id:
+            raise HTTPException(status_code=400, detail="bet_id is required")
+
+        logger.info(f"🔧 Manual bet verification for bet {bet_id[:8]}...")
+
+        from sqlalchemy import text
+        from app.models.database_models import Bet, BetStatus, BetHistory
+        from app.core.database import SessionLocal
+        from datetime import datetime
+
+        db = SessionLocal()
+        try:
+            # Get the bet
+            bet = db.query(Bet).filter(Bet.id == bet_id).first()
+            if not bet:
+                raise HTTPException(status_code=404, detail="Bet not found")
+
+            if bet.status != BetStatus.PENDING:
+                return {
+                    "success": False,
+                    "message": f"Bet {bet_id[:8]}... is already settled ({bet.status.value})",
+                }
+
+            # Get the game for this bet
+            if not bet.game_id:
+                raise HTTPException(
+                    status_code=400, detail="Bet has no associated game"
+                )
+
+            # Check if game has finished and get the result
+            game_query = """
+            SELECT home_team, away_team, home_score, away_score, status, commence_time
+            FROM games
+            WHERE id = :game_id
+            """
+            result = db.execute(text(game_query), {"game_id": bet.game_id})
+            game = result.fetchone()
+
+            if not game:
+                raise HTTPException(status_code=404, detail="Game not found")
+
+            home_team, away_team, home_score, away_score, game_status, commence_time = (
+                game
+            )
+
+            # Check if game is completed
+            if game_status != "completed" or home_score is None or away_score is None:
+                return {
+                    "success": False,
+                    "message": f"Game {home_team} vs {away_team} is not completed yet (status: {game_status})",
+                    "game_info": {
+                        "home_team": home_team,
+                        "away_team": away_team,
+                        "home_score": home_score,
+                        "away_score": away_score,
+                        "status": game_status,
+                    },
+                }
+
+            # Determine bet result based on bet type and selection
+            bet_won = False
+            if bet.bet_type.value == "moneyline":
+                # For moneyline, check if selected team won
+                if bet.selection == home_team and home_score > away_score:
+                    bet_won = True
+                elif bet.selection == away_team and away_score > home_score:
+                    bet_won = True
+            elif bet.bet_type.value == "spread":
+                # For spread bets, need to check against the line
+                if bet.selection == home_team:
+                    adjusted_home_score = home_score + (bet.line_value or 0)
+                    bet_won = adjusted_home_score > away_score
+                elif bet.selection == away_team:
+                    adjusted_away_score = away_score + (bet.line_value or 0)
+                    bet_won = adjusted_away_score > home_score
+
+            # Determine final status and amount
+            if bet_won:
+                final_status = BetStatus.WON
+                result_amount = bet.amount + bet.potential_win
+            else:
+                final_status = BetStatus.LOST
+                result_amount = 0
+
+            # Update bet status
+            old_status = bet.status.value
+            bet.status = final_status
+            bet.result_amount = result_amount
+            bet.settled_at = datetime.utcnow()
+
+            # Create bet_history record
+            bet_history = BetHistory(
+                bet_id=bet.id,
+                action="settled",
+                old_status=old_status,
+                new_status=final_status.value,
+                amount=result_amount,
+                timestamp=datetime.utcnow(),
+            )
+            db.add(bet_history)
+
+            # Commit changes
+            db.commit()
+
+            logger.info(
+                f"✅ Manually settled bet {bet_id[:8]}... as {final_status.value}"
+            )
+
+            return {
+                "success": True,
+                "message": f"Bet {bet_id[:8]}... manually settled as {final_status.value}",
+                "bet_info": {
+                    "bet_id": bet_id[:8] + "...",
+                    "teams": f"{home_team} vs {away_team}",
+                    "selection": bet.selection,
+                    "bet_type": bet.bet_type.value,
+                    "old_status": old_status,
+                    "new_status": final_status.value,
+                    "result_amount": result_amount,
+                },
+                "game_info": {
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "home_score": home_score,
+                    "away_score": away_score,
+                    "final_score": f"{home_team} {home_score} - {away_score} {away_team}",
+                },
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Manual bet verification failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Manual bet verification failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
