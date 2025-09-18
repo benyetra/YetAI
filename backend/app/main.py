@@ -1772,6 +1772,128 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
         )
 
 
+@app.get("/api/admin/bets/debug")
+async def debug_bet_status(admin_user: dict = Depends(require_admin)):
+    """Debug bet status in production database (Admin only)"""
+    try:
+        logger.info("🔍 Debug bet status triggered via admin endpoint")
+
+        from sqlalchemy import text
+        from app.models.database_models import Bet, BetStatus, BetHistory, ParlayBet
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            # Get all PENDING bets
+            pending_query = """
+            SELECT b.id, b.user_id, b.home_team, b.away_team, b.status, b.placed_at
+            FROM bets b
+            WHERE b.status = 'PENDING'
+            ORDER BY b.placed_at DESC
+            """
+            result = db.execute(text(pending_query))
+            pending_bets = result.fetchall()
+
+            # Get Cardinals-related bets (both PENDING and settled)
+            cardinals_query = """
+            SELECT b.id, b.user_id, b.home_team, b.away_team, b.status, b.placed_at
+            FROM bets b
+            WHERE (LOWER(b.home_team) LIKE '%cardinal%' OR LOWER(b.away_team) LIKE '%cardinal%')
+            ORDER BY b.placed_at DESC
+            LIMIT 10
+            """
+            result = db.execute(text(cardinals_query))
+            cardinals_bets = result.fetchall()
+
+            # Get recent bet_history records for Cardinals bets
+            cardinals_history = []
+            for bet in cardinals_bets:
+                bet_id = bet[0]
+                history_query = """
+                SELECT bh.action, bh.old_status, bh.new_status, bh.amount, bh.timestamp
+                FROM bet_history bh
+                WHERE bh.bet_id = :bet_id
+                ORDER BY bh.timestamp DESC
+                LIMIT 3
+                """
+                history_result = db.execute(text(history_query), {"bet_id": bet_id})
+                history_records = history_result.fetchall()
+                cardinals_history.append(
+                    {
+                        "bet_id": bet_id[:8] + "...",
+                        "teams": f"{bet[2]} vs {bet[3]}",
+                        "status": bet[4],
+                        "history": [
+                            {
+                                "action": record[0],
+                                "old_status": record[1],
+                                "new_status": record[2],
+                                "amount": record[3],
+                                "timestamp": str(record[4]),
+                            }
+                            for record in history_records
+                        ],
+                    }
+                )
+
+            # Run the exact sync query to see what would be synced
+            sync_query = """
+            SELECT DISTINCT
+                b.id,
+                b.user_id,
+                b.parlay_id,
+                b.status as current_status,
+                bh.new_status as history_status,
+                bh.amount as result_amount,
+                bh.timestamp as settled_at
+            FROM bets b
+            JOIN bet_history bh ON b.id = bh.bet_id
+            WHERE b.status = 'PENDING'
+            AND bh.action = 'settled'
+            AND bh.new_status IN ('won', 'lost', 'cancelled')
+            ORDER BY bh.timestamp DESC
+            """
+            result = db.execute(text(sync_query))
+            sync_candidates = result.fetchall()
+
+            return {
+                "success": True,
+                "pending_bets": [
+                    {
+                        "bet_id": bet[0][:8] + "...",
+                        "teams": f"{bet[2]} vs {bet[3]}",
+                        "status": bet[4],
+                        "placed_at": str(bet[5]),
+                    }
+                    for bet in pending_bets
+                ],
+                "cardinals_bets": cardinals_history,
+                "sync_candidates": [
+                    {
+                        "bet_id": bet[0][:8] + "...",
+                        "current_status": bet[3],
+                        "history_status": bet[4],
+                        "settled_at": str(bet[6]),
+                    }
+                    for bet in sync_candidates
+                ],
+                "counts": {
+                    "pending_bets": len(pending_bets),
+                    "cardinals_bets": len(cardinals_bets),
+                    "sync_candidates": len(sync_candidates),
+                },
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Debug bet status failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Debug bet status failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
