@@ -6,11 +6,12 @@ import asyncio
 from sqlalchemy import text, create_engine
 from sqlalchemy.orm import sessionmaker
 
-sys.path.append('/app')
+sys.path.append("/app")
+
 
 async def sync_status():
     # Use production DATABASE_URL
-    db_url = os.environ.get('DATABASE_URL')
+    db_url = os.environ.get("DATABASE_URL")
     if not db_url:
         print("❌ No DATABASE_URL found")
         return
@@ -44,6 +45,7 @@ async def sync_status():
 
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(sync_status())

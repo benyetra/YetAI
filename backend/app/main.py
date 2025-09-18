@@ -1592,7 +1592,7 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
                 return {
                     "success": True,
                     "message": "No bet status mismatches found",
-                    "synced_count": 0
+                    "synced_count": 0,
                 }
 
             logger.info(f"🔍 Found {len(mismatched_bets)} bets with status mismatches")
@@ -1638,7 +1638,7 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
                 "success": True,
                 "message": f"Successfully synced {synced_count} bet statuses",
                 "synced_count": synced_count,
-                "total_found": len(mismatched_bets)
+                "total_found": len(mismatched_bets),
             }
 
         except Exception as e:
@@ -1650,7 +1650,9 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
 
     except Exception as e:
         logger.error(f"Bet status sync fix failed: {e}")
-        raise HTTPException(status_code=500, detail=f"Bet status sync fix failed: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Bet status sync fix failed: {str(e)}"
+        )
 
 
 @app.options("/api/admin/bets/verification/config")
