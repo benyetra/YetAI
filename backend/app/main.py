@@ -1560,7 +1560,7 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
         logger.info("🔧 Bet status sync fix triggered via admin endpoint")
 
         from sqlalchemy import text
-        from app.models.database_models import Bet, BetStatus, BetHistory
+        from app.models.database_models import Bet, BetStatus, BetHistory, ParlayBet
         from app.core.database import SessionLocal
         from datetime import datetime
 
@@ -1572,6 +1572,7 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
             SELECT DISTINCT
                 b.id,
                 b.user_id,
+                b.parlay_id,
                 b.status as current_status,
                 bh.new_status as history_status,
                 bh.amount as result_amount,
@@ -1587,24 +1588,56 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
             result = db.execute(text(query))
             mismatched_bets = result.fetchall()
 
-            if not mismatched_bets:
+            # Also check for parlay bets that need syncing
+            parlay_query = """
+            SELECT DISTINCT
+                pb.id,
+                pb.user_id,
+                NULL as parlay_id,
+                pb.status as current_status,
+                bh.new_status as history_status,
+                bh.amount as result_amount,
+                bh.timestamp as settled_at
+            FROM parlay_bets pb
+            JOIN bet_history bh ON pb.id = bh.bet_id
+            WHERE pb.status = 'PENDING'
+            AND bh.action = 'settled'
+            AND bh.new_status IN ('won', 'lost', 'cancelled')
+            ORDER BY bh.timestamp DESC
+            """
+
+            parlay_result = db.execute(text(parlay_query))
+            mismatched_parlays = parlay_result.fetchall()
+
+            total_mismatched = len(mismatched_bets) + len(mismatched_parlays)
+
+            if total_mismatched == 0:
                 logger.info("✅ No bet status mismatches found - all good!")
                 return {
                     "success": True,
                     "message": "No bet status mismatches found",
                     "synced_count": 0,
+                    "synced_bets": 0,
+                    "synced_parlays": 0,
                 }
 
-            logger.info(f"🔍 Found {len(mismatched_bets)} bets with status mismatches")
+            logger.info(
+                f"🔍 Found {len(mismatched_bets)} bet legs and {len(mismatched_parlays)} parlays with status mismatches"
+            )
 
-            synced_count = 0
+            synced_bets = 0
+            synced_parlays = 0
+            parlay_ids_to_check = set()
+
+            # Sync individual bet legs
             for bet_row in mismatched_bets:
                 bet_id = bet_row[0]
                 user_id = bet_row[1]
-                current_status = bet_row[2]
-                history_status = bet_row[3]
-                result_amount = bet_row[4]
-                settled_at = bet_row[5]
+                parlay_id = bet_row[2]
+                current_status = bet_row[3]
+                history_status = bet_row[4]
+                result_amount = bet_row[5]
+                settled_at = bet_row[6]
 
                 logger.info(
                     f"Syncing bet {bet_id[:8]}... (user {user_id}): "
@@ -1625,20 +1658,104 @@ async def fix_bet_status_sync(admin_user: dict = Depends(require_admin)):
                     bet.result_amount = result_amount or 0
                     bet.settled_at = settled_at
 
-                    synced_count += 1
+                    synced_bets += 1
                     logger.info(f"✅ Updated bet {bet_id[:8]}... to {bet.status.value}")
+
+                    # Track parlay IDs that need to be recalculated
+                    if parlay_id:
+                        parlay_ids_to_check.add(parlay_id)
                 else:
                     logger.error(f"❌ Bet {bet_id[:8]}... not found in bets table")
 
+            # Sync individual parlay bets
+            for parlay_row in mismatched_parlays:
+                parlay_id = parlay_row[0]
+                user_id = parlay_row[1]
+                current_status = parlay_row[3]
+                history_status = parlay_row[4]
+                result_amount = parlay_row[5]
+                settled_at = parlay_row[6]
+
+                logger.info(
+                    f"Syncing parlay {parlay_id[:8]}... (user {user_id}): "
+                    f"{current_status} → {history_status}"
+                )
+
+                # Update the parlay record to match bet_history
+                parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+                if parlay:
+                    # Map string status to enum
+                    if history_status.lower() == "won":
+                        parlay.status = BetStatus.WON
+                    elif history_status.lower() == "lost":
+                        parlay.status = BetStatus.LOST
+                    elif history_status.lower() == "cancelled":
+                        parlay.status = BetStatus.CANCELLED
+
+                    parlay.result_amount = result_amount or 0
+                    parlay.settled_at = settled_at
+
+                    synced_parlays += 1
+                    logger.info(
+                        f"✅ Updated parlay {parlay_id[:8]}... to {parlay.status.value}"
+                    )
+                else:
+                    logger.error(
+                        f"❌ Parlay {parlay_id[:8]}... not found in parlay_bets table"
+                    )
+
+            # Update parlay statuses based on leg results
+            for parlay_id in parlay_ids_to_check:
+                parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+                if parlay and parlay.status == BetStatus.PENDING:
+                    # Get all legs for this parlay
+                    legs = db.query(Bet).filter(Bet.parlay_id == parlay_id).all()
+
+                    # Check if all legs are settled
+                    all_settled = all(leg.status != BetStatus.PENDING for leg in legs)
+
+                    if all_settled:
+                        # Check if all legs won
+                        all_won = all(leg.status == BetStatus.WON for leg in legs)
+                        any_lost = any(leg.status == BetStatus.LOST for leg in legs)
+
+                        if all_won:
+                            parlay.status = BetStatus.WON
+                            parlay.result_amount = parlay.amount + parlay.potential_win
+                            logger.info(
+                                f"✅ Parlay {parlay_id[:8]}... WON - all legs won"
+                            )
+                        elif any_lost:
+                            parlay.status = BetStatus.LOST
+                            parlay.result_amount = 0
+                            logger.info(
+                                f"❌ Parlay {parlay_id[:8]}... LOST - at least one leg lost"
+                            )
+                        else:  # Some cancelled
+                            parlay.status = BetStatus.CANCELLED
+                            parlay.result_amount = (
+                                parlay.amount
+                            )  # Return original stake
+                            logger.info(
+                                f"🚫 Parlay {parlay_id[:8]}... CANCELLED - legs cancelled"
+                            )
+
+                        parlay.settled_at = datetime.utcnow()
+                        synced_parlays += 1
+
             # Commit all changes
             db.commit()
-            logger.info(f"🎉 Successfully synced {synced_count} bet statuses!")
+            logger.info(
+                f"🎉 Successfully synced {synced_bets} bet legs and {synced_parlays} parlays!"
+            )
 
             return {
                 "success": True,
-                "message": f"Successfully synced {synced_count} bet statuses",
-                "synced_count": synced_count,
-                "total_found": len(mismatched_bets),
+                "message": f"Successfully synced {synced_bets} bet legs and {synced_parlays} parlays",
+                "synced_count": synced_bets + synced_parlays,
+                "synced_bets": synced_bets,
+                "synced_parlays": synced_parlays,
+                "total_found": total_mismatched,
             }
 
         except Exception as e:
