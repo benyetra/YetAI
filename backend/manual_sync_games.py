@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 
 import sys
+import asyncio
+
 sys.path.append("/Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend")
 
-import asyncio
 from app.services.game_sync_service import game_sync_service
+
 
 async def manual_sync_games():
     print("🔄 Manual Game Sync...")
@@ -13,7 +15,7 @@ async def manual_sync_games():
     try:
         result = await game_sync_service.sync_game_scores(days_back=3)
 
-        print(f"\nResults:")
+        print("\nResults:")
         print(f"  - Success: {result.get('success', False)}")
         print(f"  - Message: {result.get('message', 'No message')}")
         print(f"  - Games Updated: {result.get('games_updated', 0)}")
@@ -26,6 +28,7 @@ async def manual_sync_games():
         print(f"Error: {e}")
 
     print("\n✅ Manual sync complete!")
+
 
 if __name__ == "__main__":
     asyncio.run(manual_sync_games())

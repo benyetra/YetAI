@@ -896,13 +896,19 @@ class BetVerificationService:
             try:
                 await self._send_bet_notification(db_bet, result)
             except Exception as notify_error:
-                logger.warning(f"Failed to send notification for bet {bet.id}: {notify_error}")
+                logger.warning(
+                    f"Failed to send notification for bet {bet.id}: {notify_error}"
+                )
 
         except Exception as e:
             db.rollback()
             logger.error(f"❌ Error settling bet {bet.id}: {e}")
-            logger.error(f"   - Bet details: user_id={bet.user_id}, status={bet.status}, amount={bet.amount}")
-            logger.error(f"   - Result details: status={result.status}, amount={result.result_amount}")
+            logger.error(
+                f"   - Bet details: user_id={bet.user_id}, status={bet.status}, amount={bet.amount}"
+            )
+            logger.error(
+                f"   - Result details: status={result.status}, amount={result.result_amount}"
+            )
             raise  # Re-raise to ensure calling code knows the settlement failed
         finally:
             db.close()

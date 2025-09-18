@@ -7,14 +7,14 @@ but the main bets table still shows PENDING status.
 """
 
 import sys
+import asyncio
+from sqlalchemy import text
+
 sys.path.append("/Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend")
 
-import asyncio
-from datetime import datetime
-from sqlalchemy.orm import Session
-from sqlalchemy import text
 from app.core.database import SessionLocal
-from app.models.database_models import Bet, BetHistory, BetStatus
+from app.models.database_models import Bet, BetStatus
+
 
 async def fix_bet_status_sync():
     """
@@ -25,7 +25,8 @@ async def fix_bet_status_sync():
 
     db = SessionLocal()
     try:
-        # Find all bets that are PENDING in bets table but have settlement records in bet_history
+        # Find all bets that are PENDING in bets table but have settlement
+        # records in bet_history
         query = """
         SELECT DISTINCT
             b.id,
@@ -59,17 +60,20 @@ async def fix_bet_status_sync():
             result_amount = bet_row[4]
             settled_at = bet_row[5]
 
-            print(f"  - Bet {bet_id[:8]}... (user {user_id}): {current_status} → {history_status}")
+            print(
+                f"  - Bet {bet_id[:8]}... (user {user_id}): "
+                f"{current_status} → {history_status}"
+            )
 
             # Update the bet record to match bet_history
             bet = db.query(Bet).filter(Bet.id == bet_id).first()
             if bet:
                 # Map string status to enum
-                if history_status.lower() == 'won':
+                if history_status.lower() == "won":
                     bet.status = BetStatus.WON
-                elif history_status.lower() == 'lost':
+                elif history_status.lower() == "lost":
                     bet.status = BetStatus.LOST
-                elif history_status.lower() == 'cancelled':
+                elif history_status.lower() == "cancelled":
                     bet.status = BetStatus.CANCELLED
 
                 bet.result_amount = result_amount or 0
@@ -89,6 +93,7 @@ async def fix_bet_status_sync():
         raise
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(fix_bet_status_sync())
