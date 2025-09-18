@@ -181,18 +181,22 @@ export function formatGameStatus(status: string): string {
 export function formatFriendlyDate(dateString: string): string {
   const date = new Date(dateString);
   const now = new Date();
-  const diffDays = Math.floor((date.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-  
+
+  // Compare just the date parts, not time
+  const dateOnly = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const nowOnly = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.floor((dateOnly.getTime() - nowOnly.getTime()) / (1000 * 60 * 60 * 24));
+
   if (diffDays === 0) return 'Today';
   if (diffDays === 1) return 'Tomorrow';
   if (diffDays === -1) return 'Yesterday';
   if (diffDays > -7 && diffDays < 0) {
     return date.toLocaleDateString('en-US', { weekday: 'long' });
   }
-  
-  return date.toLocaleDateString('en-US', { 
-    weekday: 'short', 
-    month: 'short', 
+
+  return date.toLocaleDateString('en-US', {
+    weekday: 'short',
+    month: 'short',
     day: 'numeric',
     year: date.getFullYear() !== now.getFullYear() ? 'numeric' : undefined
   });
