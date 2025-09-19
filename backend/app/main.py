@@ -2257,7 +2257,7 @@ async def manual_fix_specific_parlay_legs(admin_user: dict = Depends(require_adm
             FROM bets b
             JOIN parlay_bets pb ON b.parlay_id = pb.id
             WHERE b.selection = 'Cincinnati Reds'
-            AND b.bet_type = 'moneyline'
+            AND b.bet_type::text = 'moneyline'
             AND b.game_id IS NULL
             AND b.status = 'PENDING'
             """
@@ -2312,7 +2312,7 @@ async def manual_fix_specific_parlay_legs(admin_user: dict = Depends(require_adm
             FROM bets b
             JOIN parlay_bets pb ON b.parlay_id = pb.id
             WHERE b.selection = 'Chicago Cubs'
-            AND b.bet_type = 'moneyline'
+            AND b.bet_type::text = 'moneyline'
             AND b.game_id IS NULL
             AND b.status = 'PENDING'
             """
