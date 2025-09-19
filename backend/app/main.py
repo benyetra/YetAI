@@ -2134,6 +2134,110 @@ async def manual_update_game(request: dict, admin_user: dict = Depends(require_a
         )
 
 
+@app.post("/api/admin/parlays/fix-game-associations")
+async def fix_parlay_game_associations(admin_user: dict = Depends(require_admin)):
+    """Fix parlay legs missing game associations (Admin only)"""
+    try:
+        logger.info("🔧 Fixing parlay leg game associations...")
+
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            # Find parlay legs without game associations
+            orphaned_legs_query = """
+            SELECT b.id, b.selection, b.bet_type, b.parlay_id
+            FROM bets b
+            JOIN parlay_bets pb ON b.parlay_id = pb.id
+            WHERE b.game_id IS NULL
+            AND b.status = 'PENDING'
+            AND pb.status = 'PENDING'
+            """
+            result = db.execute(text(orphaned_legs_query))
+            orphaned_legs = result.fetchall()
+
+            if not orphaned_legs:
+                return {
+                    "success": True,
+                    "message": "No orphaned parlay legs found",
+                    "fixed_count": 0,
+                }
+
+            fixed_count = 0
+            fixes = []
+
+            for leg in orphaned_legs:
+                leg_id, selection, bet_type, parlay_id = leg
+
+                # Try to match leg to a game based on selection
+                if bet_type == "moneyline":
+                    # For moneyline, selection is team name
+                    game_query = """
+                    SELECT id, home_team, away_team
+                    FROM games
+                    WHERE (home_team = :team OR away_team = :team)
+                    AND status IN ('SCHEDULED', 'completed')
+                    ORDER BY commence_time DESC
+                    LIMIT 1
+                    """
+                    game_result = db.execute(text(game_query), {"team": selection})
+                    game = game_result.fetchone()
+
+                    if game:
+                        game_id, home_team, away_team = game
+
+                        # Update the bet with game association
+                        update_query = """
+                        UPDATE bets
+                        SET game_id = :game_id,
+                            home_team = :home_team,
+                            away_team = :away_team
+                        WHERE id = :bet_id
+                        """
+                        db.execute(
+                            text(update_query),
+                            {
+                                "bet_id": leg_id,
+                                "game_id": game_id,
+                                "home_team": home_team,
+                                "away_team": away_team,
+                            },
+                        )
+
+                        fixed_count += 1
+                        fixes.append(
+                            {
+                                "leg_id": leg_id[:8] + "...",
+                                "selection": selection,
+                                "bet_type": bet_type,
+                                "matched_game": f"{home_team} vs {away_team}",
+                                "game_id": game_id[:8] + "...",
+                            }
+                        )
+
+            db.commit()
+
+            logger.info(f"✅ Fixed {fixed_count} parlay leg game associations")
+
+            return {
+                "success": True,
+                "message": f"Fixed {fixed_count} parlay leg game associations",
+                "fixed_count": fixed_count,
+                "fixes": fixes,
+                "orphaned_legs_found": len(orphaned_legs),
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Fix parlay game associations failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Fix parlay game associations failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
