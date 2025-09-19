@@ -2238,6 +2238,148 @@ async def fix_parlay_game_associations(admin_user: dict = Depends(require_admin)
         )
 
 
+@app.post("/api/admin/parlays/manual-fix-specific")
+async def manual_fix_specific_parlay_legs(admin_user: dict = Depends(require_admin)):
+    """Manually fix the specific parlay legs we know about (Admin only)"""
+    try:
+        logger.info("🔧 Manually fixing specific parlay legs...")
+
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            fixes = []
+
+            # Fix Cincinnati Reds leg - should match Cardinals vs Reds game
+            reds_query = """
+            SELECT b.id
+            FROM bets b
+            JOIN parlay_bets pb ON b.parlay_id = pb.id
+            WHERE b.selection = 'Cincinnati Reds'
+            AND b.bet_type = 'moneyline'
+            AND b.game_id IS NULL
+            AND b.status = 'PENDING'
+            """
+            result = db.execute(text(reds_query))
+            reds_leg = result.fetchone()
+
+            if reds_leg:
+                # Find Cardinals vs Reds game
+                game_query = """
+                SELECT id, home_team, away_team
+                FROM games
+                WHERE (home_team LIKE '%Cardinal%' AND away_team LIKE '%Red%')
+                OR (home_team LIKE '%Red%' AND away_team LIKE '%Cardinal%')
+                ORDER BY commence_time DESC
+                LIMIT 1
+                """
+                game_result = db.execute(text(game_query))
+                game = game_result.fetchone()
+
+                if game:
+                    game_id, home_team, away_team = game
+
+                    update_query = """
+                    UPDATE bets
+                    SET game_id = :game_id,
+                        home_team = :home_team,
+                        away_team = :away_team
+                    WHERE id = :bet_id
+                    """
+                    db.execute(
+                        text(update_query),
+                        {
+                            "bet_id": reds_leg[0],
+                            "game_id": game_id,
+                            "home_team": home_team,
+                            "away_team": away_team,
+                        },
+                    )
+
+                    fixes.append(
+                        {
+                            "leg_id": reds_leg[0][:8] + "...",
+                            "selection": "Cincinnati Reds",
+                            "matched_game": f"{home_team} vs {away_team}",
+                            "game_id": game_id[:8] + "...",
+                        }
+                    )
+
+            # Fix Chicago Cubs leg - find Cubs game
+            cubs_query = """
+            SELECT b.id
+            FROM bets b
+            JOIN parlay_bets pb ON b.parlay_id = pb.id
+            WHERE b.selection = 'Chicago Cubs'
+            AND b.bet_type = 'moneyline'
+            AND b.game_id IS NULL
+            AND b.status = 'PENDING'
+            """
+            result = db.execute(text(cubs_query))
+            cubs_leg = result.fetchone()
+
+            if cubs_leg:
+                # Find Cubs game
+                cubs_game_query = """
+                SELECT id, home_team, away_team
+                FROM games
+                WHERE home_team LIKE '%Cubs%' OR away_team LIKE '%Cubs%'
+                ORDER BY commence_time DESC
+                LIMIT 1
+                """
+                game_result = db.execute(text(cubs_game_query))
+                game = game_result.fetchone()
+
+                if game:
+                    game_id, home_team, away_team = game
+
+                    update_query = """
+                    UPDATE bets
+                    SET game_id = :game_id,
+                        home_team = :home_team,
+                        away_team = :away_team
+                    WHERE id = :bet_id
+                    """
+                    db.execute(
+                        text(update_query),
+                        {
+                            "bet_id": cubs_leg[0],
+                            "game_id": game_id,
+                            "home_team": home_team,
+                            "away_team": away_team,
+                        },
+                    )
+
+                    fixes.append(
+                        {
+                            "leg_id": cubs_leg[0][:8] + "...",
+                            "selection": "Chicago Cubs",
+                            "matched_game": f"{home_team} vs {away_team}",
+                            "game_id": game_id[:8] + "...",
+                        }
+                    )
+
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Manually fixed {len(fixes)} specific parlay legs",
+                "fixed_count": len(fixes),
+                "fixes": fixes,
+                "note": "Total bets (O 7.5) require additional context and weren't fixed automatically",
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Manual fix specific parlay legs failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Manual fix specific parlay legs failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
