@@ -5032,7 +5032,7 @@ async def get_public_featured_games(db=Depends(get_db)):
 
 @app.delete("/api/admin/featured-games/cleanup")
 async def cleanup_expired_featured_games(
-    current_user: dict = Depends(get_current_user_admin), db=Depends(get_db)
+    admin_user: dict = Depends(require_admin), db=Depends(get_db)
 ):
     """Remove expired featured games (games that have already ended)"""
     try:
