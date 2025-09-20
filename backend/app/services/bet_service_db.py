@@ -163,6 +163,9 @@ class BetServiceDB:
                 for leg in parlay_data.legs:
                     leg_id = str(uuid.uuid4())
 
+                    # Create or get game record for this leg
+                    game = await self._get_or_create_game_from_leg(leg, db)
+
                     leg_bet = Bet(
                         id=leg_id,
                         user_id=user_id,
@@ -175,16 +178,28 @@ class BetServiceDB:
                         potential_win=0,
                         status=BetStatus.PENDING,
                         placed_at=datetime.utcnow(),
-                        # Use leg data from frontend
-                        home_team=leg.home_team,
-                        away_team=leg.away_team,
-                        sport=leg.sport,
+                        # Use leg data from frontend or game data if available
+                        home_team=(
+                            leg.home_team
+                            if hasattr(leg, "home_team")
+                            else (game.home_team if game else None)
+                        ),
+                        away_team=(
+                            leg.away_team
+                            if hasattr(leg, "away_team")
+                            else (game.away_team if game else None)
+                        ),
+                        sport=(
+                            leg.sport
+                            if hasattr(leg, "sport")
+                            else (game.sport_key if game else None)
+                        ),
                         commence_time=(
                             datetime.fromisoformat(
                                 leg.commence_time.replace("Z", "+00:00")
                             )
-                            if leg.commence_time
-                            else datetime.utcnow()
+                            if hasattr(leg, "commence_time") and leg.commence_time
+                            else (game.commence_time if game else datetime.utcnow())
                         ),
                     )
 
