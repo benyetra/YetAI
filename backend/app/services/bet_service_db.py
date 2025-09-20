@@ -166,8 +166,8 @@ class BetServiceDB:
                     leg_bet = Bet(
                         id=leg_id,
                         user_id=user_id,
-                        game_id=None,  # Set to None to avoid foreign key constraint
-                        parlay_id=parlay_id,
+                        game_id=leg.game_id,  # Use the provided game_id from frontend
+                        parent_bet_id=parlay_id,  # Link to parent parlay
                         bet_type=leg.bet_type,
                         selection=leg.selection,
                         odds=leg.odds,
@@ -175,11 +175,11 @@ class BetServiceDB:
                         potential_win=0,
                         status=BetStatus.PENDING,
                         placed_at=datetime.utcnow(),
-                        # Use leg data if available, otherwise None
-                        home_team=getattr(leg, "home_team", None),
-                        away_team=getattr(leg, "away_team", None),
-                        sport=getattr(leg, "sport", None),
-                        commence_time=datetime.utcnow(),
+                        # Use leg data from frontend
+                        home_team=leg.home_team,
+                        away_team=leg.away_team,
+                        sport=leg.sport,
+                        commence_time=datetime.fromisoformat(leg.commence_time.replace('Z', '+00:00')) if leg.commence_time else datetime.utcnow(),
                     )
 
                     db.add(leg_bet)

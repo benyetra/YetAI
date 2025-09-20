@@ -2502,6 +2502,162 @@ async def fix_specific_parlay_ids(admin_user: dict = Depends(require_admin)):
         )
 
 
+@app.post("/api/admin/parlays/fix-all-orphaned-legs")
+async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)):
+    """Fix all parlay legs that don't have game associations (Admin only)"""
+    try:
+        logger.info("🔧 Fixing all orphaned parlay legs...")
+
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            # Find all parlay legs without game associations
+            orphaned_query = """
+            SELECT b.id, b.selection, b.bet_type, b.parent_bet_id
+            FROM bets b
+            WHERE b.bet_type::text IN ('moneyline', 'spread', 'total')
+            AND b.parent_bet_id IS NOT NULL
+            AND b.game_id IS NULL
+            ORDER BY b.created_at DESC
+            """
+            orphaned_result = db.execute(text(orphaned_query))
+            orphaned_legs = orphaned_result.fetchall()
+
+            if not orphaned_legs:
+                return {
+                    "status": "success",
+                    "message": "No orphaned parlay legs found",
+                    "fixed_legs": []
+                }
+
+            logger.info(f"Found {len(orphaned_legs)} orphaned parlay legs")
+
+            fixed_legs = []
+            unmatched_legs = []
+
+            for leg in orphaned_legs:
+                bet_id, selection, bet_type, parent_bet_id = leg
+                logger.info(f"Processing leg {bet_id[:8]}... - {selection} ({bet_type})")
+
+                # Extract team names from selection
+                team_name = None
+
+                if bet_type == 'moneyline':
+                    # For moneyline, selection is just the team name
+                    team_name = selection.strip()
+                elif bet_type == 'spread':
+                    # For spread, extract team from "Detroit Tigers +7.5" format
+                    if '+' in selection or '-' in selection:
+                        # Split on + or - and take the first part
+                        import re
+                        match = re.match(r'^(.+?)\s*[+-]', selection)
+                        if match:
+                            team_name = match.group(1).strip()
+                elif bet_type == 'total':
+                    # For total bets, we need to find the game differently
+                    # Look for "Over X.X" or "Under X.X" in selection
+                    # We'll need to find recent games and match by timing/context
+                    logger.info(f"Total bet detected: {selection} - skipping for now")
+                    continue
+
+                if not team_name:
+                    logger.warning(f"Could not extract team name from selection: {selection}")
+                    unmatched_legs.append({
+                        "bet_id": bet_id[:8] + "...",
+                        "selection": selection,
+                        "bet_type": bet_type,
+                        "reason": "Could not extract team name"
+                    })
+                    continue
+
+                # Find matching game
+                game_query = """
+                SELECT id, home_team, away_team, commence_time
+                FROM games
+                WHERE (home_team ILIKE %s OR away_team ILIKE %s)
+                AND commence_time >= NOW() - INTERVAL '7 days'
+                ORDER BY commence_time DESC
+                LIMIT 1
+                """
+
+                # Create search pattern
+                search_pattern = f"%{team_name}%"
+
+                game_result = db.execute(text(game_query), (search_pattern, search_pattern))
+                game = game_result.fetchone()
+
+                if game:
+                    game_id, home_team, away_team, commence_time = game
+
+                    # Update the bet with game information
+                    update_query = """
+                    UPDATE bets
+                    SET game_id = :game_id,
+                        home_team = :home_team,
+                        away_team = :away_team
+                    WHERE id = :bet_id
+                    """
+                    db.execute(
+                        text(update_query),
+                        {
+                            "bet_id": bet_id,
+                            "game_id": game_id,
+                            "home_team": home_team,
+                            "away_team": away_team,
+                        },
+                    )
+
+                    fixed_legs.append({
+                        "bet_id": bet_id[:8] + "...",
+                        "selection": selection,
+                        "bet_type": bet_type,
+                        "matched_team": team_name,
+                        "game": f"{home_team} vs {away_team}",
+                        "game_id": game_id[:8] + "...",
+                        "commence_time": str(commence_time)
+                    })
+
+                    logger.info(f"✅ Fixed leg {bet_id[:8]}... -> {home_team} vs {away_team}")
+
+                else:
+                    logger.warning(f"No game found for team: {team_name}")
+                    unmatched_legs.append({
+                        "bet_id": bet_id[:8] + "...",
+                        "selection": selection,
+                        "bet_type": bet_type,
+                        "extracted_team": team_name,
+                        "reason": "No matching game found"
+                    })
+
+            # Commit all changes
+            db.commit()
+
+            return {
+                "status": "success",
+                "message": f"Fixed {len(fixed_legs)} orphaned parlay legs",
+                "fixed_legs": fixed_legs,
+                "unmatched_legs": unmatched_legs,
+                "total_processed": len(orphaned_legs)
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error fixing orphaned parlay legs: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Fix orphaned parlay legs failed: {str(e)}"
+        )
+
+
+@app.options("/api/admin/parlays/fix-all-orphaned-legs")
+async def options_fix_all_orphaned_parlay_legs():
+    """Handle CORS preflight for fix all orphaned parlay legs"""
+    return {}
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
