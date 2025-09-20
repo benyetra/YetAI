@@ -968,10 +968,43 @@ class BetServiceDB:
                     self._parlay_to_dict(parlay, db) for parlay in active_parlays
                 ]
 
+                # Debug logging to identify duplicates
+                logger.info(
+                    f"Active bets query returned {len(active_bets)} single bets, {len(active_parlays)} parlays"
+                )
+
+                # Check for duplicate IDs in the results
+                bet_ids = [bet.id for bet in active_bets]
+                parlay_ids = [parlay.id for parlay in active_parlays]
+
+                if len(bet_ids) != len(set(bet_ids)):
+                    logger.warning(f"DUPLICATE SINGLE BET IDs found: {bet_ids}")
+                if len(parlay_ids) != len(set(parlay_ids)):
+                    logger.warning(f"DUPLICATE PARLAY IDs found: {parlay_ids}")
+
                 # Combine and sort by placed_at
                 all_active = bet_list + parlay_list
                 all_active.sort(key=lambda x: x["placed_at"], reverse=True)
 
+                # Final check for duplicate IDs in combined list
+                combined_ids = [bet.get("id") for bet in all_active]
+                if len(combined_ids) != len(set(combined_ids)):
+                    logger.error(f"DUPLICATE IDs in final result: {combined_ids}")
+
+                    # Temporary fix: Remove duplicates based on ID
+                    seen_ids = set()
+                    deduplicated = []
+                    for bet in all_active:
+                        if bet.get("id") not in seen_ids:
+                            deduplicated.append(bet)
+                            seen_ids.add(bet.get("id"))
+
+                    logger.warning(
+                        f"Removed {len(all_active) - len(deduplicated)} duplicate entries"
+                    )
+                    all_active = deduplicated
+
+                logger.info(f"Returning {len(all_active)} total active bets")
                 return all_active
 
             finally:
