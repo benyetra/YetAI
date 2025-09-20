@@ -68,10 +68,23 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
 
     if (bet?.home_team && bet?.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
+
       if (bet.bet_type === 'moneyline') {
-        return `${bet.selection} to Win (${gameInfo})`;
+        // Check if selection is 'home'/'away' and convert to team name
+        if (bet.selection === 'home' || bet.selection === 'away') {
+          const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+          return `${team} to Win (${gameInfo})`;
+        } else {
+          return `${bet.selection} to Win (${gameInfo})`;
+        }
       } else if (bet.bet_type === 'spread') {
-        return `${bet.selection} (${gameInfo})`;
+        // Check if selection is 'home'/'away' and convert to team name
+        if (bet.selection === 'home' || bet.selection === 'away') {
+          const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+          return `${team} Spread (${gameInfo})`;
+        } else {
+          return `${bet.selection} Spread (${gameInfo})`;
+        }
       } else if (bet.bet_type === 'total') {
         return `${(bet.selection || '').toUpperCase()} (${gameInfo})`;
       }
