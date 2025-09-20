@@ -167,7 +167,7 @@ class BetServiceDB:
                         id=leg_id,
                         user_id=user_id,
                         game_id=leg.game_id,  # Use the provided game_id from frontend
-                        parent_bet_id=parlay_id,  # Link to parent parlay
+                        parlay_id=parlay_id,  # Link to parent parlay
                         bet_type=leg.bet_type,
                         selection=leg.selection,
                         odds=leg.odds,

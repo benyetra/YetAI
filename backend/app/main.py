@@ -2515,12 +2515,12 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
         try:
             # Find all parlay legs without game associations
             orphaned_query = """
-            SELECT b.id, b.selection, b.bet_type, b.parent_bet_id
+            SELECT b.id, b.selection, b.bet_type, b.parlay_id
             FROM bets b
             WHERE b.bet_type::text IN ('moneyline', 'spread', 'total')
-            AND b.parent_bet_id IS NOT NULL
+            AND b.parlay_id IS NOT NULL
             AND b.game_id IS NULL
-            ORDER BY b.created_at DESC
+            ORDER BY b.placed_at DESC
             """
             orphaned_result = db.execute(text(orphaned_query))
             orphaned_legs = orphaned_result.fetchall()
@@ -2538,7 +2538,7 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
             unmatched_legs = []
 
             for leg in orphaned_legs:
-                bet_id, selection, bet_type, parent_bet_id = leg
+                bet_id, selection, bet_type, parlay_id = leg
                 logger.info(
                     f"Processing leg {bet_id[:8]}... - {selection} ({bet_type})"
                 )
