@@ -701,32 +701,63 @@ class BetServiceDB:
         game = db.query(Game).filter(Game.id == leg.game_id).first()
 
         if not game:
-            # Use team information from leg data if available
-            sport_key = leg.sport if hasattr(leg, "sport") and leg.sport else "unknown"
+            # First, try to use team information from leg data if available
+            sport_key = leg.sport if hasattr(leg, "sport") and leg.sport else None
             home_team = (
-                leg.home_team if hasattr(leg, "home_team") and leg.home_team else "TBD"
+                leg.home_team if hasattr(leg, "home_team") and leg.home_team else None
             )
             away_team = (
-                leg.away_team if hasattr(leg, "away_team") and leg.away_team else "TBD"
+                leg.away_team if hasattr(leg, "away_team") and leg.away_team else None
             )
             commence_time = (
                 self._parse_datetime(leg.commence_time)
                 if hasattr(leg, "commence_time") and leg.commence_time
-                else datetime.utcnow()
+                else None
             )
 
-            # Fallback: try to extract sport from game_id pattern if no sport provided
-            if sport_key == "unknown" and leg.game_id.startswith("nfl-"):
-                sport_key = "americanfootball_nfl"
+            # If we have good leg data, use it directly
+            if home_team and away_team and sport_key:
+                game = Game(
+                    id=leg.game_id,
+                    sport_key=sport_key,
+                    sport_title=sport_key.replace("_", " ").title(),
+                    home_team=home_team,
+                    away_team=away_team,
+                    commence_time=commence_time or datetime.utcnow(),
+                )
+            else:
+                # If leg data is incomplete, try to fetch from Odds API
+                logger.info(f"Leg data incomplete for {leg.game_id}, trying Odds API")
+                game_details = await self._fetch_game_details_from_api(leg.game_id)
+                if game_details:
+                    game = Game(
+                        id=leg.game_id,
+                        sport_key=game_details["sport_key"],
+                        sport_title=game_details["sport_title"],
+                        home_team=game_details["home_team"],
+                        away_team=game_details["away_team"],
+                        commence_time=game_details["commence_time"],
+                    )
+                    logger.info(
+                        f"Created game from API for {leg.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
+                    )
+                else:
+                    # Fallback to placeholder data with sport inference
+                    sport_key = sport_key or "unknown"
+                    if sport_key == "unknown" and leg.game_id.startswith("nfl-"):
+                        sport_key = "americanfootball_nfl"
 
-            game = Game(
-                id=leg.game_id,
-                sport_key=sport_key,
-                sport_title=sport_key.replace("_", " ").title(),
-                home_team=home_team,
-                away_team=away_team,
-                commence_time=commence_time,
-            )
+                    game = Game(
+                        id=leg.game_id,
+                        sport_key=sport_key,
+                        sport_title=sport_key.replace("_", " ").title(),
+                        home_team=home_team or "TBD",
+                        away_team=away_team or "TBD",
+                        commence_time=commence_time or datetime.utcnow(),
+                    )
+                    logger.warning(
+                        f"Created placeholder game for {leg.game_id} - no API data found"
+                    )
 
             try:
                 db.add(game)
