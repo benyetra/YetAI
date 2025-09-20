@@ -4357,7 +4357,9 @@ async def get_ncaaf_odds():
                 games = await service.get_odds("americanfootball_ncaaf")
 
                 # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(games, "americanfootball_ncaaf")
+                stored_count = await _store_games_in_database(
+                    games, "americanfootball_ncaaf"
+                )
                 logger.info(
                     f"NCAAF: Fetched {len(games)} games, stored {stored_count} in database"
                 )
@@ -4409,7 +4411,7 @@ async def get_popular_sports_odds():
                 "status": "error",
                 "games": [],
                 "count": 0,
-                "message": f"Failed to fetch odds: {str(e)}"
+                "message": f"Failed to fetch odds: {str(e)}",
             }
 
     # Return error if API key is not configured
