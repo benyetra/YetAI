@@ -12,6 +12,7 @@ import logging
 import os
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 from pydantic import BaseModel, EmailStr
 from typing import List, Optional, Dict, Any
 
@@ -343,7 +344,62 @@ app.add_middleware(
 )
 
 # Mount static files for avatars
-app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
+# Create uploads directory if it doesn't exist and mount it
+uploads_dir = Path(__file__).parent / "uploads"
+uploads_dir.mkdir(exist_ok=True)
+(uploads_dir / "avatars").mkdir(exist_ok=True)
+
+app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
+
+# Debug endpoint to check avatar files
+@app.get("/debug/avatar/{user_id}")
+async def debug_avatar(user_id: int):
+    """Debug endpoint to check avatar files and paths"""
+    uploads_dir = Path(__file__).parent / "uploads" / "avatars"
+    logger.info(f"Checking avatar directory: {uploads_dir}")
+    logger.info(f"Directory exists: {uploads_dir.exists()}")
+
+    if uploads_dir.exists():
+        files = list(uploads_dir.glob(f"{user_id}_*.jpg"))
+        logger.info(f"Found files for user {user_id}: {files}")
+        all_files = list(uploads_dir.glob("*.jpg"))
+        return {
+            "uploads_dir": str(uploads_dir),
+            "exists": uploads_dir.exists(),
+            "files": [str(f) for f in files],
+            "user_files": [f.name for f in files],
+            "all_files": [f.name for f in all_files],
+            "static_mount_dir": str(Path(__file__).parent / "uploads"),
+        }
+    else:
+        return {
+            "uploads_dir": str(uploads_dir),
+            "exists": False,
+            "error": "Directory does not exist",
+        }
+
+
+# Alternative avatar serving endpoint for debugging
+@app.get("/api/serve-avatar/{filename}")
+async def serve_avatar_debug(filename: str):
+    """Alternative avatar serving for debugging"""
+    from fastapi.responses import FileResponse
+
+    uploads_dir = Path(__file__).parent / "uploads" / "avatars"
+    file_path = uploads_dir / filename
+
+    logger.info(f"Trying to serve: {file_path}")
+    logger.info(f"File exists: {file_path.exists()}")
+
+    if file_path.exists() and file_path.is_file():
+        return FileResponse(
+            path=str(file_path),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    else:
+        raise HTTPException(status_code=404, detail="Avatar not found")
 
 
 # Health and status endpoints
