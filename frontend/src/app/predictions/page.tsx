@@ -91,9 +91,15 @@ export default function YetAIBetsPage() {
       if (response.ok) {
         const data = await response.json();
         console.log('API response:', data); // Debug log
-        
+
         // Extract bets from the response object
         const betsArray = Array.isArray(data.bets) ? data.bets : [];
+
+        // Debug date filtering
+        if (betsArray.length > 0) {
+          console.log('Sample bet game_time format:', betsArray[0].game_time);
+          console.log('Today\'s date:', new Date().toDateString());
+        }
         setBets(betsArray);
         
         // Calculate performance stats from data
@@ -181,9 +187,72 @@ export default function YetAIBetsPage() {
 
   const isProUser = user?.subscription_tier === 'pro' || user?.subscription_tier === 'elite';
 
+  // Helper function to check if a date string matches the selected period
+  const isInPeriod = (gameTimeStr: string, period: string) => {
+    try {
+      // Parse the game time string - handle different formats
+      let dateStr = gameTimeStr;
+
+      // If format is "09/16/2025 @06:46 PM EDT", extract just the date part
+      if (dateStr.includes(' @')) {
+        dateStr = dateStr.split(' @')[0];
+      }
+
+      // Parse the date
+      const gameDate = new Date(dateStr);
+      const today = new Date();
+
+      // Ensure we have a valid date
+      if (isNaN(gameDate.getTime())) {
+        console.warn('Invalid date format:', gameTimeStr);
+        return false;
+      }
+
+      // Set times to start of day for comparison
+      gameDate.setHours(0, 0, 0, 0);
+      today.setHours(0, 0, 0, 0);
+
+      const yesterday = new Date(today);
+      yesterday.setDate(today.getDate() - 1);
+      const weekAgo = new Date(today);
+      weekAgo.setDate(today.getDate() - 7);
+
+      switch (period) {
+        case 'today':
+          return gameDate.getTime() === today.getTime();
+        case 'yesterday':
+          return gameDate.getTime() === yesterday.getTime();
+        case 'week':
+          return gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= today.getTime();
+        default:
+          return false;
+      }
+    } catch (error) {
+      console.error('Error parsing date:', gameTimeStr, error);
+      return false;
+    }
+  };
+
   // Filter bets based on selected period and user tier
-  const todaysBets = bets.filter(bet => bet.status === 'pending');
-  const recentResults = bets.filter(bet => bet.status === 'won' || bet.status === 'lost');
+  const todaysBets = bets.filter(bet => {
+    const matchesPeriod = isInPeriod(bet.game_time, selectedPeriod);
+    // For 'today' period, show pending bets for today
+    if (selectedPeriod === 'today') {
+      const result = bet.status === 'pending' && matchesPeriod;
+      if (bet.status === 'pending') {
+        console.log(`Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
+      }
+      return result;
+    }
+    // For other periods, show pending bets in that time range
+    return bet.status === 'pending' && matchesPeriod;
+  });
+
+  const recentResults = bets.filter(bet => {
+    // Show settled bets (won/lost) that match the selected period
+    const matchesPeriod = isInPeriod(bet.game_time, selectedPeriod);
+    return (bet.status === 'won' || bet.status === 'lost') && matchesPeriod;
+  });
 
   const visibleBets = isProUser ? todaysBets : todaysBets.slice(0, 1);
   const lockedBets = isProUser ? [] : todaysBets.slice(1);
@@ -390,7 +459,7 @@ export default function YetAIBetsPage() {
           ))}
         </div>
 
-        {/* Today's Bets */}
+        {/* Current Period Bets */}
         {selectedPeriod === 'today' && (
           <div>
             <div className="flex items-center justify-between mb-4">
@@ -399,7 +468,7 @@ export default function YetAIBetsPage() {
                 Today's Best Bets
               </h2>
               <span className="text-sm text-gray-500">
-                {loadingBets ? 'Loading...' : 
+                {loadingBets ? 'Loading...' :
                   isProUser ? `${todaysBets.length} bets available` : '1 free bet, 3 premium bets'}
               </span>
             </div>
