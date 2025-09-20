@@ -5043,7 +5043,7 @@ async def cleanup_expired_featured_games(
         result = db.execute(cleanup_query)
         db.commit()
 
-        expired_count = result.rowcount if hasattr(result, 'rowcount') else 0
+        expired_count = result.rowcount if hasattr(result, "rowcount") else 0
 
         return {
             "status": "success",
@@ -5069,7 +5069,9 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
         # First, clean up expired games (games that have already ended)
         cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
         cleanup_result = db.execute(cleanup_query)
-        expired_count = cleanup_result.rowcount if hasattr(cleanup_result, 'rowcount') else 0
+        expired_count = (
+            cleanup_result.rowcount if hasattr(cleanup_result, "rowcount") else 0
+        )
 
         # Clear existing featured games
         db.execute(text("DELETE FROM featured_games"))
