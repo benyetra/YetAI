@@ -97,20 +97,21 @@ class TestProductionApp:
 
     @patch("app.core.service_loader.is_service_available")
     @patch("app.core.service_loader.get_service")
-    def test_nfl_odds_endpoint_success(
+    def test_nfl_odds_endpoint_no_api_key(
         self, mock_get_service, mock_is_available, client
     ):
-        """Test NFL odds endpoint when service is available"""
-        # Mock service availability - but odds endpoint doesn't use sports_pipeline directly
-        mock_is_available.return_value = False  # Will return mock data
+        """Test NFL odds endpoint when API key is not configured"""
+        # Mock service availability - odds endpoint only depends on API key now
+        mock_is_available.return_value = False
 
         response = client.get("/api/odds/nfl")
         assert response.status_code == 200
 
         data = response.json()
-        assert data["status"] == "success"
+        assert data["status"] == "error"
         assert "odds" in data
-        # Note: May have real data if ODDS_API_KEY is configured
+        assert data["odds"] == []
+        assert "ODDS_API_KEY not configured" in data["message"]
 
     @patch("app.core.service_loader.is_service_available")
     @patch("app.core.service_loader.get_service")
