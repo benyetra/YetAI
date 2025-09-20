@@ -282,6 +282,150 @@ class GameSyncService:
         finally:
             db.close()
 
+    async def sync_upcoming_games(self, days_ahead: int = 7) -> Dict[str, any]:
+        """
+        Sync upcoming games from The Odds API and store in database
+
+        This ensures we have real game data for betting instead of placeholder data
+
+        Args:
+            days_ahead: Number of days ahead to fetch games
+
+        Returns:
+            Dict with sync results
+        """
+        if not self.is_available():
+            logger.warning("Game sync service unavailable - no API key")
+            return {"status": "skipped", "reason": "no_api_key"}
+
+        total_updated = 0
+        total_created = 0
+        sports_synced = []
+
+        try:
+            for sport_key in self.sync_sports:
+                try:
+                    logger.info(f"Syncing upcoming games for {sport_key}")
+
+                    # Fetch upcoming games from Odds API
+                    games = await self.odds_api_service.get_odds(
+                        sport=sport_key.value,
+                        commence_time_from=datetime.utcnow(),
+                        commence_time_to=datetime.utcnow() + timedelta(days=days_ahead),
+                    )
+
+                    if not games:
+                        logger.info(f"No upcoming games found for {sport_key}")
+                        continue
+
+                    # Update database with game data
+                    updated, created = await self._update_games_from_odds(
+                        games, sport_key.value
+                    )
+                    total_updated += updated
+                    total_created += created
+                    sports_synced.append(sport_key.value)
+
+                    logger.info(
+                        f"Synced {sport_key}: {updated} updated, {created} created from {len(games)} games"
+                    )
+
+                    # Small delay between API calls to respect rate limits
+                    await asyncio.sleep(1)
+
+                except Exception as e:
+                    logger.error(f"Error syncing upcoming games for {sport_key}: {e}")
+                    continue
+
+            return {
+                "status": "success",
+                "total_updated": total_updated,
+                "total_created": total_created,
+                "sports_synced": sports_synced,
+                "message": f"Synced {total_updated + total_created} games across {len(sports_synced)} sports",
+            }
+
+        except Exception as e:
+            logger.error(f"Critical error in sync_upcoming_games: {e}")
+            return {"status": "error", "error": str(e)}
+
+    async def _update_games_from_odds(
+        self, games: List, sport_key: str
+    ) -> tuple[int, int]:
+        """
+        Update database games from Odds API game data
+
+        Args:
+            games: List of Game objects from Odds API
+            sport_key: Sport key for logging
+
+        Returns:
+            Tuple of (updated_count, created_count)
+        """
+        updated_count = 0
+        created_count = 0
+
+        db = SessionLocal()
+        try:
+            for api_game in games:
+                try:
+                    # Check if game exists
+                    existing_game = (
+                        db.query(Game).filter(Game.id == api_game.id).first()
+                    )
+
+                    if existing_game:
+                        # Update existing game with real data
+                        existing_game.sport_key = api_game.sport_key
+                        existing_game.sport_title = api_game.sport_title
+                        existing_game.home_team = api_game.home_team
+                        existing_game.away_team = api_game.away_team
+                        existing_game.commence_time = api_game.commence_time
+                        existing_game.last_update = datetime.utcnow()
+
+                        # Only update status if it's currently placeholder
+                        if existing_game.status == GameStatus.SCHEDULED:
+                            existing_game.status = GameStatus.SCHEDULED
+
+                        updated_count += 1
+                        logger.info(
+                            f"Updated existing game: {api_game.away_team} @ {api_game.home_team}"
+                        )
+
+                    else:
+                        # Create new game from API data
+                        new_game = Game(
+                            id=api_game.id,
+                            sport_key=api_game.sport_key,
+                            sport_title=api_game.sport_title,
+                            home_team=api_game.home_team,
+                            away_team=api_game.away_team,
+                            commence_time=api_game.commence_time,
+                            status=GameStatus.SCHEDULED,
+                            last_update=datetime.utcnow(),
+                        )
+
+                        db.add(new_game)
+                        created_count += 1
+                        logger.info(
+                            f"Created new game: {api_game.away_team} @ {api_game.home_team}"
+                        )
+
+                except Exception as e:
+                    logger.error(f"Error processing game {api_game.id}: {e}")
+                    continue
+
+            db.commit()
+
+        except Exception as e:
+            logger.error(f"Database error in _update_games_from_odds: {e}")
+            db.rollback()
+
+        finally:
+            db.close()
+
+        return updated_count, created_count
+
 
 # Global service instance
 game_sync_service = GameSyncService()

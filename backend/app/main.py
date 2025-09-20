@@ -2732,6 +2732,19 @@ async def sync_games(admin_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=500, detail="Failed to sync games")
 
 
+@app.post("/api/admin/games/sync-upcoming")
+async def sync_upcoming_games(admin_user: dict = Depends(require_admin)):
+    """Sync upcoming games from Odds API to populate real game data (Admin only)"""
+    try:
+        from app.services.game_sync_service import game_sync_service
+
+        result = await game_sync_service.sync_upcoming_games(days_ahead=7)
+        return {"status": "success", "result": result}
+    except Exception as e:
+        logger.error(f"Error syncing upcoming games: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync upcoming games")
+
+
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")
 async def options_place_bet():

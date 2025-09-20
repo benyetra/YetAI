@@ -694,7 +694,7 @@ class BetServiceDB:
             return None
 
     async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
-        """Get or create game record from parlay leg"""
+        """Get or create game record from parlay leg - simplified version"""
         if not hasattr(leg, "game_id") or not leg.game_id:
             return None
 
@@ -725,6 +725,9 @@ class BetServiceDB:
                     away_team=away_team,
                     commence_time=commence_time or datetime.utcnow(),
                 )
+                logger.info(
+                    f"Created game from leg data: {away_team} @ {home_team} ({sport_key})"
+                )
             else:
                 # If leg data is incomplete, try to fetch from Odds API
                 logger.info(f"Leg data incomplete for {leg.game_id}, trying Odds API")
@@ -742,25 +745,17 @@ class BetServiceDB:
                         f"Created game from API for {leg.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
                     )
                 else:
-                    # Try to extract team info from selection text as last resort
-                    extracted_teams = self._extract_teams_from_selection(leg.selection)
-                    extracted_sport = self._detect_sport_from_game_id(leg.game_id)
-
-                    # Use extracted data if available, otherwise use placeholders
-                    sport_key = sport_key or extracted_sport or "unknown"
-                    home_team = home_team or extracted_teams.get("home") or "TBD"
-                    away_team = away_team or extracted_teams.get("away") or "TBD"
-
+                    # Last resort: create minimal placeholder that admin can sync later
+                    logger.warning(
+                        f"No data available for game {leg.game_id}, creating placeholder. Use sync-upcoming-games endpoint to populate real data."
+                    )
                     game = Game(
                         id=leg.game_id,
-                        sport_key=sport_key,
-                        sport_title=sport_key.replace("_", " ").title(),
-                        home_team=home_team,
-                        away_team=away_team,
-                        commence_time=commence_time or datetime.utcnow(),
-                    )
-                    logger.warning(
-                        f"Created game with extracted data for {leg.game_id}: {away_team} @ {home_team} ({sport_key})"
+                        sport_key="unknown",
+                        sport_title="Unknown Sport",
+                        home_team="TBD",
+                        away_team="TBD",
+                        commence_time=datetime.utcnow(),
                     )
 
             try:
@@ -1042,109 +1037,6 @@ class BetServiceDB:
         except Exception as e:
             logger.error(f"Error simulating results: {e}")
             return {"success": False, "error": str(e)}
-
-    def _detect_sport_from_game_id(self, game_id: str) -> Optional[str]:
-        """Detect sport from game ID patterns"""
-        if not game_id:
-            return None
-
-        game_id_lower = game_id.lower()
-
-        # Common patterns in game IDs
-        if "nfl" in game_id_lower or game_id.startswith("5737e4") or len(game_id) == 32:
-            return "americanfootball_nfl"
-        elif "mlb" in game_id_lower or "baseball" in game_id_lower:
-            return "baseball_mlb"
-        elif "nba" in game_id_lower or "basketball" in game_id_lower:
-            return "basketball_nba"
-        elif "nhl" in game_id_lower or "hockey" in game_id_lower:
-            return "icehockey_nhl"
-        elif "ncaaf" in game_id_lower or "college_football" in game_id_lower:
-            return "americanfootball_ncaaf"
-        elif "ncaab" in game_id_lower or "college_basketball" in game_id_lower:
-            return "basketball_ncaab"
-
-        return None
-
-    def _extract_teams_from_selection(self, selection: str) -> Dict[str, Optional[str]]:
-        """Extract team names from bet selection text"""
-        if not selection:
-            return {"home": None, "away": None}
-
-        # Common NFL team patterns
-        nfl_teams = {
-            "Panthers": "Carolina Panthers",
-            "Carolina Panthers": "Carolina Panthers",
-            "Chiefs": "Kansas City Chiefs",
-            "Kansas City": "Kansas City Chiefs",
-            "Patriots": "New England Patriots",
-            "New England": "New England Patriots",
-            "Cowboys": "Dallas Cowboys",
-            "Dallas": "Dallas Cowboys",
-            "Packers": "Green Bay Packers",
-            "Green Bay": "Green Bay Packers",
-            "Saints": "New Orleans Saints",
-            "New Orleans": "New Orleans Saints",
-            "49ers": "San Francisco 49ers",
-            "San Francisco": "San Francisco 49ers",
-            "Ravens": "Baltimore Ravens",
-            "Baltimore": "Baltimore Ravens",
-            "Steelers": "Pittsburgh Steelers",
-            "Pittsburgh": "Pittsburgh Steelers",
-            "Bills": "Buffalo Bills",
-            "Buffalo": "Buffalo Bills",
-            "Dolphins": "Miami Dolphins",
-            "Miami": "Miami Dolphins",
-            "Jets": "New York Jets",
-            "Giants": "New York Giants",
-            "Eagles": "Philadelphia Eagles",
-            "Philadelphia": "Philadelphia Eagles",
-            "Commanders": "Washington Commanders",
-            "Washington": "Washington Commanders",
-            "Bears": "Chicago Bears",
-            "Chicago": "Chicago Bears",
-            "Lions": "Detroit Lions",
-            "Detroit": "Detroit Lions",
-            "Vikings": "Minnesota Vikings",
-            "Minnesota": "Minnesota Vikings",
-            "Falcons": "Atlanta Falcons",
-            "Atlanta": "Atlanta Falcons",
-            "Buccaneers": "Tampa Bay Buccaneers",
-            "Tampa Bay": "Tampa Bay Buccaneers",
-            "Rams": "Los Angeles Rams",
-            "Chargers": "Los Angeles Chargers",
-            "Cardinals": "Arizona Cardinals",
-            "Arizona": "Arizona Cardinals",
-            "Seahawks": "Seattle Seahawks",
-            "Seattle": "Seattle Seahawks",
-            "Broncos": "Denver Broncos",
-            "Denver": "Denver Broncos",
-            "Raiders": "Las Vegas Raiders",
-            "Las Vegas": "Las Vegas Raiders",
-            "Titans": "Tennessee Titans",
-            "Tennessee": "Tennessee Titans",
-            "Colts": "Indianapolis Colts",
-            "Indianapolis": "Indianapolis Colts",
-            "Jaguars": "Jacksonville Jaguars",
-            "Jacksonville": "Jacksonville Jaguars",
-            "Texans": "Houston Texans",
-            "Houston": "Houston Texans",
-            "Browns": "Cleveland Browns",
-            "Cleveland": "Cleveland Browns",
-            "Bengals": "Cincinnati Bengals",
-            "Cincinnati": "Cincinnati Bengals",
-        }
-
-        # Check for team names in selection
-        for team_key, full_name in nfl_teams.items():
-            if team_key.lower() in selection.lower():
-                # For spread/total bets, the team mentioned is usually one of the teams
-                # We can't easily determine home vs away from just the selection
-                # so we'll put it as the away team (common convention)
-                return {"away": full_name, "home": None}
-
-        # For MLB and other sports, you could add similar logic
-        return {"home": None, "away": None}
 
 
 # Initialize service
