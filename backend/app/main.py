@@ -4201,7 +4201,7 @@ async def options_nfl_odds():
 @app.get("/api/odds/americanfootball_nfl")
 async def get_nfl_odds():
     """Get NFL odds directly"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import OddsAPIService
 
@@ -4219,13 +4219,12 @@ async def get_nfl_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
-            # Fall through to mock data
 
-    # Return mock NFL data
+    # Return error if API key not configured
     return {
-        "status": "success",
+        "status": "error",
         "games": [],
-        "message": f"Mock NFL odds - Running in {settings.ENVIRONMENT} mode",
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NFL odds.",
     }
 
 
@@ -4238,7 +4237,7 @@ async def options_nba_odds():
 @app.get("/api/odds/basketball_nba")
 async def get_nba_odds():
     """Get NBA odds directly"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import OddsAPIService
 
@@ -4256,9 +4255,9 @@ async def get_nba_odds():
             logger.error(f"Error fetching NBA odds: {e}")
 
     return {
-        "status": "success",
+        "status": "error",
         "games": [],
-        "message": f"Mock NBA odds - Running in {settings.ENVIRONMENT} mode",
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NBA odds.",
     }
 
 
@@ -4271,7 +4270,7 @@ async def options_mlb_odds():
 @app.get("/api/odds/baseball_mlb")
 async def get_mlb_odds():
     """Get MLB odds directly"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import OddsAPIService
 
@@ -4289,9 +4288,9 @@ async def get_mlb_odds():
             logger.error(f"Error fetching MLB odds: {e}")
 
     return {
-        "status": "success",
+        "status": "error",
         "games": [],
-        "message": f"Mock MLB odds - Running in {settings.ENVIRONMENT} mode",
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real MLB odds.",
     }
 
 
@@ -4304,7 +4303,7 @@ async def options_nhl_odds():
 @app.get("/api/odds/icehockey_nhl")
 async def get_nhl_odds():
     """Get NHL (Ice Hockey) odds"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import OddsAPIService
 
@@ -4322,9 +4321,9 @@ async def get_nhl_odds():
             logger.error(f"Error fetching NHL odds: {e}")
 
     return {
-        "status": "success",
+        "status": "error",
         "games": [],
-        "message": f"Mock NHL odds - Running in {settings.ENVIRONMENT} mode",
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NHL odds.",
     }
 
 
@@ -4341,10 +4340,43 @@ async def get_hockey_odds():
     return await get_nhl_odds()
 
 
+@app.options("/api/odds/americanfootball_ncaaf")
+async def options_ncaaf_odds():
+    """Handle CORS preflight for NCAAF odds"""
+    return {}
+
+
+@app.get("/api/odds/americanfootball_ncaaf")
+async def get_ncaaf_odds():
+    """Get NCAAF (College Football) odds"""
+    if settings.ODDS_API_KEY:
+        try:
+            from app.services.odds_api_service import OddsAPIService
+
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds("americanfootball_ncaaf")
+
+                # Store games in database for parlay creation
+                stored_count = await _store_games_in_database(games, "americanfootball_ncaaf")
+                logger.info(
+                    f"NCAAF: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+
+                return {"status": "success", "games": games}
+        except Exception as e:
+            logger.error(f"Error fetching NCAAF odds: {e}")
+
+    return {
+        "status": "error",
+        "games": [],
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NCAAF odds.",
+    }
+
+
 @app.get("/api/odds/nfl")
 async def get_nfl_odds_legacy():
     """Get NFL odds (legacy endpoint)"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import OddsAPIService
 
@@ -4355,50 +4387,37 @@ async def get_nfl_odds_legacy():
             logger.error(f"Error fetching NFL odds: {e}")
 
     return {
-        "status": "success",
+        "status": "error",
         "odds": [],
-        "message": "Mock data - Odds API not configured",
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NFL odds.",
     }
 
 
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
     """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
-    if settings.ODDS_API_KEY and is_service_available("sports_pipeline"):
+    if settings.ODDS_API_KEY:
         try:
             from app.services.odds_api_service import get_popular_sports_odds
 
             games = await get_popular_sports_odds()
-            return {"status": "success", "data": games}
+            return {"status": "success", "games": games, "count": len(games)}
         except Exception as e:
             logger.error(f"Error fetching popular sports odds: {e}")
-
-    return {
-        "status": "success",
-        "data": [
-            {
-                "id": "mock_game_1",
-                "sport_title": "NFL",
-                "home_team": "Kansas City Chiefs",
-                "away_team": "Buffalo Bills",
-                "commence_time": "2025-01-12T21:00:00Z",
-                "bookmakers": [
-                    {
-                        "title": "DraftKings",
-                        "markets": [
-                            {
-                                "key": "h2h",
-                                "outcomes": [
-                                    {"name": "Kansas City Chiefs", "price": -110},
-                                    {"name": "Buffalo Bills", "price": -110},
-                                ],
-                            }
-                        ],
-                    }
-                ],
+            # If real API fails, return empty games list instead of mock data
+            return {
+                "status": "error",
+                "games": [],
+                "count": 0,
+                "message": f"Failed to fetch odds: {str(e)}"
             }
-        ],
-        "message": f"Mock data - Running in {settings.ENVIRONMENT} mode",
+
+    # Return error if API key is not configured
+    return {
+        "status": "error",
+        "games": [],
+        "count": 0,
+        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real odds data.",
     }
 
 
@@ -5254,12 +5273,13 @@ async def endpoint_health_check():
         "Odds & Markets": {
             "endpoints": [
                 "/api/odds/americanfootball_nfl",
+                "/api/odds/americanfootball_ncaaf",
                 "/api/odds/basketball_nba",
                 "/api/odds/baseball_mlb",
                 "/api/odds/icehockey_nhl",
                 "/api/odds/popular",
             ],
-            "operational": is_service_available("sports_pipeline"),
+            "operational": bool(settings.ODDS_API_KEY),
         },
         "Parlays": {
             "endpoints": ["/api/parlays/markets", "/api/parlays/popular"],
