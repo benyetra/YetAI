@@ -2529,7 +2529,7 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
                 return {
                     "status": "success",
                     "message": "No orphaned parlay legs found",
-                    "fixed_legs": []
+                    "fixed_legs": [],
                 }
 
             logger.info(f"Found {len(orphaned_legs)} orphaned parlay legs")
@@ -2539,23 +2539,26 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
 
             for leg in orphaned_legs:
                 bet_id, selection, bet_type, parent_bet_id = leg
-                logger.info(f"Processing leg {bet_id[:8]}... - {selection} ({bet_type})")
+                logger.info(
+                    f"Processing leg {bet_id[:8]}... - {selection} ({bet_type})"
+                )
 
                 # Extract team names from selection
                 team_name = None
 
-                if bet_type == 'moneyline':
+                if bet_type == "moneyline":
                     # For moneyline, selection is just the team name
                     team_name = selection.strip()
-                elif bet_type == 'spread':
+                elif bet_type == "spread":
                     # For spread, extract team from "Detroit Tigers +7.5" format
-                    if '+' in selection or '-' in selection:
+                    if "+" in selection or "-" in selection:
                         # Split on + or - and take the first part
                         import re
-                        match = re.match(r'^(.+?)\s*[+-]', selection)
+
+                        match = re.match(r"^(.+?)\s*[+-]", selection)
                         if match:
                             team_name = match.group(1).strip()
-                elif bet_type == 'total':
+                elif bet_type == "total":
                     # For total bets, we need to find the game differently
                     # Look for "Over X.X" or "Under X.X" in selection
                     # We'll need to find recent games and match by timing/context
@@ -2563,13 +2566,17 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
                     continue
 
                 if not team_name:
-                    logger.warning(f"Could not extract team name from selection: {selection}")
-                    unmatched_legs.append({
-                        "bet_id": bet_id[:8] + "...",
-                        "selection": selection,
-                        "bet_type": bet_type,
-                        "reason": "Could not extract team name"
-                    })
+                    logger.warning(
+                        f"Could not extract team name from selection: {selection}"
+                    )
+                    unmatched_legs.append(
+                        {
+                            "bet_id": bet_id[:8] + "...",
+                            "selection": selection,
+                            "bet_type": bet_type,
+                            "reason": "Could not extract team name",
+                        }
+                    )
                     continue
 
                 # Find matching game
@@ -2585,7 +2592,9 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
                 # Create search pattern
                 search_pattern = f"%{team_name}%"
 
-                game_result = db.execute(text(game_query), (search_pattern, search_pattern))
+                game_result = db.execute(
+                    text(game_query), (search_pattern, search_pattern)
+                )
                 game = game_result.fetchone()
 
                 if game:
@@ -2609,27 +2618,33 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
                         },
                     )
 
-                    fixed_legs.append({
-                        "bet_id": bet_id[:8] + "...",
-                        "selection": selection,
-                        "bet_type": bet_type,
-                        "matched_team": team_name,
-                        "game": f"{home_team} vs {away_team}",
-                        "game_id": game_id[:8] + "...",
-                        "commence_time": str(commence_time)
-                    })
+                    fixed_legs.append(
+                        {
+                            "bet_id": bet_id[:8] + "...",
+                            "selection": selection,
+                            "bet_type": bet_type,
+                            "matched_team": team_name,
+                            "game": f"{home_team} vs {away_team}",
+                            "game_id": game_id[:8] + "...",
+                            "commence_time": str(commence_time),
+                        }
+                    )
 
-                    logger.info(f"✅ Fixed leg {bet_id[:8]}... -> {home_team} vs {away_team}")
+                    logger.info(
+                        f"✅ Fixed leg {bet_id[:8]}... -> {home_team} vs {away_team}"
+                    )
 
                 else:
                     logger.warning(f"No game found for team: {team_name}")
-                    unmatched_legs.append({
-                        "bet_id": bet_id[:8] + "...",
-                        "selection": selection,
-                        "bet_type": bet_type,
-                        "extracted_team": team_name,
-                        "reason": "No matching game found"
-                    })
+                    unmatched_legs.append(
+                        {
+                            "bet_id": bet_id[:8] + "...",
+                            "selection": selection,
+                            "bet_type": bet_type,
+                            "extracted_team": team_name,
+                            "reason": "No matching game found",
+                        }
+                    )
 
             # Commit all changes
             db.commit()
@@ -2639,7 +2654,7 @@ async def fix_all_orphaned_parlay_legs(admin_user: dict = Depends(require_admin)
                 "message": f"Fixed {len(fixed_legs)} orphaned parlay legs",
                 "fixed_legs": fixed_legs,
                 "unmatched_legs": unmatched_legs,
-                "total_processed": len(orphaned_legs)
+                "total_processed": len(orphaned_legs),
             }
 
         finally:

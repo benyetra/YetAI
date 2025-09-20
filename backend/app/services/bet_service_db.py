@@ -179,7 +179,13 @@ class BetServiceDB:
                         home_team=leg.home_team,
                         away_team=leg.away_team,
                         sport=leg.sport,
-                        commence_time=datetime.fromisoformat(leg.commence_time.replace('Z', '+00:00')) if leg.commence_time else datetime.utcnow(),
+                        commence_time=(
+                            datetime.fromisoformat(
+                                leg.commence_time.replace("Z", "+00:00")
+                            )
+                            if leg.commence_time
+                            else datetime.utcnow()
+                        ),
                     )
 
                     db.add(leg_bet)
