@@ -644,44 +644,43 @@ class BetServiceDB:
                 f"Using Odds API key ending in ...{settings.ODDS_API_KEY[-4:] if len(settings.ODDS_API_KEY) > 4 else 'SHORT'}"
             )
 
-            # Try common sports to find the game
-            sports_to_try = [
-                "baseball_mlb",
-                "americanfootball_nfl",
-                "basketball_nba",
-                "icehockey_nhl",
-                "americanfootball_ncaaf",
-                "basketball_ncaab",
-            ]
+            # Use the same function that the frontend uses to get all games
+            from app.services.odds_api_service import get_popular_sports_odds
 
-            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
-                for sport in sports_to_try:
-                    try:
-                        logger.info(f"Checking sport {sport} for game {game_id}")
-                        # Get current odds/games for this sport
-                        games = await odds_service.get_odds(sport)
-                        logger.info(f"Found {len(games)} games in {sport}")
+            logger.info(
+                "Fetching all games from popular sports odds (same as frontend)"
+            )
+            api_games = await get_popular_sports_odds()
+            logger.info(f"Found {len(api_games)} total games from popular sports")
 
-                        # Look for our game ID
-                        for game in games:
-                            if game.id == game_id:
-                                logger.info(
-                                    f"FOUND GAME: {game.away_team} @ {game.home_team} in {sport}"
-                                )
-                                return {
-                                    "sport_key": game.sport_key,
-                                    "sport_title": game.sport_title,
-                                    "home_team": game.home_team,
-                                    "away_team": game.away_team,
-                                    "commence_time": game.commence_time,
-                                }
-                    except Exception as e:
-                        logger.error(
-                            f"Error checking sport {sport} for game {game_id}: {e}"
-                        )
-                        continue
+            # Find the specific game by ID
+            for game_data in api_games:
+                if game_data.get("id") == game_id:
+                    logger.info(
+                        f"FOUND GAME: {game_data.get('away_team')} @ {game_data.get('home_team')} ({game_data.get('sport_title')})"
+                    )
 
-            logger.error(f"Game {game_id} not found in any sport via Odds API")
+                    # Parse commence_time if available
+                    commence_time = None
+                    if game_data.get("commence_time"):
+                        try:
+                            commence_time = datetime.fromisoformat(
+                                game_data["commence_time"].replace("Z", "+00:00")
+                            )
+                        except:
+                            commence_time = datetime.utcnow()
+                    else:
+                        commence_time = datetime.utcnow()
+
+                    return {
+                        "sport_key": game_data.get("sport_key", "unknown"),
+                        "sport_title": game_data.get("sport_title", "Unknown Sport"),
+                        "home_team": game_data.get("home_team", "Unknown Home"),
+                        "away_team": game_data.get("away_team", "Unknown Away"),
+                        "commence_time": commence_time,
+                    }
+
+            logger.warning(f"Game {game_id} not found in popular sports data")
             return None
 
         except Exception as e:
@@ -745,22 +744,19 @@ class BetServiceDB:
                         f"Created game from API for {leg.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
                     )
                 else:
-                    # Last resort: try to extract basic info from selection text
-                    extracted_info = self._extract_basic_info_from_selection(
-                        leg.selection
+                    # Log that we're missing real game data - this should not happen
+                    logger.error(
+                        f"❌ MISSING REAL DATA: Game {leg.game_id} not found in Odds API. "
+                        f"This should not happen - frontend data should match API data. "
+                        f"Selection: {leg.selection}"
                     )
-
-                    logger.warning(
-                        f"No API data for game {leg.game_id}, using extracted info: {extracted_info}"
-                    )
+                    # Create placeholder game to prevent database errors
                     game = Game(
                         id=leg.game_id,
-                        sport_key=extracted_info.get("sport", "unknown"),
-                        sport_title=extracted_info.get("sport", "Unknown Sport")
-                        .replace("_", " ")
-                        .title(),
-                        home_team=extracted_info.get("home_team", "TBD"),
-                        away_team=extracted_info.get("away_team", "TBD"),
+                        sport_key="unknown",
+                        sport_title="Unknown Sport",
+                        home_team="API Data Missing",
+                        away_team="API Data Missing",
                         commence_time=datetime.utcnow(),
                     )
 
@@ -1056,26 +1052,52 @@ class BetServiceDB:
         teams = {
             # NFL
             "panthers": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
+            "carolina panthers": {
+                "team": "Carolina Panthers",
+                "sport": "americanfootball_nfl",
+            },
             "carolina": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
             "falcons": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
             "atlanta": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
+            "browns": {"team": "Cleveland Browns", "sport": "americanfootball_nfl"},
+            "cleveland": {"team": "Cleveland Browns", "sport": "americanfootball_nfl"},
             # NBA
             "rockets": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "houston rockets": {"team": "Houston Rockets", "sport": "basketball_nba"},
             "houston": {"team": "Houston Rockets", "sport": "basketball_nba"},
             "heat": {"team": "Miami Heat", "sport": "basketball_nba"},
+            "raptors": {"team": "Toronto Raptors", "sport": "basketball_nba"},
+            "toronto raptors": {"team": "Toronto Raptors", "sport": "basketball_nba"},
+            "toronto": {"team": "Toronto Raptors", "sport": "basketball_nba"},
             # MLB
             "red sox": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "boston red sox": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
             "boston": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
             "dodgers": {"team": "Los Angeles Dodgers", "sport": "baseball_mlb"},
+            "tigers": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
+            "detroit tigers": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
+            "detroit": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
             # NHL
             "florida panthers": {"team": "Florida Panthers", "sport": "icehockey_nhl"},
+            "canadiens": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
+            "montreal canadiens": {
+                "team": "Montréal Canadiens",
+                "sport": "icehockey_nhl",
+            },
+            "montréal canadiens": {
+                "team": "Montréal Canadiens",
+                "sport": "icehockey_nhl",
+            },
+            "montreal": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
+            "montréal": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
         }
 
-        # Check for team matches
-        for team_key, team_info in teams.items():
+        # Check for team matches (longest first to avoid partial matches)
+        sorted_teams = sorted(teams.keys(), key=len, reverse=True)
+        for team_key in sorted_teams:
             if team_key in selection_lower:
-                result["away_team"] = team_info["team"]
-                result["sport"] = team_info["sport"]
+                result["away_team"] = teams[team_key]["team"]
+                result["sport"] = teams[team_key]["sport"]
                 break
 
         return result
