@@ -745,16 +745,22 @@ class BetServiceDB:
                         f"Created game from API for {leg.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
                     )
                 else:
-                    # Last resort: create minimal placeholder that admin can sync later
+                    # Last resort: try to extract basic info from selection text
+                    extracted_info = self._extract_basic_info_from_selection(
+                        leg.selection
+                    )
+
                     logger.warning(
-                        f"No data available for game {leg.game_id}, creating placeholder. Use sync-upcoming-games endpoint to populate real data."
+                        f"No API data for game {leg.game_id}, using extracted info: {extracted_info}"
                     )
                     game = Game(
                         id=leg.game_id,
-                        sport_key="unknown",
-                        sport_title="Unknown Sport",
-                        home_team="TBD",
-                        away_team="TBD",
+                        sport_key=extracted_info.get("sport", "unknown"),
+                        sport_title=extracted_info.get("sport", "Unknown Sport")
+                        .replace("_", " ")
+                        .title(),
+                        home_team=extracted_info.get("home_team", "TBD"),
+                        away_team=extracted_info.get("away_team", "TBD"),
                         commence_time=datetime.utcnow(),
                     )
 
@@ -1037,6 +1043,42 @@ class BetServiceDB:
         except Exception as e:
             logger.error(f"Error simulating results: {e}")
             return {"success": False, "error": str(e)}
+
+    def _extract_basic_info_from_selection(self, selection: str) -> Dict[str, str]:
+        """Extract basic team and sport info from bet selection text"""
+        if not selection:
+            return {}
+
+        selection_lower = selection.lower()
+        result = {}
+
+        # Simple team extraction - look for common team patterns
+        teams = {
+            # NFL
+            "panthers": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
+            "carolina": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
+            "falcons": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
+            "atlanta": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
+            # NBA
+            "rockets": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "houston": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "heat": {"team": "Miami Heat", "sport": "basketball_nba"},
+            # MLB
+            "red sox": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "boston": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "dodgers": {"team": "Los Angeles Dodgers", "sport": "baseball_mlb"},
+            # NHL
+            "florida panthers": {"team": "Florida Panthers", "sport": "icehockey_nhl"},
+        }
+
+        # Check for team matches
+        for team_key, team_info in teams.items():
+            if team_key in selection_lower:
+                result["away_team"] = team_info["team"]
+                result["sport"] = team_info["sport"]
+                break
+
+        return result
 
 
 # Initialize service

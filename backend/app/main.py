@@ -2745,6 +2745,38 @@ async def sync_upcoming_games(admin_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=500, detail="Failed to sync upcoming games")
 
 
+@app.get("/api/admin/games/test-api")
+async def test_odds_api(admin_user: dict = Depends(require_admin)):
+    """Test Odds API connectivity and available games (Admin only)"""
+    try:
+        from app.services.odds_api_service import OddsAPIService
+        from app.core.config import settings
+
+        if not settings.ODDS_API_KEY:
+            return {"status": "error", "message": "No API key configured"}
+
+        # Test with a small sample
+        async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+            # Try MLB first (most likely to have games)
+            games = await odds_service.get_odds("baseball_mlb")
+
+            return {
+                "status": "success",
+                "mlb_games_found": len(games),
+                "sample_games": [
+                    {
+                        "id": game.id,
+                        "teams": f"{game.away_team} @ {game.home_team}",
+                        "commence_time": game.commence_time.isoformat(),
+                    }
+                    for game in games[:3]  # First 3 games
+                ],
+            }
+    except Exception as e:
+        logger.error(f"Error testing odds API: {e}")
+        return {"status": "error", "error": str(e)}
+
+
 # Sports Betting API Endpoints
 @app.options("/api/bets/place")
 async def options_place_bet():
