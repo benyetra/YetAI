@@ -2380,6 +2380,128 @@ async def manual_fix_specific_parlay_legs(admin_user: dict = Depends(require_adm
         )
 
 
+@app.post("/api/admin/parlays/fix-specific-ids")
+async def fix_specific_parlay_ids(admin_user: dict = Depends(require_admin)):
+    """Fix parlay legs using their specific IDs (Admin only)"""
+    try:
+        logger.info("🔧 Fixing parlay legs by specific IDs...")
+
+        from sqlalchemy import text
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        try:
+            fixes = []
+
+            # Fix Cincinnati Reds leg by ID - from the parlay data you shared
+            reds_leg_id = "cd675b49-6f0d-4b38-bcd9-89041f0f27b5"
+
+            # Find Cardinals vs Reds game
+            game_query = """
+            SELECT id, home_team, away_team
+            FROM games
+            WHERE (home_team LIKE '%Cardinal%' AND away_team LIKE '%Red%')
+            OR (home_team LIKE '%Red%' AND away_team LIKE '%Cardinal%')
+            ORDER BY commence_time DESC
+            LIMIT 1
+            """
+            game_result = db.execute(text(game_query))
+            game = game_result.fetchone()
+
+            if game:
+                game_id, home_team, away_team = game
+
+                # Update the Reds leg
+                update_query = """
+                UPDATE bets
+                SET game_id = :game_id,
+                    home_team = :home_team,
+                    away_team = :away_team
+                WHERE id = :bet_id
+                """
+                db.execute(
+                    text(update_query),
+                    {
+                        "bet_id": reds_leg_id,
+                        "game_id": game_id,
+                        "home_team": home_team,
+                        "away_team": away_team,
+                    },
+                )
+
+                fixes.append(
+                    {
+                        "leg_id": reds_leg_id[:8] + "...",
+                        "selection": "Cincinnati Reds (by ID)",
+                        "matched_game": f"{home_team} vs {away_team}",
+                        "game_id": game_id[:8] + "...",
+                    }
+                )
+
+            # Fix Chicago Cubs leg by ID
+            cubs_leg_id = "0056b9d7-ae32-445d-91d2-5d6672e55655"
+
+            # Find Cubs game
+            cubs_game_query = """
+            SELECT id, home_team, away_team
+            FROM games
+            WHERE home_team LIKE '%Cubs%' OR away_team LIKE '%Cubs%'
+            ORDER BY commence_time DESC
+            LIMIT 1
+            """
+            game_result = db.execute(text(cubs_game_query))
+            game = game_result.fetchone()
+
+            if game:
+                game_id, home_team, away_team = game
+
+                # Update the Cubs leg
+                update_query = """
+                UPDATE bets
+                SET game_id = :game_id,
+                    home_team = :home_team,
+                    away_team = :away_team
+                WHERE id = :bet_id
+                """
+                db.execute(
+                    text(update_query),
+                    {
+                        "bet_id": cubs_leg_id,
+                        "game_id": game_id,
+                        "home_team": home_team,
+                        "away_team": away_team,
+                    },
+                )
+
+                fixes.append(
+                    {
+                        "leg_id": cubs_leg_id[:8] + "...",
+                        "selection": "Chicago Cubs (by ID)",
+                        "matched_game": f"{home_team} vs {away_team}",
+                        "game_id": game_id[:8] + "...",
+                    }
+                )
+
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Fixed {len(fixes)} parlay legs by specific IDs",
+                "fixed_count": len(fixes),
+                "fixes": fixes,
+                "note": f"Used hardcoded bet IDs: Reds={reds_leg_id[:8]}..., Cubs={cubs_leg_id[:8]}...",
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Fix specific parlay IDs failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Fix specific parlay IDs failed: {str(e)}"
+        )
+
+
 @app.options("/api/admin/bets/verification/config")
 async def options_verification_config():
     """Handle CORS preflight for verification config"""
