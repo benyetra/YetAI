@@ -198,9 +198,12 @@ export default function YetAIBetsPage() {
         dateStr = dateStr.split(' @')[0];
       }
 
-      // Parse the date
+      // Parse the date (handle MM/DD/YYYY format)
       const gameDate = new Date(dateStr);
       const today = new Date();
+
+      // Debug logging
+      console.log(`Parsing date: "${dateStr}" -> ${gameDate.toDateString()}, Today: ${today.toDateString()}`);
 
       // Ensure we have a valid date
       if (isNaN(gameDate.getTime())) {
@@ -219,11 +222,17 @@ export default function YetAIBetsPage() {
 
       switch (period) {
         case 'today':
-          return gameDate.getTime() === today.getTime();
+          const isToday = gameDate.getTime() === today.getTime();
+          console.log(`Today check: ${isToday} (${gameDate.toDateString()} === ${today.toDateString()})`);
+          return isToday;
         case 'yesterday':
-          return gameDate.getTime() === yesterday.getTime();
+          const isYesterday = gameDate.getTime() === yesterday.getTime();
+          console.log(`Yesterday check: ${isYesterday} (${gameDate.toDateString()} === ${yesterday.toDateString()})`);
+          return isYesterday;
         case 'week':
-          return gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= today.getTime();
+          const isInWeek = gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= today.getTime();
+          console.log(`Week check: ${isInWeek} (${gameDate.toDateString()} between ${weekAgo.toDateString()} and ${today.toDateString()})`);
+          return isInWeek;
         default:
           return false;
       }
@@ -239,19 +248,19 @@ export default function YetAIBetsPage() {
     // For 'today' period, show pending bets for today
     if (selectedPeriod === 'today') {
       const result = bet.status === 'pending' && matchesPeriod;
-      if (bet.status === 'pending') {
-        console.log(`Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
-      }
+      console.log(`Today filter - Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
       return result;
     }
-    // For other periods, show pending bets in that time range
-    return bet.status === 'pending' && matchesPeriod;
+    // For other periods (yesterday/week), show all bets (pending, won, lost) in that time range
+    const result = matchesPeriod;
+    console.log(`${selectedPeriod} filter - Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
+    return result;
   });
 
   const recentResults = bets.filter(bet => {
-    // Show settled bets (won/lost) that match the selected period
-    const matchesPeriod = isInPeriod(bet.game_time, selectedPeriod);
-    return (bet.status === 'won' || bet.status === 'lost') && matchesPeriod;
+    // This is now only used for the "Recent Results" section when selectedPeriod !== 'today'
+    // For non-today periods, we show all bets in todaysBets, so this can be empty
+    return selectedPeriod === 'today' && (bet.status === 'won' || bet.status === 'lost') && isInPeriod(bet.game_time, selectedPeriod);
   });
 
   const visibleBets = isProUser ? todaysBets : todaysBets.slice(0, 1);
@@ -460,67 +469,53 @@ export default function YetAIBetsPage() {
         </div>
 
         {/* Current Period Bets */}
-        {selectedPeriod === 'today' && (
-          <div>
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold text-gray-900 flex items-center">
-                <Calendar className="w-5 h-5 mr-2" />
-                Today's Best Bets
-              </h2>
-              <span className="text-sm text-gray-500">
-                {loadingBets ? 'Loading...' :
-                  isProUser ? `${todaysBets.length} bets available` : '1 free bet, 3 premium bets'}
-              </span>
-            </div>
-            
-            {loadingBets ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {visibleBets.map((bet) => (
-                  <BetCard key={bet.id} bet={bet} />
-                ))}
-                {lockedBets.map((bet) => (
-                  <BetCard key={bet.id} bet={bet} isLocked={true} />
-                ))}
-                {!loadingBets && todaysBets.length === 0 && (
-                  <div className="col-span-2 text-center py-8 text-gray-500">
-                    No bets available today. Check back later!
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Recent Results */}
-        {selectedPeriod !== 'today' && (
-          <div>
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
-              <Star className="w-5 h-5 mr-2" />
-              Recent Results
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <Calendar className="w-5 h-5 mr-2" />
+              {selectedPeriod === 'today' ? "Today's Best Bets" :
+               selectedPeriod === 'yesterday' ? "Yesterday's Bets" :
+               "This Week's Bets"}
             </h2>
-            
-            {loadingBets ? (
-              <div className="flex justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                {recentResults.map((bet) => (
-                  <BetCard key={bet.id} bet={bet} />
-                ))}
-                {!loadingBets && recentResults.length === 0 && (
-                  <div className="col-span-2 text-center py-8 text-gray-500">
-                    No recent results to show.
-                  </div>
-                )}
-              </div>
-            )}
+            <span className="text-sm text-gray-500">
+              {loadingBets ? 'Loading...' :
+                selectedPeriod === 'today' && !isProUser ? '1 free bet, 3 premium bets' :
+                `${todaysBets.length} bets available`}
+            </span>
           </div>
-        )}
+
+          {loadingBets ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {selectedPeriod === 'today' ? (
+                <>
+                  {visibleBets.map((bet) => (
+                    <BetCard key={bet.id} bet={bet} />
+                  ))}
+                  {lockedBets.map((bet) => (
+                    <BetCard key={bet.id} bet={bet} isLocked={true} />
+                  ))}
+                </>
+              ) : (
+                <>
+                  {todaysBets.map((bet) => (
+                    <BetCard key={bet.id} bet={bet} />
+                  ))}
+                </>
+              )}
+              {!loadingBets && todaysBets.length === 0 && (
+                <div className="col-span-2 text-center py-8 text-gray-500">
+                  {selectedPeriod === 'today' ? 'No bets available today. Check back later!' :
+                   selectedPeriod === 'yesterday' ? 'No bets from yesterday.' :
+                   'No bets from this week.'}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
 
         {/* Upgrade CTA for Free Users */}
         {!isProUser && (

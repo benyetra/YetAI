@@ -307,9 +307,13 @@ export default function AdminPage() {
       // Map sport names to API keys
       const sportKeyMap: {[key: string]: string} = {
         'NFL': 'americanfootball_nfl',
-        'NBA': 'basketball_nba', 
+        'NBA': 'basketball_nba',
         'MLB': 'baseball_mlb',
-        'NHL': 'icehockey_nhl'
+        'NHL': 'icehockey_nhl',
+        'NCAA Football': 'americanfootball_ncaaf',
+        'NCAA Basketball': 'basketball_ncaab',
+        'Soccer': 'soccer_epl',
+        'Tennis': 'tennis_atp'
       };
       
       const sportKey = sportKeyMap[selectedSport];
