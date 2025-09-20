@@ -3054,7 +3054,7 @@ async def share_bet(
             "bet_id": share_request.bet_id,
             "user_id": current_user.get("id") or current_user.get("user_id"),
             "message": share_request.message,
-            "share_url": f"https://yetai.com/shared-bet/{share_request.bet_id}",
+            "share_url": f"https://yetai.app/shared-bet/{share_request.bet_id}",
             "created_at": datetime.now(timezone.utc).isoformat(),
         },
         "message": "Mock bet shared - sharing service unavailable",

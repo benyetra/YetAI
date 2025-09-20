@@ -48,9 +48,11 @@ class Settings(BaseSettings):
         if self.ALLOWED_ORIGINS:
             urls.extend([url.strip() for url in self.ALLOWED_ORIGINS.split(",")])
 
+        # Always include production domains
+        urls.extend(["https://yetai.app", "https://www.yetai.app"])
+
         # Add environment-specific defaults
         if self.ENVIRONMENT == "production":
-            urls.extend(["https://yetai.app", "https://www.yetai.app"])
             if self.FRONTEND_URL:
                 urls.append(self.FRONTEND_URL)
         elif self.ENVIRONMENT == "staging":

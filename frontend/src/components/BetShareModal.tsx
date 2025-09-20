@@ -49,10 +49,9 @@ export default function BetShareModal({ bet, isOpen, onClose }: BetShareModalPro
         bet_id: bet.id
       }, token);
       
-      if (response.status === 'success') {
-        const baseUrl = window.location.origin;
-        const fullShareUrl = `${baseUrl}${response.share_url}`;
-        setShareUrl(fullShareUrl);
+      if (response.status === 'success' && response.share?.share_url) {
+        // Backend returns full URL, use it directly
+        setShareUrl(response.share.share_url);
       }
     } catch (error) {
       console.error('Failed to generate share URL:', error);
