@@ -693,83 +693,72 @@ class BetServiceDB:
             return None
 
     async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
-        """Get or create game record from parlay leg - simplified version"""
+        """Get game record from database - games should already be stored by API endpoints"""
         if not hasattr(leg, "game_id") or not leg.game_id:
             return None
 
         game = db.query(Game).filter(Game.id == leg.game_id).first()
 
-        if not game:
-            # First, try to use team information from leg data if available
-            sport_key = leg.sport if hasattr(leg, "sport") and leg.sport else None
-            home_team = (
-                leg.home_team if hasattr(leg, "home_team") and leg.home_team else None
+        if game:
+            logger.debug(
+                f"Found game in database: {game.away_team} @ {game.home_team} ({game.sport_title})"
             )
-            away_team = (
-                leg.away_team if hasattr(leg, "away_team") and leg.away_team else None
-            )
-            commence_time = (
-                self._parse_datetime(leg.commence_time)
-                if hasattr(leg, "commence_time") and leg.commence_time
-                else None
-            )
+            return game
 
-            # If we have good leg data, use it directly
-            if home_team and away_team and sport_key:
-                game = Game(
-                    id=leg.game_id,
-                    sport_key=sport_key,
-                    sport_title=sport_key.replace("_", " ").title(),
-                    home_team=home_team,
-                    away_team=away_team,
-                    commence_time=commence_time or datetime.utcnow(),
-                )
-                logger.info(
-                    f"Created game from leg data: {away_team} @ {home_team} ({sport_key})"
-                )
-            else:
-                # If leg data is incomplete, try to fetch from Odds API
-                logger.info(f"Leg data incomplete for {leg.game_id}, trying Odds API")
-                game_details = await self._fetch_game_details_from_api(leg.game_id)
-                if game_details:
-                    game = Game(
-                        id=leg.game_id,
-                        sport_key=game_details["sport_key"],
-                        sport_title=game_details["sport_title"],
-                        home_team=game_details["home_team"],
-                        away_team=game_details["away_team"],
-                        commence_time=game_details["commence_time"],
-                    )
-                    logger.info(
-                        f"Created game from API for {leg.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
-                    )
-                else:
-                    # Log that we're missing real game data - this should not happen
-                    logger.error(
-                        f"❌ MISSING REAL DATA: Game {leg.game_id} not found in Odds API. "
-                        f"This should not happen - frontend data should match API data. "
-                        f"Selection: {leg.selection}"
-                    )
-                    # Create placeholder game to prevent database errors
-                    game = Game(
-                        id=leg.game_id,
-                        sport_key="unknown",
-                        sport_title="Unknown Sport",
-                        home_team="API Data Missing",
-                        away_team="API Data Missing",
-                        commence_time=datetime.utcnow(),
-                    )
+        # Game not found in database - this shouldn't happen if frontend is using current API data
+        logger.error(
+            f"❌ GAME NOT IN DATABASE: {leg.game_id} not found. "
+            f"This means the frontend is using stale data or the API endpoints weren't called first. "
+            f"Selection: {leg.selection}"
+        )
 
+        # As a fallback, try to use leg data if available
+        sport_key = leg.sport if hasattr(leg, "sport") and leg.sport else "unknown"
+        home_team = (
+            leg.home_team
+            if hasattr(leg, "home_team") and leg.home_team
+            else "Unknown Home"
+        )
+        away_team = (
+            leg.away_team
+            if hasattr(leg, "away_team") and leg.away_team
+            else "Unknown Away"
+        )
+        commence_time = datetime.utcnow()
+
+        if hasattr(leg, "commence_time") and leg.commence_time:
             try:
-                db.add(game)
-                db.flush()  # Flush to catch unique constraint violations
-            except Exception as e:
-                # Handle unique constraint violation - another transaction created the game
-                db.rollback()
-                game = db.query(Game).filter(Game.id == leg.game_id).first()
-                if not game:
-                    # If still not found, re-raise the error
-                    raise e
+                commence_time = self._parse_datetime(leg.commence_time)
+            except:
+                commence_time = datetime.utcnow()
+
+        # Create game with available data
+        game = Game(
+            id=leg.game_id,
+            sport_key=sport_key,
+            sport_title=(
+                sport_key.replace("_", " ").title()
+                if sport_key != "unknown"
+                else "Unknown Sport"
+            ),
+            home_team=home_team,
+            away_team=away_team,
+            commence_time=commence_time,
+            status=GameStatus.SCHEDULED,
+            last_update=datetime.utcnow(),
+        )
+        logger.warning(f"Created fallback game: {away_team} @ {home_team}")
+
+        try:
+            db.add(game)
+            db.flush()
+        except Exception as e:
+            # Handle unique constraint violation - another transaction created the game
+            db.rollback()
+            game = db.query(Game).filter(Game.id == leg.game_id).first()
+            if not game:
+                # If still not found, re-raise the error
+                raise e
 
         return game
 

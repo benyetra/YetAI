@@ -22,7 +22,7 @@ from app.core.service_loader import (
     get_service,
     is_service_available,
 )
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 
 # Import live betting service
 from app.services.live_betting_service_db import (
@@ -4207,6 +4207,15 @@ async def get_nfl_odds():
 
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("americanfootball_nfl")
+
+                # Store games in database for parlay creation
+                stored_count = await _store_games_in_database(
+                    games, "americanfootball_nfl"
+                )
+                logger.info(
+                    f"NFL: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
@@ -4235,6 +4244,13 @@ async def get_nba_odds():
 
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("basketball_nba")
+
+                # Store games in database for parlay creation
+                stored_count = await _store_games_in_database(games, "basketball_nba")
+                logger.info(
+                    f"NBA: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NBA odds: {e}")
@@ -4261,6 +4277,13 @@ async def get_mlb_odds():
 
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("baseball_mlb")
+
+                # Store games in database for parlay creation
+                stored_count = await _store_games_in_database(games, "baseball_mlb")
+                logger.info(
+                    f"MLB: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching MLB odds: {e}")
@@ -4287,6 +4310,13 @@ async def get_nhl_odds():
 
             async with OddsAPIService(settings.ODDS_API_KEY) as service:
                 games = await service.get_odds("icehockey_nhl")
+
+                # Store games in database for parlay creation
+                stored_count = await _store_games_in_database(games, "icehockey_nhl")
+                logger.info(
+                    f"NHL: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NHL odds: {e}")
@@ -4417,6 +4447,67 @@ async def get_popular_games(sport: Optional[str] = None):
             "total_count": 0,
             "message": "No popular games available at this time",
         }
+
+
+async def _store_games_in_database(games_data: List, sport_key: str) -> int:
+    """Store games from Odds API in the database for parlay creation"""
+    if not games_data:
+        return 0
+
+    stored_count = 0
+    db = SessionLocal()
+    try:
+        from app.models.database_models import Game, GameStatus
+
+        for game_data in games_data:
+            try:
+                # Check if game already exists
+                existing_game = db.query(Game).filter(Game.id == game_data.id).first()
+
+                if existing_game:
+                    # Update existing game with fresh data
+                    existing_game.sport_key = game_data.sport_key
+                    existing_game.sport_title = game_data.sport_title
+                    existing_game.home_team = game_data.home_team
+                    existing_game.away_team = game_data.away_team
+                    existing_game.commence_time = game_data.commence_time
+                    existing_game.last_update = datetime.utcnow()
+                    logger.debug(
+                        f"Updated game: {game_data.away_team} @ {game_data.home_team}"
+                    )
+                else:
+                    # Create new game
+                    new_game = Game(
+                        id=game_data.id,
+                        sport_key=game_data.sport_key,
+                        sport_title=game_data.sport_title,
+                        home_team=game_data.home_team,
+                        away_team=game_data.away_team,
+                        commence_time=game_data.commence_time,
+                        status=GameStatus.SCHEDULED,
+                        last_update=datetime.utcnow(),
+                    )
+                    db.add(new_game)
+                    logger.debug(
+                        f"Created game: {game_data.away_team} @ {game_data.home_team}"
+                    )
+
+                stored_count += 1
+
+            except Exception as e:
+                logger.error(f"Error storing game {game_data.id}: {e}")
+                continue
+
+        db.commit()
+        logger.info(f"Stored {stored_count} {sport_key} games in database")
+
+    except Exception as e:
+        logger.error(f"Database error storing {sport_key} games: {e}")
+        db.rollback()
+    finally:
+        db.close()
+
+    return stored_count
 
 
 def _generate_enhanced_popular_games():
