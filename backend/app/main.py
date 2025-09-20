@@ -4890,13 +4890,19 @@ async def get_featured_games(db=Depends(get_db)):
     try:
         from sqlalchemy import text
 
-        # First, try to get featured games from database
+        # Clean up expired games first
+        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        db.execute(cleanup_query)
+        db.commit()
+
+        # First, try to get featured games from database (only future games)
         query = text(
             """
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation, admin_notes, created_at
             FROM featured_games
-            ORDER BY created_at DESC
+            WHERE start_time > NOW()
+            ORDER BY start_time ASC
         """
         )
 
@@ -4968,6 +4974,90 @@ async def get_featured_games(db=Depends(get_db)):
         return {"status": "error", "featured_games": []}
 
 
+@app.get("/api/featured-games")
+async def get_public_featured_games(db=Depends(get_db)):
+    """Get featured games for public display"""
+    try:
+        from sqlalchemy import text
+
+        # Clean up expired games first
+        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        db.execute(cleanup_query)
+        db.commit()
+
+        # Get only upcoming featured games for public display
+        query = text(
+            """
+            SELECT game_id, home_team, away_team, start_time,
+                   sport_key, explanation
+            FROM featured_games
+            WHERE start_time > NOW()
+            ORDER BY start_time ASC
+            LIMIT 10
+        """
+        )
+
+        result = db.execute(query)
+        rows = result.fetchall()
+
+        featured_games = []
+        for row in rows:
+            featured_games.append(
+                {
+                    "id": row.game_id,
+                    "game_id": row.game_id,
+                    "home_team": row.home_team,
+                    "away_team": row.away_team,
+                    "start_time": (
+                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
+                        if row.start_time
+                        else None
+                    ),
+                    "commence_time": (
+                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
+                        if row.start_time
+                        else None
+                    ),
+                    "sport_key": row.sport_key,
+                    "status": "scheduled",
+                    "explanation": row.explanation,
+                }
+            )
+
+        return {"status": "success", "featured_games": featured_games}
+    except Exception as e:
+        logger.error(f"Error getting public featured games: {e}")
+        return {"status": "error", "featured_games": []}
+
+
+@app.delete("/api/admin/featured-games/cleanup")
+async def cleanup_expired_featured_games(
+    current_user: dict = Depends(get_current_user_admin), db=Depends(get_db)
+):
+    """Remove expired featured games (games that have already ended)"""
+    try:
+        from sqlalchemy import text
+
+        # Delete games that have already ended
+        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        result = db.execute(cleanup_query)
+        db.commit()
+
+        expired_count = result.rowcount if hasattr(result, 'rowcount') else 0
+
+        return {
+            "status": "success",
+            "message": f"Cleaned up {expired_count} expired featured games",
+            "expired_removed": expired_count,
+        }
+    except Exception as e:
+        logger.error(f"Error cleaning up expired featured games: {e}")
+        return {
+            "status": "error",
+            "message": f"Failed to cleanup expired games: {str(e)}",
+        }
+
+
 @app.post("/api/admin/featured-games")
 async def set_featured_games(request: dict, db=Depends(get_db)):
     """Set admin-selected featured games with explanations"""
@@ -4975,6 +5065,11 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
         from sqlalchemy import text
 
         featured_games_data = request.get("featured_games", [])
+
+        # First, clean up expired games (games that have already ended)
+        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        cleanup_result = db.execute(cleanup_query)
+        expired_count = cleanup_result.rowcount if hasattr(cleanup_result, 'rowcount') else 0
 
         # Clear existing featured games
         db.execute(text("DELETE FROM featured_games"))
@@ -5008,10 +5103,15 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
 
         db.commit()
 
+        message = f"Featured games updated with {len(featured_games_data)} games"
+        if expired_count > 0:
+            message += f" (removed {expired_count} expired games)"
+
         return {
             "status": "success",
-            "message": f"Featured games updated with {len(featured_games_data)} games",
+            "message": message,
             "count": len(featured_games_data),
+            "expired_removed": expired_count,
         }
     except Exception as e:
         logger.error(f"Error setting featured games: {e}")

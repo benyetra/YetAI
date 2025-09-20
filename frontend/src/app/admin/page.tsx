@@ -72,6 +72,7 @@ export default function AdminPage() {
   const [availableTodaysGames, setAvailableTodaysGames] = useState<any[]>([]);
   const [loadingTodaysGames, setLoadingTodaysGames] = useState(false);
   const [selectedGameForFeatured, setSelectedGameForFeatured] = useState<any>(null);
+  const [isCleaningUp, setIsCleaningUp] = useState(false);
 
   useEffect(() => {
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
@@ -166,6 +167,34 @@ export default function AdminPage() {
   const removeFeaturedGame = (index: number) => {
     const updated = featuredGames.filter((_, i) => i !== index);
     setFeaturedGames(updated);
+  };
+
+  const cleanupExpiredGames = async () => {
+    setIsCleaningUp(true);
+    try {
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(getApiUrl('/api/admin/featured-games/cleanup'), {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setMessage({ type: 'success', text: data.message || 'Expired games cleaned up successfully!' });
+        await loadFeaturedGames(); // Refresh the list
+      } else {
+        const errorData = await response.json();
+        setMessage({ type: 'error', text: errorData.message || 'Failed to cleanup expired games' });
+      }
+    } catch (error) {
+      console.error('Error cleaning up expired games:', error);
+      setMessage({ type: 'error', text: 'Failed to cleanup expired games' });
+    } finally {
+      setIsCleaningUp(false);
+    }
   };
 
   // Load featured games when tab switches
@@ -1125,10 +1154,25 @@ export default function AdminPage() {
 
             {/* Current Featured Games List */}
             <div className="mb-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
-                <Crown className="w-4 h-4 mr-2 text-yellow-600" />
-                Current Featured Games ({featuredGames.length})
-              </h3>
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                  <Crown className="w-4 h-4 mr-2 text-yellow-600" />
+                  Current Featured Games ({featuredGames.length})
+                </h3>
+                <button
+                  onClick={cleanupExpiredGames}
+                  disabled={isCleaningUp}
+                  className="bg-red-600 text-white px-4 py-2 rounded-lg font-medium hover:bg-red-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center"
+                  title="Remove games that have already ended"
+                >
+                  {isCleaningUp ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  ) : (
+                    <Trash2 className="w-4 h-4 mr-2" />
+                  )}
+                  {isCleaningUp ? 'Cleaning...' : 'Clean Expired'}
+                </button>
+              </div>
 
               {featuredGames.length === 0 ? (
                 <div className="text-center py-8 text-gray-500">
