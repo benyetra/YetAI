@@ -38,7 +38,8 @@ export default function LiveBettingPage() {
         const activeLiveBets = activeBetsResponse.active_bets || [];
         const pendingRegularBets = pendingBetsResponse.status === 'success' ? pendingBetsResponse.history || [] : [];
         
-        const totalActiveBets = activeLiveBets.length + pendingRegularBets.length;
+        // Only count pending bets since that's what ActiveLiveBets component shows
+        const totalActiveBets = pendingRegularBets.length;
         const livePotentialWins = activeLiveBets.reduce((sum: number, bet: any) => 
           sum + (bet.current_potential_win || bet.potential_win || 0), 0
         );
