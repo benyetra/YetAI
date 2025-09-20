@@ -284,13 +284,26 @@ const BetHistory: React.FC = () => {
         if (bet.selection === 'home' || bet.selection === 'away') {
           const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
           return `${team} to Win (${gameInfo})`;
-        } else {
-          // Selection is likely the actual team name, always show game context when available
+        } else if (bet.selection === bet.home_team || bet.selection === bet.away_team) {
+          // Selection is the actual team name
           return `${bet.selection} to Win (${gameInfo})`;
+        } else {
+          // Fallback to MONEYLINE - TEAM format if selection is team name
+          return `MONEYLINE - ${bet.selection}`;
         }
       } else if (cleanBetType.toLowerCase() === 'spread') {
-        // For spread, always show the game context when we have team info
-        return `${bet.selection} Spread (${gameInfo})`;
+        // For spread, check if selection is home/away or team name
+        if (bet.selection === 'home' || bet.selection === 'away') {
+          const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
+          return `${team} Spread (${gameInfo})`;
+        } else if (bet.selection === bet.home_team || bet.selection === bet.away_team) {
+          // Selection is the actual team name
+          return `${bet.selection} Spread (${gameInfo})`;
+        } else {
+          // This is the key fix - when we have team info but selection doesn't match exactly,
+          // still show the spread format with the selection as provided
+          return `${bet.selection} Spread (${gameInfo})`;
+        }
       } else if (cleanBetType.toLowerCase() === 'total') {
         return `${bet.selection?.toUpperCase() || 'TOTAL'} (${gameInfo})`;
       }
