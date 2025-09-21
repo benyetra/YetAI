@@ -1209,6 +1209,139 @@ async def update_preferences(
         logger.error(f"Error updating preferences: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to update preferences: {str(e)}")
 
+# Email verification endpoints
+@app.post("/api/auth/verify-email")
+async def verify_email(data: dict):
+    """Verify user email with verification token"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        token = data.get("token")
+        if not token:
+            raise HTTPException(status_code=400, detail="Verification token is required")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.verify_email(token)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Invalid verification token"))
+
+        return {
+            "status": "success",
+            "message": result.get("message"),
+            "user": result.get("user")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Email verification error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to verify email")
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification_email(data: dict):
+    """Resend verification email to user"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        email = data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.resend_verification_email(email)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to resend verification email"))
+
+        return {
+            "status": "success",
+            "message": result.get("message")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to resend verification email")
+
+# Password reset endpoints
+@app.post("/api/auth/request-password-reset")
+async def request_password_reset(data: dict):
+    """Request password reset for user email"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        email = data.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.request_password_reset(email)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to request password reset"))
+
+        return {
+            "status": "success",
+            "message": result.get("message")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset request error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to request password reset")
+
+@app.post("/api/auth/reset-password")
+async def reset_password(data: dict):
+    """Reset user password with reset token"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        token = data.get("token")
+        new_password = data.get("password")
+
+        if not token or not new_password:
+            raise HTTPException(status_code=400, detail="Token and new password are required")
+
+        if len(new_password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters long")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.reset_password(token, new_password)
+
+        if not result.get("success"):
+            raise HTTPException(status_code=400, detail=result.get("error", "Failed to reset password"))
+
+        return {
+            "status": "success",
+            "message": result.get("message"),
+            "user": result.get("user")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Password reset error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to reset password")
+
 # YetAI Bets endpoints
 @app.options("/api/yetai-bets")
 async def options_yetai_bets():

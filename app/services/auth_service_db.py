@@ -727,5 +727,151 @@ class AuthServiceDB:
             logger.error(f"Error updating user {user_id}: {e}")
             return None
 
+    async def verify_email(self, token: str) -> Dict:
+        """Verify user email with verification token"""
+        try:
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.verification_token == token).first()
+                if not user:
+                    return {"success": False, "error": "Invalid or expired verification token"}
+
+                if user.is_verified:
+                    return {"success": False, "error": "Email is already verified"}
+
+                # Verify the email
+                user.is_verified = True
+                user.verification_token = None  # Clear the token
+                db.commit()
+
+                return {
+                    "success": True,
+                    "message": "Email verified successfully",
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "username": user.username,
+                        "is_verified": user.is_verified
+                    }
+                }
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error verifying email: {e}")
+            return {"success": False, "error": "Failed to verify email"}
+
+    async def resend_verification_email(self, email: str) -> Dict:
+        """Resend verification email to user"""
+        try:
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.email == email).first()
+                if not user:
+                    return {"success": False, "error": "User not found"}
+
+                if user.is_verified:
+                    return {"success": False, "error": "Email is already verified"}
+
+                # Generate new verification token
+                verification_token = secrets.token_urlsafe(32)
+                user.verification_token = verification_token
+                db.commit()
+
+                # Send verification email
+                try:
+                    email_service.send_verification_email(
+                        to_email=email,
+                        verification_token=verification_token,
+                        first_name=user.first_name
+                    )
+                    return {"success": True, "message": "Verification email sent"}
+                except Exception as email_error:
+                    logger.error(f"Failed to send verification email: {email_error}")
+                    return {"success": False, "error": "Failed to send verification email"}
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error resending verification email: {e}")
+            return {"success": False, "error": "Failed to resend verification email"}
+
+    async def request_password_reset(self, email: str) -> Dict:
+        """Request password reset for user"""
+        try:
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(User.email == email).first()
+                if not user:
+                    # Don't reveal if email exists for security
+                    return {"success": True, "message": "If the email exists, a reset link has been sent"}
+
+                # Generate reset token with 1 hour expiry
+                reset_token = secrets.token_urlsafe(32)
+                reset_expires = datetime.utcnow() + timedelta(hours=1)
+
+                user.reset_token = reset_token
+                user.reset_token_expires = reset_expires
+                db.commit()
+
+                # Send password reset email
+                try:
+                    email_service.send_password_reset_email(
+                        to_email=email,
+                        reset_token=reset_token,
+                        first_name=user.first_name
+                    )
+                    return {"success": True, "message": "If the email exists, a reset link has been sent"}
+                except Exception as email_error:
+                    logger.error(f"Failed to send password reset email: {email_error}")
+                    return {"success": False, "error": "Failed to send password reset email"}
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error requesting password reset: {e}")
+            return {"success": False, "error": "Failed to request password reset"}
+
+    async def reset_password(self, token: str, new_password: str) -> Dict:
+        """Reset user password with reset token"""
+        try:
+            db = SessionLocal()
+            try:
+                user = db.query(User).filter(
+                    and_(
+                        User.reset_token == token,
+                        User.reset_token_expires > datetime.utcnow()
+                    )
+                ).first()
+
+                if not user:
+                    return {"success": False, "error": "Invalid or expired reset token"}
+
+                # Reset password
+                user.password_hash = self.hash_password(new_password)
+                user.reset_token = None  # Clear reset token
+                user.reset_token_expires = None
+                db.commit()
+
+                return {
+                    "success": True,
+                    "message": "Password reset successfully",
+                    "user": {
+                        "id": user.id,
+                        "email": user.email,
+                        "username": user.username
+                    }
+                }
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error resetting password: {e}")
+            return {"success": False, "error": "Failed to reset password"}
+
 # Initialize service
 auth_service_db = AuthServiceDB()
