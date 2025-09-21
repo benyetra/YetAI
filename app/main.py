@@ -294,6 +294,22 @@ async def ping():
     """Fast health check for Railway deployment"""
     return {"status": "ok"}
 
+@app.get("/version")
+async def version():
+    """Show deployment version info"""
+    import subprocess
+    try:
+        commit = subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD'],
+                                       cwd='/app', text=True).strip()
+    except:
+        commit = "unknown"
+    return {
+        "version": "email-verification-v3",
+        "commit": commit,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "has_email_verification": True
+    }
+
 @app.get("/health")
 async def health_check():
     """Detailed health check endpoint for Railway/deployment monitoring - Updated with email verification v2"""
