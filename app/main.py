@@ -289,9 +289,14 @@ app.add_middleware(
 app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 
 # Health and status endpoints
+@app.get("/ping")
+async def ping():
+    """Fast health check for Railway deployment"""
+    return {"status": "ok"}
+
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway/deployment monitoring - Updated with email verification v2"""
+    """Detailed health check endpoint for Railway/deployment monitoring - Updated with email verification v2"""
     return {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
