@@ -4,12 +4,14 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'backend/**'
+      - 'app/**'
+      - 'requirements.txt'
       - '.github/workflows/backend-ci-cd.yml'
   pull_request:
     branches: [ main ]
     paths:
-      - 'backend/**'
+      - 'app/**'
+      - 'requirements.txt'
 
 env:
   PYTHON_VERSION: '3.11'
@@ -20,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./
     
     services:
       postgres:
@@ -85,7 +87,7 @@ jobs:
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
       with:
-        file: ./backend/coverage.xml
+        file: ./coverage.xml
         flags: backend
         name: backend-coverage
 
@@ -94,7 +96,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./
     
     steps:
     - name: Checkout code
@@ -123,7 +125,7 @@ jobs:
     if: github.ref == 'refs/heads/develop'
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./
     
     steps:
     - name: Checkout code
@@ -152,7 +154,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     defaults:
       run:
-        working-directory: ./backend
+        working-directory: ./
     
     steps:
     - name: Checkout code
