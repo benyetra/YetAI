@@ -291,7 +291,7 @@ app.mount("/uploads", StaticFiles(directory="app/uploads"), name="uploads")
 # Health and status endpoints
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway/deployment monitoring"""
+    """Health check endpoint for Railway/deployment monitoring - Updated with email verification v2"""
     return {
         "status": "healthy",
         "environment": settings.ENVIRONMENT,
