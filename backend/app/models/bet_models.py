@@ -150,7 +150,6 @@ class UpdateYetAIBetRequest(BaseModel):
     result: Optional[str] = None
 
 
-
 class YetAIBetResponse(BaseModel):
     bets: List[YetAIBet]
     total_count: int

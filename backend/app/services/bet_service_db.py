@@ -10,7 +10,16 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.database import get_db, SessionLocal
-from app.models.database_models import User, Bet, ParlayBet, Game, BetHistory, BetLimit, YetAIBet, SubscriptionTier
+from app.models.database_models import (
+    User,
+    Bet,
+    ParlayBet,
+    Game,
+    BetHistory,
+    BetLimit,
+    YetAIBet,
+    SubscriptionTier,
+)
 from app.models.bet_models import *
 
 logger = logging.getLogger(__name__)
@@ -1128,11 +1137,15 @@ class BetServiceDB:
 
         return result
 
-    async def _place_yetai_bet(self, user_id: int, bet_data: PlaceBetRequest, db: Session) -> Dict:
+    async def _place_yetai_bet(
+        self, user_id: int, bet_data: PlaceBetRequest, db: Session
+    ) -> Dict:
         """Handle placing a bet on a YetAI pick"""
         try:
             # Find the YetAI bet
-            yetai_bet = db.query(YetAIBet).filter(YetAIBet.id == bet_data.yetai_bet_id).first()
+            yetai_bet = (
+                db.query(YetAIBet).filter(YetAIBet.id == bet_data.yetai_bet_id).first()
+            )
 
             if not yetai_bet:
                 return {"success": False, "error": "YetAI bet not found"}
@@ -1146,15 +1159,23 @@ class BetServiceDB:
                 return {"success": False, "error": "User not found"}
 
             # Check if user has access to premium bets
-            if yetai_bet.tier_requirement != SubscriptionTier.FREE and user.subscription_tier == SubscriptionTier.FREE:
-                return {"success": False, "error": "Premium subscription required for this bet"}
+            if (
+                yetai_bet.tier_requirement != SubscriptionTier.FREE
+                and user.subscription_tier == SubscriptionTier.FREE
+            ):
+                return {
+                    "success": False,
+                    "error": "Premium subscription required for this bet",
+                }
 
             # Validate bet limits with the amount from bet_data
             if not await self._check_bet_limits(user_id, bet_data.amount, db):
                 return {"success": False, "error": "Bet exceeds limits"}
 
             # Use YetAI bet data but with user's amount
-            potential_win = self._calculate_potential_win(bet_data.amount, yetai_bet.odds)
+            potential_win = self._calculate_potential_win(
+                bet_data.amount, yetai_bet.odds
+            )
 
             # Generate bet ID
             bet_id = str(uuid.uuid4())
@@ -1175,7 +1196,7 @@ class BetServiceDB:
                 away_team=yetai_bet.away_team,
                 sport=yetai_bet.sport,
                 commence_time=yetai_bet.commence_time,
-                bookmaker="YetAI"
+                bookmaker="YetAI",
             )
 
             db.add(bet)
@@ -1190,14 +1211,16 @@ class BetServiceDB:
                 bet_metadata={
                     "bet_type": yetai_bet.bet_type,
                     "selection": yetai_bet.selection,
-                    "yetai_bet_id": bet_data.yetai_bet_id
+                    "yetai_bet_id": bet_data.yetai_bet_id,
                 },
             )
             db.add(history)
 
             db.commit()
 
-            logger.info(f"User {user_id} placed bet {bet_id} on YetAI bet {bet_data.yetai_bet_id}")
+            logger.info(
+                f"User {user_id} placed bet {bet_id} on YetAI bet {bet_data.yetai_bet_id}"
+            )
 
             return {
                 "success": True,
@@ -1215,8 +1238,10 @@ class BetServiceDB:
                     "home_team": bet.home_team,
                     "away_team": bet.away_team,
                     "sport": bet.sport,
-                    "commence_time": bet.commence_time.isoformat() if bet.commence_time else None,
-                    "bookmaker": bet.bookmaker
+                    "commence_time": (
+                        bet.commence_time.isoformat() if bet.commence_time else None
+                    ),
+                    "bookmaker": bet.bookmaker,
                 },
                 "message": "Bet placed successfully on YetAI pick",
             }

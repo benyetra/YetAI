@@ -302,7 +302,6 @@ class YetAIBetsServiceDB:
             logger.error(f"Error deleting bet: {e}")
             return {"success": False, "error": "Failed to delete bet"}
 
-
     async def get_performance_stats(self) -> Dict:
         """Calculate performance statistics for YetAI Bets from database"""
         try:
