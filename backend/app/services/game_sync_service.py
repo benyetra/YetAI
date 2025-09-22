@@ -113,55 +113,57 @@ class GameSyncService:
         total_created = 0
         sports_synced = []
 
-        try:
-            for sport_key in self.sync_sports:
-                try:
-                    logger.info(f"Syncing scores for {sport_key}")
+        # Use async context manager for odds API service
+        async with self.odds_api_service as api_service:
+            try:
+                for sport_key in self.sync_sports:
+                    try:
+                        logger.info(f"Syncing scores for {sport_key}")
 
-                    # Fetch scores from Odds API
-                    scores = await self.odds_api_service.get_scores(
-                        sport=sport_key.value, days_from=days_back
-                    )
+                        # Fetch scores from Odds API
+                        scores = await api_service.get_scores(
+                            sport=sport_key.value, days_from=days_back
+                        )
 
-                    if not scores:
-                        logger.info(f"No scores found for {sport_key}")
+                        if not scores:
+                            logger.info(f"No scores found for {sport_key}")
+                            continue
+
+                        # Update database with scores
+                        updated, created = await self._update_games_from_scores(
+                            scores, sport_key.value
+                        )
+                        total_updated += updated
+                        total_created += created
+                        sports_synced.append(sport_key.value)
+
+                        logger.info(
+                            f"Synced {sport_key}: {updated} updated, {created} created"
+                        )
+
+                        # Small delay between API calls to respect rate limits
+                        await asyncio.sleep(1)
+
+                    except Exception as e:
+                        logger.error(f"Error syncing {sport_key}: {e}")
                         continue
 
-                    # Update database with scores
-                    updated, created = await self._update_games_from_scores(
-                        scores, sport_key.value
-                    )
-                    total_updated += updated
-                    total_created += created
-                    sports_synced.append(sport_key.value)
+                return {
+                    "success": True,
+                    "message": f"Synced {len(sports_synced)} sports: {', '.join(sports_synced)}",
+                    "games_updated": total_updated,
+                    "games_created": total_created,
+                    "sports_synced": sports_synced,
+                }
 
-                    logger.info(
-                        f"Synced {sport_key}: {updated} updated, {created} created"
-                    )
-
-                    # Small delay between API calls to respect rate limits
-                    await asyncio.sleep(1)
-
-                except Exception as e:
-                    logger.error(f"Error syncing {sport_key}: {e}")
-                    continue
-
-            return {
-                "success": True,
-                "message": f"Synced {len(sports_synced)} sports: {', '.join(sports_synced)}",
-                "games_updated": total_updated,
-                "games_created": total_created,
-                "sports_synced": sports_synced,
-            }
-
-        except Exception as e:
-            logger.error(f"Error during game sync: {e}")
-            return {
-                "success": False,
-                "message": f"Game sync failed: {str(e)}",
-                "games_updated": total_updated,
-                "games_created": total_created,
-            }
+            except Exception as e:
+                logger.error(f"Error during game sync: {e}")
+                return {
+                    "success": False,
+                    "message": f"Game sync failed: {str(e)}",
+                    "games_updated": total_updated,
+                    "games_created": total_created,
+                }
 
     async def _update_games_from_scores(
         self, scores, sport_key: str

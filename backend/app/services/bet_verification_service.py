@@ -457,7 +457,11 @@ class BetVerificationService:
 
                     # Check if game is actually completed and past start time
                     now = datetime.utcnow()
-                    game_started = score.commence_time <= now
+                    # Ensure both datetimes are timezone-naive for comparison
+                    score_start_time = score.commence_time
+                    if score_start_time.tzinfo is not None:
+                        score_start_time = score_start_time.replace(tzinfo=None)
+                    game_started = score_start_time <= now
                     is_truly_completed = score.completed and game_started
 
                     logger.info(
@@ -505,7 +509,14 @@ class BetVerificationService:
                         )
 
             except Exception as e:
-                logger.error(f"Error fetching scores for sport {sport}: {e}")
+                error_msg = str(e).lower()
+                if "rate limit" in error_msg:
+                    logger.warning(f"Rate limit reached for sport {sport}, skipping for now")
+                    # Don't continue checking other sports if we're rate limited
+                    # This prevents burning through our quota
+                    break
+                else:
+                    logger.error(f"Error fetching scores for sport {sport}: {e}")
                 continue
 
         return game_results
