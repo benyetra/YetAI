@@ -10,7 +10,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.database import get_db, SessionLocal
-from app.models.database_models import User, Bet, ParlayBet, Game, BetHistory, BetLimit
+from app.models.database_models import User, Bet, ParlayBet, Game, BetHistory, BetLimit, YetAIBet, SubscriptionTier
 from app.models.bet_models import *
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,10 @@ class BetServiceDB:
         try:
             db = SessionLocal()
             try:
+                # Handle YetAI bet placement if yetai_bet_id is provided
+                if bet_data.yetai_bet_id:
+                    return await self._place_yetai_bet(user_id, bet_data, db)
+
                 # Validate bet limits
                 if not await self._check_bet_limits(user_id, bet_data.amount, db):
                     return {"success": False, "error": "Bet exceeds limits"}
@@ -1123,6 +1127,103 @@ class BetServiceDB:
                 break
 
         return result
+
+    async def _place_yetai_bet(self, user_id: int, bet_data: PlaceBetRequest, db: Session) -> Dict:
+        """Handle placing a bet on a YetAI pick"""
+        try:
+            # Find the YetAI bet
+            yetai_bet = db.query(YetAIBet).filter(YetAIBet.id == bet_data.yetai_bet_id).first()
+
+            if not yetai_bet:
+                return {"success": False, "error": "YetAI bet not found"}
+
+            if yetai_bet.status != "pending":
+                return {"success": False, "error": "This YetAI bet is no longer active"}
+
+            # Check user subscription tier
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return {"success": False, "error": "User not found"}
+
+            # Check if user has access to premium bets
+            if yetai_bet.tier_requirement != SubscriptionTier.FREE and user.subscription_tier == SubscriptionTier.FREE:
+                return {"success": False, "error": "Premium subscription required for this bet"}
+
+            # Validate bet limits with the amount from bet_data
+            if not await self._check_bet_limits(user_id, bet_data.amount, db):
+                return {"success": False, "error": "Bet exceeds limits"}
+
+            # Use YetAI bet data but with user's amount
+            potential_win = self._calculate_potential_win(bet_data.amount, yetai_bet.odds)
+
+            # Generate bet ID
+            bet_id = str(uuid.uuid4())
+
+            # Create user bet record using YetAI bet data
+            bet = Bet(
+                id=bet_id,
+                user_id=user_id,
+                game_id=yetai_bet.game_id,  # May be None for some YetAI bets
+                bet_type=yetai_bet.bet_type,
+                selection=yetai_bet.selection,
+                odds=yetai_bet.odds,
+                amount=bet_data.amount,  # Use user's amount
+                potential_win=potential_win,
+                status=BetStatus.PENDING,
+                placed_at=datetime.utcnow(),
+                home_team=yetai_bet.home_team,
+                away_team=yetai_bet.away_team,
+                sport=yetai_bet.sport,
+                commence_time=yetai_bet.commence_time,
+                bookmaker="YetAI"
+            )
+
+            db.add(bet)
+
+            # Log bet history
+            history = BetHistory(
+                user_id=user_id,
+                bet_id=bet_id,
+                action="placed",
+                new_status=BetStatus.PENDING.value,
+                amount=bet_data.amount,
+                bet_metadata={
+                    "bet_type": yetai_bet.bet_type,
+                    "selection": yetai_bet.selection,
+                    "yetai_bet_id": bet_data.yetai_bet_id
+                },
+            )
+            db.add(history)
+
+            db.commit()
+
+            logger.info(f"User {user_id} placed bet {bet_id} on YetAI bet {bet_data.yetai_bet_id}")
+
+            return {
+                "success": True,
+                "bet": {
+                    "id": bet.id,
+                    "user_id": bet.user_id,
+                    "game_id": bet.game_id,
+                    "bet_type": bet.bet_type,
+                    "selection": bet.selection,
+                    "odds": bet.odds,
+                    "amount": bet.amount,
+                    "potential_win": bet.potential_win,
+                    "status": bet.status,
+                    "placed_at": bet.placed_at.isoformat(),
+                    "home_team": bet.home_team,
+                    "away_team": bet.away_team,
+                    "sport": bet.sport,
+                    "commence_time": bet.commence_time.isoformat() if bet.commence_time else None,
+                    "bookmaker": bet.bookmaker
+                },
+                "message": "Bet placed successfully on YetAI pick",
+            }
+
+        except Exception as e:
+            logger.error(f"Error placing YetAI bet: {e}")
+            return {"success": False, "error": f"Failed to place bet: {str(e)}"}
 
 
 # Initialize service

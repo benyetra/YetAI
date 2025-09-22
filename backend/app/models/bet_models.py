@@ -31,6 +31,8 @@ class PlaceBetRequest(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
     commence_time: Optional[datetime] = None
+    # Optional field for placing bets on YetAI picks
+    yetai_bet_id: Optional[str] = None
 
 
 class ParlayLeg(BaseModel):
@@ -146,6 +148,7 @@ class YetAIBet(BaseModel):
 class UpdateYetAIBetRequest(BaseModel):
     status: Optional[BetStatus] = None
     result: Optional[str] = None
+
 
 
 class YetAIBetResponse(BaseModel):
