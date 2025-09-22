@@ -37,7 +37,7 @@ class BetServiceDB:
             db = SessionLocal()
             try:
                 # Handle YetAI bet placement if yetai_bet_id is provided
-                yetai_bet_id = getattr(bet_data, 'yetai_bet_id', None)
+                yetai_bet_id = getattr(bet_data, "yetai_bet_id", None)
                 if yetai_bet_id:
                     return await self._place_yetai_bet(user_id, bet_data, db)
 
@@ -1144,10 +1144,8 @@ class BetServiceDB:
         """Handle placing a bet on a YetAI pick"""
         try:
             # Find the YetAI bet
-            yetai_bet_id = getattr(bet_data, 'yetai_bet_id', None)
-            yetai_bet = (
-                db.query(YetAIBet).filter(YetAIBet.id == yetai_bet_id).first()
-            )
+            yetai_bet_id = getattr(bet_data, "yetai_bet_id", None)
+            yetai_bet = db.query(YetAIBet).filter(YetAIBet.id == yetai_bet_id).first()
 
             if not yetai_bet:
                 return {"success": False, "error": "YetAI bet not found"}
