@@ -438,44 +438,45 @@ class BetVerificationService:
         db = SessionLocal()
         try:
             for game_id in remaining_game_ids:
-                # Try to get sport from database first
-                game = db.query(Game).filter(Game.id == game_id).first()
-                if game and game.sport_key and game.sport_key != "unknown":
-                    sport = game.sport_key
-                else:
-                    # Try to infer sport from game ID pattern
-                    sport = self._infer_sport_from_game_id(game_id)
-
-                # If sport is still unknown or default, try all major sports
-                if sport in ["unknown", "americanfootball_nfl"] and (
-                    not game or game.sport_key == "unknown"
-                ):
-                    # For unknown sports, add to multiple sport categories to try them all
-                    major_sports = [
-                        "baseball_mlb",
-                        "americanfootball_nfl",
-                        "basketball_nba",
-                        "icehockey_nhl",
-                    ]
-                    for try_sport in major_sports:
-                        if try_sport not in games_by_sport:
-                            games_by_sport[try_sport] = []
-                        games_by_sport[try_sport].append(game_id)
-                    logger.info(
-                        f"Game {game_id} has unknown sport, will try: {major_sports}"
+                # Get sport from pending bets for this game (more reliable than game record)
+                bet_with_sport = (
+                    db.query(Bet)
+                    .filter(
+                        Bet.game_id == game_id,
+                        Bet.status == "PENDING",
+                        Bet.sport.isnot(None),
                     )
+                    .first()
+                )
+
+                if bet_with_sport and bet_with_sport.sport:
+                    sport = bet_with_sport.sport
                 else:
-                    if sport not in games_by_sport:
-                        games_by_sport[sport] = []
-                    games_by_sport[sport].append(game_id)
+                    # Fallback to game record or inference
+                    game = db.query(Game).filter(Game.id == game_id).first()
+                    if game and game.sport_key and game.sport_key != "unknown":
+                        sport = game.sport_key
+                    else:
+                        sport = self._infer_sport_from_game_id(game_id)
+
+                if sport not in games_by_sport:
+                    games_by_sport[sport] = []
+                games_by_sport[sport].append(game_id)
+                logger.debug(f"Game {game_id} assigned to sport: {sport}")
         finally:
             db.close()
 
         # Fetch scores for each sport from API
         for sport, sport_game_ids in games_by_sport.items():
             try:
-                logger.info(f"Fetching scores for {sport}: {sport_game_ids}")
-                scores = await self.odds_api_service.get_scores(sport, days_from=3)
+                # Normalize sport key for API call
+                normalized_sport = self._normalize_sport_key(sport)
+                logger.info(
+                    f"Fetching scores for {sport} (normalized: {normalized_sport}): {sport_game_ids}"
+                )
+                scores = await self.odds_api_service.get_scores(
+                    normalized_sport, days_from=3
+                )
 
                 # Get game details for team-based matching
                 db = SessionLocal()
@@ -562,6 +563,28 @@ class BetVerificationService:
                 continue
 
         return game_results
+
+    def _normalize_sport_key(self, sport: str) -> str:
+        """Convert sport names to Odds API sport keys"""
+        sport_mapping = {
+            "NCAA Football": "americanfootball_ncaaf",
+            "NCAA FOOTBALL": "americanfootball_ncaaf",
+            "NCAAF": "americanfootball_ncaaf",
+            "ncaaf": "americanfootball_ncaaf",
+            "NCAA Basketball": "basketball_ncaab",
+            "NCAA BASKETBALL": "basketball_ncaab",
+            "NCAAB": "basketball_ncaab",
+            "ncaab": "basketball_ncaab",
+            "NFL": "americanfootball_nfl",
+            "americanfootball_nfl": "americanfootball_nfl",
+            "MLB": "baseball_mlb",
+            "baseball_mlb": "baseball_mlb",
+            "NBA": "basketball_nba",
+            "basketball_nba": "basketball_nba",
+            "NHL": "icehockey_nhl",
+            "icehockey_nhl": "icehockey_nhl",
+        }
+        return sport_mapping.get(sport, sport)
 
     def _infer_sport_from_game_id(self, game_id: str) -> str:
         """Infer sport from game ID pattern"""
