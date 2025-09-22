@@ -346,6 +346,44 @@ class BetVerificationService:
             for game_id in game_ids:
                 game = db.query(Game).filter(Game.id == game_id).first()
 
+                # Handle orphaned bets with missing games
+                if not game:
+                    logger.warning(
+                        f"Game {game_id} not found in database - cancelling orphaned bets"
+                    )
+                    # Cancel all bets for this missing game
+                    orphaned_bets = (
+                        db.query(Bet)
+                        .filter(Bet.game_id == game_id, Bet.status == "PENDING")
+                        .all()
+                    )
+
+                    for bet in orphaned_bets:
+                        bet.status = "CANCELLED"
+                        bet.settled_at = now
+                        bet.result_amount = bet.amount  # Return original amount
+
+                        # Add to history
+                        bet_history = BetHistory(
+                            user_id=bet.user_id,
+                            bet_id=bet.id,
+                            action="settled",
+                            old_status="pending",
+                            new_status="cancelled",
+                            amount=bet.amount,
+                            bet_metadata=json.dumps(
+                                {"reasoning": f"Game {game_id} not found in database"}
+                            ),
+                        )
+                        db.add(bet_history)
+
+                        logger.info(
+                            f"Cancelled orphaned bet {bet.id} for missing game {game_id}"
+                        )
+
+                    db.commit()
+                    continue
+
                 # Check if game is truly completed (status is final AND past start time)
                 game_started = game and game.commence_time and game.commence_time <= now
                 # Handle edge case: if game is marked FINAL with scores, consider it completed even if commence_time is in future (test data issue)
