@@ -511,7 +511,9 @@ class BetVerificationService:
             except Exception as e:
                 error_msg = str(e).lower()
                 if "rate limit" in error_msg:
-                    logger.warning(f"Rate limit reached for sport {sport}, skipping for now")
+                    logger.warning(
+                        f"Rate limit reached for sport {sport}, skipping for now"
+                    )
                     # Don't continue checking other sports if we're rate limited
                     # This prevents burning through our quota
                     break
