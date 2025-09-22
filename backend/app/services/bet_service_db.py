@@ -37,7 +37,8 @@ class BetServiceDB:
             db = SessionLocal()
             try:
                 # Handle YetAI bet placement if yetai_bet_id is provided
-                if bet_data.yetai_bet_id:
+                yetai_bet_id = getattr(bet_data, 'yetai_bet_id', None)
+                if yetai_bet_id:
                     return await self._place_yetai_bet(user_id, bet_data, db)
 
                 # Validate bet limits
@@ -1143,8 +1144,9 @@ class BetServiceDB:
         """Handle placing a bet on a YetAI pick"""
         try:
             # Find the YetAI bet
+            yetai_bet_id = getattr(bet_data, 'yetai_bet_id', None)
             yetai_bet = (
-                db.query(YetAIBet).filter(YetAIBet.id == bet_data.yetai_bet_id).first()
+                db.query(YetAIBet).filter(YetAIBet.id == yetai_bet_id).first()
             )
 
             if not yetai_bet:
@@ -1211,7 +1213,7 @@ class BetServiceDB:
                 bet_metadata={
                     "bet_type": yetai_bet.bet_type,
                     "selection": yetai_bet.selection,
-                    "yetai_bet_id": bet_data.yetai_bet_id,
+                    "yetai_bet_id": yetai_bet_id,
                 },
             )
             db.add(history)
@@ -1219,7 +1221,7 @@ class BetServiceDB:
             db.commit()
 
             logger.info(
-                f"User {user_id} placed bet {bet_id} on YetAI bet {bet_data.yetai_bet_id}"
+                f"User {user_id} placed bet {bet_id} on YetAI bet {yetai_bet_id}"
             )
 
             return {
