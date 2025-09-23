@@ -403,11 +403,11 @@ class BetVerificationService:
                         sport=game.sport_key or "unknown",
                         home_team=game.home_team,
                         away_team=game.away_team,
-                        home_score=game.home_score,
-                        away_score=game.away_score,
-                        winner=self._determine_winner(game.home_score, game.away_score),
+                        home_score=int(game.home_score or 0),
+                        away_score=int(game.away_score or 0),
+                        winner=self._determine_winner(int(game.home_score or 0), int(game.away_score or 0)),
                         is_final=True,
-                        total_score=game.home_score + game.away_score,
+                        total_score=int(game.home_score or 0) + int(game.away_score or 0),
                     )
                     game_results[game.id] = game_result
                     logger.info(
@@ -533,14 +533,13 @@ class BetVerificationService:
                             sport=score.sport_key,
                             home_team=score.home_team,
                             away_team=score.away_team,
-                            home_score=score.home_score or 0,
-                            away_score=score.away_score or 0,
+                            home_score=int(score.home_score or 0),
+                            away_score=int(score.away_score or 0),
                             winner=self._determine_winner(
-                                score.home_score, score.away_score
+                                int(score.home_score or 0), int(score.away_score or 0)
                             ),
                             is_final=score.completed,
-                            total_score=(score.home_score or 0)
-                            + (score.away_score or 0),
+                            total_score=int(score.home_score or 0) + int(score.away_score or 0),
                         )
                         game_results[matched_game_id] = (
                             game_result  # Key by our internal game_id
@@ -754,7 +753,7 @@ class BetVerificationService:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying spread bet {bet.id}: {e}")
+            logger.error(f"Error verifying spread bet {bet.id}: {e}. Selection: '{bet.selection}', Line value: '{bet.line_value}', Game scores: {game_result.home_score}-{game_result.away_score}")
             return BetResult(
                 bet_id=bet.id,
                 status=BetStatus.CANCELLED,
@@ -804,7 +803,7 @@ class BetVerificationService:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying total bet {bet.id}: {e}")
+            logger.error(f"Error verifying total bet {bet.id}: {e}. Selection: '{bet.selection}', Total score: {game_result.total_score}")
             return BetResult(
                 bet_id=bet.id,
                 status=BetStatus.CANCELLED,
