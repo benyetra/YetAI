@@ -161,13 +161,22 @@ class LiveBettingServiceDB:
                 # Get real team names from cached markets or create reasonable defaults
                 home_team, away_team, sport = self._get_game_details(request.game_id)
 
+                # Transform generic selections to specific ones with line values
+                specific_selection = self._create_specific_selection(
+                    request.bet_type,
+                    request.selection,
+                    home_team,
+                    away_team,
+                    game_state,
+                )
+
                 # Create database record
                 db_bet = LiveBetDB(
                     id=bet_id,
                     user_id=user_id,
                     game_id=request.game_id,
                     bet_type=request.bet_type,
-                    selection=request.selection,
+                    selection=specific_selection,
                     odds=current_odds,
                     amount=request.amount,
                     potential_win=potential_win,
@@ -1061,6 +1070,69 @@ class LiveBettingServiceDB:
         # Cache the result
         self.game_details_cache[game_id] = (home_team, away_team, sport)
         return (home_team, away_team, sport)
+
+    def _create_specific_selection(
+        self,
+        bet_type: str,
+        selection: str,
+        home_team: str,
+        away_team: str,
+        game_state: LiveGameUpdate,
+    ) -> str:
+        """Transform generic selections to specific ones with line values"""
+
+        # Get current odds data for line values
+        odds_data = self.live_odds.get(game_state.game_id)
+
+        bet_type_lower = bet_type.lower()
+        selection_lower = selection.lower()
+
+        # Handle spread bets
+        if bet_type_lower in ["spread", "spreads", "point_spread"]:
+            if odds_data and odds_data.spread is not None:
+                if selection_lower == "home":
+                    spread_value = odds_data.spread
+                    if spread_value > 0:
+                        return f"{home_team} +{spread_value}"
+                    else:
+                        return f"{home_team} {spread_value}"
+                elif selection_lower == "away":
+                    spread_value = -odds_data.spread
+                    if spread_value > 0:
+                        return f"{away_team} +{spread_value}"
+                    else:
+                        return f"{away_team} {spread_value}"
+
+            # Fallback if no odds data
+            if selection_lower == "home":
+                return f"{home_team} +1.5"
+            elif selection_lower == "away":
+                return f"{away_team} -1.5"
+
+        # Handle total bets
+        elif bet_type_lower in ["total", "totals", "over_under"]:
+            if odds_data and odds_data.total is not None:
+                total_value = odds_data.total
+                if selection_lower == "over":
+                    return f"Over {total_value}"
+                elif selection_lower == "under":
+                    return f"Under {total_value}"
+
+            # Fallback if no odds data
+            if selection_lower == "over":
+                return "Over 8.5"
+            elif selection_lower == "under":
+                return "Under 8.5"
+
+        # Handle moneyline - just use team names
+        elif bet_type_lower in ["moneyline", "h2h"]:
+            if selection_lower == "home":
+                return home_team
+            elif selection_lower == "away":
+                return away_team
+
+        # If we can't transform it, return original selection
+        return selection
 
 
 # Initialize service
