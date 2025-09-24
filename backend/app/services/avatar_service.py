@@ -17,6 +17,7 @@ from app.core.config import settings
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
+
     HAS_S3 = True
 except ImportError:
     HAS_S3 = False
@@ -56,7 +57,9 @@ class AvatarService:
             # Fallback to local storage
             self.base_path = Path(__file__).parent.parent / "uploads" / "avatars"
             self.base_path.mkdir(parents=True, exist_ok=True)
-            logger.warning("Using local storage for avatars (files will be lost on deployment)")
+            logger.warning(
+                "Using local storage for avatars (files will be lost on deployment)"
+            )
 
     def _has_s3_config(self) -> bool:
         """Check if S3 configuration is available"""
@@ -66,22 +69,24 @@ class AvatarService:
             bucket_name = bucket_name.replace("s3://", "").split("/")[0]
 
         return bool(
-            os.getenv("AWS_ACCESS_KEY_ID") and
-            os.getenv("AWS_SECRET_ACCESS_KEY") and
-            bucket_name
+            os.getenv("AWS_ACCESS_KEY_ID")
+            and os.getenv("AWS_SECRET_ACCESS_KEY")
+            and bucket_name
         )
 
     def _init_s3(self):
         """Initialize S3 client"""
         try:
             # Get region from either AWS_REGION or AWS_DEFAULT_REGION
-            region = os.getenv("AWS_REGION") or os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+            region = os.getenv("AWS_REGION") or os.getenv(
+                "AWS_DEFAULT_REGION", "us-east-1"
+            )
 
             self.s3_client = boto3.client(
-                's3',
+                "s3",
                 aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
                 aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-                region_name=region
+                region_name=region,
             )
 
             # Clean up bucket name - remove s3:// prefix and /avatars suffix if present
@@ -89,12 +94,16 @@ class AvatarService:
             if raw_bucket_name.startswith("s3://"):
                 self.bucket_name = raw_bucket_name.replace("s3://", "").split("/")[0]
             else:
-                self.bucket_name = raw_bucket_name.split("/")[0]  # Remove any path suffixes
+                self.bucket_name = raw_bucket_name.split("/")[
+                    0
+                ]  # Remove any path suffixes
 
             self.cloudfront_domain = os.getenv("AWS_CLOUDFRONT_DOMAIN")  # Optional CDN
             self.aws_region = region
 
-            logger.info(f"S3 initialized with bucket: {self.bucket_name} in region: {region}")
+            logger.info(
+                f"S3 initialized with bucket: {self.bucket_name} in region: {region}"
+            )
 
             # Test S3 connection
             try:
@@ -197,7 +206,9 @@ class AvatarService:
             logger.error(f"Error saving avatar: {e}")
             return False, "Failed to save avatar"
 
-    def _save_to_s3(self, img: Image.Image, user_id: int, filename: str) -> Tuple[bool, str]:
+    def _save_to_s3(
+        self, img: Image.Image, user_id: int, filename: str
+    ) -> Tuple[bool, str]:
         """Save avatar to S3"""
         try:
             # Save main image to buffer
@@ -224,14 +235,14 @@ class AvatarService:
                 self.bucket_name,
                 s3_key,
                 ExtraArgs={
-                    'ContentType': 'image/jpeg',
-                    'ACL': 'public-read',  # Make publicly accessible
-                    'CacheControl': 'max-age=31536000',  # 1 year cache
-                    'Metadata': {
-                        'user-id': str(user_id),
-                        'upload-time': str(int(time.time()))
-                    }
-                }
+                    "ContentType": "image/jpeg",
+                    "ACL": "public-read",  # Make publicly accessible
+                    "CacheControl": "max-age=31536000",  # 1 year cache
+                    "Metadata": {
+                        "user-id": str(user_id),
+                        "upload-time": str(int(time.time())),
+                    },
+                },
             )
 
             # Upload thumbnail to S3
@@ -241,15 +252,15 @@ class AvatarService:
                 self.bucket_name,
                 thumb_s3_key,
                 ExtraArgs={
-                    'ContentType': 'image/jpeg',
-                    'ACL': 'public-read',
-                    'CacheControl': 'max-age=31536000',
-                    'Metadata': {
-                        'user-id': str(user_id),
-                        'upload-time': str(int(time.time())),
-                        'type': 'thumbnail'
-                    }
-                }
+                    "ContentType": "image/jpeg",
+                    "ACL": "public-read",
+                    "CacheControl": "max-age=31536000",
+                    "Metadata": {
+                        "user-id": str(user_id),
+                        "upload-time": str(int(time.time())),
+                        "type": "thumbnail",
+                    },
+                },
             )
 
             # Generate URLs
@@ -260,7 +271,9 @@ class AvatarService:
                 # Use region-specific S3 URL format
                 if self.aws_region == "us-east-1":
                     avatar_url = f"https://{self.bucket_name}.s3.amazonaws.com/{s3_key}"
-                    thumb_url = f"https://{self.bucket_name}.s3.amazonaws.com/{thumb_s3_key}"
+                    thumb_url = (
+                        f"https://{self.bucket_name}.s3.amazonaws.com/{thumb_s3_key}"
+                    )
                 else:
                     avatar_url = f"https://{self.bucket_name}.s3.{self.aws_region}.amazonaws.com/{s3_key}"
                     thumb_url = f"https://{self.bucket_name}.s3.{self.aws_region}.amazonaws.com/{thumb_s3_key}"
@@ -289,7 +302,9 @@ class AvatarService:
             # Create and save thumbnail
             thumb = img.copy()
             thumb.thumbnail(self.thumbnail_size, Image.Resampling.LANCZOS)
-            thumb_filename = f"{filename.split('_')[0]}_thumb_{secrets.token_hex(8)}.jpg"
+            thumb_filename = (
+                f"{filename.split('_')[0]}_thumb_{secrets.token_hex(8)}.jpg"
+            )
             thumb_filepath = self.base_path / thumb_filename
             thumb.save(thumb_filepath, "JPEG", quality=85, optimize=True)
 
@@ -317,7 +332,9 @@ class AvatarService:
             logger.error(f"Error deleting avatar: {e}")
             return False
 
-    def _delete_from_s3(self, avatar_path: str, thumbnail_path: Optional[str] = None) -> bool:
+    def _delete_from_s3(
+        self, avatar_path: str, thumbnail_path: Optional[str] = None
+    ) -> bool:
         """Delete avatar from S3"""
         try:
             # Extract S3 key from URL
@@ -343,10 +360,16 @@ class AvatarService:
                     thumb_s3_key = thumbnail_path.split(".amazonaws.com/")[-1]
                 elif "s3.amazonaws.com/" in thumbnail_path:
                     thumb_s3_key = thumbnail_path.split(".s3.amazonaws.com/")[-1]
-                elif self.cloudfront_domain and self.cloudfront_domain in thumbnail_path:
-                    thumb_s3_key = thumbnail_path.split(self.cloudfront_domain + "/")[-1]
+                elif (
+                    self.cloudfront_domain and self.cloudfront_domain in thumbnail_path
+                ):
+                    thumb_s3_key = thumbnail_path.split(self.cloudfront_domain + "/")[
+                        -1
+                    ]
                 else:
-                    logger.warning(f"Cannot extract S3 key from thumbnail URL: {thumbnail_path}")
+                    logger.warning(
+                        f"Cannot extract S3 key from thumbnail URL: {thumbnail_path}"
+                    )
                     return True  # Don't fail if we can't delete thumbnail
 
                 self.s3_client.delete_object(Bucket=self.bucket_name, Key=thumb_s3_key)
@@ -357,7 +380,9 @@ class AvatarService:
             logger.error(f"Error deleting from S3: {e}")
             return False
 
-    def _delete_from_local(self, avatar_path: str, thumbnail_path: Optional[str] = None) -> bool:
+    def _delete_from_local(
+        self, avatar_path: str, thumbnail_path: Optional[str] = None
+    ) -> bool:
         """Delete avatar from local filesystem"""
         try:
             # Delete main avatar

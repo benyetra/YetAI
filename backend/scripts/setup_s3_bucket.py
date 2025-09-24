@@ -23,10 +23,10 @@ def setup_s3_bucket():
     try:
         # Initialize S3 client
         s3_client = boto3.client(
-            's3',
+            "s3",
             aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
             aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
-            region_name=region
+            region_name=region,
         )
 
         # Test bucket access
@@ -37,18 +37,18 @@ def setup_s3_bucket():
         # Configure CORS for web uploads
         print("🔧 Setting up CORS policy...")
         cors_config = {
-            'CORSRules': [
+            "CORSRules": [
                 {
-                    'AllowedHeaders': ['*'],
-                    'AllowedMethods': ['GET', 'PUT', 'POST', 'DELETE', 'HEAD'],
-                    'AllowedOrigins': [
-                        'https://yetai.app',
-                        'https://www.yetai.app',
-                        'http://localhost:3000',
-                        'http://localhost:8000'
+                    "AllowedHeaders": ["*"],
+                    "AllowedMethods": ["GET", "PUT", "POST", "DELETE", "HEAD"],
+                    "AllowedOrigins": [
+                        "https://yetai.app",
+                        "https://www.yetai.app",
+                        "http://localhost:3000",
+                        "http://localhost:8000",
                     ],
-                    'ExposeHeaders': ['ETag'],
-                    'MaxAgeSeconds': 3000
+                    "ExposeHeaders": ["ETag"],
+                    "MaxAgeSeconds": 3000,
                 }
             ]
         }
@@ -66,24 +66,20 @@ def setup_s3_bucket():
                     "Effect": "Allow",
                     "Principal": "*",
                     "Action": "s3:GetObject",
-                    "Resource": f"arn:aws:s3:::{bucket_name}/avatars/*"
+                    "Resource": f"arn:aws:s3:::{bucket_name}/avatars/*",
                 }
-            ]
+            ],
         }
 
         s3_client.put_bucket_policy(
-            Bucket=bucket_name,
-            Policy=json.dumps(bucket_policy)
+            Bucket=bucket_name, Policy=json.dumps(bucket_policy)
         )
         print("✅ Bucket policy configured for public read access")
 
         # Configure bucket versioning (optional but recommended)
         print("🔧 Enabling versioning...")
         s3_client.put_bucket_versioning(
-            Bucket=bucket_name,
-            VersioningConfiguration={
-                'Status': 'Enabled'
-            }
+            Bucket=bucket_name, VersioningConfiguration={"Status": "Enabled"}
         )
         print("✅ Versioning enabled")
 
@@ -95,7 +91,7 @@ def setup_s3_bucket():
             Key=test_key,
             Body=b"YetAI S3 setup test",
             ContentType="text/plain",
-            ACL="public-read"
+            ACL="public-read",
         )
 
         # Test public access
@@ -107,7 +103,9 @@ def setup_s3_bucket():
         print("✅ Test cleanup completed")
 
         print("\n🎉 S3 bucket setup completed successfully!")
-        print(f"\nBucket URL format: https://{bucket_name}.s3.{region}.amazonaws.com/avatars/filename.jpg")
+        print(
+            f"\nBucket URL format: https://{bucket_name}.s3.{region}.amazonaws.com/avatars/filename.jpg"
+        )
         print("\nEnvironment variables needed:")
         print("AWS_ACCESS_KEY_ID=your_access_key")
         print("AWS_SECRET_ACCESS_KEY=your_secret_key")
@@ -115,10 +113,10 @@ def setup_s3_bucket():
         print(f"AWS_S3_BUCKET_NAME={bucket_name}")
 
     except ClientError as e:
-        error_code = e.response['Error']['Code']
-        if error_code == 'NoSuchBucket':
+        error_code = e.response["Error"]["Code"]
+        if error_code == "NoSuchBucket":
             print(f"❌ Bucket {bucket_name} does not exist. Please create it first.")
-        elif error_code == 'AccessDenied':
+        elif error_code == "AccessDenied":
             print("❌ Access denied. Check your AWS credentials and permissions.")
         else:
             print(f"❌ AWS Error: {e}")

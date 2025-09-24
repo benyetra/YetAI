@@ -13,20 +13,22 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from app.services.avatar_service import avatar_service
 
+
 def create_test_image():
     """Create a simple test image in base64 format"""
     from PIL import Image
     import io
 
     # Create a simple 100x100 red square
-    img = Image.new('RGB', (100, 100), color='red')
+    img = Image.new("RGB", (100, 100), color="red")
     buffer = io.BytesIO()
-    img.save(buffer, format='JPEG')
+    img.save(buffer, format="JPEG")
     buffer.seek(0)
 
     # Convert to base64
-    img_data = base64.b64encode(buffer.getvalue()).decode('utf-8')
+    img_data = base64.b64encode(buffer.getvalue()).decode("utf-8")
     return f"data:image/jpeg;base64,{img_data}"
+
 
 def test_avatar_service():
     """Test the avatar service S3 integration"""
@@ -60,23 +62,20 @@ def test_avatar_service():
 
     # Test avatar URL generation
     print("\n🔗 Testing avatar URL generation...")
-    test_user = {
-        "email": "test@yetai.app",
-        "first_name": "Test",
-        "last_name": "User"
-    }
+    test_user = {"email": "test@yetai.app", "first_name": "Test", "last_name": "User"}
 
     default_avatar = avatar_service.get_avatar_url(test_user)
     print(f"Default avatar URL: {default_avatar[:100]}...")
 
     # Test with uploaded avatar
-    if isinstance(result, dict) and result.get('avatar'):
+    if isinstance(result, dict) and result.get("avatar"):
         test_user["avatar_url"] = result["avatar"]
         uploaded_avatar = avatar_service.get_avatar_url(test_user)
         print(f"Uploaded avatar URL: {uploaded_avatar}")
 
     print("\n✅ Avatar service test completed!")
     return True
+
 
 if __name__ == "__main__":
     try:
