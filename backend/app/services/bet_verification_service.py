@@ -144,17 +144,33 @@ class BetVerificationService:
                     "settled": 0,
                 }
 
+            # Log what games we have results for before verification
+            logger.info(
+                f"Game results available for verification: {list(game_results.keys())}"
+            )
+            for game_id, result in game_results.items():
+                logger.info(
+                    f"Game {game_id}: {result.away_team} @ {result.home_team} - "
+                    f"Final: {result.is_final}, Score: {result.away_score}-{result.home_score}"
+                )
+
             # Verify individual bets
             verified_bets = 0
             settled_bets = 0
 
             for bet in pending_bets:
                 if bet.game_id in game_results:
+                    game_result = game_results[bet.game_id]
+                    logger.info(
+                        f"Verifying bet {bet.id} for game {bet.game_id}: "
+                        f"is_final={game_result.is_final}, completed={game_result.is_final}"
+                    )
                     try:
-                        result = await self._verify_single_bet(
-                            bet, game_results[bet.game_id]
-                        )
+                        result = await self._verify_single_bet(bet, game_result)
                         if result:
+                            logger.info(
+                                f"Bet {bet.id} verification result: {result.status.value} - {result.reasoning}"
+                            )
                             await self._settle_bet(bet, result)
                             verified_bets += 1
                             if result.status in [
@@ -163,14 +179,28 @@ class BetVerificationService:
                                 BetStatus.PUSHED,
                             ]:
                                 settled_bets += 1
+                        else:
+                            logger.info(
+                                f"Bet {bet.id} could not be verified (game not final)"
+                            )
                     except Exception as e:
                         logger.error(f"Error verifying bet {bet.id}: {e}")
+                else:
+                    logger.debug(
+                        f"Bet {bet.id} game {bet.game_id} not in available game results"
+                    )
 
             # Verify parlays
             for parlay in pending_parlays:
+                logger.info(
+                    f"Verifying parlay {parlay.id} with {len(parlay.legs) if hasattr(parlay, 'legs') else 0} legs"
+                )
                 try:
                     parlay_result = await self._verify_parlay(parlay, game_results)
                     if parlay_result:
+                        logger.info(
+                            f"Parlay {parlay.id} verification result: {parlay_result.status.value} - {parlay_result.reasoning}"
+                        )
                         await self._settle_parlay(parlay, parlay_result)
                         verified_bets += 1
                         if parlay_result.status in [
@@ -179,6 +209,10 @@ class BetVerificationService:
                             BetStatus.PUSHED,
                         ]:
                             settled_bets += 1
+                    else:
+                        logger.info(
+                            f"Parlay {parlay.id} could not be verified (not all legs final)"
+                        )
                 except Exception as e:
                     logger.error(f"Error verifying parlay {parlay.id}: {e}")
 
@@ -437,6 +471,7 @@ class BetVerificationService:
             db.close()
 
         # Fetch scores for each sport from API
+        rate_limited = False
         for sport, sport_game_ids in games_by_sport.items():
             try:
                 # Normalize sport key for API call
@@ -516,15 +551,22 @@ class BetVerificationService:
             except Exception as e:
                 error_msg = str(e).lower()
                 if "rate limit" in error_msg:
-                    logger.warning(
-                        f"Rate limit reached for sport {sport}, skipping for now"
+                    logger.error(
+                        f"🚫 Rate limit reached for sport {sport} - ABORTING ALL BET VERIFICATION to prevent incorrect settlements"
                     )
-                    # Don't continue checking other sports if we're rate limited
-                    # This prevents burning through our quota
+                    rate_limited = True
                     break
                 else:
                     logger.error(f"Error fetching scores for sport {sport}: {e}")
                 continue
+
+        # If we hit rate limits, abort all verification to prevent incorrect settlements
+        if rate_limited:
+            logger.error(
+                "🚫 Rate limit encountered - clearing all game results and aborting verification "
+                "to prevent settling bets with incomplete data"
+            )
+            return {}  # Return empty dict - no games will be verified
 
         return game_results
 
@@ -590,8 +632,25 @@ class BetVerificationService:
         Returns:
             BetResult with outcome or None if bet cannot be verified
         """
+        # Double-check that the game is actually completed before settling
         if not game_result.is_final:
+            logger.info(
+                f"Bet {bet.id}: Game {bet.game_id} not final (is_final={game_result.is_final}), skipping"
+            )
             return None
+
+        # Additional safety check - verify game has actual scores
+        if game_result.home_score is None or game_result.away_score is None:
+            logger.warning(
+                f"Bet {bet.id}: Game {bet.game_id} marked as final but has null scores "
+                f"(home: {game_result.home_score}, away: {game_result.away_score}), skipping"
+            )
+            return None
+
+        logger.info(
+            f"Bet {bet.id}: Proceeding with verification - Game {bet.game_id} is final with scores "
+            f"{game_result.away_team} {game_result.away_score} - {game_result.home_team} {game_result.home_score}"
+        )
 
         try:
             if bet.bet_type == BetType.MONEYLINE:
