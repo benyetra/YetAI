@@ -103,6 +103,7 @@ const BetHistory: React.FC = () => {
   const [bets, setBets] = useState<Bet[]>([]);
   const [liveBets, setLiveBets] = useState<any[]>([]);
   const [stats, setStats] = useState<BetStats | null>(null);
+  const [totalBetsFromAPI, setTotalBetsFromAPI] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterBetType, setFilterBetType] = useState<string>('all');
@@ -140,6 +141,11 @@ const BetHistory: React.FC = () => {
       const response = await apiClient.post('/api/bets/history', filters, token);
       if (response.status === 'success') {
         setBets(response.history || response.bets || []);
+        // Use the actual total from the API response, which correctly excludes parlay legs
+        if (typeof response.total === 'number') {
+          setTotalBetsFromAPI(response.total);
+          console.log('📊 Total bets from API:', response.total, 'vs stats total:', stats?.total_bets);
+        }
       }
     } catch (error) {
       console.error('Error fetching bet history:', error);
@@ -468,7 +474,7 @@ const BetHistory: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
               title="Total Bets"
-              value={stats.total_bets}
+              value={totalBetsFromAPI > 0 ? totalBetsFromAPI : stats.total_bets}
               icon={<Target className="w-6 h-6 text-blue-600" />}
             />
             <StatCard
