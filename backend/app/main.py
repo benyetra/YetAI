@@ -436,19 +436,46 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         # Format the response for the dashboard
         personal_stats = {
             "predictions_made": stats["total_bets"],
-            "accuracy_rate": stats["win_rate"] * 100,  # Convert to percentage
-            "total_profit": stats["total_winnings"] - stats["total_wagered"],
-            "roi": stats["roi"] * 100,  # Convert to percentage
-            "total_wagered": stats["total_wagered"],
-            "total_winnings": stats["total_winnings"],
+            "accuracy_rate": round(
+                stats["win_rate"] * 100, 1
+            ),  # Convert to percentage and round to 1 decimal
+            "total_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
+            "roi": round(
+                stats["roi"] * 100, 1
+            ),  # Convert to percentage and round to 1 decimal
+            "total_wagered": round(stats["total_wagered"], 2),
+            "total_winnings": round(stats["total_winnings"], 2),
             "favorite_sport": stats["favorite_sport"],
             "favorite_bet_type": stats["favorite_bet_type"],
             "win_streak": stats.get("current_streak", {}).get("count", 0),
         }
 
+        # Return in the format expected by frontend
         return {
             "status": "success",
             "personal_stats": personal_stats,
+            "metrics": {
+                "total_predictions": stats["total_bets"],
+                "overall_accuracy": round(stats["win_rate"] * 100, 1),
+                "total_wagered": round(stats["total_wagered"], 2),
+                "net_profit": round(
+                    stats["total_winnings"] - stats["total_wagered"], 2
+                ),
+                "resolved_predictions": stats.get(
+                    "total_resolved_bets", stats["total_bets"]
+                ),
+                "pending_predictions": stats.get("total_pending_bets", 0),
+                "success_rate": stats["win_rate"],
+                "by_sport": stats.get("by_sport", {}),
+                "by_type": stats.get("by_bet_type", {}),
+                "trends": {
+                    "last_7_days_accuracy": round(
+                        stats.get("last_7_days_accuracy", stats["win_rate"]) * 100, 1
+                    ),
+                    "improvement_trend": stats.get("improvement_trend", "stable"),
+                },
+                "period_days": 30,
+            },
             "user_id": user_id,
         }
     except Exception as e:
@@ -468,6 +495,19 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "favorite_sport": "N/A",
                 "favorite_bet_type": "N/A",
                 "win_streak": 0,
+            },
+            "metrics": {
+                "total_predictions": 0,
+                "overall_accuracy": 0,
+                "total_wagered": 0,
+                "net_profit": 0,
+                "resolved_predictions": 0,
+                "pending_predictions": 0,
+                "success_rate": 0,
+                "by_sport": {},
+                "by_type": {},
+                "trends": {"last_7_days_accuracy": 0, "improvement_trend": "stable"},
+                "period_days": 30,
             },
             "user_id": user_id,
         }
