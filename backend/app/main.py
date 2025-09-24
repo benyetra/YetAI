@@ -1643,18 +1643,21 @@ async def cleanup_orphaned_bet_history(admin_user: dict = Depends(require_admin)
     try:
         from app.core.database import SessionLocal
         from app.models.database_models import BetHistory, Bet, ParlayBet
+        from sqlalchemy import text
 
         db = SessionLocal()
         try:
             # Find bet_history records that don't have corresponding bets
             orphaned_history = db.execute(
-                """
+                text(
+                    """
                 SELECT bh.id, bh.bet_id, bh.user_id
                 FROM bet_history bh
                 LEFT JOIN bets b ON bh.bet_id = b.id
                 LEFT JOIN parlay_bets pb ON bh.bet_id = pb.id
                 WHERE b.id IS NULL AND pb.id IS NULL
-            """
+                """
+                )
             ).fetchall()
 
             if not orphaned_history:
