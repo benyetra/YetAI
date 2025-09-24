@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
+import { getApiUrl } from '@/lib/api-config';
 
 interface PerformanceData {
   status: string;
@@ -67,6 +68,7 @@ export default function PerformancePage() {
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState(30);
   const [error, setError] = useState('');
+  const [actualPendingCount, setActualPendingCount] = useState<number>(0);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -77,8 +79,39 @@ export default function PerformancePage() {
   useEffect(() => {
     if (isAuthenticated) {
       fetchPerformanceData();
+      fetchPendingBetsCount();
     }
   }, [isAuthenticated, selectedPeriod]);
+
+  const fetchPendingBetsCount = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+
+      // Fetch pending bets from bet history API
+      const response = await fetch(getApiUrl('/api/bets/history'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          status: 'pending',
+          limit: 100,
+          offset: 0
+        })
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.status === 'success' && typeof data.total === 'number') {
+          setActualPendingCount(data.total);
+          console.log('📊 Actual pending bets from history API:', data.total);
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching pending bets count:', error);
+    }
+  };
 
   const fetchPerformanceData = async () => {
     try {
@@ -297,7 +330,9 @@ export default function PerformancePage() {
           <div className="bg-white p-6 rounded-lg border border-gray-200">
             <div className="flex items-center justify-between mb-4">
               <TrendingUp className="w-8 h-8 text-orange-600" />
-              <span className="text-2xl font-bold text-orange-600">{overview.pending_bets || 0}</span>
+              <span className="text-2xl font-bold text-orange-600">
+                {actualPendingCount > 0 ? actualPendingCount : (overview.pending_bets || 0)}
+              </span>
             </div>
             <h3 className="font-semibold text-gray-900">Pending</h3>
             <p className="text-sm text-gray-600">Awaiting results</p>
