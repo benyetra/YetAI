@@ -385,66 +385,12 @@ class BetVerificationService:
                     db.commit()
                     continue
 
-                # Check if game is truly completed (status is final AND past start time)
-                game_started = game and game.commence_time and game.commence_time <= now
-
-                # Only consider games completed if they have actually started AND have final scores
-                has_final_scores = (
-                    game
-                    and game_started  # Game must have started
-                    and game.status.upper() in ["FINAL", "COMPLETED"]
-                    and game.home_score is not None
-                    and game.away_score is not None
+                # Skip local database scores - always check API for authoritative completion status
+                logger.info(
+                    f"Game {game.id} ({game.away_team} @ {game.home_team}): "
+                    f"commence_time={game.commence_time}, will check API for completion status"
                 )
-
-                # Also consider games completed if they started more than 4 hours ago (typical game duration)
-                hours_since_start = None
-                if game and game.commence_time:
-                    hours_since_start = (
-                        now - game.commence_time
-                    ).total_seconds() / 3600
-
-                game_likely_completed = (
-                    hours_since_start and hours_since_start > 4 and game_started
-                )
-
-                is_game_completed = has_final_scores or game_likely_completed
-
-                if is_game_completed:
-                    if has_final_scores:
-                        # We have a completed game with scores in our database
-                        game_result = GameResult(
-                            game_id=game.id,
-                            sport=game.sport_key or "unknown",
-                            home_team=game.home_team,
-                            away_team=game.away_team,
-                            home_score=int(game.home_score or 0),
-                            away_score=int(game.away_score or 0),
-                            winner=self._determine_winner(
-                                int(game.home_score or 0), int(game.away_score or 0)
-                            ),
-                            is_final=True,
-                            total_score=int(game.home_score or 0)
-                            + int(game.away_score or 0),
-                        )
-                        game_results[game.id] = game_result
-                        logger.info(
-                            f"Found completed game in database: {game.away_team} @ {game.home_team} - {game.away_score}-{game.home_score} (started: {game_started})"
-                        )
-                    else:
-                        # Game is likely completed but we need to fetch scores from API
-                        logger.info(
-                            f"Game {game.id} likely completed ({hours_since_start:.1f}h since start) but no scores in DB - will check API"
-                        )
-                        remaining_game_ids.append(game_id)
-                else:
-                    # Need to check API for this game
-                    remaining_game_ids.append(game_id)
-                    if game:
-                        logger.info(
-                            f"Game {game_id} not ready for verification: status={game.status}, "
-                            f"commence_time={game.commence_time}, now={now}, game_started={game_started}"
-                        )
+                remaining_game_ids.append(game_id)
         finally:
             db.close()
 
@@ -520,19 +466,13 @@ class BetVerificationService:
                 for score in scores:
                     matched_game_id = None
 
-                    # Check if game is actually completed and past start time
-                    now = datetime.utcnow()
-                    # Ensure both datetimes are timezone-naive for comparison
-                    score_start_time = score.commence_time
-                    if score_start_time.tzinfo is not None:
-                        score_start_time = score_start_time.replace(tzinfo=None)
-                    game_started = score_start_time <= now
-                    is_truly_completed = score.completed and game_started
+                    # Use The Odds API completed boolean as the authoritative source
+                    is_truly_completed = score.completed
 
                     logger.info(
                         f"Game {score.id} ({score.away_team} @ {score.home_team}): "
                         f"completed={score.completed}, commence_time={score.commence_time}, "
-                        f"now={now}, game_started={game_started}, is_truly_completed={is_truly_completed}"
+                        f"home_score={score.home_score}, away_score={score.away_score}"
                     )
 
                     # First try direct ID match
