@@ -218,7 +218,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   const [expandedRecommendation, setExpandedRecommendation] = useState<string | null>(null);
 
   useEffect(() => {
-    if (selectedLeague && standingsTeams) {
+    if (selectedLeague && standingsTeams && standingsTeams.length > 0) {
       // Convert standings teams to the format expected by the component
       const formattedTeams = standingsTeams.map(team => ({
         id: parseInt(team.team_id.toString()), // Ensure ID is always a number
@@ -226,7 +226,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         owner_name: team.owner_name
       }));
       setTeams(formattedTeams);
-      console.log('Formatted teams from standings:', formattedTeams.map(t => ({ id: t.id, type: typeof t.id, name: t.name })));
+      console.log('✅ Using REAL teams from standings:', formattedTeams.map(t => ({ id: t.id, name: t.name })));
     }
   }, [selectedLeague, standingsTeams]);
 
@@ -263,27 +263,75 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     }
   }, [targetTeam, selectedLeague, leagues, teams]);
 
-  // Create mock teams if no standings teams are available
+  // Load real teams from API if no standings teams are available
   useEffect(() => {
     if (selectedLeague && (!standingsTeams || standingsTeams.length === 0)) {
-      const mockTeams = [
-        { id: 1, name: "Team Alpha", owner_name: "Owner 1" },
-        { id: 2, name: "Team Beta", owner_name: "Owner 2" },
-        { id: 3, name: "Team Gamma", owner_name: "Owner 3" },
-        { id: 4, name: "Team Delta", owner_name: "Owner 4" },
-        { id: 5, name: "Team Epsilon", owner_name: "Owner 5" },
-        { id: 6, name: "Team Zeta", owner_name: "Owner 6" },
-        { id: 7, name: "Team Eta", owner_name: "Owner 7" },
-        { id: 8, name: "Team Theta", owner_name: "Owner 8" },
-        { id: 9, name: "Team Iota", owner_name: "Owner 9" },
-        { id: 10, name: "Team Kappa", owner_name: "Owner 10" },
-        { id: 11, name: "Team Lambda", owner_name: "Owner 11" },
-        { id: 12, name: "Team Mu", owner_name: "Owner 12" }
-      ];
-      setTeams(mockTeams);
-      console.log('Created mock teams for testing:', mockTeams.map(t => ({ id: t.id, type: typeof t.id, name: t.name })));
+      console.log('No standings teams available, attempting to load teams from API for league:', selectedLeague);
+      loadTeamsFromAPI(selectedLeague);
     }
   }, [selectedLeague, standingsTeams]);
+
+  // Helper function to load teams from API when standings data is not available
+  const loadTeamsFromAPI = async (leagueId: number) => {
+    try {
+      const league = leagues?.find(l => l.id === leagueId);
+      if (!league) {
+        console.error('League not found for teams loading:', leagueId);
+        return;
+      }
+
+      const platformLeagueId = league.platform_league_id || league.league_id;
+      if (!platformLeagueId) {
+        console.error('No platform league ID found for league:', league);
+        return;
+      }
+
+      console.log('Loading teams directly from Sleeper for league:', platformLeagueId);
+
+      // Get users data from Sleeper API to get real team names
+      const usersResponse = await fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`);
+
+      if (usersResponse.ok) {
+        const users = await usersResponse.json();
+        console.log('Successfully loaded', users?.length, 'users from Sleeper API');
+
+        if (users && users.length > 0) {
+          const realTeams = users.map((user: any, index: number) => ({
+            id: index + 1, // Use index-based ID for consistency
+            name: user.metadata?.team_name || user.display_name || `Team ${index + 1}`,
+            owner_name: user.display_name || `Owner ${index + 1}`
+          }));
+
+          setTeams(realTeams);
+          console.log('Loaded real teams from API:', realTeams.map(t => ({ id: t.id, name: t.name })));
+          return;
+        }
+      } else {
+        console.error('Failed to fetch users from Sleeper API:', usersResponse.status);
+      }
+    } catch (error) {
+      console.error('Failed to load teams from API:', error);
+    }
+
+    // Only create mock teams as absolute fallback
+    console.log('Creating mock teams as fallback');
+    const mockTeams = [
+      { id: 1, name: "Team Alpha", owner_name: "Owner 1" },
+      { id: 2, name: "Team Beta", owner_name: "Owner 2" },
+      { id: 3, name: "Team Gamma", owner_name: "Owner 3" },
+      { id: 4, name: "Team Delta", owner_name: "Owner 4" },
+      { id: 5, name: "Team Epsilon", owner_name: "Owner 5" },
+      { id: 6, name: "Team Zeta", owner_name: "Owner 6" },
+      { id: 7, name: "Team Eta", owner_name: "Owner 7" },
+      { id: 8, name: "Team Theta", owner_name: "Owner 8" },
+      { id: 9, name: "Team Iota", owner_name: "Owner 9" },
+      { id: 10, name: "Team Kappa", owner_name: "Owner 10" },
+      { id: 11, name: "Team Lambda", owner_name: "Owner 11" },
+      { id: 12, name: "Team Mu", owner_name: "Owner 12" }
+    ];
+    setTeams(mockTeams);
+    console.log('Created mock teams as final fallback:', mockTeams.map(t => ({ id: t.id, name: t.name })));
+  };
 
   // API calls
   const loadTeamRoster = async (teamId: number, leagueId: number) => {
