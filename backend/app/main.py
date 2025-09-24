@@ -443,7 +443,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             "total_winnings": stats["total_winnings"],
             "favorite_sport": stats["favorite_sport"],
             "favorite_bet_type": stats["favorite_bet_type"],
-            "win_streak": stats.get("current_streak", 0),
+            "win_streak": stats.get("current_streak", {}).get("count", 0),
         }
 
         return {
