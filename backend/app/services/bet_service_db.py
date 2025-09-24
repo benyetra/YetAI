@@ -59,13 +59,22 @@ class BetServiceDB:
                 # Extract line value for spread/total bets
                 line_value = self._extract_line_value(bet_data)
 
+                # Transform generic selections to specific ones with line values
+                specific_selection = self._create_specific_selection(
+                    bet_data.bet_type,
+                    bet_data.selection,
+                    bet_data.home_team,
+                    bet_data.away_team,
+                    line_value,
+                )
+
                 # Create bet record
                 bet = Bet(
                     id=bet_id,
                     user_id=user_id,
                     game_id=game.id if game else None,
                     bet_type=bet_data.bet_type,
-                    selection=bet_data.selection,
+                    selection=specific_selection,
                     odds=bet_data.odds,
                     amount=bet_data.amount,
                     potential_win=potential_win,
@@ -1320,6 +1329,64 @@ class BetServiceDB:
 
         mock_data = MockBetData(yetai_bet.bet_type, yetai_bet.selection)
         return self._extract_line_value(mock_data)
+
+    def _create_specific_selection(
+        self,
+        bet_type: str,
+        selection: str,
+        home_team: str,
+        away_team: str,
+        line_value: Optional[float],
+    ) -> str:
+        """Transform generic selections to specific ones with line values"""
+
+        bet_type_lower = bet_type.lower()
+        selection_lower = selection.lower()
+
+        # Handle spread bets
+        if bet_type_lower in ["spread", "spreads", "point_spread"]:
+            if line_value is not None:
+                if selection_lower == "home":
+                    if line_value > 0:
+                        return f"{home_team} +{line_value}"
+                    else:
+                        return f"{home_team} {line_value}"
+                elif selection_lower == "away":
+                    away_line = -line_value
+                    if away_line > 0:
+                        return f"{away_team} +{away_line}"
+                    else:
+                        return f"{away_team} {away_line}"
+
+            # Fallback if no line value
+            if selection_lower == "home":
+                return f"{home_team} +1.5"
+            elif selection_lower == "away":
+                return f"{away_team} -1.5"
+
+        # Handle total bets
+        elif bet_type_lower in ["total", "totals", "over_under"]:
+            if line_value is not None:
+                if selection_lower == "over":
+                    return f"Over {line_value}"
+                elif selection_lower == "under":
+                    return f"Under {line_value}"
+
+            # Fallback if no line value
+            if selection_lower == "over":
+                return "Over 8.5"
+            elif selection_lower == "under":
+                return "Under 8.5"
+
+        # Handle moneyline - just use team names
+        elif bet_type_lower in ["moneyline", "h2h"]:
+            if selection_lower == "home":
+                return home_team or "Home Team"
+            elif selection_lower == "away":
+                return away_team or "Away Team"
+
+        # If we can't transform it, return original selection
+        return selection
 
 
 # Initialize service
