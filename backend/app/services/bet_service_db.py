@@ -56,6 +56,9 @@ class BetServiceDB:
                     bet_data.amount, bet_data.odds
                 )
 
+                # Extract line value for spread/total bets
+                line_value = self._extract_line_value(bet_data)
+
                 # Create bet record
                 bet = Bet(
                     id=bet_id,
@@ -68,6 +71,7 @@ class BetServiceDB:
                     potential_win=potential_win,
                     status=BetStatus.PENDING,
                     placed_at=datetime.utcnow(),
+                    line_value=line_value,  # Store the extracted line value
                     # Include game details - prefer game data over bet_data
                     home_team=game.home_team if game else bet_data.home_team,
                     away_team=game.away_team if game else bet_data.away_team,
@@ -180,6 +184,9 @@ class BetServiceDB:
                     # Create or get game record for this leg
                     game = await self._get_or_create_game_from_leg(leg, db)
 
+                    # Extract line value for parlay leg
+                    leg_line_value = self._extract_line_value(leg)
+
                     leg_bet = Bet(
                         id=leg_id,
                         user_id=user_id,
@@ -192,6 +199,7 @@ class BetServiceDB:
                         potential_win=0,
                         status=BetStatus.PENDING,
                         placed_at=datetime.utcnow(),
+                        line_value=leg_line_value,  # Store the extracted line value
                         # Use leg data from frontend or game data if available
                         home_team=(
                             leg.home_team
@@ -1180,6 +1188,9 @@ class BetServiceDB:
             # Generate bet ID
             bet_id = str(uuid.uuid4())
 
+            # Extract line value from YetAI bet selection
+            yetai_line_value = self._extract_line_value_from_yetai_bet(yetai_bet)
+
             # Create user bet record using YetAI bet data
             bet = Bet(
                 id=bet_id,
@@ -1192,6 +1203,7 @@ class BetServiceDB:
                 potential_win=potential_win,
                 status=BetStatus.PENDING,
                 placed_at=datetime.utcnow(),
+                line_value=yetai_line_value,  # Store the extracted line value
                 home_team=yetai_bet.home_team,
                 away_team=yetai_bet.away_team,
                 sport=yetai_bet.sport,
@@ -1249,6 +1261,60 @@ class BetServiceDB:
         except Exception as e:
             logger.error(f"Error placing YetAI bet: {e}")
             return {"success": False, "error": f"Failed to place bet: {str(e)}"}
+
+    def _extract_line_value(self, bet_data) -> Optional[float]:
+        """
+        Extract line value (spread/total) from bet selection for verification purposes
+        Returns None for moneyline bets
+        """
+        import re
+
+        # Skip moneyline bets
+        if bet_data.bet_type.lower() in ["moneyline", "h2h"]:
+            return None
+
+        selection = bet_data.selection
+
+        # For spread bets, look for patterns like:
+        # "Philadelphia Phillies -1.5" or "New York Yankees +7"
+        # "Chiefs -3.5" or "Cowboys +7"
+        spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
+        if spread_match and bet_data.bet_type.lower() in ["spread", "spreads", "point_spread"]:
+            try:
+                return float(spread_match.group(1))
+            except ValueError:
+                pass
+
+        # For total bets, look for patterns like:
+        # "Over 45.5" or "Under 228.5" or "Total Over 7.5"
+        if bet_data.bet_type.lower() in ["total", "totals", "over_under"]:
+            total_match = re.search(r"(\d+\.?\d*)", selection)
+            if total_match:
+                try:
+                    return float(total_match.group(1))
+                except ValueError:
+                    pass
+
+        # Log if we couldn't extract line value for spread/total bets
+        if bet_data.bet_type.lower() not in ["moneyline", "h2h"]:
+            logger.warning(
+                f"Could not extract line value from selection '{selection}' for bet type '{bet_data.bet_type}'"
+            )
+
+        return None
+
+    def _extract_line_value_from_yetai_bet(self, yetai_bet) -> Optional[float]:
+        """
+        Extract line value from YetAI bet for verification purposes
+        """
+        # Create a mock bet_data object with the required attributes
+        class MockBetData:
+            def __init__(self, bet_type, selection):
+                self.bet_type = bet_type
+                self.selection = selection
+
+        mock_data = MockBetData(yetai_bet.bet_type, yetai_bet.selection)
+        return self._extract_line_value(mock_data)
 
 
 # Initialize service
