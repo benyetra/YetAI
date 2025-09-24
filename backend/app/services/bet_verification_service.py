@@ -1,13 +1,15 @@
 """
 Bet Verification Service - Automatically check and settle bet outcomes
 
-This service:
-1. Fetches completed game results from The Odds API
-2. Determines bet outcomes (won/lost/pushed)
+This service ONLY uses The Odds API for game results - NO local database fallback:
+1. Fetches completed game results from The Odds API exclusively
+2. Determines bet outcomes (won/lost/pushed) using real API data
 3. Updates bet statuses in the database
 4. Calculates and assigns result amounts
 5. Sends notifications to users
 6. Handles both individual bets and parlays
+
+Requires valid ODDS_API_KEY environment variable.
 """
 
 import asyncio
@@ -69,6 +71,17 @@ class BetVerificationService:
 
     async def __aenter__(self):
         """Async context manager entry"""
+        # Check if API key is available for real data
+        if (
+            not settings.ODDS_API_KEY
+            or settings.ODDS_API_KEY == "your_odds_api_key_here"
+        ):
+            logger.error(
+                "🚫 WARNING: ODDS_API_KEY is missing or using placeholder value. "
+                "Bet verification will be disabled to prevent settlements with fake data. "
+                "Please configure a valid Odds API key from https://the-odds-api.com/"
+            )
+
         self.odds_api_service = OddsAPIService(settings.ODDS_API_KEY)
         await self.odds_api_service.__aenter__()
         return self
@@ -86,6 +99,22 @@ class BetVerificationService:
             Dictionary with verification results and statistics
         """
         logger.info("Starting bet verification process")
+
+        # Check if we have a valid API key before processing
+        if (
+            not settings.ODDS_API_KEY
+            or settings.ODDS_API_KEY == "your_odds_api_key_here"
+        ):
+            logger.error(
+                "🚫 Bet verification ABORTED: No valid Odds API key configured. "
+                "Cannot verify bets without real game data. Please set ODDS_API_KEY environment variable."
+            )
+            return {
+                "success": False,
+                "error": "No valid Odds API key configured",
+                "verified": 0,
+                "settled": 0,
+            }
 
         try:
             # First, check for incorrectly settled bets and revert them
@@ -365,23 +394,28 @@ class BetVerificationService:
 
     async def _get_game_results(self, game_ids: List[str]) -> Dict[str, GameResult]:
         """
-        Fetch game results for specified game IDs from local database and The Odds API
+        Fetch game results for specified game IDs from The Odds API ONLY
+
+        NO fallback to local database to prevent mock/fake data usage
 
         Returns:
             Dictionary mapping game_id to GameResult
         """
         game_results = {}
 
-        # First, check for completed games in our local database
-        db = SessionLocal()
-        remaining_game_ids = []
+        logger.info(
+            f"Fetching game results from API for {len(game_ids)} games - NO local database fallback"
+        )
 
+        # Handle orphaned bets (games that don't exist in database at all)
+        db = SessionLocal()
         try:
             now = datetime.utcnow()
+            valid_game_ids = []
+
             for game_id in game_ids:
                 game = db.query(Game).filter(Game.id == game_id).first()
 
-                # Handle orphaned bets with missing games
                 if not game:
                     logger.warning(
                         f"Game {game_id} not found in database - cancelling orphaned bets"
@@ -416,32 +450,28 @@ class BetVerificationService:
                             f"Cancelled orphaned bet {bet.id} for missing game {game_id}"
                         )
 
-                    db.commit()
-                    continue
-
-                # Skip local database scores - always check API for authoritative completion status
-                logger.info(
-                    f"Game {game.id} ({game.away_team} @ {game.home_team}): "
-                    f"commence_time={game.commence_time}, will check API for completion status"
-                )
-                remaining_game_ids.append(game_id)
+                    if orphaned_bets:
+                        db.commit()
+                else:
+                    # Game exists in database, add to list for API checking
+                    valid_game_ids.append(game_id)
+                    logger.info(
+                        f"Game {game.id} ({game.away_team} @ {game.home_team}): "
+                        f"queued for API verification - NO local database scores will be used"
+                    )
         finally:
             db.close()
 
-        # If all games were found locally, return early
-        if not remaining_game_ids:
+        if not valid_game_ids:
+            logger.info("No valid games to check with API")
             return game_results
 
-        logger.info(
-            f"Found {len(game_results)} games locally, checking API for {len(remaining_game_ids)} remaining games"
-        )
-
-        # Group remaining games by sport for efficient API calls
+        # Group games by sport for efficient API calls
         games_by_sport = {}
 
         db = SessionLocal()
         try:
-            for game_id in remaining_game_ids:
+            for game_id in valid_game_ids:
                 # Get sport from pending bets for this game (more reliable than game record)
                 bet_with_sport = (
                     db.query(Bet)
@@ -527,25 +557,25 @@ class BetVerificationService:
                                 break
 
                     if matched_game_id:
+                        home_score = int(score.home_score or 0)
+                        away_score = int(score.away_score or 0)
+
                         game_result = GameResult(
                             game_id=matched_game_id,  # Use our internal game_id for mapping back to bets
                             sport=score.sport_key,
                             home_team=score.home_team,
                             away_team=score.away_team,
-                            home_score=int(score.home_score or 0),
-                            away_score=int(score.away_score or 0),
-                            winner=self._determine_winner(
-                                int(score.home_score or 0), int(score.away_score or 0)
-                            ),
+                            home_score=home_score,
+                            away_score=away_score,
+                            winner=self._determine_winner(home_score, away_score),
                             is_final=score.completed,
-                            total_score=int(score.home_score or 0)
-                            + int(score.away_score or 0),
+                            total_score=home_score + away_score,
                         )
                         game_results[matched_game_id] = (
                             game_result  # Key by our internal game_id
                         )
                         logger.info(
-                            f"Game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score}"
+                            f"✅ API game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score} (completed: {score.completed})"
                         )
 
             except Exception as e:
