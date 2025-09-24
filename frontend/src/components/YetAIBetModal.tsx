@@ -140,7 +140,16 @@ export default function YetAIBetModal({
         home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
         away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
         sport: bet.sport,
-        commence_time: new Date(bet.game_time).toISOString()
+        commence_time: (() => {
+          try {
+            if (!bet.game_time) return new Date().toISOString();
+            const date = new Date(bet.game_time);
+            return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+          } catch (error) {
+            console.log('⚠️ Date parsing error:', error, 'Using current time instead');
+            return new Date().toISOString();
+          }
+        })()
       };
 
       console.log('🚀 Making API call:', {
