@@ -678,8 +678,8 @@ export default function ProfilePage() {
                   <h2 className="text-xl font-semibold text-gray-900">Profile Picture</h2>
                 </div>
 
-                <div className="flex items-center space-x-6">
-                  <div className="relative">
+                <div className="flex flex-col 2xl:flex-row items-center 2xl:items-start space-y-4 2xl:space-y-0 2xl:space-x-6">
+                  <div className="relative flex-shrink-0">
                     <Avatar
                       ref={avatarRef}
                       user={user}
@@ -692,17 +692,17 @@ export default function ProfilePage() {
                       </div>
                     )}
                   </div>
-                  
-                  <div className="flex-1">
+
+                  <div className="flex-1 text-center 2xl:text-left">
                     <h3 className="font-medium text-gray-900 mb-2">
                       {user?.first_name} {user?.last_name}
                     </h3>
                     <p className="text-sm text-gray-600 mb-4">
                       Upload a new profile picture or remove the current one
                     </p>
-                    
-                    <div className="flex space-x-3">
-                      <label className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center space-x-2">
+
+                    <div className="flex flex-col sm:flex-row justify-center 2xl:justify-start space-y-2 sm:space-y-0 sm:space-x-3">
+                      <label className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center justify-center space-x-2">
                         <Upload className="w-4 h-4" />
                         <span>Upload New</span>
                         <input
@@ -715,11 +715,11 @@ export default function ProfilePage() {
                           className="hidden"
                         />
                       </label>
-                      
+
                       {avatarUrl && (
                         <button
                           onClick={handleDeleteAvatar}
-                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
+                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
                         >
                           <Trash2 className="w-4 h-4" />
                           <span>Remove</span>
