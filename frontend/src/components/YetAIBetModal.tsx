@@ -105,11 +105,16 @@ export default function YetAIBetModal({
   };
 
   const handlePlaceBet = async () => {
-    if (!validateBet() || !bet) return;
-    
+    console.log('🎯 Place bet clicked!', { bet, amount, user, token: !!token });
+
+    if (!validateBet() || !bet) {
+      console.log('❌ Validation failed or no bet', { validateResult: validateBet(), bet });
+      return;
+    }
+
     setIsProcessing(true);
     setError('');
-    
+
     try {
       // Map bet type to enum format
       const betTypeMapping: { [key: string]: string } = {
@@ -125,24 +130,41 @@ export default function YetAIBetModal({
       };
 
       const normalizedBetType = betTypeMapping[bet.bet_type.toLowerCase()] || 'total';
-      
+
+      const requestPayload = {
+        game_id: bet.id, // Using bet ID as game ID for YetAI bets
+        bet_type: normalizedBetType,
+        selection: bet.pick,
+        odds: parseOdds(bet.odds),
+        amount: parseFloat(amount),
+        home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
+        away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
+        sport: bet.sport,
+        commence_time: new Date(bet.game_time).toISOString()
+      };
+
+      console.log('🚀 Making API call:', {
+        url: getApiUrl('/api/bets/place'),
+        payload: requestPayload,
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
+
       const response = await fetch(getApiUrl('/api/bets/place'), {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          game_id: bet.id, // Using bet ID as game ID for YetAI bets
-          bet_type: normalizedBetType,
-          selection: bet.pick,
-          odds: parseOdds(bet.odds),
-          amount: parseFloat(amount),
-          home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
-          away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
-          sport: bet.sport,
-          commence_time: new Date(bet.game_time).toISOString()
-        })
+        body: JSON.stringify(requestPayload)
+      });
+
+      console.log('📡 API Response:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
       });
 
       if (response.ok) {
@@ -153,9 +175,11 @@ export default function YetAIBetModal({
         }
       } else {
         const errorData = await response.json();
+        console.log('❌ API Error:', errorData);
         setError(errorData.detail || 'Failed to place bet');
       }
     } catch (err) {
+      console.log('💥 Exception caught:', err);
       setError('Failed to place bet. Please try again.');
     } finally {
       setIsProcessing(false);
