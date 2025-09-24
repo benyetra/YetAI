@@ -626,7 +626,7 @@ export default function ProfilePage() {
             
             {/* Account Info Sidebar */}
             <div className="lg:col-span-2 xl:col-span-1">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
                 {/* User Info */}
                 <div className="text-center mb-6">
                   <Avatar 
@@ -670,39 +670,43 @@ export default function ProfilePage() {
             {/* Profile Content */}
             <div className="lg:col-span-3 xl:col-span-3">
               <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-              
+
               {/* Avatar Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
-                <div className="flex items-center space-x-3 mb-4">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+                <div className="flex items-center space-x-3 mb-6">
                   <Camera className="w-6 h-6 text-[#A855F7]" />
                   <h2 className="text-xl font-semibold text-gray-900">Profile Picture</h2>
                 </div>
 
-                <div className="flex flex-col 2xl:flex-row items-center 2xl:items-start space-y-4 2xl:space-y-0 2xl:space-x-6">
-                  <div className="relative flex-shrink-0">
-                    <Avatar
-                      ref={avatarRef}
-                      user={user}
-                      size="xl"
-                      key={`avatar-${user?.id}-${avatarUrl}`}
-                    />
-                    {isUploadingAvatar && (
-                      <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
-                        <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      </div>
-                    )}
+                <div className="space-y-6">
+                  <div className="flex justify-center">
+                    <div className="relative">
+                      <Avatar
+                        ref={avatarRef}
+                        user={user}
+                        size="xl"
+                        key={`avatar-${user?.id}-${avatarUrl}`}
+                      />
+                      {isUploadingAvatar && (
+                        <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                          <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex-1 text-center 2xl:text-left">
-                    <h3 className="font-medium text-gray-900 mb-2">
-                      {user?.first_name} {user?.last_name}
-                    </h3>
-                    <p className="text-sm text-gray-600 mb-4">
-                      Upload a new profile picture or remove the current one
-                    </p>
+                  <div className="text-center space-y-4">
+                    <div>
+                      <h3 className="font-medium text-gray-900 mb-2">
+                        {user?.first_name} {user?.last_name}
+                      </h3>
+                      <p className="text-sm text-gray-600">
+                        Upload a new profile picture or remove the current one
+                      </p>
+                    </div>
 
-                    <div className="flex flex-col sm:flex-row justify-center 2xl:justify-start space-y-2 sm:space-y-0 sm:space-x-3">
-                      <label className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center justify-center space-x-2">
+                    <div className="flex flex-col sm:flex-row justify-center gap-3">
+                      <label className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center justify-center space-x-2 whitespace-nowrap">
                         <Upload className="w-4 h-4" />
                         <span>Upload New</span>
                         <input
@@ -719,7 +723,7 @@ export default function ProfilePage() {
                       {avatarUrl && (
                         <button
                           onClick={handleDeleteAvatar}
-                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
+                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 whitespace-nowrap"
                         >
                           <Trash2 className="w-4 h-4" />
                           <span>Remove</span>
@@ -923,7 +927,7 @@ export default function ProfilePage() {
               </div>
 
               {/* Preferences Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Heart className="w-6 h-6 text-[#A855F7]" />
                   <h2 className="text-xl font-semibold text-gray-900">Preferences</h2>
@@ -1011,7 +1015,7 @@ export default function ProfilePage() {
               </div>
 
               {/* Notifications Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Bell className="w-6 h-6 text-[#A855F7]" />
                   <h2 className="text-xl font-semibold text-gray-900">Notifications</h2>
@@ -1108,7 +1112,7 @@ export default function ProfilePage() {
               </div>
 
               {/* Security Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Shield className="w-6 h-6 text-[#A855F7]" />
                   <h2 className="text-xl font-semibold text-gray-900">Security</h2>
@@ -1172,18 +1176,18 @@ export default function ProfilePage() {
               </div>
 
               {/* Developer Tools Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-fit">
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <TestTube className="w-6 h-6 text-[#A855F7]" />
                   <h2 className="text-xl font-semibold text-gray-900">Developer Tools</h2>
                 </div>
 
-                <div className="space-y-4">
-                  <p className="text-sm text-gray-600 mb-4">
+                <div className="space-y-6">
+                  <p className="text-sm text-gray-600">
                     Test notification system functionality
                   </p>
-                  
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+
+                  <div className="grid grid-cols-2 gap-2">
                     {[
                       { type: 'bet_won', label: 'Bet Won', color: 'bg-green-600' },
                       { type: 'odds_change', label: 'Odds Change', color: 'bg-blue-600' },
@@ -1193,7 +1197,7 @@ export default function ProfilePage() {
                       <button
                         key={type}
                         onClick={() => testNotification(type as any)}
-                        className={`px-4 py-2 ${color} text-white rounded-lg hover:opacity-90 transition-opacity text-sm`}
+                        className={`px-2 py-2 ${color} text-white rounded-lg hover:opacity-90 transition-opacity text-xs font-medium text-center`}
                       >
                         {label}
                       </button>
