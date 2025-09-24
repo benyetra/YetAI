@@ -913,25 +913,43 @@ class BetVerificationService:
         lost_legs = 0
         pushed_legs = 0
 
+        logger.info(f"Verifying parlay {parlay.id} with {len(parlay.legs)} legs")
+
         for leg in parlay.legs:
+            # Check if leg is already settled (manually or previously)
+            if leg.status != BetStatus.PENDING:
+                logger.info(f"Leg {leg.id} already settled: {leg.status.value}")
+                if leg.status == BetStatus.WON:
+                    won_legs += 1
+                elif leg.status == BetStatus.LOST:
+                    lost_legs += 1
+                elif leg.status == BetStatus.PUSHED:
+                    pushed_legs += 1
+                continue
+
+            # Process pending legs with API data
             if leg.game_id not in game_results:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: no game result available")
                 continue
 
             game_result = game_results[leg.game_id]
             if not game_result.is_final:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: game not final")
                 continue
 
             leg_result = await self._verify_single_bet(leg, game_result)
             if not leg_result:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: could not verify")
                 continue
 
             leg_results.append(leg_result)
 
             # Settle individual leg with its actual outcome
             await self._settle_bet(leg, leg_result)
+            logger.info(f"Settled leg {leg.id}: {leg_result.status.value}")
 
             if leg_result.status == BetStatus.WON:
                 won_legs += 1
@@ -940,8 +958,26 @@ class BetVerificationService:
             elif leg_result.status == BetStatus.PUSHED:
                 pushed_legs += 1
 
+        logger.info(
+            f"Parlay {parlay.id} leg summary: {won_legs} won, {lost_legs} lost, "
+            f"{pushed_legs} pushed, {pending_legs} pending"
+        )
+
+        # CRITICAL: If ANY leg has lost, the entire parlay loses immediately
+        if lost_legs > 0:
+            logger.info(f"Parlay {parlay.id} LOST: {lost_legs} legs lost")
+            return BetResult(
+                bet_id=parlay.id,
+                status=BetStatus.LOST,
+                result_amount=0,
+                reasoning=f"Parlay lost: {lost_legs} of {len(parlay.legs)} legs lost",
+            )
+
         # If any legs are still pending, don't settle the parlay yet
         if pending_legs > 0:
+            logger.info(
+                f"Parlay {parlay.id} still pending: {pending_legs} legs pending"
+            )
             return None
 
         total_legs = len(parlay.legs)
