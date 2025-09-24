@@ -439,7 +439,7 @@ export function MobileBottomNav() {
     { name: 'Live', href: '/live-betting', icon: Activity },
     { name: 'Bet', href: '/bet', icon: Target },
     { name: 'History', href: '/bets', icon: History },
-    { name: 'More', href: '/settings', icon: Menu },
+    { name: 'More', href: '/profile', icon: Menu },
   ];
 
   return (
@@ -453,7 +453,7 @@ export function MobileBottomNav() {
             <button
               key={item.name}
               onClick={() => {
-                if ((item.href === '/bet' || item.href === '/bets' || item.href === '/dashboard' || item.href === '/live-betting') && !isAuthenticated) {
+                if ((item.href === '/bet' || item.href === '/bets' || item.href === '/dashboard' || item.href === '/live-betting' || item.href === '/profile') && !isAuthenticated) {
                   router.push('/?login=true');
                 } else {
                   router.push(item.href);
