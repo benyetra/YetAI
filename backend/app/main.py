@@ -1587,6 +1587,13 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
                         status_code=404, detail=f"User {user_id} not found"
                     )
 
+                # Delete user's bet history first (to avoid foreign key issues)
+                from app.models.database_models import BetHistory
+
+                history_deleted = (
+                    db.query(BetHistory).filter(BetHistory.user_id == user_id).delete()
+                )
+
                 # Delete user's regular bets
                 bets_deleted = db.query(Bet).filter(Bet.user_id == user_id).delete()
 
@@ -1601,9 +1608,10 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
 
                 return {
                     "status": "success",
-                    "message": f"Deleted {total_deleted} bets for user {user_id}",
+                    "message": f"Deleted {total_deleted} bets and {history_deleted} history records for user {user_id}",
                     "bets_deleted": bets_deleted,
                     "parlay_bets_deleted": parlay_bets_deleted,
+                    "history_records_deleted": history_deleted,
                 }
             finally:
                 db.close()
@@ -1621,6 +1629,70 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
     except Exception as e:
         logger.error(f"Error deleting bets for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete user bets")
+
+
+@app.options("/api/admin/cleanup/orphaned-history")
+async def options_admin_cleanup_orphaned_history():
+    """Handle CORS preflight for admin cleanup orphaned history"""
+    return {}
+
+
+@app.post("/api/admin/cleanup/orphaned-history")
+async def cleanup_orphaned_bet_history(admin_user: dict = Depends(require_admin)):
+    """Clean up orphaned bet_history records (Admin only)"""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.database_models import BetHistory, Bet, ParlayBet
+
+        db = SessionLocal()
+        try:
+            # Find bet_history records that don't have corresponding bets
+            orphaned_history = db.execute(
+                """
+                SELECT bh.id, bh.bet_id, bh.user_id
+                FROM bet_history bh
+                LEFT JOIN bets b ON bh.bet_id = b.id
+                LEFT JOIN parlay_bets pb ON bh.bet_id = pb.id
+                WHERE b.id IS NULL AND pb.id IS NULL
+            """
+            ).fetchall()
+
+            if not orphaned_history:
+                return {
+                    "status": "success",
+                    "message": "No orphaned bet history records found",
+                    "cleaned_up": 0,
+                }
+
+            # Delete orphaned records
+            orphaned_ids = [str(record.id) for record in orphaned_history]
+            deleted_count = (
+                db.query(BetHistory)
+                .filter(BetHistory.id.in_(orphaned_ids))
+                .delete(synchronize_session=False)
+            )
+
+            db.commit()
+
+            logger.info(
+                f"Admin {admin_user['id']} cleaned up {deleted_count} orphaned bet history records"
+            )
+
+            return {
+                "status": "success",
+                "message": f"Successfully cleaned up {deleted_count} orphaned bet history records",
+                "cleaned_up": deleted_count,
+                "orphaned_bet_ids": [record.bet_id for record in orphaned_history],
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error cleaning up orphaned bet history: {e}")
+        raise HTTPException(
+            status_code=500, detail="Failed to cleanup orphaned bet history"
+        )
 
 
 # Admin Bet Verification Endpoints

@@ -279,7 +279,7 @@ class YetAIBetsServiceDB:
             return {"success": False, "error": "Failed to update bet"}
 
     async def delete_bet(self, bet_id: str, admin_user_id: int) -> Dict:
-        """Delete a YetAI Bet from database"""
+        """Delete a YetAI Bet from database and associated bet history"""
         try:
             db = SessionLocal()
             try:
@@ -288,12 +288,25 @@ class YetAIBetsServiceDB:
                 if not bet:
                     return {"success": False, "error": "Bet not found"}
 
+                # Also delete any associated bet history records
+                from app.models.database_models import BetHistory
+
+                history_deleted = (
+                    db.query(BetHistory).filter(BetHistory.bet_id == bet_id).delete()
+                )
+
                 db.delete(bet)
                 db.commit()
 
-                logger.info(f"Deleted YetAI Bet: {bet_id} by admin {admin_user_id}")
+                logger.info(
+                    f"Deleted YetAI Bet: {bet_id} (and {history_deleted} history records) by admin {admin_user_id}"
+                )
 
-                return {"success": True, "message": "Bet deleted successfully"}
+                return {
+                    "success": True,
+                    "message": "Bet deleted successfully",
+                    "history_records_deleted": history_deleted,
+                }
 
             finally:
                 db.close()
