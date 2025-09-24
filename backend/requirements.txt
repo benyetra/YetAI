@@ -39,6 +39,9 @@ stripe==7.8.0
 # Notifications
 twilio==9.1.0
 
+# File Storage
+boto3==1.34.162
+
 # Environment Management
 python-dotenv==1.0.0
 
