@@ -142,11 +142,18 @@ export default function YetAIBetModal({
         sport: bet.sport,
         commence_time: (() => {
           try {
-            if (!bet.game_time) return new Date().toISOString();
+            if (!bet.game_time) {
+              console.warn('⚠️ No game_time provided for YetAI bet, using fallback');
+              return new Date().toISOString();
+            }
             const date = new Date(bet.game_time);
-            return isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
+            if (isNaN(date.getTime())) {
+              console.warn('⚠️ Invalid game_time format:', bet.game_time, 'using fallback');
+              return new Date().toISOString();
+            }
+            return date.toISOString();
           } catch (error) {
-            console.log('⚠️ Date parsing error:', error, 'Using current time instead');
+            console.warn('⚠️ Date parsing error:', error, 'for game_time:', bet.game_time, 'using fallback');
             return new Date().toISOString();
           }
         })()

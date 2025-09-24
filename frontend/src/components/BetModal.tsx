@@ -171,7 +171,11 @@ export default function BetModal({
         bet_type: betType,
         selection: selection,
         odds: getOdds(),
-        amount: parseFloat(amount)
+        amount: parseFloat(amount),
+        home_team: game.home_team,
+        away_team: game.away_team,
+        sport: game.sport,
+        commence_time: game.commence_time
       };
       
       console.log('Placing bet:', betData);
