@@ -690,15 +690,22 @@ async def get_personalized_predictions(current_user: dict = Depends(get_current_
         for bet in bets:
             prediction = {
                 "id": bet.get("id"),
-                "title": bet.get("title"),
-                "description": bet.get("description"),
+                "title": bet.get("game"),  # YetAI service uses 'game' not 'title'
+                "description": bet.get(
+                    "reasoning"
+                ),  # YetAI service uses 'reasoning' not 'description'
                 "sport": bet.get("sport", "NFL"),
-                "confidence": bet.get("confidence", 0.75),
+                "confidence": bet.get("confidence", 75),
                 "bet_type": bet.get("bet_type"),
-                "selection": bet.get("selection"),
+                "selection": bet.get(
+                    "pick"
+                ),  # YetAI service uses 'pick' not 'selection'
                 "odds": bet.get("odds"),
-                "game_date": bet.get("commence_time"),
-                "reason": f"AI analysis with {bet.get('confidence', 75)}% confidence based on historical data",
+                "game_date": bet.get("game_time"),  # YetAI service uses 'game_time'
+                "reason": bet.get(
+                    "reasoning",
+                    f"AI analysis with {bet.get('confidence', 75)}% confidence based on historical data",
+                ),
             }
             predictions.append(prediction)
 
