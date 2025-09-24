@@ -1279,7 +1279,11 @@ class BetServiceDB:
         # "Philadelphia Phillies -1.5" or "New York Yankees +7"
         # "Chiefs -3.5" or "Cowboys +7"
         spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
-        if spread_match and bet_data.bet_type.lower() in ["spread", "spreads", "point_spread"]:
+        if spread_match and bet_data.bet_type.lower() in [
+            "spread",
+            "spreads",
+            "point_spread",
+        ]:
             try:
                 return float(spread_match.group(1))
             except ValueError:
@@ -1307,6 +1311,7 @@ class BetServiceDB:
         """
         Extract line value from YetAI bet for verification purposes
         """
+
         # Create a mock bet_data object with the required attributes
         class MockBetData:
             def __init__(self, bet_type, selection):

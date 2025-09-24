@@ -398,7 +398,9 @@ class BetVerificationService:
                 # Also consider games completed if they started more than 4 hours ago (typical game duration)
                 hours_since_start = None
                 if game and game.commence_time:
-                    hours_since_start = (now - game.commence_time).total_seconds() / 3600
+                    hours_since_start = (
+                        now - game.commence_time
+                    ).total_seconds() / 3600
 
                 game_likely_completed = hours_since_start and hours_since_start > 4
 
