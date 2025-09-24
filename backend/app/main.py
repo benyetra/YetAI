@@ -428,7 +428,9 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         user_id = current_user.get("id") or current_user.get("user_id")
 
         # Use betting analytics service to get real user stats
-        analytics_service = get_service("betting_analytics")
+        analytics_service = get_service("betting_analytics_service")
+        if not analytics_service:
+            raise Exception("Betting analytics service not available")
         stats = await analytics_service.get_user_stats(user_id)
 
         # Format the response for the dashboard
