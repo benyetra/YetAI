@@ -83,7 +83,25 @@ def setup_s3_bucket():
         )
         print("✅ Versioning enabled")
 
-        # Test upload to avatars folder
+        # Check public access block settings
+        print("🔍 Checking public access block settings...")
+        try:
+            pab_response = s3_client.get_public_access_block(Bucket=bucket_name)
+            pab_config = pab_response.get("PublicAccessBlockConfiguration", {})
+            print(f"Current settings: {pab_config}")
+
+            if pab_config.get("RestrictPublicBuckets", True):
+                print("⚠️ Public bucket policies are restricted")
+                print(
+                    "💡 You may need to disable 'Block public bucket policies' in AWS Console"
+                )
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchPublicAccessBlockConfiguration":
+                print("✅ No public access block restrictions found")
+            else:
+                print(f"⚠️ Could not check public access block: {e}")
+
+        # Test upload to avatars folder (without ACL since bucket may have ACLs disabled)
         print("🧪 Testing upload to avatars folder...")
         test_key = "avatars/test-setup.txt"
         s3_client.put_object(
@@ -91,12 +109,27 @@ def setup_s3_bucket():
             Key=test_key,
             Body=b"YetAI S3 setup test",
             ContentType="text/plain",
-            ACL="public-read",
         )
 
         # Test public access
         test_url = f"https://{bucket_name}.s3.{region}.amazonaws.com/{test_key}"
         print(f"✅ Test file uploaded: {test_url}")
+        print("🔍 Testing public access to uploaded file...")
+
+        # Try to access the file publicly
+        import requests
+
+        try:
+            response = requests.get(test_url, timeout=10)
+            if response.status_code == 200:
+                print("✅ Public access confirmed!")
+            else:
+                print(f"⚠️ Public access test failed: HTTP {response.status_code}")
+                print(
+                    "💡 The bucket policy may not be effective due to public access block settings"
+                )
+        except Exception as e:
+            print(f"⚠️ Could not test public access: {e}")
 
         # Clean up test file
         s3_client.delete_object(Bucket=bucket_name, Key=test_key)
