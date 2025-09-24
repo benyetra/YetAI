@@ -1175,36 +1175,38 @@ export default function ProfilePage() {
                 </div>
               </div>
 
-              {/* Developer Tools Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
-                <div className="flex items-center space-x-3 mb-4">
-                  <TestTube className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Developer Tools</h2>
-                </div>
+              {/* Developer Tools Card - Admin Only */}
+              {user?.is_admin && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+                  <div className="flex items-center space-x-3 mb-4">
+                    <TestTube className="w-6 h-6 text-[#A855F7]" />
+                    <h2 className="text-xl font-semibold text-gray-900">Developer Tools</h2>
+                  </div>
 
-                <div className="space-y-6">
-                  <p className="text-sm text-gray-600">
-                    Test notification system functionality
-                  </p>
+                  <div className="space-y-6">
+                    <p className="text-sm text-gray-600">
+                      Test notification system functionality
+                    </p>
 
-                  <div className="grid grid-cols-2 gap-2">
-                    {[
-                      { type: 'bet_won', label: 'Bet Won', color: 'bg-green-600' },
-                      { type: 'odds_change', label: 'Odds Change', color: 'bg-blue-600' },
-                      { type: 'prediction', label: 'Prediction', color: 'bg-purple-600' },
-                      { type: 'achievement', label: 'Achievement', color: 'bg-yellow-600' }
-                    ].map(({ type, label, color }) => (
-                      <button
-                        key={type}
-                        onClick={() => testNotification(type as any)}
-                        className={`px-2 py-2 ${color} text-white rounded-lg hover:opacity-90 transition-opacity text-xs font-medium text-center`}
-                      >
-                        {label}
-                      </button>
-                    ))}
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { type: 'bet_won', label: 'Bet Won', color: 'bg-green-600' },
+                        { type: 'odds_change', label: 'Odds Change', color: 'bg-blue-600' },
+                        { type: 'prediction', label: 'Prediction', color: 'bg-purple-600' },
+                        { type: 'achievement', label: 'Achievement', color: 'bg-yellow-600' }
+                      ].map(({ type, label, color }) => (
+                        <button
+                          key={type}
+                          onClick={() => testNotification(type as any)}
+                          className={`px-2 py-2 ${color} text-white rounded-lg hover:opacity-90 transition-opacity text-xs font-medium text-center`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               </div>
 
