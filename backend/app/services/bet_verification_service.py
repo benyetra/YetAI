@@ -387,9 +387,11 @@ class BetVerificationService:
 
                 # Check if game is truly completed (status is final AND past start time)
                 game_started = game and game.commence_time and game.commence_time <= now
-                # Handle edge case: if game is marked FINAL with scores, consider it completed even if commence_time is in future (test data issue)
+
+                # Only consider games completed if they have actually started AND have final scores
                 has_final_scores = (
                     game
+                    and game_started  # Game must have started
                     and game.status.upper() in ["FINAL", "COMPLETED"]
                     and game.home_score is not None
                     and game.away_score is not None
@@ -402,7 +404,9 @@ class BetVerificationService:
                         now - game.commence_time
                     ).total_seconds() / 3600
 
-                game_likely_completed = hours_since_start and hours_since_start > 4
+                game_likely_completed = (
+                    hours_since_start and hours_since_start > 4 and game_started
+                )
 
                 is_game_completed = has_final_scores or game_likely_completed
 
