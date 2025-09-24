@@ -109,6 +109,20 @@ class AvatarService:
             try:
                 self.s3_client.head_bucket(Bucket=self.bucket_name)
                 logger.info("✅ S3 bucket access confirmed")
+
+                # Check bucket public access configuration
+                try:
+                    public_access_block = self.s3_client.get_public_access_block(
+                        Bucket=self.bucket_name
+                    )
+                    logger.info(
+                        f"Bucket public access settings: {public_access_block.get('PublicAccessBlockConfiguration', {})}"
+                    )
+                except Exception as pab_error:
+                    logger.info(
+                        f"Could not retrieve public access block settings (may not exist): {pab_error}"
+                    )
+
             except Exception as e:
                 logger.warning(f"⚠️ Cannot access S3 bucket {self.bucket_name}: {e}")
 
@@ -236,7 +250,6 @@ class AvatarService:
                 s3_key,
                 ExtraArgs={
                     "ContentType": "image/jpeg",
-                    "ACL": "public-read",  # Make publicly accessible
                     "CacheControl": "max-age=31536000",  # 1 year cache
                     "Metadata": {
                         "user-id": str(user_id),
@@ -253,7 +266,6 @@ class AvatarService:
                 thumb_s3_key,
                 ExtraArgs={
                     "ContentType": "image/jpeg",
-                    "ACL": "public-read",
                     "CacheControl": "max-age=31536000",
                     "Metadata": {
                         "user-id": str(user_id),
