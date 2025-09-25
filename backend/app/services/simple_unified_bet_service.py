@@ -58,9 +58,14 @@ class SimpleUnifiedBetService:
                 )
 
                 # Parse bet selection for structured data
+                bet_type_str = (
+                    bet_data.bet_type.value
+                    if hasattr(bet_data.bet_type, "value")
+                    else str(bet_data.bet_type)
+                )
                 parsed_selection = self._parse_bet_selection(
                     bet_data.selection,
-                    bet_data.bet_type.value,
+                    bet_type_str,
                     bet_data.home_team,
                     bet_data.away_team,
                 )
@@ -71,7 +76,7 @@ class SimpleUnifiedBetService:
                     user_id=user_id,
                     odds_api_event_id=game.id if game else bet_data.game_id,
                     game_id=game.id if game else bet_data.game_id,
-                    bet_type=BetType(bet_data.bet_type.value.lower()),
+                    bet_type=BetType(bet_type_str.lower()),
                     amount=bet_data.amount,
                     odds=bet_data.odds,
                     potential_win=potential_win,
@@ -169,8 +174,13 @@ class SimpleUnifiedBetService:
                     game = await self._get_or_create_game(leg, db)
 
                     # Parse leg selection
+                    leg_bet_type_str = (
+                        leg.bet_type.value
+                        if hasattr(leg.bet_type, "value")
+                        else str(leg.bet_type)
+                    )
                     parsed_selection = self._parse_bet_selection(
-                        leg.selection, leg.bet_type, leg.home_team, leg.away_team
+                        leg.selection, leg_bet_type_str, leg.home_team, leg.away_team
                     )
 
                     parlay_leg = SimpleUnifiedBet(
@@ -178,7 +188,7 @@ class SimpleUnifiedBetService:
                         user_id=user_id,
                         odds_api_event_id=game.id if game else leg.game_id,
                         game_id=game.id if game else leg.game_id,
-                        bet_type=BetType(leg.bet_type.lower()),
+                        bet_type=BetType(leg_bet_type_str.lower()),
                         amount=0,  # Individual leg amounts not stored
                         odds=leg.odds,
                         potential_win=0,  # Calculated at parlay level
@@ -250,9 +260,14 @@ class SimpleUnifiedBetService:
                 bet_id = str(uuid.uuid4())
 
                 # Parse selection
+                live_bet_type_str = (
+                    live_bet_data.bet_type.value
+                    if hasattr(live_bet_data.bet_type, "value")
+                    else str(live_bet_data.bet_type)
+                )
                 parsed_selection = self._parse_bet_selection(
                     live_bet_data.selection,
-                    live_bet_data.bet_type,
+                    live_bet_type_str,
                     live_bet_data.home_team,
                     live_bet_data.away_team,
                 )
@@ -263,7 +278,7 @@ class SimpleUnifiedBetService:
                     user_id=user_id,
                     odds_api_event_id=live_bet_data.game_id or f"live_{bet_id[:8]}",
                     game_id=live_bet_data.game_id,
-                    bet_type=BetType(live_bet_data.bet_type.lower()),
+                    bet_type=BetType(live_bet_type_str.lower()),
                     amount=live_bet_data.amount,
                     odds=live_bet_data.odds,
                     potential_win=live_bet_data.potential_win,
