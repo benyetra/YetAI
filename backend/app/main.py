@@ -25,10 +25,8 @@ from app.core.service_loader import (
 )
 from app.core.database import get_db, SessionLocal
 
-# Import live betting service
-from app.services.live_betting_service_db import (
-    live_betting_service_db as live_betting_service,
-)
+# Import unified bet service
+from app.services.simple_unified_bet_service import simple_unified_bet_service
 
 # Import bet scheduler service
 from app.services.bet_scheduler_service import (
@@ -645,9 +643,9 @@ async def options_simple_bets():
 async def get_simple_bets(current_user: dict = Depends(get_current_user)):
     """Get user's bets - simplified endpoint"""
     try:
-        bet_service = get_service("bet_service")
-        bets = await bet_service.get_user_bets(
-            current_user.get("id") or current_user.get("user_id")
+        bets = await simple_unified_bet_service.get_user_bets(
+            current_user.get("id") or current_user.get("user_id"),
+            include_legs=False  # Don't include parlay legs by default
         )
         return {"status": "success", "bets": bets}
     except Exception as e:
@@ -2969,34 +2967,28 @@ async def place_bet(
     bet_request: PlaceBetRequest, current_user: dict = Depends(get_current_user)
 ):
     """Place a single sports bet"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.place_bet(
-                user_id=current_user.get("id")
-                or current_user.get("user_id"),  # Now correctly returns int
-                bet_data=bet_request,  # Pass the whole request object
-            )
-            return {"status": "success", "bet": result}
-        except Exception as e:
-            logger.error(f"Error placing bet: {e}")
-            raise HTTPException(status_code=500, detail="Failed to place bet")
+    try:
+        result = await simple_unified_bet_service.place_bet(
+            user_id=current_user.get("id") or current_user.get("user_id"),
+            bet_data=bet_request,
+        )
 
-    # Mock response when service unavailable
-    return {
-        "status": "success",
-        "bet": {
-            "id": "mock_bet_123",
-            "user_id": current_user.get("id") or current_user.get("user_id"),
-            "bet_type": bet_request.bet_type,
-            "selection": bet_request.selection,
-            "odds": bet_request.odds,
-            "amount": bet_request.amount,
-            "status": "pending",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        },
-        "message": "Mock bet placed - bet service unavailable",
-    }
+        if result.get("success"):
+            return {
+                "status": "success",
+                "bet": result.get("bet"),
+                "message": result.get("message", "Bet placed successfully"),
+            }
+        else:
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Failed to place bet")
+            )
+
+    except Exception as e:
+        logger.error(f"Error placing bet: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to place bet: {str(e)}"
+        )
 
 
 @app.options("/api/bets/parlay")
@@ -3011,10 +3003,7 @@ async def place_parlay(
 ):
     """Place a parlay bet with multiple legs"""
     try:
-        # Import and use the database service directly
-        from app.services.bet_service_db import bet_service_db
-
-        result = await bet_service_db.place_parlay(
+        result = await simple_unified_bet_service.place_parlay(
             user_id=current_user.get("id") or current_user.get("user_id"),
             parlay_data=parlay_request,
         )
@@ -3023,7 +3012,7 @@ async def place_parlay(
             return {
                 "status": "success",
                 "parlay": result.get("parlay"),
-                "legs": result.get("legs", []),
+                "legs": result.get("leg_ids", []),
                 "message": result.get("message", "Parlay placed successfully"),
             }
         else:
@@ -3162,44 +3151,42 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
     user_id = current_user.get("id") or current_user.get("user_id")
     logger.info(f"Getting bet stats for user {user_id}")
 
-    if is_service_available("betting_analytics_service"):
-        try:
-            logger.info(
-                "Betting analytics service is available, attempting to get stats"
-            )
-            analytics_service = get_service("betting_analytics_service")
-            stats = await analytics_service.get_user_stats(user_id)
-            logger.info(f"Successfully retrieved stats: {stats}")
-            return {"status": "success", "stats": stats}
-        except Exception as e:
-            logger.error(f"Error fetching bet stats: {e}")
-            logger.exception("Full exception details:")
-    else:
-        logger.warning("Betting analytics service not available")
+    try:
+        stats = await simple_unified_bet_service.get_user_stats(user_id)
 
-    # Mock betting statistics
-    logger.info("Falling back to mock betting statistics")
-    return {
-        "status": "success",
-        "stats": {
-            "total_bets": 25,
-            "total_wagered": 1250.0,
-            "total_winnings": 1375.0,
-            "win_rate": 0.68,
-            "roi": 0.10,
-            "average_odds": -115,
+        # Format stats for frontend compatibility
+        formatted_stats = {
+            "total_bets": stats.get("total_bets", 0),
+            "total_wagered": stats.get("total_wagered", 0.0),
+            "total_winnings": stats.get("total_won", 0.0),
+            "win_rate": stats.get("win_rate", 0.0) / 100,  # Convert to decimal
+            "roi": (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0)) if stats.get("total_wagered", 0) > 0 else 0.0,
+            "average_odds": -110,  # Default American odds
             "favorite_sport": "NFL",
             "favorite_bet_type": "moneyline",
-            "current_streak": {"type": "win", "count": 4},
+            "current_streak": {"type": "mixed", "count": 0},
             "monthly_summary": {
-                "bets": 8,
-                "wagered": 400.0,
-                "winnings": 450.0,
-                "roi": 0.125,
+                "bets": stats.get("total_bets", 0),
+                "wagered": stats.get("total_wagered", 0.0),
+                "winnings": stats.get("total_won", 0.0),
+                "roi": (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0)) if stats.get("total_wagered", 0) > 0 else 0.0,
             },
-        },
-        "message": "Mock betting statistics - analytics service unavailable",
-    }
+            # Unified structure stats
+            "straight_bets": stats.get("straight_bets", 0),
+            "parlay_bets": stats.get("parlay_bets", 0),
+            "live_bets": stats.get("live_bets", 0),
+            "yetai_bets": stats.get("yetai_bets", 0),
+        }
+
+        logger.info(f"Successfully retrieved formatted stats: {formatted_stats}")
+        return {"status": "success", "stats": formatted_stats}
+    except Exception as e:
+        logger.error(f"Error fetching bet stats: {e}")
+        return {
+            "status": "error",
+            "error": f"Failed to fetch stats: {str(e)}",
+            "stats": {}
+        }
 
 
 @app.options("/api/bets/share")
@@ -4977,20 +4964,21 @@ async def place_live_bet(
 ):
     """Place a live bet during active game"""
     try:
-        # Use the live betting service directly
-        result = live_betting_service.place_live_bet(
+        result = await simple_unified_bet_service.place_live_bet(
             user_id=current_user.get("id") or current_user.get("user_id"),
-            request=bet_request,
+            live_bet_data=bet_request,
         )
 
-        # Convert LiveBetResponse to dict for JSON response
-        if result.success:
-            return {"status": "success", "bet": result.model_dump()}
+        if result.get("success"):
+            return {
+                "status": "success",
+                "bet": result.get("bet"),
+                "message": result.get("message", "Live bet placed successfully"),
+            }
         else:
             return {
                 "status": "error",
-                "error": result.error,
-                "odds_changed": result.odds_changed,
+                "error": result.get("error", "Failed to place live bet"),
             }
 
     except Exception as e:

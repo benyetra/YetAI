@@ -1,6 +1,6 @@
 """
 Betting Analytics Service
-Provides comprehensive analytics based on real user betting data
+Provides comprehensive analytics based on unified betting data
 """
 
 import logging
@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, desc, case
 from app.core.database import SessionLocal
-from app.models.database_models import User, Bet, ParlayBet, Game
+from app.models.simple_unified_bet_model import SimpleUnifiedBet, BetStatus, BetSource
 
 # from app.lib.formatting import formatSpread, formatTotal, formatGameStatus
 
@@ -27,13 +27,15 @@ class BettingAnalyticsService:
         try:
             db = SessionLocal()
             try:
-                # Get all user bets
-                user_bets = db.query(Bet).filter(Bet.user_id == user_id).all()
-                parlay_bets = (
-                    db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
-                )
+                # Get all non-leg bets (straight bets and parlay parents only)
+                user_bets = db.query(SimpleUnifiedBet).filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.parent_bet_id.is_(None)  # Exclude parlay legs
+                    )
+                ).all()
 
-                if not user_bets and not parlay_bets:
+                if not user_bets:
                     return {
                         "total_bets": 0,
                         "total_wagered": 0.0,
