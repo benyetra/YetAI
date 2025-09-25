@@ -7491,7 +7491,7 @@ async def migrate_production_data(db=Depends(get_db)):
         }
 
 
-@app.post("/admin/update-parlay-status")
+@app.get("/admin/update-parlay-status")
 async def update_parlay_status_endpoint(parlay_id: str, status: str):
     """Temporary endpoint to update parlay status"""
     try:
