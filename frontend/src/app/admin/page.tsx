@@ -474,10 +474,19 @@ export default function AdminPage() {
     }
   };
 
-  const triggerVerification = async () => {
+  const triggerVerification = async (retryCount = 0) => {
     setIsVerifying(true);
+    const maxRetries = 2;
+
     try {
       const token = localStorage.getItem('auth_token');
+      console.log('Triggering verification with URL:', getApiUrl('/api/admin/bets/verify'));
+
+      // Add a small delay for retries to handle potential rate limiting or temporary issues
+      if (retryCount > 0) {
+        await new Promise(resolve => setTimeout(resolve, 1000 * retryCount));
+      }
+
       const response = await fetch(getApiUrl('/api/admin/bets/verify'), {
         method: 'POST',
         headers: {
@@ -486,21 +495,49 @@ export default function AdminPage() {
         },
         body: JSON.stringify({})
       });
-      
+
+      console.log('Verification response status:', response.status, response.statusText);
+
       if (response.ok) {
         const data = await response.json();
-        setMessage({ type: 'success', text: `Verification completed: ${data.data?.message || 'Success'}` });
+        console.log('Verification successful:', data);
+        setMessage({ type: 'success', text: `Verification completed: ${data.result?.message || 'Success'}` });
         // Refresh stats by setting verificationStats to null to trigger re-fetch
         setVerificationStats(null);
+      } else if (response.status >= 500 && retryCount < maxRetries) {
+        // Retry on server errors (5xx)
+        console.log(`Server error ${response.status}, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        return triggerVerification(retryCount + 1);
       } else {
-        const errorData = await response.json();
-        setMessage({ type: 'error', text: `Verification failed: ${errorData.detail || 'Unknown error'}` });
+        let errorText = `HTTP ${response.status}: ${response.statusText}`;
+        try {
+          const errorData = await response.json();
+          errorText = `${errorText} - ${errorData.detail || 'Unknown error'}`;
+        } catch (jsonError) {
+          console.error('Failed to parse error response as JSON:', jsonError);
+          errorText = `${errorText} - Unable to parse error response`;
+        }
+        console.error('Verification failed:', errorText);
+        setMessage({ type: 'error', text: `Verification failed: ${errorText}` });
       }
     } catch (error) {
       console.error('Error triggering verification:', error);
-      setMessage({ type: 'error', text: 'Failed to trigger bet verification' });
+
+      // Retry on network errors if we haven't exceeded max retries
+      if (retryCount < maxRetries && (error instanceof TypeError || error.message.includes('Failed to fetch'))) {
+        console.log(`Network error, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
+        return triggerVerification(retryCount + 1);
+      }
+
+      const errorMsg = error instanceof Error ? error.message : 'Network or connection error';
+      setMessage({
+        type: 'error',
+        text: `Failed to trigger bet verification: ${errorMsg}. Check console for details.`
+      });
     } finally {
-      setIsVerifying(false);
+      if (retryCount === 0) { // Only reset loading state on the final attempt
+        setIsVerifying(false);
+      }
     }
   };
 
