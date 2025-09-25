@@ -32,6 +32,7 @@ from app.models.database_models import (
     GameStatus,
 )
 from app.services.odds_api_service import OddsAPIService, Score
+from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.services.websocket_manager import manager as websocket_manager
 from app.core.config import settings
 
@@ -84,12 +85,17 @@ class BetVerificationService:
 
         self.odds_api_service = OddsAPIService(settings.ODDS_API_KEY)
         await self.odds_api_service.__aenter__()
+
+        # Initialize optimized service for efficient API usage
+        self.optimized_odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         if self.odds_api_service:
             await self.odds_api_service.__aexit__(exc_type, exc_val, exc_tb)
+        if self.optimized_odds_service:
+            await self.optimized_odds_service.close()
 
     async def verify_all_pending_bets(self) -> Dict:
         """
@@ -509,8 +515,9 @@ class BetVerificationService:
                 logger.info(
                     f"Fetching scores for {sport} (normalized: {normalized_sport}): {sport_game_ids}"
                 )
-                scores = await self.odds_api_service.get_scores(
-                    normalized_sport, days_from=3
+                # Use optimized API to minimize costs (2 credits vs potential higher costs)
+                scores = await self.optimized_odds_service.get_scores_optimized(
+                    normalized_sport, include_completed=True
                 )
 
                 # Get game details for team-based matching
