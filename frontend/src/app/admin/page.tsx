@@ -474,7 +474,7 @@ export default function AdminPage() {
     }
   };
 
-  const triggerVerification = async (retryCount = 0) => {
+  const triggerVerificationInternal = async (retryCount = 0) => {
     setIsVerifying(true);
     const maxRetries = 2;
 
@@ -507,7 +507,7 @@ export default function AdminPage() {
       } else if (response.status >= 500 && retryCount < maxRetries) {
         // Retry on server errors (5xx)
         console.log(`Server error ${response.status}, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        return triggerVerification(retryCount + 1);
+        return triggerVerificationInternal(retryCount + 1);
       } else {
         let errorText = `HTTP ${response.status}: ${response.statusText}`;
         try {
@@ -524,9 +524,9 @@ export default function AdminPage() {
       console.error('Error triggering verification:', error);
 
       // Retry on network errors if we haven't exceeded max retries
-      if (retryCount < maxRetries && (error instanceof TypeError || error.message.includes('Failed to fetch'))) {
+      if (retryCount < maxRetries && (error instanceof TypeError || (error instanceof Error && error.message.includes('Failed to fetch')))) {
         console.log(`Network error, retrying... (attempt ${retryCount + 1}/${maxRetries + 1})`);
-        return triggerVerification(retryCount + 1);
+        return triggerVerificationInternal(retryCount + 1);
       }
 
       const errorMsg = error instanceof Error ? error.message : 'Network or connection error';
@@ -539,6 +539,10 @@ export default function AdminPage() {
         setIsVerifying(false);
       }
     }
+  };
+
+  const triggerVerification = () => {
+    triggerVerificationInternal();
   };
 
   return (
