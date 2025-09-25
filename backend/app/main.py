@@ -7491,6 +7491,52 @@ async def migrate_production_data(db=Depends(get_db)):
         }
 
 
+@app.post("/admin/update-parlay-status")
+async def update_parlay_status_endpoint(parlay_id: str, status: str):
+    """Temporary endpoint to update parlay status"""
+    try:
+        from app.core.database import get_db
+        from app.models.database_models import ParlayBet, BetStatus
+
+        db_gen = get_db()
+        db = next(db_gen)
+
+        # Find the parlay
+        parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+
+        if not parlay:
+            db.close()
+            return {"success": False, "error": f"Parlay {parlay_id} not found"}
+
+        old_status = parlay.status.value
+
+        # Update status
+        if status.lower() == "lost":
+            parlay.status = BetStatus.LOST
+            parlay.result_amount = 0
+        elif status.lower() == "won":
+            parlay.status = BetStatus.WON
+        elif status.lower() == "pending":
+            parlay.status = BetStatus.PENDING
+        else:
+            db.close()
+            return {"success": False, "error": f"Invalid status: {status}"}
+
+        db.commit()
+        db.close()
+
+        return {
+            "success": True,
+            "message": f"Updated parlay {parlay_id} status from {old_status} to {status.upper()}",
+            "parlay_id": parlay_id,
+            "old_status": old_status,
+            "new_status": status.lower()
+        }
+
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 if __name__ == "__main__":
     import uvicorn
 
