@@ -30,6 +30,7 @@ import { useAuth } from './Auth';
 import { apiClient } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import BetShareModal from './BetShareModal';
+import { formatLocalDateTime, formatLocalDate } from '@/lib/formatting';
 
 interface Bet {
   id: string;
@@ -254,15 +255,7 @@ const BetHistory: React.FC = () => {
     }
   };
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
+  // Remove local formatDate function - using utilities from @/lib/formatting
 
   const formatOdds = (odds: number) => {
     if (isNaN(odds) || odds === null || odds === undefined) {
@@ -341,12 +334,7 @@ const BetHistory: React.FC = () => {
     // Add game time if available
     if (bet.commence_time) {
       try {
-        const gameTime = new Date(bet.commence_time).toLocaleDateString('en-US', {
-          month: 'short',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
-        });
+        const gameTime = formatLocalDateTime(bet.commence_time);
         parts.push(gameTime);
       } catch (e) {
         // Ignore invalid dates
@@ -640,7 +628,7 @@ const BetHistory: React.FC = () => {
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
                         <span>Odds: {formatOdds(bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay' ? bet.total_odds : bet.odds)}</span>
                         <span>•</span>
-                        <span>{formatDate(bet.placed_at)}</span>
+                        <span>{formatLocalDateTime(bet.placed_at)}</span>
                         {bet.game_id && !bet.home_team && !bet.away_team && (
                           <>
                             <span>•</span>
@@ -754,7 +742,7 @@ const BetHistory: React.FC = () => {
                       </div>
                       <div className="text-right">
                         <div className="text-sm text-gray-500">
-                          {formatDate(selectedParlay.placed_at)}
+                          {formatLocalDateTime(selectedParlay.placed_at)}
                         </div>
                       </div>
                     </div>
@@ -824,7 +812,7 @@ const BetHistory: React.FC = () => {
                   {selectedParlay.settled_at && (
                     <div className="mt-6 pt-4 border-t border-gray-200">
                       <p className="text-xs text-gray-500">
-                        Settled on {formatDate(selectedParlay.settled_at)}
+                        Settled on {formatLocalDateTime(selectedParlay.settled_at)}
                       </p>
                     </div>
                   )}

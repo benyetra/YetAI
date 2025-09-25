@@ -11,7 +11,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { LiveOdds } from './LiveOdds';
 import { PopularGames } from './PopularGames';
 import { sportsAPI, oddsUtils } from '../lib/api';
-import { formatSpread, formatTotal, formatGameStatus } from '../lib/formatting';
+import { formatSpread, formatTotal, formatGameStatus, formatLocalTime } from '../lib/formatting';
 
 interface User {
   id: string;
@@ -148,11 +148,7 @@ const GameCard: React.FC<{
           {isFavorite && <span className="text-blue-600 text-xs font-medium">★ Favorite</span>}
         </div>
         <p className="text-xs text-gray-500">
-          {new Date(game.start_time).toLocaleTimeString([], {
-            hour: '2-digit',
-            minute: '2-digit',
-            timeZoneName: 'short'
-          })}
+          {formatLocalTime(game.start_time)}
         </p>
       </div>
 

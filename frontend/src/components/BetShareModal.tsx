@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { apiClient } from '@/lib/api';
 import { useAuth } from './Auth';
+import { formatLocalDate } from '@/lib/formatting';
 
 interface BetShareModalProps {
   bet: any;
@@ -181,7 +182,7 @@ export default function BetShareModal({ bet, isOpen, onClose }: BetShareModalPro
               </div>
               <div className="text-sm text-gray-500 flex items-center">
                 <Calendar className="w-4 h-4 mr-1" />
-                {new Date(bet.placed_at).toLocaleDateString()}
+                {formatLocalDate(bet.placed_at)}
               </div>
             </div>
             

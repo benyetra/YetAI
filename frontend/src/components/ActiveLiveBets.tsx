@@ -7,6 +7,7 @@ import {
   DollarSign, Clock, Share2
 } from 'lucide-react';
 import BetShareModal from './BetShareModal';
+import { formatLocalDateTime } from '@/lib/formatting';
 
 
 interface ActiveLiveBetsProps {
@@ -180,7 +181,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
                       )}
                     </div>
                     <div className="text-sm text-gray-600 mt-1">
-                      Placed: {new Date(bet.placed_at).toLocaleString()}
+                      Placed: {formatLocalDateTime(bet.placed_at)}
                     </div>
                     {bet.sport && (
                       <div className="text-xs text-gray-500 mt-1">
@@ -223,12 +224,7 @@ export default function ActiveLiveBets({ onUpdate }: ActiveLiveBetsProps) {
                   <div>
                     <div className="text-sm text-gray-600">Game Time</div>
                     <div className="font-semibold text-sm">
-                      {new Date(bet.commence_time).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit'
-                      })}
+                      {formatLocalDateTime(bet.commence_time)}
                     </div>
                   </div>
                 )}

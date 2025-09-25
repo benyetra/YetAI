@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { Layers, Clock, CheckCircle, XCircle, DollarSign, Calendar, Share2 } from 'lucide-react';
 import BetShareModal from './BetShareModal';
+import { formatLocalDate, formatLocalTime } from '@/lib/formatting';
 
 interface ParlayLeg {
   id: string;
@@ -209,7 +210,7 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
                   <div className="text-right">
                     <div className="text-sm text-gray-500">
                       <Calendar className="w-4 h-4 inline mr-1" />
-                      {new Date(parlay.placed_at).toLocaleDateString()}
+                      {formatLocalDate(parlay.placed_at)}
                     </div>
                   </div>
                 </div>
@@ -277,7 +278,7 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
                 {parlay.settled_at && (
                   <div className="mt-3 pt-3 border-t border-gray-100">
                     <p className="text-xs text-gray-500">
-                      Settled on {new Date(parlay.settled_at).toLocaleDateString()} at {new Date(parlay.settled_at).toLocaleTimeString()}
+                      Settled on {formatLocalDate(parlay.settled_at)} at {formatLocalTime(parlay.settled_at)}
                     </p>
                   </div>
                 )}
