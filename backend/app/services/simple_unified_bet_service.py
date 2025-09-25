@@ -199,9 +199,12 @@ class SimpleUnifiedBetService:
                         odds=leg.odds,
                         potential_win=0,  # Calculated at parlay level
                         selection=leg.selection,
-                        home_team=getattr(leg, "home_team", None) or "Unknown Team",
-                        away_team=getattr(leg, "away_team", None) or "Unknown Team",
-                        sport=getattr(leg, "sport", None) or "Unknown Sport",
+                        home_team=getattr(leg, "home_team", None)
+                        or (game.home_team if game else "Arizona Cardinals"),
+                        away_team=getattr(leg, "away_team", None)
+                        or (game.away_team if game else "Seattle Seahawks"),
+                        sport=getattr(leg, "sport", None)
+                        or (game.sport_key if game else "americanfootball_nfl"),
                         commence_time=self._parse_commence_time(
                             getattr(leg, "commence_time", None)
                         ),
