@@ -84,7 +84,10 @@ class SimpleUnifiedBetService:
                     home_team=bet_data.home_team,
                     away_team=bet_data.away_team,
                     sport=bet_data.sport,
-                    commence_time=bet_data.commence_time,
+                    commence_time=(
+                        self._parse_commence_time(bet_data.commence_time)
+                        or (game.commence_time if game else datetime.utcnow())
+                    ),
                     source=BetSource.STRAIGHT,
                     bookmaker=getattr(bet_data, "bookmaker", "fanduel"),
                     line_value=getattr(bet_data, "line_value", None),
@@ -159,7 +162,11 @@ class SimpleUnifiedBetService:
                     home_team="Multiple Teams",
                     away_team="Multiple Teams",
                     sport="Multiple Sports",
-                    commence_time=datetime.utcnow(),
+                    commence_time=min([
+                        self._parse_commence_time(getattr(leg, "commence_time", None))
+                        for leg in parlay_data.legs
+                        if getattr(leg, "commence_time", None)
+                    ] or [datetime.utcnow()]),
                     source=BetSource.PARLAYS,
                     bookmaker="fanduel",
                     is_parlay=True,
@@ -205,8 +212,9 @@ class SimpleUnifiedBetService:
                         or (game.away_team if game else "Seattle Seahawks"),
                         sport=getattr(leg, "sport", None)
                         or (game.sport_key if game else "americanfootball_nfl"),
-                        commence_time=self._parse_commence_time(
-                            getattr(leg, "commence_time", None)
+                        commence_time=(
+                            self._parse_commence_time(getattr(leg, "commence_time", None))
+                            or (game.commence_time if game else datetime.utcnow())
                         ),
                         source=BetSource.PARLAYS,
                         bookmaker=getattr(leg, "bookmaker", "fanduel"),
@@ -297,8 +305,9 @@ class SimpleUnifiedBetService:
                     home_team=live_bet_data.home_team,
                     away_team=live_bet_data.away_team,
                     sport=getattr(live_bet_data, "sport", "Unknown"),
-                    commence_time=getattr(
-                        live_bet_data, "commence_time", datetime.utcnow()
+                    commence_time=(
+                        self._parse_commence_time(getattr(live_bet_data, "commence_time", None))
+                        or datetime.utcnow()
                     ),
                     source=BetSource.LIVE,
                     bookmaker="fanduel",
@@ -665,7 +674,8 @@ class SimpleUnifiedBetService:
     def _parse_commence_time(self, commence_time) -> datetime:
         """Parse commence_time from various formats to datetime"""
         if not commence_time:
-            return datetime.utcnow()
+            # Return None if no commence time provided - caller should handle fallback
+            return None
 
         if isinstance(commence_time, datetime):
             return commence_time
@@ -675,10 +685,10 @@ class SimpleUnifiedBetService:
                 # Try to parse ISO format string
                 return datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
             except:
-                # If parsing fails, use current time
-                return datetime.utcnow()
+                # If parsing fails, return None - caller should handle fallback
+                return None
 
-        return datetime.utcnow()
+        return None
 
     def _calculate_potential_win(self, odds: float, amount: float) -> float:
         """Calculate potential win from American odds and bet amount"""
