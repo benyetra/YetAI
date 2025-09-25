@@ -234,11 +234,13 @@ class BettingAnalyticsService:
                 # Get all user bets in the time period
                 user_bets = (
                     db.query(Bet)
-                    .filter(and_(
-                        Bet.user_id == user_id,
-                        Bet.placed_at >= cutoff_date,
-                        Bet.parlay_id.is_(None)  # Exclude parlay legs
-                    ))
+                    .filter(
+                        and_(
+                            Bet.user_id == user_id,
+                            Bet.placed_at >= cutoff_date,
+                            Bet.parlay_id.is_(None),  # Exclude parlay legs
+                        )
+                    )
                     .all()
                 )
 
