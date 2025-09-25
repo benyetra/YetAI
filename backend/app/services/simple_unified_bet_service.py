@@ -6,15 +6,14 @@ by using the unified simple_unified_bets table structure.
 """
 
 import uuid
-import asyncio
 import json
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional, Any
+from datetime import datetime, timezone
+from typing import Dict, List, Optional
 import logging
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc, func
-from app.core.database import get_db, SessionLocal
-from app.models.database_models import User, Game, BetHistory, BetLimit
+from sqlalchemy import and_, desc, func
+from app.core.database import SessionLocal
+from app.models.database_models import Game
 from app.models.simple_unified_bet_model import (
     SimpleUnifiedBet,
     BetStatus,
@@ -22,8 +21,6 @@ from app.models.simple_unified_bet_model import (
     BetSource,
     TeamSide,
     OverUnder,
-    GameStatus,
-    SubscriptionTier,
 )
 from app.models.bet_models import PlaceBetRequest, PlaceParlayRequest
 from app.models.live_bet_models import PlaceLiveBetRequest
@@ -86,7 +83,7 @@ class SimpleUnifiedBetService:
                     sport=bet_data.sport,
                     commence_time=(
                         self._parse_commence_time(bet_data.commence_time)
-                        or (game.commence_time if game else datetime.utcnow())
+                        or (game.commence_time if game else datetime.now(timezone.utc))
                     ),
                     source=BetSource.STRAIGHT,
                     bookmaker=getattr(bet_data, "bookmaker", "fanduel"),
@@ -162,17 +159,24 @@ class SimpleUnifiedBetService:
                     home_team="Multiple Teams",
                     away_team="Multiple Teams",
                     sport="Multiple Sports",
-                    commence_time=min([
-                        self._parse_commence_time(getattr(leg, "commence_time", None))
-                        for leg in parlay_data.legs
-                        if getattr(leg, "commence_time", None)
-                    ] or [datetime.utcnow()]),
+                    commence_time=min(
+                        [
+                            self._parse_commence_time(
+                                getattr(leg, "commence_time", None)
+                            )
+                            for leg in parlay_data.legs
+                            if getattr(leg, "commence_time", None)
+                        ]
+                        or [datetime.now(timezone.utc)]
+                    ),
                     source=BetSource.PARLAYS,
                     bookmaker="fanduel",
                     is_parlay=True,
                     leg_count=len(parlay_data.legs),
                     total_odds=total_odds,
-                    parlay_legs=json.dumps([leg.dict() for leg in parlay_data.legs]),
+                    parlay_legs=json.dumps(
+                        [leg.model_dump() for leg in parlay_data.legs]
+                    ),
                 )
 
                 db.add(parlay_parent)
@@ -213,8 +217,14 @@ class SimpleUnifiedBetService:
                         sport=getattr(leg, "sport", None)
                         or (game.sport_key if game else "americanfootball_nfl"),
                         commence_time=(
-                            self._parse_commence_time(getattr(leg, "commence_time", None))
-                            or (game.commence_time if game else datetime.utcnow())
+                            self._parse_commence_time(
+                                getattr(leg, "commence_time", None)
+                            )
+                            or (
+                                game.commence_time
+                                if game
+                                else datetime.now(timezone.utc)
+                            )
                         ),
                         source=BetSource.PARLAYS,
                         bookmaker=getattr(leg, "bookmaker", "fanduel"),
@@ -306,8 +316,10 @@ class SimpleUnifiedBetService:
                     away_team=live_bet_data.away_team,
                     sport=getattr(live_bet_data, "sport", "Unknown"),
                     commence_time=(
-                        self._parse_commence_time(getattr(live_bet_data, "commence_time", None))
-                        or datetime.utcnow()
+                        self._parse_commence_time(
+                            getattr(live_bet_data, "commence_time", None)
+                        )
+                        or datetime.now(timezone.utc)
                     ),
                     source=BetSource.LIVE,
                     bookmaker="fanduel",
@@ -596,7 +608,7 @@ class SimpleUnifiedBetService:
                 return False
 
             # Check daily limit
-            today = datetime.utcnow().date()
+            today = datetime.now(timezone.utc).date()
             daily_total = (
                 db.query(func.sum(SimpleUnifiedBet.amount))
                 .filter(
@@ -639,7 +651,9 @@ class SimpleUnifiedBetService:
                 away_team=getattr(bet_data, "away_team", "Unknown"),
                 sport_key=getattr(bet_data, "sport", "unknown"),
                 sport_title=getattr(bet_data, "sport", "Unknown"),
-                commence_time=getattr(bet_data, "commence_time", datetime.utcnow()),
+                commence_time=getattr(
+                    bet_data, "commence_time", datetime.now(timezone.utc)
+                ),
                 status="scheduled",
             )
             db.add(game)
