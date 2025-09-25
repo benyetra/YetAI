@@ -28,6 +28,12 @@ from app.core.database import get_db, SessionLocal
 # Import unified bet service
 from app.services.simple_unified_bet_service import simple_unified_bet_service
 
+# Import live betting service
+from app.services.live_betting_service_db import LiveBettingServiceDB
+
+# Initialize service instances
+live_betting_service = LiveBettingServiceDB()
+
 # Import bet scheduler service
 from app.services.bet_scheduler_service import (
     bet_scheduler,
@@ -4920,8 +4926,7 @@ async def get_live_betting_markets(sport: Optional[str] = None):
     """Get available live betting markets with real sports data (public endpoint)"""
     try:
         print(f"Live betting markets endpoint called with sport: {sport}")
-        # TODO: Implement live betting markets
-        markets = []
+        markets = await live_betting_service.get_live_betting_markets(sport)
         print(f"Service returned {len(markets)} markets")
 
         return {"status": "success", "count": len(markets), "markets": markets}

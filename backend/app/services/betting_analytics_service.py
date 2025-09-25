@@ -197,18 +197,12 @@ class BettingAnalyticsService:
                 .all()
             )
 
-            monthly_parlays = (
-                db.query(SimpleUnifiedBet)
-                .filter(
-                    and_(
-                        SimpleUnifiedBet.user_id == user_id,
-                        SimpleUnifiedBet.placed_at >= cutoff_date,
-                    )
-                )
-                .all()
-            )
-
-            all_monthly_bets = monthly_bets + monthly_parlays
+            # Get only non-parlay-leg bets (straight bets and parlay parents)
+            all_monthly_bets = [
+                bet
+                for bet in monthly_bets
+                if bet.parent_bet_id is None  # Exclude parlay legs
+            ]
             monthly_bets_count = len(all_monthly_bets)
             monthly_wagered = sum(bet.amount for bet in all_monthly_bets)
 
