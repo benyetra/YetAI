@@ -199,9 +199,9 @@ class SimpleUnifiedBetService:
                         odds=leg.odds,
                         potential_win=0,  # Calculated at parlay level
                         selection=leg.selection,
-                        home_team=leg.home_team,
-                        away_team=leg.away_team,
-                        sport=leg.sport,
+                        home_team=getattr(leg, "home_team", None) or "Unknown Team",
+                        away_team=getattr(leg, "away_team", None) or "Unknown Team",
+                        sport=getattr(leg, "sport", None) or "Unknown Sport",
                         commence_time=self._parse_commence_time(
                             getattr(leg, "commence_time", None)
                         ),
