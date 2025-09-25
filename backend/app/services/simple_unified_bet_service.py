@@ -202,9 +202,11 @@ class SimpleUnifiedBetService:
                         home_team=leg.home_team,
                         away_team=leg.away_team,
                         sport=leg.sport,
-                        commence_time=leg.commence_time,
+                        commence_time=self._parse_commence_time(
+                            getattr(leg, "commence_time", None)
+                        ),
                         source=BetSource.PARLAYS,
-                        bookmaker=leg.bookmaker,
+                        bookmaker=getattr(leg, "bookmaker", "fanduel"),
                         parent_bet_id=parlay_id,  # Link to parent
                         is_parlay=False,  # This is a leg, not parent
                         leg_count=1,
@@ -656,6 +658,24 @@ class SimpleUnifiedBetService:
         else:
             # Convert to negative American odds: -100 / (decimal - 1)
             return -100 / (total_decimal_odds - 1)
+
+    def _parse_commence_time(self, commence_time) -> datetime:
+        """Parse commence_time from various formats to datetime"""
+        if not commence_time:
+            return datetime.utcnow()
+
+        if isinstance(commence_time, datetime):
+            return commence_time
+
+        if isinstance(commence_time, str):
+            try:
+                # Try to parse ISO format string
+                return datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+            except:
+                # If parsing fails, use current time
+                return datetime.utcnow()
+
+        return datetime.utcnow()
 
     def _calculate_potential_win(self, odds: float, amount: float) -> float:
         """Calculate potential win from American odds and bet amount"""
