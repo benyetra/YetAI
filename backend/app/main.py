@@ -3097,50 +3097,84 @@ async def options_bet_history():
 async def get_bet_history(
     query: BetHistoryQuery, current_user: dict = Depends(get_current_user)
 ):
-    """Get user bet history with filtering"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            result = await bet_service.get_bet_history(
-                current_user.get("id") or current_user.get("user_id"), query
-            )
-            if result.get("success"):
-                return {
-                    "status": "success",
-                    "history": result["bets"],
-                    "total": result["total"],
-                    "offset": result["offset"],
-                    "limit": result["limit"],
-                }
-            else:
-                logger.error(f"Bet service returned error: {result.get('error')}")
-                return {
-                    "status": "error",
-                    "error": result.get("error", "Unknown error"),
-                    "history": [],
-                    "total": 0,
-                    "offset": query.offset,
-                    "limit": query.limit,
-                }
-        except Exception as e:
-            logger.error(f"Error fetching bet history: {e}")
-            return {
-                "status": "error",
-                "error": str(e),
-                "history": [],
-                "total": 0,
-                "offset": query.offset,
-                "limit": query.limit,
-            }
+    """Get user bet history with filtering using unified service"""
+    try:
+        # Get all user bets from unified service
+        bets = await simple_unified_bet_service.get_user_bets(
+            current_user.get("id") or current_user.get("user_id"),
+            include_legs=True,  # Include parlay legs for complete history
+        )
 
-    return {
-        "status": "error",
-        "error": "Bet service is currently unavailable",
-        "history": [],
-        "total": 0,
-        "offset": query.offset,
-        "limit": query.limit,
-    }
+        # Apply filters
+        filtered_bets = []
+        for bet in bets:
+            # Status filter
+            if query.status and bet.get("status") != query.status.lower():
+                continue
+
+            # Bet type filter
+            if query.bet_type and bet.get("bet_type") != query.bet_type.lower():
+                continue
+
+            # Date filters (if provided)
+            if query.start_date or query.end_date:
+                placed_at = bet.get("placed_at")
+                if placed_at:
+                    from datetime import datetime
+
+                    if isinstance(placed_at, str):
+                        bet_date = datetime.fromisoformat(
+                            placed_at.replace("Z", "+00:00")
+                        ).date()
+                    else:
+                        bet_date = placed_at.date()
+
+                    if query.start_date:
+                        start_date = datetime.fromisoformat(query.start_date).date()
+                        if bet_date < start_date:
+                            continue
+
+                    if query.end_date:
+                        end_date = datetime.fromisoformat(query.end_date).date()
+                        if bet_date > end_date:
+                            continue
+
+            filtered_bets.append(bet)
+
+        # Apply pagination
+        total = len(filtered_bets)
+        start_idx = query.offset
+        end_idx = start_idx + query.limit
+        paginated_bets = filtered_bets[start_idx:end_idx]
+
+        # Transform to match expected format (add parlay_id for backward compatibility)
+        history = []
+        for bet in paginated_bets:
+            history_bet = dict(bet)
+            # Map parent_bet_id to parlay_id for backward compatibility
+            if bet.get("parent_bet_id"):
+                history_bet["parlay_id"] = bet["parent_bet_id"]
+            else:
+                history_bet["parlay_id"] = None
+            history.append(history_bet)
+
+        return {
+            "status": "success",
+            "history": history,
+            "total": total,
+            "offset": query.offset,
+            "limit": query.limit,
+        }
+    except Exception as e:
+        logger.error(f"Error fetching bet history: {e}")
+        return {
+            "status": "error",
+            "error": str(e),
+            "history": [],
+            "total": 0,
+            "offset": query.offset,
+            "limit": query.limit,
+        }
 
 
 @app.options("/api/bets/stats")
