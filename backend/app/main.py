@@ -645,7 +645,7 @@ async def get_simple_bets(current_user: dict = Depends(get_current_user)):
     try:
         bets = await simple_unified_bet_service.get_user_bets(
             current_user.get("id") or current_user.get("user_id"),
-            include_legs=False  # Don't include parlay legs by default
+            include_legs=False,  # Don't include parlay legs by default
         )
         return {"status": "success", "bets": bets}
     except Exception as e:
@@ -2986,9 +2986,7 @@ async def place_bet(
 
     except Exception as e:
         logger.error(f"Error placing bet: {e}")
-        raise HTTPException(
-            status_code=500, detail=f"Failed to place bet: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=f"Failed to place bet: {str(e)}")
 
 
 @app.options("/api/bets/parlay")
@@ -3160,7 +3158,11 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
             "total_wagered": stats.get("total_wagered", 0.0),
             "total_winnings": stats.get("total_won", 0.0),
             "win_rate": stats.get("win_rate", 0.0) / 100,  # Convert to decimal
-            "roi": (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0)) if stats.get("total_wagered", 0) > 0 else 0.0,
+            "roi": (
+                (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0))
+                if stats.get("total_wagered", 0) > 0
+                else 0.0
+            ),
             "average_odds": -110,  # Default American odds
             "favorite_sport": "NFL",
             "favorite_bet_type": "moneyline",
@@ -3169,7 +3171,11 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
                 "bets": stats.get("total_bets", 0),
                 "wagered": stats.get("total_wagered", 0.0),
                 "winnings": stats.get("total_won", 0.0),
-                "roi": (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0)) if stats.get("total_wagered", 0) > 0 else 0.0,
+                "roi": (
+                    (stats.get("profit_loss", 0.0) / stats.get("total_wagered", 1.0))
+                    if stats.get("total_wagered", 0) > 0
+                    else 0.0
+                ),
             },
             # Unified structure stats
             "straight_bets": stats.get("straight_bets", 0),
@@ -3185,7 +3191,7 @@ async def get_bet_stats(current_user: dict = Depends(get_current_user)):
         return {
             "status": "error",
             "error": f"Failed to fetch stats: {str(e)}",
-            "stats": {}
+            "stats": {},
         }
 
 

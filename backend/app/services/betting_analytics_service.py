@@ -28,12 +28,18 @@ class BettingAnalyticsService:
             db = SessionLocal()
             try:
                 # Get all non-leg bets (straight bets and parlay parents only)
-                user_bets = db.query(SimpleUnifiedBet).filter(
-                    and_(
-                        SimpleUnifiedBet.user_id == user_id,
-                        SimpleUnifiedBet.parent_bet_id.is_(None)  # Exclude parlay legs
+                user_bets = (
+                    db.query(SimpleUnifiedBet)
+                    .filter(
+                        and_(
+                            SimpleUnifiedBet.user_id == user_id,
+                            SimpleUnifiedBet.parent_bet_id.is_(
+                                None
+                            ),  # Exclude parlay legs
+                        )
                     )
-                ).all()
+                    .all()
+                )
 
                 if not user_bets:
                     return {

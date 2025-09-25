@@ -63,7 +63,7 @@ async def migrate_data_step_by_step():
             sport="test_sport",
             commence_time=datetime.utcnow(),
             source="STRAIGHT",
-            bookmaker="fanduel"
+            bookmaker="fanduel",
         )
 
         db.add(test_bet)
@@ -94,9 +94,13 @@ async def check_current_data():
     db = SessionLocal()
     try:
         # Check counts
-        straight_bets = db.execute(text("SELECT COUNT(*) FROM bets WHERE parlay_id IS NULL")).scalar()
+        straight_bets = db.execute(
+            text("SELECT COUNT(*) FROM bets WHERE parlay_id IS NULL")
+        ).scalar()
         parlay_bets = db.execute(text("SELECT COUNT(*) FROM parlay_bets")).scalar()
-        parlay_legs = db.execute(text("SELECT COUNT(*) FROM bets WHERE parlay_id IS NOT NULL")).scalar()
+        parlay_legs = db.execute(
+            text("SELECT COUNT(*) FROM bets WHERE parlay_id IS NOT NULL")
+        ).scalar()
         live_bets = db.execute(text("SELECT COUNT(*) FROM live_bets")).scalar()
 
         logger.info(f"📊 Data counts:")

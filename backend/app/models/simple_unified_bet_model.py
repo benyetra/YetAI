@@ -129,7 +129,7 @@ class SimpleUnifiedBet(Base):
     game_completed_at = Column(DateTime)
 
     # === ODDS API DATA PRESERVATION ===
-    bookmaker = Column(String(100), nullable=False, default='fanduel')
+    bookmaker = Column(String(100), nullable=False, default="fanduel")
     original_odds_data = Column(JSON)
 
     # === BET SOURCE & CONTEXT ===
