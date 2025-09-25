@@ -61,7 +61,7 @@ class BettingAnalyticsService:
                     }
 
                 # Calculate basic stats
-                all_bets = user_bets + parlay_bets
+                all_bets = user_bets
                 total_bets = len(all_bets)
                 total_wagered = sum(bet.amount for bet in all_bets)
 
@@ -187,16 +187,22 @@ class BettingAnalyticsService:
             cutoff_date = datetime.now() - timedelta(days=30)
 
             monthly_bets = (
-                db.query(Bet)
-                .filter(and_(Bet.user_id == user_id, Bet.placed_at >= cutoff_date))
+                db.query(SimpleUnifiedBet)
+                .filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= cutoff_date,
+                    )
+                )
                 .all()
             )
 
             monthly_parlays = (
-                db.query(ParlayBet)
+                db.query(SimpleUnifiedBet)
                 .filter(
                     and_(
-                        ParlayBet.user_id == user_id, ParlayBet.placed_at >= cutoff_date
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= cutoff_date,
                     )
                 )
                 .all()
@@ -241,12 +247,14 @@ class BettingAnalyticsService:
 
                 # Get all user bets in the time period
                 user_bets = (
-                    db.query(Bet)
+                    db.query(SimpleUnifiedBet)
                     .filter(
                         and_(
-                            Bet.user_id == user_id,
-                            Bet.placed_at >= cutoff_date,
-                            Bet.parlay_id.is_(None),  # Exclude parlay legs
+                            SimpleUnifiedBet.user_id == user_id,
+                            SimpleUnifiedBet.placed_at >= cutoff_date,
+                            SimpleUnifiedBet.parent_bet_id.is_(
+                                None
+                            ),  # Exclude parlay legs
                         )
                     )
                     .all()
@@ -254,11 +262,12 @@ class BettingAnalyticsService:
 
                 # Get parlay bets
                 parlay_bets = (
-                    db.query(ParlayBet)
+                    db.query(SimpleUnifiedBet)
                     .filter(
                         and_(
-                            ParlayBet.user_id == user_id,
-                            ParlayBet.placed_at >= cutoff_date,
+                            SimpleUnifiedBet.user_id == user_id,
+                            SimpleUnifiedBet.placed_at >= cutoff_date,
+                            SimpleUnifiedBet.is_parlay == True,
                         )
                     )
                     .all()
@@ -362,27 +371,41 @@ class BettingAnalyticsService:
             # Get bets with sport information
             sport_query = (
                 db.query(
-                    Bet.sport,
-                    func.count(Bet.id).label("total_bets"),
-                    func.sum(Bet.amount).label("total_wagered"),
+                    SimpleUnifiedBet.sport,
+                    func.count(SimpleUnifiedBet.id).label("total_bets"),
+                    func.sum(SimpleUnifiedBet.amount).label("total_wagered"),
                     func.sum(
                         case(
-                            (Bet.status == "won", Bet.potential_win - Bet.amount),
-                            (Bet.status == "lost", -Bet.amount),
+                            (
+                                SimpleUnifiedBet.status == "won",
+                                SimpleUnifiedBet.potential_win
+                                - SimpleUnifiedBet.amount,
+                            ),
+                            (
+                                SimpleUnifiedBet.status == "lost",
+                                -SimpleUnifiedBet.amount,
+                            ),
                             else_=0,
                         )
                     ).label("profit_loss"),
-                    func.sum(case((Bet.status == "won", 1), else_=0)).label("wins"),
+                    func.sum(
+                        case((SimpleUnifiedBet.status == "won", 1), else_=0)
+                    ).label("wins"),
                     func.sum(
                         case(
-                            (and_(Bet.status == "won"), 1),
-                            (and_(Bet.status == "lost"), 1),
+                            (and_(SimpleUnifiedBet.status == "won"), 1),
+                            (and_(SimpleUnifiedBet.status == "lost"), 1),
                             else_=0,
                         )
                     ).label("resolved"),
                 )
-                .filter(and_(Bet.user_id == user_id, Bet.placed_at >= cutoff_date))
-                .group_by(Bet.sport)
+                .filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= cutoff_date,
+                    )
+                )
+                .group_by(SimpleUnifiedBet.sport)
                 .all()
             )
 
@@ -422,27 +445,41 @@ class BettingAnalyticsService:
         try:
             bet_type_query = (
                 db.query(
-                    Bet.bet_type,
-                    func.count(Bet.id).label("total_bets"),
-                    func.sum(Bet.amount).label("total_wagered"),
+                    SimpleUnifiedBet.bet_type,
+                    func.count(SimpleUnifiedBet.id).label("total_bets"),
+                    func.sum(SimpleUnifiedBet.amount).label("total_wagered"),
                     func.sum(
                         case(
-                            (Bet.status == "won", Bet.potential_win - Bet.amount),
-                            (Bet.status == "lost", -Bet.amount),
+                            (
+                                SimpleUnifiedBet.status == "won",
+                                SimpleUnifiedBet.potential_win
+                                - SimpleUnifiedBet.amount,
+                            ),
+                            (
+                                SimpleUnifiedBet.status == "lost",
+                                -SimpleUnifiedBet.amount,
+                            ),
                             else_=0,
                         )
                     ).label("profit_loss"),
-                    func.sum(case((Bet.status == "won", 1), else_=0)).label("wins"),
+                    func.sum(
+                        case((SimpleUnifiedBet.status == "won", 1), else_=0)
+                    ).label("wins"),
                     func.sum(
                         case(
-                            (and_(Bet.status == "won"), 1),
-                            (and_(Bet.status == "lost"), 1),
+                            (and_(SimpleUnifiedBet.status == "won"), 1),
+                            (and_(SimpleUnifiedBet.status == "lost"), 1),
                             else_=0,
                         )
                     ).label("resolved"),
                 )
-                .filter(and_(Bet.user_id == user_id, Bet.placed_at >= cutoff_date))
-                .group_by(Bet.bet_type)
+                .filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= cutoff_date,
+                    )
+                )
+                .group_by(SimpleUnifiedBet.bet_type)
                 .all()
             )
 
@@ -484,19 +521,24 @@ class BettingAnalyticsService:
 
             # Last 7 days performance
             recent_bets = (
-                db.query(Bet)
-                .filter(and_(Bet.user_id == user_id, Bet.placed_at >= last_7_days))
+                db.query(SimpleUnifiedBet)
+                .filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= last_7_days,
+                    )
+                )
                 .all()
             )
 
             # Previous 7 days performance
             previous_bets = (
-                db.query(Bet)
+                db.query(SimpleUnifiedBet)
                 .filter(
                     and_(
-                        Bet.user_id == user_id,
-                        Bet.placed_at >= previous_7_days,
-                        Bet.placed_at < last_7_days,
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= previous_7_days,
+                        SimpleUnifiedBet.placed_at < last_7_days,
                     )
                 )
                 .all()

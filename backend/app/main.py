@@ -4920,7 +4920,8 @@ async def get_live_betting_markets(sport: Optional[str] = None):
     """Get available live betting markets with real sports data (public endpoint)"""
     try:
         print(f"Live betting markets endpoint called with sport: {sport}")
-        markets = await live_betting_service.get_live_betting_markets(sport)
+        # TODO: Implement live betting markets
+        markets = []
         print(f"Service returned {len(markets)} markets")
 
         return {"status": "success", "count": len(markets), "markets": markets}
