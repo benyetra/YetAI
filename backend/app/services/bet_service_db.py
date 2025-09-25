@@ -590,7 +590,11 @@ class BetServiceDB:
             "amount": parlay.amount,
             "total_odds": parlay.total_odds,
             "potential_win": parlay.potential_win,
-            "status": parlay.status.value if hasattr(parlay.status, 'value') else parlay.status,
+            "status": (
+                parlay.status.value
+                if hasattr(parlay.status, "value")
+                else parlay.status
+            ),
             "placed_at": parlay.placed_at.isoformat(),
             "settled_at": parlay.settled_at.isoformat() if parlay.settled_at else None,
             "result_amount": parlay.result_amount,
