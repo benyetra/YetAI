@@ -3037,20 +3037,26 @@ async def options_get_parlays():
 
 @app.get("/api/bets/parlays")
 async def get_parlays(current_user: dict = Depends(get_current_user)):
-    """Get user's parlay bets"""
+    """Get user's parlay bets using unified service"""
     try:
-        from app.services.bet_service_db import bet_service_db
-
-        result = await bet_service_db.get_user_parlays(
-            current_user.get("id") or current_user.get("user_id")
+        # Get all user bets and filter for parlays only
+        bets = await simple_unified_bet_service.get_user_bets(
+            current_user.get("id") or current_user.get("user_id"),
+            include_legs=False,  # Only get parent parlays, not legs
         )
 
-        if result.get("success"):
-            return {"status": "success", "parlays": result.get("parlays", [])}
-        else:
-            raise HTTPException(
-                status_code=500, detail=result.get("error", "Failed to fetch parlays")
-            )
+        # Filter for parlay bets only
+        parlays = []
+        for bet in bets:
+            if bet.get("is_parlay"):
+                # Get legs for this parlay
+                parlay_with_legs = await simple_unified_bet_service.get_bet_by_id(
+                    bet["id"]
+                )
+                if parlay_with_legs:
+                    parlays.append(parlay_with_legs)
+
+        return {"status": "success", "parlays": parlays}
 
     except Exception as e:
         logger.error(f"Error fetching parlays: {e}")
@@ -3063,20 +3069,18 @@ async def get_parlays(current_user: dict = Depends(get_current_user)):
 async def get_parlay_details(
     parlay_id: str, current_user: dict = Depends(get_current_user)
 ):
-    """Get specific parlay details"""
+    """Get specific parlay details using unified service"""
     try:
-        from app.services.bet_service_db import bet_service_db
+        parlay = await simple_unified_bet_service.get_bet_by_id(parlay_id)
 
-        result = await bet_service_db.get_parlay_by_id(
-            current_user.get("id") or current_user.get("user_id"), parlay_id
-        )
+        if not parlay:
+            raise HTTPException(status_code=404, detail="Parlay not found")
 
-        if result.get("success"):
-            return {"status": "success", "parlay": result.get("parlay")}
-        else:
-            raise HTTPException(
-                status_code=404, detail=result.get("error", "Parlay not found")
-            )
+        # Verify the parlay belongs to the current user
+        if parlay["user_id"] != (current_user.get("id") or current_user.get("user_id")):
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        return {"status": "success", "parlay": parlay}
 
     except HTTPException:
         raise
