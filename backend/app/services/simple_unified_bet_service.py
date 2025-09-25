@@ -132,13 +132,19 @@ class SimpleUnifiedBetService:
             db = SessionLocal()
             try:
                 # Validate bet limits
-                if not await self._check_bet_limits(
-                    user_id, parlay_data.total_amount, db
-                ):
+                if not await self._check_bet_limits(user_id, parlay_data.amount, db):
                     return {"success": False, "error": "Parlay exceeds bet limits"}
 
                 # Generate parlay parent ID
                 parlay_id = str(uuid.uuid4())
+
+                # Calculate parlay odds and potential win
+                total_odds = self._calculate_parlay_odds(
+                    [leg.odds for leg in parlay_data.legs]
+                )
+                potential_win = self._calculate_potential_win(
+                    total_odds, parlay_data.amount
+                )
 
                 # Create parlay parent record
                 parlay_parent = SimpleUnifiedBet(
@@ -146,9 +152,9 @@ class SimpleUnifiedBetService:
                     user_id=user_id,
                     odds_api_event_id=f"parlay_{parlay_id[:8]}",
                     bet_type=BetType.PARLAY,
-                    amount=parlay_data.total_amount,
-                    odds=parlay_data.total_odds,
-                    potential_win=parlay_data.potential_win,
+                    amount=parlay_data.amount,
+                    odds=total_odds,
+                    potential_win=potential_win,
                     selection=f"Parlay ({len(parlay_data.legs)} legs)",
                     home_team="Multiple Teams",
                     away_team="Multiple Teams",
@@ -158,7 +164,7 @@ class SimpleUnifiedBetService:
                     bookmaker="fanduel",
                     is_parlay=True,
                     leg_count=len(parlay_data.legs),
-                    total_odds=parlay_data.total_odds,
+                    total_odds=total_odds,
                     parlay_legs=json.dumps([leg.dict() for leg in parlay_data.legs]),
                 )
 
@@ -628,6 +634,28 @@ class SimpleUnifiedBetService:
         except Exception as e:
             logger.error(f"Error getting/creating game: {e}")
             return None
+
+    def _calculate_parlay_odds(self, leg_odds: List[float]) -> float:
+        """Calculate combined parlay odds from individual leg odds (American format)"""
+        total_decimal_odds = 1.0
+
+        for odds in leg_odds:
+            if odds > 0:
+                # Positive odds to decimal: (odds / 100) + 1
+                decimal_odds = (odds / 100) + 1
+            else:
+                # Negative odds to decimal: (100 / abs(odds)) + 1
+                decimal_odds = (100 / abs(odds)) + 1
+
+            total_decimal_odds *= decimal_odds
+
+        # Convert back to American odds
+        if total_decimal_odds >= 2.0:
+            # Convert to positive American odds: (decimal - 1) * 100
+            return (total_decimal_odds - 1) * 100
+        else:
+            # Convert to negative American odds: -100 / (decimal - 1)
+            return -100 / (total_decimal_odds - 1)
 
     def _calculate_potential_win(self, odds: float, amount: float) -> float:
         """Calculate potential win from American odds and bet amount"""
