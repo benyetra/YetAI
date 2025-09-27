@@ -41,7 +41,7 @@ class UnifiedBetVerificationService:
     """Unified bet verification service for simple_unified_bets table"""
 
     def __init__(self):
-        self.odds_service = get_optimized_odds_service()
+        self.odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
     async def verify_all_pending_bets(self) -> Dict:
         """
