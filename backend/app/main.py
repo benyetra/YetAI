@@ -40,7 +40,9 @@ from app.services.bet_scheduler_service import (
     init_scheduler,
     cleanup_scheduler,
 )
-from app.services.unified_bet_verification_service import unified_bet_verification_service
+from app.services.unified_bet_verification_service import (
+    unified_bet_verification_service,
+)
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
@@ -1743,14 +1745,19 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
             all_bets = db.query(SimpleUnifiedBet).all()
             logger.info(f"DEBUG: Found {len(all_bets)} total bets in unified table")
 
-            pending_count = db.query(SimpleUnifiedBet).filter(
-                SimpleUnifiedBet.status == BetStatus.PENDING
-            ).count()
+            pending_count = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.status == BetStatus.PENDING)
+                .count()
+            )
             logger.info(f"DEBUG: Found {pending_count} pending bets")
 
         except Exception as db_error:
             logger.error(f"Database error: {db_error}", exc_info=True)
-            return {"status": "error", "result": {"error": f"Database error: {str(db_error)}"}}
+            return {
+                "status": "error",
+                "result": {"error": f"Database error: {str(db_error)}"},
+            }
         finally:
             db.close()
 
@@ -1760,18 +1767,23 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
         logger.info(f"Unified verification result: {result}")
 
         # Also sync games to ensure we have latest data
-        game_sync_result = {"success": True, "message": "Game sync skipped for unified verification", "games_updated": 0, "games_created": 0, "sports_synced": []}
+        game_sync_result = {
+            "success": True,
+            "message": "Game sync skipped for unified verification",
+            "games_updated": 0,
+            "games_created": 0,
+            "sports_synced": [],
+        }
 
         return {
             "status": "success",
-            "result": {
-                **result,
-                "game_sync": game_sync_result
-            }
+            "result": {**result, "game_sync": game_sync_result},
         }
     except Exception as e:
         logger.error(f"Error running unified verification: {e}", exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Failed to run verification: {str(e)}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to run verification: {str(e)}"
+        )
 
 
 @app.post("/api/admin/bets/sync-status")

@@ -20,14 +20,17 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 def verify_pending_bets():
     """Manually verify and settle completed bets"""
     db = SessionLocal()
     try:
         # Get all pending bets
-        pending_bets = db.query(SimpleUnifiedBet).filter(
-            SimpleUnifiedBet.status == BetStatus.PENDING
-        ).all()
+        pending_bets = (
+            db.query(SimpleUnifiedBet)
+            .filter(SimpleUnifiedBet.status == BetStatus.PENDING)
+            .all()
+        )
 
         logger.info(f"Found {len(pending_bets)} pending bets to check")
 
@@ -37,7 +40,9 @@ def verify_pending_bets():
 
         # For now, let's just show what games these bets are for
         for bet in pending_bets:
-            logger.info(f"Bet {bet.id[:8]}: {bet.selection} ({bet.sport}) - {bet.home_team} vs {bet.away_team}")
+            logger.info(
+                f"Bet {bet.id[:8]}: {bet.selection} ({bet.sport}) - {bet.home_team} vs {bet.away_team}"
+            )
 
             # Check if game commenced time has passed (simple completion check)
             if bet.commence_time and bet.commence_time < datetime.now():
@@ -45,10 +50,13 @@ def verify_pending_bets():
             else:
                 logger.info(f"  Game hasn't started yet: {bet.commence_time}")
 
-        logger.info("Manual verification needed - automatic settlement requires game score lookup")
+        logger.info(
+            "Manual verification needed - automatic settlement requires game score lookup"
+        )
 
     finally:
         db.close()
+
 
 if __name__ == "__main__":
     verify_pending_bets()

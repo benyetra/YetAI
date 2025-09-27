@@ -30,6 +30,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class UnifiedBetResult:
     """Result of evaluating a unified bet"""
+
     bet_id: str
     status: BetStatus
     result_amount: float
@@ -56,12 +57,16 @@ class UnifiedBetVerificationService:
             logger.info(f"Total bets in unified table: {len(all_bets)}")
 
             for bet in all_bets[:3]:  # Log first 3 for debugging
-                logger.info(f"Bet {bet.id[:8]}: status={bet.status} ({type(bet.status)}) - {bet.selection}")
+                logger.info(
+                    f"Bet {bet.id[:8]}: status={bet.status} ({type(bet.status)}) - {bet.selection}"
+                )
 
             # Get all pending bets from unified table
-            pending_bets = db.query(SimpleUnifiedBet).filter(
-                SimpleUnifiedBet.status == BetStatus.PENDING
-            ).all()
+            pending_bets = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.status == BetStatus.PENDING)
+                .all()
+            )
 
             logger.info(f"Found {len(pending_bets)} pending bets to verify")
 
@@ -88,7 +93,9 @@ class UnifiedBetVerificationService:
 
             for sport, sport_bets in bets_by_sport.items():
                 if sport == "unknown":
-                    logger.warning(f"Skipping {len(sport_bets)} bets with unknown sport")
+                    logger.warning(
+                        f"Skipping {len(sport_bets)} bets with unknown sport"
+                    )
                     continue
 
                 try:
@@ -100,7 +107,9 @@ class UnifiedBetVerificationService:
                         normalized_sport, include_completed=True
                     )
 
-                    logger.info(f"Retrieved {len(completed_games)} game results for {sport}")
+                    logger.info(
+                        f"Retrieved {len(completed_games)} game results for {sport}"
+                    )
 
                     # Process each bet for this sport
                     for bet in sport_bets:
@@ -122,7 +131,9 @@ class UnifiedBetVerificationService:
             db.commit()
 
             duration = (datetime.now() - start_time).total_seconds()
-            logger.info(f"✅ Unified verification complete: {total_settled} settled, {total_verified} verified in {duration:.1f}s")
+            logger.info(
+                f"✅ Unified verification complete: {total_settled} settled, {total_verified} verified in {duration:.1f}s"
+            )
 
             return {
                 "success": True,
@@ -157,7 +168,9 @@ class UnifiedBetVerificationService:
                 break
 
         if not game_data:
-            logger.debug(f"Game {bet.odds_api_event_id[:8]} not found in completed games")
+            logger.debug(
+                f"Game {bet.odds_api_event_id[:8]} not found in completed games"
+            )
             return None
 
         # Check if game is completed
@@ -174,8 +187,12 @@ class UnifiedBetVerificationService:
         home_score = scores[0].get("score", 0)
         away_score = scores[1].get("score", 0)
 
-        logger.info(f"Verifying bet {bet.id[:8]}: {bet.bet_type.value} - {bet.selection}")
-        logger.info(f"Final score: {bet.away_team} {away_score} - {bet.home_team} {home_score}")
+        logger.info(
+            f"Verifying bet {bet.id[:8]}: {bet.bet_type.value} - {bet.selection}"
+        )
+        logger.info(
+            f"Final score: {bet.away_team} {away_score} - {bet.home_team} {home_score}"
+        )
 
         # Determine bet outcome
         return self._evaluate_bet_outcome(bet, home_score, away_score)
@@ -218,7 +235,7 @@ class UnifiedBetVerificationService:
             bet_id=bet.id,
             status=status,
             result_amount=result_amount,
-            reasoning=reasoning
+            reasoning=reasoning,
         )
 
     def _evaluate_moneyline(
@@ -235,9 +252,17 @@ class UnifiedBetVerificationService:
         selection = bet.selection.lower()
         bet_winner = None
 
-        if selection in ["home", winner] or (bet.selected_team_name and bet.selected_team_name.lower() == bet.home_team.lower() and winner == "home"):
+        if selection in ["home", winner] or (
+            bet.selected_team_name
+            and bet.selected_team_name.lower() == bet.home_team.lower()
+            and winner == "home"
+        ):
             bet_winner = "home"
-        elif selection in ["away"] or (bet.selected_team_name and bet.selected_team_name.lower() == bet.away_team.lower() and winner == "away"):
+        elif selection in ["away"] or (
+            bet.selected_team_name
+            and bet.selected_team_name.lower() == bet.away_team.lower()
+            and winner == "away"
+        ):
             bet_winner = "away"
         elif bet.selected_team_name:
             # Team name selection
@@ -248,9 +273,17 @@ class UnifiedBetVerificationService:
 
         if bet_winner == winner:
             payout = bet.amount + bet.potential_win
-            return BetStatus.WON, payout, f"Won: {bet.selected_team_name or selection} won"
+            return (
+                BetStatus.WON,
+                payout,
+                f"Won: {bet.selected_team_name or selection} won",
+            )
         else:
-            return BetStatus.LOST, 0.0, f"Lost: {bet.selected_team_name or selection} lost"
+            return (
+                BetStatus.LOST,
+                0.0,
+                f"Lost: {bet.selected_team_name or selection} lost",
+            )
 
     def _evaluate_spread(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
@@ -302,10 +335,18 @@ class UnifiedBetVerificationService:
         elif (is_over and total_score > line) or (not is_over and total_score < line):
             payout = bet.amount + bet.potential_win
             direction = "Over" if is_over else "Under"
-            return BetStatus.WON, payout, f"Won: {direction} {line} (total: {total_score})"
+            return (
+                BetStatus.WON,
+                payout,
+                f"Won: {direction} {line} (total: {total_score})",
+            )
         else:
             direction = "Over" if is_over else "Under"
-            return BetStatus.LOST, 0.0, f"Lost: {direction} {line} (total: {total_score})"
+            return (
+                BetStatus.LOST,
+                0.0,
+                f"Lost: {direction} {line} (total: {total_score})",
+            )
 
     def _evaluate_parlay(self, bet: SimpleUnifiedBet) -> Tuple[BetStatus, float, str]:
         """Evaluate parlay bet - check all legs"""
@@ -318,9 +359,11 @@ class UnifiedBetVerificationService:
 
         for result in results:
             try:
-                bet = db.query(SimpleUnifiedBet).filter(
-                    SimpleUnifiedBet.id == result.bet_id
-                ).first()
+                bet = (
+                    db.query(SimpleUnifiedBet)
+                    .filter(SimpleUnifiedBet.id == result.bet_id)
+                    .first()
+                )
 
                 if bet and bet.status == BetStatus.PENDING:
                     bet.status = result.status
@@ -329,7 +372,9 @@ class UnifiedBetVerificationService:
                     if result.status != BetStatus.PENDING:
                         bet.settled_at = datetime.now(timezone.utc)
 
-                    logger.info(f"✅ Updated bet {result.bet_id[:8]}: {result.status.value} - {result.reasoning}")
+                    logger.info(
+                        f"✅ Updated bet {result.bet_id[:8]}: {result.status.value} - {result.reasoning}"
+                    )
 
             except Exception as e:
                 logger.error(f"Error updating bet {result.bet_id[:8]}: {e}")
