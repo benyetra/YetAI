@@ -540,8 +540,8 @@ class SimpleUnifiedBetService:
                 # Store spread with +/- sign (e.g., -7.5 or +3.5)
                 spread_str = spread_match.group(1)
                 # Ensure we have a sign (default to negative if no sign present)
-                if not spread_str.startswith(('+', '-')):
-                    spread_str = '-' + spread_str
+                if not spread_str.startswith(("+", "-")):
+                    spread_str = "-" + spread_str
                 result["spread_value"] = float(spread_str)
 
                 if home_team and home_team.lower() in selection_lower:

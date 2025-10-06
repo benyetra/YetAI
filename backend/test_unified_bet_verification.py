@@ -78,7 +78,7 @@ class TestUnifiedBetVerification:
                 self.db.query(SimpleUnifiedBet)
                 .filter(
                     SimpleUnifiedBet.bet_type == BetType.MONEYLINE,
-                    SimpleUnifiedBet.team_selection != TeamSide.NONE
+                    SimpleUnifiedBet.team_selection != TeamSide.NONE,
                 )
                 .first()
             )
@@ -89,9 +89,7 @@ class TestUnifiedBetVerification:
 
             print(f"Found bet {bet.id[:8]}:")
             print(f"  Selection: {bet.selection}")
-            selection_value = (
-                bet.team_selection.value if bet.team_selection else "NONE"
-            )
+            selection_value = bet.team_selection.value if bet.team_selection else "NONE"
             print(f"  Team Selection Enum: {selection_value}")
             print(f"  Selected Team Name: {bet.selected_team_name}")
             print(f"  Home Team: {bet.home_team}")
@@ -124,7 +122,7 @@ class TestUnifiedBetVerification:
                 self.db.query(SimpleUnifiedBet)
                 .filter(
                     SimpleUnifiedBet.bet_type == BetType.SPREAD,
-                    SimpleUnifiedBet.spread_value.isnot(None)
+                    SimpleUnifiedBet.spread_value.isnot(None),
                 )
                 .first()
             )
@@ -169,7 +167,7 @@ class TestUnifiedBetVerification:
                 self.db.query(SimpleUnifiedBet)
                 .filter(
                     SimpleUnifiedBet.bet_type == BetType.TOTAL,
-                    SimpleUnifiedBet.over_under_selection != OverUnder.NONE
+                    SimpleUnifiedBet.over_under_selection != OverUnder.NONE,
                 )
                 .first()
             )
@@ -191,9 +189,7 @@ class TestUnifiedBetVerification:
                 f"❌ over_under_selection should be OVER or UNDER, "
                 f"got {bet.over_under_selection}"
             )
-            assert (
-                bet.total_points is not None
-            ), "❌ total_points should be stored"
+            assert bet.total_points is not None, "❌ total_points should be stored"
 
             print("✅ Total bet has proper over/under enum")
             return {"status": "passed"}
@@ -281,23 +277,25 @@ class TestUnifiedBetVerification:
 
         try:
             # Check service instance
-            assert unified_bet_verification_service is not None, \
-                "❌ unified_bet_verification_service is None"
+            assert (
+                unified_bet_verification_service is not None
+            ), "❌ unified_bet_verification_service is None"
 
             print("✅ Unified verification service instance is available")
 
             # Test that service has required methods
             required_methods = [
-                'verify_all_pending_bets',
-                '_verify_single_bet',
-                '_evaluate_moneyline',
-                '_evaluate_spread',
-                '_evaluate_total',
+                "verify_all_pending_bets",
+                "_verify_single_bet",
+                "_evaluate_moneyline",
+                "_evaluate_spread",
+                "_evaluate_total",
             ]
 
             for method_name in required_methods:
-                assert hasattr(unified_bet_verification_service, method_name), \
-                    f"❌ Service missing method: {method_name}"
+                assert hasattr(
+                    unified_bet_verification_service, method_name
+                ), f"❌ Service missing method: {method_name}"
                 print(f"  ✓ Method available: {method_name}")
 
             print("✅ All required methods are available")
