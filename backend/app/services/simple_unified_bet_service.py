@@ -465,6 +465,8 @@ class SimpleUnifiedBetService:
 
                 total_bets = len(bets)
                 total_wagered = sum(bet.amount for bet in bets)
+
+                # Only sum winnings from won bets
                 total_won = sum(
                     bet.result_amount or 0
                     for bet in bets
@@ -477,8 +479,19 @@ class SimpleUnifiedBetService:
                     [bet for bet in bets if bet.status == BetStatus.PENDING]
                 )
 
-                win_rate = (won_bets / total_bets * 100) if total_bets > 0 else 0
-                profit_loss = total_won - total_wagered
+                # Calculate settled bets only (exclude pending)
+                settled_bets = won_bets + lost_bets
+                settled_wagered = sum(
+                    bet.amount
+                    for bet in bets
+                    if bet.status in [BetStatus.WON, BetStatus.LOST]
+                )
+
+                # Profit/loss should only consider settled bets
+                profit_loss = total_won - settled_wagered
+
+                # Win rate based on settled bets only
+                win_rate = (won_bets / settled_bets * 100) if settled_bets > 0 else 0
 
                 return {
                     "total_bets": total_bets,
