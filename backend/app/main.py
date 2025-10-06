@@ -493,7 +493,8 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "by_type": stats.get("by_bet_type", {}),
                 "trends": {
                     "last_7_days_accuracy": round(
-                        stats.get("last_7_days_accuracy", stats["win_rate"]) * 100, 1
+                        stats.get("last_7_days_accuracy", stats["win_rate"]) * 100,
+                        1,
                     ),
                     "improvement_trend": trends.get("trend_direction", "stable"),
                     "weekly_bet_change": weekly_bet_change,
