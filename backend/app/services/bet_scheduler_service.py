@@ -151,10 +151,8 @@ class BetSchedulerService:
                 if retries > 0:
                     await asyncio.sleep(self.config.rate_limit_delay)
 
-                # Run the unified verification (no game sync - uses API directly)
-                result = (
-                    await unified_bet_verification_service.verify_all_pending_bets()
-                )
+                # Run the unified verification (no game sync needed - uses API directly)
+                result = await unified_bet_verification_service.verify_all_pending_bets()
 
                 if result.get("success", False):
                     # Success
