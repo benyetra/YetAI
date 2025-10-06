@@ -1584,6 +1584,7 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
             # Since there's no specific method to delete all user bets, we'll implement a basic version
             from app.core.database import SessionLocal
             from app.models.database_models import User, Bet, ParlayBet
+            from app.models.simple_unified_bet_model import SimpleUnifiedBet
 
             db = SessionLocal()
             try:
@@ -1601,23 +1602,33 @@ async def delete_user_bets(user_id: int, admin_user: dict = Depends(require_admi
                     db.query(BetHistory).filter(BetHistory.user_id == user_id).delete()
                 )
 
-                # Delete user's regular bets
+                # Delete user's unified bets (new table)
+                unified_bets_deleted = (
+                    db.query(SimpleUnifiedBet)
+                    .filter(SimpleUnifiedBet.user_id == user_id)
+                    .delete()
+                )
+
+                # Delete user's regular bets (old table)
                 bets_deleted = db.query(Bet).filter(Bet.user_id == user_id).delete()
 
-                # Delete user's parlay bets
+                # Delete user's parlay bets (old table)
                 parlay_bets_deleted = (
                     db.query(ParlayBet).filter(ParlayBet.user_id == user_id).delete()
                 )
 
                 db.commit()
 
-                total_deleted = bets_deleted + parlay_bets_deleted
+                total_deleted = (
+                    unified_bets_deleted + bets_deleted + parlay_bets_deleted
+                )
 
                 return {
                     "status": "success",
                     "message": f"Deleted {total_deleted} bets and {history_deleted} history records for user {user_id}",
                     "bets_deleted": bets_deleted,
                     "parlay_bets_deleted": parlay_bets_deleted,
+                    "unified_bets_deleted": unified_bets_deleted,
                     "history_records_deleted": history_deleted,
                 }
             finally:
