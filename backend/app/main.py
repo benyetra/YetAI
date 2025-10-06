@@ -532,10 +532,6 @@ async def get_leaderboard(
 ):
     """Get leaderboard with real user betting statistics"""
     try:
-        bet_service = get_service("bet_service")
-        if not bet_service:
-            raise HTTPException(status_code=500, detail="Bet service not available")
-
         # Get all users from database
         from app.core.database import SessionLocal
         from app.models.database_models import User
@@ -545,26 +541,25 @@ async def get_leaderboard(
             users = db.query(User).all()
             leaderboard_data = []
 
-            # Calculate days for period
+            # Calculate days for period (not currently used for filtering)
             days = {"weekly": 7, "monthly": 30, "all_time": 365}.get(period, 7)
 
             for user in users:
                 try:
-                    # Get user bet stats
-                    stats_result = await bet_service.get_bet_stats(user.id)
-                    if stats_result.get("success"):
-                        stats = stats_result.get("stats", {})
+                    # Get user bet stats from unified service
+                    stats = await simple_unified_bet_service.get_user_stats(user.id)
 
+                    if stats:
                         # Calculate metrics
                         total_wagered = stats.get("total_wagered", 0)
-                        net_profit = stats.get("net_profit", 0)
+                        profit_loss = stats.get("profit_loss", 0)
                         win_rate = stats.get("win_rate", 0)
                         total_bets = stats.get("total_bets", 0)
 
                         # Only include users who have placed bets
                         if total_bets > 0:
                             roi = (
-                                (net_profit / total_wagered * 100)
+                                (profit_loss / total_wagered * 100)
                                 if total_wagered > 0
                                 else 0
                             )
@@ -573,7 +568,7 @@ async def get_leaderboard(
                                 {
                                     "user_id": user.id,
                                     "username": user.username or f"User{user.id}",
-                                    "profit": net_profit,
+                                    "profit": profit_loss,
                                     "win_rate": win_rate,
                                     "roi": roi,
                                     "total_bets": total_bets,
