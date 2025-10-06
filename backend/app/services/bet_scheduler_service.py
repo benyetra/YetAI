@@ -347,3 +347,4 @@ def cleanup_scheduler():
         logger.info("Bet verification scheduler stopped successfully")
     except Exception as e:
         logger.error(f"Error stopping bet verification scheduler: {e}")
+

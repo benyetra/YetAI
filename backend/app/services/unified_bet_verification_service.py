@@ -29,7 +29,11 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
 from app.core.database import SessionLocal
-from app.models.simple_unified_bet_model import SimpleUnifiedBet, TeamSide, OverUnder
+from app.models.simple_unified_bet_model import (
+    SimpleUnifiedBet,
+    TeamSide,
+    OverUnder,
+)
 from app.models.database_models import BetStatus, BetType
 from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.core.config import settings
@@ -448,3 +452,4 @@ class UnifiedBetVerificationService:
 
 # Create singleton instance
 unified_bet_verification_service = UnifiedBetVerificationService()
+

@@ -16,11 +16,16 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, List
 
 # Add parent directory to path
-sys.path.insert(0, '.')
+sys.path.insert(0, ".")
 
 try:
-    from app.services.unified_bet_verification_service import unified_bet_verification_service
-    from app.services.simple_unified_bet_service import simple_unified_bet_service, SimpleUnifiedBetService
+    from app.services.unified_bet_verification_service import (
+        unified_bet_verification_service,
+    )
+    from app.services.simple_unified_bet_service import (
+        simple_unified_bet_service,
+        SimpleUnifiedBetService,
+    )
     from app.models.simple_unified_bet_model import (
         SimpleUnifiedBet,
         BetStatus,
@@ -31,6 +36,7 @@ try:
     )
     from app.core.database import SessionLocal
     from app.models.bet_models import PlaceBetRequest
+
     print("✅ All imports successful")
 except ImportError as e:
     print(f"❌ Import error: {e}")
@@ -369,3 +375,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+

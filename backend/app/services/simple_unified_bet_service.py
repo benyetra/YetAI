@@ -734,3 +734,4 @@ class SimpleUnifiedBetService:
 
 # Global instance
 simple_unified_bet_service = SimpleUnifiedBetService()
+
