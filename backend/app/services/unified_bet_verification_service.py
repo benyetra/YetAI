@@ -305,7 +305,7 @@ class UnifiedBetVerificationService:
     def _evaluate_spread(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
     ) -> Tuple[BetStatus, float, str]:
-        """Evaluate spread bet using stored spread_selection enum and spread_value with +/- sign"""
+        """Evaluate spread bet using stored enum and signed spread_value"""
 
         if not bet.spread_value:
             return BetStatus.LOST, 0.0, "Invalid spread value"
@@ -452,4 +452,3 @@ class UnifiedBetVerificationService:
 
 # Create singleton instance
 unified_bet_verification_service = UnifiedBetVerificationService()
-
