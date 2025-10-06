@@ -440,6 +440,20 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             raise Exception("Betting analytics service not available")
         stats = await analytics_service.get_user_stats(user_id)
 
+        # Get trend data from betting analytics
+        from app.core.database import SessionLocal
+        db = SessionLocal()
+        try:
+            trends = await analytics_service._get_performance_trend(user_id, db)
+        finally:
+            db.close()
+
+        # Calculate weekly and monthly changes
+        monthly_summary = stats.get("monthly_summary", {})
+        weekly_bet_change = trends.get("recent_period", {}).get("total_bets", 0)
+        accuracy_change = trends.get("win_rate_change", 0)
+        profit_change = trends.get("profit_change", 0)
+
         # Format the response for the dashboard
         personal_stats = {
             "predictions_made": stats["total_bets"],
@@ -455,6 +469,11 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             "favorite_sport": stats["favorite_sport"],
             "favorite_bet_type": stats["favorite_bet_type"],
             "win_streak": stats.get("current_streak", {}).get("count", 0),
+            # Add trend data
+            "weekly_bet_change": weekly_bet_change,
+            "accuracy_change": accuracy_change,
+            "profit_change": profit_change,
+            "trend_direction": trends.get("trend_direction", "stable"),
         }
 
         # Return in the format expected by frontend
@@ -479,7 +498,10 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                     "last_7_days_accuracy": round(
                         stats.get("last_7_days_accuracy", stats["win_rate"]) * 100, 1
                     ),
-                    "improvement_trend": stats.get("improvement_trend", "stable"),
+                    "improvement_trend": trends.get("trend_direction", "stable"),
+                    "weekly_bet_change": weekly_bet_change,
+                    "accuracy_change": accuracy_change,
+                    "profit_change": profit_change,
                 },
                 "period_days": 30,
             },
@@ -502,6 +524,10 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "favorite_sport": "N/A",
                 "favorite_bet_type": "N/A",
                 "win_streak": 0,
+                "weekly_bet_change": 0,
+                "accuracy_change": 0,
+                "profit_change": 0,
+                "trend_direction": "stable",
             },
             "metrics": {
                 "total_predictions": 0,
@@ -513,7 +539,13 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "success_rate": 0,
                 "by_sport": {},
                 "by_type": {},
-                "trends": {"last_7_days_accuracy": 0, "improvement_trend": "stable"},
+                "trends": {
+                    "last_7_days_accuracy": 0,
+                    "improvement_trend": "stable",
+                    "weekly_bet_change": 0,
+                    "accuracy_change": 0,
+                    "profit_change": 0,
+                },
                 "period_days": 30,
             },
             "user_id": user_id,

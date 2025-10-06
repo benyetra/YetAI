@@ -256,6 +256,12 @@ const Dashboard: React.FC = () => {
     profit_loss: 0,
     win_streak: 0
   });
+  const [trends, setTrends] = useState<{
+    weekly_bet_change?: number;
+    accuracy_change?: number;
+    profit_change?: number;
+    trend_direction?: string;
+  }>({});
   const [games, setGames] = useState<Game[]>([]);
   const [predictions, setPredictions] = useState<Prediction[]>([]);
   const [insights, setInsights] = useState<AIInsight[]>([]);
@@ -307,6 +313,14 @@ const Dashboard: React.FC = () => {
             profit_loss: typeof statsData.personal_stats?.total_profit === 'number' ?
                          statsData.personal_stats.total_profit : 0,
             win_streak: statsData.personal_stats?.win_streak || 0
+          });
+
+          // Set trend data
+          setTrends({
+            weekly_bet_change: statsData.personal_stats?.weekly_bet_change || 0,
+            accuracy_change: statsData.personal_stats?.accuracy_change || 0,
+            profit_change: statsData.personal_stats?.profit_change || 0,
+            trend_direction: statsData.personal_stats?.trend_direction || 'stable'
           });
         }
 
@@ -506,22 +520,22 @@ const Dashboard: React.FC = () => {
                 title="Total Predictions"
                 value={stats.total_predictions}
                 icon={<Target className="w-6 h-6 text-blue-600" />}
-                change="+3 this week"
-                changeType="positive"
+                change={trends.weekly_bet_change ? `${trends.weekly_bet_change > 0 ? '+' : ''}${trends.weekly_bet_change} this week` : undefined}
+                changeType={trends.weekly_bet_change && trends.weekly_bet_change > 0 ? 'positive' : trends.weekly_bet_change && trends.weekly_bet_change < 0 ? 'negative' : 'neutral'}
               />
               <StatCard
                 title="Accuracy Rate"
                 value={`${stats.accuracy_rate}%`}
                 icon={<TrendingUp className="w-6 h-6 text-green-600" />}
-                change="+2.3% vs last month"
-                changeType="positive"
+                change={trends.accuracy_change ? `${trends.accuracy_change > 0 ? '+' : ''}${trends.accuracy_change.toFixed(1)}% vs last week` : undefined}
+                changeType={trends.accuracy_change && trends.accuracy_change > 0 ? 'positive' : trends.accuracy_change && trends.accuracy_change < 0 ? 'negative' : 'neutral'}
               />
               <StatCard
                 title={user?.subscription_tier === 'free' ? 'Upgrade for P&L' : 'Profit/Loss'}
                 value={user?.subscription_tier === 'free' ? 'Pro Feature' : `$${stats.profit_loss}`}
                 icon={<DollarSign className="w-6 h-6 text-green-600" />}
-                change={user?.subscription_tier !== 'free' ? '+$23 today' : undefined}
-                changeType="positive"
+                change={user?.subscription_tier !== 'free' && trends.profit_change ? `${trends.profit_change > 0 ? '+' : ''}$${trends.profit_change.toFixed(2)} vs last week` : undefined}
+                changeType={trends.profit_change && trends.profit_change > 0 ? 'positive' : trends.profit_change && trends.profit_change < 0 ? 'negative' : 'neutral'}
               />
               <StatCard
                 title="Win Streak"
