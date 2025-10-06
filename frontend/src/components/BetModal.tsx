@@ -29,6 +29,8 @@ interface Game {
   home_odds: number;
   away_odds: number;
   spread: number;
+  home_spread?: number;
+  away_spread?: number;
   total: number;
 }
 
@@ -316,7 +318,10 @@ export default function BetModal({
             >
               <p className="font-medium">Spread</p>
               <p className="text-xs mt-1 opacity-75">
-                {game.spread > 0 ? '+' : ''}{game.spread}
+                {(() => {
+                  const homeSpreadValue = game.home_spread ?? game.spread;
+                  return `${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue}`;
+                })()}
               </p>
             </button>
             <button
@@ -371,7 +376,10 @@ export default function BetModal({
           {betType === 'spread' && (
             <div className="grid grid-cols-2 gap-3">
               <button
-                onClick={() => setSelection(`${game.away_team} ${game.spread > 0 ? '+' : ''}${game.spread}`)}
+                onClick={() => {
+                  const awaySpreadValue = game.away_spread ?? -game.spread;
+                  setSelection(`${game.away_team} ${awaySpreadValue > 0 ? '+' : ''}${awaySpreadValue}`);
+                }}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   selection.includes(game.away_team)
                     ? 'border-blue-500 bg-blue-50'
@@ -380,11 +388,17 @@ export default function BetModal({
               >
                 <p className="font-medium text-gray-900">{game.away_team}</p>
                 <p className="text-lg font-bold text-blue-600 mt-1">
-                  {game.spread > 0 ? '+' : ''}{game.spread} (-110)
+                  {(() => {
+                    const awaySpreadValue = game.away_spread ?? -game.spread;
+                    return `${awaySpreadValue > 0 ? '+' : ''}${awaySpreadValue} (-110)`;
+                  })()}
                 </p>
               </button>
               <button
-                onClick={() => setSelection(`${game.home_team} ${game.spread < 0 ? '+' : ''}${-game.spread}`)}
+                onClick={() => {
+                  const homeSpreadValue = game.home_spread ?? game.spread;
+                  setSelection(`${game.home_team} ${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue}`);
+                }}
                 className={`p-4 rounded-lg border-2 transition-all ${
                   selection.includes(game.home_team)
                     ? 'border-blue-500 bg-blue-50'
@@ -393,7 +407,10 @@ export default function BetModal({
               >
                 <p className="font-medium text-gray-900">{game.home_team}</p>
                 <p className="text-lg font-bold text-blue-600 mt-1">
-                  {-game.spread > 0 ? '+' : ''}{-game.spread} (-110)
+                  {(() => {
+                    const homeSpreadValue = game.home_spread ?? game.spread;
+                    return `${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue} (-110)`;
+                  })()}
                 </p>
               </button>
             </div>

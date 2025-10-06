@@ -565,12 +565,18 @@ export const oddsUtils = {
       if (awayOutcome) awayOdds = awayOutcome.price;
     }
 
-    // Extract spread
+    // Extract spread (both home and away)
+    let homeSpread = 0;
+    let awaySpread = 0;
     const spreadMarket = bookmaker.markets?.find((m: any) => m.key === 'spreads');
     if (spreadMarket && spreadMarket.outcomes) {
       const homeOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.home_team);
+      const awayOutcome = spreadMarket.outcomes.find((o: any) => o.name === game.away_team);
       if (homeOutcome && homeOutcome.point) {
-        spread = parseFloat(homeOutcome.point);
+        homeSpread = parseFloat(homeOutcome.point);
+      }
+      if (awayOutcome && awayOutcome.point) {
+        awaySpread = parseFloat(awayOutcome.point);
       }
     }
 
@@ -583,7 +589,7 @@ export const oddsUtils = {
       }
     }
 
-    return { home_odds: homeOdds, away_odds: awayOdds, spread, total };
+    return { home_odds: homeOdds, away_odds: awayOdds, spread, home_spread: homeSpread, away_spread: awaySpread, total };
   },
 
   // Convert complex game to simple format for BetModal
