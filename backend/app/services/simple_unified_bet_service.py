@@ -264,14 +264,18 @@ class SimpleUnifiedBetService:
                 db.commit()
 
                 logger.info(
-                    f"Placed parlay {parlay_id} with {len(parlay_data.legs)} legs for user {user_id}"
+                    f"Placed parlay {parlay_id} with {len(parlay_data.legs)} "
+                    f"legs for user {user_id}"
                 )
 
                 return {
                     "success": True,
                     "parlay_id": parlay_id,
                     "leg_ids": leg_ids,
-                    "message": f"Parlay with {len(parlay_data.legs)} legs placed successfully",
+                    "message": (
+                        f"Parlay with {len(parlay_data.legs)} legs "
+                        f"placed successfully"
+                    ),
                     "parlay": self._format_bet_response(parlay_parent),
                 }
 
@@ -529,7 +533,8 @@ class SimpleUnifiedBetService:
             import re
 
             # Look for patterns like "Team +7.5" or "Team -3.5"
-            # Must capture the +/- sign to preserve whether it's a positive or negative spread
+            # Must capture the +/- sign to preserve whether it's a
+            # positive or negative spread
             spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
             if spread_match:
                 # Store spread with +/- sign (e.g., -7.5 or +3.5)

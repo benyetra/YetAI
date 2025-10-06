@@ -187,7 +187,10 @@ class TestUnifiedBetVerification:
             assert bet.over_under_selection in [
                 OverUnder.OVER,
                 OverUnder.UNDER,
-            ], f"❌ over_under_selection should be OVER or UNDER, got {bet.over_under_selection}"
+            ], (
+                f"❌ over_under_selection should be OVER or UNDER, "
+                f"got {bet.over_under_selection}"
+            )
             assert (
                 bet.total_points is not None
             ), "❌ total_points should be stored"
