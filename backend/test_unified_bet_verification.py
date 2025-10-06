@@ -83,16 +83,22 @@ class TestUnifiedBetVerification:
 
             print(f"Found bet {bet.id[:8]}:")
             print(f"  Selection: {bet.selection}")
-            print(f"  Team Selection Enum: {bet.team_selection.value if bet.team_selection else 'NONE'}")
+            selection_value = (
+                bet.team_selection.value if bet.team_selection else "NONE"
+            )
+            print(f"  Team Selection Enum: {selection_value}")
             print(f"  Selected Team Name: {bet.selected_team_name}")
             print(f"  Home Team: {bet.home_team}")
             print(f"  Away Team: {bet.away_team}")
 
             # Validate enum is stored
-            assert bet.team_selection in [TeamSide.HOME, TeamSide.AWAY], \
-                f"❌ team_selection should be HOME or AWAY, got {bet.team_selection}"
-            assert bet.selected_team_name is not None, \
-                "❌ selected_team_name should be stored"
+            assert bet.team_selection in [
+                TeamSide.HOME,
+                TeamSide.AWAY,
+            ], f"❌ team_selection should be HOME or AWAY, got {bet.team_selection}"
+            assert (
+                bet.selected_team_name is not None
+            ), "❌ selected_team_name should be stored"
 
             print("✅ Moneyline bet has proper enum fields")
             return {"status": "passed"}
@@ -124,14 +130,20 @@ class TestUnifiedBetVerification:
             print(f"Found bet {bet.id[:8]}:")
             print(f"  Selection: {bet.selection}")
             print(f"  Spread Value: {bet.spread_value:+.1f}")
-            print(f"  Spread Selection Enum: {bet.spread_selection.value if bet.spread_selection else 'NONE'}")
+            spread_selection_value = (
+                bet.spread_selection.value if bet.spread_selection else "NONE"
+            )
+            print(f"  Spread Selection Enum: {spread_selection_value}")
             print(f"  Selected Team: {bet.selected_team_name}")
 
             # Validate spread has sign
-            assert bet.spread_value != abs(bet.spread_value) or bet.spread_value > 0, \
-                f"❌ spread_value should have sign, got {bet.spread_value}"
-            assert bet.spread_selection in [TeamSide.HOME, TeamSide.AWAY], \
-                f"❌ spread_selection should be HOME or AWAY, got {bet.spread_selection}"
+            assert (
+                bet.spread_value != abs(bet.spread_value) or bet.spread_value > 0
+            ), f"❌ spread_value should have sign, got {bet.spread_value}"
+            assert bet.spread_selection in [
+                TeamSide.HOME,
+                TeamSide.AWAY,
+            ], f"❌ spread_selection should be HOME or AWAY, got {bet.spread_selection}"
 
             print("✅ Spread bet has proper signed value and enum")
             return {"status": "passed"}
@@ -166,10 +178,13 @@ class TestUnifiedBetVerification:
             print(f"  Over/Under Enum: {bet.over_under_selection.value}")
 
             # Validate over/under enum
-            assert bet.over_under_selection in [OverUnder.OVER, OverUnder.UNDER], \
-                f"❌ over_under_selection should be OVER or UNDER, got {bet.over_under_selection}"
-            assert bet.total_points is not None, \
-                "❌ total_points should be stored"
+            assert bet.over_under_selection in [
+                OverUnder.OVER,
+                OverUnder.UNDER,
+            ], f"❌ over_under_selection should be OVER or UNDER, got {bet.over_under_selection}"
+            assert (
+                bet.total_points is not None
+            ), "❌ total_points should be stored"
 
             print("✅ Total bet has proper over/under enum")
             return {"status": "passed"}
@@ -194,11 +209,16 @@ class TestUnifiedBetVerification:
             print(f"Checking {len(bets)} bets:")
             for bet in bets:
                 status = bet.status
-                print(f"  Bet {bet.id[:8]}: status={status.value} (type: {type(status).__name__})")
+                status_type_name = type(status).__name__
+                print(
+                    f"  Bet {bet.id[:8]}: status={status.value} "
+                    f"(type: {status_type_name})"
+                )
 
                 # Validate it's an enum, not a string
-                assert isinstance(status, BetStatus), \
-                    f"❌ status should be BetStatus enum, got {type(status)}"
+                assert isinstance(
+                    status, BetStatus
+                ), f"❌ status should be BetStatus enum, got {type(status)}"
 
             print("✅ All bets use BetStatus enum (not strings)")
             return {"status": "passed"}
@@ -228,12 +248,15 @@ class TestUnifiedBetVerification:
             print(f"  Home Team: {bet.home_team}")
             print(f"  Away Team: {bet.away_team}")
 
-            assert bet.odds_api_event_id is not None, \
-                "❌ odds_api_event_id should be stored"
-            assert bet.home_team is not None, \
-                "❌ home_team should be stored for score matching"
-            assert bet.away_team is not None, \
-                "❌ away_team should be stored for score matching"
+            assert (
+                bet.odds_api_event_id is not None
+            ), "❌ odds_api_event_id should be stored"
+            assert (
+                bet.home_team is not None
+            ), "❌ home_team should be stored for score matching"
+            assert (
+                bet.away_team is not None
+            ), "❌ away_team should be stored for score matching"
 
             print("✅ Bet has proper odds_api_event_id and team names")
             return {"status": "passed"}

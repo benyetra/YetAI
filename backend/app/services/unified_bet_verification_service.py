@@ -186,7 +186,10 @@ class UnifiedBetVerificationService:
         # Check if game is completed using the completed boolean field from Odds API
         is_completed = game_data.get("completed")
         if not is_completed:
-            logger.debug(f"Game {bet.odds_api_event_id[:8]} not yet completed (completed={is_completed})")
+            logger.debug(
+                f"Game {bet.odds_api_event_id[:8]} not yet completed "
+                f"(completed={is_completed})"
+            )
             return None
 
         # Get final scores - match by team name, not array index
@@ -311,20 +314,48 @@ class UnifiedBetVerificationService:
             adjusted_home = home_score + spread
             if adjusted_home > away_score:
                 payout = bet.amount + bet.potential_win
-                return BetStatus.WON, payout, f"Won: {bet.selected_team_name} {spread:+.1f} covered ({adjusted_home:.1f} vs {away_score})"
+                return (
+                    BetStatus.WON,
+                    payout,
+                    f"Won: {bet.selected_team_name} {spread:+.1f} covered "
+                    f"({adjusted_home:.1f} vs {away_score})",
+                )
             elif adjusted_home == away_score:
-                return BetStatus.PUSHED, bet.amount, f"Push: {bet.selected_team_name} {spread:+.1f} tied"
+                return (
+                    BetStatus.PUSHED,
+                    bet.amount,
+                    f"Push: {bet.selected_team_name} {spread:+.1f} tied",
+                )
             else:
-                return BetStatus.LOST, 0.0, f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover ({adjusted_home:.1f} vs {away_score})"
+                return (
+                    BetStatus.LOST,
+                    0.0,
+                    f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover "
+                    f"({adjusted_home:.1f} vs {away_score})",
+                )
         else:  # AWAY
             adjusted_away = away_score + spread
             if adjusted_away > home_score:
                 payout = bet.amount + bet.potential_win
-                return BetStatus.WON, payout, f"Won: {bet.selected_team_name} {spread:+.1f} covered ({adjusted_away:.1f} vs {home_score})"
+                return (
+                    BetStatus.WON,
+                    payout,
+                    f"Won: {bet.selected_team_name} {spread:+.1f} covered "
+                    f"({adjusted_away:.1f} vs {home_score})",
+                )
             elif adjusted_away == home_score:
-                return BetStatus.PUSHED, bet.amount, f"Push: {bet.selected_team_name} {spread:+.1f} tied"
+                return (
+                    BetStatus.PUSHED,
+                    bet.amount,
+                    f"Push: {bet.selected_team_name} {spread:+.1f} tied",
+                )
             else:
-                return BetStatus.LOST, 0.0, f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover ({adjusted_away:.1f} vs {home_score})"
+                return (
+                    BetStatus.LOST,
+                    0.0,
+                    f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover "
+                    f"({adjusted_away:.1f} vs {home_score})",
+                )
 
     def _evaluate_total(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
@@ -358,11 +389,17 @@ class UnifiedBetVerificationService:
                 f"Lost: {direction} {line} (total: {total_score})",
             )
 
-    def _evaluate_parlay(self, bet: SimpleUnifiedBet) -> Tuple[BetStatus, float, str]:
+    def _evaluate_parlay(
+        self, bet: SimpleUnifiedBet
+    ) -> Tuple[BetStatus, float, str]:
         """Evaluate parlay bet - check all legs"""
         # For now, return pending - parlay evaluation is complex
         # Would need to check all legs in the parlay
-        return BetStatus.PENDING, 0.0, "Parlay evaluation not yet implemented"
+        return (
+            BetStatus.PENDING,
+            0.0,
+            "Parlay evaluation not yet implemented",
+        )
 
     async def _apply_results(self, results: List[UnifiedBetResult], db: Session):
         """Apply verification results to database"""
