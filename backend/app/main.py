@@ -3166,7 +3166,7 @@ async def get_bet_history(
         # Get all user bets from unified service
         bets = await simple_unified_bet_service.get_user_bets(
             current_user.get("id") or current_user.get("user_id"),
-            include_legs=True,  # Include parlay legs for complete history
+            include_legs=False,  # Exclude parlay legs, only show parent bets
         )
 
         # Apply filters
