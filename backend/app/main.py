@@ -442,6 +442,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
 
         # Get trend data from betting analytics
         from app.core.database import SessionLocal
+
         db = SessionLocal()
         try:
             trends = await analytics_service._get_performance_trend(user_id, db)
@@ -458,9 +459,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         personal_stats = {
             "predictions_made": stats["total_bets"],
             "accuracy_rate": round(stats["win_rate"] * 100, 1),
-            "total_profit": round(
-                stats["total_winnings"] - stats["total_wagered"], 2
-            ),
+            "total_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
             "roi": round(stats["roi"] * 100, 1),
             "total_wagered": round(stats["total_wagered"], 2),
             "total_winnings": round(stats["total_winnings"], 2),
