@@ -458,7 +458,9 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         personal_stats = {
             "predictions_made": stats["total_bets"],
             "accuracy_rate": round(stats["win_rate"] * 100, 1),
-            "total_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
+            "total_profit": round(
+                stats["total_winnings"] - stats["total_wagered"], 2
+            ),
             "roi": round(stats["roi"] * 100, 1),
             "total_wagered": round(stats["total_wagered"], 2),
             "total_winnings": round(stats["total_winnings"], 2),
@@ -479,7 +481,9 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "total_predictions": stats["total_bets"],
                 "overall_accuracy": round(stats["win_rate"] * 100, 1),
                 "total_wagered": round(stats["total_wagered"], 2),
-                "net_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
+                "net_profit": round(
+                    stats["total_winnings"] - stats["total_wagered"], 2
+                ),
                 "resolved_predictions": stats.get(
                     "total_resolved_bets", stats["total_bets"]
                 ),
