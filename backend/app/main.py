@@ -457,19 +457,14 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         # Format the response for the dashboard
         personal_stats = {
             "predictions_made": stats["total_bets"],
-            "accuracy_rate": round(
-                stats["win_rate"] * 100, 1
-            ),  # Convert to percentage and round to 1 decimal
+            "accuracy_rate": round(stats["win_rate"] * 100, 1),
             "total_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
-            "roi": round(
-                stats["roi"] * 100, 1
-            ),  # Convert to percentage and round to 1 decimal
+            "roi": round(stats["roi"] * 100, 1),
             "total_wagered": round(stats["total_wagered"], 2),
             "total_winnings": round(stats["total_winnings"], 2),
             "favorite_sport": stats["favorite_sport"],
             "favorite_bet_type": stats["favorite_bet_type"],
             "win_streak": stats.get("current_streak", {}).get("count", 0),
-            # Add trend data
             "weekly_bet_change": weekly_bet_change,
             "accuracy_change": accuracy_change,
             "profit_change": profit_change,
@@ -484,9 +479,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "total_predictions": stats["total_bets"],
                 "overall_accuracy": round(stats["win_rate"] * 100, 1),
                 "total_wagered": round(stats["total_wagered"], 2),
-                "net_profit": round(
-                    stats["total_winnings"] - stats["total_wagered"], 2
-                ),
+                "net_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
                 "resolved_predictions": stats.get(
                     "total_resolved_bets", stats["total_bets"]
                 ),
