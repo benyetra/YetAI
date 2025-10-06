@@ -264,18 +264,18 @@ class SimpleUnifiedBetService:
                 db.commit()
 
                 logger.info(
-                    f"Placed parlay {parlay_id} with {len(parlay_data.legs)} "
-                    f"legs for user {user_id}"
+                    "Placed parlay %s with %s legs for user %s",
+                    parlay_id,
+                    len(parlay_data.legs),
+                    user_id,
                 )
 
+                legs_count = len(parlay_data.legs)
                 return {
                     "success": True,
                     "parlay_id": parlay_id,
                     "leg_ids": leg_ids,
-                    "message": (
-                        f"Parlay with {len(parlay_data.legs)} legs "
-                        f"placed successfully"
-                    ),
+                    "message": f"Parlay with {legs_count} legs placed successfully",
                     "parlay": self._format_bet_response(parlay_parent),
                 }
 
