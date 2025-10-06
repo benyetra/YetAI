@@ -291,16 +291,18 @@ const BetHistory: React.FC = () => {
           return `MONEYLINE - ${bet.selection}`;
         }
       } else if (cleanBetType.toLowerCase() === 'spread') {
-        // For spread, check if selection is home/away or team name
-        if (bet.selection === 'home' || bet.selection === 'away') {
+        // For spread, check if selection already includes spread value
+        if (bet.selection && (bet.selection.includes('+') || bet.selection.includes('-')) && /[+-]?\d+\.?\d*/.test(bet.selection)) {
+          // Selection already has spread value (e.g., "Philadelphia Eagles -7")
+          return `${bet.selection} (${gameInfo})`;
+        } else if (bet.selection === 'home' || bet.selection === 'away') {
           const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
           return `${team} Spread (${gameInfo})`;
         } else if (bet.selection === bet.home_team || bet.selection === bet.away_team) {
           // Selection is the actual team name
           return `${bet.selection} Spread (${gameInfo})`;
         } else {
-          // This is the key fix - when we have team info but selection doesn't match exactly,
-          // still show the spread format with the selection as provided
+          // Fallback - when we have team info but selection doesn't match exactly
           return `${bet.selection} Spread (${gameInfo})`;
         }
       } else if (cleanBetType.toLowerCase() === 'total') {

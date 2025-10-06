@@ -764,7 +764,7 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                           </h4>
                           <div className="space-y-2">
                             <button
-                              onClick={() => placeUpcomingBet(game, 'spread', 'away', -110)}
+                              onClick={() => placeUpcomingBet(game, 'spread', `${game.away_team} ${formatSpread(-spreadLine)}`, -110)}
                               disabled={placingBet === `${game.id}-spread-away`}
                               className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >
@@ -776,7 +776,7 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
                               </div>
                             </button>
                             <button
-                              onClick={() => placeUpcomingBet(game, 'spread', 'home', -110)}
+                              onClick={() => placeUpcomingBet(game, 'spread', `${game.home_team} ${formatSpread(spreadLine)}`, -110)}
                               disabled={placingBet === `${game.id}-spread-home`}
                               className="w-full flex items-center justify-between p-3 bg-white border border-gray-300 rounded-lg hover:bg-purple-50 hover:border-purple-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                             >

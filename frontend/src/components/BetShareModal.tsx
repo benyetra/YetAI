@@ -90,6 +90,10 @@ export default function BetShareModal({ bet, isOpen, onClose }: BetShareModalPro
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} to Win (${gameInfo})`;
       } else if (bet.bet_type === 'spread') {
+        // Use full selection if it contains spread info, otherwise fallback
+        if (bet.selection && (bet.selection.includes('+') || bet.selection.includes('-'))) {
+          return `${bet.selection} (${gameInfo})`;
+        }
         const team = bet.selection === 'home' ? bet.home_team : bet.away_team;
         return `${team} Spread (${gameInfo})`;
       } else if (bet.bet_type === 'total') {
