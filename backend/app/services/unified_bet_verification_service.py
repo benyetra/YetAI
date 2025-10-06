@@ -1,12 +1,22 @@
 """
-Unified Bet Verification Service - Modern verification for unified betting system
+Unified Bet Verification Service - THE ONLY SERVICE FOR BET VERIFICATION
+
+⚠️ IMPORTANT: This is the ONLY bet verification service that should be used.
+   The old bet_verification_service.py has been deprecated.
 
 This service works with the SimpleUnifiedBet model and uses The Odds API for verification:
 1. Fetches pending bets from simple_unified_bets table
 2. Uses odds_api_event_id to get game results from The Odds API
-3. Determines bet outcomes based on real API data
+3. Determines bet outcomes based on real API data using stored enums (no string parsing)
 4. Updates bet statuses and calculates payouts
 5. Handles individual bets, parlays, and live bets uniformly
+
+Key improvements over old service:
+- No string parsing for bet outcomes (uses TeamSide, OverUnder enums set during bet creation)
+- Matches scores by team name, not array position
+- Uses explicit 'completed' boolean from Odds API
+- Spread values include +/- sign for proper calculation
+- All status comparisons use BetStatus enum
 """
 
 import asyncio
@@ -173,19 +183,40 @@ class UnifiedBetVerificationService:
             )
             return None
 
-        # Check if game is completed
-        if not game_data.get("completed", False):
-            logger.debug(f"Game {bet.odds_api_event_id[:8]} not yet completed")
+        # Check if game is completed using the completed boolean field from Odds API
+        is_completed = game_data.get("completed")
+        if not is_completed:
+            logger.debug(f"Game {bet.odds_api_event_id[:8]} not yet completed (completed={is_completed})")
             return None
 
-        # Get final scores
+        # Get final scores - match by team name, not array index
         scores = game_data.get("scores")
         if not scores or len(scores) < 2:
             logger.warning(f"Invalid scores for game {bet.odds_api_event_id[:8]}")
             return None
 
-        home_score = scores[0].get("score", 0)
-        away_score = scores[1].get("score", 0)
+        # Match scores to home/away teams by name
+        home_score = None
+        away_score = None
+
+        for score_entry in scores:
+            team_name = score_entry.get("name", "")
+            score_value = score_entry.get("score")
+
+            # Match against bet's stored team names
+            if team_name == bet.home_team:
+                home_score = int(score_value) if score_value is not None else 0
+            elif team_name == bet.away_team:
+                away_score = int(score_value) if score_value is not None else 0
+
+        # Verify we found both scores
+        if home_score is None or away_score is None:
+            logger.warning(
+                f"Could not match scores to teams for game {bet.odds_api_event_id[:8]}. "
+                f"Expected teams: {bet.home_team} vs {bet.away_team}. "
+                f"API teams: {[s.get('name') for s in scores]}"
+            )
+            return None
 
         logger.info(
             f"Verifying bet {bet.id[:8]}: {bet.bet_type.value} - {bet.selection}"
@@ -241,84 +272,64 @@ class UnifiedBetVerificationService:
     def _evaluate_moneyline(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
     ) -> Tuple[BetStatus, float, str]:
-        """Evaluate moneyline bet"""
+        """Evaluate moneyline bet using stored team_selection enum"""
 
         if home_score == away_score:
             return BetStatus.PUSHED, bet.amount, "Game tied - bet pushed"
 
-        winner = "home" if home_score > away_score else "away"
+        # Determine actual winner
+        actual_winner = TeamSide.HOME if home_score > away_score else TeamSide.AWAY
 
-        # Parse selection - could be "home", "away", or team name
-        selection = bet.selection.lower()
-        bet_winner = None
-
-        if selection in ["home", winner] or (
-            bet.selected_team_name
-            and bet.selected_team_name.lower() == bet.home_team.lower()
-            and winner == "home"
-        ):
-            bet_winner = "home"
-        elif selection in ["away"] or (
-            bet.selected_team_name
-            and bet.selected_team_name.lower() == bet.away_team.lower()
-            and winner == "away"
-        ):
-            bet_winner = "away"
-        elif bet.selected_team_name:
-            # Team name selection
-            if bet.selected_team_name.lower() == bet.home_team.lower():
-                bet_winner = "home"
-            elif bet.selected_team_name.lower() == bet.away_team.lower():
-                bet_winner = "away"
-
-        if bet_winner == winner:
+        # Use stored team_selection enum (set during bet creation)
+        if bet.team_selection == actual_winner:
             payout = bet.amount + bet.potential_win
             return (
                 BetStatus.WON,
                 payout,
-                f"Won: {bet.selected_team_name or selection} won",
+                f"Won: {bet.selected_team_name} won ({home_score}-{away_score})",
             )
         else:
             return (
                 BetStatus.LOST,
                 0.0,
-                f"Lost: {bet.selected_team_name or selection} lost",
+                f"Lost: {bet.selected_team_name} lost ({home_score}-{away_score})",
             )
 
     def _evaluate_spread(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
     ) -> Tuple[BetStatus, float, str]:
-        """Evaluate spread bet"""
+        """Evaluate spread bet using stored spread_selection enum and spread_value with +/- sign"""
 
         if not bet.spread_value:
             return BetStatus.LOST, 0.0, "Invalid spread value"
 
+        # spread_value already includes +/- sign (e.g., -7.5 or +3.5)
         spread = bet.spread_value
 
-        # Apply spread to selected team
+        # Apply spread to selected team (spread already has correct sign)
         if bet.spread_selection == TeamSide.HOME:
             adjusted_home = home_score + spread
             if adjusted_home > away_score:
                 payout = bet.amount + bet.potential_win
-                return BetStatus.WON, payout, f"Won: Home +{spread} covered"
+                return BetStatus.WON, payout, f"Won: {bet.selected_team_name} {spread:+.1f} covered ({adjusted_home:.1f} vs {away_score})"
             elif adjusted_home == away_score:
-                return BetStatus.PUSHED, bet.amount, f"Push: Home +{spread} tied"
+                return BetStatus.PUSHED, bet.amount, f"Push: {bet.selected_team_name} {spread:+.1f} tied"
             else:
-                return BetStatus.LOST, 0.0, f"Lost: Home +{spread} didn't cover"
+                return BetStatus.LOST, 0.0, f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover ({adjusted_home:.1f} vs {away_score})"
         else:  # AWAY
             adjusted_away = away_score + spread
             if adjusted_away > home_score:
                 payout = bet.amount + bet.potential_win
-                return BetStatus.WON, payout, f"Won: Away +{spread} covered"
+                return BetStatus.WON, payout, f"Won: {bet.selected_team_name} {spread:+.1f} covered ({adjusted_away:.1f} vs {home_score})"
             elif adjusted_away == home_score:
-                return BetStatus.PUSHED, bet.amount, f"Push: Away +{spread} tied"
+                return BetStatus.PUSHED, bet.amount, f"Push: {bet.selected_team_name} {spread:+.1f} tied"
             else:
-                return BetStatus.LOST, 0.0, f"Lost: Away +{spread} didn't cover"
+                return BetStatus.LOST, 0.0, f"Lost: {bet.selected_team_name} {spread:+.1f} didn't cover ({adjusted_away:.1f} vs {home_score})"
 
     def _evaluate_total(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
     ) -> Tuple[BetStatus, float, str]:
-        """Evaluate total (over/under) bet"""
+        """Evaluate total (over/under) bet using stored over_under_selection enum"""
 
         if not bet.total_points:
             return BetStatus.LOST, 0.0, "Invalid total points value"
@@ -326,9 +337,8 @@ class UnifiedBetVerificationService:
         total_score = home_score + away_score
         line = bet.total_points
 
-        # Determine if bet was over or under
-        selection = bet.selection.lower()
-        is_over = "over" in selection or bet.over_under_selection == OverUnder.OVER
+        # Use stored over_under_selection enum (set during bet creation)
+        is_over = bet.over_under_selection == OverUnder.OVER
 
         if total_score == line:
             return BetStatus.PUSHED, bet.amount, f"Push: Total exactly {line}"

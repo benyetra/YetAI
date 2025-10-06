@@ -1,8 +1,20 @@
 """
-Simple Unified Bet Service - Single service for all betting operations
+Simple Unified Bet Service - THE ONLY SERVICE FOR BET CREATION
+
+⚠️ IMPORTANT: This is the ONLY bet creation service that should be used.
+   Old services (bet_service_db, yetai_bets_service_db, etc.) are deprecated.
 
 This service replaces the separate bet, parlay, live, and yetai bet services
 by using the unified simple_unified_bets table structure.
+
+Key features for proper bet verification:
+- Stores TeamSide enum (HOME/AWAY) for moneyline bets during creation
+- Stores OverUnder enum (OVER/UNDER) for total bets during creation
+- Stores spread values with +/- sign (e.g., -7.5 or +3.5)
+- Stores spread_selection enum (HOME/AWAY) for spread bets
+- Stores exact team names from Odds API for score matching
+- Stores odds_api_event_id for precise game identification
+- No complex string parsing needed during verification
 """
 
 import uuid
@@ -517,9 +529,15 @@ class SimpleUnifiedBetService:
             import re
 
             # Look for patterns like "Team +7.5" or "Team -3.5"
+            # Must capture the +/- sign to preserve whether it's a positive or negative spread
             spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
             if spread_match:
-                result["spread_value"] = float(spread_match.group(1))
+                # Store spread with +/- sign (e.g., -7.5 or +3.5)
+                spread_str = spread_match.group(1)
+                # Ensure we have a sign (default to negative if no sign present)
+                if not spread_str.startswith(('+', '-')):
+                    spread_str = '-' + spread_str
+                result["spread_value"] = float(spread_str)
 
                 if home_team and home_team.lower() in selection_lower:
                     result["spread_selection"] = TeamSide.HOME
