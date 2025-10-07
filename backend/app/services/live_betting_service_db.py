@@ -434,6 +434,18 @@ class LiveBettingServiceDB:
 
                 for sport_key in sports_to_check:
                     try:
+                        # First, get live scores to identify actually live games
+                        logger.info(f"Fetching live scores for sport: {sport_key}")
+                        live_scores = await self.get_real_live_scores(sport_key.value)
+                        logger.info(
+                            f"Found {len(live_scores)} live games for {sport_key}"
+                        )
+
+                        if not live_scores:
+                            logger.info(f"No live games for {sport_key}, skipping")
+                            continue
+
+                        # Now fetch odds for these games
                         logger.info(f"Fetching odds for sport: {sport_key}")
                         odds_data = await odds_service.get_odds(
                             sport=sport_key.value,
@@ -456,19 +468,27 @@ class LiveBettingServiceDB:
                         )
 
                         # Process each game to create live markets
-                        for i, game in enumerate(
-                            games_data[:10]
-                        ):  # Take first 10 games
+                        # Only create markets for games that are actually live
+                        for game in games_data:
+                            # Check if this game is in our live scores
+                            if game.id not in live_scores:
+                                continue
+
                             logger.info(
-                                f"Processing game {i+1}: {game.home_team} vs {game.away_team}"
+                                f"Processing live game: {game.home_team} vs {game.away_team}"
                             )
 
                             try:
-                                # Use the simpler market creation method that always works
-                                market = await self._create_simple_live_market(game)
+                                # Get live scores for this game
+                                score_data = live_scores[game.id]
+
+                                # Create market with live score data
+                                market = await self._create_live_market_with_scores(
+                                    game, score_data
+                                )
                                 if market:
                                     logger.info(
-                                        f"✓ Market created: {market.home_team} vs {market.away_team}"
+                                        f"✓ Live market created: {market.home_team} vs {market.away_team} ({score_data['home_score']}-{score_data['away_score']})"
                                     )
                                     markets.append(market)
                                 else:
@@ -795,6 +815,89 @@ class LiveBettingServiceDB:
 
         except Exception as e:
             logger.error(f"Error creating live market for game {game.id}: {e}")
+            return None
+
+    async def _create_live_market_with_scores(
+        self, game, score_data: Dict[str, Any]
+    ) -> Optional[LiveBettingMarket]:
+        """Create live betting market using actual live scores from API"""
+        try:
+            from app.models.live_bet_models import LiveBettingMarket, GameStatus
+            from datetime import datetime
+
+            # Extract odds from the game data
+            moneyline_odds, moneyline_bookmaker = self._extract_odds_from_game(
+                game, "h2h"
+            )
+            spread_odds, spread_bookmaker = self._extract_odds_from_game(
+                game, "spreads"
+            )
+            total_odds, total_bookmaker = self._extract_odds_from_game(game, "totals")
+
+            # Determine available markets based on what odds we found
+            markets_available = []
+            if moneyline_odds:
+                markets_available.append("moneyline")
+            if spread_odds:
+                markets_available.append("spreads")
+            if total_odds:
+                markets_available.append("totals")
+
+            # Use actual live scores
+            home_score = score_data.get("home_score", 0)
+            away_score = score_data.get("away_score", 0)
+
+            # Determine game status based on sport
+            # For now, use a generic "In Progress" status
+            game_status = GameStatus.IN_PROGRESS
+
+            market = LiveBettingMarket(
+                game_id=game.id,
+                sport=getattr(game, "sport_key", score_data.get("sport", "unknown")),
+                home_team=game.home_team,
+                away_team=game.away_team,
+                game_status=game_status,
+                home_score=home_score,
+                away_score=away_score,
+                time_remaining="Live",
+                commence_time=(
+                    datetime.fromisoformat(str(game.commence_time).replace("Z", "+00:00"))
+                    if game.commence_time
+                    else datetime.utcnow()
+                ),
+                markets_available=markets_available,
+                moneyline_home=moneyline_odds.get("home") if moneyline_odds else None,
+                moneyline_away=moneyline_odds.get("away") if moneyline_odds else None,
+                spread_line=spread_odds.get("point") if spread_odds else None,
+                spread_home_odds=spread_odds.get("home_odds") if spread_odds else None,
+                spread_away_odds=spread_odds.get("away_odds") if spread_odds else None,
+                total_line=total_odds.get("point") if total_odds else None,
+                total_over_odds=total_odds.get("over_odds") if total_odds else None,
+                total_under_odds=total_odds.get("under_odds") if total_odds else None,
+                moneyline_bookmaker=moneyline_bookmaker,
+                spread_bookmaker=spread_bookmaker,
+                total_bookmaker=total_bookmaker,
+                is_suspended=False,
+                suspension_reason=None,
+                last_updated=datetime.utcnow(),
+            )
+
+            # Add to live_games cache
+            from app.models.live_bet_models import LiveGameUpdate
+
+            live_game = LiveGameUpdate(
+                game_id=game.id,
+                home_score=home_score,
+                away_score=away_score,
+                game_status=game_status,
+                time_remaining="Live",
+            )
+            self.live_games[game.id] = live_game
+
+            return market
+
+        except Exception as e:
+            logger.error(f"Error creating live market with scores for game {game.id}: {e}")
             return None
 
     def _extract_odds_from_game(self, game, market_type: str) -> tuple:
