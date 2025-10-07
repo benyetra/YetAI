@@ -861,7 +861,9 @@ class LiveBettingServiceDB:
                 away_score=away_score,
                 time_remaining="Live",
                 commence_time=(
-                    datetime.fromisoformat(str(game.commence_time).replace("Z", "+00:00"))
+                    datetime.fromisoformat(
+                        str(game.commence_time).replace("Z", "+00:00")
+                    )
                     if game.commence_time
                     else datetime.utcnow()
                 ),
@@ -897,7 +899,9 @@ class LiveBettingServiceDB:
             return market
 
         except Exception as e:
-            logger.error(f"Error creating live market with scores for game {game.id}: {e}")
+            logger.error(
+                f"Error creating live market with scores for game {game.id}: {e}"
+            )
             return None
 
     def _extract_odds_from_game(self, game, market_type: str) -> tuple:
