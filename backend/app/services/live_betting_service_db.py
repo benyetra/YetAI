@@ -434,16 +434,12 @@ class LiveBettingServiceDB:
 
                 for sport_key in sports_to_check:
                     try:
-                        # First, get live scores to identify actually live games
+                        # First, try to get live scores to identify actually live games
                         logger.info(f"Fetching live scores for sport: {sport_key}")
                         live_scores = await self.get_real_live_scores(sport_key.value)
                         logger.info(
                             f"Found {len(live_scores)} live games for {sport_key}"
                         )
-
-                        if not live_scores:
-                            logger.info(f"No live games for {sport_key}, skipping")
-                            continue
 
                         # Now fetch odds for these games
                         logger.info(f"Fetching odds for sport: {sport_key}")
@@ -468,31 +464,36 @@ class LiveBettingServiceDB:
                         )
 
                         # Process each game to create live markets
-                        # Only create markets for games that are actually live
                         for game in games_data:
-                            # Check if this game is in our live scores
-                            if game.id not in live_scores:
-                                continue
-
                             logger.info(
-                                f"Processing live game: {game.home_team} vs {game.away_team}"
+                                f"Checking game: {game.home_team} vs {game.away_team} (ID: {game.id})"
                             )
 
                             try:
-                                # Get live scores for this game
-                                score_data = live_scores[game.id]
+                                # Check if we have live scores for this game
+                                if game.id in live_scores:
+                                    # Use actual live scores
+                                    score_data = live_scores[game.id]
+                                    logger.info(
+                                        f"Found live scores: {score_data['home_score']}-{score_data['away_score']}"
+                                    )
+                                    market = await self._create_live_market_with_scores(
+                                        game, score_data
+                                    )
+                                else:
+                                    # Fall back to time-based check
+                                    logger.info(
+                                        f"No live scores found, using time-based check"
+                                    )
+                                    market = await self._create_simple_live_market(game)
 
-                                # Create market with live score data
-                                market = await self._create_live_market_with_scores(
-                                    game, score_data
-                                )
                                 if market:
                                     logger.info(
-                                        f"✓ Live market created: {market.home_team} vs {market.away_team} ({score_data['home_score']}-{score_data['away_score']})"
+                                        f"✓ Live market created: {market.home_team} vs {market.away_team}"
                                     )
                                     markets.append(market)
                                 else:
-                                    logger.warning(f"✗ Market creation returned None")
+                                    logger.info(f"✗ Game not currently live")
                             except Exception as e:
                                 logger.error(f"✗ Error creating market: {e}")
                                 continue
