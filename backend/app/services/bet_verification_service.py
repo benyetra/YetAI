@@ -1093,6 +1093,18 @@ class BetVerificationService:
                     f"Failed to send notification for bet {bet.id}: {notify_error}"
                 )
 
+            # IMPORTANT: If this is a parlay leg, check if parent parlay should be settled
+            if db_bet.parent_bet_id:
+                logger.info(
+                    f"Leg {bet.id} is part of parlay {db_bet.parent_bet_id}, checking if parlay should be settled"
+                )
+                try:
+                    await self._check_and_settle_parent_parlay(db_bet.parent_bet_id)
+                except Exception as parlay_error:
+                    logger.error(
+                        f"Error checking parent parlay {db_bet.parent_bet_id}: {parlay_error}"
+                    )
+
         except Exception as e:
             db.rollback()
             logger.error(f"❌ Error settling bet {bet.id}: {e}")
@@ -1103,6 +1115,120 @@ class BetVerificationService:
                 f"   - Result details: status={result.status}, amount={result.result_amount}"
             )
             raise  # Re-raise to ensure calling code knows the settlement failed
+        finally:
+            db.close()
+
+    async def _check_and_settle_parent_parlay(self, parlay_id: str) -> None:
+        """
+        Check if a parlay should be settled after one of its legs is settled.
+        - If ANY leg is lost, settle parlay as LOST immediately
+        - If ALL legs are settled (won/pushed), settle parlay as WON or PUSHED
+        """
+        db = SessionLocal()
+        try:
+            # Get the parlay and all its legs
+            parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+            if not parlay:
+                logger.error(f"Parlay {parlay_id} not found")
+                return
+
+            # If parlay is already settled, skip
+            if parlay.status != BetStatus.PENDING:
+                logger.info(
+                    f"Parlay {parlay_id} already settled as {parlay.status.value}"
+                )
+                return
+
+            # Get all legs for this parlay
+            legs = db.query(Bet).filter(Bet.parent_bet_id == parlay_id).all()
+            if not legs:
+                logger.error(f"No legs found for parlay {parlay_id}")
+                return
+
+            won_legs = 0
+            lost_legs = 0
+            pushed_legs = 0
+            pending_legs = 0
+
+            for leg in legs:
+                if leg.status == BetStatus.WON:
+                    won_legs += 1
+                elif leg.status == BetStatus.LOST:
+                    lost_legs += 1
+                elif leg.status == BetStatus.PUSHED:
+                    pushed_legs += 1
+                elif leg.status == BetStatus.PENDING:
+                    pending_legs += 1
+
+            logger.info(
+                f"Parlay {parlay_id} status: {won_legs} won, {lost_legs} lost, "
+                f"{pushed_legs} pushed, {pending_legs} pending out of {len(legs)} legs"
+            )
+
+            # RULE 1: If ANY leg is lost, parlay loses immediately
+            if lost_legs > 0:
+                logger.info(f"❌ Parlay {parlay_id} LOST: {lost_legs} legs lost")
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.LOST,
+                    result_amount=0,
+                    reasoning=f"Parlay lost: {lost_legs} of {len(legs)} legs lost",
+                )
+                await self._settle_parlay(parlay, result)
+                return
+
+            # RULE 2: If any legs are still pending, don't settle yet
+            if pending_legs > 0:
+                logger.info(
+                    f"⏳ Parlay {parlay_id} still pending: {pending_legs} legs not yet settled"
+                )
+                return
+
+            # RULE 3: All legs are settled (won/pushed)
+            total_legs = len(legs)
+            active_legs = total_legs - pushed_legs
+
+            if active_legs == 0:
+                # All legs pushed - refund
+                logger.info(f"🔄 Parlay {parlay_id} PUSHED: all legs pushed")
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.PUSHED,
+                    result_amount=parlay.amount,
+                    reasoning=f"Parlay pushed: All {total_legs} legs pushed",
+                )
+            elif won_legs == active_legs:
+                # All active legs won - calculate payout
+                logger.info(
+                    f"✅ Parlay {parlay_id} WON: all {active_legs} active legs won"
+                )
+                # Use the original potential_win if no pushes, otherwise recalculate
+                if pushed_legs == 0:
+                    payout = parlay.potential_win
+                else:
+                    # Recalculate based on remaining legs
+                    payout = self._calculate_adjusted_parlay_payout(parlay, pushed_legs)
+
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.WON,
+                    result_amount=parlay.amount + payout,
+                    reasoning=f"Parlay won: All {active_legs} active legs won (out of {total_legs} total legs)",
+                )
+            else:
+                logger.warning(
+                    f"⚠️ Unexpected parlay state for {parlay_id}: "
+                    f"{won_legs} won, {lost_legs} lost, {pushed_legs} pushed, {pending_legs} pending"
+                )
+                return
+
+            await self._settle_parlay(parlay, result)
+
+        except Exception as e:
+            logger.error(f"Error checking parent parlay {parlay_id}: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
         finally:
             db.close()
 
