@@ -434,15 +434,8 @@ class LiveBettingServiceDB:
 
                 for sport_key in sports_to_check:
                     try:
-                        # First, try to get live scores to identify actually live games
-                        logger.info(f"Fetching live scores for sport: {sport_key}")
-                        live_scores = await self.get_real_live_scores(sport_key.value)
-                        logger.info(
-                            f"Found {len(live_scores)} live games for {sport_key}"
-                        )
-
-                        # Now fetch odds for these games
-                        logger.info(f"Fetching odds for sport: {sport_key}")
+                        # Fetch odds for this sport
+                        logger.info(f"Fetching odds for sport: {sport_key.value}")
                         odds_data = await odds_service.get_odds(
                             sport=sport_key.value,
                             markets=[
@@ -460,42 +453,58 @@ class LiveBettingServiceDB:
                             else odds_data.get("data", [])
                         )
                         logger.info(
-                            f"API returned {len(games_data)} games for {sport_key}"
+                            f"API returned {len(games_data)} games for {sport_key.value}"
                         )
 
-                        # Process each game to create live markets
-                        for game in games_data:
+                        # Try to get live scores (optional, for displaying actual scores)
+                        logger.info(
+                            f"Attempting to fetch live scores for {sport_key.value}"
+                        )
+                        live_scores = {}
+                        try:
+                            live_scores = await self.get_real_live_scores(
+                                sport_key.value
+                            )
                             logger.info(
-                                f"Checking game: {game.home_team} vs {game.away_team} (ID: {game.id})"
+                                f"Found {len(live_scores)} games with live scores"
+                            )
+                        except Exception as score_error:
+                            logger.warning(
+                                f"Could not fetch live scores: {score_error}"
                             )
 
+                        # Process each game to create live markets
+                        for i, game in enumerate(games_data):
+                            logger.info(
+                                f"[{i+1}/{len(games_data)}] Checking: {game.home_team} vs {game.away_team}"
+                            )
+                            logger.info(f"  Commence time: {game.commence_time}")
+
                             try:
-                                # Check if we have live scores for this game
-                                if game.id in live_scores:
-                                    # Use actual live scores
+                                # Try time-based check first
+                                market = await self._create_simple_live_market(game)
+
+                                # If we have live scores, update the market with actual scores
+                                if market and game.id in live_scores:
                                     score_data = live_scores[game.id]
                                     logger.info(
-                                        f"Found live scores: {score_data['home_score']}-{score_data['away_score']}"
+                                        f"  Updating with live scores: {score_data['home_score']}-{score_data['away_score']}"
                                     )
-                                    market = await self._create_live_market_with_scores(
-                                        game, score_data
-                                    )
-                                else:
-                                    # Fall back to time-based check
-                                    logger.info(
-                                        f"No live scores found, using time-based check"
-                                    )
-                                    market = await self._create_simple_live_market(game)
+                                    market.home_score = score_data["home_score"]
+                                    market.away_score = score_data["away_score"]
 
                                 if market:
                                     logger.info(
-                                        f"✓ Live market created: {market.home_team} vs {market.away_team}"
+                                        f"✓ Live market created: {market.home_team} vs {market.away_team} ({market.home_score}-{market.away_score})"
                                     )
                                     markets.append(market)
                                 else:
                                     logger.info(f"✗ Game not currently live")
                             except Exception as e:
                                 logger.error(f"✗ Error creating market: {e}")
+                                import traceback
+
+                                logger.error(traceback.format_exc())
                                 continue
 
                     except Exception as e:
