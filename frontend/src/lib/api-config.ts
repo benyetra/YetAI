@@ -57,8 +57,8 @@ function getApiConfig(): ApiConfig {
   switch (environment) {
     case 'production':
       return {
-        baseURL: 'https://backend-production-f7af.up.railway.app',
-        wsURL: 'wss://backend-production-f7af.up.railway.app',
+        baseURL: 'https://api.yetai.app',
+        wsURL: 'wss://api.yetai.app',
         environment
       };
       
