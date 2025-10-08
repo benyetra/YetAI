@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, Optional, List
 import jwt
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.config import settings
@@ -20,32 +20,30 @@ import re
 
 logger = logging.getLogger(__name__)
 
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Use bcrypt directly to avoid passlib version compatibility issues
 
 class AuthServiceDB:
     """Database-powered user authentication and session management"""
-    
+
     def __init__(self):
-        self.pwd_context = pwd_context
-        
         # Create demo users on initialization if they don't exist
         self._create_demo_users()
-        
+
     def hash_password(self, password: str) -> str:
-        """Hash a password securely"""
+        """Hash a password securely using bcrypt directly"""
         # Bcrypt has a 72-byte limit, truncate password if needed
-        # Encode to UTF-8 and truncate to 72 bytes
         password_bytes = password.encode('utf-8')[:72]
-        password_truncated = password_bytes.decode('utf-8', errors='ignore')
-        return pwd_context.hash(password_truncated)
-    
+        # Generate salt and hash
+        salt = bcrypt.gensalt()
+        hashed = bcrypt.hashpw(password_bytes, salt)
+        return hashed.decode('utf-8')
+
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
-        """Verify a password against its hash"""
+        """Verify a password against its hash using bcrypt directly"""
         # Apply same truncation as hash_password for consistency
         password_bytes = plain_password.encode('utf-8')[:72]
-        password_truncated = password_bytes.decode('utf-8', errors='ignore')
-        return pwd_context.verify(password_truncated, hashed_password)
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
     
     def validate_username(self, username: str) -> Dict[str, str]:
         """Validate username format and availability"""
