@@ -17,8 +17,9 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies (force reinstall bcrypt for compatibility)
+RUN pip install --no-cache-dir --force-reinstall bcrypt==3.2.0 && \
+    pip install --no-cache-dir -r requirements.txt
 
 # Copy application code
 COPY . .
