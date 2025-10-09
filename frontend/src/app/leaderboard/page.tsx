@@ -111,7 +111,7 @@ export default function LeaderboardPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    const sign = amount >= 0 ? '+' : '';
+    const sign = amount >= 0 ? '+' : '-';
     return `${sign}$${Math.abs(amount).toLocaleString()}`;
   };
 
