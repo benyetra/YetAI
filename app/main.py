@@ -4972,7 +4972,25 @@ async def get_popular_games(sport: Optional[str] = None):
 
             # Filter bookmakers to only include FanDuel
             bookmakers = game.bookmakers if hasattr(game, "bookmakers") else []
-            fanduel_odds = [bm for bm in bookmakers if bm.get("key") == "fanduel"]
+            fanduel_bookmakers = [
+                bm for bm in bookmakers if hasattr(bm, "key") and bm.key == "fanduel"
+            ]
+
+            # Convert FanDuel bookmaker objects to dicts
+            fanduel_odds = []
+            for bm in fanduel_bookmakers:
+                fanduel_odds.append(
+                    {
+                        "key": bm.key,
+                        "title": bm.title,
+                        "last_update": (
+                            bm.last_update.isoformat()
+                            if hasattr(bm.last_update, "isoformat")
+                            else str(bm.last_update)
+                        ),
+                        "markets": bm.markets,
+                    }
+                )
 
             # Create game dict with all necessary fields
             game_dict = {
