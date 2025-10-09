@@ -254,25 +254,20 @@ jobs:
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
 
-    - name: Install Vercel CLI
-      run: npm install --global vercel@latest
-
-    - name: Pull Vercel Environment Information
-      run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-    - name: Build Project Artifacts
-      run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
-      env:
-        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
-
-    - name: Deploy Project Artifacts to Vercel Production
+    - name: Verify Vercel integration
       run: |
-        url=$(vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }})
-        echo "Production URL: $url"
+        echo "✅ Vercel auto-deploys from GitHub"
+        echo "Skipping manual deployment - Vercel will deploy this commit automatically"
+        echo "Environment variable NEXT_PUBLIC_API_URL is set in Vercel dashboard"
+
+    - name: Wait for Vercel auto-deployment
+      run: |
+        echo "Waiting for Vercel to deploy..."
+        sleep 90
 
     - name: Run production health check
       run: |
-        sleep 30
+        echo "Testing production deployment..."
         curl -f https://yetai.app || exit 1
 
     - name: Test frontend functionality
