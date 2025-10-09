@@ -2701,19 +2701,84 @@ async def force_settle_parlay(request: dict, admin_user: dict = Depends(require_
 
         logger.info(f"🔧 Force settling parlay {parlay_id[:8]}...")
 
-        from app.services.bet_verification_service import bet_verification_service
+        from app.models.simple_unified_bet_model import SimpleUnifiedBet
+        from app.models.database_models import BetStatus
+        from app.core.database import SessionLocal
+        from datetime import datetime
 
-        # Call the internal method to check and settle the parlay
-        await bet_verification_service._check_and_settle_parent_parlay(parlay_id)
+        db = SessionLocal()
+        try:
+            # First, verify the parlay exists and check its legs
+            parlay = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.id == parlay_id)
+                .first()
+            )
 
-        return {
-            "success": True,
-            "message": f"Parlay {parlay_id[:8]}... settlement check completed",
-            "parlay_id": parlay_id,
-        }
+            if not parlay:
+                raise HTTPException(status_code=404, detail="Parlay not found")
 
+            # Get all legs
+            legs = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.parent_bet_id == parlay_id)
+                .all()
+            )
+
+            leg_statuses = {
+                "won": sum(1 for leg in legs if leg.status == BetStatus.WON),
+                "lost": sum(1 for leg in legs if leg.status == BetStatus.LOST),
+                "pushed": sum(1 for leg in legs if leg.status == BetStatus.PUSHED),
+                "pending": sum(1 for leg in legs if leg.status == BetStatus.PENDING),
+            }
+
+            logger.info(
+                f"Parlay {parlay_id[:8]} - Current status: {parlay.status.value}, Legs: {leg_statuses}"
+            )
+
+            # If any leg is lost, mark parlay as lost
+            if leg_statuses["lost"] > 0 and parlay.status == BetStatus.PENDING:
+                logger.info(f"Marking parlay {parlay_id[:8]} as LOST")
+                parlay.status = BetStatus.LOST
+                parlay.result_amount = 0
+                parlay.settled_at = datetime.utcnow()
+                db.commit()
+                logger.info(f"✅ Parlay {parlay_id[:8]} marked as LOST")
+
+                return {
+                    "success": True,
+                    "message": f"Parlay {parlay_id[:8]}... marked as LOST",
+                    "parlay_id": parlay_id,
+                    "leg_statuses": leg_statuses,
+                    "action": "settled_as_lost",
+                }
+            elif parlay.status != BetStatus.PENDING:
+                return {
+                    "success": True,
+                    "message": f"Parlay {parlay_id[:8]}... already settled as {parlay.status.value}",
+                    "parlay_id": parlay_id,
+                    "leg_statuses": leg_statuses,
+                    "action": "already_settled",
+                }
+            else:
+                return {
+                    "success": True,
+                    "message": f"Parlay {parlay_id[:8]}... not ready to settle",
+                    "parlay_id": parlay_id,
+                    "leg_statuses": leg_statuses,
+                    "action": "not_ready",
+                }
+
+        finally:
+            db.close()
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Force settle parlay failed: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Force settle parlay failed: {str(e)}"
         )
