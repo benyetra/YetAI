@@ -1,7 +1,7 @@
 /**
  * Centralized API configuration for environment-aware URL handling
  * This ensures consistent API URL usage across the entire frontend application
- * Updated: 2025-10-08 - Added Vercel environment variables
+ * Updated: 2025-10-08 - Vercel env vars configured for api.yetai.app
  */
 
 interface ApiConfig {
