@@ -4865,9 +4865,15 @@ async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
         from app.services.odds_api_service import get_popular_sports_odds
+        from datetime import datetime, timezone, timedelta
 
         # Fetch all popular games
         all_games = await get_popular_sports_odds()
+
+        # Get today's date range (midnight to midnight in UTC)
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        today_end = today_start + timedelta(days=1)
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -4886,6 +4892,25 @@ async def get_popular_games(sport: Optional[str] = None):
         }
 
         for game in all_games:
+            # Get commence time
+            if hasattr(game, "commence_time"):
+                commence_time = game.commence_time
+            else:
+                commence_time = game.get("commence_time")
+
+            # Parse commence time if it's a string
+            if isinstance(commence_time, str):
+                try:
+                    commence_time = datetime.fromisoformat(
+                        commence_time.replace("Z", "+00:00")
+                    )
+                except:
+                    continue
+
+            # Skip if not today's game (allow games within next 24 hours)
+            if commence_time < today_start or commence_time > today_end:
+                continue
+
             # Get sport key from game
             game_sport = (
                 game.sport_key
@@ -4898,7 +4923,7 @@ async def get_popular_games(sport: Optional[str] = None):
             if friendly_sport not in games_by_sport:
                 continue
 
-            # Convert to dict if it's an object
+            # Convert to dict if it's an object and include odds
             if hasattr(game, "__dict__"):
                 game_dict = {
                     "id": game.id,
@@ -4910,7 +4935,10 @@ async def get_popular_games(sport: Optional[str] = None):
                     "commence_time": (
                         game.commence_time.isoformat()
                         if hasattr(game.commence_time, "isoformat")
-                        else game.commence_time
+                        else str(game.commence_time)
+                    ),
+                    "bookmakers": (
+                        game.bookmakers if hasattr(game, "bookmakers") else []
                     ),
                 }
             else:
@@ -4922,6 +4950,7 @@ async def get_popular_games(sport: Optional[str] = None):
                     "home_team": game.get("home_team"),
                     "away_team": game.get("away_team"),
                     "commence_time": game.get("commence_time"),
+                    "bookmakers": game.get("bookmakers", []),
                 }
 
             games_by_sport[friendly_sport].append(game_dict)

@@ -32,10 +32,14 @@ interface PopularGame {
   id: string;
   home_team: string;
   away_team: string;
-  start_time: string;
+  start_time?: string;  // Legacy field
+  commence_time: string;  // New field from API
   sport: string;
-  broadcast: BroadcastInfo;
-  popularity_score: number;
+  sport_key: string;
+  sport_title: string;
+  broadcast?: BroadcastInfo;
+  popularity_score?: number;
+  bookmakers?: any[];
 }
 
 interface PopularGamesData {
@@ -132,11 +136,11 @@ export function PopularGames({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center space-x-2 text-sm text-gray-500">
           <Calendar className="w-4 h-4" />
-          <span>{formatFriendlyDate(game.start_time)}</span>
+          <span>{formatFriendlyDate(game.commence_time || game.start_time)}</span>
         </div>
         <div className="flex items-center space-x-2 text-sm font-medium text-gray-700">
           <Clock className="w-4 h-4" />
-          <span>{formatLocalTime(game.start_time)}</span>
+          <span>{formatLocalTime(game.commence_time || game.start_time)}</span>
         </div>
       </div>
 
