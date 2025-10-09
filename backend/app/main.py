@@ -4872,8 +4872,11 @@ async def get_popular_games(sport: Optional[str] = None):
         now = datetime.now(timezone.utc)
         # Start from 6 hours ago to catch games that started earlier today
         today_start = now - timedelta(hours=6)
-        # End at end of today (not tomorrow)
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # End at 6 AM tomorrow UTC (covers all of "tonight" in US time zones)
+        # This ensures we show games like TNF that start at midnight UTC (8 PM EST)
+        today_end = (now + timedelta(days=1)).replace(
+            hour=6, minute=0, second=0, microsecond=0
+        )
 
         logger.info(f"Fetching popular games between {today_start} and {today_end}")
 
