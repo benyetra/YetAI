@@ -5014,12 +5014,27 @@ async def get_popular_games(sport: Optional[str] = None):
             }
         else:
             total_count = sum(len(games) for games in games_by_sport.values())
-            return {
+            response = {
                 "status": "success",
                 "popular_games": games_by_sport,
                 "total_count": total_count,
                 "message": f"Found {total_count} popular games across all sports",
             }
+
+            # Add debug info if no games found
+            if total_count == 0:
+                response["debug"] = {
+                    "total_fetched": len(all_games),
+                    "filtered": filtered_count,
+                    "skipped": skipped_count,
+                    "date_range_utc": {
+                        "start": today_start.isoformat(),
+                        "end": today_end.isoformat(),
+                    },
+                    "current_time_et": now_et.isoformat(),
+                }
+
+            return response
 
     except Exception as e:
         logger.error(f"Error fetching popular games: {e}")
