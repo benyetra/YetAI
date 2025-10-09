@@ -38,7 +38,7 @@ interface User {
 }
 
 export default function AdminUsersPage() {
-  const { isAuthenticated, loading, user, token } = useAuth();
+  const { isAuthenticated, loading, user: currentUser, token } = useAuth();
   const router = useRouter();
   
   const [users, setUsers] = useState<User[]>([]);
@@ -64,12 +64,12 @@ export default function AdminUsersPage() {
   });
 
   useEffect(() => {
-    if (!loading && (!isAuthenticated || !user?.is_admin)) {
+    if (!loading && (!isAuthenticated || !currentUser?.is_admin)) {
       router.push('/dashboard');
-    } else if (isAuthenticated && user?.is_admin) {
+    } else if (isAuthenticated && currentUser?.is_admin) {
       loadUsers();
     }
-  }, [isAuthenticated, loading, user, router]);
+  }, [isAuthenticated, loading, currentUser, router]);
 
   const loadUsers = async () => {
     setIsLoading(true);
@@ -241,7 +241,7 @@ export default function AdminUsersPage() {
     );
   }
 
-  if (!isAuthenticated || !user?.is_admin) {
+  if (!isAuthenticated || !currentUser?.is_admin) {
     return null;
   }
 
@@ -398,9 +398,9 @@ export default function AdminUsersPage() {
                         </button>
                         <button
                           onClick={() => handleDelete(user.id)}
-                          className="text-red-600 hover:text-red-900"
-                          title="Delete user"
-                          disabled={user.id === user?.id}
+                          className="text-red-600 hover:text-red-900 disabled:opacity-50 disabled:cursor-not-allowed"
+                          title={user.id === currentUser?.id ? "Cannot delete yourself" : "Delete user"}
+                          disabled={user.id === currentUser?.id}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
