@@ -1137,10 +1137,18 @@ class BetVerificationService:
         """
         db = SessionLocal()
         try:
-            # Get the parlay and all its legs
-            parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+            # Get the parlay - try SimpleUnifiedBet first (current model)
+            parlay = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.id == parlay_id)
+                .first()
+            )
             if not parlay:
-                logger.error(f"Parlay {parlay_id} not found")
+                # Fallback to old ParlayBet model if needed
+                parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+
+            if not parlay:
+                logger.error(f"Parlay {parlay_id} not found in any table")
                 return
 
             # If parlay is already settled, skip
@@ -1247,14 +1255,26 @@ class BetVerificationService:
         finally:
             db.close()
 
-    async def _settle_parlay(self, parlay: ParlayBet, result: BetResult) -> None:
+    async def _settle_parlay(self, parlay, result: BetResult) -> None:
         """Update database with parlay result and individual leg outcomes"""
         db = SessionLocal()
         try:
-            # Update parlay status
-            db_parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay.id).first()
+            # Update parlay status - try SimpleUnifiedBet first (current model)
+            db_parlay = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.id == parlay.id)
+                .first()
+            )
             if not db_parlay:
-                logger.error(f"Parlay {parlay.id} not found for settlement")
+                # Fallback to old ParlayBet model if needed
+                db_parlay = (
+                    db.query(ParlayBet).filter(ParlayBet.id == parlay.id).first()
+                )
+
+            if not db_parlay:
+                logger.error(
+                    f"Parlay {parlay.id} not found for settlement in any table"
+                )
                 return
 
             old_status = db_parlay.status
