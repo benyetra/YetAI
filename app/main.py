@@ -4916,9 +4916,13 @@ async def get_popular_games(sport: Optional[str] = None):
                     logger.error(f"Error fetching {sport_key}: {e}")
                     continue
 
-        logger.info(f"Total games fetched: {len(all_games)}")
+        logger.info(
+            f"Total games fetched: {len(all_games)} - filtering for today: {today_start} to {today_end}"
+        )
 
         # Filter and process games
+        filtered_count = 0
+        skipped_count = 0
         for game in all_games:
             # Get commence time from Game object
             commence_time = (
@@ -4941,10 +4945,13 @@ async def get_popular_games(sport: Optional[str] = None):
 
             # Filter for today only (with buffer for games that started earlier)
             if commence_time < today_start or commence_time > today_end:
-                logger.debug(
+                logger.info(
                     f"Filtering out game {game.id} at {commence_time} (outside today range)"
                 )
+                skipped_count += 1
                 continue
+
+            filtered_count += 1
 
             # Get sport key from game
             game_sport = game.sport_key if hasattr(game, "sport_key") else ""
@@ -4975,9 +4982,17 @@ async def get_popular_games(sport: Optional[str] = None):
             )
             games_by_sport[friendly_sport].append(game_dict)
 
+        logger.info(
+            f"Filtered {filtered_count} games, skipped {skipped_count} games outside date range"
+        )
+
         # Limit to 10 games per sport
         for sport_key in games_by_sport:
             games_by_sport[sport_key] = games_by_sport[sport_key][:10]
+
+        # Log final counts
+        sport_counts = {k: len(v) for k, v in games_by_sport.items() if v}
+        logger.info(f"Popular games by sport: {sport_counts}")
 
         # Return specific sport or all sports
         if sport:
