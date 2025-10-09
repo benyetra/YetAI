@@ -31,6 +31,7 @@ from app.models.database_models import (
     BetType,
     GameStatus,
 )
+from app.models.simple_unified_bet_model import SimpleUnifiedBet
 from app.services.odds_api_service import OddsAPIService, Score
 from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.services.websocket_manager import manager as websocket_manager
@@ -1053,8 +1054,12 @@ class BetVerificationService:
         """Update database with bet result"""
         db = SessionLocal()
         try:
-            # Update bet status
-            db_bet = db.query(Bet).filter(Bet.id == bet.id).first()
+            # Update bet status - try SimpleUnifiedBet first (current model)
+            db_bet = db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.id == bet.id).first()
+            if not db_bet:
+                # Fallback to old Bet model if needed
+                db_bet = db.query(Bet).filter(Bet.id == bet.id).first()
+
             if not db_bet:
                 logger.error(f"Bet {bet.id} not found for settlement")
                 return
@@ -1094,15 +1099,17 @@ class BetVerificationService:
                 )
 
             # IMPORTANT: If this is a parlay leg, check if parent parlay should be settled
-            if db_bet.parlay_id:
+            # Check for parent_bet_id (SimpleUnifiedBet) or parlay_id (old Bet model)
+            parent_id = getattr(db_bet, 'parent_bet_id', None) or getattr(db_bet, 'parlay_id', None)
+            if parent_id:
                 logger.info(
-                    f"Leg {bet.id} is part of parlay {db_bet.parlay_id}, checking if parlay should be settled"
+                    f"Leg {bet.id} is part of parlay {parent_id}, checking if parlay should be settled"
                 )
                 try:
-                    await self._check_and_settle_parent_parlay(db_bet.parlay_id)
+                    await self._check_and_settle_parent_parlay(parent_id)
                 except Exception as parlay_error:
                     logger.error(
-                        f"Error checking parent parlay {db_bet.parlay_id}: {parlay_error}"
+                        f"Error checking parent parlay {parent_id}: {parlay_error}"
                     )
 
         except Exception as e:
@@ -1140,7 +1147,7 @@ class BetVerificationService:
                 return
 
             # Get all legs for this parlay
-            legs = db.query(Bet).filter(Bet.parlay_id == parlay_id).all()
+            legs = db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.parent_bet_id == parlay_id).all()
             if not legs:
                 logger.error(f"No legs found for parlay {parlay_id}")
                 return
