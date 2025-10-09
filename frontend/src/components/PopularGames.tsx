@@ -151,22 +151,24 @@ export function PopularGames({
       </div>
 
       {/* Network Info */}
-      <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
-        <div className="flex items-center space-x-2">
-          {getNetworkIcon(game.broadcast.network)}
-          {game.broadcast.network && (
-            <span className="text-sm font-medium">{game.broadcast.network}</span>
-          )}
+      {game.broadcast && (
+        <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
+          <div className="flex items-center space-x-2">
+            {getNetworkIcon(game.broadcast.network)}
+            {game.broadcast.network && (
+              <span className="text-sm font-medium">{game.broadcast.network}</span>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Badges and Actions */}
       <div className="flex items-center justify-between">
         <div className="flex items-center space-x-3 text-xs text-gray-500">
-          {game.broadcast.is_national && (
+          {game.broadcast?.is_national && (
             <span className="bg-green-100 text-green-800 px-2 py-1 rounded">National</span>
           )}
-          {game.broadcast.is_prime_time && (
+          {game.broadcast?.is_prime_time && (
             <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded">Prime Time</span>
           )}
         </div>
