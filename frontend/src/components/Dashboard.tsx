@@ -579,23 +579,44 @@ const Dashboard: React.FC = () => {
             {/* Featured Games */}
             <div>
               <h2 className="text-xl font-bold text-gray-900 mb-4 section-subtitle">Today's Featured Games</h2>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {games && games.length > 0 && games.slice(0, 6).map((game) => {
-                  const prediction = predictions && predictions.length > 0 ? predictions.find(p => p.game_id === game.id) : undefined;
-                  const isFavorite = favoriteTeams && favoriteTeams.length > 0 ? favoriteTeams.some(team => 
-                    game.home_team && game.home_team.includes(team) || game.away_team && game.away_team.includes(team)
-                  ) : false;
-                  return (
-                    <GameCard
-                      key={game.id}
-                      game={game}
-                      prediction={prediction}
-                      isFavorite={isFavorite}
-                      onPlaceBet={handlePlaceBet}
+              {games && games.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {games.slice(0, 6).map((game) => {
+                    const prediction = predictions && predictions.length > 0 ? predictions.find(p => p.game_id === game.id) : undefined;
+                    const isFavorite = favoriteTeams && favoriteTeams.length > 0 ? favoriteTeams.some(team =>
+                      game.home_team && game.home_team.includes(team) || game.away_team && game.away_team.includes(team)
+                    ) : false;
+                    return (
+                      <GameCard
+                        key={game.id}
+                        game={game}
+                        prediction={prediction}
+                        isFavorite={isFavorite}
+                        onPlaceBet={handlePlaceBet}
+                      />
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="bg-white rounded-lg border border-gray-200 p-12 text-center">
+                  <svg
+                    className="mx-auto h-12 w-12 text-gray-400 mb-4"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"
                     />
-                  );
-                })}
-              </div>
+                  </svg>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No Featured Games</h3>
+                  <p className="text-gray-600 mb-4">There are no featured games available right now.</p>
+                  <p className="text-sm text-gray-500">Check back later for upcoming games and betting opportunities.</p>
+                </div>
+              )}
             </div>
           </div>
         )}
