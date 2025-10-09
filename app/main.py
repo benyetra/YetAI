@@ -4970,6 +4970,10 @@ async def get_popular_games(sport: Optional[str] = None):
             if friendly_sport not in games_by_sport:
                 continue
 
+            # Filter bookmakers to only include FanDuel
+            bookmakers = game.bookmakers if hasattr(game, "bookmakers") else []
+            fanduel_odds = [bm for bm in bookmakers if bm.get("key") == "fanduel"]
+
             # Create game dict with all necessary fields
             game_dict = {
                 "id": game.id,
@@ -4983,7 +4987,7 @@ async def get_popular_games(sport: Optional[str] = None):
                     if hasattr(game.commence_time, "isoformat")
                     else str(game.commence_time)
                 ),
-                "bookmakers": game.bookmakers if hasattr(game, "bookmakers") else [],
+                "bookmakers": fanduel_odds,  # Only include FanDuel
             }
 
             logger.debug(
