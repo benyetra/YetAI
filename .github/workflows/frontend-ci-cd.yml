@@ -53,7 +53,7 @@ jobs:
       run: npm run test:ci
       env:
         CI: true
-        NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
 
     - name: Verify TypeScript paths
       run: |
@@ -69,7 +69,7 @@ jobs:
         echo "NODE_ENV: $NODE_ENV"
         npm run build
       env:
-        NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
         NODE_ENV: "production"
 
     - name: Upload build artifacts
@@ -103,7 +103,7 @@ jobs:
     - name: Build application
       run: npm run build
       env:
-        NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
 
     - name: Run accessibility tests
       run: |
@@ -125,7 +125,7 @@ jobs:
         kill $NEXT_PID 2>/dev/null || true
       continue-on-error: true
       env:
-        NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
 
   security-scan:
     name: Security Scan
@@ -263,7 +263,7 @@ jobs:
     - name: Build Project Artifacts
       run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
       env:
-        NEXT_PUBLIC_API_URL: "https://backend-production-f7af.up.railway.app"
+        NEXT_PUBLIC_API_URL: "https://api.yetai.app"
 
     - name: Deploy Project Artifacts to Vercel Production
       run: |

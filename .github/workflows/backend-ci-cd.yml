@@ -176,20 +176,22 @@ jobs:
       env:
         RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
       run: |
-        # Deploy using Railway CLI with token authentication and service specification
-        railway up --service backend --detach
+        # Note: Railway auto-deploys from GitHub, manual deploy commented out
+        # railway up --service backend --detach
+        echo "⏭️ Skipping manual Railway deploy - using GitHub integration"
+        echo "Railway will auto-deploy this commit"
 
     - name: Run deployment health check
       run: |
         sleep 60
-        curl -f https://backend-production-f7af.up.railway.app/health || exit 1
+        curl -f https://api.yetai.app/health || exit 1
 
     - name: Test API endpoints
       run: |
         # Test core endpoints
-        curl -f https://backend-production-f7af.up.railway.app/api/status
-        curl -f https://backend-production-f7af.up.railway.app/test-db
-        curl -f https://backend-production-f7af.up.railway.app/api/chat/suggestions
+        curl -f https://api.yetai.app/api/status
+        curl -f https://api.yetai.app/test-db
+        curl -f https://api.yetai.app/api/chat/suggestions
         echo "✅ All API endpoints responding correctly"
 
     - name: Notify deployment success
