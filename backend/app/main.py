@@ -4864,60 +4864,71 @@ async def get_popular_sports_odds():
 async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
-        from app.services.optimized_odds_api_service import get_optimized_odds_service
-        from datetime import datetime, timedelta
+        from app.services.odds_api_service import get_popular_sports_odds
 
-        odds_service = get_optimized_odds_service()
+        # Fetch all popular games
+        all_games = await get_popular_sports_odds()
 
-        # Fetch games for major sports
-        sport_keys = [
-            "americanfootball_nfl",
-            "baseball_mlb",
-            "basketball_nba",
-            "icehockey_nhl",
-        ]
+        # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
 
-        for sport_key in sport_keys:
-            try:
-                # Fetch odds for this sport
-                games_data = await odds_service.fetch_sport_odds(
-                    sport_key=sport_key,
-                    regions="us",
-                    markets="h2h,spreads,totals",
-                    odds_format="american",
-                )
+        # Map sport keys to friendly names
+        sport_map = {
+            "americanfootball_nfl": "nfl",
+            "americanfootball_ncaaf": "nfl",
+            "baseball_mlb": "mlb",
+            "basketball_nba": "nba",
+            "basketball_ncaab": "nba",
+            "basketball_wnba": "nba",
+            "icehockey_nhl": "nhl",
+            "soccer_epl": "soccer",
+            "soccer_mls": "soccer",
+        }
 
-                if not games_data:
-                    continue
+        for game in all_games:
+            # Get sport key from game
+            game_sport = (
+                game.sport_key
+                if hasattr(game, "sport_key")
+                else game.get("sport_key", "")
+            )
+            friendly_sport = sport_map.get(game_sport, game_sport)
 
-                # Map sport keys to friendly names
-                sport_map = {
-                    "americanfootball_nfl": "nfl",
-                    "baseball_mlb": "mlb",
-                    "basketball_nba": "nba",
-                    "icehockey_nhl": "nhl",
+            # Only include sports we're tracking
+            if friendly_sport not in games_by_sport:
+                continue
+
+            # Convert to dict if it's an object
+            if hasattr(game, "__dict__"):
+                game_dict = {
+                    "id": game.id,
+                    "sport": friendly_sport,
+                    "sport_key": game.sport_key,
+                    "sport_title": game.sport_title,
+                    "home_team": game.home_team,
+                    "away_team": game.away_team,
+                    "commence_time": (
+                        game.commence_time.isoformat()
+                        if hasattr(game.commence_time, "isoformat")
+                        else game.commence_time
+                    ),
+                }
+            else:
+                game_dict = {
+                    "id": game.get("id"),
+                    "sport": friendly_sport,
+                    "sport_key": game.get("sport_key"),
+                    "sport_title": game.get("sport_title", ""),
+                    "home_team": game.get("home_team"),
+                    "away_team": game.get("away_team"),
+                    "commence_time": game.get("commence_time"),
                 }
 
-                friendly_sport = sport_map.get(sport_key, sport_key)
+            games_by_sport[friendly_sport].append(game_dict)
 
-                # Convert to frontend format
-                for game in games_data[:10]:  # Limit to 10 games per sport
-                    game_dict = {
-                        "id": game.get("id"),
-                        "sport": friendly_sport,
-                        "sport_key": sport_key,
-                        "sport_title": game.get("sport_title", ""),
-                        "home_team": game.get("home_team"),
-                        "away_team": game.get("away_team"),
-                        "commence_time": game.get("commence_time"),
-                        "bookmakers": game.get("bookmakers", []),
-                    }
-                    games_by_sport[friendly_sport].append(game_dict)
-
-            except Exception as e:
-                logger.error(f"Error fetching {sport_key} popular games: {e}")
-                continue
+        # Limit to 10 games per sport
+        for sport_key in games_by_sport:
+            games_by_sport[sport_key] = games_by_sport[sport_key][:10]
 
         # Return specific sport or all sports
         if sport:
