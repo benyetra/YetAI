@@ -4912,17 +4912,24 @@ async def get_popular_games(sport: Optional[str] = None):
 
         # Fetch odds for each sport (includes bookmakers)
         all_games = []
+        fetch_errors = {}
+        fetch_success = {}
         async with OddsAPIService(settings.ODDS_API_KEY) as service:
             for sport_key in sports_to_fetch:
                 try:
                     logger.info(f"Fetching odds for {sport_key}")
                     games = await service.get_odds(sport_key)
                     logger.info(f"Got {len(games)} games for {sport_key}")
+                    fetch_success[sport_key] = len(games)
 
                     # Add games to list
                     all_games.extend(games)
                 except Exception as e:
                     logger.error(f"Error fetching {sport_key}: {e}")
+                    import traceback
+
+                    logger.error(traceback.format_exc())
+                    fetch_errors[sport_key] = str(e)
                     continue
 
         logger.info(
@@ -5054,6 +5061,8 @@ async def get_popular_games(sport: Optional[str] = None):
                 },
                 "current_time_et": now_et.isoformat(),
                 "sport_counts": {k: len(v) for k, v in games_by_sport.items()},
+                "fetch_success": fetch_success,
+                "fetch_errors": fetch_errors,
             }
 
             return response
