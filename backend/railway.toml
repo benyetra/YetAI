@@ -4,7 +4,7 @@ builder = "nixpacks"
 [deploy]
 numReplicas = 1
 restartPolicyType = "ON_FAILURE"
-startCommand = "python -m app.main"
+startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
 healthcheckTimeout = 300
 
