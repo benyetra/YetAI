@@ -2691,6 +2691,34 @@ async def manual_fix_specific_parlay_legs(admin_user: dict = Depends(require_adm
         )
 
 
+@app.post("/api/admin/parlays/force-settle")
+async def force_settle_parlay(request: dict, admin_user: dict = Depends(require_admin)):
+    """Force settlement of a parlay based on current leg statuses (Admin only)"""
+    try:
+        parlay_id = request.get("parlay_id")
+        if not parlay_id:
+            raise HTTPException(status_code=400, detail="parlay_id is required")
+
+        logger.info(f"🔧 Force settling parlay {parlay_id[:8]}...")
+
+        from app.services.bet_verification_service import bet_verification_service
+
+        # Call the internal method to check and settle the parlay
+        await bet_verification_service._check_and_settle_parent_parlay(parlay_id)
+
+        return {
+            "success": True,
+            "message": f"Parlay {parlay_id[:8]}... settlement check completed",
+            "parlay_id": parlay_id,
+        }
+
+    except Exception as e:
+        logger.error(f"Force settle parlay failed: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Force settle parlay failed: {str(e)}"
+        )
+
+
 @app.post("/api/admin/parlays/fix-specific-ids")
 async def fix_specific_parlay_ids(admin_user: dict = Depends(require_admin)):
     """Fix parlay legs using their specific IDs (Admin only)"""
