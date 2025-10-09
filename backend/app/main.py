@@ -4864,19 +4864,60 @@ async def get_popular_sports_odds():
 async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
-        # Import odds API function
-        from app.services.odds_api_service import get_popular_sports_odds
+        from app.services.optimized_odds_api_service import get_optimized_odds_service
+        from datetime import datetime, timedelta
 
-        # Generate enhanced popular games with realistic data
-        enhanced_games = _generate_enhanced_popular_games()
+        odds_service = get_optimized_odds_service()
 
-        # Group by sport
+        # Fetch games for major sports
+        sport_keys = [
+            "americanfootball_nfl",
+            "baseball_mlb",
+            "basketball_nba",
+            "icehockey_nhl",
+        ]
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
 
-        for game in enhanced_games:
-            sport_key = game.get("sport", "")
-            if sport_key in games_by_sport:
-                games_by_sport[sport_key].append(game)
+        for sport_key in sport_keys:
+            try:
+                # Fetch odds for this sport
+                games_data = await odds_service.fetch_sport_odds(
+                    sport_key=sport_key,
+                    regions="us",
+                    markets="h2h,spreads,totals",
+                    odds_format="american",
+                )
+
+                if not games_data:
+                    continue
+
+                # Map sport keys to friendly names
+                sport_map = {
+                    "americanfootball_nfl": "nfl",
+                    "baseball_mlb": "mlb",
+                    "basketball_nba": "nba",
+                    "icehockey_nhl": "nhl",
+                }
+
+                friendly_sport = sport_map.get(sport_key, sport_key)
+
+                # Convert to frontend format
+                for game in games_data[:10]:  # Limit to 10 games per sport
+                    game_dict = {
+                        "id": game.get("id"),
+                        "sport": friendly_sport,
+                        "sport_key": sport_key,
+                        "sport_title": game.get("sport_title", ""),
+                        "home_team": game.get("home_team"),
+                        "away_team": game.get("away_team"),
+                        "commence_time": game.get("commence_time"),
+                        "bookmakers": game.get("bookmakers", []),
+                    }
+                    games_by_sport[friendly_sport].append(game_dict)
+
+            except Exception as e:
+                logger.error(f"Error fetching {sport_key} popular games: {e}")
+                continue
 
         # Return specific sport or all sports
         if sport:
@@ -4898,6 +4939,9 @@ async def get_popular_games(sport: Optional[str] = None):
 
     except Exception as e:
         logger.error(f"Error fetching popular games: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
         # Return basic fallback
         return {
             "status": "success",
