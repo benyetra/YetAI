@@ -4870,10 +4870,9 @@ async def get_popular_games(sport: Optional[str] = None):
         # Fetch all popular games
         all_games = await get_popular_sports_odds()
 
-        # Get today's date range (midnight to midnight in UTC)
+        # Get games from now up to 7 days ahead (more flexible filtering)
         now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
+        future_cutoff = now + timedelta(days=7)
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -4907,8 +4906,8 @@ async def get_popular_games(sport: Optional[str] = None):
                 except:
                     continue
 
-            # Skip if not today's game (allow games within next 24 hours)
-            if commence_time < today_start or commence_time > today_end:
+            # Skip if game is in the past or too far in the future (7 days)
+            if commence_time < now or commence_time > future_cutoff:
                 continue
 
             # Get sport key from game
