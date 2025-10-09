@@ -1,6 +1,6 @@
 # YetAI Sports Betting MVP - Backend Dockerfile
 # Optimized for Railway deployment
-# Cache bust: 2025-10-08-v3 - Fixed backend path
+# Cache bust: 2025-10-08-v4 - Trigger deploy with fixed CI
 
 FROM python:3.11-slim
 
