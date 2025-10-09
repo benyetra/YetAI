@@ -1607,8 +1607,7 @@ async def delete_admin_user(user_id: int, admin_user: dict = Depends(require_adm
         # Prevent admin from deleting themselves
         if user_id == admin_user.get("id"):
             raise HTTPException(
-                status_code=400,
-                detail="Cannot delete your own account"
+                status_code=400, detail="Cannot delete your own account"
             )
 
         if is_service_available("auth_service"):
@@ -1620,18 +1619,15 @@ async def delete_admin_user(user_id: int, admin_user: dict = Depends(require_adm
             if success:
                 return {
                     "status": "success",
-                    "message": f"User {user_id} deleted successfully"
+                    "message": f"User {user_id} deleted successfully",
                 }
             else:
-                raise HTTPException(
-                    status_code=404,
-                    detail=f"User {user_id} not found"
-                )
+                raise HTTPException(status_code=404, detail=f"User {user_id} not found")
         else:
             # Mock response when service unavailable
             return {
                 "status": "success",
-                "message": f"Mock delete of user {user_id} - service unavailable"
+                "message": f"Mock delete of user {user_id} - service unavailable",
             }
 
     except HTTPException:
