@@ -1094,15 +1094,15 @@ class BetVerificationService:
                 )
 
             # IMPORTANT: If this is a parlay leg, check if parent parlay should be settled
-            if db_bet.parent_bet_id:
+            if db_bet.parlay_id:
                 logger.info(
-                    f"Leg {bet.id} is part of parlay {db_bet.parent_bet_id}, checking if parlay should be settled"
+                    f"Leg {bet.id} is part of parlay {db_bet.parlay_id}, checking if parlay should be settled"
                 )
                 try:
-                    await self._check_and_settle_parent_parlay(db_bet.parent_bet_id)
+                    await self._check_and_settle_parent_parlay(db_bet.parlay_id)
                 except Exception as parlay_error:
                     logger.error(
-                        f"Error checking parent parlay {db_bet.parent_bet_id}: {parlay_error}"
+                        f"Error checking parent parlay {db_bet.parlay_id}: {parlay_error}"
                     )
 
         except Exception as e:
