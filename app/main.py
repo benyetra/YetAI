@@ -5043,18 +5043,18 @@ async def get_popular_games(sport: Optional[str] = None):
                 "message": f"Found {total_count} popular games across all sports",
             }
 
-            # Add debug info if no games found
-            if total_count == 0:
-                response["debug"] = {
-                    "total_fetched": len(all_games),
-                    "filtered": filtered_count,
-                    "skipped": skipped_count,
-                    "date_range_utc": {
-                        "start": today_start.isoformat(),
-                        "end": today_end.isoformat(),
-                    },
-                    "current_time_et": now_et.isoformat(),
-                }
+            # Add debug info (temporarily showing always for troubleshooting)
+            response["debug"] = {
+                "total_fetched": len(all_games),
+                "filtered": filtered_count,
+                "skipped": skipped_count,
+                "date_range_utc": {
+                    "start": today_start.isoformat(),
+                    "end": today_end.isoformat(),
+                },
+                "current_time_et": now_et.isoformat(),
+                "sport_counts": {k: len(v) for k, v in games_by_sport.items()},
+            }
 
             return response
 
