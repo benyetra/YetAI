@@ -1594,6 +1594,53 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
         raise HTTPException(status_code=500, detail="Failed to reset password")
 
 
+@app.options("/api/admin/users/{user_id}")
+async def options_admin_delete_user():
+    """Handle CORS preflight for admin delete user"""
+    return {}
+
+
+@app.delete("/api/admin/users/{user_id}")
+async def delete_admin_user(user_id: int, admin_user: dict = Depends(require_admin)):
+    """Delete a user (Admin only)"""
+    try:
+        # Prevent admin from deleting themselves
+        if user_id == admin_user.get("id"):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete your own account"
+            )
+
+        if is_service_available("auth_service"):
+            from app.services.auth_service_db import auth_service_db
+
+            # Delete the user
+            success = await auth_service_db.delete_user(user_id)
+
+            if success:
+                return {
+                    "status": "success",
+                    "message": f"User {user_id} deleted successfully"
+                }
+            else:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"User {user_id} not found"
+                )
+        else:
+            # Mock response when service unavailable
+            return {
+                "status": "success",
+                "message": f"Mock delete of user {user_id} - service unavailable"
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete user")
+
+
 @app.options("/api/admin/users/{user_id}/bets")
 async def options_admin_delete_user_bets():
     """Handle CORS preflight for admin delete user bets"""

@@ -732,6 +732,37 @@ class AuthServiceDB:
             logger.error(f"Error updating user {user_id}: {e}")
             return None
 
+    async def delete_user(self, user_id: int) -> bool:
+        """Delete a user and all associated data"""
+        try:
+            logger.info(f"Attempting to delete user {user_id}")
+            db = SessionLocal()
+            try:
+                # Get the user
+                user = db.query(User).filter(User.id == user_id).first()
+                if not user:
+                    logger.warning(f"User with ID {user_id} not found in database")
+                    return False
+
+                logger.info(f"Found user to delete: {user.email} (ID: {user.id})")
+
+                # Delete user sessions first (foreign key constraint)
+                db.query(UserSession).filter(UserSession.user_id == user_id).delete()
+
+                # Delete the user
+                db.delete(user)
+                db.commit()
+
+                logger.info(f"Successfully deleted user {user_id}")
+                return True
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Error deleting user {user_id}: {e}")
+            return False
+
     async def verify_email(self, token: str) -> Dict:
         """Verify user email with verification token"""
         try:
