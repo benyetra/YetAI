@@ -1055,7 +1055,9 @@ class BetVerificationService:
         db = SessionLocal()
         try:
             # Update bet status - try SimpleUnifiedBet first (current model)
-            db_bet = db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.id == bet.id).first()
+            db_bet = (
+                db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.id == bet.id).first()
+            )
             if not db_bet:
                 # Fallback to old Bet model if needed
                 db_bet = db.query(Bet).filter(Bet.id == bet.id).first()
@@ -1100,7 +1102,9 @@ class BetVerificationService:
 
             # IMPORTANT: If this is a parlay leg, check if parent parlay should be settled
             # Check for parent_bet_id (SimpleUnifiedBet) or parlay_id (old Bet model)
-            parent_id = getattr(db_bet, 'parent_bet_id', None) or getattr(db_bet, 'parlay_id', None)
+            parent_id = getattr(db_bet, "parent_bet_id", None) or getattr(
+                db_bet, "parlay_id", None
+            )
             if parent_id:
                 logger.info(
                     f"Leg {bet.id} is part of parlay {parent_id}, checking if parlay should be settled"
@@ -1147,7 +1151,11 @@ class BetVerificationService:
                 return
 
             # Get all legs for this parlay
-            legs = db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.parent_bet_id == parlay_id).all()
+            legs = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.parent_bet_id == parlay_id)
+                .all()
+            )
             if not legs:
                 logger.error(f"No legs found for parlay {parlay_id}")
                 return
