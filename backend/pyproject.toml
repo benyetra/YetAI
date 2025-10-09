@@ -61,8 +61,8 @@ test = [
 
 [project.urls]
 "Homepage" = "https://yetai.app"
-"Bug Reports" = "https://github.com/yetai/ai-sports-betting-mvp/issues"
-"Source" = "https://github.com/yetai/ai-sports-betting-mvp"
+"Bug Reports" = "https://github.com/benyetra/YetAI/issues"
+"Source" = "https://github.com/benyetra/YetAI"
 
 [tool.setuptools.packages.find]
 where = ["."]

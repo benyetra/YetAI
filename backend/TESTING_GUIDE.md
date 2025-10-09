@@ -7,7 +7,7 @@ This guide covers how to test the updated bet verification system to ensure all 
 
 ### 1. Syntax & Import Validation
 ```bash
-cd /Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend
+cd /Users/byetz/Development/YetAI/YetAI/backend
 ./validate_changes.sh
 ```
 
@@ -23,7 +23,7 @@ Expected output: **✅ ALL VALIDATION CHECKS PASSED**
 
 ### 2. Unit Tests (with database)
 ```bash
-cd /Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend
+cd /Users/byetz/Development/YetAI/YetAI/backend
 python3 test_unified_bet_verification.py
 ```
 
@@ -41,7 +41,7 @@ Expected output: **🎉 ALL TESTS PASSED!**
 
 ### Step 1: Start the Application
 ```bash
-cd /Users/byetz/Development/YetAI/ai-sports-betting-mvp/backend
+cd /Users/byetz/Development/YetAI/YetAI/backend
 # Start your backend server
 python3 -m uvicorn app.main:app --reload
 ```

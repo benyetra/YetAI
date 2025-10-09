@@ -26,7 +26,7 @@ Visit http://localhost:3000 and click "Test API Connection"
 
 ## Environment Structure
 ```
-ai-sports-betting-mvp/
+YetAI/
 ├── backend/           # FastAPI Python backend
 ├── frontend/          # Next.js TypeScript frontend
 ├── database/          # PostgreSQL schema and scripts
