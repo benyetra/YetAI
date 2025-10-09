@@ -4865,7 +4865,7 @@ async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
         from datetime import datetime, timezone, timedelta
-        from app.services.optimized_odds_api_service import get_optimized_odds_service
+        from app.services.odds_api_service import OddsAPIService
         from app.core.config import settings
 
         # Get games happening today (with buffer for games that started earlier)
@@ -4876,9 +4876,6 @@ async def get_popular_games(sport: Optional[str] = None):
         today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         logger.info(f"Fetching popular games between {today_start} and {today_end}")
-
-        # Fetch games directly from the odds service
-        odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -4904,28 +4901,29 @@ async def get_popular_games(sport: Optional[str] = None):
             "icehockey_nhl",
         ]
 
-        # Fetch events for each sport (FREE endpoint)
+        # Fetch odds for each sport (includes bookmakers)
         all_games = []
-        for sport_key in sports_to_fetch:
-            try:
-                logger.info(f"Fetching events for {sport_key}")
-                events = await odds_service.get_events(sport_key)
-                logger.info(f"Got {len(events)} events for {sport_key}")
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            for sport_key in sports_to_fetch:
+                try:
+                    logger.info(f"Fetching odds for {sport_key}")
+                    games = await service.get_odds(sport_key)
+                    logger.info(f"Got {len(games)} games for {sport_key}")
 
-                # Add sport_key to each event for later processing
-                for event in events:
-                    event["sport_key"] = sport_key
-                    all_games.append(event)
-            except Exception as e:
-                logger.error(f"Error fetching {sport_key}: {e}")
-                continue
+                    # Add games to list
+                    all_games.extend(games)
+                except Exception as e:
+                    logger.error(f"Error fetching {sport_key}: {e}")
+                    continue
 
         logger.info(f"Total games fetched: {len(all_games)}")
 
         # Filter and process games
         for game in all_games:
-            # Get commence time
-            commence_time = game.get("commence_time")
+            # Get commence time from Game object
+            commence_time = (
+                game.commence_time if hasattr(game, "commence_time") else None
+            )
             if not commence_time:
                 continue
 
@@ -4943,10 +4941,13 @@ async def get_popular_games(sport: Optional[str] = None):
 
             # Filter for today only (with buffer for games that started earlier)
             if commence_time < today_start or commence_time > today_end:
+                logger.debug(
+                    f"Filtering out game {game.id} at {commence_time} (outside today range)"
+                )
                 continue
 
             # Get sport key from game
-            game_sport = game.get("sport_key", "")
+            game_sport = game.sport_key if hasattr(game, "sport_key") else ""
             friendly_sport = sport_map.get(game_sport, game_sport)
 
             # Only include sports we're tracking
@@ -4955,16 +4956,23 @@ async def get_popular_games(sport: Optional[str] = None):
 
             # Create game dict with all necessary fields
             game_dict = {
-                "id": game.get("id"),
+                "id": game.id,
                 "sport": friendly_sport,
-                "sport_key": game.get("sport_key"),
-                "sport_title": game.get("sport_title", friendly_sport.upper()),
-                "home_team": game.get("home_team"),
-                "away_team": game.get("away_team"),
-                "commence_time": game.get("commence_time"),
-                "bookmakers": game.get("bookmakers", []),
+                "sport_key": game.sport_key,
+                "sport_title": game.sport_title,
+                "home_team": game.home_team,
+                "away_team": game.away_team,
+                "commence_time": (
+                    game.commence_time.isoformat()
+                    if hasattr(game.commence_time, "isoformat")
+                    else str(game.commence_time)
+                ),
+                "bookmakers": game.bookmakers if hasattr(game, "bookmakers") else [],
             }
 
+            logger.debug(
+                f"Adding game {game.id} to {friendly_sport}: {game.home_team} vs {game.away_team} at {commence_time}"
+            )
             games_by_sport[friendly_sport].append(game_dict)
 
         # Limit to 10 games per sport
