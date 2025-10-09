@@ -4865,20 +4865,26 @@ async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
         from datetime import datetime, timezone, timedelta
+        from zoneinfo import ZoneInfo
         from app.services.odds_api_service import OddsAPIService
         from app.core.config import settings
 
-        # Get games happening today (with buffer for games that started earlier)
-        now = datetime.now(timezone.utc)
-        # Start from 6 hours ago to catch games that started earlier today
-        today_start = now - timedelta(hours=6)
-        # End at 6 AM tomorrow UTC (covers all of "tonight" in US time zones)
-        # This ensures we show games like TNF that start at midnight UTC (8 PM EST)
-        today_end = (now + timedelta(days=1)).replace(
-            hour=6, minute=0, second=0, microsecond=0
-        )
+        # Work in Eastern Time since that's where most US sports are scheduled
+        eastern = ZoneInfo("America/New_York")
+        now_et = datetime.now(eastern)
 
-        logger.info(f"Fetching popular games between {today_start} and {today_end}")
+        # Get "today" in Eastern Time - from 6 hours ago through end of day
+        today_start_et = now_et - timedelta(hours=6)
+        today_end_et = now_et.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        # Convert to UTC for API filtering
+        today_start = today_start_et.astimezone(timezone.utc)
+        today_end = today_end_et.astimezone(timezone.utc)
+
+        logger.info(
+            f"Fetching popular games for today in ET: {now_et.strftime('%Y-%m-%d %H:%M %Z')}"
+        )
+        logger.info(f"Date range (UTC): {today_start} to {today_end}")
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
