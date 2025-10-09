@@ -4903,11 +4903,10 @@ async def get_popular_games(sport: Optional[str] = None):
         }
 
         # Sports to fetch
+        # Note: Only fetching NFL to avoid rate limits
+        # Users can navigate to specific sport pages for MLB, NBA, NHL
         sports_to_fetch = [
             "americanfootball_nfl",
-            "baseball_mlb",
-            "basketball_nba",
-            "icehockey_nhl",
         ]
 
         # Fetch odds for each sport (includes bookmakers)
