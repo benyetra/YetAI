@@ -116,6 +116,15 @@ class TradeAnalysis(BaseModel):
     recommendation: str
 
 
+class TeamAnalytics(BaseModel):
+    success: bool
+    user_team: Dict[str, Any]
+    league_analytics: List[Dict[str, Any]]
+    league_insights: Dict[str, Any]
+    season: int
+    generated_at: str
+
+
 @router.get("/player/{player_id}/trends", response_model=PlayerTrendResponse)
 async def get_player_trends(
     player_id: int,
@@ -436,4 +445,30 @@ async def get_data_summary(
 
     except Exception as e:
         logger.error(f"Error getting data summary: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/team-analytics/{league_id}", response_model=TeamAnalytics)
+async def get_comprehensive_team_analytics(
+    league_id: str,
+    season: int = Query(2025, ge=2021, le=2025),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get comprehensive team analytics for all teams in a league"""
+    try:
+        fantasy_service = FantasyService(db)
+        analytics = await fantasy_service.get_team_analytics(
+            current_user["id"], league_id, season
+        )
+
+        if "error" in analytics:
+            raise HTTPException(status_code=404, detail=analytics["error"])
+
+        return TeamAnalytics(**analytics)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting team analytics: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))

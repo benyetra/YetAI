@@ -3,16 +3,20 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+
 class LiveBetStatus(str, Enum):
     """Status for live bets"""
+
     ACTIVE = "active"  # Bet is live and game is in progress
     SUSPENDED = "suspended"  # Temporarily unavailable (timeout, review, etc)
     CASHED_OUT = "cashed_out"  # User cashed out
     SETTLED = "settled"  # Game ended, bet settled
     VOID = "void"  # Bet voided (game cancelled, etc)
 
+
 class GameStatus(str, Enum):
     """Real-time game status"""
+
     PRE_GAME = "pre_game"
     FIRST_QUARTER = "1st_quarter"
     SECOND_QUARTER = "2nd_quarter"
@@ -40,8 +44,10 @@ class GameStatus(str, Enum):
     NINTH_INNING = "9th_inning"
     # Add more as needed
 
+
 class LiveOddsUpdate(BaseModel):
     """Real-time odds update for live betting"""
+
     game_id: str
     bet_type: str  # moneyline, spread, total
     home_odds: float
@@ -52,8 +58,10 @@ class LiveOddsUpdate(BaseModel):
     is_suspended: bool = False
     suspension_reason: Optional[str] = None
 
+
 class LiveGameUpdate(BaseModel):
     """Real-time game state update"""
+
     game_id: str
     status: GameStatus
     home_score: int
@@ -66,13 +74,17 @@ class LiveGameUpdate(BaseModel):
     last_play: Optional[str] = None  # description of last play
     timestamp: datetime
 
+
 class CashOutRequest(BaseModel):
     """Request to cash out a live bet"""
+
     bet_id: str
     accept_amount: Optional[float] = None  # If None, get current offer
 
+
 class CashOutOffer(BaseModel):
     """Cash out offer for a live bet"""
+
     bet_id: str
     original_amount: float
     original_potential_win: float
@@ -82,8 +94,10 @@ class CashOutOffer(BaseModel):
     is_available: bool
     reason: Optional[str] = None  # if not available
 
+
 class LiveBet(BaseModel):
     """Enhanced bet model for live betting"""
+
     id: str
     user_id: int
     game_id: str
@@ -112,8 +126,10 @@ class LiveBet(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
 
+
 class PlaceLiveBetRequest(BaseModel):
     """Request to place a live bet"""
+
     game_id: str
     bet_type: str  # moneyline, spread, total
     selection: str  # home, away, over, under
@@ -122,16 +138,20 @@ class PlaceLiveBetRequest(BaseModel):
     accept_odds_change: bool = False  # Accept if odds change slightly
     min_odds: Optional[float] = None  # Minimum acceptable odds
 
+
 class LiveBetResponse(BaseModel):
     """Response after placing a live bet"""
+
     success: bool
     bet: Optional[LiveBet] = None
     error: Optional[str] = None
     odds_changed: bool = False
     new_odds: Optional[float] = None
 
+
 class LiveBettingStats(BaseModel):
     """Statistics for live betting"""
+
     total_live_bets: int
     active_live_bets: int
     total_cashed_out: int
@@ -141,8 +161,10 @@ class LiveBettingStats(BaseModel):
     best_cash_out: Dict[str, Any]
     worst_cash_out: Dict[str, Any]
 
+
 class LiveBettingMarket(BaseModel):
     """Live betting market for a game"""
+
     game_id: str
     sport: str
     home_team: str
@@ -168,8 +190,10 @@ class LiveBettingMarket(BaseModel):
     suspension_reason: Optional[str] = None
     last_updated: datetime
 
+
 class CashOutHistory(BaseModel):
     """History of cash out transactions"""
+
     bet_id: str
     game_id: str
     original_bet_amount: float

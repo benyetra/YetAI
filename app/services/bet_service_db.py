@@ -1,6 +1,7 @@
 """
 Database-powered bet service for persistent storage
 """
+
 import uuid
 import asyncio
 from datetime import datetime, timedelta
@@ -9,63 +10,88 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.database import get_db, SessionLocal
-from app.models.database_models import User, Bet, ParlayBet, Game, BetHistory, BetLimit
+from app.models.database_models import (
+    User,
+    Bet,
+    ParlayBet,
+    Game,
+    BetHistory,
+    BetLimit,
+    YetAIBet,
+    SubscriptionTier,
+)
 from app.models.bet_models import *
 
 logger = logging.getLogger(__name__)
 
+
 class BetServiceDB:
     """Database-powered bet placement, tracking, and settlement service"""
-    
+
     def __init__(self):
-        self.bet_limits = {
-            "daily": 5000,
-            "weekly": 20000,
-            "single_bet": 10000
-        }
-        
+        self.bet_limits = {"daily": 5000, "weekly": 20000, "single_bet": 10000}
+
     async def place_bet(self, user_id: int, bet_data: PlaceBetRequest) -> Dict:
         """Place a single bet with database persistence"""
         try:
             db = SessionLocal()
             try:
+                # Handle YetAI bet placement if yetai_bet_id is provided
+                yetai_bet_id = getattr(bet_data, "yetai_bet_id", None)
+                if yetai_bet_id:
+                    return await self._place_yetai_bet(user_id, bet_data, db)
+
                 # Validate bet limits
                 if not await self._check_bet_limits(user_id, bet_data.amount, db):
                     return {"success": False, "error": "Bet exceeds limits"}
-                
+
                 # Get or create game record
                 game = await self._get_or_create_game(bet_data, db)
-                
+
                 # Generate bet ID
                 bet_id = str(uuid.uuid4())
-                
+
                 # Calculate potential winnings
                 potential_win = self._calculate_potential_win(
-                    bet_data.amount, 
-                    bet_data.odds
+                    bet_data.amount, bet_data.odds
                 )
-                
+
+                # Extract line value for spread/total bets
+                line_value = self._extract_line_value(bet_data)
+
+                # Transform generic selections to specific ones with line values
+                specific_selection = self._create_specific_selection(
+                    bet_data.bet_type,
+                    bet_data.selection,
+                    bet_data.home_team,
+                    bet_data.away_team,
+                    line_value,
+                )
+
                 # Create bet record
                 bet = Bet(
                     id=bet_id,
                     user_id=user_id,
                     game_id=game.id if game else None,
                     bet_type=bet_data.bet_type,
-                    selection=bet_data.selection,
+                    selection=specific_selection,
                     odds=bet_data.odds,
                     amount=bet_data.amount,
                     potential_win=potential_win,
                     status=BetStatus.PENDING,
                     placed_at=datetime.utcnow(),
+                    line_value=line_value,  # Store the extracted line value
                     # Include game details - prefer game data over bet_data
                     home_team=game.home_team if game else bet_data.home_team,
                     away_team=game.away_team if game else bet_data.away_team,
                     sport=game.sport_key if game else bet_data.sport,
-                    commence_time=game.commence_time if game else bet_data.commence_time
+                    commence_time=(
+                        game.commence_time if game else bet_data.commence_time
+                    ),
                 )
-                
+
                 db.add(bet)
-                
+
                 # Log bet history
                 history = BetHistory(
                     user_id=user_id,
@@ -73,14 +99,17 @@ class BetServiceDB:
                     action="placed",
                     new_status=BetStatus.PENDING.value,
                     amount=bet_data.amount,
-                    bet_metadata={"bet_type": bet_data.bet_type, "selection": bet_data.selection}
+                    bet_metadata={
+                        "bet_type": bet_data.bet_type,
+                        "selection": bet_data.selection,
+                    },
                 )
                 db.add(history)
-                
+
                 db.commit()
-                
+
                 logger.info(f"Bet placed: {bet_id} for user {user_id}")
-                
+
                 return {
                     "success": True,
                     "bet": {
@@ -97,46 +126,51 @@ class BetServiceDB:
                         "home_team": bet.home_team,
                         "away_team": bet.away_team,
                         "sport": bet.sport,
-                        "commence_time": bet.commence_time.isoformat() if bet.commence_time else None
+                        "commence_time": (
+                            bet.commence_time.isoformat() if bet.commence_time else None
+                        ),
                     },
-                    "message": "Bet placed successfully"
+                    "message": "Bet placed successfully",
                 }
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error placing bet: {e}")
             return {"success": False, "error": str(e)}
-    
+
     async def place_parlay(self, user_id: int, parlay_data: PlaceParlayRequest) -> Dict:
         """Place a parlay bet with multiple legs"""
         try:
             if len(parlay_data.legs) < 2:
                 return {"success": False, "error": "Parlay must have at least 2 legs"}
-            
+
             if len(parlay_data.legs) > 10:
                 return {"success": False, "error": "Maximum 10 legs allowed in parlay"}
-            
+
             db = SessionLocal()
             try:
                 # Check bet limits (simplified)
                 if parlay_data.amount > 10000:
-                    return {"success": False, "error": "Bet exceeds maximum limit of $10,000"}
-                
+                    return {
+                        "success": False,
+                        "error": "Bet exceeds maximum limit of $10,000",
+                    }
+
                 # Calculate parlay odds
                 total_odds = 1.0
                 for leg in parlay_data.legs:
                     decimal_odds = self._american_to_decimal(leg.odds)
                     total_odds *= decimal_odds
-                
+
                 # Convert back to American odds
                 parlay_odds = self._decimal_to_american(total_odds)
                 potential_win = (total_odds - 1) * parlay_data.amount
-                
+
                 # Generate parlay ID
                 parlay_id = str(uuid.uuid4())
-                
+
                 # Create main parlay bet
                 parlay_bet = ParlayBet(
                     id=parlay_id,
@@ -146,21 +180,27 @@ class BetServiceDB:
                     potential_win=potential_win,
                     status=BetStatus.PENDING,
                     placed_at=datetime.utcnow(),
-                    leg_count=len(parlay_data.legs)
+                    leg_count=len(parlay_data.legs),
                 )
-                
+
                 db.add(parlay_bet)
-                
+
                 # Create individual leg bets
                 leg_bets = []
                 for leg in parlay_data.legs:
                     leg_id = str(uuid.uuid4())
-                    
+
+                    # Create or get game record for this leg
+                    game = await self._get_or_create_game_from_leg(leg, db)
+
+                    # Extract line value for parlay leg
+                    leg_line_value = self._extract_line_value(leg)
+
                     leg_bet = Bet(
                         id=leg_id,
                         user_id=user_id,
-                        game_id=None,  # Set to None to avoid foreign key constraint
-                        parlay_id=parlay_id,
+                        game_id=leg.game_id,  # Use the provided game_id from frontend
+                        parlay_id=parlay_id,  # Link to parent parlay
                         bet_type=leg.bet_type,
                         selection=leg.selection,
                         odds=leg.odds,
@@ -168,16 +208,35 @@ class BetServiceDB:
                         potential_win=0,
                         status=BetStatus.PENDING,
                         placed_at=datetime.utcnow(),
-                        # Use leg data if available, otherwise None
-                        home_team=getattr(leg, 'home_team', None),
-                        away_team=getattr(leg, 'away_team', None),
-                        sport=getattr(leg, 'sport', None),
-                        commence_time=datetime.utcnow()
+                        line_value=leg_line_value,  # Store the extracted line value
+                        # Use leg data from frontend or game data if available
+                        home_team=(
+                            leg.home_team
+                            if hasattr(leg, "home_team")
+                            else (game.home_team if game else None)
+                        ),
+                        away_team=(
+                            leg.away_team
+                            if hasattr(leg, "away_team")
+                            else (game.away_team if game else None)
+                        ),
+                        sport=(
+                            leg.sport
+                            if hasattr(leg, "sport")
+                            else (game.sport_key if game else None)
+                        ),
+                        commence_time=(
+                            datetime.fromisoformat(
+                                leg.commence_time.replace("Z", "+00:00")
+                            )
+                            if hasattr(leg, "commence_time") and leg.commence_time
+                            else (game.commence_time if game else datetime.utcnow())
+                        ),
                     )
-                    
+
                     db.add(leg_bet)
                     leg_bets.append(leg_bet)
-                
+
                 # Log parlay history
                 history = BetHistory(
                     user_id=user_id,
@@ -185,14 +244,16 @@ class BetServiceDB:
                     action="placed",
                     new_status=BetStatus.PENDING.value,
                     amount=parlay_data.amount,
-                    bet_metadata={"type": "parlay", "leg_count": len(parlay_data.legs)}
+                    bet_metadata={"type": "parlay", "leg_count": len(parlay_data.legs)},
                 )
                 db.add(history)
-                
+
                 db.commit()
-                
-                logger.info(f"Parlay placed: {parlay_id} with {len(parlay_data.legs)} legs for user {user_id}")
-                
+
+                logger.info(
+                    f"Parlay placed: {parlay_id} with {len(parlay_data.legs)} legs for user {user_id}"
+                )
+
                 return {
                     "success": True,
                     "parlay": {
@@ -203,19 +264,19 @@ class BetServiceDB:
                         "potential_win": parlay_bet.potential_win,
                         "status": parlay_bet.status,
                         "placed_at": parlay_bet.placed_at.isoformat(),
-                        "leg_count": parlay_bet.leg_count
+                        "leg_count": parlay_bet.leg_count,
                     },
                     "legs": [self._bet_to_dict(leg) for leg in leg_bets],
-                    "message": f"Parlay placed with {len(parlay_data.legs)} legs"
+                    "message": f"Parlay placed with {len(parlay_data.legs)} legs",
                 }
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error placing parlay: {e}")
             return {"success": False, "error": str(e)}
-    
+
     async def get_bet_history(self, user_id: int, query: BetHistoryQuery) -> Dict:
         """Get user's bet history with filtering"""
         try:
@@ -225,10 +286,10 @@ class BetServiceDB:
                 bet_query = db.query(Bet).filter(
                     and_(
                         Bet.user_id == user_id,
-                        Bet.parlay_id.is_(None)  # Exclude parlay legs
+                        Bet.parlay_id.is_(None),  # Exclude parlay legs
                     )
                 )
-                
+
                 # Apply filters
                 if query.status:
                     bet_query = bet_query.filter(Bet.status == query.status)
@@ -238,137 +299,157 @@ class BetServiceDB:
                     bet_query = bet_query.filter(Bet.placed_at >= query.start_date)
                 if query.end_date:
                     bet_query = bet_query.filter(Bet.placed_at <= query.end_date)
-                
+
                 # Get total count
                 total_count = bet_query.count()
-                
+
                 # Apply sorting and pagination
-                bets = bet_query.order_by(desc(Bet.placed_at)).offset(query.offset).limit(query.limit).all()
-                
+                bets = (
+                    bet_query.order_by(desc(Bet.placed_at))
+                    .offset(query.offset)
+                    .limit(query.limit)
+                    .all()
+                )
+
                 # Get parlay bets separately
                 parlay_query = db.query(ParlayBet).filter(ParlayBet.user_id == user_id)
-                
+
                 if query.status:
                     parlay_query = parlay_query.filter(ParlayBet.status == query.status)
                 if query.start_date:
-                    parlay_query = parlay_query.filter(ParlayBet.placed_at >= query.start_date)
+                    parlay_query = parlay_query.filter(
+                        ParlayBet.placed_at >= query.start_date
+                    )
                 if query.end_date:
-                    parlay_query = parlay_query.filter(ParlayBet.placed_at <= query.end_date)
-                
-                parlays = parlay_query.order_by(desc(ParlayBet.placed_at)).offset(query.offset).limit(query.limit).all()
-                
+                    parlay_query = parlay_query.filter(
+                        ParlayBet.placed_at <= query.end_date
+                    )
+
+                parlays = (
+                    parlay_query.order_by(desc(ParlayBet.placed_at))
+                    .offset(query.offset)
+                    .limit(query.limit)
+                    .all()
+                )
+
                 # Convert to response format
                 bet_list = [self._bet_to_dict(bet) for bet in bets]
                 parlay_list = [self._parlay_to_dict(parlay, db) for parlay in parlays]
-                
+
                 # Combine and sort by date
                 all_bets = bet_list + parlay_list
                 all_bets.sort(key=lambda x: x["placed_at"], reverse=True)
-                
+
                 return {
                     "success": True,
-                    "bets": all_bets[query.offset:query.offset + query.limit],
+                    "bets": all_bets[query.offset : query.offset + query.limit],
                     "total": total_count + len(parlay_list),
                     "offset": query.offset,
-                    "limit": query.limit
+                    "limit": query.limit,
                 }
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error fetching bet history: {e}")
             return {"success": False, "error": str(e)}
-    
-    async def get_user_parlays(self, user_id: int, status: Optional[str] = None, limit: int = 50) -> Dict:
+
+    async def get_user_parlays(
+        self, user_id: int, status: Optional[str] = None, limit: int = 50
+    ) -> Dict:
         """Get user's parlay bets with legs"""
         try:
             db = SessionLocal()
             try:
                 query = db.query(ParlayBet).filter(ParlayBet.user_id == user_id)
-                
+
                 if status:
                     query = query.filter(ParlayBet.status == status)
-                
+
                 parlays = query.order_by(desc(ParlayBet.placed_at)).limit(limit).all()
-                
+
                 parlay_list = [self._parlay_to_dict(parlay, db) for parlay in parlays]
-                
+
                 return {
                     "success": True,
                     "parlays": parlay_list,
-                    "total": len(parlay_list)
+                    "total": len(parlay_list),
                 }
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error fetching user parlays: {e}")
             return {"success": False, "error": str(e)}
-    
+
     async def get_parlay_by_id(self, user_id: int, parlay_id: str) -> Dict:
         """Get specific parlay details by ID"""
         try:
             db = SessionLocal()
             try:
-                parlay = db.query(ParlayBet).filter(
-                    and_(
-                        ParlayBet.id == parlay_id,
-                        ParlayBet.user_id == user_id
+                parlay = (
+                    db.query(ParlayBet)
+                    .filter(
+                        and_(ParlayBet.id == parlay_id, ParlayBet.user_id == user_id)
                     )
-                ).first()
-                
+                    .first()
+                )
+
                 if not parlay:
                     return {"success": False, "error": "Parlay not found"}
-                
+
                 parlay_data = self._parlay_to_dict(parlay, db)
-                
+
                 return {"success": True, "parlay": parlay_data}
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error fetching parlay {parlay_id}: {e}")
             return {"success": False, "error": str(e)}
-    
+
     async def get_bet_stats(self, user_id: int) -> Dict:
         """Get comprehensive betting statistics for a user"""
         try:
             db = SessionLocal()
             try:
                 # Get all bets (excluding parlay legs)
-                bets = db.query(Bet).filter(
-                    and_(
-                        Bet.user_id == user_id,
-                        Bet.parlay_id.is_(None)
-                    )
-                ).all()
-                
+                bets = (
+                    db.query(Bet)
+                    .filter(and_(Bet.user_id == user_id, Bet.parlay_id.is_(None)))
+                    .all()
+                )
+
                 # Get parlay bets
                 parlays = db.query(ParlayBet).filter(ParlayBet.user_id == user_id).all()
-                
+
                 # Combine for statistics
                 all_bets = []
                 for bet in bets:
-                    all_bets.append({
-                        "amount": bet.amount,
-                        "odds": bet.odds,
-                        "status": bet.status,
-                        "result_amount": bet.result_amount or 0,
-                        "potential_win": bet.potential_win
-                    })
-                
+                    all_bets.append(
+                        {
+                            "amount": bet.amount,
+                            "odds": bet.odds,
+                            "status": bet.status,
+                            "result_amount": bet.result_amount or 0,
+                            "potential_win": bet.potential_win,
+                        }
+                    )
+
                 for parlay in parlays:
-                    all_bets.append({
-                        "amount": parlay.amount,
-                        "odds": parlay.total_odds,
-                        "status": parlay.status,
-                        "result_amount": parlay.result_amount or 0,
-                        "potential_win": parlay.potential_win
-                    })
-                
+                    all_bets.append(
+                        {
+                            "amount": parlay.amount,
+                            "odds": parlay.total_odds,
+                            "status": parlay.status,
+                            "result_amount": parlay.result_amount or 0,
+                            "potential_win": parlay.potential_win,
+                        }
+                    )
+
                 if not all_bets:
                     return {
                         "success": True,
@@ -385,26 +466,52 @@ class BetServiceDB:
                             worst_loss=0,
                             current_streak=0,
                             longest_win_streak=0,
-                            longest_loss_streak=0
-                        ).dict()
+                            longest_loss_streak=0,
+                        ).dict(),
                     }
-                
+
                 # Calculate statistics
                 total_bets = len(all_bets)
                 total_wagered = sum(bet["amount"] for bet in all_bets)
-                total_won = sum(bet["result_amount"] for bet in all_bets if bet["status"] == BetStatus.WON)
-                total_lost = sum(bet["amount"] for bet in all_bets if bet["status"] == BetStatus.LOST)
+                total_won = sum(
+                    bet["result_amount"]
+                    for bet in all_bets
+                    if bet["status"] == BetStatus.WON
+                )
+                total_lost = sum(
+                    bet["amount"] for bet in all_bets if bet["status"] == BetStatus.LOST
+                )
                 wins = len([bet for bet in all_bets if bet["status"] == BetStatus.WON])
-                losses = len([bet for bet in all_bets if bet["status"] == BetStatus.LOST])
-                
+                losses = len(
+                    [bet for bet in all_bets if bet["status"] == BetStatus.LOST]
+                )
+
                 win_rate = (wins / total_bets * 100) if total_bets > 0 else 0
                 average_bet = total_wagered / total_bets if total_bets > 0 else 0
-                average_odds = sum(bet["odds"] for bet in all_bets) / total_bets if total_bets > 0 else 0
+                average_odds = (
+                    sum(bet["odds"] for bet in all_bets) / total_bets
+                    if total_bets > 0
+                    else 0
+                )
                 net_profit = total_won - total_lost
-                
-                best_win = max((bet["result_amount"] for bet in all_bets if bet["status"] == BetStatus.WON), default=0)
-                worst_loss = max((bet["amount"] for bet in all_bets if bet["status"] == BetStatus.LOST), default=0)
-                
+
+                best_win = max(
+                    (
+                        bet["result_amount"]
+                        for bet in all_bets
+                        if bet["status"] == BetStatus.WON
+                    ),
+                    default=0,
+                )
+                worst_loss = max(
+                    (
+                        bet["amount"]
+                        for bet in all_bets
+                        if bet["status"] == BetStatus.LOST
+                    ),
+                    default=0,
+                )
+
                 stats = BetStats(
                     total_bets=total_bets,
                     total_wagered=round(total_wagered, 2),
@@ -418,18 +525,18 @@ class BetServiceDB:
                     worst_loss=round(worst_loss, 2),
                     current_streak=0,  # Would need more complex calculation
                     longest_win_streak=0,  # Would need more complex calculation
-                    longest_loss_streak=0  # Would need more complex calculation
+                    longest_loss_streak=0,  # Would need more complex calculation
                 )
-                
+
                 return {"success": True, "stats": stats.dict()}
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error calculating stats: {e}")
             return {"success": False, "error": str(e)}
-    
+
     def _bet_to_dict(self, bet: Bet) -> Dict:
         """Convert Bet model to dictionary"""
         return {
@@ -448,47 +555,57 @@ class BetServiceDB:
             "home_team": bet.home_team,
             "away_team": bet.away_team,
             "sport": bet.sport,
-            "commence_time": bet.commence_time.isoformat() if bet.commence_time else None,
-            "parlay_id": bet.parlay_id
+            "commence_time": (
+                bet.commence_time.isoformat() if bet.commence_time else None
+            ),
+            "parlay_id": bet.parlay_id,
         }
-    
+
     def _parlay_to_dict(self, parlay: ParlayBet, db: Session) -> Dict:
         """Convert ParlayBet model to dictionary with legs"""
         # Get legs with game information
         legs = db.query(Bet).filter(Bet.parlay_id == parlay.id).all()
-        
+
         # Enhance legs with game information if missing
         enhanced_legs = []
         for leg in legs:
             leg_dict = self._bet_to_dict(leg)
-            
+
             # If leg doesn't have team info but has game_id, get it from Game table
-            if not leg_dict.get('home_team') and leg_dict.get('game_id'):
-                game = db.query(Game).filter(Game.id == leg_dict['game_id']).first()
+            if not leg_dict.get("home_team") and leg_dict.get("game_id"):
+                game = db.query(Game).filter(Game.id == leg_dict["game_id"]).first()
                 if game:
-                    leg_dict['home_team'] = game.home_team
-                    leg_dict['away_team'] = game.away_team
-                    leg_dict['sport'] = game.sport_key
-                    leg_dict['commence_time'] = game.commence_time.isoformat() if game.commence_time else None
-            
+                    leg_dict["home_team"] = game.home_team
+                    leg_dict["away_team"] = game.away_team
+                    leg_dict["sport"] = game.sport_key
+                    leg_dict["commence_time"] = (
+                        game.commence_time.isoformat() if game.commence_time else None
+                    )
+
             enhanced_legs.append(leg_dict)
-        
+
         return {
             "id": parlay.id,
             "user_id": parlay.user_id,
             "amount": parlay.amount,
             "total_odds": parlay.total_odds,
             "potential_win": parlay.potential_win,
-            "status": parlay.status,
+            "status": (
+                parlay.status.value
+                if hasattr(parlay.status, "value")
+                else parlay.status
+            ),
             "placed_at": parlay.placed_at.isoformat(),
             "settled_at": parlay.settled_at.isoformat() if parlay.settled_at else None,
             "result_amount": parlay.result_amount,
             "leg_count": parlay.leg_count,
             "legs": enhanced_legs,
-            "bet_type": "parlay"  # For compatibility
+            "bet_type": "parlay",  # For compatibility
         }
-    
-    async def _get_or_create_game(self, bet_data: PlaceBetRequest, db: Session) -> Optional[Game]:
+
+    async def _get_or_create_game(
+        self, bet_data: PlaceBetRequest, db: Session
+    ) -> Optional[Game]:
         """Get or create game record"""
         if not bet_data.game_id:
             return None
@@ -504,199 +621,335 @@ class BetServiceDB:
                     sport_title=bet_data.sport or "Unknown",
                     home_team=bet_data.home_team,
                     away_team=bet_data.away_team,
-                    commence_time=bet_data.commence_time or datetime.utcnow()
+                    commence_time=(
+                        self._parse_datetime(bet_data.commence_time)
+                        if bet_data.commence_time
+                        else datetime.utcnow()
+                    ),
                 )
                 db.add(game)
+                logger.info(
+                    f"Created game record with provided data for {bet_data.game_id}"
+                )
             else:
-                # If no game details provided, create a minimal game record with placeholder data
-                # This ensures we have a game record for the bet to reference
-                game = Game(
-                    id=bet_data.game_id,
-                    sport_key="unknown",
-                    sport_title="Unknown Sport",
-                    home_team="TBD",
-                    away_team="TBD",
-                    commence_time=datetime.utcnow()
-                )
-                db.add(game)
-                logger.warning(f"Created minimal game record for game_id {bet_data.game_id} - consider updating with actual game details")
+                # If no game details provided, try to fetch from Odds API
+                game_details = await self._fetch_game_details_from_api(bet_data.game_id)
+                if game_details:
+                    game = Game(
+                        id=bet_data.game_id,
+                        sport_key=game_details["sport_key"],
+                        sport_title=game_details["sport_title"],
+                        home_team=game_details["home_team"],
+                        away_team=game_details["away_team"],
+                        commence_time=game_details["commence_time"],
+                    )
+                    db.add(game)
+                    logger.info(
+                        f"Created game record with API data for {bet_data.game_id}: {game_details['away_team']} @ {game_details['home_team']}"
+                    )
+                else:
+                    # Fall back to minimal game record if API lookup fails
+                    game = Game(
+                        id=bet_data.game_id,
+                        sport_key="unknown",
+                        sport_title="Unknown Sport",
+                        home_team="TBD",
+                        away_team="TBD",
+                        commence_time=datetime.utcnow(),
+                    )
+                    db.add(game)
+                    logger.warning(
+                        f"Created minimal game record for game_id {bet_data.game_id} - API lookup failed"
+                    )
 
         return game
-    
-    async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
-        """Get or create game record from parlay leg"""
-        if not hasattr(leg, 'game_id') or not leg.game_id:
-            return None
-            
-        game = db.query(Game).filter(Game.id == leg.game_id).first()
-        
-        if not game:
-            # Use team information from leg data if available
-            sport_key = leg.sport if hasattr(leg, 'sport') and leg.sport else "unknown"
-            home_team = leg.home_team if hasattr(leg, 'home_team') and leg.home_team else "TBD"
-            away_team = leg.away_team if hasattr(leg, 'away_team') and leg.away_team else "TBD"
-            commence_time = self._parse_datetime(leg.commence_time) if hasattr(leg, 'commence_time') and leg.commence_time else datetime.utcnow()
-            
-            # Fallback: try to extract sport from game_id pattern if no sport provided
-            if sport_key == "unknown" and leg.game_id.startswith('nfl-'):
-                sport_key = "americanfootball_nfl"
-            
-            game = Game(
-                id=leg.game_id,
-                sport_key=sport_key,
-                sport_title=sport_key.replace('_', ' ').title(),
-                home_team=home_team,
-                away_team=away_team,
-                commence_time=commence_time
+
+    async def _fetch_game_details_from_api(self, game_id: str) -> Optional[Dict]:
+        """Fetch game details from Odds API using game_id"""
+        logger.info(f"Attempting to fetch game details for {game_id}")
+        try:
+            from app.services.odds_api_service import OddsAPIService
+            from app.core.config import settings
+
+            if not settings.ODDS_API_KEY:
+                logger.error("No Odds API key available for game lookup")
+                return None
+
+            logger.info(
+                f"Using Odds API key ending in ...{settings.ODDS_API_KEY[-4:] if len(settings.ODDS_API_KEY) > 4 else 'SHORT'}"
             )
-            
+
+            # Use the same function that the frontend uses to get all games
+            from app.services.odds_api_service import get_popular_sports_odds
+
+            logger.info(
+                "Fetching all games from popular sports odds (same as frontend)"
+            )
+            api_games = await get_popular_sports_odds()
+            logger.info(f"Found {len(api_games)} total games from popular sports")
+
+            # Find the specific game by ID
+            for game_data in api_games:
+                if game_data.get("id") == game_id:
+                    logger.info(
+                        f"FOUND GAME: {game_data.get('away_team')} @ {game_data.get('home_team')} ({game_data.get('sport_title')})"
+                    )
+
+                    # Parse commence_time if available
+                    commence_time = None
+                    if game_data.get("commence_time"):
+                        try:
+                            commence_time = datetime.fromisoformat(
+                                game_data["commence_time"].replace("Z", "+00:00")
+                            )
+                        except:
+                            commence_time = datetime.utcnow()
+                    else:
+                        commence_time = datetime.utcnow()
+
+                    return {
+                        "sport_key": game_data.get("sport_key", "unknown"),
+                        "sport_title": game_data.get("sport_title", "Unknown Sport"),
+                        "home_team": game_data.get("home_team", "Unknown Home"),
+                        "away_team": game_data.get("away_team", "Unknown Away"),
+                        "commence_time": commence_time,
+                    }
+
+            logger.warning(f"Game {game_id} not found in popular sports data")
+            return None
+
+        except Exception as e:
+            logger.error(
+                f"Critical error fetching game details from API for {game_id}: {e}"
+            )
+            import traceback
+
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return None
+
+    async def _get_or_create_game_from_leg(self, leg, db: Session) -> Optional[Game]:
+        """Get game record from database - games should already be stored by API endpoints"""
+        if not hasattr(leg, "game_id") or not leg.game_id:
+            return None
+
+        game = db.query(Game).filter(Game.id == leg.game_id).first()
+
+        if game:
+            logger.debug(
+                f"Found game in database: {game.away_team} @ {game.home_team} ({game.sport_title})"
+            )
+            return game
+
+        # Game not found in database - this shouldn't happen if frontend is using current API data
+        logger.error(
+            f"❌ GAME NOT IN DATABASE: {leg.game_id} not found. "
+            f"This means the frontend is using stale data or the API endpoints weren't called first. "
+            f"Selection: {leg.selection}"
+        )
+
+        # As a fallback, try to use leg data if available
+        sport_key = leg.sport if hasattr(leg, "sport") and leg.sport else "unknown"
+        home_team = (
+            leg.home_team
+            if hasattr(leg, "home_team") and leg.home_team
+            else "Unknown Home"
+        )
+        away_team = (
+            leg.away_team
+            if hasattr(leg, "away_team") and leg.away_team
+            else "Unknown Away"
+        )
+        commence_time = datetime.utcnow()
+
+        if hasattr(leg, "commence_time") and leg.commence_time:
             try:
-                db.add(game)
-                db.flush()  # Flush to catch unique constraint violations
-            except Exception as e:
-                # Handle unique constraint violation - another transaction created the game
-                db.rollback()
-                game = db.query(Game).filter(Game.id == leg.game_id).first()
-                if not game:
-                    # If still not found, re-raise the error
-                    raise e
-                    
+                commence_time = self._parse_datetime(leg.commence_time)
+            except:
+                commence_time = datetime.utcnow()
+
+        # Create game with available data
+        game = Game(
+            id=leg.game_id,
+            sport_key=sport_key,
+            sport_title=(
+                sport_key.replace("_", " ").title()
+                if sport_key != "unknown"
+                else "Unknown Sport"
+            ),
+            home_team=home_team,
+            away_team=away_team,
+            commence_time=commence_time,
+            status=GameStatus.SCHEDULED,
+            last_update=datetime.utcnow(),
+        )
+        logger.warning(f"Created fallback game: {away_team} @ {home_team}")
+
+        try:
+            db.add(game)
+            db.flush()
+        except Exception as e:
+            # Handle unique constraint violation - another transaction created the game
+            db.rollback()
+            game = db.query(Game).filter(Game.id == leg.game_id).first()
+            if not game:
+                # If still not found, re-raise the error
+                raise e
+
         return game
-    
+
     def _calculate_potential_win(self, amount: float, odds: float) -> float:
         """Calculate potential winnings from American odds"""
         if odds > 0:
             return amount * (odds / 100)
         else:
             return amount * (100 / abs(odds))
-    
+
     def _american_to_decimal(self, odds: float) -> float:
         """Convert American odds to decimal"""
         if odds > 0:
             return (odds / 100) + 1
         else:
             return (100 / abs(odds)) + 1
-    
+
     def _decimal_to_american(self, odds: float) -> int:
         """Convert decimal odds to American"""
         if odds >= 2:
             return round((odds - 1) * 100)
         else:
             return round(-100 / (odds - 1))
-    
+
     async def _check_bet_limits(self, user_id: int, amount: float, db: Session) -> bool:
         """Check if bet amount is within user limits"""
         if amount > self.bet_limits["single_bet"]:
             return False
-        
+
         # Check daily limit
-        today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+        today_start = datetime.utcnow().replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
         today_total = await self._get_period_total(user_id, today_start, db)
         if today_total + amount > self.bet_limits["daily"]:
             return False
-        
+
         # Check weekly limit
         week_start = today_start - timedelta(days=7)
         week_total = await self._get_period_total(user_id, week_start, db)
         if week_total + amount > self.bet_limits["weekly"]:
             return False
-        
+
         return True
-    
-    async def _get_period_total(self, user_id: int, start_date: datetime, db: Session) -> float:
+
+    async def _get_period_total(
+        self, user_id: int, start_date: datetime, db: Session
+    ) -> float:
         """Get total bet amount for a period"""
         # Regular bets
-        bet_total = db.query(Bet).filter(
-            and_(
-                Bet.user_id == user_id,
-                Bet.placed_at >= start_date,
-                Bet.parlay_id.is_(None)  # Don't count parlay legs
+        bet_total = (
+            db.query(Bet)
+            .filter(
+                and_(
+                    Bet.user_id == user_id,
+                    Bet.placed_at >= start_date,
+                    Bet.parlay_id.is_(None),  # Don't count parlay legs
+                )
             )
-        ).with_entities(Bet.amount).all()
-        
+            .with_entities(Bet.amount)
+            .all()
+        )
+
         # Parlay bets
-        parlay_total = db.query(ParlayBet).filter(
-            and_(
-                ParlayBet.user_id == user_id,
-                ParlayBet.placed_at >= start_date
+        parlay_total = (
+            db.query(ParlayBet)
+            .filter(
+                and_(ParlayBet.user_id == user_id, ParlayBet.placed_at >= start_date)
             )
-        ).with_entities(ParlayBet.amount).all()
-        
-        total = sum(bet.amount for bet in bet_total) + sum(parlay.amount for parlay in parlay_total)
+            .with_entities(ParlayBet.amount)
+            .all()
+        )
+
+        total = sum(bet.amount for bet in bet_total) + sum(
+            parlay.amount for parlay in parlay_total
+        )
         return total
-    
+
     def _parse_datetime(self, datetime_str: str) -> datetime:
         """Parse datetime string with various formats"""
         try:
             # Handle ISO format with Z
-            if datetime_str.endswith('Z'):
-                datetime_str = datetime_str.replace('Z', '+00:00')
+            if datetime_str.endswith("Z"):
+                datetime_str = datetime_str.replace("Z", "+00:00")
             return datetime.fromisoformat(datetime_str)
         except ValueError:
             # Fallback to current time if parsing fails
             return datetime.utcnow()
-    
+
     async def cancel_bet(self, user_id: int, bet_id: str) -> Dict:
         """Cancel a pending bet"""
         try:
             db = SessionLocal()
             try:
                 # Find the bet
-                bet = db.query(Bet).filter(
-                    and_(
-                        Bet.id == bet_id,
-                        Bet.user_id == user_id
-                    )
-                ).first()
-                
+                bet = (
+                    db.query(Bet)
+                    .filter(and_(Bet.id == bet_id, Bet.user_id == user_id))
+                    .first()
+                )
+
                 if not bet:
                     return {"success": False, "error": "Bet not found"}
-                
+
                 if bet.status != BetStatus.PENDING:
                     return {"success": False, "error": "Can only cancel pending bets"}
-                
+
                 # Check if game has started (would need real game data)
                 # For now, allow cancellation if placed within last 5 minutes
-                time_since_placed = datetime.utcnow() - bet.placed_at.replace(tzinfo=None)
+                time_since_placed = datetime.utcnow() - bet.placed_at.replace(
+                    tzinfo=None
+                )
                 if time_since_placed > timedelta(minutes=5):
                     return {"success": False, "error": "Cancellation window has passed"}
-                
+
                 # Update bet status
                 bet.status = BetStatus.CANCELLED
                 bet.settled_at = datetime.utcnow()
-                
+
                 db.commit()
-                
+
                 return {"success": True, "message": "Bet cancelled successfully"}
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error cancelling bet: {e}")
             return {"success": False, "error": str(e)}
-    
+
     async def get_user_bets(self, user_id: int) -> List[Dict]:
         """Get all user bets (combined single bets and parlays)"""
         try:
             db = SessionLocal()
             try:
                 # Get single bets (not parlay legs)
-                single_bets = db.query(Bet).filter(
-                    and_(
-                        Bet.user_id == user_id,
-                        Bet.parlay_id.is_(None)
-                    )
-                ).order_by(desc(Bet.placed_at)).all()
+                single_bets = (
+                    db.query(Bet)
+                    .filter(and_(Bet.user_id == user_id, Bet.parlay_id.is_(None)))
+                    .order_by(desc(Bet.placed_at))
+                    .all()
+                )
 
                 # Get parlay bets
-                parlay_bets = db.query(ParlayBet).filter(
-                    ParlayBet.user_id == user_id
-                ).order_by(desc(ParlayBet.placed_at)).all()
+                parlay_bets = (
+                    db.query(ParlayBet)
+                    .filter(ParlayBet.user_id == user_id)
+                    .order_by(desc(ParlayBet.placed_at))
+                    .all()
+                )
 
                 # Convert to response format
                 bet_list = [self._bet_to_dict(bet) for bet in single_bets]
-                parlay_list = [self._parlay_to_dict(parlay, db) for parlay in parlay_bets]
+                parlay_list = [
+                    self._parlay_to_dict(parlay, db) for parlay in parlay_bets
+                ]
 
                 # Combine and sort by placed_at
                 all_bets = bet_list + parlay_list
@@ -718,30 +971,75 @@ class BetServiceDB:
             try:
                 # Get active live bets - these are bets that are still pending
                 # and are for games that might be in progress
-                active_bets = db.query(Bet).filter(
-                    and_(
-                        Bet.user_id == user_id,
-                        Bet.status == BetStatus.PENDING,
-                        Bet.parlay_id.is_(None)  # Exclude parlay legs
+                active_bets = (
+                    db.query(Bet)
+                    .filter(
+                        and_(
+                            Bet.user_id == user_id,
+                            Bet.status == BetStatus.PENDING,
+                            Bet.parlay_id.is_(None),  # Exclude parlay legs
+                        )
                     )
-                ).order_by(desc(Bet.placed_at)).all()
+                    .order_by(desc(Bet.placed_at))
+                    .all()
+                )
 
                 # Also get active parlay bets
-                active_parlays = db.query(ParlayBet).filter(
-                    and_(
-                        ParlayBet.user_id == user_id,
-                        ParlayBet.status == BetStatus.PENDING
+                active_parlays = (
+                    db.query(ParlayBet)
+                    .filter(
+                        and_(
+                            ParlayBet.user_id == user_id,
+                            ParlayBet.status == BetStatus.PENDING,
+                        )
                     )
-                ).order_by(desc(ParlayBet.placed_at)).all()
+                    .order_by(desc(ParlayBet.placed_at))
+                    .all()
+                )
 
                 # Convert to response format
                 bet_list = [self._bet_to_dict(bet) for bet in active_bets]
-                parlay_list = [self._parlay_to_dict(parlay, db) for parlay in active_parlays]
+                parlay_list = [
+                    self._parlay_to_dict(parlay, db) for parlay in active_parlays
+                ]
+
+                # Debug logging to identify duplicates
+                logger.info(
+                    f"Active bets query returned {len(active_bets)} single bets, {len(active_parlays)} parlays"
+                )
+
+                # Check for duplicate IDs in the results
+                bet_ids = [bet.id for bet in active_bets]
+                parlay_ids = [parlay.id for parlay in active_parlays]
+
+                if len(bet_ids) != len(set(bet_ids)):
+                    logger.warning(f"DUPLICATE SINGLE BET IDs found: {bet_ids}")
+                if len(parlay_ids) != len(set(parlay_ids)):
+                    logger.warning(f"DUPLICATE PARLAY IDs found: {parlay_ids}")
 
                 # Combine and sort by placed_at
                 all_active = bet_list + parlay_list
                 all_active.sort(key=lambda x: x["placed_at"], reverse=True)
 
+                # Final check for duplicate IDs in combined list
+                combined_ids = [bet.get("id") for bet in all_active]
+                if len(combined_ids) != len(set(combined_ids)):
+                    logger.error(f"DUPLICATE IDs in final result: {combined_ids}")
+
+                    # Temporary fix: Remove duplicates based on ID
+                    seen_ids = set()
+                    deduplicated = []
+                    for bet in all_active:
+                        if bet.get("id") not in seen_ids:
+                            deduplicated.append(bet)
+                            seen_ids.add(bet.get("id"))
+
+                    logger.warning(
+                        f"Removed {len(all_active) - len(deduplicated)} duplicate entries"
+                    )
+                    all_active = deduplicated
+
+                logger.info(f"Returning {len(all_active)} total active bets")
                 return all_active
 
             finally:
@@ -757,19 +1055,22 @@ class BetServiceDB:
             db = SessionLocal()
             try:
                 # Get pending bets for user
-                pending_bets = db.query(Bet).filter(
-                    and_(
-                        Bet.user_id == user_id,
-                        Bet.status == BetStatus.PENDING
+                pending_bets = (
+                    db.query(Bet)
+                    .filter(
+                        and_(Bet.user_id == user_id, Bet.status == BetStatus.PENDING)
                     )
-                ).limit(5).all()
-                
+                    .limit(5)
+                    .all()
+                )
+
                 if not pending_bets:
                     return {"success": False, "error": "No pending bets found"}
-                
+
                 import random
+
                 results_set = 0
-                
+
                 for bet in pending_bets:
                     # Randomly set results (70% win rate for demo)
                     if random.random() < 0.7:
@@ -778,23 +1079,319 @@ class BetServiceDB:
                     else:
                         bet.status = BetStatus.LOST
                         bet.result_amount = 0
-                    
+
                     bet.settled_at = datetime.utcnow()
                     results_set += 1
-                
+
                 db.commit()
-                
+
                 return {
                     "success": True,
-                    "message": f"Simulated results for {results_set} bets"
+                    "message": f"Simulated results for {results_set} bets",
                 }
-                
+
             finally:
                 db.close()
-                
+
         except Exception as e:
             logger.error(f"Error simulating results: {e}")
             return {"success": False, "error": str(e)}
+
+    def _extract_basic_info_from_selection(self, selection: str) -> Dict[str, str]:
+        """Extract basic team and sport info from bet selection text"""
+        if not selection:
+            return {}
+
+        selection_lower = selection.lower()
+        result = {}
+
+        # Simple team extraction - look for common team patterns
+        teams = {
+            # NFL
+            "panthers": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
+            "carolina panthers": {
+                "team": "Carolina Panthers",
+                "sport": "americanfootball_nfl",
+            },
+            "carolina": {"team": "Carolina Panthers", "sport": "americanfootball_nfl"},
+            "falcons": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
+            "atlanta": {"team": "Atlanta Falcons", "sport": "americanfootball_nfl"},
+            "browns": {"team": "Cleveland Browns", "sport": "americanfootball_nfl"},
+            "cleveland": {"team": "Cleveland Browns", "sport": "americanfootball_nfl"},
+            # NBA
+            "rockets": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "houston rockets": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "houston": {"team": "Houston Rockets", "sport": "basketball_nba"},
+            "heat": {"team": "Miami Heat", "sport": "basketball_nba"},
+            "raptors": {"team": "Toronto Raptors", "sport": "basketball_nba"},
+            "toronto raptors": {"team": "Toronto Raptors", "sport": "basketball_nba"},
+            "toronto": {"team": "Toronto Raptors", "sport": "basketball_nba"},
+            # MLB
+            "red sox": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "boston red sox": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "boston": {"team": "Boston Red Sox", "sport": "baseball_mlb"},
+            "dodgers": {"team": "Los Angeles Dodgers", "sport": "baseball_mlb"},
+            "tigers": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
+            "detroit tigers": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
+            "detroit": {"team": "Detroit Tigers", "sport": "baseball_mlb"},
+            # NHL
+            "florida panthers": {"team": "Florida Panthers", "sport": "icehockey_nhl"},
+            "canadiens": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
+            "montreal canadiens": {
+                "team": "Montréal Canadiens",
+                "sport": "icehockey_nhl",
+            },
+            "montréal canadiens": {
+                "team": "Montréal Canadiens",
+                "sport": "icehockey_nhl",
+            },
+            "montreal": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
+            "montréal": {"team": "Montréal Canadiens", "sport": "icehockey_nhl"},
+        }
+
+        # Check for team matches (longest first to avoid partial matches)
+        sorted_teams = sorted(teams.keys(), key=len, reverse=True)
+        for team_key in sorted_teams:
+            if team_key in selection_lower:
+                result["away_team"] = teams[team_key]["team"]
+                result["sport"] = teams[team_key]["sport"]
+                break
+
+        return result
+
+    async def _place_yetai_bet(
+        self, user_id: int, bet_data: PlaceBetRequest, db: Session
+    ) -> Dict:
+        """Handle placing a bet on a YetAI pick"""
+        try:
+            # Find the YetAI bet
+            yetai_bet_id = getattr(bet_data, "yetai_bet_id", None)
+            yetai_bet = db.query(YetAIBet).filter(YetAIBet.id == yetai_bet_id).first()
+
+            if not yetai_bet:
+                return {"success": False, "error": "YetAI bet not found"}
+
+            if yetai_bet.status != "pending":
+                return {"success": False, "error": "This YetAI bet is no longer active"}
+
+            # Check user subscription tier
+            user = db.query(User).filter(User.id == user_id).first()
+            if not user:
+                return {"success": False, "error": "User not found"}
+
+            # Check if user has access to premium bets
+            if (
+                yetai_bet.tier_requirement != SubscriptionTier.FREE
+                and user.subscription_tier == SubscriptionTier.FREE
+            ):
+                return {
+                    "success": False,
+                    "error": "Premium subscription required for this bet",
+                }
+
+            # Validate bet limits with the amount from bet_data
+            if not await self._check_bet_limits(user_id, bet_data.amount, db):
+                return {"success": False, "error": "Bet exceeds limits"}
+
+            # Use YetAI bet data but with user's amount
+            potential_win = self._calculate_potential_win(
+                bet_data.amount, yetai_bet.odds
+            )
+
+            # Generate bet ID
+            bet_id = str(uuid.uuid4())
+
+            # Extract line value from YetAI bet selection
+            yetai_line_value = self._extract_line_value_from_yetai_bet(yetai_bet)
+
+            # Create user bet record using YetAI bet data
+            bet = Bet(
+                id=bet_id,
+                user_id=user_id,
+                game_id=yetai_bet.game_id,  # May be None for some YetAI bets
+                bet_type=yetai_bet.bet_type,
+                selection=yetai_bet.selection,
+                odds=yetai_bet.odds,
+                amount=bet_data.amount,  # Use user's amount
+                potential_win=potential_win,
+                status=BetStatus.PENDING,
+                placed_at=datetime.utcnow(),
+                line_value=yetai_line_value,  # Store the extracted line value
+                home_team=yetai_bet.home_team,
+                away_team=yetai_bet.away_team,
+                sport=yetai_bet.sport,
+                commence_time=yetai_bet.commence_time,
+                bookmaker="YetAI",
+            )
+
+            db.add(bet)
+
+            # Log bet history
+            history = BetHistory(
+                user_id=user_id,
+                bet_id=bet_id,
+                action="placed",
+                new_status=BetStatus.PENDING.value,
+                amount=bet_data.amount,
+                bet_metadata={
+                    "bet_type": yetai_bet.bet_type,
+                    "selection": yetai_bet.selection,
+                    "yetai_bet_id": yetai_bet_id,
+                },
+            )
+            db.add(history)
+
+            db.commit()
+
+            logger.info(
+                f"User {user_id} placed bet {bet_id} on YetAI bet {yetai_bet_id}"
+            )
+
+            return {
+                "success": True,
+                "bet": {
+                    "id": bet.id,
+                    "user_id": bet.user_id,
+                    "game_id": bet.game_id,
+                    "bet_type": bet.bet_type,
+                    "selection": bet.selection,
+                    "odds": bet.odds,
+                    "amount": bet.amount,
+                    "potential_win": bet.potential_win,
+                    "status": bet.status,
+                    "placed_at": bet.placed_at.isoformat(),
+                    "home_team": bet.home_team,
+                    "away_team": bet.away_team,
+                    "sport": bet.sport,
+                    "commence_time": (
+                        bet.commence_time.isoformat() if bet.commence_time else None
+                    ),
+                    "bookmaker": bet.bookmaker,
+                },
+                "message": "Bet placed successfully on YetAI pick",
+            }
+
+        except Exception as e:
+            logger.error(f"Error placing YetAI bet: {e}")
+            return {"success": False, "error": f"Failed to place bet: {str(e)}"}
+
+    def _extract_line_value(self, bet_data) -> Optional[float]:
+        """
+        Extract line value (spread/total) from bet selection for verification purposes
+        Returns None for moneyline bets
+        """
+        import re
+
+        # Skip moneyline bets
+        if bet_data.bet_type.lower() in ["moneyline", "h2h"]:
+            return None
+
+        selection = bet_data.selection
+
+        # For spread bets, look for patterns like:
+        # "Philadelphia Phillies -1.5" or "New York Yankees +7"
+        # "Chiefs -3.5" or "Cowboys +7"
+        spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
+        if spread_match and bet_data.bet_type.lower() in [
+            "spread",
+            "spreads",
+            "point_spread",
+        ]:
+            try:
+                return float(spread_match.group(1))
+            except ValueError:
+                pass
+
+        # For total bets, look for patterns like:
+        # "Over 45.5" or "Under 228.5" or "Total Over 7.5"
+        if bet_data.bet_type.lower() in ["total", "totals", "over_under"]:
+            total_match = re.search(r"(\d+\.?\d*)", selection)
+            if total_match:
+                try:
+                    return float(total_match.group(1))
+                except ValueError:
+                    pass
+
+        # Log if we couldn't extract line value for spread/total bets
+        if bet_data.bet_type.lower() not in ["moneyline", "h2h"]:
+            logger.warning(
+                f"Could not extract line value from selection '{selection}' for bet type '{bet_data.bet_type}'"
+            )
+
+        return None
+
+    def _extract_line_value_from_yetai_bet(self, yetai_bet) -> Optional[float]:
+        """
+        Extract line value from YetAI bet for verification purposes
+        """
+
+        # Create a mock bet_data object with the required attributes
+        class MockBetData:
+            def __init__(self, bet_type, selection):
+                self.bet_type = bet_type
+                self.selection = selection
+
+        mock_data = MockBetData(yetai_bet.bet_type, yetai_bet.selection)
+        return self._extract_line_value(mock_data)
+
+    def _create_specific_selection(
+        self,
+        bet_type: str,
+        selection: str,
+        home_team: str,
+        away_team: str,
+        line_value: Optional[float],
+    ) -> str:
+        """Transform generic selections to specific ones with line values"""
+
+        bet_type_lower = bet_type.lower()
+        selection_lower = selection.lower()
+
+        # Handle spread bets
+        if bet_type_lower in ["spread", "spreads", "point_spread"]:
+            if line_value is not None:
+                if selection_lower == "home":
+                    if line_value > 0:
+                        return f"{home_team} +{line_value}"
+                    else:
+                        return f"{home_team} {line_value}"
+                elif selection_lower == "away":
+                    away_line = -line_value
+                    if away_line > 0:
+                        return f"{away_team} +{away_line}"
+                    else:
+                        return f"{away_team} {away_line}"
+
+            # Fallback if no line value
+            if selection_lower == "home":
+                return f"{home_team} +1.5"
+            elif selection_lower == "away":
+                return f"{away_team} -1.5"
+
+        # Handle total bets
+        elif bet_type_lower in ["total", "totals", "over_under"]:
+            if line_value is not None:
+                if selection_lower == "over":
+                    return f"Over {line_value}"
+                elif selection_lower == "under":
+                    return f"Under {line_value}"
+
+            # Fallback if no line value
+            if selection_lower == "over":
+                return "Over 8.5"
+            elif selection_lower == "under":
+                return "Under 8.5"
+
+        # Handle moneyline - just use team names
+        elif bet_type_lower in ["moneyline", "h2h"]:
+            if selection_lower == "home":
+                return home_team or "Home Team"
+            elif selection_lower == "away":
+                return away_team or "Away Team"
+
+        # If we can't transform it, return original selection
+        return selection
+
 
 # Initialize service
 bet_service_db = BetServiceDB()

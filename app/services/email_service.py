@@ -13,9 +13,10 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
+
 class EmailService:
     """Handle email sending for the application"""
-    
+
     def __init__(self):
         # Email configuration - in production, use environment variables
         self.smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
@@ -27,60 +28,72 @@ class EmailService:
         # Use environment-aware frontend URL
         frontend_urls = settings.get_frontend_urls()
         self.app_url = frontend_urls[0] if frontend_urls else "http://localhost:3000"
-        
+
         # For development - simulate email sending
         self.dev_mode = not self.smtp_user or not self.smtp_password
-        
+
         if self.dev_mode:
-            logger.info("Email service running in development mode - emails will be logged only")
-    
-    def send_email(self, to_email: str, subject: str, html_body: str, text_body: Optional[str] = None) -> bool:
+            logger.info(
+                "Email service running in development mode - emails will be logged only"
+            )
+
+    def send_email(
+        self,
+        to_email: str,
+        subject: str,
+        html_body: str,
+        text_body: Optional[str] = None,
+    ) -> bool:
         """Send an email"""
         try:
             if self.dev_mode:
                 # In development, just log the email
-                logger.info(f"""
+                logger.info(
+                    f"""
                 ========== EMAIL SIMULATION ==========
                 To: {to_email}
                 Subject: {subject}
                 Body: {text_body or 'HTML email'}
                 ======================================
-                """)
+                """
+                )
                 return True
-            
+
             # Create message
-            msg = MIMEMultipart('alternative')
-            msg['Subject'] = subject
-            msg['From'] = f"{self.from_name} <{self.from_email}>"
-            msg['To'] = to_email
-            
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = f"{self.from_name} <{self.from_email}>"
+            msg["To"] = to_email
+
             # Add text and HTML parts
             if text_body:
-                part1 = MIMEText(text_body, 'plain')
+                part1 = MIMEText(text_body, "plain")
                 msg.attach(part1)
-            
-            part2 = MIMEText(html_body, 'html')
+
+            part2 = MIMEText(html_body, "html")
             msg.attach(part2)
-            
+
             # Send email
             with smtplib.SMTP(self.smtp_host, self.smtp_port) as server:
                 server.starttls()
                 server.login(self.smtp_user, self.smtp_password)
                 server.send_message(msg)
-            
+
             logger.info(f"Email sent successfully to {to_email}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {e}")
             return False
-    
-    def send_verification_email(self, to_email: str, verification_token: str, first_name: Optional[str] = None) -> bool:
+
+    def send_verification_email(
+        self, to_email: str, verification_token: str, first_name: Optional[str] = None
+    ) -> bool:
         """Send email verification link"""
         verification_link = f"{self.app_url}/verify-email?token={verification_token}"
-        
+
         subject = "Verify Your YetAI Account"
-        
+
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -118,7 +131,7 @@ class EmailService:
         </body>
         </html>
         """
-        
+
         text_body = f"""
         Welcome to YetAI!
         
@@ -135,15 +148,17 @@ class EmailService:
         
         © 2024 YetAI Sports Betting Platform
         """
-        
+
         return self.send_email(to_email, subject, html_body, text_body)
-    
-    def send_password_reset_email(self, to_email: str, reset_token: str, first_name: Optional[str] = None) -> bool:
+
+    def send_password_reset_email(
+        self, to_email: str, reset_token: str, first_name: Optional[str] = None
+    ) -> bool:
         """Send password reset email"""
         reset_link = f"{self.app_url}/reset-password?token={reset_token}"
-        
+
         subject = "Reset Your YetAI Password"
-        
+
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -183,7 +198,7 @@ class EmailService:
         </body>
         </html>
         """
-        
+
         text_body = f"""
         Password Reset Request
         
@@ -200,16 +215,18 @@ class EmailService:
         
         © 2024 YetAI Sports Betting Platform
         """
-        
+
         return self.send_email(to_email, subject, html_body, text_body)
-    
-    def send_2fa_backup_codes_email(self, to_email: str, backup_codes: list, first_name: Optional[str] = None) -> bool:
+
+    def send_2fa_backup_codes_email(
+        self, to_email: str, backup_codes: list, first_name: Optional[str] = None
+    ) -> bool:
         """Send 2FA backup codes via email"""
         subject = "Your YetAI 2FA Backup Codes"
-        
+
         codes_html = "<br>".join([f"<code>{code}</code>" for code in backup_codes])
         codes_text = "\n".join([f"  • {code}" for code in backup_codes])
-        
+
         html_body = f"""
         <!DOCTYPE html>
         <html>
@@ -254,7 +271,7 @@ class EmailService:
         </body>
         </html>
         """
-        
+
         text_body = f"""
         2FA Backup Codes for YetAI
         
@@ -274,8 +291,9 @@ class EmailService:
         
         © 2024 YetAI Sports Betting Platform
         """
-        
+
         return self.send_email(to_email, subject, html_body, text_body)
+
 
 # Service instance
 email_service = EmailService()

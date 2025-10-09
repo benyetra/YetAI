@@ -8,6 +8,7 @@ from sqlalchemy import and_, or_, desc
 from datetime import datetime, timedelta
 import logging
 import json
+import statistics
 from abc import ABC, abstractmethod
 
 from app.models.fantasy_models import (
@@ -588,6 +589,74 @@ class TradeAnalyzerService:
                 if player.age > 32:
                     multiplier *= 0.95  # Slight age discount in redraft
 
+        # Analytics-based performance adjustments
+        if analytics:
+            # Usage stability and efficiency adjustments
+            if analytics.snap_percentage and analytics.snap_percentage > 0.8:
+                multiplier *= 1.08  # High usage premium
+            elif analytics.snap_percentage and analytics.snap_percentage < 0.4:
+                multiplier *= 0.92  # Low usage discount
+
+            # Efficiency premium/discount
+            if analytics.points_per_snap and analytics.points_per_snap > 0.2:
+                multiplier *= 1.05  # Elite efficiency
+            elif analytics.points_per_snap and analytics.points_per_snap < 0.1:
+                multiplier *= 0.95  # Poor efficiency
+
+            # Consistency factor
+            if analytics.boom_rate and analytics.bust_rate:
+                consistency = 1 - analytics.bust_rate + (analytics.boom_rate * 0.5)
+                if consistency > 0.8:
+                    multiplier *= 1.03  # Consistent high performer
+                elif consistency < 0.5:
+                    multiplier *= 0.97  # Inconsistent performer
+
+            # Red zone value in TD-heavy leagues
+            if analytics.red_zone_share and analytics.red_zone_share > 0.3:
+                multiplier *= 1.04  # Red zone usage premium
+
+            # Position-specific analytics adjustments
+            if player.position.value == "RB":
+                # Workload sustainability
+                if analytics.carries and analytics.carries > 20:
+                    if player.age and player.age > 28:
+                        multiplier *= 0.95  # High usage + age concern
+                    else:
+                        multiplier *= 1.03  # High usage premium for young RBs
+
+                # YPC efficiency
+                if (
+                    analytics.rushing_yards
+                    and analytics.carries
+                    and analytics.carries > 5
+                ):
+                    ypc = analytics.rushing_yards / analytics.carries
+                    if ypc > 4.8:
+                        multiplier *= 1.02  # Efficient runner
+                    elif ypc < 3.5:
+                        multiplier *= 0.98  # Inefficient runner
+
+            elif player.position.value in ["WR", "TE"]:
+                # Target efficiency
+                if analytics.targets and analytics.receptions and analytics.targets > 3:
+                    catch_rate = analytics.receptions / analytics.targets
+                    if catch_rate > 0.75:
+                        multiplier *= 1.02  # Reliable hands
+                    elif catch_rate < 0.55:
+                        multiplier *= 0.98  # Drop concerns
+
+                # Big play ability
+                if (
+                    analytics.receiving_yards
+                    and analytics.receptions
+                    and analytics.receptions > 0
+                ):
+                    ypr = analytics.receiving_yards / analytics.receptions
+                    if ypr > 15:
+                        multiplier *= 1.02  # Big play threat
+                    elif ypr < 8:
+                        multiplier *= 0.99  # Limited big play upside
+
         # Performance trend adjustments
         if trends:
             if trends.momentum_score and trends.momentum_score > 0.7:
@@ -620,16 +689,96 @@ class TradeAnalyzerService:
         trends: PlayerTrends,
         league_context: Dict,
     ) -> List[str]:
-        """Get list of factors affecting player value"""
+        """Get comprehensive list of factors affecting player value"""
         factors = []
 
         if analytics:
-            if analytics.snap_percentage and analytics.snap_percentage > 0.8:
-                factors.append("High snap share")
-            if analytics.target_share and analytics.target_share > 0.25:
-                factors.append("Strong target share")
-            if analytics.red_zone_share and analytics.red_zone_share > 0.3:
-                factors.append("Red zone usage")
+            # Usage Metrics
+            if analytics.snap_percentage and analytics.snap_percentage > 0.85:
+                factors.append("Elite snap share (>85%)")
+            elif analytics.snap_percentage and analytics.snap_percentage > 0.75:
+                factors.append("High snap share (>75%)")
+            elif analytics.snap_percentage and analytics.snap_percentage < 0.5:
+                factors.append("Limited snap share (<50%)")
+
+            # Target Share Analysis (for pass catchers)
+            if player.position.value in ["WR", "TE", "RB"]:
+                if analytics.target_share and analytics.target_share > 0.25:
+                    factors.append(f"Elite target share ({analytics.target_share:.1%})")
+                elif analytics.target_share and analytics.target_share > 0.18:
+                    factors.append(
+                        f"Strong target share ({analytics.target_share:.1%})"
+                    )
+                elif analytics.target_share and analytics.target_share < 0.08:
+                    factors.append(f"Low target share ({analytics.target_share:.1%})")
+
+            # Red Zone Usage
+            if analytics.red_zone_share and analytics.red_zone_share > 0.35:
+                factors.append("High red zone usage")
+            elif analytics.red_zone_share and analytics.red_zone_share > 0.2:
+                factors.append("Solid red zone role")
+
+            # Efficiency Metrics
+            if analytics.points_per_snap and analytics.points_per_snap > 0.25:
+                factors.append("Elite efficiency")
+            elif analytics.points_per_snap and analytics.points_per_snap > 0.18:
+                factors.append("High efficiency")
+            elif analytics.points_per_snap and analytics.points_per_snap < 0.1:
+                factors.append("Low efficiency")
+
+            # Consistency Analysis
+            if analytics.boom_rate and analytics.boom_rate > 0.35:
+                factors.append("High ceiling player")
+            elif analytics.boom_rate and analytics.boom_rate < 0.15:
+                factors.append("Safe floor player")
+
+            if analytics.bust_rate and analytics.bust_rate > 0.3:
+                factors.append("High volatility")
+            elif analytics.bust_rate and analytics.bust_rate < 0.15:
+                factors.append("Consistent performer")
+
+            # RB-Specific Metrics
+            if player.position.value == "RB":
+                if analytics.carries and analytics.carries > 18:
+                    factors.append("High volume runner")
+                elif analytics.carries and analytics.carries < 8:
+                    factors.append("Limited rushing role")
+
+                if analytics.rushing_yards and analytics.carries:
+                    ypc = analytics.rushing_yards / analytics.carries
+                    if ypc > 5.0:
+                        factors.append(f"Explosive runner ({ypc:.1f} YPC)")
+                    elif ypc < 3.5:
+                        factors.append(f"Low YPC ({ypc:.1f})")
+
+            # WR/TE Specific Metrics
+            if player.position.value in ["WR", "TE"]:
+                if analytics.targets and analytics.receptions:
+                    catch_rate = analytics.receptions / analytics.targets
+                    if catch_rate > 0.75:
+                        factors.append(f"High catch rate ({catch_rate:.1%})")
+                    elif catch_rate < 0.6:
+                        factors.append(f"Low catch rate ({catch_rate:.1%})")
+
+                if (
+                    analytics.receiving_yards
+                    and analytics.receptions
+                    and analytics.receptions > 0
+                ):
+                    ypr = analytics.receiving_yards / analytics.receptions
+                    if ypr > 15:
+                        factors.append(f"Big play threat ({ypr:.1f} YPR)")
+                    elif ypr < 8:
+                        factors.append(f"Short-area target ({ypr:.1f} YPR)")
+
+            # Recent Performance Trends
+            if analytics.ppr_points:
+                if analytics.ppr_points > 20:
+                    factors.append("Elite recent game")
+                elif analytics.ppr_points > 15:
+                    factors.append("Strong recent game")
+                elif analytics.ppr_points < 5:
+                    factors.append("Poor recent game")
 
         if trends:
             if trends.buy_low_indicator:
@@ -637,11 +786,16 @@ class TradeAnalyzerService:
             if trends.sell_high_indicator:
                 factors.append("Sell-high candidate")
 
+        # Age and Experience Factors
         if player.age:
-            if player.age < 25:
-                factors.append("Youth upside")
+            if player.age < 23:
+                factors.append("Prime breakout age")
+            elif player.age < 27:
+                factors.append("Peak years")
             elif player.age > 30:
-                factors.append("Veteran presence")
+                factors.append("Veteran decline risk")
+            elif player.age > 28:
+                factors.append("Age concern")
 
         return factors
 
@@ -1599,3 +1753,752 @@ class TradeAnalyzerService:
             "trade_context": evaluation.trade_context,
             "created_at": evaluation.created_at.isoformat(),
         }
+
+    # ============================================================================
+    # COMPREHENSIVE TEAM ANALYTICS
+    # ============================================================================
+
+    async def get_comprehensive_team_analytics(
+        self, team_id: int, season: int = 2025
+    ) -> Dict[str, Any]:
+        """Get comprehensive analytics for team analysis"""
+        try:
+            # Get team roster
+            roster_spots = (
+                self.db.query(FantasyRosterSpot)
+                .filter(FantasyRosterSpot.team_id == team_id)
+                .all()
+            )
+
+            players = [spot.player for spot in roster_spots if spot.player]
+
+            # Analyze position groups
+            position_analytics = await self._analyze_position_groups(players, season)
+
+            # Calculate team consistency scores
+            team_consistency = await self._calculate_team_consistency(players, season)
+
+            # Analyze usage distribution
+            usage_distribution = await self._analyze_usage_distribution(players, season)
+
+            # Calculate efficiency benchmarks
+            efficiency_benchmarks = await self._calculate_efficiency_benchmarks(
+                players, season
+            )
+
+            # Identify team strengths and weaknesses
+            strengths_weaknesses = await self._identify_team_strengths_weaknesses(
+                position_analytics, team_consistency, efficiency_benchmarks
+            )
+
+            return {
+                "team_id": team_id,
+                "season": season,
+                "position_analytics": position_analytics,
+                "team_consistency": team_consistency,
+                "usage_distribution": usage_distribution,
+                "efficiency_benchmarks": efficiency_benchmarks,
+                "strengths_weaknesses": strengths_weaknesses,
+                "overall_team_grade": self._calculate_overall_team_grade(
+                    position_analytics, team_consistency, efficiency_benchmarks
+                ),
+                "analytics_updated": datetime.now().isoformat(),
+            }
+
+        except Exception as e:
+            print(f"Error in get_comprehensive_team_analytics: {str(e)}")
+            return {}
+
+    async def _analyze_position_groups(
+        self, players: List[FantasyPlayer], season: int
+    ) -> Dict[str, Any]:
+        """Analyze each position group's performance and depth"""
+        from app.services.player_analytics_service import PlayerAnalyticsService
+
+        analytics_service = PlayerAnalyticsService(self.db)
+
+        position_groups = {"QB": [], "RB": [], "WR": [], "TE": [], "K": [], "DEF": []}
+
+        # Group players by position
+        for player in players:
+            if player.position and player.position.value in position_groups:
+                position_groups[player.position.value].append(player)
+
+        position_analytics = {}
+
+        for position, pos_players in position_groups.items():
+            if not pos_players:
+                position_analytics[position] = {
+                    "player_count": 0,
+                    "depth_quality": "Poor",
+                    "avg_efficiency": 0,
+                    "consistency_score": 0,
+                    "top_performers": [],
+                    "position_grade": "F",
+                }
+                continue
+
+            # Calculate position group metrics
+            efficiency_scores = []
+            consistency_scores = []
+            top_performers = []
+
+            for player in pos_players:
+                # Get recent analytics data
+                recent_weeks = list(range(1, 13))  # First 12 weeks
+                analytics = await analytics_service.get_player_analytics(
+                    player.id, recent_weeks, season
+                )
+
+                if analytics:
+                    # Calculate efficiency metrics
+                    points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+                    if points:
+                        avg_points = sum(points) / len(points)
+                        efficiency_scores.append(avg_points)
+
+                        # Calculate consistency (inverse of standard deviation)
+                        if len(points) > 1:
+                            std_dev = statistics.stdev(points)
+                            consistency = max(
+                                0, 100 - (std_dev * 5)
+                            )  # Convert to 0-100 scale
+                            consistency_scores.append(consistency)
+
+                        # Identify top performers (above position average)
+                        if position == "QB" and avg_points > 18:
+                            top_performers.append(
+                                {"name": player.name, "avg_points": avg_points}
+                            )
+                        elif position == "RB" and avg_points > 12:
+                            top_performers.append(
+                                {"name": player.name, "avg_points": avg_points}
+                            )
+                        elif position == "WR" and avg_points > 10:
+                            top_performers.append(
+                                {"name": player.name, "avg_points": avg_points}
+                            )
+                        elif position == "TE" and avg_points > 8:
+                            top_performers.append(
+                                {"name": player.name, "avg_points": avg_points}
+                            )
+
+            # Calculate position group metrics
+            avg_efficiency = (
+                sum(efficiency_scores) / len(efficiency_scores)
+                if efficiency_scores
+                else 0
+            )
+            avg_consistency = (
+                sum(consistency_scores) / len(consistency_scores)
+                if consistency_scores
+                else 0
+            )
+
+            # Determine depth quality
+            starter_count = min(self._get_starter_count(position), len(pos_players))
+            depth_quality = self._evaluate_depth_quality(
+                len(pos_players), starter_count, avg_efficiency
+            )
+
+            # Calculate position grade
+            position_grade = self._calculate_position_grade(
+                avg_efficiency, avg_consistency, depth_quality
+            )
+
+            position_analytics[position] = {
+                "player_count": len(pos_players),
+                "depth_quality": depth_quality,
+                "avg_efficiency": round(avg_efficiency, 1),
+                "consistency_score": round(avg_consistency, 1),
+                "top_performers": sorted(
+                    top_performers, key=lambda x: x["avg_points"], reverse=True
+                )[:3],
+                "position_grade": position_grade,
+            }
+
+        return position_analytics
+
+    async def _calculate_team_consistency(
+        self, players: List[FantasyPlayer], season: int
+    ) -> Dict[str, Any]:
+        """Calculate overall team consistency metrics"""
+        from app.services.player_analytics_service import PlayerAnalyticsService
+
+        analytics_service = PlayerAnalyticsService(self.db)
+
+        all_weekly_scores = []
+        position_consistency = {}
+
+        for player in players:
+            recent_weeks = list(range(1, 13))
+            analytics = await analytics_service.get_player_analytics(
+                player.id, recent_weeks, season
+            )
+
+            if analytics:
+                points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+
+                if points and len(points) > 1:
+                    # Add to overall team variance calculation
+                    all_weekly_scores.extend(points)
+
+                    # Position-specific consistency
+                    position = player.position.value if player.position else "Unknown"
+                    if position not in position_consistency:
+                        position_consistency[position] = []
+
+                    std_dev = statistics.stdev(points)
+                    consistency_score = max(0, 100 - (std_dev * 5))
+                    position_consistency[position].append(consistency_score)
+
+        # Calculate overall team consistency
+        overall_consistency = 0
+        if len(all_weekly_scores) > 1:
+            team_std_dev = statistics.stdev(all_weekly_scores)
+            overall_consistency = max(0, 100 - (team_std_dev * 2))
+
+        # Calculate position group consistency averages
+        position_avg_consistency = {}
+        for pos, scores in position_consistency.items():
+            if scores:
+                position_avg_consistency[pos] = round(sum(scores) / len(scores), 1)
+
+        return {
+            "overall_consistency": round(overall_consistency, 1),
+            "position_consistency": position_avg_consistency,
+            "consistency_grade": self._grade_consistency(overall_consistency),
+            "most_consistent_position": (
+                max(position_avg_consistency.items(), key=lambda x: x[1])[0]
+                if position_avg_consistency
+                else None
+            ),
+            "least_consistent_position": (
+                min(position_avg_consistency.items(), key=lambda x: x[1])[0]
+                if position_avg_consistency
+                else None
+            ),
+        }
+
+    async def _analyze_usage_distribution(
+        self, players: List[FantasyPlayer], season: int
+    ) -> Dict[str, Any]:
+        """Analyze how usage is distributed across the team"""
+        from app.services.player_analytics_service import PlayerAnalyticsService
+
+        analytics_service = PlayerAnalyticsService(self.db)
+
+        player_usage = []
+        total_team_points = 0
+
+        for player in players:
+            recent_weeks = list(range(1, 13))
+            analytics = await analytics_service.get_player_analytics(
+                player.id, recent_weeks, season
+            )
+
+            if analytics:
+                points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+                snap_percentages = [
+                    a["snap_percentage"] for a in analytics if a["snap_percentage"]
+                ]
+                target_shares = [
+                    a["target_share"] for a in analytics if a["target_share"]
+                ]
+
+                if points:
+                    avg_points = sum(points) / len(points)
+                    avg_snap_pct = (
+                        sum(snap_percentages) / len(snap_percentages)
+                        if snap_percentages
+                        else 0
+                    )
+                    avg_target_share = (
+                        sum(target_shares) / len(target_shares) if target_shares else 0
+                    )
+
+                    player_usage.append(
+                        {
+                            "player_name": player.name,
+                            "position": (
+                                player.position.value if player.position else "Unknown"
+                            ),
+                            "avg_points": avg_points,
+                            "avg_snap_percentage": avg_snap_pct,
+                            "avg_target_share": avg_target_share
+                            * 100,  # Convert to percentage
+                            "total_points": sum(points),
+                        }
+                    )
+
+                    total_team_points += sum(points)
+
+        # Calculate concentration metrics
+        if player_usage:
+            # Sort by total points
+            player_usage.sort(key=lambda x: x["total_points"], reverse=True)
+
+            # Calculate point concentration (what % of points come from top players)
+            top_3_points = sum(p["total_points"] for p in player_usage[:3])
+            top_5_points = sum(p["total_points"] for p in player_usage[:5])
+
+            concentration_metrics = {
+                "top_3_concentration": (
+                    round((top_3_points / total_team_points * 100), 1)
+                    if total_team_points > 0
+                    else 0
+                ),
+                "top_5_concentration": (
+                    round((top_5_points / total_team_points * 100), 1)
+                    if total_team_points > 0
+                    else 0
+                ),
+                "distribution_balance": self._evaluate_distribution_balance(
+                    player_usage
+                ),
+            }
+        else:
+            concentration_metrics = {
+                "top_3_concentration": 0,
+                "top_5_concentration": 0,
+                "distribution_balance": "Poor",
+            }
+
+        return {
+            "player_usage": player_usage[:10],  # Top 10 players
+            "concentration_metrics": concentration_metrics,
+            "usage_distribution_grade": self._grade_usage_distribution(
+                concentration_metrics
+            ),
+            "team_dependencies": self._identify_team_dependencies(player_usage),
+        }
+
+    async def _calculate_efficiency_benchmarks(
+        self, players: List[FantasyPlayer], season: int
+    ) -> Dict[str, Any]:
+        """Calculate efficiency benchmarks compared to league averages"""
+        from app.services.player_analytics_service import PlayerAnalyticsService
+
+        analytics_service = PlayerAnalyticsService(self.db)
+
+        position_efficiency = {"QB": [], "RB": [], "WR": [], "TE": []}
+
+        for player in players:
+            if player.position and player.position.value in position_efficiency:
+                recent_weeks = list(range(1, 13))
+                analytics = await analytics_service.get_player_analytics(
+                    player.id, recent_weeks, season
+                )
+
+                if analytics:
+                    # Calculate various efficiency metrics
+                    efficiency_metrics = []
+
+                    for week_data in analytics:
+                        if week_data.get("ppr_points") and week_data.get(
+                            "snap_percentage"
+                        ):
+                            points_per_snap = week_data["ppr_points"] / (
+                                week_data["snap_percentage"] / 100
+                            )
+                            efficiency_metrics.append(points_per_snap)
+
+                    if efficiency_metrics:
+                        avg_efficiency = sum(efficiency_metrics) / len(
+                            efficiency_metrics
+                        )
+                        position_efficiency[player.position.value].append(
+                            avg_efficiency
+                        )
+
+        # Compare to league benchmarks (simplified)
+        league_benchmarks = {
+            "QB": 0.35,  # Points per snap
+            "RB": 0.25,
+            "WR": 0.20,
+            "TE": 0.15,
+        }
+
+        efficiency_comparison = {}
+        for position, efficiencies in position_efficiency.items():
+            if efficiencies:
+                team_avg = sum(efficiencies) / len(efficiencies)
+                league_avg = league_benchmarks[position]
+
+                efficiency_comparison[position] = {
+                    "team_average": round(team_avg, 3),
+                    "league_average": league_avg,
+                    "vs_league": round(((team_avg - league_avg) / league_avg * 100), 1),
+                    "grade": self._grade_efficiency_vs_league(team_avg, league_avg),
+                }
+
+        return {
+            "efficiency_by_position": efficiency_comparison,
+            "overall_efficiency_grade": self._calculate_overall_efficiency_grade(
+                efficiency_comparison
+            ),
+            "efficiency_strengths": self._identify_efficiency_strengths(
+                efficiency_comparison
+            ),
+            "efficiency_weaknesses": self._identify_efficiency_weaknesses(
+                efficiency_comparison
+            ),
+        }
+
+    async def _identify_team_strengths_weaknesses(
+        self,
+        position_analytics: Dict,
+        team_consistency: Dict,
+        efficiency_benchmarks: Dict,
+    ) -> Dict[str, Any]:
+        """Identify key team strengths and weaknesses based on analytics"""
+
+        strengths = []
+        weaknesses = []
+
+        # Position-based strengths/weaknesses
+        for position, analytics in position_analytics.items():
+            grade = analytics.get("position_grade", "F")
+            efficiency = analytics.get("avg_efficiency", 0)
+
+            if grade in ["A+", "A", "A-"] and efficiency > 15:
+                strengths.append(
+                    f"Elite {position} production ({grade} grade, {efficiency:.1f} PPG avg)"
+                )
+            elif grade in ["D", "F"] or efficiency < 5:
+                weaknesses.append(
+                    f"Weak {position} depth ({grade} grade, {efficiency:.1f} PPG avg)"
+                )
+
+        # Consistency-based insights
+        overall_consistency = team_consistency.get("overall_consistency", 0)
+        if overall_consistency > 80:
+            strengths.append(
+                f"Highly consistent scoring ({overall_consistency:.1f}/100)"
+            )
+        elif overall_consistency < 50:
+            weaknesses.append(
+                f"Inconsistent week-to-week performance ({overall_consistency:.1f}/100)"
+            )
+
+        # Efficiency-based insights
+        efficiency_grades = efficiency_benchmarks.get("efficiency_by_position", {})
+        for position, metrics in efficiency_grades.items():
+            vs_league = metrics.get("vs_league", 0)
+            if vs_league > 20:
+                strengths.append(
+                    f"{position} efficiency well above league average (+{vs_league:.1f}%)"
+                )
+            elif vs_league < -20:
+                weaknesses.append(
+                    f"{position} efficiency below league average ({vs_league:.1f}%)"
+                )
+
+        return {
+            "key_strengths": strengths[:5],  # Top 5 strengths
+            "key_weaknesses": weaknesses[:5],  # Top 5 weaknesses
+            "overall_team_profile": self._determine_team_profile(strengths, weaknesses),
+            "recommended_strategy": self._recommend_team_strategy(
+                strengths, weaknesses
+            ),
+        }
+
+    def _get_starter_count(self, position: str) -> int:
+        """Get typical starter count for position"""
+        starter_counts = {"QB": 1, "RB": 2, "WR": 3, "TE": 1, "K": 1, "DEF": 1}
+        return starter_counts.get(position, 1)
+
+    def _evaluate_depth_quality(
+        self, total_players: int, starters_needed: int, avg_efficiency: float
+    ) -> str:
+        """Evaluate depth quality for a position group"""
+        depth_ratio = total_players / starters_needed if starters_needed > 0 else 0
+
+        if depth_ratio >= 2.5 and avg_efficiency > 12:
+            return "Excellent"
+        elif depth_ratio >= 2 and avg_efficiency > 8:
+            return "Good"
+        elif depth_ratio >= 1.5 and avg_efficiency > 5:
+            return "Fair"
+        else:
+            return "Poor"
+
+    def _calculate_position_grade(
+        self, efficiency: float, consistency: float, depth_quality: str
+    ) -> str:
+        """Calculate overall position group grade"""
+        score = 0
+
+        # Efficiency component (40%)
+        if efficiency > 15:
+            score += 40
+        elif efficiency > 12:
+            score += 32
+        elif efficiency > 8:
+            score += 24
+        elif efficiency > 5:
+            score += 16
+        else:
+            score += 8
+
+        # Consistency component (30%)
+        if consistency > 80:
+            score += 30
+        elif consistency > 70:
+            score += 24
+        elif consistency > 60:
+            score += 18
+        elif consistency > 50:
+            score += 12
+        else:
+            score += 6
+
+        # Depth component (30%)
+        depth_scores = {"Excellent": 30, "Good": 24, "Fair": 18, "Poor": 6}
+        score += depth_scores.get(depth_quality, 6)
+
+        # Convert to letter grade
+        if score >= 90:
+            return "A+"
+        elif score >= 85:
+            return "A"
+        elif score >= 80:
+            return "A-"
+        elif score >= 75:
+            return "B+"
+        elif score >= 70:
+            return "B"
+        elif score >= 65:
+            return "B-"
+        elif score >= 60:
+            return "C+"
+        elif score >= 55:
+            return "C"
+        elif score >= 50:
+            return "C-"
+        elif score >= 45:
+            return "D"
+        else:
+            return "F"
+
+    def _grade_consistency(self, consistency_score: float) -> str:
+        """Convert consistency score to letter grade"""
+        if consistency_score >= 85:
+            return "A"
+        elif consistency_score >= 75:
+            return "B"
+        elif consistency_score >= 65:
+            return "C"
+        elif consistency_score >= 55:
+            return "D"
+        else:
+            return "F"
+
+    def _evaluate_distribution_balance(self, player_usage: List[Dict]) -> str:
+        """Evaluate how balanced the usage distribution is"""
+        if len(player_usage) < 3:
+            return "Poor"
+
+        # Check if points are well distributed
+        total_points = sum(p["total_points"] for p in player_usage)
+        top_player_pct = (
+            player_usage[0]["total_points"] / total_points * 100
+            if total_points > 0
+            else 0
+        )
+
+        if top_player_pct < 25:
+            return "Excellent"
+        elif top_player_pct < 35:
+            return "Good"
+        elif top_player_pct < 45:
+            return "Fair"
+        else:
+            return "Poor"
+
+    def _grade_usage_distribution(self, concentration_metrics: Dict) -> str:
+        """Grade the usage distribution"""
+        top_3_conc = concentration_metrics.get("top_3_concentration", 0)
+        balance = concentration_metrics.get("distribution_balance", "Poor")
+
+        if balance == "Excellent" and top_3_conc < 60:
+            return "A"
+        elif balance in ["Good", "Excellent"] and top_3_conc < 70:
+            return "B"
+        elif balance == "Fair" and top_3_conc < 80:
+            return "C"
+        else:
+            return "D"
+
+    def _identify_team_dependencies(self, player_usage: List[Dict]) -> List[str]:
+        """Identify key team dependencies"""
+        dependencies = []
+
+        if not player_usage:
+            return dependencies
+
+        total_points = sum(p["total_points"] for p in player_usage)
+
+        for player in player_usage[:3]:  # Check top 3 players
+            player_pct = (
+                player["total_points"] / total_points * 100 if total_points > 0 else 0
+            )
+            if player_pct > 25:
+                dependencies.append(
+                    f"Heavy reliance on {player['player_name']} ({player_pct:.1f}% of team points)"
+                )
+
+        return dependencies
+
+    def _grade_efficiency_vs_league(self, team_avg: float, league_avg: float) -> str:
+        """Grade efficiency compared to league average"""
+        ratio = team_avg / league_avg if league_avg > 0 else 1
+
+        if ratio >= 1.3:
+            return "A"
+        elif ratio >= 1.15:
+            return "B"
+        elif ratio >= 0.95:
+            return "C"
+        elif ratio >= 0.8:
+            return "D"
+        else:
+            return "F"
+
+    def _calculate_overall_efficiency_grade(self, efficiency_comparison: Dict) -> str:
+        """Calculate overall efficiency grade across all positions"""
+        grades = [
+            metrics.get("grade", "F") for metrics in efficiency_comparison.values()
+        ]
+
+        if not grades:
+            return "F"
+
+        # Convert grades to numeric and average
+        grade_values = {"A": 90, "B": 80, "C": 70, "D": 60, "F": 50}
+        numeric_grades = [grade_values.get(g, 50) for g in grades]
+        avg_grade = sum(numeric_grades) / len(numeric_grades)
+
+        if avg_grade >= 85:
+            return "A"
+        elif avg_grade >= 75:
+            return "B"
+        elif avg_grade >= 65:
+            return "C"
+        elif avg_grade >= 55:
+            return "D"
+        else:
+            return "F"
+
+    def _identify_efficiency_strengths(self, efficiency_comparison: Dict) -> List[str]:
+        """Identify efficiency strengths"""
+        strengths = []
+
+        for position, metrics in efficiency_comparison.items():
+            vs_league = metrics.get("vs_league", 0)
+            if vs_league > 15:
+                strengths.append(f"{position} efficiency (+{vs_league:.1f}% vs league)")
+
+        return strengths
+
+    def _identify_efficiency_weaknesses(self, efficiency_comparison: Dict) -> List[str]:
+        """Identify efficiency weaknesses"""
+        weaknesses = []
+
+        for position, metrics in efficiency_comparison.items():
+            vs_league = metrics.get("vs_league", 0)
+            if vs_league < -15:
+                weaknesses.append(f"{position} efficiency ({vs_league:.1f}% vs league)")
+
+        return weaknesses
+
+    def _determine_team_profile(
+        self, strengths: List[str], weaknesses: List[str]
+    ) -> str:
+        """Determine overall team profile"""
+        strength_count = len(strengths)
+        weakness_count = len(weaknesses)
+
+        if strength_count >= 3 and weakness_count <= 1:
+            return "Elite roster with dominant strengths"
+        elif strength_count >= 2 and weakness_count <= 2:
+            return "Strong roster with minor weaknesses"
+        elif strength_count >= weakness_count:
+            return "Balanced roster trending positive"
+        elif weakness_count > strength_count * 1.5:
+            return "Developing roster with significant gaps"
+        else:
+            return "Average roster with mixed results"
+
+    def _recommend_team_strategy(
+        self, strengths: List[str], weaknesses: List[str]
+    ) -> str:
+        """Recommend strategy based on team analysis"""
+        strength_count = len(strengths)
+        weakness_count = len(weaknesses)
+
+        if strength_count >= 3:
+            return "Win-now strategy: leverage elite talent for championship push"
+        elif weakness_count >= 3:
+            return "Rebuild strategy: address fundamental weaknesses through trades/waivers"
+        elif "consistency" in str(weaknesses).lower():
+            return "Stabilization strategy: target consistent performers to reduce variance"
+        else:
+            return "Optimization strategy: make targeted improvements to competitive roster"
+
+    def _calculate_overall_team_grade(
+        self,
+        position_analytics: Dict,
+        team_consistency: Dict,
+        efficiency_benchmarks: Dict,
+    ) -> str:
+        """Calculate overall team grade"""
+        scores = []
+
+        # Position grades (60% weight)
+        position_grades = [
+            analytics.get("position_grade", "F")
+            for analytics in position_analytics.values()
+        ]
+        grade_values = {
+            "A+": 97,
+            "A": 93,
+            "A-": 90,
+            "B+": 87,
+            "B": 83,
+            "B-": 80,
+            "C+": 77,
+            "C": 73,
+            "C-": 70,
+            "D": 60,
+            "F": 50,
+        }
+
+        if position_grades:
+            avg_position_score = sum(
+                grade_values.get(g, 50) for g in position_grades
+            ) / len(position_grades)
+            scores.append(avg_position_score * 0.6)
+
+        # Consistency grade (20% weight)
+        consistency_grade = team_consistency.get("consistency_grade", "F")
+        scores.append(grade_values.get(consistency_grade, 50) * 0.2)
+
+        # Efficiency grade (20% weight)
+        efficiency_grade = efficiency_benchmarks.get("overall_efficiency_grade", "F")
+        scores.append(grade_values.get(efficiency_grade, 50) * 0.2)
+
+        # Calculate final score
+        final_score = sum(scores) if scores else 50
+
+        # Convert back to letter grade
+        if final_score >= 93:
+            return "A"
+        elif final_score >= 85:
+            return "B"
+        elif final_score >= 75:
+            return "C"
+        elif final_score >= 65:
+            return "D"
+        else:
+            return "F"

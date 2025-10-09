@@ -3,11 +3,13 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 from enum import Enum
 
+
 class BetType(str, Enum):
     MONEYLINE = "moneyline"
     SPREAD = "spread"
     TOTAL = "total"
     PARLAY = "parlay"
+
 
 class BetStatus(str, Enum):
     PENDING = "pending"
@@ -16,6 +18,7 @@ class BetStatus(str, Enum):
     PUSHED = "pushed"
     CANCELLED = "cancelled"
     LIVE = "live"
+
 
 class PlaceBetRequest(BaseModel):
     game_id: str
@@ -28,6 +31,9 @@ class PlaceBetRequest(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
     commence_time: Optional[datetime] = None
+    # Optional field for placing bets on YetAI picks
+    yetai_bet_id: Optional[str] = None
+
 
 class ParlayLeg(BaseModel):
     game_id: str
@@ -39,10 +45,12 @@ class ParlayLeg(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
     commence_time: Optional[str] = None
-    
+
+
 class PlaceParlayRequest(BaseModel):
     legs: List[ParlayLeg]
     amount: float = Field(gt=0, le=10000)
+
 
 class BetResponse(BaseModel):
     id: str
@@ -64,6 +72,7 @@ class BetResponse(BaseModel):
     sport: Optional[str] = None
     commence_time: Optional[datetime] = None
 
+
 class BetHistoryQuery(BaseModel):
     status: Optional[BetStatus] = None
     bet_type: Optional[BetType] = None
@@ -71,6 +80,7 @@ class BetHistoryQuery(BaseModel):
     end_date: Optional[datetime] = None
     limit: int = Field(default=50, le=100)
     offset: int = Field(default=0, ge=0)
+
 
 class BetStats(BaseModel):
     total_bets: int
@@ -87,23 +97,26 @@ class BetStats(BaseModel):
     longest_win_streak: int
     longest_loss_streak: int
 
+
 # YetAI Bets Models for Admin-Created Best Bets
 class YetAIBetType(str, Enum):
     STRAIGHT = "straight"
     PARLAY = "parlay"
 
+
 class CreateYetAIBetRequest(BaseModel):
     sport: str
     game: str
-    bet_type: str  # e.g., "Spread", "Moneyline", "Total", "Puck Line" 
-    pick: str      # e.g., "Chiefs -3.5", "Over 228.5"
-    odds: str      # e.g., "-110", "+150"
+    bet_type: str  # e.g., "Spread", "Moneyline", "Total", "Puck Line"
+    pick: str  # e.g., "Chiefs -3.5", "Over 228.5"
+    odds: str  # e.g., "-110", "+150"
     confidence: int = Field(ge=50, le=100)
     reasoning: str
     game_time: str
     is_premium: bool = True
     bet_category: YetAIBetType = YetAIBetType.STRAIGHT
-    
+
+
 class CreateParlayBetRequest(BaseModel):
     name: str  # e.g., "3-Team NFL Parlay"
     legs: List[CreateYetAIBetRequest]
@@ -111,6 +124,7 @@ class CreateParlayBetRequest(BaseModel):
     confidence: int = Field(ge=50, le=100)
     reasoning: str
     is_premium: bool = True
+
 
 class YetAIBet(BaseModel):
     id: str
@@ -129,11 +143,13 @@ class YetAIBet(BaseModel):
     result: Optional[str] = None
     bet_category: YetAIBetType
     created_by_admin: int  # admin user ID
-    
+
+
 class UpdateYetAIBetRequest(BaseModel):
     status: Optional[BetStatus] = None
     result: Optional[str] = None
-    
+
+
 class YetAIBetResponse(BaseModel):
     bets: List[YetAIBet]
     total_count: int

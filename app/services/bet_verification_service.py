@@ -1,16 +1,19 @@
 """
 Bet Verification Service - Automatically check and settle bet outcomes
 
-This service:
-1. Fetches completed game results from The Odds API
-2. Determines bet outcomes (won/lost/pushed)
+This service ONLY uses The Odds API for game results - NO local database fallback:
+1. Fetches completed game results from The Odds API exclusively
+2. Determines bet outcomes (won/lost/pushed) using real API data
 3. Updates bet statuses in the database
 4. Calculates and assigns result amounts
 5. Sends notifications to users
 6. Handles both individual bets and parlays
+
+Requires valid ODDS_API_KEY environment variable.
 """
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
@@ -29,6 +32,7 @@ from app.models.database_models import (
     GameStatus,
 )
 from app.services.odds_api_service import OddsAPIService, Score
+from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.services.websocket_manager import manager as websocket_manager
 from app.core.config import settings
 
@@ -68,14 +72,30 @@ class BetVerificationService:
 
     async def __aenter__(self):
         """Async context manager entry"""
+        # Check if API key is available for real data
+        if (
+            not settings.ODDS_API_KEY
+            or settings.ODDS_API_KEY == "your_odds_api_key_here"
+        ):
+            logger.error(
+                "🚫 WARNING: ODDS_API_KEY is missing or using placeholder value. "
+                "Bet verification will be disabled to prevent settlements with fake data. "
+                "Please configure a valid Odds API key from https://the-odds-api.com/"
+            )
+
         self.odds_api_service = OddsAPIService(settings.ODDS_API_KEY)
         await self.odds_api_service.__aenter__()
+
+        # Initialize optimized service for efficient API usage
+        self.optimized_odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit"""
         if self.odds_api_service:
             await self.odds_api_service.__aexit__(exc_type, exc_val, exc_tb)
+        if self.optimized_odds_service:
+            await self.optimized_odds_service.close()
 
     async def verify_all_pending_bets(self) -> Dict:
         """
@@ -86,7 +106,30 @@ class BetVerificationService:
         """
         logger.info("Starting bet verification process")
 
+        # Check if we have a valid API key before processing
+        if (
+            not settings.ODDS_API_KEY
+            or settings.ODDS_API_KEY == "your_odds_api_key_here"
+        ):
+            logger.error(
+                "🚫 Bet verification ABORTED: No valid Odds API key configured. "
+                "Cannot verify bets without real game data. Please set ODDS_API_KEY environment variable."
+            )
+            return {
+                "success": False,
+                "error": "No valid Odds API key configured",
+                "verified": 0,
+                "settled": 0,
+            }
+
         try:
+            # First, check for incorrectly settled bets and revert them
+            reverted_count = await self._revert_premature_settlements()
+            if reverted_count > 0:
+                logger.info(
+                    f"Reverted {reverted_count} prematurely settled bets back to pending"
+                )
+
             # Get all pending bets
             pending_bets = await self._get_pending_bets()
             pending_parlays = await self._get_pending_parlays()
@@ -136,17 +179,33 @@ class BetVerificationService:
                     "settled": 0,
                 }
 
+            # Log what games we have results for before verification
+            logger.info(
+                f"Game results available for verification: {list(game_results.keys())}"
+            )
+            for game_id, result in game_results.items():
+                logger.info(
+                    f"Game {game_id}: {result.away_team} @ {result.home_team} - "
+                    f"Final: {result.is_final}, Score: {result.away_score}-{result.home_score}"
+                )
+
             # Verify individual bets
             verified_bets = 0
             settled_bets = 0
 
             for bet in pending_bets:
                 if bet.game_id in game_results:
+                    game_result = game_results[bet.game_id]
+                    logger.info(
+                        f"Verifying bet {bet.id} for game {bet.game_id}: "
+                        f"is_final={game_result.is_final}, completed={game_result.is_final}"
+                    )
                     try:
-                        result = await self._verify_single_bet(
-                            bet, game_results[bet.game_id]
-                        )
+                        result = await self._verify_single_bet(bet, game_result)
                         if result:
+                            logger.info(
+                                f"Bet {bet.id} verification result: {result.status.value} - {result.reasoning}"
+                            )
                             await self._settle_bet(bet, result)
                             verified_bets += 1
                             if result.status in [
@@ -155,14 +214,28 @@ class BetVerificationService:
                                 BetStatus.PUSHED,
                             ]:
                                 settled_bets += 1
+                        else:
+                            logger.info(
+                                f"Bet {bet.id} could not be verified (game not final)"
+                            )
                     except Exception as e:
                         logger.error(f"Error verifying bet {bet.id}: {e}")
+                else:
+                    logger.debug(
+                        f"Bet {bet.id} game {bet.game_id} not in available game results"
+                    )
 
             # Verify parlays
             for parlay in pending_parlays:
+                logger.info(
+                    f"Verifying parlay {parlay.id} with {len(parlay.legs) if hasattr(parlay, 'legs') else 0} legs"
+                )
                 try:
                     parlay_result = await self._verify_parlay(parlay, game_results)
                     if parlay_result:
+                        logger.info(
+                            f"Parlay {parlay.id} verification result: {parlay_result.status.value} - {parlay_result.reasoning}"
+                        )
                         await self._settle_parlay(parlay, parlay_result)
                         verified_bets += 1
                         if parlay_result.status in [
@@ -171,6 +244,10 @@ class BetVerificationService:
                             BetStatus.PUSHED,
                         ]:
                             settled_bets += 1
+                    else:
+                        logger.info(
+                            f"Parlay {parlay.id} could not be verified (not all legs final)"
+                        )
                 except Exception as e:
                     logger.error(f"Error verifying parlay {parlay.id}: {e}")
 
@@ -224,110 +301,333 @@ class BetVerificationService:
         finally:
             db.close()
 
+    async def _revert_premature_settlements(self) -> int:
+        """
+        Check for bets that were prematurely settled (before game start time)
+        and revert them back to pending status
+
+        Returns:
+            Number of bets reverted
+        """
+        db = SessionLocal()
+        reverted_count = 0
+
+        try:
+            now = datetime.utcnow()
+
+            # Find settled bets where the game hasn't started yet
+            settled_bets = (
+                db.query(Bet)
+                .join(Game, Bet.game_id == Game.id)
+                .filter(
+                    and_(
+                        Bet.status.in_([BetStatus.WON, BetStatus.LOST]),
+                        Game.commence_time > now,  # Game hasn't started yet
+                    )
+                )
+                .all()
+            )
+
+            for bet in settled_bets:
+                game = db.query(Game).filter(Game.id == bet.game_id).first()
+                logger.warning(
+                    f"Reverting prematurely settled bet {bet.id}: "
+                    f"game {game.away_team} @ {game.home_team} "
+                    f"doesn't start until {game.commence_time} (now: {now})"
+                )
+
+                # Revert bet to pending
+                bet.status = BetStatus.PENDING
+                bet.result_amount = None
+                bet.settled_at = None
+
+                # Remove from bet history if exists
+                history_entry = (
+                    db.query(BetHistory).filter(BetHistory.bet_id == bet.id).first()
+                )
+                if history_entry:
+                    db.delete(history_entry)
+
+                reverted_count += 1
+
+            # Do the same for parlay bets
+            settled_parlays = (
+                db.query(ParlayBet)
+                .filter(ParlayBet.status.in_([BetStatus.WON, BetStatus.LOST]))
+                .all()
+            )
+
+            for parlay in settled_parlays:
+                legs = db.query(Bet).filter(Bet.parlay_id == parlay.id).all()
+                should_revert = False
+
+                # Check if any leg game hasn't started
+                for leg in legs:
+                    game = db.query(Game).filter(Game.id == leg.game_id).first()
+                    if game and game.commence_time > now:
+                        should_revert = True
+                        logger.warning(
+                            f"Reverting prematurely settled parlay {parlay.id}: "
+                            f"leg game {game.away_team} @ {game.home_team} "
+                            f"doesn't start until {game.commence_time} (now: {now})"
+                        )
+                        break
+
+                if should_revert:
+                    # Revert parlay to pending
+                    parlay.status = BetStatus.PENDING
+                    parlay.result_amount = None
+                    parlay.settled_at = None
+
+                    # Revert all legs back to pending too
+                    for leg in legs:
+                        leg.status = BetStatus.PENDING
+                        leg.result_amount = None
+                        leg.settled_at = None
+
+                    reverted_count += 1
+
+            if reverted_count > 0:
+                db.commit()
+
+        except Exception as e:
+            logger.error(f"Error reverting premature settlements: {e}")
+            db.rollback()
+        finally:
+            db.close()
+
+        return reverted_count
+
     async def _get_game_results(self, game_ids: List[str]) -> Dict[str, GameResult]:
         """
-        Fetch game results for specified game IDs from local database and The Odds API
+        Fetch game results for specified game IDs from The Odds API ONLY
+
+        NO fallback to local database to prevent mock/fake data usage
 
         Returns:
             Dictionary mapping game_id to GameResult
         """
         game_results = {}
 
-        # First, check for completed games in our local database
-        db = SessionLocal()
-        remaining_game_ids = []
+        logger.info(
+            f"Fetching game results from API for {len(game_ids)} games - NO local database fallback"
+        )
 
+        # Handle orphaned bets (games that don't exist in database at all)
+        db = SessionLocal()
         try:
+            now = datetime.utcnow()
+            valid_game_ids = []
+
             for game_id in game_ids:
                 game = db.query(Game).filter(Game.id == game_id).first()
-                if (
-                    game
-                    and game.status == GameStatus.FINAL
-                    and game.home_score is not None
-                    and game.away_score is not None
-                ):
-                    # We have a completed game in our database
-                    game_result = GameResult(
-                        game_id=game.id,
-                        sport=game.sport_key or "unknown",
-                        home_team=game.home_team,
-                        away_team=game.away_team,
-                        home_score=game.home_score,
-                        away_score=game.away_score,
-                        winner=self._determine_winner(game.home_score, game.away_score),
-                        is_final=True,
-                        total_score=game.home_score + game.away_score,
+
+                if not game:
+                    logger.warning(
+                        f"Game {game_id} not found in database - cancelling orphaned bets"
                     )
-                    game_results[game.id] = game_result
-                    logger.info(
-                        f"Found completed game in database: {game.away_team} @ {game.home_team} - {game.away_score}-{game.home_score}"
+                    # Cancel all bets for this missing game
+                    orphaned_bets = (
+                        db.query(Bet)
+                        .filter(Bet.game_id == game_id, Bet.status == "PENDING")
+                        .all()
                     )
+
+                    for bet in orphaned_bets:
+                        bet.status = "CANCELLED"
+                        bet.settled_at = now
+                        bet.result_amount = bet.amount  # Return original amount
+
+                        # Add to history
+                        bet_history = BetHistory(
+                            user_id=bet.user_id,
+                            bet_id=bet.id,
+                            action="settled",
+                            old_status="pending",
+                            new_status="cancelled",
+                            amount=bet.amount,
+                            bet_metadata=json.dumps(
+                                {"reasoning": f"Game {game_id} not found in database"}
+                            ),
+                        )
+                        db.add(bet_history)
+
+                        logger.info(
+                            f"Cancelled orphaned bet {bet.id} for missing game {game_id}"
+                        )
+
+                    if orphaned_bets:
+                        db.commit()
                 else:
-                    # Need to check API for this game
-                    remaining_game_ids.append(game_id)
+                    # Game exists in database, add to list for API checking
+                    valid_game_ids.append(game_id)
+                    logger.info(
+                        f"Game {game.id} ({game.away_team} @ {game.home_team}): "
+                        f"queued for API verification - NO local database scores will be used"
+                    )
         finally:
             db.close()
 
-        # If all games were found locally, return early
-        if not remaining_game_ids:
+        if not valid_game_ids:
+            logger.info("No valid games to check with API")
             return game_results
 
-        logger.info(
-            f"Found {len(game_results)} games locally, checking API for {len(remaining_game_ids)} remaining games"
-        )
-
-        # Group remaining games by sport for efficient API calls
+        # Group games by sport for efficient API calls
         games_by_sport = {}
 
         db = SessionLocal()
         try:
-            for game_id in remaining_game_ids:
-                # Try to get sport from database first
-                game = db.query(Game).filter(Game.id == game_id).first()
-                if game and game.sport_key:
-                    sport = game.sport_key
+            for game_id in valid_game_ids:
+                # Get sport from pending bets for this game (more reliable than game record)
+                bet_with_sport = (
+                    db.query(Bet)
+                    .filter(
+                        Bet.game_id == game_id,
+                        Bet.status == "PENDING",
+                        Bet.sport.isnot(None),
+                    )
+                    .first()
+                )
+
+                if bet_with_sport and bet_with_sport.sport:
+                    sport = bet_with_sport.sport
                 else:
-                    # Try to infer sport from game ID pattern
-                    sport = self._infer_sport_from_game_id(game_id)
+                    # Fallback to game record or inference
+                    game = db.query(Game).filter(Game.id == game_id).first()
+                    if game and game.sport_key and game.sport_key != "unknown":
+                        sport = game.sport_key
+                    else:
+                        sport = self._infer_sport_from_game_id(game_id)
 
                 if sport not in games_by_sport:
                     games_by_sport[sport] = []
                 games_by_sport[sport].append(game_id)
+                logger.debug(f"Game {game_id} assigned to sport: {sport}")
         finally:
             db.close()
 
         # Fetch scores for each sport from API
+        rate_limited = False
         for sport, sport_game_ids in games_by_sport.items():
             try:
-                logger.info(f"Fetching scores for {sport}: {sport_game_ids}")
-                scores = await self.odds_api_service.get_scores(sport, days_from=3)
+                # Normalize sport key for API call
+                normalized_sport = self._normalize_sport_key(sport)
+                logger.info(
+                    f"Fetching scores for {sport} (normalized: {normalized_sport}): {sport_game_ids}"
+                )
+                # Use optimized API to minimize costs (2 credits vs potential higher costs)
+                scores = await self.optimized_odds_service.get_scores_optimized(
+                    normalized_sport, include_completed=True
+                )
+
+                # Get game details for team-based matching
+                db = SessionLocal()
+                try:
+                    games_info = {}
+                    for game_id in sport_game_ids:
+                        game = db.query(Game).filter(Game.id == game_id).first()
+                        if game:
+                            games_info[game_id] = {
+                                "home_team": game.home_team,
+                                "away_team": game.away_team,
+                                "sport": game.sport_key,
+                            }
+                finally:
+                    db.close()
 
                 for score in scores:
-                    if score.id in sport_game_ids and score.completed:
+                    matched_game_id = None
+
+                    # Use The Odds API completed boolean as the authoritative source
+                    is_truly_completed = score.completed
+
+                    logger.info(
+                        f"Game {score.id} ({score.away_team} @ {score.home_team}): "
+                        f"completed={score.completed}, commence_time={score.commence_time}, "
+                        f"home_score={score.home_score}, away_score={score.away_score}"
+                    )
+
+                    # First try direct ID match
+                    if score.id in sport_game_ids and is_truly_completed:
+                        matched_game_id = score.id
+                    elif is_truly_completed:
+                        # Try team name matching for UUID game IDs
+                        for game_id, game_info in games_info.items():
+                            if (
+                                game_info["home_team"] == score.home_team
+                                and game_info["away_team"] == score.away_team
+                            ):
+                                matched_game_id = game_id
+                                logger.info(
+                                    f"Matched game by teams: {game_id} -> {score.id} ({score.away_team} @ {score.home_team})"
+                                )
+                                break
+
+                    if matched_game_id:
+                        home_score = int(score.home_score or 0)
+                        away_score = int(score.away_score or 0)
+
                         game_result = GameResult(
-                            game_id=score.id,
+                            game_id=matched_game_id,  # Use our internal game_id for mapping back to bets
                             sport=score.sport_key,
                             home_team=score.home_team,
                             away_team=score.away_team,
-                            home_score=score.home_score or 0,
-                            away_score=score.away_score or 0,
-                            winner=self._determine_winner(
-                                score.home_score, score.away_score
-                            ),
+                            home_score=home_score,
+                            away_score=away_score,
+                            winner=self._determine_winner(home_score, away_score),
                             is_final=score.completed,
-                            total_score=(score.home_score or 0)
-                            + (score.away_score or 0),
+                            total_score=home_score + away_score,
                         )
-                        game_results[score.id] = game_result
+                        game_results[matched_game_id] = (
+                            game_result  # Key by our internal game_id
+                        )
                         logger.info(
-                            f"Game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score}"
+                            f"✅ API game result: {score.away_team} @ {score.home_team} - {score.away_score}-{score.home_score} (completed: {score.completed})"
                         )
 
             except Exception as e:
-                logger.error(f"Error fetching scores for sport {sport}: {e}")
+                error_msg = str(e).lower()
+                if "rate limit" in error_msg:
+                    logger.error(
+                        f"🚫 Rate limit reached for sport {sport} - ABORTING ALL BET VERIFICATION to prevent incorrect settlements"
+                    )
+                    rate_limited = True
+                    break
+                else:
+                    logger.error(f"Error fetching scores for sport {sport}: {e}")
                 continue
 
+        # If we hit rate limits, abort all verification to prevent incorrect settlements
+        if rate_limited:
+            logger.error(
+                "🚫 Rate limit encountered - clearing all game results and aborting verification "
+                "to prevent settling bets with incomplete data"
+            )
+            return {}  # Return empty dict - no games will be verified
+
         return game_results
+
+    def _normalize_sport_key(self, sport: str) -> str:
+        """Convert sport names to Odds API sport keys"""
+        sport_mapping = {
+            "NCAA Football": "americanfootball_ncaaf",
+            "NCAA FOOTBALL": "americanfootball_ncaaf",
+            "NCAAF": "americanfootball_ncaaf",
+            "ncaaf": "americanfootball_ncaaf",
+            "NCAA Basketball": "basketball_ncaab",
+            "NCAA BASKETBALL": "basketball_ncaab",
+            "NCAAB": "basketball_ncaab",
+            "ncaab": "basketball_ncaab",
+            "NFL": "americanfootball_nfl",
+            "americanfootball_nfl": "americanfootball_nfl",
+            "MLB": "baseball_mlb",
+            "baseball_mlb": "baseball_mlb",
+            "NBA": "basketball_nba",
+            "basketball_nba": "basketball_nba",
+            "NHL": "icehockey_nhl",
+            "icehockey_nhl": "icehockey_nhl",
+        }
+        return sport_mapping.get(sport, sport)
 
     def _infer_sport_from_game_id(self, game_id: str) -> str:
         """Infer sport from game ID pattern"""
@@ -369,8 +669,25 @@ class BetVerificationService:
         Returns:
             BetResult with outcome or None if bet cannot be verified
         """
+        # Double-check that the game is actually completed before settling
         if not game_result.is_final:
+            logger.info(
+                f"Bet {bet.id}: Game {bet.game_id} not final (is_final={game_result.is_final}), skipping"
+            )
             return None
+
+        # Additional safety check - verify game has actual scores
+        if game_result.home_score is None or game_result.away_score is None:
+            logger.warning(
+                f"Bet {bet.id}: Game {bet.game_id} marked as final but has null scores "
+                f"(home: {game_result.home_score}, away: {game_result.away_score}), skipping"
+            )
+            return None
+
+        logger.info(
+            f"Bet {bet.id}: Proceeding with verification - Game {bet.game_id} is final with scores "
+            f"{game_result.away_team} {game_result.away_score} - {game_result.home_team} {game_result.home_score}"
+        )
 
         try:
             if bet.bet_type == BetType.MONEYLINE:
@@ -435,16 +752,33 @@ class BetVerificationService:
     def _verify_spread_bet(self, bet: Bet, game_result: GameResult) -> BetResult:
         """Verify point spread bet"""
         try:
-            # Parse spread from selection (e.g., "Chiefs -3.5" or "Cowboys +7")
+            # First try to parse spread from selection (e.g., "Chiefs -3.5" or "Cowboys +7")
             spread_value = self._extract_spread_from_selection(bet.selection)
+
+            # If no spread in selection, check if bet has line_value for spread
+            if spread_value is None and bet.line_value is not None:
+                spread_value = float(bet.line_value)
+
+            # For simple "away" or "home" selections, we need more info
             if spread_value is None:
-                raise ValueError(f"Cannot parse spread from selection: {bet.selection}")
+                # For legacy bets with simple selections, we can't determine the spread
+                # Mark as cancelled and return original amount
+                return BetResult(
+                    bet_id=bet.id,
+                    status=BetStatus.CANCELLED,
+                    result_amount=bet.amount,
+                    reasoning=f"Cannot determine spread value from selection '{bet.selection}' and line_value '{bet.line_value}'",
+                )
 
             selection_lower = bet.selection.lower()
-            is_home_bet = (
-                game_result.home_team.lower() in selection_lower
-                or selection_lower in game_result.home_team.lower()
-            )
+            # Determine if bet is on home or away team
+            if selection_lower in ["home", "away"]:
+                is_home_bet = selection_lower == "home"
+            else:
+                is_home_bet = (
+                    game_result.home_team.lower() in selection_lower
+                    or selection_lower in game_result.home_team.lower()
+                )
 
             # Calculate adjusted scores
             if is_home_bet:
@@ -480,7 +814,9 @@ class BetVerificationService:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying spread bet {bet.id}: {e}")
+            logger.error(
+                f"Error verifying spread bet {bet.id}: {e}. Selection: '{bet.selection}', Line value: '{bet.line_value}', Game scores: {game_result.home_score}-{game_result.away_score}"
+            )
             return BetResult(
                 bet_id=bet.id,
                 status=BetStatus.CANCELLED,
@@ -530,7 +866,9 @@ class BetVerificationService:
                 )
 
         except Exception as e:
-            logger.error(f"Error verifying total bet {bet.id}: {e}")
+            logger.error(
+                f"Error verifying total bet {bet.id}: {e}. Selection: '{bet.selection}', Total score: {game_result.total_score}"
+            )
             return BetResult(
                 bet_id=bet.id,
                 status=BetStatus.CANCELLED,
@@ -582,25 +920,43 @@ class BetVerificationService:
         lost_legs = 0
         pushed_legs = 0
 
+        logger.info(f"Verifying parlay {parlay.id} with {len(parlay.legs)} legs")
+
         for leg in parlay.legs:
+            # Check if leg is already settled (manually or previously)
+            if leg.status != BetStatus.PENDING:
+                logger.info(f"Leg {leg.id} already settled: {leg.status.value}")
+                if leg.status == BetStatus.WON:
+                    won_legs += 1
+                elif leg.status == BetStatus.LOST:
+                    lost_legs += 1
+                elif leg.status == BetStatus.PUSHED:
+                    pushed_legs += 1
+                continue
+
+            # Process pending legs with API data
             if leg.game_id not in game_results:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: no game result available")
                 continue
 
             game_result = game_results[leg.game_id]
             if not game_result.is_final:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: game not final")
                 continue
 
             leg_result = await self._verify_single_bet(leg, game_result)
             if not leg_result:
                 pending_legs += 1
+                logger.info(f"Leg {leg.id} pending: could not verify")
                 continue
 
             leg_results.append(leg_result)
 
             # Settle individual leg with its actual outcome
             await self._settle_bet(leg, leg_result)
+            logger.info(f"Settled leg {leg.id}: {leg_result.status.value}")
 
             if leg_result.status == BetStatus.WON:
                 won_legs += 1
@@ -609,8 +965,26 @@ class BetVerificationService:
             elif leg_result.status == BetStatus.PUSHED:
                 pushed_legs += 1
 
+        logger.info(
+            f"Parlay {parlay.id} leg summary: {won_legs} won, {lost_legs} lost, "
+            f"{pushed_legs} pushed, {pending_legs} pending"
+        )
+
+        # CRITICAL: If ANY leg has lost, the entire parlay loses immediately
+        if lost_legs > 0:
+            logger.info(f"Parlay {parlay.id} LOST: {lost_legs} legs lost")
+            return BetResult(
+                bet_id=parlay.id,
+                status=BetStatus.LOST,
+                result_amount=0,
+                reasoning=f"Parlay lost: {lost_legs} of {len(parlay.legs)} legs lost",
+            )
+
         # If any legs are still pending, don't settle the parlay yet
         if pending_legs > 0:
+            logger.info(
+                f"Parlay {parlay.id} still pending: {pending_legs} legs pending"
+            )
             return None
 
         total_legs = len(parlay.legs)
@@ -686,6 +1060,8 @@ class BetVerificationService:
                 return
 
             old_status = db_bet.status
+
+            # Update the main bet record
             db_bet.status = result.status
             db_bet.result_amount = result.result_amount
             db_bet.settled_at = datetime.utcnow()
@@ -702,18 +1078,157 @@ class BetVerificationService:
             )
             db.add(history)
 
+            # Commit both updates atomically
             db.commit()
 
-            # Send real-time notification
-            await self._send_bet_notification(db_bet, result)
-
             logger.info(
-                f"Settled bet {bet.id}: {result.status.value} - ${result.result_amount}"
+                f"✅ Successfully settled bet {bet.id}: {old_status.value} → {result.status.value} - ${result.result_amount}"
             )
+
+            # Send real-time notification (after successful DB update)
+            try:
+                await self._send_bet_notification(db_bet, result)
+            except Exception as notify_error:
+                logger.warning(
+                    f"Failed to send notification for bet {bet.id}: {notify_error}"
+                )
+
+            # IMPORTANT: If this is a parlay leg, check if parent parlay should be settled
+            if db_bet.parent_bet_id:
+                logger.info(
+                    f"Leg {bet.id} is part of parlay {db_bet.parent_bet_id}, checking if parlay should be settled"
+                )
+                try:
+                    await self._check_and_settle_parent_parlay(db_bet.parent_bet_id)
+                except Exception as parlay_error:
+                    logger.error(
+                        f"Error checking parent parlay {db_bet.parent_bet_id}: {parlay_error}"
+                    )
 
         except Exception as e:
             db.rollback()
-            logger.error(f"Error settling bet {bet.id}: {e}")
+            logger.error(f"❌ Error settling bet {bet.id}: {e}")
+            logger.error(
+                f"   - Bet details: user_id={bet.user_id}, status={bet.status}, amount={bet.amount}"
+            )
+            logger.error(
+                f"   - Result details: status={result.status}, amount={result.result_amount}"
+            )
+            raise  # Re-raise to ensure calling code knows the settlement failed
+        finally:
+            db.close()
+
+    async def _check_and_settle_parent_parlay(self, parlay_id: str) -> None:
+        """
+        Check if a parlay should be settled after one of its legs is settled.
+        - If ANY leg is lost, settle parlay as LOST immediately
+        - If ALL legs are settled (won/pushed), settle parlay as WON or PUSHED
+        """
+        db = SessionLocal()
+        try:
+            # Get the parlay and all its legs
+            parlay = db.query(ParlayBet).filter(ParlayBet.id == parlay_id).first()
+            if not parlay:
+                logger.error(f"Parlay {parlay_id} not found")
+                return
+
+            # If parlay is already settled, skip
+            if parlay.status != BetStatus.PENDING:
+                logger.info(
+                    f"Parlay {parlay_id} already settled as {parlay.status.value}"
+                )
+                return
+
+            # Get all legs for this parlay
+            legs = db.query(Bet).filter(Bet.parent_bet_id == parlay_id).all()
+            if not legs:
+                logger.error(f"No legs found for parlay {parlay_id}")
+                return
+
+            won_legs = 0
+            lost_legs = 0
+            pushed_legs = 0
+            pending_legs = 0
+
+            for leg in legs:
+                if leg.status == BetStatus.WON:
+                    won_legs += 1
+                elif leg.status == BetStatus.LOST:
+                    lost_legs += 1
+                elif leg.status == BetStatus.PUSHED:
+                    pushed_legs += 1
+                elif leg.status == BetStatus.PENDING:
+                    pending_legs += 1
+
+            logger.info(
+                f"Parlay {parlay_id} status: {won_legs} won, {lost_legs} lost, "
+                f"{pushed_legs} pushed, {pending_legs} pending out of {len(legs)} legs"
+            )
+
+            # RULE 1: If ANY leg is lost, parlay loses immediately
+            if lost_legs > 0:
+                logger.info(f"❌ Parlay {parlay_id} LOST: {lost_legs} legs lost")
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.LOST,
+                    result_amount=0,
+                    reasoning=f"Parlay lost: {lost_legs} of {len(legs)} legs lost",
+                )
+                await self._settle_parlay(parlay, result)
+                return
+
+            # RULE 2: If any legs are still pending, don't settle yet
+            if pending_legs > 0:
+                logger.info(
+                    f"⏳ Parlay {parlay_id} still pending: {pending_legs} legs not yet settled"
+                )
+                return
+
+            # RULE 3: All legs are settled (won/pushed)
+            total_legs = len(legs)
+            active_legs = total_legs - pushed_legs
+
+            if active_legs == 0:
+                # All legs pushed - refund
+                logger.info(f"🔄 Parlay {parlay_id} PUSHED: all legs pushed")
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.PUSHED,
+                    result_amount=parlay.amount,
+                    reasoning=f"Parlay pushed: All {total_legs} legs pushed",
+                )
+            elif won_legs == active_legs:
+                # All active legs won - calculate payout
+                logger.info(
+                    f"✅ Parlay {parlay_id} WON: all {active_legs} active legs won"
+                )
+                # Use the original potential_win if no pushes, otherwise recalculate
+                if pushed_legs == 0:
+                    payout = parlay.potential_win
+                else:
+                    # Recalculate based on remaining legs
+                    payout = self._calculate_adjusted_parlay_payout(parlay, pushed_legs)
+
+                result = BetResult(
+                    bet_id=parlay_id,
+                    status=BetStatus.WON,
+                    result_amount=parlay.amount + payout,
+                    reasoning=f"Parlay won: All {active_legs} active legs won (out of {total_legs} total legs)",
+                )
+            else:
+                logger.warning(
+                    f"⚠️ Unexpected parlay state for {parlay_id}: "
+                    f"{won_legs} won, {lost_legs} lost, {pushed_legs} pushed, {pending_legs} pending"
+                )
+                return
+
+            await self._settle_parlay(parlay, result)
+
+        except Exception as e:
+            logger.error(f"Error checking parent parlay {parlay_id}: {e}")
+            import traceback
+
+            logger.error(traceback.format_exc())
         finally:
             db.close()
 
