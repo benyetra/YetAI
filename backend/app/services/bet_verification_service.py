@@ -1140,7 +1140,7 @@ class BetVerificationService:
                 return
 
             # Get all legs for this parlay
-            legs = db.query(Bet).filter(Bet.parent_bet_id == parlay_id).all()
+            legs = db.query(Bet).filter(Bet.parlay_id == parlay_id).all()
             if not legs:
                 logger.error(f"No legs found for parlay {parlay_id}")
                 return
