@@ -6,6 +6,7 @@ for all leagues (NFL, MLB, NBA, NHL) and store them in the database with odds
 and broadcast information. This eliminates rate limiting issues when serving
 popular games and provides a single source of truth for game data.
 """
+
 import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
@@ -27,12 +28,7 @@ class GamesSyncService:
     """Service to sync games from external APIs to database"""
 
     # Sports we track
-    SPORTS = [
-        "americanfootball_nfl",
-        "baseball_mlb",
-        "basketball_nba",
-        "icehockey_nhl"
-    ]
+    SPORTS = ["americanfootball_nfl", "baseball_mlb", "basketball_nba", "icehockey_nhl"]
 
     # How far ahead to fetch games (in days)
     FETCH_DAYS_AHEAD = 7
@@ -58,7 +54,7 @@ class GamesSyncService:
             "total_games_updated": 0,
             "errors": [],
             "completed_at": None,
-            "duration_seconds": None
+            "duration_seconds": None,
         }
 
         try:
@@ -97,13 +93,17 @@ class GamesSyncService:
         stats["completed_at"] = end_time.isoformat()
         stats["duration_seconds"] = (end_time - start_time).total_seconds()
 
-        logger.info(f"Games sync completed: {stats['total_games_fetched']} fetched, "
-                   f"{stats['total_games_created']} created, "
-                   f"{stats['total_games_updated']} updated")
+        logger.info(
+            f"Games sync completed: {stats['total_games_fetched']} fetched, "
+            f"{stats['total_games_created']} created, "
+            f"{stats['total_games_updated']} updated"
+        )
 
         return stats
 
-    async def _sync_sport(self, odds_service: OddsAPIService, sport_key: str) -> Dict[str, int]:
+    async def _sync_sport(
+        self, odds_service: OddsAPIService, sport_key: str
+    ) -> Dict[str, int]:
         """
         Sync games for a specific sport.
 
@@ -120,7 +120,7 @@ class GamesSyncService:
             "games_fetched": 0,
             "games_created": 0,
             "games_updated": 0,
-            "errors": []
+            "errors": [],
         }
 
         try:
@@ -131,17 +131,21 @@ class GamesSyncService:
             for game in games:
                 try:
                     # Check if game already exists
-                    existing_game = self.db.query(Game).filter(Game.id == game.id).first()
+                    existing_game = (
+                        self.db.query(Game).filter(Game.id == game.id).first()
+                    )
 
                     # Prepare odds data (include all bookmakers)
                     odds_data = []
                     for bookmaker in game.bookmakers:
-                        odds_data.append({
-                            "key": bookmaker.key,
-                            "title": bookmaker.title,
-                            "last_update": bookmaker.last_update.isoformat(),
-                            "markets": bookmaker.markets
-                        })
+                        odds_data.append(
+                            {
+                                "key": bookmaker.key,
+                                "title": bookmaker.title,
+                                "last_update": bookmaker.last_update.isoformat(),
+                                "markets": bookmaker.markets,
+                            }
+                        )
 
                     if existing_game:
                         # Update existing game
@@ -162,7 +166,7 @@ class GamesSyncService:
                             commence_time=game.commence_time,
                             status=GameStatus.SCHEDULED,
                             odds_data=odds_data,
-                            last_update=datetime.now(timezone.utc)
+                            last_update=datetime.now(timezone.utc),
                         )
                         self.db.add(new_game)
                         stats["games_created"] += 1
@@ -194,10 +198,14 @@ class GamesSyncService:
         now = datetime.now(eastern)
         end_date = now + timedelta(days=self.FETCH_DAYS_AHEAD)
 
-        games = self.db.query(Game).filter(
-            Game.commence_time >= now.astimezone(timezone.utc),
-            Game.commence_time <= end_date.astimezone(timezone.utc)
-        ).all()
+        games = (
+            self.db.query(Game)
+            .filter(
+                Game.commence_time >= now.astimezone(timezone.utc),
+                Game.commence_time <= end_date.astimezone(timezone.utc),
+            )
+            .all()
+        )
 
         logger.info(f"Found {len(games)} games to check for broadcast info")
 
@@ -224,9 +232,11 @@ class GamesSyncService:
                 if is_tnf or is_snf or is_mnf:
                     game.is_nationally_televised = True
                     game.broadcast_info = {
-                        "network": "NBC" if is_snf else "ESPN" if is_mnf else "Prime Video",
+                        "network": (
+                            "NBC" if is_snf else "ESPN" if is_mnf else "Prime Video"
+                        ),
                         "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
             # Mark MLB playoff games as nationally televised
@@ -237,7 +247,7 @@ class GamesSyncService:
                     game.broadcast_info = {
                         "network": "TBS/FOX/ESPN",
                         "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
             # Mark NBA nationally televised games (placeholder)
@@ -249,7 +259,7 @@ class GamesSyncService:
                     game.broadcast_info = {
                         "network": "ESPN/TNT/ABC",
                         "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat()
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
         self.db.commit()
