@@ -4864,15 +4864,21 @@ async def get_popular_sports_odds():
 async def get_popular_games(sport: Optional[str] = None):
     """Get popular games using odds API data with smart popularity scoring"""
     try:
-        from app.services.odds_api_service import get_popular_sports_odds
         from datetime import datetime, timezone, timedelta
+        from app.services.optimized_odds_api_service import get_optimized_odds_service
+        from app.core.config import settings
 
-        # Fetch all popular games
-        all_games = await get_popular_sports_odds()
-
-        # Get games from now up to 7 days ahead (more flexible filtering)
+        # Get games happening today (with buffer for games that started earlier)
         now = datetime.now(timezone.utc)
-        future_cutoff = now + timedelta(days=7)
+        # Start from 6 hours ago to catch games that started earlier today
+        today_start = now - timedelta(hours=6)
+        # End at end of today (not tomorrow)
+        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+
+        logger.info(f"Fetching popular games between {today_start} and {today_end}")
+
+        # Fetch games directly from the odds service
+        odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -4890,12 +4896,38 @@ async def get_popular_games(sport: Optional[str] = None):
             "soccer_mls": "soccer",
         }
 
+        # Sports to fetch
+        sports_to_fetch = [
+            "americanfootball_nfl",
+            "baseball_mlb",
+            "basketball_nba",
+            "icehockey_nhl",
+        ]
+
+        # Fetch events for each sport (FREE endpoint)
+        all_games = []
+        for sport_key in sports_to_fetch:
+            try:
+                logger.info(f"Fetching events for {sport_key}")
+                events = await odds_service.get_events(sport_key)
+                logger.info(f"Got {len(events)} events for {sport_key}")
+
+                # Add sport_key to each event for later processing
+                for event in events:
+                    event["sport_key"] = sport_key
+                    all_games.append(event)
+            except Exception as e:
+                logger.error(f"Error fetching {sport_key}: {e}")
+                continue
+
+        logger.info(f"Total games fetched: {len(all_games)}")
+
+        # Filter and process games
         for game in all_games:
             # Get commence time
-            if hasattr(game, "commence_time"):
-                commence_time = game.commence_time
-            else:
-                commence_time = game.get("commence_time")
+            commence_time = game.get("commence_time")
+            if not commence_time:
+                continue
 
             # Parse commence time if it's a string
             if isinstance(commence_time, str):
@@ -4903,54 +4935,35 @@ async def get_popular_games(sport: Optional[str] = None):
                     commence_time = datetime.fromisoformat(
                         commence_time.replace("Z", "+00:00")
                     )
-                except:
+                except Exception as e:
+                    logger.warning(
+                        f"Could not parse commence_time: {commence_time} - {e}"
+                    )
                     continue
 
-            # Skip if game is in the past or too far in the future (7 days)
-            if commence_time < now or commence_time > future_cutoff:
+            # Filter for today only (with buffer for games that started earlier)
+            if commence_time < today_start or commence_time > today_end:
                 continue
 
             # Get sport key from game
-            game_sport = (
-                game.sport_key
-                if hasattr(game, "sport_key")
-                else game.get("sport_key", "")
-            )
+            game_sport = game.get("sport_key", "")
             friendly_sport = sport_map.get(game_sport, game_sport)
 
             # Only include sports we're tracking
             if friendly_sport not in games_by_sport:
                 continue
 
-            # Convert to dict if it's an object and include odds
-            if hasattr(game, "__dict__"):
-                game_dict = {
-                    "id": game.id,
-                    "sport": friendly_sport,
-                    "sport_key": game.sport_key,
-                    "sport_title": game.sport_title,
-                    "home_team": game.home_team,
-                    "away_team": game.away_team,
-                    "commence_time": (
-                        game.commence_time.isoformat()
-                        if hasattr(game.commence_time, "isoformat")
-                        else str(game.commence_time)
-                    ),
-                    "bookmakers": (
-                        game.bookmakers if hasattr(game, "bookmakers") else []
-                    ),
-                }
-            else:
-                game_dict = {
-                    "id": game.get("id"),
-                    "sport": friendly_sport,
-                    "sport_key": game.get("sport_key"),
-                    "sport_title": game.get("sport_title", ""),
-                    "home_team": game.get("home_team"),
-                    "away_team": game.get("away_team"),
-                    "commence_time": game.get("commence_time"),
-                    "bookmakers": game.get("bookmakers", []),
-                }
+            # Create game dict with all necessary fields
+            game_dict = {
+                "id": game.get("id"),
+                "sport": friendly_sport,
+                "sport_key": game.get("sport_key"),
+                "sport_title": game.get("sport_title", friendly_sport.upper()),
+                "home_team": game.get("home_team"),
+                "away_team": game.get("away_team"),
+                "commence_time": game.get("commence_time"),
+                "bookmakers": game.get("bookmakers", []),
+            }
 
             games_by_sport[friendly_sport].append(game_dict)
 
