@@ -4861,13 +4861,12 @@ async def get_popular_sports_odds():
 
 
 @app.get("/api/popular-games")
-async def get_popular_games(sport: Optional[str] = None):
-    """Get popular games using odds API data with smart popularity scoring"""
+async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(get_db)):
+    """Get popular games from database (cached by scheduled sync)"""
     try:
         from datetime import datetime, timezone, timedelta
         from zoneinfo import ZoneInfo
-        from app.services.odds_api_service import OddsAPIService
-        from app.core.config import settings
+        from app.models.database_models import Game
 
         # Work in Eastern Time since that's where most US sports are scheduled
         eastern = ZoneInfo("America/New_York")
@@ -4877,7 +4876,7 @@ async def get_popular_games(sport: Optional[str] = None):
         today_start_et = now_et - timedelta(hours=6)
         today_end_et = now_et.replace(hour=23, minute=59, second=59, microsecond=999999)
 
-        # Convert to UTC for API filtering
+        # Convert to UTC for database filtering
         today_start = today_start_et.astimezone(timezone.utc)
         today_end = today_end_et.astimezone(timezone.utc)
 
@@ -4885,6 +4884,15 @@ async def get_popular_games(sport: Optional[str] = None):
             f"Fetching popular games for today in ET: {now_et.strftime('%Y-%m-%d %H:%M %Z')}"
         )
         logger.info(f"Date range (UTC): {today_start} to {today_end}")
+
+        # Query database for nationally televised games happening today
+        games_query = db.query(Game).filter(
+            Game.is_nationally_televised == True,
+            Game.commence_time >= today_start,
+            Game.commence_time <= today_end
+        ).order_by(Game.commence_time).all()
+
+        logger.info(f"Found {len(games_query)} nationally televised games in database")
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -4902,101 +4910,20 @@ async def get_popular_games(sport: Optional[str] = None):
             "soccer_mls": "soccer",
         }
 
-        # Sports to fetch
-        # Note: Only fetching NFL to avoid rate limits
-        # Users can navigate to specific sport pages for MLB, NBA, NHL
-        sports_to_fetch = [
-            "americanfootball_nfl",
-        ]
-
-        # Fetch odds for each sport (includes bookmakers)
-        all_games = []
-        fetch_errors = {}
-        fetch_success = {}
-        async with OddsAPIService(settings.ODDS_API_KEY) as service:
-            for sport_key in sports_to_fetch:
-                try:
-                    logger.info(f"Fetching odds for {sport_key}")
-                    games = await service.get_odds(sport_key)
-                    logger.info(f"Got {len(games)} games for {sport_key}")
-                    fetch_success[sport_key] = len(games)
-
-                    # Add games to list
-                    all_games.extend(games)
-                except Exception as e:
-                    logger.error(f"Error fetching {sport_key}: {e}")
-                    import traceback
-
-                    logger.error(traceback.format_exc())
-                    fetch_errors[sport_key] = str(e)
-                    continue
-
-        logger.info(
-            f"Total games fetched: {len(all_games)} - filtering for today: {today_start} to {today_end}"
-        )
-
-        # Filter and process games
-        filtered_count = 0
-        skipped_count = 0
-        for game in all_games:
-            # Get commence time from Game object
-            commence_time = (
-                game.commence_time if hasattr(game, "commence_time") else None
-            )
-            if not commence_time:
-                continue
-
-            # Parse commence time if it's a string
-            if isinstance(commence_time, str):
-                try:
-                    commence_time = datetime.fromisoformat(
-                        commence_time.replace("Z", "+00:00")
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Could not parse commence_time: {commence_time} - {e}"
-                    )
-                    continue
-
-            # Filter for today only (with buffer for games that started earlier)
-            if commence_time < today_start or commence_time > today_end:
-                logger.info(
-                    f"Filtering out game {game.id} at {commence_time} (outside today range)"
-                )
-                skipped_count += 1
-                continue
-
-            filtered_count += 1
-
-            # Get sport key from game
-            game_sport = game.sport_key if hasattr(game, "sport_key") else ""
-            friendly_sport = sport_map.get(game_sport, game_sport)
+        # Process games from database
+        for game in games_query:
+            friendly_sport = sport_map.get(game.sport_key, game.sport_key)
 
             # Only include sports we're tracking
             if friendly_sport not in games_by_sport:
                 continue
 
-            # Filter bookmakers to only include FanDuel
-            bookmakers = game.bookmakers if hasattr(game, "bookmakers") else []
-            fanduel_bookmakers = [
-                bm for bm in bookmakers if hasattr(bm, "key") and bm.key == "fanduel"
-            ]
-
-            # Convert FanDuel bookmaker objects to dicts
+            # Extract FanDuel odds from odds_data JSON
             fanduel_odds = []
-            for bm in fanduel_bookmakers:
-                fanduel_odds.append(
-                    {
-                        "key": bm.key,
-                        "title": bm.title,
-                        "last_update": (
-                            bm.last_update.isoformat()
-                            if hasattr(bm.last_update, "isoformat")
-                            else str(bm.last_update)
-                        ),
-                        "markets": bm.markets,
-                    }
-                )
+            if game.odds_data:
+                for bookmaker in game.odds_data:
+                    if isinstance(bookmaker, dict) and bookmaker.get("key") == "fanduel":
+                        fanduel_odds.append(bookmaker)
 
             # Create game dict with all necessary fields
             game_dict = {
@@ -5006,22 +4933,15 @@ async def get_popular_games(sport: Optional[str] = None):
                 "sport_title": game.sport_title,
                 "home_team": game.home_team,
                 "away_team": game.away_team,
-                "commence_time": (
-                    game.commence_time.isoformat()
-                    if hasattr(game.commence_time, "isoformat")
-                    else str(game.commence_time)
-                ),
+                "commence_time": game.commence_time.isoformat(),
                 "bookmakers": fanduel_odds,  # Only include FanDuel
+                "broadcast": game.broadcast_info,  # Include broadcast info
             }
 
             logger.debug(
-                f"Adding game {game.id} to {friendly_sport}: {game.home_team} vs {game.away_team} at {commence_time}"
+                f"Adding game {game.id} to {friendly_sport}: {game.home_team} vs {game.away_team}"
             )
             games_by_sport[friendly_sport].append(game_dict)
-
-        logger.info(
-            f"Filtered {filtered_count} games, skipped {skipped_count} games outside date range"
-        )
 
         # Limit to 10 games per sport
         for sport_key in games_by_sport:
@@ -5049,19 +4969,16 @@ async def get_popular_games(sport: Optional[str] = None):
                 "message": f"Found {total_count} popular games across all sports",
             }
 
-            # Add debug info (temporarily showing always for troubleshooting)
+            # Add debug info
             response["debug"] = {
-                "total_fetched": len(all_games),
-                "filtered": filtered_count,
-                "skipped": skipped_count,
+                "total_in_db": len(games_query),
                 "date_range_utc": {
                     "start": today_start.isoformat(),
                     "end": today_end.isoformat(),
                 },
                 "current_time_et": now_et.isoformat(),
                 "sport_counts": {k: len(v) for k, v in games_by_sport.items()},
-                "fetch_success": fetch_success,
-                "fetch_errors": fetch_errors,
+                "data_source": "database_cache",
             }
 
             return response
