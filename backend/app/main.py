@@ -1103,6 +1103,76 @@ async def logout():
     return {"status": "success", "message": "Logged out successfully"}
 
 
+@app.post("/api/auth/verify-email")
+async def verify_email(request: dict):
+    """Verify user email with token from verification link"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503, detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        token = request.get("token")
+        if not token:
+            raise HTTPException(
+                status_code=400, detail="Verification token is required"
+            )
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.verify_email(token)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Email verification failed")
+            )
+
+        return {
+            "status": "success",
+            "message": result.get("message", "Email verified successfully"),
+            "user": result.get("user"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Email verification error: {e}")
+        raise HTTPException(status_code=400, detail="Email verification failed")
+
+
+@app.post("/api/auth/resend-verification")
+async def resend_verification(request: dict):
+    """Resend verification email to user"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503, detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        email = request.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.resend_verification_email(email)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400,
+                detail=result.get("error", "Failed to resend verification email"),
+            )
+
+        return {
+            "status": "success",
+            "message": result.get("message", "Verification email sent successfully"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Resend verification error: {e}")
+        raise HTTPException(
+            status_code=400, detail="Failed to resend verification email"
+        )
+
+
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Get current user info"""
