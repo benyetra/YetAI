@@ -4886,11 +4886,16 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         logger.info(f"Date range (UTC): {today_start} to {today_end}")
 
         # Query database for nationally televised games happening today
-        games_query = db.query(Game).filter(
-            Game.is_nationally_televised == True,
-            Game.commence_time >= today_start,
-            Game.commence_time <= today_end
-        ).order_by(Game.commence_time).all()
+        games_query = (
+            db.query(Game)
+            .filter(
+                Game.is_nationally_televised == True,
+                Game.commence_time >= today_start,
+                Game.commence_time <= today_end,
+            )
+            .order_by(Game.commence_time)
+            .all()
+        )
 
         logger.info(f"Found {len(games_query)} nationally televised games in database")
 
@@ -4922,7 +4927,10 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
             fanduel_odds = []
             if game.odds_data:
                 for bookmaker in game.odds_data:
-                    if isinstance(bookmaker, dict) and bookmaker.get("key") == "fanduel":
+                    if (
+                        isinstance(bookmaker, dict)
+                        and bookmaker.get("key") == "fanduel"
+                    ):
                         fanduel_odds.append(bookmaker)
 
             # Create game dict with all necessary fields
