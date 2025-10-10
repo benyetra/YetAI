@@ -163,15 +163,26 @@ class AuthServiceDB:
                 db.commit()
                 db.refresh(new_user)
 
-                # Send verification email
-                try:
-                    email_service.send_verification_email(
-                        to_email=email,
-                        verification_token=verification_token,
-                        first_name=first_name,
-                    )
-                except Exception as email_error:
-                    logger.warning(f"Failed to send verification email: {email_error}")
+                # Send verification email asynchronously (don't block registration)
+                import threading
+
+                def send_email_background():
+                    try:
+                        email_service.send_verification_email(
+                            to_email=email,
+                            verification_token=verification_token,
+                            first_name=first_name,
+                        )
+                    except Exception as email_error:
+                        logger.warning(
+                            f"Failed to send verification email: {email_error}"
+                        )
+
+                # Start email sending in background thread
+                email_thread = threading.Thread(
+                    target=send_email_background, daemon=True
+                )
+                email_thread.start()
 
                 # Generate access token
                 access_token = self.generate_token(new_user.id)
