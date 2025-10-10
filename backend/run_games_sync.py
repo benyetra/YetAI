@@ -24,21 +24,24 @@ async def main():
         print(f"  Total games updated: {stats['total_games_updated']}")
         print(f"  Duration: {stats['duration_seconds']:.2f} seconds")
 
-        if stats['errors']:
+        if stats["errors"]:
             print(f"\n⚠️  Errors encountered:")
-            for error in stats['errors']:
+            for error in stats["errors"]:
                 print(f"    - {error}")
 
         print(f"\nSports synced:")
-        for sport, sport_stats in stats['sports_synced'].items():
-            print(f"  {sport}: {sport_stats['games_fetched']} fetched, "
-                  f"{sport_stats['games_created']} created, "
-                  f"{sport_stats['games_updated']} updated")
+        for sport, sport_stats in stats["sports_synced"].items():
+            print(
+                f"  {sport}: {sport_stats['games_fetched']} fetched, "
+                f"{sport_stats['games_created']} created, "
+                f"{sport_stats['games_updated']} updated"
+            )
 
         return 0
     except Exception as e:
         print(f"\n❌ Games sync failed: {e}")
         import traceback
+
         traceback.print_exc()
         return 1
 
