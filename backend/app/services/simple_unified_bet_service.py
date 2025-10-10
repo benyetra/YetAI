@@ -25,7 +25,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, desc, func
 from app.core.database import SessionLocal
-from app.models.database_models import Game
+from app.models.database_models import Game, GameStatus
 from app.models.simple_unified_bet_model import (
     SimpleUnifiedBet,
     BetStatus,
@@ -670,29 +670,45 @@ class SimpleUnifiedBetService:
             return False
 
     async def _get_or_create_game(self, bet_data, db: Session) -> Optional[Game]:
-        """Get or create a game record"""
+        """Get or create a game record - prefers database lookup to avoid duplicates"""
         try:
             game_id = getattr(bet_data, "game_id", None)
             if not game_id:
                 return None
 
+            # First, check if game exists in database
             game = db.query(Game).filter(Game.id == game_id).first()
             if game:
                 return game
 
-            # Create minimal game record if not found
+            # If game not in database, parse commence_time properly
+            commence_time = self._parse_commence_time(
+                getattr(bet_data, "commence_time", None)
+            )
+
+            # IMPORTANT: Do NOT create game if commence_time is missing or invalid
+            # This prevents duplicate games with incorrect timestamps
+            if not commence_time:
+                logger.warning(
+                    f"Cannot create game {game_id} without valid commence_time. "
+                    f"Game should exist in database from games sync."
+                )
+                return None
+
+            # Create minimal game record only if we have valid data
             game = Game(
                 id=game_id,
                 home_team=getattr(bet_data, "home_team", "Unknown"),
                 away_team=getattr(bet_data, "away_team", "Unknown"),
                 sport_key=getattr(bet_data, "sport", "unknown"),
                 sport_title=getattr(bet_data, "sport", "Unknown"),
-                commence_time=getattr(
-                    bet_data, "commence_time", datetime.now(timezone.utc)
-                ),
-                status="scheduled",
+                commence_time=commence_time,
+                status=GameStatus.SCHEDULED,
             )
             db.add(game)
+            logger.info(
+                f"Created game record for {game_id} with commence_time {commence_time}"
+            )
             return game
 
         except Exception as e:
