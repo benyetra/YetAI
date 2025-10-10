@@ -118,13 +118,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       
       if (response.status === 'success' && response.user && response.access_token) {
         const { user: userData, access_token } = response;
-        
+
         setUser(userData);
         setToken(access_token);
-        
+
         localStorage.setItem('auth_token', access_token);
         localStorage.setItem('user_data', JSON.stringify(userData));
-        
+
+        // In dev mode, show verification URL
+        if (response.verification_url) {
+          console.log('🔗 EMAIL VERIFICATION URL (Dev Mode):');
+          console.log(response.verification_url);
+          alert(`Account created! Since email is in dev mode, verify at:\n\n${response.verification_url}`);
+        }
+
         return { success: true };
       } else {
         return { success: false, message: response.detail || response.message || 'Signup failed' };

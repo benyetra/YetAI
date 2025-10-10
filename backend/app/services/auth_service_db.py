@@ -187,7 +187,8 @@ class AuthServiceDB:
                 # Generate access token
                 access_token = self.generate_token(new_user.id)
 
-                return {
+                # Build response
+                response_data = {
                     "success": True,
                     "user": {
                         "id": new_user.id,
@@ -204,6 +205,19 @@ class AuthServiceDB:
                     "access_token": access_token,
                     "token_type": "bearer",
                 }
+
+                # In dev mode, include verification token in response for testing
+                if email_service.dev_mode:
+                    response_data["verification_token"] = verification_token
+                    response_data["verification_url"] = (
+                        f"{email_service.app_url}/verify-email?token={verification_token}"
+                    )
+                    logger.info(
+                        f"DEV MODE: Verification URL for {email}: "
+                        f"{response_data['verification_url']}"
+                    )
+
+                return response_data
 
             finally:
                 db.close()
