@@ -1027,7 +1027,7 @@ async def auth_status():
 
 
 @app.post("/api/auth/register")
-async def register(user_data: dict):
+async def register(user_data: UserSignup):
     """Register a new user"""
     if not is_service_available("auth_service"):
         raise HTTPException(
@@ -1037,13 +1037,11 @@ async def register(user_data: dict):
     try:
         auth_service = get_service("auth_service")
         result = await auth_service.create_user(
-            email=user_data.get("email"),
-            password=user_data.get("password"),
-            username=user_data.get(
-                "username", user_data.get("email")
-            ),  # Use username or fallback to email
-            first_name=user_data.get("first_name", ""),
-            last_name=user_data.get("last_name", ""),
+            email=user_data.email,
+            password=user_data.password,
+            username=user_data.username,
+            first_name=user_data.first_name or "",
+            last_name=user_data.last_name or "",
         )
 
         if not result.get("success"):
