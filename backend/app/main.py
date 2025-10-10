@@ -24,6 +24,7 @@ from app.core.service_loader import (
     is_service_available,
 )
 from app.core.database import get_db, SessionLocal
+from sqlalchemy.orm import Session
 
 # Import unified bet service
 from app.services.simple_unified_bet_service import simple_unified_bet_service
