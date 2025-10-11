@@ -1,3 +1,7 @@
+"""
+Stripe subscription service for handling Pro plan upgrades
+"""
+
 import stripe
 import os
 import logging
