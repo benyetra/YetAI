@@ -418,8 +418,20 @@ async def debug_s3_config():
     import os
     from app.services.avatar_service import avatar_service
 
+    # Check if boto3 can be imported
+    boto3_available = False
+    boto3_error = None
+    try:
+        import boto3
+
+        boto3_available = True
+    except ImportError as e:
+        boto3_error = str(e)
+
     return {
         "s3_enabled": avatar_service.use_s3,
+        "boto3_available": boto3_available,
+        "boto3_error": boto3_error,
         "has_access_key": bool(os.getenv("AWS_ACCESS_KEY_ID")),
         "has_secret_key": bool(os.getenv("AWS_SECRET_ACCESS_KEY")),
         "has_bucket": bool(os.getenv("AWS_S3_BUCKET_NAME")),
@@ -431,6 +443,11 @@ async def debug_s3_config():
         "region": os.getenv("AWS_REGION")
         or os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
         "storage_type": "S3" if avatar_service.use_s3 else "Local Filesystem",
+        "storage_path": (
+            str(avatar_service.base_path)
+            if hasattr(avatar_service, "base_path")
+            else None
+        ),
     }
 
 
