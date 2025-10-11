@@ -19,7 +19,9 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements.txt && \
+    echo "Verifying boto3 installation:" && \
+    pip show boto3 || echo "boto3 not found!"
 
 # Copy application code
 COPY . .
