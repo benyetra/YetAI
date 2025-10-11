@@ -17,6 +17,8 @@ export default function EmbeddedCheckout({
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
+    let checkoutInstance: any = null;
+
     const initializeCheckout = async () => {
       try {
         // Get the publishable key from env
@@ -76,6 +78,7 @@ export default function EmbeddedCheckout({
 
         checkout.mount('#embedded-checkout');
         setIsLoading(false);
+        checkoutInstance = checkout;
 
         // Handle completion
         if (typeof checkout.on === 'function') {
@@ -96,11 +99,16 @@ export default function EmbeddedCheckout({
       initializeCheckout();
     }
 
-    // Cleanup function
+    // Cleanup function - properly destroy the checkout instance
     return () => {
-      const checkoutElement = document.getElementById('embedded-checkout');
-      if (checkoutElement) {
-        checkoutElement.innerHTML = '';
+      console.log('Cleaning up checkout instance');
+      if (checkoutInstance && typeof checkoutInstance.destroy === 'function') {
+        try {
+          checkoutInstance.destroy();
+          console.log('Checkout instance destroyed');
+        } catch (e) {
+          console.error('Error destroying checkout:', e);
+        }
       }
     };
   }, [clientSecret, onComplete, onError]);
