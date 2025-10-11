@@ -60,9 +60,17 @@ class SubscriptionService:
                     name=f"{user.first_name} {user.last_name}",
                     metadata={"user_id": str(user.id), "username": user.username},
                 )
-                user.stripe_customer_id = customer.id
-                self.db.commit()
-                logger.info(f"Created customer: {customer.id}")
+                logger.info(f"Customer object type: {type(customer)}")
+                logger.info(f"Customer object: {customer}")
+                logger.info(f"Customer has 'id' attr: {hasattr(customer, 'id')}")
+                if hasattr(customer, "id"):
+                    logger.info(f"Customer.id value: {customer.id}")
+                    user.stripe_customer_id = customer.id
+                    self.db.commit()
+                    logger.info(f"Created customer: {customer.id}")
+                else:
+                    logger.error(f"Customer object missing 'id' attribute!")
+                    raise Exception("Failed to create Stripe customer - no ID returned")
             else:
                 logger.info(f"Retrieving existing customer: {user.stripe_customer_id}")
                 try:
@@ -76,8 +84,21 @@ class SubscriptionService:
                         name=f"{user.first_name} {user.last_name}",
                         metadata={"user_id": str(user.id), "username": user.username},
                     )
-                    user.stripe_customer_id = customer.id
-                    self.db.commit()
+                    logger.info(f"Customer object type: {type(customer)}")
+                    logger.info(f"Customer has 'id' attr: {hasattr(customer, 'id')}")
+                    if hasattr(customer, "id"):
+                        user.stripe_customer_id = customer.id
+                        self.db.commit()
+                    else:
+                        logger.error(f"Customer object missing 'id' attribute!")
+                        raise Exception(
+                            "Failed to create Stripe customer - no ID returned"
+                        )
+
+            # Validate customer object before proceeding
+            if not customer or not hasattr(customer, "id"):
+                logger.error(f"Invalid customer object: {customer}")
+                raise Exception("Failed to get valid customer object from Stripe")
 
             # Create checkout session
             logger.info(f"About to create checkout session:")
