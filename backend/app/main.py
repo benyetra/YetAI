@@ -1082,6 +1082,7 @@ async def upload_auth_avatar(
             # If using local storage (relative paths), convert to full URLs
             if not avatar_url.startswith("http"):
                 from app.core.config import settings
+
                 if settings.ENVIRONMENT == "production":
                     base_url = "https://backend-production-f7af.up.railway.app"
                 elif settings.ENVIRONMENT == "staging":
