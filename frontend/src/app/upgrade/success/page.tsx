@@ -11,13 +11,42 @@ function SuccessContent() {
   const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
+    // Update subscription status on backend
+    const updateSubscription = async () => {
+      if (!sessionId) return;
+
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/api/subscription/session-status/${sessionId}`,
+          {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+            },
+          }
+        );
+
+        const data = await response.json();
+        console.log('Subscription update response:', data);
+
+        if (data.status === 'complete') {
+          console.log('Subscription activated successfully!');
+          // Force reload user data by clearing cache
+          localStorage.removeItem('user_cache');
+        }
+      } catch (error) {
+        console.error('Error updating subscription:', error);
+      }
+    };
+
+    updateSubscription();
+
     // Redirect to dashboard after 3 seconds
     const timer = setTimeout(() => {
       router.push('/dashboard');
     }, 3000);
 
     return () => clearTimeout(timer);
-  }, [router]);
+  }, [router, sessionId]);
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center">

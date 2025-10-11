@@ -231,6 +231,79 @@ class SubscriptionService:
             logger.error(f"Error creating checkout session: {e}")
             raise
 
+    def get_session_status(self, session_id: str, user: User) -> Dict:
+        """Get checkout session status and update user if completed"""
+        try:
+            import requests
+
+            api_key = stripe.api_key
+            headers = {"Authorization": f"Bearer {api_key}"}
+
+            # Retrieve session from Stripe
+            response = requests.get(
+                f"https://api.stripe.com/v1/checkout/sessions/{session_id}",
+                headers=headers,
+                params={"expand[]": "subscription"},
+            )
+
+            if response.status_code != 200:
+                logger.error(f"Failed to retrieve session: {response.text}")
+                return {"status": "error", "message": "Failed to retrieve session"}
+
+            session = response.json()
+            payment_status = session.get("payment_status")
+
+            logger.info(f"Session {session_id} payment status: {payment_status}")
+
+            # If payment is complete, update the user
+            if payment_status == "paid":
+                tier = session.get("metadata", {}).get("tier", "pro")
+                subscription_id = session.get("subscription")
+
+                # Update user subscription
+                user.subscription_tier = tier
+                user.stripe_subscription_id = (
+                    subscription_id
+                    if isinstance(subscription_id, str)
+                    else subscription_id.get("id") if subscription_id else None
+                )
+
+                # Get subscription details
+                if subscription_id:
+                    sub_id = (
+                        subscription_id
+                        if isinstance(subscription_id, str)
+                        else subscription_id.get("id")
+                    )
+                    sub_response = requests.get(
+                        f"https://api.stripe.com/v1/subscriptions/{sub_id}",
+                        headers=headers,
+                    )
+                    if sub_response.status_code == 200:
+                        subscription_data = sub_response.json()
+                        user.subscription_status = subscription_data.get("status")
+                        user.subscription_current_period_end = datetime.fromtimestamp(
+                            subscription_data.get("current_period_end")
+                        )
+
+                self.db.commit()
+                logger.info(f"Updated user {user.id} subscription to {tier}")
+
+                return {
+                    "status": "complete",
+                    "payment_status": payment_status,
+                    "tier": tier,
+                }
+            else:
+                return {
+                    "status": "incomplete",
+                    "payment_status": payment_status,
+                }
+
+        except Exception as e:
+            logger.error(f"Error getting session status: {e}")
+            return {"status": "error", "message": str(e)}
+
     def handle_checkout_completed(self, session: Dict) -> None:
         """Handle successful checkout completion webhook"""
         try:

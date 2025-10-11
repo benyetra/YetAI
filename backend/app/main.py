@@ -786,6 +786,34 @@ async def create_checkout_session(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/api/subscription/session-status/{session_id}")
+async def get_session_status(
+    session_id: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Get checkout session status and update user subscription if completed"""
+    try:
+        from app.services.subscription_service import SubscriptionService
+        from app.models.database_models import User
+
+        user_id = current_user.get("id") or current_user.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        subscription_service = SubscriptionService(db)
+        status = subscription_service.get_session_status(session_id, user)
+
+        return status
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Session status error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/subscription/webhook")
 async def stripe_webhook(request: dict):
     """Handle Stripe webhook events"""
