@@ -764,7 +764,8 @@ async def create_checkout_session(
             raise HTTPException(status_code=400, detail="Subscription tier is required")
 
         # Get user from database
-        user = db.query(User).filter(User.id == current_user["id"]).first()
+        user_id = current_user.get("id") or current_user.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
@@ -846,7 +847,8 @@ async def get_subscription_info(
         from app.services.subscription_service import SubscriptionService
         from app.models.database_models import User
 
-        user = db.query(User).filter(User.id == current_user["id"]).first()
+        user_id = current_user.get("id") or current_user.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
@@ -875,7 +877,8 @@ async def cancel_subscription(
         from app.services.subscription_service import SubscriptionService
         from app.models.database_models import User
 
-        user = db.query(User).filter(User.id == current_user["id"]).first()
+        user_id = current_user.get("id") or current_user.get("user_id")
+        user = db.query(User).filter(User.id == user_id).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
 
