@@ -65,10 +65,14 @@ class SubscriptionService:
                 customer = stripe.Customer.retrieve(user.stripe_customer_id)
 
             # Create checkout session
-            logger.info(
-                f"Creating checkout with customer_id: {customer.id}, price_id: {price_id}"
-            )
-            logger.info(f"Return URL: {return_url}")
+            logger.info(f"About to create checkout session:")
+            logger.info(f"  customer_id: {customer.id}")
+            logger.info(f"  price_id: '{price_id}'")
+            logger.info(f"  price_id type: {type(price_id)}")
+            logger.info(f"  return_url: {return_url}")
+
+            if not price_id:
+                raise ValueError("Price ID is empty or None")
 
             checkout_session = stripe.checkout.Session.create(
                 customer=customer.id,
