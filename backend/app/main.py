@@ -745,36 +745,39 @@ async def options_simple_odds():
 # SUBSCRIPTION ENDPOINTS
 # ============================================================================
 
+
 @app.post("/api/subscription/create-checkout")
 async def create_checkout_session(
-    request: dict, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)
+    request: dict,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Create Stripe Checkout session for subscription upgrade"""
     try:
         from app.services.subscription_service import SubscriptionService
         from app.models.database_models import User
-        
+
         tier = request.get("tier")
         return_url = request.get("return_url", f"{settings.FRONTEND_URL}/dashboard")
-        
+
         if not tier:
             raise HTTPException(status_code=400, detail="Subscription tier is required")
-        
+
         # Get user from database
         user = db.query(User).filter(User.id == current_user["id"]).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         # Create checkout session
         subscription_service = SubscriptionService(db)
         result = subscription_service.create_checkout_session(user, tier, return_url)
-        
+
         return {
             "status": "success",
             "checkout_url": result["checkout_url"],
-            "session_id": result["session_id"]
+            "session_id": result["session_id"],
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -786,14 +789,14 @@ async def create_checkout_session(
 async def stripe_webhook(request: dict):
     """Handle Stripe webhook events"""
     import stripe
-    
+
     try:
         # Get the webhook secret from environment
         webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
         if not webhook_secret:
             logger.warning("STRIPE_WEBHOOK_SECRET not configured")
             return {"status": "ignored"}
-        
+
         # Verify webhook signature
         signature = request.headers.get("stripe-signature")
         try:
@@ -804,27 +807,31 @@ async def stripe_webhook(request: dict):
             raise HTTPException(status_code=400, detail="Invalid payload")
         except stripe.error.SignatureVerificationError:
             raise HTTPException(status_code=400, detail="Invalid signature")
-        
+
         # Handle the event
         db = SessionLocal()
         try:
             from app.services.subscription_service import SubscriptionService
+
             subscription_service = SubscriptionService(db)
-            
+
             if event["type"] == "checkout.session.completed":
                 session = event["data"]["object"]
                 subscription_service.handle_checkout_completed(session)
-                
-            elif event["type"] in ["customer.subscription.updated", "customer.subscription.deleted"]:
+
+            elif event["type"] in [
+                "customer.subscription.updated",
+                "customer.subscription.deleted",
+            ]:
                 subscription = event["data"]["object"]
                 subscription_service.handle_subscription_updated(subscription)
-                
+
             logger.info(f"Processed webhook event: {event['type']}")
             return {"status": "success"}
-            
+
         finally:
             db.close()
-            
+
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         raise HTTPException(status_code=500, detail="Webhook processing failed")
@@ -838,22 +845,20 @@ async def get_subscription_info(
     try:
         from app.services.subscription_service import SubscriptionService
         from app.models.database_models import User
-        
+
         user = db.query(User).filter(User.id == current_user["id"]).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         subscription_service = SubscriptionService(db)
         subscription_info = subscription_service.get_subscription_info(user)
-        
+
         return {
             "status": "success",
-            "subscription": subscription_info or {
-                "tier": user.subscription_tier,
-                "status": "free"
-            }
+            "subscription": subscription_info
+            or {"tier": user.subscription_tier, "status": "free"},
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -869,24 +874,31 @@ async def cancel_subscription(
     try:
         from app.services.subscription_service import SubscriptionService
         from app.models.database_models import User
-        
+
         user = db.query(User).filter(User.id == current_user["id"]).first()
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
-        
+
         subscription_service = SubscriptionService(db)
         result = subscription_service.cancel_subscription(user)
-        
+
         if not result.get("success"):
-            raise HTTPException(status_code=400, detail=result.get("error", "Cancellation failed"))
-        
-        return {"status": "success", "message": result["message"], "period_end": result.get("period_end")}
-        
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Cancellation failed")
+            )
+
+        return {
+            "status": "success",
+            "message": result["message"],
+            "period_end": result.get("period_end"),
+        }
+
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Cancel subscription error: {e}")
         raise HTTPException(status_code=500, detail="Failed to cancel subscription")
+
 
 @app.get("/api/odds")
 async def get_simple_odds():
