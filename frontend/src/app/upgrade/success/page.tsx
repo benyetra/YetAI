@@ -11,11 +11,12 @@ function SuccessContent() {
   const sessionId = searchParams.get('session_id');
 
   useEffect(() => {
-    // Update subscription status on backend
+    // Update subscription status on backend and refresh user data
     const updateSubscription = async () => {
       if (!sessionId) return;
 
       try {
+        // Step 1: Update subscription in backend
         const response = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/api/subscription/session-status/${sessionId}`,
           {
@@ -30,8 +31,30 @@ function SuccessContent() {
 
         if (data.status === 'complete') {
           console.log('Subscription activated successfully!');
-          // Force reload user data by clearing cache
-          localStorage.removeItem('user_cache');
+
+          // Step 2: Fetch fresh user data from backend
+          const userResponse = await fetch(
+            `${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`,
+            {
+              headers: {
+                'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+              },
+            }
+          );
+
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            console.log('Fresh user data:', userData);
+
+            if (userData.status === 'success' && userData.user) {
+              // Update localStorage with fresh user data
+              localStorage.setItem('user_data', JSON.stringify(userData.user));
+              console.log('Updated user data in localStorage');
+
+              // Trigger a storage event to update Auth context
+              window.dispatchEvent(new Event('storage'));
+            }
+          }
         }
       } catch (error) {
         console.error('Error updating subscription:', error);
