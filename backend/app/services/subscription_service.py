@@ -12,25 +12,29 @@ from app.models.database_models import User
 
 logger = logging.getLogger(__name__)
 
+# Initialize Stripe API key once at module level
+_stripe_initialized = False
+
+
+def _ensure_stripe_initialized():
+    """Ensure Stripe is initialized with API key"""
+    global _stripe_initialized
+    if not _stripe_initialized:
+        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        if not stripe_key:
+            raise ValueError(
+                "STRIPE_SECRET_KEY environment variable not set. Please configure it in Railway."
+            )
+        stripe.api_key = stripe_key
+        _stripe_initialized = True
+        logger.info(f"Stripe initialized with key length: {len(stripe_key)}")
+
 
 class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
-        # Initialize Stripe with API key from environment
-        self.stripe_key = os.getenv("STRIPE_SECRET_KEY")
-        logger.info(f"STRIPE_SECRET_KEY present: {bool(self.stripe_key)}")
-        logger.info(
-            f"STRIPE_SECRET_KEY length: {len(self.stripe_key) if self.stripe_key else 0}"
-        )
-
-        if not self.stripe_key:
-            raise ValueError(
-                "STRIPE_SECRET_KEY environment variable not set. Please configure it in Railway."
-            )
-
-        # Set Stripe API key
-        stripe.api_key = self.stripe_key
-        logger.info("Stripe API key configured successfully")
+        # Ensure Stripe is initialized
+        _ensure_stripe_initialized()
 
     def create_checkout_session(
         self, user: User, tier: str, return_url: str
