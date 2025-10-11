@@ -188,8 +188,7 @@ class SubscriptionService:
             }
 
             data = {
-                "customer": customer.id,
-                "customer_email": user.email,  # Ensure email is set for receipts
+                "customer": customer.id,  # Email is already on customer record
                 "line_items[0][price]": price_id,
                 "line_items[0][quantity]": "1",
                 "mode": "subscription",
