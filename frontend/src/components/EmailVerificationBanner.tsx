@@ -10,17 +10,10 @@ export default function EmailVerificationBanner() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
-  // Debug logging
-  console.log('EmailVerificationBanner - user:', user);
-  console.log('EmailVerificationBanner - is_verified:', user?.is_verified);
-
   // Don't show if user is verified, not logged in, or banner dismissed
   if (!user || user.is_verified || dismissed) {
-    console.log('Banner hidden - user:', !!user, 'verified:', user?.is_verified, 'dismissed:', dismissed);
     return null;
   }
-
-  console.log('Banner SHOWING for user:', user.email);
 
   const handleResendEmail = async () => {
     setLoading(true);
@@ -50,7 +43,7 @@ export default function EmailVerificationBanner() {
   };
 
   return (
-    <div className="bg-gradient-to-r from-purple-600 to-amber-500 text-white">
+    <div className="fixed top-16 left-0 right-0 z-40 bg-gradient-to-r from-purple-600 to-amber-500 text-white lg:left-64">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between gap-4 py-3">
           <div className="flex items-center gap-3 flex-1">

@@ -10,7 +10,8 @@ interface LayoutProps {
 }
 
 export default function Layout({ children, requiresAuth = false, fullWidth = false }: LayoutProps) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
+  const showBanner = user && !user.is_verified;
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -25,7 +26,7 @@ export default function Layout({ children, requiresAuth = false, fullWidth = fal
 
       {/* Main Content */}
       <main className={`
-        pt-16 pb-16 lg:pb-0
+        ${showBanner ? 'pt-28' : 'pt-16'} pb-16 lg:pb-0
         lg:pl-64
         min-h-screen
         ${fullWidth ? '' : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8'}
