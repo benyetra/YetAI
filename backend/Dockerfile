@@ -20,8 +20,11 @@ COPY requirements.txt .
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
-    echo "Verifying boto3 installation:" && \
-    pip show boto3 || echo "boto3 not found!"
+    pip install --no-cache-dir boto3==1.35.0 botocore && \
+    echo "=== Verifying boto3 installation ===" && \
+    pip show boto3 && \
+    python -c "import boto3; print(f'boto3 version: {boto3.__version__}')" && \
+    echo "=== boto3 successfully installed ==="
 
 # Copy application code
 COPY . .
