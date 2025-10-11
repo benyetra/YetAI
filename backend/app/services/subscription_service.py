@@ -1,12 +1,12 @@
 import stripe
 import os
+import logging
 from typing import Dict, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from app.models.database_models import User
-from app.core.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 # Initialize Stripe
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
