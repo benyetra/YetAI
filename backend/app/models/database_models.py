@@ -64,7 +64,10 @@ class User(Base):
     last_name = Column(String(100))
     subscription_tier = Column(Enum(SubscriptionTier), default=SubscriptionTier.FREE)
     subscription_expires_at = Column(DateTime)
+    subscription_status = Column(String(50))  # active, canceled, past_due, etc.
+    subscription_current_period_end = Column(DateTime)
     stripe_customer_id = Column(String(255))
+    stripe_subscription_id = Column(String(255))
     favorite_teams = Column(JSON, default=list)
     preferred_sports = Column(JSON, default=list)
     notification_settings = Column(JSON, default=dict)

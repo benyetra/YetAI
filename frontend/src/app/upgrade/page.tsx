@@ -7,9 +7,10 @@ import { useAuth } from '@/components/Auth';
 import { Crown, Check, Zap, Star, TrendingUp, Users, Shield, Brain } from 'lucide-react';
 
 export default function UpgradePage() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
-  const [selectedPlan, setSelectedPlan] = useState('pro');
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -31,6 +32,40 @@ export default function UpgradePage() {
     return null;
   }
 
+  const handleUpgrade = async () => {
+    setCheckoutLoading(true);
+    setError('');
+
+    try {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/subscription/create-checkout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('auth_token')}`,
+        },
+        body: JSON.stringify({
+          tier: 'pro',
+          return_url: `${window.location.origin}/dashboard`,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.checkout_url) {
+        // Redirect to Stripe Checkout
+        window.location.href = data.checkout_url;
+      } else {
+        setError(data.detail || 'Failed to start checkout process');
+        setCheckoutLoading(false);
+      }
+    } catch (err) {
+      setError('An error occurred. Please try again.');
+      setCheckoutLoading(false);
+    }
+  };
+
+  const isProUser = user?.subscription_tier === 'pro';
+
   const plans = [
     {
       name: 'Free',
@@ -38,13 +73,14 @@ export default function UpgradePage() {
       period: '/month',
       description: 'Perfect for getting started',
       features: [
-        '5 bets per month',
+        '5 parlays per month',
         'Basic odds viewing',
         'Community access',
         'Email support'
       ],
-      buttonText: 'Current Plan',
-      buttonStyle: 'bg-gray-300 text-gray-600 cursor-not-allowed'
+      buttonText: isProUser ? 'Downgrade to Free' : 'Current Plan',
+      buttonStyle: 'bg-gray-300 text-gray-600 cursor-not-allowed',
+      tier: 'free'
     },
     {
       name: 'Pro',
@@ -52,33 +88,20 @@ export default function UpgradePage() {
       period: '/month',
       description: 'For serious bettors',
       features: [
-        'Unlimited bets',
-        'AI predictions',
+        'Unlimited parlays',
+        'AI-powered predictions',
         'Advanced analytics',
         'Live chat support',
         'Fantasy insights',
-        'Priority notifications'
+        'Priority notifications',
+        'Early access to new features'
       ],
-      buttonText: 'Upgrade to Pro',
-      buttonStyle: 'bg-blue-600 text-white hover:bg-blue-700',
-      popular: true
-    },
-    {
-      name: 'Elite',
-      price: '$49',
-      period: '/month',
-      description: 'Maximum winning potential',
-      features: [
-        'Everything in Pro',
-        'Premium AI models',
-        'Personal betting coach',
-        'Advanced parlay builder',
-        'White-glove support',
-        'Exclusive community',
-        'Custom analytics'
-      ],
-      buttonText: 'Upgrade to Elite',
-      buttonStyle: 'bg-purple-600 text-white hover:bg-purple-700'
+      buttonText: isProUser ? 'Current Plan' : 'Upgrade to Pro',
+      buttonStyle: isProUser
+        ? 'bg-gray-300 text-gray-600 cursor-not-allowed'
+        : 'bg-gradient-to-r from-purple-600 to-blue-600 text-white hover:from-purple-700 hover:to-blue-700',
+      popular: true,
+      tier: 'pro'
     }
   ];
 
@@ -88,9 +111,21 @@ export default function UpgradePage() {
         <div className="text-center">
           <h1 className="text-3xl font-bold text-gray-900 mb-4">Upgrade Your Experience</h1>
           <p className="text-gray-600 mb-8">Unlock advanced features and maximize your betting potential</p>
+          {isProUser && (
+            <div className="inline-flex items-center px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+              <Check className="w-4 h-4 mr-2" />
+              You're currently on the Pro plan
+            </div>
+          )}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-12">
+        {error && (
+          <div className="max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            {error}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
           {plans.map((plan) => (
             <div
               key={plan.name}
@@ -124,8 +159,23 @@ export default function UpgradePage() {
                 ))}
               </ul>
 
-              <button className={`w-full py-3 rounded-lg font-medium transition-colors ${plan.buttonStyle}`}>
-                {plan.buttonText}
+              <button
+                onClick={() => {
+                  if (plan.tier === 'pro' && !isProUser) {
+                    handleUpgrade();
+                  }
+                }}
+                disabled={checkoutLoading || plan.tier === 'free' || isProUser}
+                className={`w-full py-3 rounded-lg font-medium transition-colors ${plan.buttonStyle}`}
+              >
+                {checkoutLoading && plan.tier === 'pro' && !isProUser ? (
+                  <span className="flex items-center justify-center">
+                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                    Processing...
+                  </span>
+                ) : (
+                  plan.buttonText
+                )}
               </button>
             </div>
           ))}
