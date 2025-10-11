@@ -8,9 +8,9 @@ import { useNotifications } from '@/components/NotificationProvider';
 import { DetailedWebSocketStatus } from '@/components/WebSocketIndicator';
 import { sportsAPI, apiClient } from '@/lib/api';
 import Avatar, { AvatarRef } from '@/components/Avatar';
-import { 
-  User, 
-  Mail, 
+import {
+  User,
+  Mail,
   Lock,
   Save,
   AlertCircle,
@@ -28,7 +28,9 @@ import {
   TestTube,
   QrCode,
   Copy,
-  Smartphone
+  Smartphone,
+  Crown,
+  XCircle
 } from 'lucide-react';
 
 export default function ProfilePage() {
@@ -57,6 +59,10 @@ export default function ProfilePage() {
   const [avatarUrl, setAvatarUrl] = useState<string>('');
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const avatarRef = useRef<AvatarRef>(null);
+
+  // Subscription state
+  const [isCancelingSubscription, setIsCancelingSubscription] = useState(false);
+  const [showCancelConfirm, setShowCancelConfirm] = useState(false);
   
   // Settings state
   const [isLoading, setIsLoading] = useState(false);
@@ -490,10 +496,37 @@ export default function ProfilePage() {
         setMessage({ type: 'success', text: 'Avatar deleted successfully' });
       }
     } catch (error: any) {
-      setMessage({ 
-        type: 'error', 
-        text: error.response?.data?.detail || 'Failed to delete avatar' 
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.detail || 'Failed to delete avatar'
       });
+    }
+  };
+
+  const handleCancelSubscription = async () => {
+    if (!token || isCancelingSubscription) return;
+
+    setIsCancelingSubscription(true);
+    try {
+      const response = await apiClient.post('/api/subscription/cancel', {}, token);
+
+      if (response.status === 'success') {
+        setMessage({
+          type: 'success',
+          text: 'Subscription cancelled. You will retain access until the end of your billing period.'
+        });
+        setShowCancelConfirm(false);
+
+        // Refresh user data to update subscription status
+        await refreshUser();
+      }
+    } catch (error: any) {
+      setMessage({
+        type: 'error',
+        text: error.response?.data?.detail || 'Failed to cancel subscription'
+      });
+    } finally {
+      setIsCancelingSubscription(false);
     }
   };
 
@@ -753,6 +786,110 @@ export default function ProfilePage() {
                   </div>
                 </div>
               </div>
+
+              {/* Subscription Management Card - Only show for Pro members */}
+              {user?.subscription_tier === 'pro' && (
+                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+                  <div className="flex items-center space-x-3 mb-6">
+                    <Crown className="w-6 h-6 text-[#F59E0B]" />
+                    <h2 className="text-xl font-semibold text-gray-900">Subscription</h2>
+                  </div>
+
+                  <div className="space-y-6">
+                    <div className="bg-gradient-to-br from-[#A855F7] to-[#F59E0B] rounded-xl p-6 text-white">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <Crown className="w-5 h-5" />
+                        <h3 className="font-bold text-lg">Pro Member</h3>
+                      </div>
+                      <p className="text-sm opacity-90">
+                        You have access to all premium features including AI predictions, unlimited bets, and advanced analytics.
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-gray-700">Current Plan</span>
+                        <span className="text-sm font-bold text-[#A855F7]">Pro</span>
+                      </div>
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-gray-700">Status</span>
+                        <span className="text-sm font-bold text-green-600">
+                          {user?.subscription_status === 'canceling' ? 'Canceling' : 'Active'}
+                        </span>
+                      </div>
+                      {user?.subscription_current_period_end && (
+                        <div className="flex justify-between items-center">
+                          <span className="text-sm font-medium text-gray-700">
+                            {user?.subscription_status === 'canceling' ? 'Access Until' : 'Next Billing'}
+                          </span>
+                          <span className="text-sm font-medium text-gray-600">
+                            {new Date(user.subscription_current_period_end).toLocaleDateString()}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+
+                    {user?.subscription_status !== 'canceling' && (
+                      <div className="pt-4 border-t border-gray-200">
+                        {!showCancelConfirm ? (
+                          <button
+                            onClick={() => setShowCancelConfirm(true)}
+                            className="w-full px-4 py-3 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                          >
+                            <XCircle className="w-4 h-4" />
+                            <span className="font-medium">Cancel Subscription</span>
+                          </button>
+                        ) : (
+                          <div className="space-y-3">
+                            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                              <p className="text-sm text-amber-800">
+                                Are you sure? You'll retain access until the end of your billing period.
+                              </p>
+                            </div>
+                            <div className="flex gap-3">
+                              <button
+                                onClick={handleCancelSubscription}
+                                disabled={isCancelingSubscription}
+                                className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center space-x-2"
+                              >
+                                {isCancelingSubscription ? (
+                                  <>
+                                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                                    <span>Canceling...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-4 h-4" />
+                                    <span>Yes, Cancel</span>
+                                  </>
+                                )}
+                              </button>
+                              <button
+                                onClick={() => setShowCancelConfirm(false)}
+                                disabled={isCancelingSubscription}
+                                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                Keep Subscription
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {user?.subscription_status === 'canceling' && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <p className="text-sm text-blue-800">
+                          Your subscription has been cancelled. You'll continue to have access to Pro features until{' '}
+                          {user?.subscription_current_period_end &&
+                            new Date(user.subscription_current_period_end).toLocaleDateString()
+                          }.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {/* Personal Information Card */}
               <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
