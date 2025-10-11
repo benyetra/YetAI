@@ -775,7 +775,7 @@ async def create_checkout_session(
 
         return {
             "status": "success",
-            "checkout_url": result["checkout_url"],
+            "client_secret": result["client_secret"],
             "session_id": result["session_id"],
         }
 

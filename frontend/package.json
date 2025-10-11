@@ -15,6 +15,7 @@
   "dependencies": {
     "@headlessui/react": "^2.2.7",
     "@hookform/resolvers": "^5.2.1",
+    "@stripe/stripe-js": "^8.0.0",
     "axios": "^1.11.0",
     "date-fns": "^4.1.0",
     "lucide-react": "^0.539.0",

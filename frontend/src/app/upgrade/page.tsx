@@ -4,13 +4,16 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
-import { Crown, Check, Zap, Star, TrendingUp, Users, Shield, Brain } from 'lucide-react';
+import { Crown, Check, Zap, Star, TrendingUp, Users, Shield, Brain, ArrowLeft } from 'lucide-react';
+import EmbeddedCheckout from '@/components/EmbeddedCheckout';
 
 export default function UpgradePage() {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [error, setError] = useState('');
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [showCheckout, setShowCheckout] = useState(false);
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
@@ -45,15 +48,16 @@ export default function UpgradePage() {
         },
         body: JSON.stringify({
           tier: 'pro',
-          return_url: `${window.location.origin}/dashboard`,
+          return_url: `${window.location.origin}/upgrade/success`,
         }),
       });
 
       const data = await response.json();
 
-      if (response.ok && data.checkout_url) {
-        // Redirect to Stripe Checkout
-        window.location.href = data.checkout_url;
+      if (response.ok && data.client_secret) {
+        setClientSecret(data.client_secret);
+        setShowCheckout(true);
+        setCheckoutLoading(false);
       } else {
         setError(data.detail || 'Failed to start checkout process');
         setCheckoutLoading(false);
@@ -62,6 +66,23 @@ export default function UpgradePage() {
       setError('An error occurred. Please try again.');
       setCheckoutLoading(false);
     }
+  };
+
+  const handleCheckoutComplete = () => {
+    // Redirect to success page
+    router.push('/upgrade/success');
+  };
+
+  const handleCheckoutError = (error: string) => {
+    setError(error);
+    setShowCheckout(false);
+    setClientSecret(null);
+  };
+
+  const handleBackToPlans = () => {
+    setShowCheckout(false);
+    setClientSecret(null);
+    setError('');
   };
 
   const isProUser = user?.subscription_tier === 'pro';
@@ -108,22 +129,24 @@ export default function UpgradePage() {
   return (
     <Layout requiresAuth>
       <div className="space-y-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Upgrade Your Experience</h1>
-          <p className="text-gray-600 mb-8">Unlock advanced features and maximize your betting potential</p>
-          {isProUser && (
-            <div className="inline-flex items-center px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
-              <Check className="w-4 h-4 mr-2" />
-              You're currently on the Pro plan
+        {!showCheckout ? (
+          <>
+            <div className="text-center">
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">Upgrade Your Experience</h1>
+              <p className="text-gray-600 mb-8">Unlock advanced features and maximize your betting potential</p>
+              {isProUser && (
+                <div className="inline-flex items-center px-4 py-2 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm">
+                  <Check className="w-4 h-4 mr-2" />
+                  You're currently on the Pro plan
+                </div>
+              )}
             </div>
-          )}
-        </div>
 
-        {error && (
-          <div className="max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
-            {error}
-          </div>
-        )}
+            {error && (
+              <div className="max-w-2xl mx-auto p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {error}
+              </div>
+            )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-12 max-w-4xl mx-auto">
           {plans.map((plan) => (
@@ -232,11 +255,42 @@ export default function UpgradePage() {
           </div>
         </div>
 
-        <div className="text-center">
-          <p className="text-sm text-gray-600">
-            Need help choosing? <button className="text-blue-600 hover:text-blue-700 underline">Contact our sales team</button>
-          </p>
-        </div>
+            <div className="text-center">
+              <p className="text-sm text-gray-600">
+                Need help choosing? <button className="text-blue-600 hover:text-blue-700 underline">Contact our sales team</button>
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="max-w-3xl mx-auto">
+            <button
+              onClick={handleBackToPlans}
+              className="flex items-center text-gray-600 hover:text-gray-900 mb-6"
+            >
+              <ArrowLeft className="w-4 h-4 mr-2" />
+              Back to plans
+            </button>
+
+            <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <h2 className="text-2xl font-bold text-gray-900 mb-2">Complete Your Upgrade</h2>
+              <p className="text-gray-600 mb-6">Enter your payment details to activate Pro features</p>
+
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {error}
+                </div>
+              )}
+
+              {clientSecret && (
+                <EmbeddedCheckout
+                  clientSecret={clientSecret}
+                  onComplete={handleCheckoutComplete}
+                  onError={handleCheckoutError}
+                />
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );

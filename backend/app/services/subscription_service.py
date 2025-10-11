@@ -112,7 +112,6 @@ class SubscriptionService:
 
             checkout_session = stripe.checkout.Session.create(
                 customer=customer.id,
-                payment_method_types=["card"],
                 line_items=[
                     {
                         "price": price_id,
@@ -120,8 +119,8 @@ class SubscriptionService:
                     }
                 ],
                 mode="subscription",
-                success_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
-                cancel_url=f"{return_url}?upgrade=cancelled",
+                ui_mode="embedded",
+                return_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
                 metadata={
                     "user_id": str(user.id),
                     "tier": tier,
@@ -139,7 +138,7 @@ class SubscriptionService:
             )
 
             return {
-                "checkout_url": checkout_session.url,
+                "client_secret": checkout_session.client_secret,
                 "session_id": checkout_session.id,
             }
 
