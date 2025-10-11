@@ -189,6 +189,7 @@ class SubscriptionService:
 
             data = {
                 "customer": customer.id,
+                "customer_email": user.email,  # Ensure email is set for receipts
                 "line_items[0][price]": price_id,
                 "line_items[0][quantity]": "1",
                 "mode": "subscription",
@@ -198,6 +199,8 @@ class SubscriptionService:
                 "metadata[tier]": tier,
                 "subscription_data[metadata][user_id]": str(user.id),
                 "subscription_data[metadata][tier]": tier,
+                "invoice_creation[enabled]": "true",  # Enable invoice creation
+                "invoice_creation[invoice_data][description]": f"YetAI {tier.capitalize()} Subscription",
             }
 
             response = requests.post(
