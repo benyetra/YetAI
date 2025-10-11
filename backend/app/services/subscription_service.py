@@ -8,28 +8,26 @@ from app.models.database_models import User
 
 logger = logging.getLogger(__name__)
 
-# Initialize Stripe
-stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-
-# Price IDs for subscription tiers (these will be created in Stripe Dashboard)
-STRIPE_PRICE_IDS = {
-    "pro": os.getenv("STRIPE_PRO_PRICE_ID", ""),  # Monthly Pro subscription
-}
-
 
 class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
+        # Initialize Stripe with API key
+        stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+        if not stripe.api_key:
+            logger.error("STRIPE_SECRET_KEY not configured")
 
     def create_checkout_session(
         self, user: User, tier: str, return_url: str
     ) -> Dict[str, str]:
         """Create a Stripe Checkout session for subscription upgrade"""
         try:
-            if tier not in STRIPE_PRICE_IDS:
+            # Get price ID from environment
+            if tier == "pro":
+                price_id = os.getenv("STRIPE_PRO_PRICE_ID", "")
+            else:
                 raise ValueError(f"Invalid subscription tier: {tier}")
 
-            price_id = STRIPE_PRICE_IDS[tier]
             if not price_id:
                 raise ValueError(
                     f"Stripe Price ID not configured for tier: {tier}. Please set STRIPE_PRO_PRICE_ID environment variable."
