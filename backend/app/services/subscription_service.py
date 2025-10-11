@@ -67,51 +67,102 @@ class SubscriptionService:
             if not user.stripe_customer_id:
                 logger.info("Creating new Stripe customer")
                 try:
-                    customer = stripe.Customer.create(
-                        email=user.email,
-                        name=f"{user.first_name} {user.last_name}",
-                        metadata={"user_id": str(user.id), "username": user.username},
-                    )
-                    logger.info("Customer.create() returned successfully")
-                    logger.info(f"Type of returned object: {type(customer)}")
+                    # Use raw API call to bypass SDK object parsing issues
+                    import requests
 
-                    # Try to access the id safely
-                    try:
-                        customer_id = customer.id
-                        logger.info(f"Successfully got customer.id: {customer_id}")
+                    api_key = stripe.api_key
+                    headers = {
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    }
+
+                    data = {
+                        "email": user.email,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "metadata[user_id]": str(user.id),
+                        "metadata[username]": user.username,
+                    }
+
+                    response = requests.post(
+                        "https://api.stripe.com/v1/customers",
+                        headers=headers,
+                        data=data,
+                    )
+
+                    logger.info(f"Raw API response status: {response.status_code}")
+
+                    if response.status_code == 200:
+                        customer_data = response.json()
+                        customer_id = customer_data.get("id")
+                        logger.info(
+                            f"Successfully got customer ID from raw API: {customer_id}"
+                        )
+
                         user.stripe_customer_id = customer_id
                         self.db.commit()
-                    except AttributeError as e:
-                        logger.error(f"AttributeError accessing customer.id: {e}")
-                        logger.error(f"Customer object dir: {dir(customer)}")
-                        raise Exception(f"Failed to access customer ID: {e}")
+
+                        # Create a simple object to use later
+                        class CustomerObj:
+                            def __init__(self, cid):
+                                self.id = cid
+
+                        customer = CustomerObj(customer_id)
+                    else:
+                        logger.error(f"API error: {response.text}")
+                        raise Exception(f"Failed to create customer: {response.text}")
+
                 except Exception as e:
                     logger.error(f"Exception during customer creation: {e}")
                     logger.error(f"Exception type: {type(e)}")
                     raise
             else:
                 logger.info(f"Retrieving existing customer: {user.stripe_customer_id}")
-                try:
-                    customer = stripe.Customer.retrieve(user.stripe_customer_id)
-                    logger.info(f"Successfully retrieved customer: {customer.id}")
-                except Exception as e:
-                    logger.error(f"Failed to retrieve customer: {e}")
+                # Use raw API to retrieve
+                import requests
+
+                api_key = stripe.api_key
+                headers = {"Authorization": f"Bearer {api_key}"}
+
+                response = requests.get(
+                    f"https://api.stripe.com/v1/customers/{user.stripe_customer_id}",
+                    headers=headers,
+                )
+
+                if response.status_code == 200:
+                    customer_data = response.json()
+                    customer_id = customer_data.get("id")
+                    logger.info(f"Successfully retrieved customer: {customer_id}")
+
+                    class CustomerObj:
+                        def __init__(self, cid):
+                            self.id = cid
+
+                    customer = CustomerObj(customer_id)
+                else:
+                    logger.error(f"Failed to retrieve customer: {response.text}")
                     logger.info("Creating new customer instead")
-                    customer = stripe.Customer.create(
-                        email=user.email,
-                        name=f"{user.first_name} {user.last_name}",
-                        metadata={"user_id": str(user.id), "username": user.username},
+                    # Use raw API to create
+                    headers["Content-Type"] = "application/x-www-form-urlencoded"
+                    data = {
+                        "email": user.email,
+                        "name": f"{user.first_name} {user.last_name}",
+                        "metadata[user_id]": str(user.id),
+                        "metadata[username]": user.username,
+                    }
+                    response = requests.post(
+                        "https://api.stripe.com/v1/customers",
+                        headers=headers,
+                        data=data,
                     )
-                    logger.info(f"Customer object type: {type(customer)}")
-                    logger.info(f"Customer has 'id' attr: {hasattr(customer, 'id')}")
-                    if hasattr(customer, "id"):
-                        user.stripe_customer_id = customer.id
+                    if response.status_code == 200:
+                        customer_data = response.json()
+                        customer_id = customer_data.get("id")
+                        logger.info(f"Created new customer: {customer_id}")
+                        user.stripe_customer_id = customer_id
                         self.db.commit()
+                        customer = CustomerObj(customer_id)
                     else:
-                        logger.error(f"Customer object missing 'id' attribute!")
-                        raise Exception(
-                            "Failed to create Stripe customer - no ID returned"
-                        )
+                        raise Exception(f"Failed to create customer: {response.text}")
 
             # Validate customer object before proceeding
             if not customer or not hasattr(customer, "id"):
