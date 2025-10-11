@@ -61,6 +61,11 @@ class SubscriptionService:
                 customer = stripe.Customer.retrieve(user.stripe_customer_id)
 
             # Create checkout session
+            logger.info(
+                f"Creating checkout with customer_id: {customer.id}, price_id: {price_id}"
+            )
+            logger.info(f"Return URL: {return_url}")
+
             checkout_session = stripe.checkout.Session.create(
                 customer=customer.id,
                 payment_method_types=["card"],
