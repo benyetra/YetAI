@@ -1,6 +1,7 @@
 import React from 'react';
 import { Sidebar, Header, MobileBottomNav } from './Navigation';
 import { useAuth } from './Auth';
+import EmailVerificationBanner from './EmailVerificationBanner';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,10 +16,13 @@ export default function Layout({ children, requiresAuth = false, fullWidth = fal
     <div className="min-h-screen bg-gray-50">
       {/* Sidebar - Desktop */}
       <Sidebar />
-      
+
       {/* Header */}
       <Header />
-      
+
+      {/* Email Verification Banner */}
+      <EmailVerificationBanner />
+
       {/* Main Content */}
       <main className={`
         pt-16 pb-16 lg:pb-0
@@ -28,7 +32,7 @@ export default function Layout({ children, requiresAuth = false, fullWidth = fal
       `}>
         {children}
       </main>
-      
+
       {/* Mobile Bottom Navigation */}
       <MobileBottomNav />
     </div>
