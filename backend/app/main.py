@@ -1219,6 +1219,71 @@ async def resend_verification(request: dict):
         )
 
 
+@app.post("/api/auth/forgot-password")
+async def forgot_password(request: dict):
+    """Request password reset email"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503, detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        email = request.get("email")
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.request_password_reset(email)
+
+        # Always return success to prevent email enumeration
+        return {
+            "status": "success",
+            "message": "If the email exists, a password reset link has been sent",
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Forgot password error: {e}")
+        raise HTTPException(status_code=400, detail="Failed to process request")
+
+
+@app.post("/api/auth/reset-password")
+async def reset_password(request: dict):
+    """Reset password with token"""
+    if not is_service_available("auth_service"):
+        raise HTTPException(
+            status_code=503, detail="Authentication service is currently unavailable"
+        )
+
+    try:
+        token = request.get("token")
+        new_password = request.get("new_password")
+
+        if not token or not new_password:
+            raise HTTPException(
+                status_code=400, detail="Token and new password are required"
+            )
+
+        auth_service = get_service("auth_service")
+        result = await auth_service.reset_password(token, new_password)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Password reset failed")
+            )
+
+        return {
+            "status": "success",
+            "message": result.get("message", "Password reset successfully"),
+            "user": result.get("user"),
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reset password error: {e}")
+        raise HTTPException(status_code=400, detail="Failed to reset password")
+
+
 @app.get("/api/auth/me")
 async def get_current_user_info(current_user: dict = Depends(get_current_user)):
     """Get current user info"""

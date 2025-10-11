@@ -7,6 +7,7 @@ import { useAuth } from '@/components/Auth';
 import { Eye, EyeOff, Mail, Lock, TrendingUp, DollarSign, Activity, Users } from 'lucide-react';
 import Link from 'next/link';
 import Script from 'next/script';
+import ForgotPasswordModal from '@/components/ForgotPasswordModal';
 
 // Google Identity Services types
 declare global {
@@ -34,6 +35,7 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -136,6 +138,10 @@ export default function LoginPage() {
   return (
     <>
       <Script src="https://accounts.google.com/gsi/client" strategy="beforeInteractive" />
+      <ForgotPasswordModal
+        isOpen={showForgotPasswordModal}
+        onClose={() => setShowForgotPasswordModal(false)}
+      />
       <div className="min-h-screen flex bg-gray-100">
         {/* Left Panel - Login Form */}
         <div className="flex-1 flex items-center justify-center px-4 sm:px-6 lg:px-8 bg-white">
@@ -252,9 +258,13 @@ export default function LoginPage() {
                 </label>
               </div>
               <div className="text-sm">
-                <a href="#" className="font-medium text-purple-600 hover:text-purple-500">
+                <button
+                  type="button"
+                  onClick={() => setShowForgotPasswordModal(true)}
+                  className="font-medium text-purple-600 hover:text-purple-500"
+                >
                   Forgot your password?
-                </a>
+                </button>
               </div>
             </div>
 
