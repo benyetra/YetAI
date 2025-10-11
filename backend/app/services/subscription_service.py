@@ -194,6 +194,7 @@ class SubscriptionService:
                 "mode": "subscription",
                 "ui_mode": "embedded",
                 "return_url": f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
+                "payment_method_types[0]": "card",  # Only allow card payments to avoid Link processing errors
                 "metadata[user_id]": str(user.id),
                 "metadata[tier]": tier,
                 "subscription_data[metadata][user_id]": str(user.id),
