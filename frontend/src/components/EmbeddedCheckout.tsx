@@ -22,35 +22,68 @@ export default function EmbeddedCheckout({
         // Get the publishable key from env
         const publishableKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
 
+        console.log('Initializing checkout with publishable key:', publishableKey ? 'present' : 'missing');
+        console.log('Client secret:', clientSecret ? 'present' : 'missing');
+
         if (!publishableKey) {
-          const error = 'Stripe publishable key not configured';
+          const error = 'Stripe publishable key not configured. Please add NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY to Vercel environment variables.';
           console.error(error);
           onError?.(error);
+          setIsLoading(false);
+          return;
+        }
+
+        if (!clientSecret) {
+          const error = 'Client secret is missing';
+          console.error(error);
+          onError?.(error);
+          setIsLoading(false);
           return;
         }
 
         // Load Stripe
+        console.log('Loading Stripe...');
         const stripe = await loadStripe(publishableKey);
 
         if (!stripe) {
           const error = 'Failed to load Stripe';
           console.error(error);
           onError?.(error);
+          setIsLoading(false);
           return;
         }
+
+        console.log('Stripe loaded successfully');
+        console.log('Initializing embedded checkout...');
 
         // Mount the embedded checkout
         const checkout = await stripe.initEmbeddedCheckout({
           clientSecret,
         });
 
+        console.log('Checkout object:', checkout);
+        console.log('Checkout type:', typeof checkout);
+        console.log('Has mount method:', typeof checkout?.mount === 'function');
+        console.log('Has on method:', typeof checkout?.on === 'function');
+
+        if (!checkout || typeof checkout.mount !== 'function') {
+          const error = 'Invalid checkout object returned from Stripe';
+          console.error(error, checkout);
+          onError?.(error);
+          setIsLoading(false);
+          return;
+        }
+
         checkout.mount('#embedded-checkout');
         setIsLoading(false);
 
         // Handle completion
-        checkout.on('complete', () => {
-          onComplete?.();
-        });
+        if (typeof checkout.on === 'function') {
+          checkout.on('complete', () => {
+            console.log('Checkout completed!');
+            onComplete?.();
+          });
+        }
 
       } catch (error) {
         console.error('Error initializing checkout:', error);
