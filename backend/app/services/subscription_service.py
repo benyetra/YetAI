@@ -12,12 +12,17 @@ logger = logging.getLogger(__name__)
 class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
-        # Initialize Stripe with API key
-        stripe_key = os.getenv("STRIPE_SECRET_KEY")
-        logger.info(f"STRIPE_SECRET_KEY loaded: {bool(stripe_key)}")
-        if not stripe_key:
-            raise ValueError("STRIPE_SECRET_KEY environment variable not set")
-        stripe.api_key = stripe_key
+        # Initialize Stripe with API key from environment
+        self.stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        logger.info(f"STRIPE_SECRET_KEY present: {bool(self.stripe_key)}")
+        logger.info(f"STRIPE_SECRET_KEY length: {len(self.stripe_key) if self.stripe_key else 0}")
+
+        if not self.stripe_key:
+            raise ValueError("STRIPE_SECRET_KEY environment variable not set. Please configure it in Railway.")
+
+        # Set Stripe API key
+        stripe.api_key = self.stripe_key
+        logger.info("Stripe API key configured successfully")
 
     def create_checkout_session(
         self, user: User, tier: str, return_url: str
