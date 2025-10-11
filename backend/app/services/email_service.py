@@ -1,10 +1,8 @@
 # app/services/email_service.py
 """Email service for sending verification emails, password resets, etc."""
 
-import smtplib
 import os
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import requests
 from typing import Optional
 import logging
 from datetime import datetime, timedelta
@@ -15,26 +13,29 @@ logger = logging.getLogger(__name__)
 
 
 class EmailService:
-    """Handle email sending for the application"""
+    """Handle email sending for the application using Brevo API"""
 
     def __init__(self):
-        # Email configuration - in production, use environment variables
-        self.smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-        self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
-        self.smtp_user = os.getenv("SMTP_USER", "")
-        self.smtp_password = os.getenv("SMTP_PASSWORD", "")
+        # Brevo API configuration
+        self.api_key = os.getenv("BREVO_API_KEY", "")
         self.from_email = os.getenv("FROM_EMAIL", "noreply@yetai.com")
         self.from_name = "YetAI Sports Betting"
+        self.api_url = "https://api.brevo.com/v3/smtp/email"
+
         # Use environment-aware frontend URL
         frontend_urls = settings.get_frontend_urls()
         self.app_url = frontend_urls[0] if frontend_urls else "http://localhost:3000"
 
         # For development - simulate email sending
-        self.dev_mode = not self.smtp_user or not self.smtp_password
+        self.dev_mode = not self.api_key
 
         if self.dev_mode:
             logger.info(
                 "Email service running in development mode - emails will be logged only"
+            )
+        else:
+            logger.info(
+                f"Email service initialized with Brevo API for {self.from_email}"
             )
 
     def send_email(
@@ -44,7 +45,7 @@ class EmailService:
         html_body: str,
         text_body: Optional[str] = None,
     ) -> bool:
-        """Send an email"""
+        """Send an email using Brevo API"""
         try:
             if self.dev_mode:
                 # In development, just log the email
@@ -59,28 +60,38 @@ class EmailService:
                 )
                 return True
 
-            # Create message
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = f"{self.from_name} <{self.from_email}>"
-            msg["To"] = to_email
+            # Prepare Brevo API payload
+            payload = {
+                "sender": {"name": self.from_name, "email": self.from_email},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_body,
+            }
 
-            # Add text and HTML parts
             if text_body:
-                part1 = MIMEText(text_body, "plain")
-                msg.attach(part1)
+                payload["textContent"] = text_body
 
-            part2 = MIMEText(html_body, "html")
-            msg.attach(part2)
+            # Send via Brevo API
+            headers = {
+                "accept": "application/json",
+                "api-key": self.api_key,
+                "content-type": "application/json",
+            }
 
-            # Send email with timeout (30 seconds for Brevo SMTP relay)
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as server:
-                server.starttls()
-                server.login(self.smtp_user, self.smtp_password)
-                server.send_message(msg)
+            response = requests.post(
+                self.api_url, json=payload, headers=headers, timeout=10
+            )
 
-            logger.info(f"Email sent successfully to {to_email}")
-            return True
+            if response.status_code in [200, 201]:
+                logger.info(
+                    f"Email sent successfully to {to_email} via Brevo API (messageId: {response.json().get('messageId', 'unknown')})"
+                )
+                return True
+            else:
+                logger.error(
+                    f"Brevo API error: {response.status_code} - {response.text}"
+                )
+                return False
 
         except Exception as e:
             logger.error(f"Failed to send email to {to_email}: {e}")
