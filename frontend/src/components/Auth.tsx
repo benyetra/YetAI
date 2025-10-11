@@ -76,12 +76,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Check for stored token on app load
     const storedToken = localStorage.getItem('auth_token');
     const storedUser = localStorage.getItem('user_data');
-    
+
     if (storedToken && storedUser) {
       setToken(storedToken);
       setUser(JSON.parse(storedUser));
     }
     setLoading(false);
+
+    // Listen for storage changes (e.g., when email is verified)
+    const handleStorageChange = () => {
+      const updatedUser = localStorage.getItem('user_data');
+      if (updatedUser) {
+        setUser(JSON.parse(updatedUser));
+      }
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
   }, []);
 
   const login = async (emailOrUsername: string, password: string) => {

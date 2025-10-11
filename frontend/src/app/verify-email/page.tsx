@@ -41,9 +41,24 @@ function VerifyEmailContent() {
         setStatus('success');
         setMessage(data.message || 'Your email has been verified successfully!');
 
-        // Redirect to login after 3 seconds
+        // Update user data in localStorage if logged in
+        const storedUser = localStorage.getItem('user_data');
+        if (storedUser) {
+          const userData = JSON.parse(storedUser);
+          userData.is_verified = true;
+          localStorage.setItem('user_data', JSON.stringify(userData));
+
+          // Trigger a storage event to update the banner across tabs/components
+          window.dispatchEvent(new Event('storage'));
+        }
+
+        // Redirect to dashboard after 3 seconds if logged in, otherwise to login
         setTimeout(() => {
-          router.push('/login');
+          if (storedUser) {
+            router.push('/');
+          } else {
+            router.push('/login');
+          }
         }, 3000);
       } else {
         setStatus('error');
