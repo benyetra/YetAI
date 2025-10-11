@@ -169,7 +169,7 @@ class SubscriptionService:
                 logger.error(f"Invalid customer object: {customer}")
                 raise Exception("Failed to get valid customer object from Stripe")
 
-            # Create checkout session
+            # Create checkout session using raw API
             logger.info(f"About to create checkout session:")
             logger.info(f"  customer_id: {customer.id}")
             logger.info(f"  price_id: '{price_id}'")
@@ -179,37 +179,50 @@ class SubscriptionService:
             if not price_id:
                 raise ValueError("Price ID is empty or None")
 
-            checkout_session = stripe.checkout.Session.create(
-                customer=customer.id,
-                line_items=[
-                    {
-                        "price": price_id,
-                        "quantity": 1,
-                    }
-                ],
-                mode="subscription",
-                ui_mode="embedded",
-                return_url=f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
-                metadata={
-                    "user_id": str(user.id),
-                    "tier": tier,
-                },
-                subscription_data={
-                    "metadata": {
-                        "user_id": str(user.id),
-                        "tier": tier,
-                    }
-                },
-            )
+            import requests
 
-            logger.info(
-                f"Created checkout session for user {user.id}: {checkout_session.id}"
-            )
-
-            return {
-                "client_secret": checkout_session.client_secret,
-                "session_id": checkout_session.id,
+            api_key = stripe.api_key
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/x-www-form-urlencoded",
             }
+
+            data = {
+                "customer": customer.id,
+                "line_items[0][price]": price_id,
+                "line_items[0][quantity]": "1",
+                "mode": "subscription",
+                "ui_mode": "embedded",
+                "return_url": f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
+                "metadata[user_id]": str(user.id),
+                "metadata[tier]": tier,
+                "subscription_data[metadata][user_id]": str(user.id),
+                "subscription_data[metadata][tier]": tier,
+            }
+
+            response = requests.post(
+                "https://api.stripe.com/v1/checkout/sessions",
+                headers=headers,
+                data=data,
+            )
+
+            logger.info(f"Checkout session API response status: {response.status_code}")
+
+            if response.status_code == 200:
+                session_data = response.json()
+                session_id = session_data.get("id")
+                client_secret = session_data.get("client_secret")
+                logger.info(
+                    f"Created checkout session for user {user.id}: {session_id}"
+                )
+
+                return {
+                    "client_secret": client_secret,
+                    "session_id": session_id,
+                }
+            else:
+                logger.error(f"Checkout session API error: {response.text}")
+                raise Exception(f"Failed to create checkout session: {response.text}")
 
         except stripe.error.StripeError as e:
             logger.error(f"Stripe error creating checkout session: {e}")
