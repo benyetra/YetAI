@@ -198,8 +198,7 @@ class SubscriptionService:
                 "metadata[tier]": tier,
                 "subscription_data[metadata][user_id]": str(user.id),
                 "subscription_data[metadata][tier]": tier,
-                "invoice_creation[enabled]": "true",  # Enable invoice creation
-                "invoice_creation[invoice_data][description]": f"YetAI {tier.capitalize()} Subscription",
+                # Note: Invoices are created automatically for subscriptions
             }
 
             response = requests.post(
