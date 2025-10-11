@@ -411,6 +411,29 @@ async def serve_avatar_debug(filename: str):
         raise HTTPException(status_code=404, detail="Avatar not found")
 
 
+# Debug endpoint to check S3 configuration
+@app.get("/debug/s3-config")
+async def debug_s3_config():
+    """Debug endpoint to check S3 configuration status"""
+    import os
+    from app.services.avatar_service import avatar_service
+
+    return {
+        "s3_enabled": avatar_service.use_s3,
+        "has_access_key": bool(os.getenv("AWS_ACCESS_KEY_ID")),
+        "has_secret_key": bool(os.getenv("AWS_SECRET_ACCESS_KEY")),
+        "has_bucket": bool(os.getenv("AWS_S3_BUCKET_NAME")),
+        "bucket_name": (
+            os.getenv("AWS_S3_BUCKET_NAME", "").split("/")[0]
+            if os.getenv("AWS_S3_BUCKET_NAME")
+            else None
+        ),
+        "region": os.getenv("AWS_REGION")
+        or os.getenv("AWS_DEFAULT_REGION", "us-east-1"),
+        "storage_type": "S3" if avatar_service.use_s3 else "Local Filesystem",
+    }
+
+
 # Health and status endpoints
 @app.get("/health")
 async def health_check():
