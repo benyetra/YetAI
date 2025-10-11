@@ -437,7 +437,7 @@ async def test_smtp_connection():
         "smtp_host": smtp_host,
         "smtp_port": smtp_port,
         "smtp_user_set": bool(smtp_user),
-        "tests": {}
+        "tests": {},
     }
 
     # Test DNS
