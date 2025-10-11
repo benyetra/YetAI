@@ -13,9 +13,11 @@ class SubscriptionService:
     def __init__(self, db: Session):
         self.db = db
         # Initialize Stripe with API key
-        stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-        if not stripe.api_key:
-            logger.error("STRIPE_SECRET_KEY not configured")
+        stripe_key = os.getenv("STRIPE_SECRET_KEY")
+        logger.info(f"STRIPE_SECRET_KEY loaded: {bool(stripe_key)}")
+        if not stripe_key:
+            raise ValueError("STRIPE_SECRET_KEY environment variable not set")
+        stripe.api_key = stripe_key
 
     def create_checkout_session(
         self, user: User, tier: str, return_url: str
