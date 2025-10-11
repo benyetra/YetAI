@@ -25,9 +25,20 @@ def _ensure_stripe_initialized():
             raise ValueError(
                 "STRIPE_SECRET_KEY environment variable not set. Please configure it in Railway."
             )
+
+        # Trim whitespace and validate format
+        stripe_key = stripe_key.strip()
+
+        if not (stripe_key.startswith("sk_test_") or stripe_key.startswith("sk_live_")):
+            raise ValueError(
+                f"Invalid STRIPE_SECRET_KEY format. Key should start with 'sk_test_' or 'sk_live_', but starts with '{stripe_key[:10]}...'"
+            )
+
         stripe.api_key = stripe_key
         _stripe_initialized = True
-        logger.info(f"Stripe initialized with key length: {len(stripe_key)}")
+        logger.info(
+            f"Stripe initialized with key length: {len(stripe_key)}, starts with: {stripe_key[:8]}..."
+        )
 
 
 class SubscriptionService:
@@ -55,22 +66,29 @@ class SubscriptionService:
             # Create or retrieve Stripe customer
             if not user.stripe_customer_id:
                 logger.info("Creating new Stripe customer")
-                customer = stripe.Customer.create(
-                    email=user.email,
-                    name=f"{user.first_name} {user.last_name}",
-                    metadata={"user_id": str(user.id), "username": user.username},
-                )
-                logger.info(f"Customer object type: {type(customer)}")
-                logger.info(f"Customer object: {customer}")
-                logger.info(f"Customer has 'id' attr: {hasattr(customer, 'id')}")
-                if hasattr(customer, "id"):
-                    logger.info(f"Customer.id value: {customer.id}")
-                    user.stripe_customer_id = customer.id
-                    self.db.commit()
-                    logger.info(f"Created customer: {customer.id}")
-                else:
-                    logger.error(f"Customer object missing 'id' attribute!")
-                    raise Exception("Failed to create Stripe customer - no ID returned")
+                try:
+                    customer = stripe.Customer.create(
+                        email=user.email,
+                        name=f"{user.first_name} {user.last_name}",
+                        metadata={"user_id": str(user.id), "username": user.username},
+                    )
+                    logger.info("Customer.create() returned successfully")
+                    logger.info(f"Type of returned object: {type(customer)}")
+
+                    # Try to access the id safely
+                    try:
+                        customer_id = customer.id
+                        logger.info(f"Successfully got customer.id: {customer_id}")
+                        user.stripe_customer_id = customer_id
+                        self.db.commit()
+                    except AttributeError as e:
+                        logger.error(f"AttributeError accessing customer.id: {e}")
+                        logger.error(f"Customer object dir: {dir(customer)}")
+                        raise Exception(f"Failed to access customer ID: {e}")
+                except Exception as e:
+                    logger.error(f"Exception during customer creation: {e}")
+                    logger.error(f"Exception type: {type(e)}")
+                    raise
             else:
                 logger.info(f"Retrieving existing customer: {user.stripe_customer_id}")
                 try:
