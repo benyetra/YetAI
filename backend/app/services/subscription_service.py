@@ -54,6 +54,7 @@ class SubscriptionService:
 
             # Create or retrieve Stripe customer
             if not user.stripe_customer_id:
+                logger.info("Creating new Stripe customer")
                 customer = stripe.Customer.create(
                     email=user.email,
                     name=f"{user.first_name} {user.last_name}",
@@ -61,8 +62,22 @@ class SubscriptionService:
                 )
                 user.stripe_customer_id = customer.id
                 self.db.commit()
+                logger.info(f"Created customer: {customer.id}")
             else:
-                customer = stripe.Customer.retrieve(user.stripe_customer_id)
+                logger.info(f"Retrieving existing customer: {user.stripe_customer_id}")
+                try:
+                    customer = stripe.Customer.retrieve(user.stripe_customer_id)
+                    logger.info(f"Successfully retrieved customer: {customer.id}")
+                except Exception as e:
+                    logger.error(f"Failed to retrieve customer: {e}")
+                    logger.info("Creating new customer instead")
+                    customer = stripe.Customer.create(
+                        email=user.email,
+                        name=f"{user.first_name} {user.last_name}",
+                        metadata={"user_id": str(user.id), "username": user.username},
+                    )
+                    user.stripe_customer_id = customer.id
+                    self.db.commit()
 
             # Create checkout session
             logger.info(f"About to create checkout session:")
