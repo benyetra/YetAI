@@ -1107,9 +1107,9 @@ async def upload_auth_avatar(
                 from app.core.config import settings
 
                 if settings.ENVIRONMENT == "production":
-                    base_url = "https://backend-production-f7af.up.railway.app"
+                    base_url = "https://api.yetai.app"
                 elif settings.ENVIRONMENT == "staging":
-                    base_url = "https://staging-backend.up.railway.app"
+                    base_url = "https://staging-api.yetai.app"
                 else:
                     base_url = "http://localhost:8001"
 
