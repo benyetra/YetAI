@@ -10,10 +10,17 @@ export default function EmailVerificationBanner() {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
 
+  // Debug logging
+  console.log('EmailVerificationBanner - user:', user);
+  console.log('EmailVerificationBanner - is_verified:', user?.is_verified);
+
   // Don't show if user is verified, not logged in, or banner dismissed
   if (!user || user.is_verified || dismissed) {
+    console.log('Banner hidden - user:', !!user, 'verified:', user?.is_verified, 'dismissed:', dismissed);
     return null;
   }
+
+  console.log('Banner SHOWING for user:', user.email);
 
   const handleResendEmail = async () => {
     setLoading(true);
