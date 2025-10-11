@@ -276,15 +276,35 @@ class SubscriptionService:
                         if isinstance(subscription_id, str)
                         else subscription_id.get("id")
                     )
+                    logger.info(f"Fetching subscription details for: {sub_id}")
                     sub_response = requests.get(
                         f"https://api.stripe.com/v1/subscriptions/{sub_id}",
                         headers=headers,
                     )
+                    logger.info(
+                        f"Subscription fetch status: {sub_response.status_code}"
+                    )
+
                     if sub_response.status_code == 200:
                         subscription_data = sub_response.json()
+                        logger.info(f"Subscription data: {subscription_data}")
+
                         user.subscription_status = subscription_data.get("status")
-                        user.subscription_current_period_end = datetime.fromtimestamp(
-                            subscription_data.get("current_period_end")
+
+                        # Safely handle period_end timestamp
+                        period_end = subscription_data.get("current_period_end")
+                        if period_end:
+                            user.subscription_current_period_end = (
+                                datetime.fromtimestamp(period_end)
+                            )
+                            logger.info(
+                                f"Set period_end: {user.subscription_current_period_end}"
+                            )
+                        else:
+                            logger.warning("No current_period_end in subscription data")
+                    else:
+                        logger.error(
+                            f"Failed to fetch subscription: {sub_response.text}"
                         )
 
                 self.db.commit()
