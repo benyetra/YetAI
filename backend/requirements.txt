@@ -34,7 +34,7 @@ pyotp==2.9.0
 qrcode==7.4.2
 
 # Payment Processing
-stripe==7.8.0
+stripe==11.2.0
 
 # Notifications
 twilio==9.1.0
