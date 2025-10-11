@@ -73,8 +73,8 @@ class EmailService:
             part2 = MIMEText(html_body, "html")
             msg.attach(part2)
 
-            # Send email with timeout
-            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=10) as server:
+            # Send email with timeout (30 seconds for Brevo SMTP relay)
+            with smtplib.SMTP(self.smtp_host, self.smtp_port, timeout=30) as server:
                 server.starttls()
                 server.login(self.smtp_user, self.smtp_password)
                 server.send_message(msg)
