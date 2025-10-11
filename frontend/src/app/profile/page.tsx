@@ -423,12 +423,32 @@ export default function ProfilePage() {
   const handleAvatarUpload = async (file: File) => {
     if (!file || !token) return;
 
+    // Client-side validation before upload
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    const allowedTypes = ['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp'];
+
+    if (file.size > maxSize) {
+      setMessage({
+        type: 'error',
+        text: 'File too large. Maximum size is 5MB.'
+      });
+      return;
+    }
+
+    if (!allowedTypes.includes(file.type.toLowerCase())) {
+      setMessage({
+        type: 'error',
+        text: 'Invalid file type. Please upload PNG, JPEG, JPG, GIF, or WEBP images.'
+      });
+      return;
+    }
+
     setIsUploadingAvatar(true);
     try {
       const reader = new FileReader();
       reader.onload = async (e) => {
         const imageData = e.target?.result as string;
-        
+
         try {
           const response = await apiClient.post('/api/auth/avatar', {
             image_data: imageData
@@ -443,15 +463,15 @@ export default function ProfilePage() {
             setMessage({ type: 'success', text: 'Avatar updated successfully' });
           }
         } catch (error: any) {
-          setMessage({ 
-            type: 'error', 
-            text: error.response?.data?.detail || 'Failed to upload avatar' 
+          setMessage({
+            type: 'error',
+            text: error.response?.data?.detail || 'Failed to upload avatar'
           });
         } finally {
           setIsUploadingAvatar(false);
         }
       };
-      
+
       reader.readAsDataURL(file);
     } catch (error) {
       setIsUploadingAvatar(false);

@@ -1075,10 +1075,27 @@ async def upload_auth_avatar(
         )
 
         if success:
+            # Convert relative URLs to full URLs for local storage
+            avatar_url = result["avatar"]
+            thumbnail_url = result["thumbnail"]
+
+            # If using local storage (relative paths), convert to full URLs
+            if not avatar_url.startswith("http"):
+                from app.core.config import settings
+                if settings.ENVIRONMENT == "production":
+                    base_url = "https://backend-production-f7af.up.railway.app"
+                elif settings.ENVIRONMENT == "staging":
+                    base_url = "https://staging-backend.up.railway.app"
+                else:
+                    base_url = "http://localhost:8001"
+
+                avatar_url = f"{base_url}{avatar_url}"
+                thumbnail_url = f"{base_url}{thumbnail_url}"
+
             # Update user record with avatar URLs in database
             update_result = await auth_service.update_user_avatar(
                 current_user.get("id") or current_user.get("user_id"),
-                result["avatar"],
+                result["avatar"],  # Store relative path in DB
                 result["thumbnail"],
             )
 
@@ -1086,15 +1103,17 @@ async def upload_auth_avatar(
                 return {
                     "status": "success",
                     "message": "Avatar uploaded successfully",
-                    "avatar_url": result["avatar"],
-                    "thumbnail_url": result["thumbnail"],
+                    "avatar_url": avatar_url,  # Return full URL
+                    "thumbnail_url": thumbnail_url,
                 }
             else:
                 raise HTTPException(
                     status_code=500, detail="Failed to update user avatar"
                 )
         else:
-            raise HTTPException(status_code=400, detail=result)
+            # Improved error messages for users
+            error_msg = result if isinstance(result, str) else "Invalid image file"
+            raise HTTPException(status_code=400, detail=error_msg)
 
     except HTTPException:
         raise

@@ -9,8 +9,6 @@ import {
   History,
   Trophy,
   Brain,
-  MessageSquare,
-  HelpCircle,
   Menu,
   X,
   ChevronLeft,
@@ -54,13 +52,10 @@ const navigation: NavItem[] = [
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW' },
   { name: 'Fantasy', href: '/fantasy', icon: Trophy, requiresAuth: true },
   { name: 'Performance', href: '/performance', icon: BarChart3, requiresAuth: true },
-  { name: 'AI Chat', href: '/chat', icon: MessageSquare, badge: 'BETA' },
   { name: 'Leaderboard', href: '/leaderboard', icon: Users },
 ];
 
-const bottomNavigation: NavItem[] = [
-  { name: 'Help & Support', href: '/help', icon: HelpCircle },
-];
+const bottomNavigation: NavItem[] = [];
 
 export function Sidebar() {
   const pathname = usePathname();
