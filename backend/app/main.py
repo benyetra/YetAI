@@ -423,6 +423,53 @@ async def health_check():
     }
 
 
+@app.get("/api/test/smtp")
+async def test_smtp_connection():
+    """Test SMTP connection to debug email issues"""
+    import smtplib
+    import socket
+
+    smtp_host = os.getenv("SMTP_HOST", "smtp-relay.brevo.com")
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
+    smtp_user = os.getenv("SMTP_USER", "")
+
+    results = {
+        "smtp_host": smtp_host,
+        "smtp_port": smtp_port,
+        "smtp_user_set": bool(smtp_user),
+        "tests": {}
+    }
+
+    # Test DNS
+    try:
+        ip = socket.gethostbyname(smtp_host)
+        results["tests"]["dns"] = {"success": True, "ip": ip}
+    except Exception as e:
+        results["tests"]["dns"] = {"success": False, "error": str(e)}
+        return results
+
+    # Test TCP connection
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.settimeout(10)
+        sock.connect((smtp_host, smtp_port))
+        sock.close()
+        results["tests"]["tcp"] = {"success": True}
+    except Exception as e:
+        results["tests"]["tcp"] = {"success": False, "error": str(e)}
+        return results
+
+    # Test SMTP handshake
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=10) as server:
+            server.ehlo()
+            results["tests"]["smtp_handshake"] = {"success": True}
+    except Exception as e:
+        results["tests"]["smtp_handshake"] = {"success": False, "error": str(e)}
+
+    return results
+
+
 # User endpoints that frontend expects
 @app.options("/api/user/performance")
 async def options_user_performance():
