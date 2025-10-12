@@ -82,11 +82,11 @@ class Settings(BaseSettings):
             return self.GOOGLE_REDIRECT_URI
 
         if self.ENVIRONMENT == "production":
-            return "https://backend-production-f7af.up.railway.app/api/auth/google/callback"
+            return "https://api.yetai.app/api/auth/google/callback"
         elif self.ENVIRONMENT == "staging":
-            return "https://staging-backend.up.railway.app/api/auth/google/callback"
+            return "https://staging-api.yetai.app/api/auth/google/callback"
         else:  # development
-            return "http://localhost:8000/api/auth/google/callback"
+            return "http://localhost:8001/api/auth/google/callback"
 
     class Config:
         env_file = ".env"
