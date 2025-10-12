@@ -22,18 +22,8 @@ function AuthCallbackContent() {
         // Store the token in localStorage
         localStorage.setItem('auth_token', token);
 
-        // Fetch user data to verify token
-        const response = await fetch('https://api.yetai.app/api/user/me', {
-          headers: {
-            'Authorization': `Bearer ${token}`
-          }
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to verify authentication');
-        }
-
-        // Redirect to dashboard
+        // Redirect to dashboard immediately
+        // The dashboard will fetch user data with the token
         router.push('/dashboard');
       } catch (err: any) {
         console.error('Auth callback error:', err);

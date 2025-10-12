@@ -1604,13 +1604,19 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
             access_token = auth_service_db.generate_token(existing_user["id"])
         else:
             # Create new user with Google OAuth
-            # Generate unique username from email
-            base_username = user_info["email"].split("@")[0]
-            username = base_username
-
-            # Since OAuth users don't have passwords, we'll generate a random one
+            # Generate unique username from email - sanitize to only allow valid characters
+            import re
             import secrets as sec
 
+            base_username = user_info["email"].split("@")[0]
+            # Remove invalid characters (only allow letters, numbers, underscores, hyphens)
+            username = re.sub(r"[^a-zA-Z0-9_-]", "", base_username)
+
+            # If username is empty after sanitization, generate one
+            if not username:
+                username = f"user_{sec.token_hex(4)}"
+
+            # Since OAuth users don't have passwords, we'll generate a random one
             random_password = sec.token_urlsafe(32)
 
             result = await auth_service_db.create_user(
@@ -1677,13 +1683,19 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
             }
         else:
             # Create new user with Google OAuth
-            # Generate unique username from email
-            base_username = user_info["email"].split("@")[0]
-            username = base_username
-
-            # Since OAuth users don't have passwords, we'll generate a random one
+            # Generate unique username from email - sanitize to only allow valid characters
+            import re
             import secrets as sec
 
+            base_username = user_info["email"].split("@")[0]
+            # Remove invalid characters (only allow letters, numbers, underscores, hyphens)
+            username = re.sub(r"[^a-zA-Z0-9_-]", "", base_username)
+
+            # If username is empty after sanitization, generate one
+            if not username:
+                username = f"user_{sec.token_hex(4)}"
+
+            # Since OAuth users don't have passwords, we'll generate a random one
             random_password = sec.token_urlsafe(32)
 
             result = await auth_service_db.create_user(
