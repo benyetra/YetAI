@@ -24,6 +24,27 @@ declare global {
   }
 }
 
+interface PlatformStats {
+  total_users: number;
+  total_winnings: number;
+  performance_30d: {
+    win_rate: number;
+    profit: number;
+    total_bets: number;
+    wins: number;
+    losses: number;
+  };
+  performance_7d: {
+    win_rate: number;
+    profit: number;
+    wow_change: number;
+  };
+  user_avatars: Array<{
+    url: string;
+    name: string;
+  }>;
+}
+
 export default function LoginPage() {
   const router = useRouter();
   const { login, isAuthenticated, loading } = useAuth();
@@ -36,12 +57,30 @@ export default function LoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
+  const [platformStats, setPlatformStats] = useState<PlatformStats | null>(null);
 
   useEffect(() => {
     if (isAuthenticated) {
       router.push('/dashboard');
     }
   }, [isAuthenticated, router]);
+
+  useEffect(() => {
+    // Fetch platform statistics
+    const fetchStats = async () => {
+      try {
+        const response = await fetch(getApiUrl('/api/platform/stats'));
+        const data = await response.json();
+        if (data.status === 'success') {
+          setPlatformStats(data.data);
+        }
+      } catch (error) {
+        console.error('Failed to fetch platform statistics:', error);
+      }
+    };
+
+    fetchStats();
+  }, []);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData(prev => ({ ...prev, [field]: value }));
@@ -149,8 +188,12 @@ export default function LoginPage() {
 
           {/* Logo */}
           <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-gradient-to-r from-purple-600 to-blue-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">Y</span>
+            <div className="w-8 h-8 rounded-lg overflow-hidden">
+              <img
+                src="/logo.png"
+                alt="YetAI Logo"
+                className="w-full h-full object-cover"
+              />
             </div>
             <span className="text-2xl font-bold text-gray-900">YetAI</span>
           </div>
@@ -305,45 +348,62 @@ export default function LoginPage() {
               </div>
             </div>
 
-            {/* Main Dashboard Card */}
+            {/* Main Dashboard Card - Total Winnings */}
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-white font-semibold">Earnings</h3>
+                <h3 className="text-white font-semibold">Total Winnings</h3>
                 <div className="w-2 h-2 bg-green-400 rounded-full"></div>
               </div>
-              
+
               <div className="space-y-4">
                 <div>
-                  <div className="text-3xl font-bold text-white">+112.10%</div>
-                  <div className="text-white/70 text-sm">Business Growth</div>
+                  <div className="text-3xl font-bold text-white">
+                    ${platformStats ? platformStats.total_winnings.toLocaleString() : '0'}
+                  </div>
+                  <div className="text-white/70 text-sm">From YetAI Bets</div>
                 </div>
-                
+
                 <div className="flex items-center space-x-2">
                   <TrendingUp className="w-4 h-4 text-green-400" />
-                  <span className="text-white/80 text-sm">68.5% Growth</span>
+                  <span className="text-white/80 text-sm">
+                    {platformStats ? platformStats.performance_30d.win_rate.toFixed(1) : '0'}% Win Rate
+                  </span>
                 </div>
               </div>
             </div>
 
-            {/* Secondary Card */}
+            {/* Secondary Card - 30-Day Performance */}
             <div className="bg-white/10 backdrop-blur-lg rounded-2xl p-6 border border-white/20">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center space-x-2">
                   <Activity className="w-5 h-5 text-blue-400" />
                   <span className="text-white font-medium">Performance</span>
                 </div>
-                <span className="text-2xl font-bold text-white">+80.9%</span>
+                <span className="text-2xl font-bold text-white">
+                  {platformStats && platformStats.performance_30d.profit >= 0 ? '+' : ''}
+                  ${platformStats ? platformStats.performance_30d.profit.toLocaleString() : '0'}
+                </span>
               </div>
-              
-              <div className="text-white/70 text-sm mb-4">Last 30 days business growth</div>
-              
+
+              <div className="text-white/70 text-sm mb-4">
+                Last 30 days • {platformStats ? platformStats.performance_30d.total_bets : 0} bets
+              </div>
+
               {/* Progress Bar */}
               <div className="bg-white/20 rounded-full h-2">
-                <div className="bg-gradient-to-r from-blue-400 to-purple-400 h-2 rounded-full w-4/5"></div>
+                <div
+                  className="bg-gradient-to-r from-blue-400 to-purple-400 h-2 rounded-full"
+                  style={{
+                    width: `${platformStats ? Math.min(platformStats.performance_30d.win_rate, 100) : 0}%`
+                  }}
+                ></div>
               </div>
-              
+
               <div className="flex justify-between mt-2 text-xs text-white/60">
-                <span>68.5% Increase</span>
+                <span>
+                  {platformStats && platformStats.performance_7d.wow_change >= 0 ? '+' : ''}
+                  {platformStats ? platformStats.performance_7d.wow_change.toFixed(1) : '0'}% WoW
+                </span>
                 <span>Last Week</span>
               </div>
             </div>
@@ -352,33 +412,46 @@ export default function LoginPage() {
             <div className="grid grid-cols-2 gap-4">
               <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
                 <DollarSign className="w-6 h-6 text-green-400 mb-2" />
-                <div className="text-white font-semibold">$24.5K</div>
-                <div className="text-white/60 text-xs">Revenue</div>
+                <div className="text-white font-semibold">
+                  ${platformStats ? platformStats.total_winnings.toLocaleString() : '0'}
+                </div>
+                <div className="text-white/60 text-xs">Total Winnings</div>
               </div>
-              
+
               <div className="bg-white/10 backdrop-blur-lg rounded-xl p-4 border border-white/20">
                 <Users className="w-6 h-6 text-blue-400 mb-2" />
-                <div className="text-white font-semibold">1,847</div>
-                <div className="text-white/60 text-xs">Active Users</div>
+                <div className="text-white font-semibold">
+                  {platformStats ? platformStats.total_users.toLocaleString() : '0'}
+                </div>
+                <div className="text-white/60 text-xs">Registered Users</div>
               </div>
             </div>
 
             {/* Bottom User Avatars */}
             <div className="flex justify-center">
               <div className="flex -space-x-3">
-                <img 
-                  src="https://images.unsplash.com/photo-1494790108755-2616b612b786?w=40&h=40&fit=crop&crop=face" 
-                  alt="User 1" 
-                  className="w-10 h-10 rounded-full border-2 border-white object-cover"
-                />
-                <img 
-                  src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=40&h=40&fit=crop&crop=face" 
-                  alt="User 2" 
-                  className="w-10 h-10 rounded-full border-2 border-white object-cover"
-                />
-                <div className="w-10 h-10 rounded-full border-2 border-white bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <span className="text-white text-xs font-medium">+5</span>
-                </div>
+                {platformStats && platformStats.user_avatars.length > 0 ? (
+                  <>
+                    {platformStats.user_avatars.map((user, index) => (
+                      <img
+                        key={index}
+                        src={user.url}
+                        alt={user.name}
+                        title={user.name}
+                        className="w-10 h-10 rounded-full border-2 border-white object-cover"
+                      />
+                    ))}
+                    {platformStats.total_users > 3 && (
+                      <div className="w-10 h-10 rounded-full border-2 border-white bg-white/20 backdrop-blur-sm flex items-center justify-center">
+                        <span className="text-white text-xs font-medium">
+                          +{platformStats.total_users - platformStats.user_avatars.length}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div className="text-white/60 text-sm">No users yet</div>
+                )}
               </div>
             </div>
           </div>
