@@ -48,14 +48,21 @@ from app.services.unified_bet_verification_service import (
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
-
-# Import Google OAuth service
-from app.services.google_oauth_service import google_oauth_service
 from app.models.bet_models import CreateYetAIBetRequest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import Google OAuth service (optional - gracefully handle if dependencies are missing)
+try:
+    from app.services.google_oauth_service import google_oauth_service
+
+    GOOGLE_OAUTH_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Google OAuth service not available: {e}")
+    google_oauth_service = None
+    GOOGLE_OAUTH_AVAILABLE = False
 
 # Initialize services with graceful degradation
 service_loader = initialize_services()
@@ -1541,6 +1548,12 @@ async def reset_password(request: dict):
 @app.get("/api/auth/google/url")
 async def get_google_auth_url():
     """Get Google OAuth authorization URL"""
+    if not GOOGLE_OAUTH_AVAILABLE or google_oauth_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not available. Please contact support.",
+        )
+
     try:
         result = google_oauth_service.get_authorization_url()
         if "error" in result:
@@ -1551,6 +1564,8 @@ async def get_google_auth_url():
             "authorization_url": result["authorization_url"],
             "state": result["state"],
         }
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Google auth URL error: {e}")
         raise HTTPException(
@@ -1561,6 +1576,12 @@ async def get_google_auth_url():
 @app.get("/api/auth/google/callback")
 async def google_oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
     """Handle Google OAuth callback"""
+    if not GOOGLE_OAUTH_AVAILABLE or google_oauth_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not available. Please contact support.",
+        )
+
     try:
         from app.services.auth_service import auth_service
 
@@ -1622,6 +1643,12 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
 @app.post("/api/auth/google/verify")
 async def verify_google_token(data: dict, db: Session = Depends(get_db)):
     """Verify Google ID token (for client-side OAuth)"""
+    if not GOOGLE_OAUTH_AVAILABLE or google_oauth_service is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Google OAuth is not available. Please contact support.",
+        )
+
     try:
         from app.services.auth_service import auth_service
 
