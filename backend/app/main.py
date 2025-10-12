@@ -1587,7 +1587,7 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
         )
 
     try:
-        from app.services.auth_service import auth_service
+        from app.services.auth_service_db import auth_service_db
 
         result = google_oauth_service.handle_callback(code, state)
 
@@ -1597,11 +1597,11 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
         user_info = result["user_info"]
 
         # Check if user already exists
-        existing_user = await auth_service.get_user_by_email(user_info["email"])
+        existing_user = auth_service_db.get_user_by_email(db, user_info["email"])
 
         if existing_user:
             # User exists - log them in
-            token_data = await auth_service.create_access_token(existing_user)
+            token_data = auth_service_db.create_access_token(existing_user)
 
             return {
                 "status": "success",
@@ -1612,30 +1612,26 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
             }
         else:
             # Create new user
-            user_data = {
-                "email": user_info["email"],
-                "username": user_info["email"].split("@")[0],
-                "password": None,  # No password for OAuth users
-                "first_name": user_info.get("first_name", ""),
-                "last_name": user_info.get("last_name", ""),
-                "google_id": user_info.get("google_id"),
-                "is_verified": user_info.get("email_verified", False),
-                "avatar_url": user_info.get("picture", ""),
+            new_user = auth_service_db.create_user(
+                db=db,
+                email=user_info["email"],
+                username=user_info["email"].split("@")[0],
+                password=None,  # No password for OAuth users
+                first_name=user_info.get("first_name", ""),
+                last_name=user_info.get("last_name", ""),
+                google_id=user_info.get("google_id"),
+                is_verified=user_info.get("email_verified", False),
+                avatar_url=user_info.get("picture", ""),
+            )
+
+            token_data = auth_service_db.create_access_token(new_user)
+            return {
+                "status": "success",
+                "message": "Account created and login successful",
+                "access_token": token_data["access_token"],
+                "token_type": "bearer",
+                "user": new_user,
             }
-
-            result = await auth_service.create_user(user_data)
-
-            if result["success"]:
-                token_data = await auth_service.create_access_token(result["user"])
-                return {
-                    "status": "success",
-                    "message": "Account created and login successful",
-                    "access_token": token_data["access_token"],
-                    "token_type": "bearer",
-                    "user": result["user"],
-                }
-            else:
-                raise HTTPException(status_code=400, detail=result["message"])
 
     except HTTPException:
         raise
@@ -1654,7 +1650,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
         )
 
     try:
-        from app.services.auth_service import auth_service
+        from app.services.auth_service_db import auth_service_db
 
         id_token = data.get("id_token")
         if not id_token:
@@ -1665,11 +1661,11 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Invalid ID token")
 
         # Check if user already exists
-        existing_user = await auth_service.get_user_by_email(user_info["email"])
+        existing_user = auth_service_db.get_user_by_email(db, user_info["email"])
 
         if existing_user:
             # User exists - log them in
-            token_data = await auth_service.create_access_token(existing_user)
+            token_data = auth_service_db.create_access_token(existing_user)
 
             return {
                 "status": "success",
@@ -1680,30 +1676,26 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
             }
         else:
             # Create new user
-            user_data = {
-                "email": user_info["email"],
-                "username": user_info["email"].split("@")[0],
-                "password": None,
-                "first_name": user_info.get("first_name", ""),
-                "last_name": user_info.get("last_name", ""),
-                "google_id": user_info.get("google_id"),
-                "is_verified": user_info.get("email_verified", False),
-                "avatar_url": user_info.get("picture", ""),
+            new_user = auth_service_db.create_user(
+                db=db,
+                email=user_info["email"],
+                username=user_info["email"].split("@")[0],
+                password=None,  # No password for OAuth users
+                first_name=user_info.get("first_name", ""),
+                last_name=user_info.get("last_name", ""),
+                google_id=user_info.get("google_id"),
+                is_verified=user_info.get("email_verified", False),
+                avatar_url=user_info.get("picture", ""),
+            )
+
+            token_data = auth_service_db.create_access_token(new_user)
+            return {
+                "status": "success",
+                "message": "Account created successfully",
+                "access_token": token_data["access_token"],
+                "token_type": "bearer",
+                "user": new_user,
             }
-
-            result = await auth_service.create_user(user_data)
-
-            if result["success"]:
-                token_data = await auth_service.create_access_token(result["user"])
-                return {
-                    "status": "success",
-                    "message": "Account created successfully",
-                    "access_token": token_data["access_token"],
-                    "token_type": "bearer",
-                    "user": result["user"],
-                }
-            else:
-                raise HTTPException(status_code=400, detail=result["message"])
 
     except HTTPException:
         raise
