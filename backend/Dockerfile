@@ -17,15 +17,20 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Cache buster: 2025-01-11-v2
+# Cache buster: 2025-01-12-v1
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir boto3==1.35.0 botocore && \
+    pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 && \
     echo "=== Verifying boto3 installation ===" && \
     pip show boto3 && \
     python -c "import boto3; print(f'boto3 version: {boto3.__version__}')" && \
-    echo "=== boto3 successfully installed ==="
+    echo "=== boto3 successfully installed ===" && \
+    echo "=== Verifying google-auth installation ===" && \
+    pip show google-auth && \
+    python -c "import google.auth; print('google-auth successfully imported')" && \
+    echo "=== google-auth successfully installed ==="
 
 # Copy application code
 COPY . .
