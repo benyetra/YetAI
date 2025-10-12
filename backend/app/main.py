@@ -48,6 +48,9 @@ from app.services.unified_bet_verification_service import (
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
+
+# Import Google OAuth service
+from app.services.google_oauth_service import google_oauth_service
 from app.models.bet_models import CreateYetAIBetRequest
 
 # Configure logging
@@ -1532,6 +1535,152 @@ async def reset_password(request: dict):
     except Exception as e:
         logger.error(f"Reset password error: {e}")
         raise HTTPException(status_code=400, detail="Failed to reset password")
+
+
+# Google OAuth endpoints
+@app.get("/api/auth/google/url")
+async def get_google_auth_url():
+    """Get Google OAuth authorization URL"""
+    try:
+        result = google_oauth_service.get_authorization_url()
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+
+        return {
+            "status": "success",
+            "authorization_url": result["authorization_url"],
+            "state": result["state"],
+        }
+    except Exception as e:
+        logger.error(f"Google auth URL error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get authorization URL: {str(e)}"
+        )
+
+
+@app.get("/api/auth/google/callback")
+async def google_oauth_callback(code: str, state: str, db: Session = Depends(get_db)):
+    """Handle Google OAuth callback"""
+    try:
+        from app.services.auth_service import auth_service
+
+        result = google_oauth_service.handle_callback(code, state)
+
+        if "error" in result:
+            raise HTTPException(status_code=400, detail=result["error"])
+
+        user_info = result["user_info"]
+
+        # Check if user already exists
+        existing_user = await auth_service.get_user_by_email(user_info["email"])
+
+        if existing_user:
+            # User exists - log them in
+            token_data = await auth_service.create_access_token(existing_user)
+
+            return {
+                "status": "success",
+                "message": "Login successful",
+                "access_token": token_data["access_token"],
+                "token_type": "bearer",
+                "user": existing_user,
+            }
+        else:
+            # Create new user
+            user_data = {
+                "email": user_info["email"],
+                "username": user_info["email"].split("@")[0],
+                "password": None,  # No password for OAuth users
+                "first_name": user_info.get("first_name", ""),
+                "last_name": user_info.get("last_name", ""),
+                "google_id": user_info.get("google_id"),
+                "is_verified": user_info.get("email_verified", False),
+                "avatar_url": user_info.get("picture", ""),
+            }
+
+            result = await auth_service.create_user(user_data)
+
+            if result["success"]:
+                token_data = await auth_service.create_access_token(result["user"])
+                return {
+                    "status": "success",
+                    "message": "Account created and login successful",
+                    "access_token": token_data["access_token"],
+                    "token_type": "bearer",
+                    "user": result["user"],
+                }
+            else:
+                raise HTTPException(status_code=400, detail=result["message"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google OAuth callback error: {e}")
+        raise HTTPException(status_code=500, detail=f"OAuth callback failed: {str(e)}")
+
+
+@app.post("/api/auth/google/verify")
+async def verify_google_token(data: dict, db: Session = Depends(get_db)):
+    """Verify Google ID token (for client-side OAuth)"""
+    try:
+        from app.services.auth_service import auth_service
+
+        id_token = data.get("id_token")
+        if not id_token:
+            raise HTTPException(status_code=400, detail="ID token is required")
+
+        user_info = google_oauth_service.verify_id_token(id_token)
+        if not user_info:
+            raise HTTPException(status_code=400, detail="Invalid ID token")
+
+        # Check if user already exists
+        existing_user = await auth_service.get_user_by_email(user_info["email"])
+
+        if existing_user:
+            # User exists - log them in
+            token_data = await auth_service.create_access_token(existing_user)
+
+            return {
+                "status": "success",
+                "message": "Login successful",
+                "access_token": token_data["access_token"],
+                "token_type": "bearer",
+                "user": existing_user,
+            }
+        else:
+            # Create new user
+            user_data = {
+                "email": user_info["email"],
+                "username": user_info["email"].split("@")[0],
+                "password": None,
+                "first_name": user_info.get("first_name", ""),
+                "last_name": user_info.get("last_name", ""),
+                "google_id": user_info.get("google_id"),
+                "is_verified": user_info.get("email_verified", False),
+                "avatar_url": user_info.get("picture", ""),
+            }
+
+            result = await auth_service.create_user(user_data)
+
+            if result["success"]:
+                token_data = await auth_service.create_access_token(result["user"])
+                return {
+                    "status": "success",
+                    "message": "Account created successfully",
+                    "access_token": token_data["access_token"],
+                    "token_type": "bearer",
+                    "user": result["user"],
+                }
+            else:
+                raise HTTPException(status_code=400, detail=result["message"])
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Google token verification error: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Token verification failed: {str(e)}"
+        )
 
 
 @app.get("/api/auth/me")
