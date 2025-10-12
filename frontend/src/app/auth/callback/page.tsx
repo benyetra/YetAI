@@ -34,8 +34,9 @@ function AuthCallbackContent() {
           }
         }
 
-        // Redirect to dashboard
-        router.push('/dashboard');
+        // Use window.location instead of router.push to force a full page reload
+        // This ensures the AuthProvider re-initializes and reads the new localStorage data
+        window.location.href = '/dashboard';
       } catch (err: any) {
         console.error('Auth callback error:', err);
         setError(err.message || 'Authentication failed');
