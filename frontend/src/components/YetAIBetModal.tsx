@@ -133,6 +133,7 @@ export default function YetAIBetModal({
 
       const requestPayload = {
         game_id: bet.id, // Using bet ID as game ID for YetAI bets
+        yetai_bet_id: bet.id, // IMPORTANT: Pass YetAI bet ID so backend can get correct odds_api_event_id
         bet_type: normalizedBetType,
         selection: bet.pick,
         odds: parseOdds(bet.odds),
