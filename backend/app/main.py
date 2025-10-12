@@ -879,9 +879,7 @@ async def get_leaderboard(
 
                     # Include ALL users, even those with no bets
                     roi = (
-                        (profit_loss / total_wagered * 100)
-                        if total_wagered > 0
-                        else 0
+                        (profit_loss / total_wagered * 100) if total_wagered > 0 else 0
                     )
 
                     leaderboard_data.append(
