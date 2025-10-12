@@ -337,13 +337,13 @@ export default function LoginPage() {
       <div className="hidden lg:flex lg:flex-1 relative">
         <div className="w-full bg-gradient-to-br from-purple-600 via-purple-700 to-indigo-800 flex items-center justify-center p-12">
           <div className="max-w-lg w-full space-y-8">
-            {/* User Avatar */}
+            {/* YetAI Logo Badge */}
             <div className="flex justify-end">
-              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center">
-                <img 
-                  src="https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=64&h=64&fit=crop&crop=face" 
-                  alt="User" 
-                  className="w-12 h-12 rounded-full object-cover"
+              <div className="w-16 h-16 rounded-full bg-white/20 backdrop-blur-sm border border-white/30 flex items-center justify-center p-2">
+                <img
+                  src="/logo.png"
+                  alt="YetAI"
+                  className="w-full h-full object-cover rounded-lg"
                 />
               </div>
             </div>

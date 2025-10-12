@@ -477,6 +477,12 @@ async def health_check():
     }
 
 
+@app.options("/api/platform/stats")
+async def options_platform_stats():
+    """Handle CORS preflight for platform stats endpoint"""
+    return {}
+
+
 @app.get("/api/platform/stats")
 async def get_platform_statistics(db: Session = Depends(get_db)):
     """Get platform-wide statistics for display on login page"""
@@ -487,6 +493,7 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
     try:
         # Get total registered users
         total_users = db.query(func.count(User.id)).scalar() or 0
+        logger.info(f"Platform stats: Found {total_users} total users")
 
         # Get total winnings from YetAI bets (won bets only)
         # Calculate based on $100 wager per bet
@@ -613,7 +620,7 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
                     }
                 )
 
-        return {
+        result = {
             "status": "success",
             "data": {
                 "total_users": total_users,
@@ -633,6 +640,11 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
                 "user_avatars": user_avatars,
             },
         }
+        logger.info(
+            f"Platform stats response: users={total_users}, winnings={total_winnings}, "
+            f"30d_bets={total_30d}, avatars={len(user_avatars)}"
+        )
+        return result
 
     except Exception as e:
         logger.error(f"Error fetching platform statistics: {e}")
