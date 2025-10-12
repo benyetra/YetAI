@@ -431,9 +431,11 @@ class SubscriptionService:
                 return {
                     "success": True,
                     "message": "Subscription will be cancelled at the end of the billing period",
-                    "period_end": datetime.fromtimestamp(
-                        current_period_end
-                    ).isoformat() if current_period_end else None,
+                    "period_end": (
+                        datetime.fromtimestamp(current_period_end).isoformat()
+                        if current_period_end
+                        else None
+                    ),
                 }
             else:
                 logger.error(f"Stripe API error: {response.text}")
