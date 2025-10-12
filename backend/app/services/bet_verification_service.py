@@ -149,13 +149,18 @@ class BetVerificationService:
             )
 
             # Get unique game IDs from pending bets
+            # Check BOTH odds_api_event_id and game_id since they might be different
             game_ids = set()
             for bet in pending_bets:
+                if bet.odds_api_event_id:
+                    game_ids.add(bet.odds_api_event_id)
                 if bet.game_id:
                     game_ids.add(bet.game_id)
 
             for parlay in pending_parlays:
                 for leg in parlay.legs:
+                    if hasattr(leg, "odds_api_event_id") and leg.odds_api_event_id:
+                        game_ids.add(leg.odds_api_event_id)
                     if leg.game_id:
                         game_ids.add(leg.game_id)
 
@@ -195,10 +200,20 @@ class BetVerificationService:
             settled_bets = 0
 
             for bet in pending_bets:
-                if bet.game_id in game_results:
+                # Check BOTH odds_api_event_id and game_id for game results
+                game_result = None
+                matched_id = None
+
+                if bet.odds_api_event_id and bet.odds_api_event_id in game_results:
+                    game_result = game_results[bet.odds_api_event_id]
+                    matched_id = bet.odds_api_event_id
+                elif bet.game_id and bet.game_id in game_results:
                     game_result = game_results[bet.game_id]
+                    matched_id = bet.game_id
+
+                if game_result:
                     logger.info(
-                        f"Verifying bet {bet.id} for game {bet.game_id}: "
+                        f"Verifying bet {bet.id} for game {matched_id}: "
                         f"is_final={game_result.is_final}, completed={game_result.is_final}"
                     )
                     try:
@@ -223,7 +238,7 @@ class BetVerificationService:
                         logger.error(f"Error verifying bet {bet.id}: {e}")
                 else:
                     logger.debug(
-                        f"Bet {bet.id} game {bet.game_id} not in available game results"
+                        f"Bet {bet.id} game IDs (odds_api_event_id={bet.odds_api_event_id}, game_id={bet.game_id}) not in available game results"
                     )
 
             # Verify parlays
