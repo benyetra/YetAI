@@ -1602,6 +1602,7 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
         if existing_user:
             # User exists - log them in
             access_token = auth_service_db.generate_token(existing_user["id"])
+            user_data = existing_user
         else:
             # Create new user with Google OAuth
             # Generate unique username from email - sanitize to only allow valid characters
@@ -1632,12 +1633,21 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
 
             # Generate access token
             access_token = auth_service_db.generate_token(result["user"]["id"])
+            user_data = result["user"]
 
-        # Redirect to frontend with token
+        # Redirect to frontend with token and user data encoded in URL
         from fastapi.responses import RedirectResponse
+        import json
+        import urllib.parse
 
         frontend_url = settings.get_frontend_urls()[0]  # Get primary frontend URL
-        redirect_url = f"{frontend_url}/auth/callback?token={access_token}"
+        # Encode user data as base64 to pass in URL safely
+        import base64
+
+        user_json = json.dumps(user_data)
+        user_encoded = base64.b64encode(user_json.encode()).decode()
+
+        redirect_url = f"{frontend_url}/auth/callback?token={access_token}&user={urllib.parse.quote(user_encoded)}"
         return RedirectResponse(url=redirect_url)
 
     except HTTPException:
