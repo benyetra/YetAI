@@ -55,8 +55,31 @@ class SimpleUnifiedBetService:
                 if not await self._check_bet_limits(user_id, bet_data.amount, db):
                     return {"success": False, "error": "Bet exceeds limits"}
 
+                # If this bet is from a YetAI recommendation, get the correct odds_api_event_id
+                odds_api_event_id = None
+                if bet_data.yetai_bet_id:
+                    from app.models.database_models import YetAIBet
+
+                    yetai_bet = (
+                        db.query(YetAIBet)
+                        .filter(YetAIBet.id == bet_data.yetai_bet_id)
+                        .first()
+                    )
+                    if yetai_bet and yetai_bet.game_id:
+                        # Use the YetAI bet's game_id as the odds_api_event_id
+                        # This ensures bet verification can find the game
+                        odds_api_event_id = yetai_bet.game_id
+                        logger.info(
+                            f"📌 Using YetAI bet's game_id as odds_api_event_id: {odds_api_event_id}"
+                        )
+
                 # Get or create game record
                 game = await self._get_or_create_game(bet_data, db)
+
+                # Determine final odds_api_event_id
+                # Priority: 1) YetAI bet's game_id, 2) Created game's id, 3) bet_data.game_id
+                if not odds_api_event_id:
+                    odds_api_event_id = game.id if game else bet_data.game_id
 
                 # Generate bet ID
                 bet_id = str(uuid.uuid4())
@@ -83,7 +106,7 @@ class SimpleUnifiedBetService:
                 unified_bet = SimpleUnifiedBet(
                     id=bet_id,
                     user_id=user_id,
-                    odds_api_event_id=game.id if game else bet_data.game_id,
+                    odds_api_event_id=odds_api_event_id,
                     game_id=game.id if game else bet_data.game_id,
                     bet_type=BetType(bet_type_str.lower()),
                     amount=bet_data.amount,
