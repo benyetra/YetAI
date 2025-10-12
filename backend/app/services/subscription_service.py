@@ -188,20 +188,18 @@ class SubscriptionService:
             }
 
             data = {
-                "customer": customer.id,
-                "customer_email": user.email,  # Explicitly set email for payment method association
+                "customer": customer.id,  # Email is already on the customer object
                 "line_items[0][price]": price_id,
                 "line_items[0][quantity]": "1",
                 "mode": "subscription",
                 "ui_mode": "embedded",
                 "return_url": f"{return_url}?session_id={{CHECKOUT_SESSION_ID}}&upgrade=success",
                 "payment_method_types[0]": "card",
-                "automatic_tax[enabled]": "false",  # Disable automatic tax to simplify processing
+                "automatic_tax[enabled]": "false",
                 "metadata[user_id]": str(user.id),
                 "metadata[tier]": tier,
                 "subscription_data[metadata][user_id]": str(user.id),
                 "subscription_data[metadata][tier]": tier,
-                # Note: Invoices are created automatically for subscriptions
             }
 
             response = requests.post(
