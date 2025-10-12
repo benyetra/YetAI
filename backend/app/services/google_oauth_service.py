@@ -141,10 +141,15 @@ class GoogleOAuthService:
 try:
     google_oauth_service = GoogleOAuthService()
     print(f"✓ Google OAuth service initialized successfully")
-    print(f"  - Client ID: {google_oauth_service.client_id[:20]}..." if google_oauth_service.client_id else "  - Client ID: NOT SET")
+    print(
+        f"  - Client ID: {google_oauth_service.client_id[:20]}..."
+        if google_oauth_service.client_id
+        else "  - Client ID: NOT SET"
+    )
     print(f"  - Redirect URI: {google_oauth_service.redirect_uri}")
 except Exception as e:
     print(f"✗ Failed to initialize Google OAuth service: {e}")
     import traceback
+
     traceback.print_exc()
     google_oauth_service = None
