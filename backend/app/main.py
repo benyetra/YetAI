@@ -2634,6 +2634,98 @@ async def options_verify_bets():
     return {}
 
 
+@app.post("/api/admin/bets/debug-verify")
+async def debug_bet_verification(
+    request: dict, admin_user: dict = Depends(require_admin)
+):
+    """Debug why a specific bet isn't being verified (Admin only)"""
+    try:
+        bet_id = request.get("bet_id")
+        if not bet_id:
+            raise HTTPException(status_code=400, detail="bet_id is required")
+
+        from app.core.database import SessionLocal
+        from app.models.simple_unified_bet_model import SimpleUnifiedBet
+        from app.services.optimized_odds_api_service import get_optimized_odds_service
+        from app.core.config import settings
+
+        db = SessionLocal()
+        try:
+            # Get the bet
+            bet = (
+                db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.id == bet_id).first()
+            )
+            if not bet:
+                return {"status": "error", "message": "Bet not found"}
+
+            logger.info(
+                f"🔍 Debug bet {bet_id[:8]}: odds_api_event_id={bet.odds_api_event_id}, "
+                f"game_id={bet.game_id}, sport={bet.sport}, status={bet.status}"
+            )
+
+            # Get completed games from Odds API
+            odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
+            completed_games = await odds_service.get_scores_optimized(
+                bet.sport.lower() if bet.sport else "mlb", include_completed=True
+            )
+
+            logger.info(f"Found {len(completed_games)} completed games for {bet.sport}")
+
+            # Check if our game is in the list
+            game_found = False
+            game_data = None
+            for game in completed_games:
+                if game.get("id") == bet.odds_api_event_id:
+                    game_found = True
+                    game_data = game
+                    logger.info(
+                        f"✓ Game found: {game.get('home_team')} vs {game.get('away_team')}"
+                    )
+                    logger.info(f"  Completed: {game.get('completed')}")
+                    logger.info(f"  Scores: {game.get('scores')}")
+                    break
+
+            if not game_found:
+                logger.warning(
+                    f"✗ Game {bet.odds_api_event_id} not found in API results"
+                )
+                # Log first few games for debugging
+                for i, game in enumerate(completed_games[:3]):
+                    logger.info(
+                        f"  Game {i+1}: ID={game.get('id')} - {game.get('home_team')} vs {game.get('away_team')}"
+                    )
+
+            return {
+                "status": "success",
+                "bet": {
+                    "id": bet.id,
+                    "odds_api_event_id": bet.odds_api_event_id,
+                    "game_id": bet.game_id,
+                    "sport": bet.sport,
+                    "status": (
+                        bet.status.value
+                        if hasattr(bet.status, "value")
+                        else str(bet.status)
+                    ),
+                    "selection": bet.selection,
+                    "home_team": bet.home_team,
+                    "away_team": bet.away_team,
+                },
+                "api_check": {
+                    "game_found": game_found,
+                    "total_games": len(completed_games),
+                    "game_data": game_data if game_data else None,
+                },
+            }
+
+        finally:
+            db.close()
+
+    except Exception as e:
+        logger.error(f"Error debugging bet: {e}", exc_info=True)
+        return {"status": "error", "message": str(e)}
+
+
 @app.post("/api/admin/bets/verify")
 async def run_verification_now(admin_user: dict = Depends(require_admin)):
     """Run bet verification now using unified verification service (Admin only)"""
