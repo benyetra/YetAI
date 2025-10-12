@@ -32,6 +32,8 @@ passlib[bcrypt]==1.7.4
 python-multipart==0.0.18
 pyotp==2.9.0
 qrcode==7.4.2
+google-auth==2.30.0
+google-auth-oauthlib==1.2.0
 
 # Payment Processing
 stripe==11.2.0
