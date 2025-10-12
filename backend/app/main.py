@@ -491,9 +491,13 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
     from datetime import timedelta
 
     try:
-        # Get total registered users
-        total_users = db.query(func.count(User.id)).scalar() or 0
-        logger.info(f"Platform stats: Found {total_users} total users")
+        # Get total registered users (excluding hidden users)
+        total_users = (
+            db.query(func.count(User.id)).filter(User.is_hidden == False).scalar() or 0
+        )
+        logger.info(
+            f"Platform stats: Found {total_users} total users (excluding hidden)"
+        )
 
         # Get total winnings from YetAI bets (won bets only)
         # Calculate based on $100 wager per bet
@@ -600,10 +604,10 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
         else:
             wow_change = 0
 
-        # Get recent user avatars (latest 3 users with avatars)
+        # Get recent user avatars (latest 3 users with avatars, excluding hidden users)
         recent_users = (
             db.query(User)
-            .filter(User.avatar_url.isnot(None))
+            .filter(and_(User.avatar_url.isnot(None), User.is_hidden == False))
             .order_by(User.created_at.desc())
             .limit(3)
             .all()
@@ -860,7 +864,8 @@ async def get_leaderboard(
 
         db = SessionLocal()
         try:
-            users = db.query(User).all()
+            # Get all users excluding hidden ones
+            users = db.query(User).filter(User.is_hidden == False).all()
             leaderboard_data = []
 
             # Calculate days for period (not currently used for filtering)

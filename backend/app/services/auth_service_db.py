@@ -539,6 +539,7 @@ class AuthServiceDB:
                         "subscription_tier": user.subscription_tier,
                         "is_admin": user.is_admin,
                         "is_verified": user.is_verified,
+                        "is_hidden": user.is_hidden,
                         "created_at": (
                             user.created_at.isoformat() if user.created_at else ""
                         ),
@@ -799,6 +800,9 @@ class AuthServiceDB:
                 if "is_verified" in update_data:
                     user.is_verified = update_data["is_verified"]
 
+                if "is_hidden" in update_data:
+                    user.is_hidden = update_data["is_hidden"]
+
                 if "totp_enabled" in update_data:
                     user.totp_enabled = update_data["totp_enabled"]
                     if not update_data["totp_enabled"]:
@@ -824,6 +828,7 @@ class AuthServiceDB:
                     "subscription_tier": user.subscription_tier,
                     "is_verified": user.is_verified,
                     "is_admin": user.is_admin,
+                    "is_hidden": user.is_hidden,
                     "totp_enabled": user.totp_enabled,
                     "avatar_url": user.avatar_url,
                     "avatar_thumbnail": user.avatar_thumbnail,

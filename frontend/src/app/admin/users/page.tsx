@@ -32,6 +32,7 @@ interface User {
   subscription_tier: string;
   is_admin: boolean;
   is_verified: boolean;
+  is_hidden: boolean;
   created_at: string;
   last_login: string;
   totp_enabled: boolean;
@@ -60,7 +61,8 @@ export default function AdminUsersPage() {
     last_name: '',
     subscription_tier: 'free',
     is_admin: false,
-    is_verified: true
+    is_verified: true,
+    is_hidden: false
   });
 
   useEffect(() => {
@@ -110,6 +112,7 @@ export default function AdminUsersPage() {
         subscription_tier: editingUser.subscription_tier,
         is_admin: editingUser.is_admin,
         is_verified: editingUser.is_verified,
+        is_hidden: editingUser.is_hidden,
         totp_enabled: editingUser.totp_enabled
       };
       
@@ -184,7 +187,8 @@ export default function AdminUsersPage() {
           last_name: '',
           subscription_tier: 'free',
           is_admin: false,
-          is_verified: true
+          is_verified: true,
+          is_hidden: false
         });
         loadUsers();
       }
@@ -357,6 +361,12 @@ export default function AdminUsersPage() {
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
                             <UserX className="w-3 h-3 mr-1" />
                             Unverified
+                          </span>
+                        )}
+                        {user.is_hidden && (
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                            <EyeOff className="w-3 h-3 mr-1" />
+                            Hidden
                           </span>
                         )}
                       </div>
@@ -532,7 +542,17 @@ export default function AdminUsersPage() {
                     />
                     <span className="text-sm">Verified</span>
                   </label>
-                  
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={editingUser.is_hidden}
+                      onChange={(e) => setEditingUser({ ...editingUser, is_hidden: e.target.checked })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Hidden (from leaderboard & public displays)</span>
+                  </label>
+
                   <label className="flex items-center">
                     <input
                       type="checkbox"
@@ -709,6 +729,16 @@ export default function AdminUsersPage() {
                       className="mr-2"
                     />
                     <span className="text-sm">Verified</span>
+                  </label>
+
+                  <label className="flex items-center">
+                    <input
+                      type="checkbox"
+                      checked={newUser.is_hidden}
+                      onChange={(e) => setNewUser({ ...newUser, is_hidden: e.target.checked })}
+                      className="mr-2"
+                    />
+                    <span className="text-sm">Hidden</span>
                   </label>
                 </div>
               </div>

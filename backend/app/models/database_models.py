@@ -75,6 +75,9 @@ class User(Base):
     is_verified = Column(Boolean, default=False)
     verification_token = Column(String(255))
     is_admin = Column(Boolean, default=False)
+    is_hidden = Column(
+        Boolean, default=False
+    )  # Hide from leaderboards and public displays
     created_at = Column(DateTime, default=datetime.utcnow)
     last_login = Column(DateTime)
 
