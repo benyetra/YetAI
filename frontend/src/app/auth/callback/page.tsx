@@ -22,8 +22,27 @@ function AuthCallbackContent() {
         // Store the token in localStorage
         localStorage.setItem('auth_token', token);
 
-        // Redirect to dashboard immediately
-        // The dashboard will fetch user data with the token
+        // Fetch user data with the token before redirecting
+        // This ensures the AuthProvider recognizes the user as authenticated
+        try {
+          const userResponse = await fetch('https://api.yetai.app/api/user/performance', {
+            headers: {
+              'Authorization': `Bearer ${token}`
+            }
+          });
+
+          if (userResponse.ok) {
+            const userData = await userResponse.json();
+            // Store user data in the format expected by AuthProvider
+            const user = userData.user || userData;
+            localStorage.setItem('user_data', JSON.stringify(user));
+          }
+        } catch (fetchError) {
+          console.error('Failed to fetch user data:', fetchError);
+          // Continue anyway, dashboard might handle it
+        }
+
+        // Redirect to dashboard
         router.push('/dashboard');
       } catch (err: any) {
         console.error('Auth callback error:', err);
