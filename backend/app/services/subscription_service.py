@@ -400,27 +400,45 @@ class SubscriptionService:
             if not user.stripe_subscription_id:
                 return {"success": False, "error": "No active subscription found"}
 
-            # Cancel at period end (don't immediately revoke access)
-            subscription = stripe.Subscription.modify(
-                user.stripe_subscription_id, cancel_at_period_end=True
-            )
+            # Use raw API to avoid SDK parsing issues
+            import requests
 
-            user.subscription_status = "canceling"
-            self.db.commit()
-
-            logger.info(f"Cancelled subscription for user {user.id}")
-
-            return {
-                "success": True,
-                "message": "Subscription will be cancelled at the end of the billing period",
-                "period_end": datetime.fromtimestamp(
-                    subscription.current_period_end
-                ).isoformat(),
+            api_key = stripe.api_key
+            headers = {
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/x-www-form-urlencoded",
             }
 
-        except stripe.error.StripeError as e:
-            logger.error(f"Stripe error cancelling subscription: {e}")
-            return {"success": False, "error": str(e)}
+            data = {
+                "cancel_at_period_end": "true",
+            }
+
+            response = requests.post(
+                f"https://api.stripe.com/v1/subscriptions/{user.stripe_subscription_id}",
+                headers=headers,
+                data=data,
+            )
+
+            if response.status_code == 200:
+                subscription_data = response.json()
+                current_period_end = subscription_data.get("current_period_end")
+
+                user.subscription_status = "canceling"
+                self.db.commit()
+
+                logger.info(f"Cancelled subscription for user {user.id}")
+
+                return {
+                    "success": True,
+                    "message": "Subscription will be cancelled at the end of the billing period",
+                    "period_end": datetime.fromtimestamp(
+                        current_period_end
+                    ).isoformat() if current_period_end else None,
+                }
+            else:
+                logger.error(f"Stripe API error: {response.text}")
+                return {"success": False, "error": "Failed to cancel subscription"}
+
         except Exception as e:
             logger.error(f"Error cancelling subscription: {e}")
             return {"success": False, "error": "Failed to cancel subscription"}
