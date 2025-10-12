@@ -871,32 +871,30 @@ async def get_leaderboard(
                     # Get user bet stats from unified service
                     stats = await simple_unified_bet_service.get_user_stats(user.id)
 
-                    if stats:
-                        # Calculate metrics
-                        total_wagered = stats.get("total_wagered", 0)
-                        profit_loss = stats.get("profit_loss", 0)
-                        win_rate = stats.get("win_rate", 0)
-                        total_bets = stats.get("total_bets", 0)
+                    # Calculate metrics (default to 0 for users with no bets)
+                    total_wagered = stats.get("total_wagered", 0) if stats else 0
+                    profit_loss = stats.get("profit_loss", 0) if stats else 0
+                    win_rate = stats.get("win_rate", 0) if stats else 0
+                    total_bets = stats.get("total_bets", 0) if stats else 0
 
-                        # Only include users who have placed bets
-                        if total_bets > 0:
-                            roi = (
-                                (profit_loss / total_wagered * 100)
-                                if total_wagered > 0
-                                else 0
-                            )
+                    # Include ALL users, even those with no bets
+                    roi = (
+                        (profit_loss / total_wagered * 100)
+                        if total_wagered > 0
+                        else 0
+                    )
 
-                            leaderboard_data.append(
-                                {
-                                    "user_id": user.id,
-                                    "username": user.username or f"User{user.id}",
-                                    "profit": profit_loss,
-                                    "win_rate": win_rate,
-                                    "roi": roi,
-                                    "total_bets": total_bets,
-                                    "total_wagered": total_wagered,
-                                }
-                            )
+                    leaderboard_data.append(
+                        {
+                            "user_id": user.id,
+                            "username": user.username or f"User{user.id}",
+                            "profit": profit_loss,
+                            "win_rate": win_rate,
+                            "roi": roi,
+                            "total_bets": total_bets,
+                            "total_wagered": total_wagered,
+                        }
+                    )
                 except Exception as e:
                     logger.error(f"Error calculating stats for user {user.id}: {e}")
                     continue
@@ -912,11 +910,11 @@ async def get_leaderboard(
                         "rank": i + 1,
                         "user_id": user_data["user_id"],
                         "username": user_data["username"],
-                        "profit": user_data["profit"],
-                        "win_rate": round(user_data["win_rate"], 1),
-                        "roi": round(user_data["roi"], 1),
+                        "profit": round(user_data["profit"]),
+                        "win_rate": round(user_data["win_rate"]),
+                        "roi": round(user_data["roi"]),
                         "total_bets": user_data["total_bets"],
-                        "total_wagered": user_data["total_wagered"],
+                        "total_wagered": round(user_data["total_wagered"]),
                         "is_current_user": user_data["user_id"]
                         == (current_user.get("id") or current_user.get("user_id")),
                     }

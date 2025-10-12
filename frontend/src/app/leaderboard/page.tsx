@@ -111,8 +111,9 @@ export default function LeaderboardPage() {
   };
 
   const formatCurrency = (amount: number) => {
-    const sign = amount >= 0 ? '+' : '-';
-    return `${sign}$${Math.abs(amount).toLocaleString()}`;
+    const rounded = Math.round(amount);
+    const sign = rounded >= 0 ? '+' : '-';
+    return `${sign}$${Math.abs(rounded).toLocaleString()}`;
   };
 
   if (error || !leaderboardData) {
@@ -179,11 +180,11 @@ export default function LeaderboardPage() {
             <div className="flex items-center justify-between mb-4">
               <Users className="w-8 h-8 text-blue-600" />
               <span className="text-2xl font-bold text-blue-600">
-                {leaderboardData.stats.active_players.toLocaleString()}
+                {leaderboardData.stats.total_players.toLocaleString()}
               </span>
             </div>
             <h3 className="font-semibold text-gray-900">Total Players</h3>
-            <p className="text-sm text-gray-600">Active this {selectedPeriod}</p>
+            <p className="text-sm text-gray-600">All registered users</p>
           </div>
 
           <div className="bg-white p-6 rounded-lg border border-gray-200">
