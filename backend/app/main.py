@@ -1597,40 +1597,50 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
         user_info = result["user_info"]
 
         # Check if user already exists
-        existing_user = auth_service_db.get_user_by_email(db, user_info["email"])
+        existing_user = await auth_service_db.get_user_by_email(user_info["email"])
 
         if existing_user:
             # User exists - log them in
-            token_data = auth_service_db.create_access_token(existing_user)
+            access_token = auth_service_db.generate_token(existing_user["id"])
 
             return {
                 "status": "success",
                 "message": "Login successful",
-                "access_token": token_data["access_token"],
+                "access_token": access_token,
                 "token_type": "bearer",
                 "user": existing_user,
             }
         else:
-            # Create new user
-            new_user = auth_service_db.create_user(
-                db=db,
+            # Create new user with Google OAuth
+            # Generate unique username from email
+            base_username = user_info["email"].split("@")[0]
+            username = base_username
+
+            # Since OAuth users don't have passwords, we'll generate a random one
+            import secrets as sec
+
+            random_password = sec.token_urlsafe(32)
+
+            result = await auth_service_db.create_user(
                 email=user_info["email"],
-                username=user_info["email"].split("@")[0],
-                password=None,  # No password for OAuth users
+                password=random_password,
+                username=username,
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
-                google_id=user_info.get("google_id"),
-                is_verified=user_info.get("email_verified", False),
-                avatar_url=user_info.get("picture", ""),
             )
 
-            token_data = auth_service_db.create_access_token(new_user)
+            if not result["success"]:
+                raise HTTPException(status_code=400, detail=result["error"])
+
+            # Generate access token
+            access_token = auth_service_db.generate_token(result["user"]["id"])
+
             return {
                 "status": "success",
                 "message": "Account created and login successful",
-                "access_token": token_data["access_token"],
+                "access_token": access_token,
                 "token_type": "bearer",
-                "user": new_user,
+                "user": result["user"],
             }
 
     except HTTPException:
@@ -1661,40 +1671,50 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="Invalid ID token")
 
         # Check if user already exists
-        existing_user = auth_service_db.get_user_by_email(db, user_info["email"])
+        existing_user = await auth_service_db.get_user_by_email(user_info["email"])
 
         if existing_user:
             # User exists - log them in
-            token_data = auth_service_db.create_access_token(existing_user)
+            access_token = auth_service_db.generate_token(existing_user["id"])
 
             return {
                 "status": "success",
                 "message": "Login successful",
-                "access_token": token_data["access_token"],
+                "access_token": access_token,
                 "token_type": "bearer",
                 "user": existing_user,
             }
         else:
-            # Create new user
-            new_user = auth_service_db.create_user(
-                db=db,
+            # Create new user with Google OAuth
+            # Generate unique username from email
+            base_username = user_info["email"].split("@")[0]
+            username = base_username
+
+            # Since OAuth users don't have passwords, we'll generate a random one
+            import secrets as sec
+
+            random_password = sec.token_urlsafe(32)
+
+            result = await auth_service_db.create_user(
                 email=user_info["email"],
-                username=user_info["email"].split("@")[0],
-                password=None,  # No password for OAuth users
+                password=random_password,
+                username=username,
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
-                google_id=user_info.get("google_id"),
-                is_verified=user_info.get("email_verified", False),
-                avatar_url=user_info.get("picture", ""),
             )
 
-            token_data = auth_service_db.create_access_token(new_user)
+            if not result["success"]:
+                raise HTTPException(status_code=400, detail=result["error"])
+
+            # Generate access token
+            access_token = auth_service_db.generate_token(result["user"]["id"])
+
             return {
                 "status": "success",
                 "message": "Account created successfully",
-                "access_token": token_data["access_token"],
+                "access_token": access_token,
                 "token_type": "bearer",
-                "user": new_user,
+                "user": result["user"],
             }
 
     except HTTPException:
