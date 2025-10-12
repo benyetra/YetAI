@@ -59,7 +59,8 @@ try:
     from app.services.google_oauth_service import google_oauth_service
 
     GOOGLE_OAUTH_AVAILABLE = True
-except ImportError as e:
+    logger.info("Google OAuth service initialized successfully")
+except Exception as e:
     logger.warning(f"Google OAuth service not available: {e}")
     google_oauth_service = None
     GOOGLE_OAUTH_AVAILABLE = False
@@ -470,6 +471,9 @@ async def health_check():
         "environment": settings.ENVIRONMENT,
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "services": service_loader.get_status(),
+        "google_oauth_available": GOOGLE_OAUTH_AVAILABLE,
+        "google_client_id_set": bool(settings.GOOGLE_CLIENT_ID),
+        "google_client_secret_set": bool(settings.GOOGLE_CLIENT_SECRET),
     }
 
 
