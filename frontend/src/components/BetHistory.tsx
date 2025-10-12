@@ -469,7 +469,7 @@ const BetHistory: React.FC = () => {
             />
             <StatCard
               title="Win Rate"
-              value={`${stats.win_rate}%`}
+              value={`${stats.win_rate.toFixed(2)}%`}
               icon={<Trophy className="w-6 h-6 text-green-600" />}
               trend={stats.win_rate >= 50 ? 'up' : 'down'}
             />

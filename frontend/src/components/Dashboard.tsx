@@ -525,14 +525,14 @@ const Dashboard: React.FC = () => {
               />
               <StatCard
                 title="Accuracy Rate"
-                value={`${stats.accuracy_rate}%`}
+                value={`${stats.accuracy_rate.toFixed(2)}%`}
                 icon={<TrendingUp className="w-6 h-6 text-green-600" />}
                 change={trends.accuracy_change ? `${trends.accuracy_change > 0 ? '+' : ''}${trends.accuracy_change.toFixed(1)}% vs last week` : undefined}
                 changeType={trends.accuracy_change && trends.accuracy_change > 0 ? 'positive' : trends.accuracy_change && trends.accuracy_change < 0 ? 'negative' : 'neutral'}
               />
               <StatCard
                 title={user?.subscription_tier === 'free' ? 'Upgrade for P&L' : 'Profit/Loss'}
-                value={user?.subscription_tier === 'free' ? 'Pro Feature' : `$${stats.profit_loss}`}
+                value={user?.subscription_tier === 'free' ? 'Pro Feature' : `$${Number(stats.profit_loss).toFixed(2)}`}
                 icon={<DollarSign className="w-6 h-6 text-green-600" />}
                 change={user?.subscription_tier !== 'free' && trends.profit_change ? `${trends.profit_change > 0 ? '+' : ''}$${trends.profit_change.toFixed(2)} vs last week` : undefined}
                 changeType={trends.profit_change && trends.profit_change > 0 ? 'positive' : trends.profit_change && trends.profit_change < 0 ? 'negative' : 'neutral'}
@@ -661,7 +661,7 @@ const Dashboard: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
               <StatCard
                 title="Win Rate"
-                value={`${stats.accuracy_rate}%`}
+                value={`${stats.accuracy_rate.toFixed(2)}%`}
                 icon={<Target className="w-6 h-6 text-green-600" />}
               />
               <StatCard
