@@ -789,7 +789,7 @@ class LiveBettingServiceDB:
                 time_remaining=(
                     f"{status.value}" if hasattr(status, "value") else str(status)
                 ),
-                last_updated=datetime.utcnow(),
+                timestamp=datetime.utcnow(),  # Fixed: was 'last_updated', should be 'timestamp'
             )
             self.live_games[game.id] = live_game
 
