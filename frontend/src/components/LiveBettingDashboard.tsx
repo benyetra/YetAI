@@ -225,7 +225,12 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
         odds,
         amount: parseFloat(betAmount),
         accept_odds_change: true,
-        min_odds: odds * 0.9 // Accept up to 10% worse odds
+        min_odds: odds * 0.9, // Accept up to 10% worse odds
+        // Include game details for proper bet creation and verification
+        home_team: market.home_team,
+        away_team: market.away_team,
+        sport: market.sport,
+        commence_time: market.commence_time
       }, token);
 
       if (response.status === 'success') {

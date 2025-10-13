@@ -268,13 +268,17 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     setError('');
 
     try {
-      // Match the working bet format - minimal data structure
+      // Include full game details for each leg to match unified service requirements
       const parlayData = {
         legs: legs.map(leg => ({
           game_id: leg.gameId,
           bet_type: leg.betType,
           selection: leg.selection,
-          odds: leg.odds
+          odds: leg.odds,
+          home_team: leg.home_team,
+          away_team: leg.away_team,
+          sport: leg.sport,
+          commence_time: leg.commence_time
         })),
         amount: parseFloat(amount)
       };

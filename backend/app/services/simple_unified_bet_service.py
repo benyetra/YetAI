@@ -324,6 +324,12 @@ class SimpleUnifiedBetService:
                 if not await self._check_bet_limits(user_id, live_bet_data.amount, db):
                     return {"success": False, "error": "Live bet exceeds limits"}
 
+                # Get or create game record (same as place_bet for consistency)
+                game = await self._get_or_create_game(live_bet_data, db)
+
+                # Determine odds_api_event_id (use game's ID if available)
+                odds_api_event_id = game.id if game else live_bet_data.game_id
+
                 # Generate bet ID
                 bet_id = str(uuid.uuid4())
 
@@ -344,8 +350,8 @@ class SimpleUnifiedBetService:
                 live_bet = SimpleUnifiedBet(
                     id=bet_id,
                     user_id=user_id,
-                    odds_api_event_id=live_bet_data.game_id or f"live_{bet_id[:8]}",
-                    game_id=live_bet_data.game_id,
+                    odds_api_event_id=odds_api_event_id,
+                    game_id=game.id if game else live_bet_data.game_id,
                     bet_type=BetType(live_bet_type_str.lower()),
                     amount=live_bet_data.amount,
                     odds=live_bet_data.odds,
