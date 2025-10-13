@@ -136,8 +136,8 @@ class Game(Base):
     venue = Column(String(255))
     weather = Column(JSON)
     odds_data = Column(JSON)  # Store latest odds from Odds API
-    # broadcast_info = Column(JSON)  # Store broadcast data from ESPN API  # TODO: Add via migration
-    # is_nationally_televised = Column(Boolean, default=False)  # TODO: Add via migration
+    broadcast_info = Column(JSON)  # Store broadcast data from ESPN API
+    is_nationally_televised = Column(Boolean, default=False)
 
     # Relationships
     bets = relationship("Bet", back_populates="game")
