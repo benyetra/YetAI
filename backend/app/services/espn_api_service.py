@@ -1,326 +1,237 @@
 """
-ESPN API Service for fetching broadcast and popularity data.
+ESPN API Service - Fetches broadcast information from ESPN's public API.
 
-This service handles interactions with ESPN's unofficial API to determine:
-- Game broadcast information (national vs local coverage)
-- Network data for popularity scoring
-- Prime time game identification
+This service fetches game schedules with broadcast network information
+from ESPN's unofficial/hidden API endpoints.
 """
 
-import aiohttp
-import asyncio
-import time
-from typing import Dict, List, Optional, Any
-from datetime import datetime, timezone
 import logging
-from dataclasses import dataclass
-from enum import Enum
+from typing import Dict, List, Optional
+from datetime import datetime
+import requests
 
 logger = logging.getLogger(__name__)
 
 
-class ESPNSport(str, Enum):
-    """ESPN sport keys mapping to their API endpoints"""
-
-    NFL = "nfl"
-    NBA = "nba"
-    MLB = "mlb"
-    NHL = "nhl"
-    COLLEGE_FOOTBALL = "college-football"
-    COLLEGE_BASKETBALL = "mens-college-basketball"
-
-
-@dataclass
-class BroadcastInfo:
-    """Broadcast information for a game"""
-
-    network: Optional[str] = None
-    is_national: bool = False
-    is_prime_time: bool = False
-    popularity_score: int = 0
-
-
-@dataclass
-class PopularGame:
-    """Game identified as popular based on broadcast data"""
-
-    id: str
-    home_team: str
-    away_team: str
-    start_time: datetime
-    sport: str
-    broadcast: BroadcastInfo
-    popularity_score: int
-
-
 class ESPNAPIService:
-    """Service for fetching ESPN broadcast data to identify popular games"""
+    """Service to fetch broadcast information from ESPN API"""
 
     BASE_URL = "https://site.api.espn.com/apis/site/v2/sports"
 
-    # National networks that indicate popular games
-    NATIONAL_NETWORKS = {
-        "ESPN",
-        "TNT",
-        "ABC",
-        "NBC",
-        "FOX",
-        "CBS",
-        "ESPN2",
-        "ESPNU",
-        "FS1",
-        "NBCSN",
-        "TBS",
-        "Amazon Prime",
-        "Apple TV+",
-        "Peacock",
-        "Prime Video",
-        "Apple TV",
-        "Netflix",
+    # Sport mappings
+    SPORT_ENDPOINTS = {
+        "americanfootball_nfl": "football/nfl",
+        "basketball_nba": "basketball/nba",
+        "baseball_mlb": "baseball/mlb",
+        "icehockey_nhl": "hockey/nhl",
     }
 
-    # Regional/local networks (lower popularity)
-    REGIONAL_NETWORKS = {
-        "Bally Sports",
-        "YES",
-        "NESN",
-        "SNY",
-        "MSG",
-        "Fox Sports Regional",
-        "NBC Sports Regional",
-    }
+    def __init__(self):
+        self.session = requests.Session()
+        self.session.headers.update(
+            {
+                "User-Agent": "Mozilla/5.0 (compatible; YetAI-Sports/1.0)",
+            }
+        )
 
-    def __init__(self, cache_service=None):
-        self.cache_service = cache_service
-        self.last_request_time = 0
-        self.rate_limit_delay = 1.0  # 1 second between requests
+    def get_scoreboard(self, sport_key: str) -> Optional[Dict]:
+        """
+        Fetch scoreboard data from ESPN API for a specific sport.
 
-    async def _make_request(self, url: str) -> Optional[Dict]:
-        """Make rate-limited request to ESPN API"""
-        try:
-            # Rate limiting
-            current_time = time.time()
-            time_since_last = current_time - self.last_request_time
-            if time_since_last < self.rate_limit_delay:
-                await asyncio.sleep(self.rate_limit_delay - time_since_last)
+        Args:
+            sport_key: Sport key (e.g., 'americanfootball_nfl')
 
-            async with aiohttp.ClientSession() as session:
-                async with session.get(
-                    url, timeout=aiohttp.ClientTimeout(total=10)
-                ) as response:
-                    self.last_request_time = time.time()
-
-                    if response.status == 200:
-                        return await response.json()
-                    else:
-                        logger.warning(
-                            f"ESPN API returned status {response.status} for {url}"
-                        )
-                        return None
-
-        except Exception as e:
-            logger.error(f"Error fetching from ESPN API: {e}")
+        Returns:
+            Dict with ESPN scoreboard data or None if error
+        """
+        endpoint = self.SPORT_ENDPOINTS.get(sport_key)
+        if not endpoint:
+            logger.warning(f"No ESPN endpoint mapping for sport: {sport_key}")
             return None
 
-    def _calculate_popularity_score(
-        self, broadcast_info: BroadcastInfo, game_time: datetime
-    ) -> int:
-        """Calculate popularity score based on broadcast data and timing"""
-        score = 0
-
-        # National network bonus
-        if broadcast_info.is_national:
-            score += 50
-
-        # Specific network bonuses
-        if broadcast_info.network:
-            network = broadcast_info.network.upper()
-            if "ESPN" in network:
-                score += 30
-            elif network in ["NBC", "CBS", "FOX", "ABC"]:
-                score += 40
-            elif network in ["TNT", "TBS"]:
-                score += 25
-            elif "PRIME" in network or "AMAZON" in network:
-                score += 35
-            elif "APPLE" in network:
-                score += 30
-
-        # Prime time bonus (7-11 PM ET)
-        if broadcast_info.is_prime_time:
-            score += 30
-
-        # Weekend bonus for afternoon games
-        if game_time.weekday() in [5, 6]:  # Saturday, Sunday
-            hour = game_time.hour
-            if 12 <= hour <= 18:  # Afternoon games
-                score += 20
-
-        return score
-
-    def _parse_broadcast_info(self, game_data: Dict) -> BroadcastInfo:
-        """Parse broadcast information from ESPN game data"""
-        broadcast_info = BroadcastInfo()
+        url = f"{self.BASE_URL}/{endpoint}/scoreboard"
 
         try:
-            # Look for broadcast/media information
-            competitions = game_data.get("competitions", [])
+            logger.info(f"Fetching ESPN scoreboard for {sport_key}: {url}")
+            response = self.session.get(url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+
+            logger.info(
+                f"Successfully fetched ESPN data for {sport_key}: {len(data.get('events', []))} events"
+            )
+            return data
+
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error fetching ESPN scoreboard for {sport_key}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error fetching ESPN data: {e}")
+            return None
+
+    def extract_broadcast_info(
+        self, home_team: str, away_team: str, commence_time: datetime, sport_key: str
+    ) -> Optional[Dict]:
+        """
+        Extract broadcast information for a specific game.
+
+        Args:
+            home_team: Home team name
+            away_team: Away team name
+            commence_time: Game start time
+            sport_key: Sport key
+
+        Returns:
+            Dict with broadcast info or None
+        """
+        scoreboard = self.get_scoreboard(sport_key)
+        if not scoreboard or "events" not in scoreboard:
+            return None
+
+        # Try to find matching game
+        for event in scoreboard.get("events", []):
+            # Check if game time matches (within 1 hour tolerance)
+            try:
+                event_time = datetime.fromisoformat(
+                    event.get("date", "").replace("Z", "+00:00")
+                )
+                time_diff = abs((event_time - commence_time).total_seconds())
+                if time_diff > 3600:  # More than 1 hour difference
+                    continue
+            except (ValueError, AttributeError):
+                continue
+
+            # Check if teams match
+            competitions = event.get("competitions", [])
             if not competitions:
-                return broadcast_info
+                continue
 
             competition = competitions[0]
-            broadcasts = competition.get("broadcasts", [])
+            competitors = competition.get("competitors", [])
 
-            if broadcasts:
-                # Get the first (primary) broadcast
-                broadcast = broadcasts[0]
-                media = broadcast.get("media", {})
+            # Extract team names from competitors
+            espn_home = None
+            espn_away = None
+            for competitor in competitors:
+                team = competitor.get("team", {})
+                team_name = f"{team.get('location', '')} {team.get('name', '')}".strip()
 
-                # Extract network name
-                network_name = media.get("shortName") or media.get("name")
-                if network_name:
-                    broadcast_info.network = network_name
+                if competitor.get("homeAway") == "home":
+                    espn_home = team_name
+                elif competitor.get("homeAway") == "away":
+                    espn_away = team_name
 
-                    # Check if it's a national network
-                    network_upper = network_name.upper()
-                    broadcast_info.is_national = any(
-                        nat_net in network_upper for nat_net in self.NATIONAL_NETWORKS
-                    )
+            # Check if teams match (case-insensitive)
+            if espn_home and espn_away:
+                if (
+                    home_team.lower() in espn_home.lower()
+                    or espn_home.lower() in home_team.lower()
+                ) and (
+                    away_team.lower() in espn_away.lower()
+                    or espn_away.lower() in away_team.lower()
+                ):
+                    # Extract broadcast information
+                    return self._parse_broadcast_info(event, competition)
 
-            # Check for prime time (7-11 PM ET)
-            date_str = game_data.get("date")
-            if date_str:
-                game_time = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                # Convert to ET for prime time check
-                et_hour = (game_time.hour - 5) % 24  # Rough ET conversion
-                broadcast_info.is_prime_time = 19 <= et_hour <= 23
+        logger.debug(
+            f"No ESPN broadcast match found for {away_team} @ {home_team} at {commence_time}"
+        )
+        return None
 
-        except Exception as e:
-            logger.error(f"Error parsing broadcast info: {e}")
+    def _parse_broadcast_info(
+        self, event: Dict, competition: Dict = None
+    ) -> Optional[Dict]:
+        """
+        Parse broadcast information from ESPN event data.
+
+        Args:
+            event: ESPN event dict
+            competition: ESPN competition dict (optional, contains broadcast data)
+
+        Returns:
+            Broadcast info dict with network, is_national, etc.
+        """
+        broadcast_info = {
+            "networks": [],
+            "is_national": False,
+            "streaming": [],
+        }
+
+        # Check competition-level broadcasts first (most reliable source)
+        if competition:
+            comp_broadcasts = competition.get("broadcasts", [])
+            for broadcast in comp_broadcasts:
+                market = broadcast.get("market", "")
+                names = broadcast.get("names", [])
+
+                if market == "national":
+                    broadcast_info["is_national"] = True
+
+                for name in names:
+                    if name and name not in broadcast_info["networks"]:
+                        broadcast_info["networks"].append(name)
+
+            # Check competition-level geoBroadcasts
+            comp_geo_broadcasts = competition.get("geoBroadcasts", [])
+            for geo_broadcast in comp_geo_broadcasts:
+                media = geo_broadcast.get("media", {})
+                network = media.get("shortName", "")
+                market = geo_broadcast.get("market", {})
+                broadcast_type = geo_broadcast.get("type", {}).get("shortName", "")
+
+                # Only add TV networks, skip Radio
+                if network and broadcast_type != "Radio":
+                    if network not in broadcast_info["networks"]:
+                        broadcast_info["networks"].append(network)
+
+                    # Track streaming services separately
+                    if broadcast_type == "Streaming":
+                        if network not in broadcast_info["streaming"]:
+                            broadcast_info["streaming"].append(network)
+
+                if market.get("type") == "National":
+                    broadcast_info["is_national"] = True
+
+        # Also check event-level broadcasts (fallback)
+        broadcasts = event.get("broadcasts", [])
+        for broadcast in broadcasts:
+            market = broadcast.get("market", "")
+            names = broadcast.get("names", [])
+
+            if market == "national":
+                broadcast_info["is_national"] = True
+
+            for name in names:
+                if name and name not in broadcast_info["networks"]:
+                    broadcast_info["networks"].append(name)
+
+        # Check event-level geoBroadcasts
+        geo_broadcasts = event.get("geoBroadcasts", [])
+        for geo_broadcast in geo_broadcasts:
+            media = geo_broadcast.get("media", {})
+            network = media.get("shortName", "")
+            market = geo_broadcast.get("market", {})
+            broadcast_type = geo_broadcast.get("type", {}).get("shortName", "")
+
+            # Only add TV networks, skip Radio
+            if network and broadcast_type != "Radio":
+                if network not in broadcast_info["networks"]:
+                    broadcast_info["networks"].append(network)
+
+                # Track streaming services separately
+                if broadcast_type == "Streaming":
+                    if network not in broadcast_info["streaming"]:
+                        broadcast_info["streaming"].append(network)
+
+            if market.get("type") == "National":
+                broadcast_info["is_national"] = True
+
+        # If no networks found, return None
+        if not broadcast_info["networks"]:
+            return None
 
         return broadcast_info
 
-    async def get_popular_games_for_sport(
-        self, sport: ESPNSport, date: Optional[str] = None
-    ) -> List[PopularGame]:
-        """Get popular games for a specific sport based on broadcast data"""
-        try:
-            # Use today if no date specified
-            if not date:
-                date = datetime.now().strftime("%Y%m%d")
 
-            # Build ESPN API URL
-            url = f"{self.BASE_URL}/{sport}/scoreboard"
-            if date:
-                url += f"?dates={date}"
-
-            # Check cache first
-            cache_key = f"espn_popular_{sport}_{date}"
-            if self.cache_service:
-                cached = await self.cache_service.get(cache_key)
-                if cached:
-                    return cached
-
-            # Fetch from ESPN API
-            data = await self._make_request(url)
-            if not data:
-                return []
-
-            popular_games = []
-            events = data.get("events", [])
-
-            for event in events:
-                try:
-                    # Parse basic game info
-                    game_id = event.get("id")
-                    name = event.get("name", "")
-                    date_str = event.get("date")
-
-                    if not all([game_id, name, date_str]):
-                        continue
-
-                    # Parse teams from name (e.g., "Team A vs Team B")
-                    teams = name.split(" vs ")
-                    if len(teams) != 2:
-                        # Try alternative format
-                        teams = name.split(" @ ")
-
-                    if len(teams) != 2:
-                        continue
-
-                    away_team, home_team = teams[0].strip(), teams[1].strip()
-
-                    # Parse game time
-                    game_time = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-
-                    # Parse broadcast information
-                    broadcast_info = self._parse_broadcast_info(event)
-
-                    # Calculate popularity score
-                    popularity_score = self._calculate_popularity_score(
-                        broadcast_info, game_time
-                    )
-                    broadcast_info.popularity_score = popularity_score
-
-                    # Only include games with significant popularity (national coverage)
-                    if popularity_score >= 25:  # Threshold for "popular"
-                        popular_game = PopularGame(
-                            id=game_id,
-                            home_team=home_team,
-                            away_team=away_team,
-                            start_time=game_time,
-                            sport=sport,
-                            broadcast=broadcast_info,
-                            popularity_score=popularity_score,
-                        )
-                        popular_games.append(popular_game)
-
-                except Exception as e:
-                    logger.error(
-                        f"Error processing game {event.get('id', 'unknown')}: {e}"
-                    )
-                    continue
-
-            # Sort by popularity score
-            popular_games.sort(key=lambda x: x.popularity_score, reverse=True)
-
-            # Cache the results for 30 minutes
-            if self.cache_service:
-                await self.cache_service.set(cache_key, popular_games, expire=1800)
-
-            logger.info(f"Found {len(popular_games)} popular games for {sport}")
-            return popular_games
-
-        except Exception as e:
-            logger.error(f"Error fetching popular games for {sport}: {e}")
-            return []
-
-    async def get_all_popular_games(
-        self, date: Optional[str] = None
-    ) -> Dict[str, List[PopularGame]]:
-        """Get popular games across all supported sports"""
-        sports = [ESPNSport.NFL, ESPNSport.NBA, ESPNSport.MLB, ESPNSport.NHL]
-
-        results = {}
-        tasks = []
-
-        for sport in sports:
-            task = self.get_popular_games_for_sport(sport, date)
-            tasks.append((sport, task))
-
-        # Execute all requests concurrently with some delay between them
-        for i, (sport, task) in enumerate(tasks):
-            if i > 0:
-                await asyncio.sleep(0.5)  # Small delay between sport requests
-            try:
-                games = await task
-                results[sport] = games
-            except Exception as e:
-                logger.error(f"Error fetching popular games for {sport}: {e}")
-                results[sport] = []
-
-        return results
-
-
-# Global service instance
+# Global instance
 espn_api_service = ESPNAPIService()

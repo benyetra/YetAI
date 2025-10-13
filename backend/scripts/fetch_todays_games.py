@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from app.core.database import SessionLocal
 from app.models.database_models import Game, GameStatus
 from app.core.config import settings
+from app.services.espn_api_service import espn_api_service
 import requests
 
 
@@ -74,9 +75,30 @@ def fetch_and_store_games():
 
                 print(f"  Found {len(games_data)} games")
 
+                # Fetch broadcast info from ESPN for this sport
+                print(f"  Fetching broadcast info from ESPN...")
+
                 # Store each game in database
                 for game_data in games_data:
                     game_id = game_data["id"]
+                    home_team = game_data["home_team"]
+                    away_team = game_data["away_team"]
+                    commence_time = datetime.fromisoformat(
+                        game_data["commence_time"].replace("Z", "+00:00")
+                    )
+
+                    # Try to get broadcast info from ESPN
+                    broadcast_info = espn_api_service.extract_broadcast_info(
+                        home_team=home_team,
+                        away_team=away_team,
+                        commence_time=commence_time,
+                        sport_key=sport,
+                    )
+
+                    # Set is_nationally_televised based on broadcast info
+                    is_national = False
+                    if broadcast_info and broadcast_info.get("is_national"):
+                        is_national = True
 
                     # Check if game exists
                     existing_game = db.query(Game).filter(Game.id == game_id).first()
@@ -84,6 +106,8 @@ def fetch_and_store_games():
                     if existing_game:
                         # Update existing game
                         existing_game.odds_data = game_data.get("bookmakers", [])
+                        existing_game.broadcast_info = broadcast_info
+                        existing_game.is_nationally_televised = is_national
                         existing_game.last_update = datetime.utcnow()
                         total_updated += 1
                     else:
@@ -92,21 +116,21 @@ def fetch_and_store_games():
                             id=game_id,
                             sport_key=game_data["sport_key"],
                             sport_title=game_data["sport_title"],
-                            home_team=game_data["home_team"],
-                            away_team=game_data["away_team"],
-                            commence_time=datetime.fromisoformat(
-                                game_data["commence_time"].replace("Z", "+00:00")
-                            ),
+                            home_team=home_team,
+                            away_team=away_team,
+                            commence_time=commence_time,
                             status=GameStatus.SCHEDULED,
                             odds_data=game_data.get("bookmakers", []),
-                            is_nationally_televised=False,  # Default to False
+                            broadcast_info=broadcast_info,
+                            is_nationally_televised=is_national,
                         )
                         db.add(new_game)
                         total_created += 1
 
-                        print(
-                            f"    ✅ {game_data['away_team']} @ {game_data['home_team']}"
-                        )
+                        network_str = ""
+                        if broadcast_info and broadcast_info.get("networks"):
+                            network_str = f" [{', '.join(broadcast_info['networks'])}]"
+                        print(f"    ✅ {away_team} @ {home_team}{network_str}")
 
                 db.commit()
 
