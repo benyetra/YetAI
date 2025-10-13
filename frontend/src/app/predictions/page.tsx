@@ -269,14 +269,27 @@ export default function YetAIBetsPage() {
   // Helper function to check if a game is in the past
   const isGameInPast = (gameTimeStr: string) => {
     try {
-      let dateStr = gameTimeStr;
+      // Parse format: "10/12/2025 @01:00 PM EDT"
+      // Remove timezone abbreviation and parse the full datetime
+      let dateStr = gameTimeStr.replace(' EDT', '').replace(' EST', '').replace(' PST', '').replace(' MST', '');
+
+      // Replace @ with space for proper parsing: "10/12/2025 01:00 PM"
       if (dateStr.includes(' @')) {
-        dateStr = dateStr.split(' @')[0];
+        dateStr = dateStr.replace(' @', ' ');
       }
+
       const gameDate = new Date(dateStr);
       const now = new Date();
+
+      // If parsing failed, return false (treat as upcoming)
+      if (isNaN(gameDate.getTime())) {
+        console.warn('Failed to parse game time:', gameTimeStr);
+        return false;
+      }
+
       return gameDate < now;
     } catch (error) {
+      console.error('Error parsing game time:', gameTimeStr, error);
       return false;
     }
   };
