@@ -2199,15 +2199,15 @@ async def sync_games(admin_user: dict = Depends(require_admin)):
     """Sync today's games from Odds API and ESPN (Admin only)"""
     try:
         import sys
-        import subprocess
+        import subprocess  # nosec B404 - subprocess used safely with hardcoded paths
         from pathlib import Path
 
         script_path = Path(__file__).parent.parent / "scripts" / "fetch_todays_games.py"
 
         logger.info(f"Admin {admin_user['id']} triggered game sync")
 
-        # Run the sync script
-        result = subprocess.run(
+        # Run the sync script with hardcoded script path (no user input)
+        result = subprocess.run(  # nosec B603 - using sys.executable and hardcoded script path
             [sys.executable, str(script_path)],
             capture_output=True,
             text=True,
