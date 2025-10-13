@@ -108,6 +108,13 @@ class UnifiedBetVerificationService:
                     )
                     continue
 
+                # Skip parlay parent bets - they're verified through their legs
+                if sport == "multiple sports":
+                    logger.info(
+                        f"Skipping {len(sport_bets)} parlay parent bets (verified via legs)"
+                    )
+                    continue
+
                 try:
                     logger.info(f"Verifying {len(sport_bets)} {sport.upper()} bets...")
 
