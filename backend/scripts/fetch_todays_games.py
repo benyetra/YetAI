@@ -104,7 +104,9 @@ def fetch_and_store_games():
                         db.add(new_game)
                         total_created += 1
 
-                        print(f"    ✅ {game_data['away_team']} @ {game_data['home_team']}")
+                        print(
+                            f"    ✅ {game_data['away_team']} @ {game_data['home_team']}"
+                        )
 
                 db.commit()
 
