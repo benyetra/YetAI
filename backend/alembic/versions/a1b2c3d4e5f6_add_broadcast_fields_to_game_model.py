@@ -25,13 +25,20 @@ def upgrade() -> None:
     # Add broadcast_info column (JSON) to games table
     op.add_column(
         "games",
-        sa.Column("broadcast_info", postgresql.JSON(astext_type=sa.Text()), nullable=True),
+        sa.Column(
+            "broadcast_info", postgresql.JSON(astext_type=sa.Text()), nullable=True
+        ),
     )
 
     # Add is_nationally_televised column (Boolean) to games table
     op.add_column(
         "games",
-        sa.Column("is_nationally_televised", sa.Boolean(), nullable=False, server_default="false"),
+        sa.Column(
+            "is_nationally_televised",
+            sa.Boolean(),
+            nullable=False,
+            server_default="false",
+        ),
     )
 
 
