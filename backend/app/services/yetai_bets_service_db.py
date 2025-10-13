@@ -106,8 +106,46 @@ class YetAIBetsServiceDB:
                 else:
                     odds_value = float(odds_value)
 
+                # Parse home and away teams from game string (format: "Away Team @ Home Team")
+                home_team = None
+                away_team = None
+                game_id = None
+
+                if " @ " in bet_request.game:
+                    parts = bet_request.game.split(" @ ")
+                    if len(parts) == 2:
+                        away_team = parts[0].strip()
+                        home_team = parts[1].strip()
+
+                        # Try to find the game in the database by team names and sport
+                        from app.models.database_models import Game
+
+                        game = (
+                            db.query(Game)
+                            .filter(
+                                Game.home_team.ilike(f"%{home_team}%"),
+                                Game.away_team.ilike(f"%{away_team}%"),
+                                Game.sport_title.ilike(f"%{bet_request.sport}%"),
+                            )
+                            .order_by(Game.commence_time.desc())
+                            .first()
+                        )
+
+                        if game:
+                            game_id = game.id
+                            home_team = game.home_team
+                            away_team = game.away_team
+                            logger.info(
+                                f"Found game {game_id} for YetAI bet: {home_team} vs {away_team}"
+                            )
+                        else:
+                            logger.warning(
+                                f"Could not find game in DB for: {bet_request.game}"
+                            )
+
                 new_bet = YetAIBet(
                     id=bet_id,
+                    game_id=game_id,
                     sport=bet_request.sport,
                     title=bet_request.game,
                     description=bet_request.reasoning,
@@ -123,6 +161,8 @@ class YetAIBetsServiceDB:
                     status="pending",
                     created_at=datetime.utcnow(),
                     commence_time=game_commence_time,
+                    home_team=home_team,
+                    away_team=away_team,
                 )
 
                 db.add(new_bet)
@@ -620,12 +660,13 @@ class YetAIBetsServiceDB:
     async def verify_pending_yetai_bets(self) -> Dict:
         """
         Verify all pending YetAI bets and settle completed games
-        Similar to unified bet verification but for yetai_bets table
+        Checks database games table first (if game_id exists), then falls back to API
         """
         from app.services.optimized_odds_api_service import (
             get_optimized_odds_api_service,
         )
         from app.core.config import settings
+        from app.models.database_models import Game, GameStatus
 
         logger.info("🎯 Starting YetAI bets verification...")
         db = SessionLocal()
@@ -639,92 +680,28 @@ class YetAIBetsServiceDB:
             if not pending_bets:
                 return {"success": True, "verified": 0, "settled": 0}
 
-            # Group bets by sport for efficient API calls
-            bets_by_sport = {}
-            for bet in pending_bets:
-                sport = bet.sport.lower() if bet.sport else "unknown"
-                if sport not in bets_by_sport:
-                    bets_by_sport[sport] = []
-                bets_by_sport[sport].append(bet)
-
             total_settled = 0
-            odds_service = get_optimized_odds_api_service(settings.ODDS_API_KEY)
 
-            for sport, sport_bets in bets_by_sport.items():
-                if sport == "unknown":
-                    continue
+            # First pass: Check bets with game_id against database
+            for bet in pending_bets:
+                if bet.game_id:
+                    game = db.query(Game).filter(Game.id == bet.game_id).first()
+                    if game and game.status == GameStatus.FINAL:
+                        # Game is complete, evaluate bet
+                        result_status, result_description = (
+                            self._evaluate_yetai_bet_outcome(
+                                bet, game.home_score, game.away_score
+                            )
+                        )
 
-                try:
-                    # Normalize sport name for API
-                    sport_mapping = {
-                        "mlb": "baseball_mlb",
-                        "nfl": "americanfootball_nfl",
-                        "nba": "basketball_nba",
-                        "nhl": "icehockey_nhl",
-                        "ncaa football": "americanfootball_ncaaf",
-                    }
-                    normalized_sport = sport_mapping.get(sport.lower(), sport.lower())
+                        bet.status = result_status
+                        bet.settled_at = datetime.utcnow()
+                        bet.result = result_description
+                        total_settled += 1
 
-                    logger.info(
-                        f"Verifying {len(sport_bets)} {sport.upper()} YetAI bets..."
-                    )
-
-                    # Get completed games for this sport
-                    completed_games = await odds_service.get_scores_optimized(
-                        normalized_sport, include_completed=True
-                    )
-
-                    logger.info(
-                        f"Retrieved {len(completed_games)} game results for {sport}"
-                    )
-
-                    # Verify each bet
-                    for bet in sport_bets:
-                        # Find the game in completed games
-                        game_found = False
-                        for game in completed_games:
-                            if not game.get("completed"):
-                                continue
-
-                            # Match by team names in game title
-                            if bet.home_team in game.get(
-                                "home_team", ""
-                            ) and bet.away_team in game.get("away_team", ""):
-                                game_found = True
-
-                                # Get scores from the game
-                                home_score = game.get("scores", [{}])[0].get("score", 0)
-                                away_score = (
-                                    game.get("scores", [{}])[1].get("score", 0)
-                                    if len(game.get("scores", [])) > 1
-                                    else 0
-                                )
-
-                                # Evaluate bet outcome
-                                result_status, result_description = (
-                                    self._evaluate_yetai_bet_outcome(
-                                        bet, home_score, away_score
-                                    )
-                                )
-
-                                # Update bet with results
-                                # Status should be the actual outcome (won/lost/pushed) for frontend display
-                                bet.status = result_status
-                                bet.settled_at = datetime.utcnow()
-                                bet.result = result_description
-                                total_settled += 1
-
-                                logger.info(
-                                    f"Settled YetAI bet {bet.id[:8]}: {bet.title} - {result_status}"
-                                )
-                                break
-
-                        if not game_found:
-                            logger.debug(f"Game not yet completed for bet {bet.id[:8]}")
-
-                except Exception as e:
-                    logger.error(f"Error verifying {sport} YetAI bets: {e}")
-                    continue
+                        logger.info(
+                            f"Settled YetAI bet {bet.id[:8]} via DB: {bet.title} - {result_status}"
+                        )
 
             db.commit()
             logger.info(f"✅ YetAI verification complete: {total_settled} bets settled")
