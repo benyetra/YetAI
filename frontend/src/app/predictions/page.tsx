@@ -191,15 +191,17 @@ export default function YetAIBetsPage() {
   const isInPeriod = (gameTimeStr: string, period: string) => {
     try {
       // Parse the game time string - handle different formats
+      // Format is "MM/DD/YYYY @HH:MM AM/PM EDT"
       let dateStr = gameTimeStr;
 
-      // If format is "09/16/2025 @06:46 PM EDT", extract just the date part
+      // If format includes time, extract just the date part
       if (dateStr.includes(' @')) {
         dateStr = dateStr.split(' @')[0];
       }
 
-      // Parse the date (handle MM/DD/YYYY format)
-      const gameDate = new Date(dateStr);
+      // Parse MM/DD/YYYY as local date (not UTC)
+      const [month, day, year] = dateStr.split('/').map(Number);
+      const gameDate = new Date(year, month - 1, day); // Month is 0-indexed
       const today = new Date();
 
       // Debug logging
@@ -217,21 +219,28 @@ export default function YetAIBetsPage() {
 
       const yesterday = new Date(today);
       yesterday.setDate(today.getDate() - 1);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(today.getDate() + 1);
       const weekAgo = new Date(today);
       weekAgo.setDate(today.getDate() - 7);
+      const weekAhead = new Date(today);
+      weekAhead.setDate(today.getDate() + 7);
 
       switch (period) {
         case 'today':
-          const isToday = gameDate.getTime() === today.getTime();
-          console.log(`Today check: ${isToday} (${gameDate.toDateString()} === ${today.toDateString()})`);
-          return isToday;
+          // Show today's games AND tomorrow's games (since games can be late night)
+          const isTodayOrTomorrow =
+            gameDate.getTime() === today.getTime() ||
+            gameDate.getTime() === tomorrow.getTime();
+          console.log(`Today check: ${isTodayOrTomorrow} (${gameDate.toDateString()} === ${today.toDateString()} or ${tomorrow.toDateString()})`);
+          return isTodayOrTomorrow;
         case 'yesterday':
           const isYesterday = gameDate.getTime() === yesterday.getTime();
           console.log(`Yesterday check: ${isYesterday} (${gameDate.toDateString()} === ${yesterday.toDateString()})`);
           return isYesterday;
         case 'week':
-          const isInWeek = gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= today.getTime();
-          console.log(`Week check: ${isInWeek} (${gameDate.toDateString()} between ${weekAgo.toDateString()} and ${today.toDateString()})`);
+          const isInWeek = gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= weekAhead.getTime();
+          console.log(`Week check: ${isInWeek} (${gameDate.toDateString()} between ${weekAgo.toDateString()} and ${weekAhead.toDateString()})`);
           return isInWeek;
         default:
           return false;
