@@ -499,6 +499,124 @@ class YetAIBetsServiceDB:
         except Exception as e:
             logger.error(f"Error creating sample bets: {e}")
 
+    def _evaluate_yetai_bet_outcome(
+        self, bet: YetAIBet, home_score: int, away_score: int
+    ) -> tuple[str, str]:
+        """
+        Evaluate YetAI bet outcome based on bet type and scores
+        Returns: (status, result_description)
+        """
+        bet_type = bet.bet_type
+        selection = bet.selection.lower()
+
+        try:
+            if bet_type == BetType.MONEYLINE:
+                # Check if selection is home or away team
+                if home_score == away_score:
+                    return "pushed", "Game tied - bet pushed"
+
+                # Check which team won
+                home_won = home_score > away_score
+                if bet.home_team.lower() in selection:
+                    if home_won:
+                        return (
+                            "won",
+                            f"Won: {bet.home_team} won ({home_score}-{away_score})",
+                        )
+                    else:
+                        return (
+                            "lost",
+                            f"Lost: {bet.home_team} lost ({home_score}-{away_score})",
+                        )
+                elif bet.away_team.lower() in selection:
+                    if not home_won:
+                        return (
+                            "won",
+                            f"Won: {bet.away_team} won ({away_score}-{home_score})",
+                        )
+                    else:
+                        return (
+                            "lost",
+                            f"Lost: {bet.away_team} lost ({away_score}-{home_score})",
+                        )
+
+            elif bet_type == BetType.SPREAD:
+                # Parse spread from selection (e.g., "Team Name -7.5" or "Team Name +3.5")
+                import re
+
+                spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
+                if not spread_match:
+                    return "pending_manual_review", "Could not parse spread value"
+
+                spread = float(spread_match.group(1))
+
+                # Determine which team and apply spread
+                if bet.home_team.lower() in selection:
+                    adjusted_home = home_score + spread
+                    if adjusted_home > away_score:
+                        return (
+                            "won",
+                            f"Won: {bet.home_team} {spread:+.1f} covered ({adjusted_home:.1f} vs {away_score})",
+                        )
+                    elif adjusted_home == away_score:
+                        return "pushed", f"Push: {bet.home_team} {spread:+.1f} tied"
+                    else:
+                        return (
+                            "lost",
+                            f"Lost: {bet.home_team} {spread:+.1f} didn't cover ({adjusted_home:.1f} vs {away_score})",
+                        )
+                elif bet.away_team.lower() in selection:
+                    adjusted_away = away_score + spread
+                    if adjusted_away > home_score:
+                        return (
+                            "won",
+                            f"Won: {bet.away_team} {spread:+.1f} covered ({adjusted_away:.1f} vs {home_score})",
+                        )
+                    elif adjusted_away == home_score:
+                        return "pushed", f"Push: {bet.away_team} {spread:+.1f} tied"
+                    else:
+                        return (
+                            "lost",
+                            f"Lost: {bet.away_team} {spread:+.1f} didn't cover ({adjusted_away:.1f} vs {home_score})",
+                        )
+
+            elif bet_type == BetType.TOTAL:
+                # Parse total from selection (e.g., "Over 220.5" or "Under 45.5")
+                import re
+
+                total_match = re.search(r"(\d+\.?\d*)", selection)
+                if not total_match:
+                    return "pending_manual_review", "Could not parse total value"
+
+                line = float(total_match.group(1))
+                total_score = home_score + away_score
+                is_over = "over" in selection
+
+                if total_score == line:
+                    return "pushed", f"Push: Total exactly {line}"
+                elif (is_over and total_score > line) or (
+                    not is_over and total_score < line
+                ):
+                    direction = "Over" if is_over else "Under"
+                    return "won", f"Won: {direction} {line} (total: {total_score})"
+                else:
+                    direction = "Over" if is_over else "Under"
+                    return "lost", f"Lost: {direction} {line} (total: {total_score})"
+
+            elif bet_type == BetType.PARLAY:
+                # Parlay evaluation is complex - would need to check all legs
+                return (
+                    "pending_manual_review",
+                    "Parlay evaluation requires manual review",
+                )
+
+            else:
+                return "pending_manual_review", f"Unknown bet type: {bet_type}"
+
+        except Exception as e:
+            logger.error(f"Error evaluating YetAI bet {bet.id[:8]}: {e}")
+            return "pending_manual_review", f"Evaluation error: {str(e)}"
+
     async def verify_pending_yetai_bets(self) -> Dict:
         """
         Verify all pending YetAI bets and settle completed games
@@ -573,15 +691,31 @@ class YetAIBetsServiceDB:
                                 "home_team", ""
                             ) and bet.away_team in game.get("away_team", ""):
                                 game_found = True
-                                # Settle the bet based on result
-                                # For now, mark as settled (result determination would need more logic)
-                                bet.status = "settled"
+
+                                # Get scores from the game
+                                home_score = game.get("scores", [{}])[0].get("score", 0)
+                                away_score = (
+                                    game.get("scores", [{}])[1].get("score", 0)
+                                    if len(game.get("scores", [])) > 1
+                                    else 0
+                                )
+
+                                # Evaluate bet outcome
+                                result_status, result_description = (
+                                    self._evaluate_yetai_bet_outcome(
+                                        bet, home_score, away_score
+                                    )
+                                )
+
+                                # Update bet with results
+                                # Status should be the actual outcome (won/lost/pushed) for frontend display
+                                bet.status = result_status
                                 bet.settled_at = datetime.utcnow()
-                                # TODO: Add logic to determine won/lost/push based on bet_type and scores
-                                bet.result = "pending_manual_review"
+                                bet.result = result_description
                                 total_settled += 1
+
                                 logger.info(
-                                    f"Settled YetAI bet {bet.id[:8]}: {bet.title}"
+                                    f"Settled YetAI bet {bet.id[:8]}: {bet.title} - {result_status}"
                                 )
                                 break
 
