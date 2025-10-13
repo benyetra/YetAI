@@ -204,25 +204,53 @@ class BettingAnalyticsService:
         breakdown = {}
 
         for bet in bets:
-            sport = self._format_sport_name(bet.sport or "Unknown")
+            # For parlay bets, extract sports from each leg
+            if bet.is_parlay and bet.parlay_legs:
+                sports = set()
+                for leg in bet.parlay_legs:
+                    if isinstance(leg, dict) and "sport" in leg:
+                        sports.add(self._format_sport_name(leg["sport"]))
 
-            if sport not in breakdown:
-                breakdown[sport] = {
-                    "total": 0,
-                    "won": 0,
-                    "lost": 0,
-                    "pending": 0,
-                    "win_rate": 0,
-                }
+                # Count this bet for each unique sport in the parlay
+                for sport in sports:
+                    if sport not in breakdown:
+                        breakdown[sport] = {
+                            "total": 0,
+                            "won": 0,
+                            "lost": 0,
+                            "pending": 0,
+                            "win_rate": 0,
+                        }
 
-            breakdown[sport]["total"] += 1
+                    breakdown[sport]["total"] += 1
 
-            if bet.status == "won":
-                breakdown[sport]["won"] += 1
-            elif bet.status == "lost":
-                breakdown[sport]["lost"] += 1
-            elif bet.status in ["pending", None]:
-                breakdown[sport]["pending"] += 1
+                    if bet.status == "won":
+                        breakdown[sport]["won"] += 1
+                    elif bet.status == "lost":
+                        breakdown[sport]["lost"] += 1
+                    elif bet.status in ["pending", None]:
+                        breakdown[sport]["pending"] += 1
+            else:
+                # Single sport bet
+                sport = self._format_sport_name(bet.sport or "Unknown")
+
+                if sport not in breakdown:
+                    breakdown[sport] = {
+                        "total": 0,
+                        "won": 0,
+                        "lost": 0,
+                        "pending": 0,
+                        "win_rate": 0,
+                    }
+
+                breakdown[sport]["total"] += 1
+
+                if bet.status == "won":
+                    breakdown[sport]["won"] += 1
+                elif bet.status == "lost":
+                    breakdown[sport]["lost"] += 1
+                elif bet.status in ["pending", None]:
+                    breakdown[sport]["pending"] += 1
 
         # Calculate win rates
         for sport in breakdown:
@@ -757,14 +785,28 @@ class BettingAnalyticsService:
 
     def _format_bet_type_name(self, bet_type: str) -> str:
         """Format bet type to readable name"""
+        # Remove "BetType." or "Bettype." prefix if present
+        bet_type_clean = bet_type.replace("BetType.", "").replace("Bettype.", "")
+
         bet_type_mapping = {
             "moneyline": "Moneyline",
-            "spread": "Point Spread",
-            "total": "Over/Under",
-            "player_prop": "Player Props",
-            "team_prop": "Team Props",
+            "MONEYLINE": "Moneyline",
+            "Moneyline": "Moneyline",
+            "spread": "Spread",
+            "SPREAD": "Spread",
+            "Spread": "Spread",
+            "total": "Total",
+            "TOTAL": "Total",
+            "Total": "Total",
+            "parlay": "Parlay",
+            "PARLAY": "Parlay",
+            "Parlay": "Parlay",
+            "player_prop": "Player Prop",
+            "team_prop": "Team Prop",
         }
-        return bet_type_mapping.get(bet_type, bet_type.replace("_", " ").title())
+        return bet_type_mapping.get(
+            bet_type_clean, bet_type_clean.replace("_", " ").title()
+        )
 
 
 # Global instance
