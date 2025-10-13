@@ -193,11 +193,30 @@ class YetAIBetsServiceDB:
             return {"success": False, "error": "Failed to create parlay"}
 
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
-        """Get active YetAI Bets based on user tier from database"""
+        """Get active YetAI Bets based on user tier from database
+
+        Returns bets that are:
+        - Status "pending" (not yet settled)
+        - Have a commence_time in the future OR within last 4 hours (to show in-progress games)
+        """
         try:
             db = SessionLocal()
             try:
-                query = db.query(YetAIBet).filter(YetAIBet.status == "pending")
+                from datetime import datetime, timedelta
+
+                # Show bets that are pending and either:
+                # 1. Game hasn't started yet, OR
+                # 2. Game started within last 4 hours (still in progress)
+                cutoff_time = datetime.utcnow() - timedelta(hours=4)
+
+                query = (
+                    db.query(YetAIBet)
+                    .filter(YetAIBet.status == "pending")
+                    .filter(
+                        (YetAIBet.commence_time >= cutoff_time)
+                        | (YetAIBet.commence_time == None)
+                    )
+                )
 
                 # For free users, only show non-premium bets
                 if user_tier == "free":
@@ -375,13 +394,19 @@ class YetAIBetsServiceDB:
             "id": bet.id,
             "sport": bet.sport,
             "game": bet.title,
+            "game_id": bet.game_id,  # Odds API event ID for verification
+            "home_team": bet.home_team,  # Required for bet placement
+            "away_team": bet.away_team,  # Required for bet placement
+            "commence_time": (
+                bet.commence_time.isoformat() if bet.commence_time else None
+            ),  # ISO format for API
             "bet_type": bet.bet_type,
             "pick": clean_pick,
             "odds": f"+{int(bet.odds)}" if bet.odds > 0 else str(int(bet.odds)),
             "confidence": int(bet.confidence),
             "reasoning": bet.description,
             "is_premium": bet.tier_requirement != SubscriptionTier.FREE,
-            "game_time": game_time_formatted,
+            "game_time": game_time_formatted,  # Display format for UI
             "bet_category": (
                 "parlay"
                 if hasattr(bet, "parlay_legs") and bet.parlay_legs
