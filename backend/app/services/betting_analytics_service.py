@@ -63,18 +63,30 @@ class BettingAnalyticsService:
                 # Calculate basic stats
                 all_bets = user_bets
                 total_bets = len(all_bets)
-                total_wagered = sum(bet.amount for bet in all_bets)
 
-                # Calculate wins/losses
+                # Separate resolved and pending bets
                 won_bets = [bet for bet in all_bets if bet.status == "won"]
                 lost_bets = [bet for bet in all_bets if bet.status == "lost"]
-                resolved_bets = len(won_bets) + len(lost_bets)
+                pushed_bets = [bet for bet in all_bets if bet.status == "pushed"]
+                pending_bets = [
+                    bet
+                    for bet in all_bets
+                    if bet.status not in ["won", "lost", "pushed"]
+                ]
 
-                # Calculate win rate
-                win_rate = (len(won_bets) / resolved_bets) if resolved_bets > 0 else 0.0
+                resolved_bets_list = won_bets + lost_bets + pushed_bets
+                total_resolved_bets = len(resolved_bets_list)
+                total_pending_bets = len(pending_bets)
 
-                # Calculate total winnings and ROI
+                # Calculate totals ONLY from resolved bets (don't count pending)
+                total_wagered = sum(bet.amount for bet in resolved_bets_list)
                 total_winnings = sum(bet.result_amount or 0 for bet in won_bets)
+
+                # Calculate win rate (only from resolved bets, excluding pushes)
+                settled_bets = len(won_bets) + len(lost_bets)
+                win_rate = (len(won_bets) / settled_bets) if settled_bets > 0 else 0.0
+
+                # Calculate ROI (profit / wagered for resolved bets only)
                 profit = total_winnings - sum(bet.amount for bet in won_bets)
                 roi = (profit / total_wagered) if total_wagered > 0 else 0.0
 
@@ -117,6 +129,8 @@ class BettingAnalyticsService:
 
                 return {
                     "total_bets": total_bets,
+                    "total_resolved_bets": total_resolved_bets,
+                    "total_pending_bets": total_pending_bets,
                     "total_wagered": round(total_wagered, 2),
                     "total_winnings": round(total_winnings, 2),
                     "win_rate": round(win_rate, 3),  # 0.68 format
