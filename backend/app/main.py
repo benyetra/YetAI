@@ -119,6 +119,7 @@ class PlaceBetRequest(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
     commence_time: Optional[str] = None
+    yetai_bet_id: Optional[str] = None  # Link to YetAI bet for tracking
 
 
 class ParlayLeg(BaseModel):

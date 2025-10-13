@@ -32,12 +32,16 @@ export default function AdminPage() {
   const [formData, setFormData] = useState({
     sport: '',
     game: '',
+    game_id: '',           // Odds API event ID
+    home_team: '',         // Home team name
+    away_team: '',         // Away team name
+    commence_time: '',     // ISO format timestamp
     bet_type: '',
     pick: '',
     odds: '',
     confidence: 80,
     reasoning: '',
-    game_time: '',
+    game_time: '',         // Display format (kept for UI)
     is_premium: true
   });
   
@@ -303,6 +307,10 @@ export default function AdminPage() {
         setFormData({
           sport: '',
           game: '',
+          game_id: '',
+          home_team: '',
+          away_team: '',
+          commence_time: '',
           bet_type: '',
           pick: '',
           odds: '',
@@ -311,6 +319,8 @@ export default function AdminPage() {
           game_time: '',
           is_premium: true
         });
+        setSelectedGame(null);
+        setAvailableGames([]);
       } else {
         const error = await response.json();
         setMessage({ type: 'error', text: error.detail || 'Failed to create bet' });
@@ -325,7 +335,19 @@ export default function AdminPage() {
 
   // Fetch games when sport is selected
   const handleSportChange = async (selectedSport: string) => {
-    setFormData({...formData, sport: selectedSport, game: '', bet_type: '', pick: '', odds: '', game_time: ''});
+    setFormData({
+      ...formData,
+      sport: selectedSport,
+      game: '',
+      game_id: '',
+      home_team: '',
+      away_team: '',
+      commence_time: '',
+      bet_type: '',
+      pick: '',
+      odds: '',
+      game_time: ''
+    });
     setSelectedGame(null);
     setAvailableGames([]);
     
@@ -367,15 +389,15 @@ export default function AdminPage() {
   const handleGameSelection = (gameId: string) => {
     const game = availableGames.find(g => g.id === gameId);
     if (!game) return;
-    
+
     setSelectedGame(game);
     const gameDisplay = `${game.away_team} @ ${game.home_team}`;
-    
+
     // Format game time as: MM/DD/YYYY @H:MMPM EST
     const gameDate = new Date(game.commence_time);
     const formattedDate = gameDate.toLocaleDateString('en-US', {
       month: '2-digit',
-      day: '2-digit', 
+      day: '2-digit',
       year: 'numeric'
     });
     const formattedTime = gameDate.toLocaleTimeString('en-US', {
@@ -384,10 +406,14 @@ export default function AdminPage() {
       timeZoneName: 'short'
     });
     const gameTime = `${formattedDate} @${formattedTime}`;
-    
+
     setFormData({
-      ...formData, 
+      ...formData,
       game: gameDisplay,
+      game_id: game.id,                    // Store Odds API event ID
+      home_team: game.home_team,           // Store home team
+      away_team: game.away_team,           // Store away team
+      commence_time: game.commence_time,   // Store ISO timestamp
       game_time: gameTime,
       bet_type: '', // Reset bet type so user can select
       pick: '',

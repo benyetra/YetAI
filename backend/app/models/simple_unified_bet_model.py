@@ -135,6 +135,7 @@ class SimpleUnifiedBet(Base):
     # === BET SOURCE & CONTEXT ===
     source = Column(Enum(BetSource), nullable=False, default=BetSource.STRAIGHT)
     line_value = Column(Float)
+    yetai_bet_id = Column(String(255), nullable=True)  # Link to YetAI bet for tracking
 
     # === PARLAY SUPPORT ===
     is_parlay = Column(Boolean, default=False)

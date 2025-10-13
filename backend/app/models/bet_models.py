@@ -106,13 +106,17 @@ class YetAIBetType(str, Enum):
 
 class CreateYetAIBetRequest(BaseModel):
     sport: str
-    game: str
+    game: str  # Display string: "Away Team @ Home Team"
+    game_id: str  # Required: Odds API event ID
+    home_team: str  # Required: Home team name
+    away_team: str  # Required: Away team name
     bet_type: str  # e.g., "Spread", "Moneyline", "Total", "Puck Line"
     pick: str  # e.g., "Chiefs -3.5", "Over 228.5"
     odds: str  # e.g., "-110", "+150"
     confidence: int = Field(ge=50, le=100)
     reasoning: str
-    game_time: str
+    game_time: str  # Display string: "10/13/2025 @01:00 PM EDT"
+    commence_time: str  # ISO format for database
     is_premium: bool = True
     bet_category: YetAIBetType = YetAIBetType.STRAIGHT
 

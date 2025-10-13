@@ -123,6 +123,7 @@ class SimpleUnifiedBetService:
                     source=BetSource.STRAIGHT,
                     bookmaker=getattr(bet_data, "bookmaker", "fanduel"),
                     line_value=getattr(bet_data, "line_value", None),
+                    yetai_bet_id=bet_data.yetai_bet_id,  # Link to YetAI bet for tracking
                     # Add structured data from parsing
                     team_selection=parsed_selection.get(
                         "team_selection", TeamSide.NONE

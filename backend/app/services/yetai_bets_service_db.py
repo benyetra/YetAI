@@ -42,34 +42,16 @@ class YetAIBetsServiceDB:
                     f"Creating YetAI Bet with data: sport={bet_request.sport}, game={bet_request.game}, game_time='{bet_request.game_time}'"
                 )
 
-                # Parse game_time to datetime if it's provided
+                # Parse commence_time (ISO format) to datetime
                 game_commence_time = None
-                if (
-                    hasattr(bet_request, "game_time")
-                    and bet_request.game_time
-                    and bet_request.game_time != "TBD"
-                ):
+                if hasattr(bet_request, "commence_time") and bet_request.commence_time:
                     try:
-                        # Handle different formats that might come from the frontend
                         from dateutil import parser
-                        import re
 
-                        game_time_str = bet_request.game_time.strip()
-                        logger.info(f"Attempting to parse game_time: '{game_time_str}'")
-
-                        # Clean up the format - handle "@" symbol and EDT/EST
-                        if "@" in game_time_str:
-                            game_time_str = game_time_str.replace("@", "")
-
-                        # Try to parse with dateutil
-                        game_commence_time = parser.parse(game_time_str)
-                        logger.info(
-                            f"Successfully parsed game_time '{bet_request.game_time}' to datetime: {game_commence_time}"
-                        )
+                        game_commence_time = parser.isoparse(bet_request.commence_time)
+                        logger.info(f"Parsed commence_time: {game_commence_time}")
                     except Exception as e:
-                        logger.error(
-                            f"Could not parse game_time '{bet_request.game_time}': {e}"
-                        )
+                        logger.error(f"Could not parse commence_time: {e}")
                         game_commence_time = None
 
                 # Map user-friendly bet types to database enum values
@@ -106,42 +88,14 @@ class YetAIBetsServiceDB:
                 else:
                     odds_value = float(odds_value)
 
-                # Parse home and away teams from game string (format: "Away Team @ Home Team")
-                home_team = None
-                away_team = None
-                game_id = None
+                # Use provided game data directly (no parsing needed)
+                game_id = bet_request.game_id
+                home_team = bet_request.home_team
+                away_team = bet_request.away_team
 
-                if " @ " in bet_request.game:
-                    parts = bet_request.game.split(" @ ")
-                    if len(parts) == 2:
-                        away_team = parts[0].strip()
-                        home_team = parts[1].strip()
-
-                        # Try to find the game in the database by team names and sport
-                        from app.models.database_models import Game
-
-                        game = (
-                            db.query(Game)
-                            .filter(
-                                Game.home_team.ilike(f"%{home_team}%"),
-                                Game.away_team.ilike(f"%{away_team}%"),
-                                Game.sport_title.ilike(f"%{bet_request.sport}%"),
-                            )
-                            .order_by(Game.commence_time.desc())
-                            .first()
-                        )
-
-                        if game:
-                            game_id = game.id
-                            home_team = game.home_team
-                            away_team = game.away_team
-                            logger.info(
-                                f"Found game {game_id} for YetAI bet: {home_team} vs {away_team}"
-                            )
-                        else:
-                            logger.warning(
-                                f"Could not find game in DB for: {bet_request.game}"
-                            )
+                logger.info(
+                    f"Using provided game data: game_id={game_id}, {away_team} @ {home_team}"
+                )
 
                 new_bet = YetAIBet(
                     id=bet_id,
@@ -660,12 +614,8 @@ class YetAIBetsServiceDB:
     async def verify_pending_yetai_bets(self) -> Dict:
         """
         Verify all pending YetAI bets and settle completed games
-        Checks database games table first (if game_id exists), then falls back to API
+        Checks database games table for games with FINAL status
         """
-        from app.services.optimized_odds_api_service import (
-            get_optimized_odds_api_service,
-        )
-        from app.core.config import settings
         from app.models.database_models import Game, GameStatus
 
         logger.info("🎯 Starting YetAI bets verification...")
