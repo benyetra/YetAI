@@ -266,9 +266,27 @@ export default function YetAIBetsPage() {
   const visibleBets = isProUser ? todaysBets : todaysBets.slice(0, 1);
   const lockedBets = isProUser ? [] : todaysBets.slice(1);
 
-  const BetCard = ({ bet, isLocked = false }: { bet: BestBet; isLocked?: boolean }) => (
+  // Helper function to check if a game is in the past
+  const isGameInPast = (gameTimeStr: string) => {
+    try {
+      let dateStr = gameTimeStr;
+      if (dateStr.includes(' @')) {
+        dateStr = dateStr.split(' @')[0];
+      }
+      const gameDate = new Date(dateStr);
+      const now = new Date();
+      return gameDate < now;
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const BetCard = ({ bet, isLocked = false }: { bet: BestBet; isLocked?: boolean }) => {
+    const gameIsInPast = isGameInPast(bet.game_time);
+
+    return (
     <div className={`bg-white rounded-lg border-2 p-6 relative ${
-      isLocked ? 'border-gray-200 opacity-60' : 
+      isLocked ? 'border-gray-200 opacity-60' :
       bet.status === 'won' ? 'border-green-200' :
       bet.status === 'lost' ? 'border-red-200' : 'border-blue-200'
     }`}>
@@ -356,16 +374,39 @@ export default function YetAIBetsPage() {
             <p className="text-sm text-gray-700">{bet.reasoning}</p>
           </div>
 
-          {bet.result && (
-            <div className={`text-sm font-medium ${
-              bet.status === 'won' ? 'text-green-600' : 'text-red-600'
+          {/* Show result for completed bets */}
+          {bet.result && bet.status !== 'pending' && (
+            <div className={`mt-4 pt-4 border-t border-gray-200 text-center ${
+              bet.status === 'won' ? 'text-green-600' :
+              bet.status === 'lost' ? 'text-red-600' : 'text-gray-600'
             }`}>
-              Result: {bet.result}
+              <div className="flex items-center justify-center space-x-2 mb-2">
+                {bet.status === 'won' && <CheckCircle className="w-5 h-5" />}
+                {bet.status === 'lost' && <XCircle className="w-5 h-5" />}
+                <span className="font-semibold text-lg">
+                  {bet.status === 'won' ? 'Won' :
+                   bet.status === 'lost' ? 'Lost' :
+                   bet.status === 'pushed' ? 'Push' : 'Result'}
+                </span>
+              </div>
+              <div className="text-sm font-medium">
+                {bet.result}
+              </div>
             </div>
           )}
 
-          {/* Place Bet Button - Only show for pending bets and non-locked cards */}
-          {bet.status === 'pending' && (
+          {/* Show "Game in Progress" for pending bets in the past */}
+          {bet.status === 'pending' && gameIsInPast && (
+            <div className="mt-4 pt-4 border-t border-gray-200">
+              <div className="w-full bg-gray-100 text-gray-600 py-2 px-4 rounded-lg flex items-center justify-center space-x-2">
+                <Clock className="w-4 h-4" />
+                <span>Game in Progress / Awaiting Result</span>
+              </div>
+            </div>
+          )}
+
+          {/* Place Bet Button - Only show for pending bets that haven't started yet */}
+          {bet.status === 'pending' && !gameIsInPast && (
             <div className="mt-4 pt-4 border-t border-gray-200">
               <button
                 onClick={() => handlePlaceBet(bet)}
@@ -379,7 +420,8 @@ export default function YetAIBetsPage() {
         </>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <Layout requiresAuth>
