@@ -504,7 +504,9 @@ class YetAIBetsServiceDB:
         Verify all pending YetAI bets and settle completed games
         Similar to unified bet verification but for yetai_bets table
         """
-        from app.services.optimized_odds_api_service import get_optimized_odds_api_service
+        from app.services.optimized_odds_api_service import (
+            get_optimized_odds_api_service,
+        )
         from app.core.config import settings
 
         logger.info("🎯 Starting YetAI bets verification...")
@@ -512,9 +514,7 @@ class YetAIBetsServiceDB:
 
         try:
             # Get all pending YetAI bets
-            pending_bets = db.query(YetAIBet).filter(
-                YetAIBet.status == "pending"
-            ).all()
+            pending_bets = db.query(YetAIBet).filter(YetAIBet.status == "pending").all()
 
             logger.info(f"Found {len(pending_bets)} pending YetAI bets to verify")
 
@@ -547,14 +547,18 @@ class YetAIBetsServiceDB:
                     }
                     normalized_sport = sport_mapping.get(sport.lower(), sport.lower())
 
-                    logger.info(f"Verifying {len(sport_bets)} {sport.upper()} YetAI bets...")
+                    logger.info(
+                        f"Verifying {len(sport_bets)} {sport.upper()} YetAI bets..."
+                    )
 
                     # Get completed games for this sport
                     completed_games = await odds_service.get_scores_optimized(
                         normalized_sport, include_completed=True
                     )
 
-                    logger.info(f"Retrieved {len(completed_games)} game results for {sport}")
+                    logger.info(
+                        f"Retrieved {len(completed_games)} game results for {sport}"
+                    )
 
                     # Verify each bet
                     for bet in sport_bets:
@@ -565,7 +569,9 @@ class YetAIBetsServiceDB:
                                 continue
 
                             # Match by team names in game title
-                            if bet.home_team in game.get("home_team", "") and bet.away_team in game.get("away_team", ""):
+                            if bet.home_team in game.get(
+                                "home_team", ""
+                            ) and bet.away_team in game.get("away_team", ""):
                                 game_found = True
                                 # Settle the bet based on result
                                 # For now, mark as settled (result determination would need more logic)
@@ -574,7 +580,9 @@ class YetAIBetsServiceDB:
                                 # TODO: Add logic to determine won/lost/push based on bet_type and scores
                                 bet.result = "pending_manual_review"
                                 total_settled += 1
-                                logger.info(f"Settled YetAI bet {bet.id[:8]}: {bet.title}")
+                                logger.info(
+                                    f"Settled YetAI bet {bet.id[:8]}: {bet.title}"
+                                )
                                 break
 
                         if not game_found:
@@ -590,7 +598,7 @@ class YetAIBetsServiceDB:
             return {
                 "success": True,
                 "verified": len(pending_bets),
-                "settled": total_settled
+                "settled": total_settled,
             }
 
         except Exception as e:
