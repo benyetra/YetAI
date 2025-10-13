@@ -304,23 +304,18 @@ class BettingAnalyticsService:
         try:
             cutoff_date = datetime.now() - timedelta(days=30)
 
-            monthly_bets = (
+            # Get only non-parlay-leg bets (straight bets and parlay parents)
+            all_monthly_bets = (
                 db.query(SimpleUnifiedBet)
                 .filter(
                     and_(
                         SimpleUnifiedBet.user_id == user_id,
                         SimpleUnifiedBet.placed_at >= cutoff_date,
+                        SimpleUnifiedBet.parent_bet_id.is_(None),  # Exclude parlay legs
                     )
                 )
                 .all()
             )
-
-            # Get only non-parlay-leg bets (straight bets and parlay parents)
-            all_monthly_bets = [
-                bet
-                for bet in monthly_bets
-                if bet.parent_bet_id is None  # Exclude parlay legs
-            ]
             monthly_bets_count = len(all_monthly_bets)
             monthly_wagered = sum(bet.amount for bet in all_monthly_bets)
 
@@ -631,19 +626,20 @@ class BettingAnalyticsService:
             last_7_days = now - timedelta(days=7)
             previous_7_days = now - timedelta(days=14)
 
-            # Last 7 days performance
+            # Last 7 days performance (exclude parlay legs)
             recent_bets = (
                 db.query(SimpleUnifiedBet)
                 .filter(
                     and_(
                         SimpleUnifiedBet.user_id == user_id,
                         SimpleUnifiedBet.placed_at >= last_7_days,
+                        SimpleUnifiedBet.parent_bet_id.is_(None),  # Exclude parlay legs
                     )
                 )
                 .all()
             )
 
-            # Previous 7 days performance
+            # Previous 7 days performance (exclude parlay legs)
             previous_bets = (
                 db.query(SimpleUnifiedBet)
                 .filter(
@@ -651,6 +647,7 @@ class BettingAnalyticsService:
                         SimpleUnifiedBet.user_id == user_id,
                         SimpleUnifiedBet.placed_at >= previous_7_days,
                         SimpleUnifiedBet.placed_at < last_7_days,
+                        SimpleUnifiedBet.parent_bet_id.is_(None),  # Exclude parlay legs
                     )
                 )
                 .all()
