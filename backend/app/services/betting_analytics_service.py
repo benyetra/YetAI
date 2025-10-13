@@ -127,6 +127,10 @@ class BettingAnalyticsService:
                 # Calculate monthly summary (last 30 days)
                 monthly_summary = await self._calculate_monthly_summary(user_id, db)
 
+                # Calculate breakdowns by sport and bet type
+                by_sport = self._calculate_breakdown_by_sport(all_bets)
+                by_bet_type = self._calculate_breakdown_by_type(all_bets)
+
                 return {
                     "total_bets": total_bets,
                     "total_resolved_bets": total_resolved_bets,
@@ -140,6 +144,8 @@ class BettingAnalyticsService:
                     "favorite_bet_type": favorite_bet_type,
                     "current_streak": current_streak,
                     "monthly_summary": monthly_summary,
+                    "by_sport": by_sport,
+                    "by_bet_type": by_bet_type,
                 }
 
             finally:
@@ -192,6 +198,76 @@ class BettingAnalyticsService:
 
         streak_type = "win" if current_status == "won" else "loss"
         return {"type": streak_type, "count": streak_count}
+
+    def _calculate_breakdown_by_sport(self, bets: List) -> Dict[str, Any]:
+        """Calculate win/loss breakdown by sport"""
+        breakdown = {}
+
+        for bet in bets:
+            sport = self._format_sport_name(bet.sport or "Unknown")
+
+            if sport not in breakdown:
+                breakdown[sport] = {
+                    "total": 0,
+                    "won": 0,
+                    "lost": 0,
+                    "pending": 0,
+                    "win_rate": 0,
+                }
+
+            breakdown[sport]["total"] += 1
+
+            if bet.status == "won":
+                breakdown[sport]["won"] += 1
+            elif bet.status == "lost":
+                breakdown[sport]["lost"] += 1
+            elif bet.status in ["pending", None]:
+                breakdown[sport]["pending"] += 1
+
+        # Calculate win rates
+        for sport in breakdown:
+            resolved = breakdown[sport]["won"] + breakdown[sport]["lost"]
+            if resolved > 0:
+                breakdown[sport]["win_rate"] = round(
+                    breakdown[sport]["won"] / resolved * 100, 1
+                )
+
+        return breakdown
+
+    def _calculate_breakdown_by_type(self, bets: List) -> Dict[str, Any]:
+        """Calculate win/loss breakdown by bet type"""
+        breakdown = {}
+
+        for bet in bets:
+            bet_type = self._format_bet_type_name(str(bet.bet_type or "Unknown"))
+
+            if bet_type not in breakdown:
+                breakdown[bet_type] = {
+                    "total": 0,
+                    "won": 0,
+                    "lost": 0,
+                    "pending": 0,
+                    "win_rate": 0,
+                }
+
+            breakdown[bet_type]["total"] += 1
+
+            if bet.status == "won":
+                breakdown[bet_type]["won"] += 1
+            elif bet.status == "lost":
+                breakdown[bet_type]["lost"] += 1
+            elif bet.status in ["pending", None]:
+                breakdown[bet_type]["pending"] += 1
+
+        # Calculate win rates
+        for bet_type in breakdown:
+            resolved = breakdown[bet_type]["won"] + breakdown[bet_type]["lost"]
+            if resolved > 0:
+                breakdown[bet_type]["win_rate"] = round(
+                    breakdown[bet_type]["won"] / resolved * 100, 1
+                )
+
+        return breakdown
 
     async def _calculate_monthly_summary(
         self, user_id: int, db: Session
