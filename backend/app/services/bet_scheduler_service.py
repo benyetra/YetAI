@@ -19,6 +19,7 @@ import json
 from app.services.unified_bet_verification_service import (
     unified_bet_verification_service,
 )
+from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
 logger = logging.getLogger(__name__)
 
@@ -156,15 +157,25 @@ class BetSchedulerService:
                     await unified_bet_verification_service.verify_all_pending_bets()
                 )
 
+                # Also run YetAI bets verification
+                yetai_service = YetAIBetsServiceDB()
+                yetai_result = await yetai_service.verify_pending_yetai_bets()
+
                 if result.get("success", False):
                     # Success
                     self.stats.successful_runs += 1
                     self.stats.last_success_time = datetime.utcnow()
                     self.stats.last_error = None
 
-                    # Update cumulative stats
+                    # Update cumulative stats (including YetAI bets)
                     self.stats.total_bets_verified += result.get("verified", 0)
                     self.stats.total_bets_settled += result.get("settled", 0)
+
+                    if yetai_result.get("success", False):
+                        self.stats.total_bets_verified += yetai_result.get(
+                            "verified", 0
+                        )
+                        self.stats.total_bets_settled += yetai_result.get("settled", 0)
 
                     logger.info(
                         f"Verification run completed successfully: {result.get('message', 'No message')}"
@@ -173,10 +184,31 @@ class BetSchedulerService:
                     # Log detailed results
                     if result.get("verified", 0) > 0:
                         logger.info(
-                            f"Verification stats: {result.get('verified')} verified, {result.get('settled')} settled, {result.get('games_checked')} games checked"
+                            f"Unified bets verification stats: {result.get('verified')} verified, {result.get('settled')} settled, {result.get('games_checked')} games checked"
                         )
 
-                    return result
+                    if yetai_result.get("verified", 0) > 0:
+                        logger.info(
+                            f"YetAI bets verification stats: {yetai_result.get('verified')} verified, {yetai_result.get('settled')} settled"
+                        )
+
+                    # Return combined results
+                    return {
+                        "success": True,
+                        "verified": result.get("verified", 0)
+                        + yetai_result.get("verified", 0),
+                        "settled": result.get("settled", 0)
+                        + yetai_result.get("settled", 0),
+                        "games_checked": result.get("games_checked", 0),
+                        "unified_bets": {
+                            "verified": result.get("verified", 0),
+                            "settled": result.get("settled", 0),
+                        },
+                        "yetai_bets": {
+                            "verified": yetai_result.get("verified", 0),
+                            "settled": yetai_result.get("settled", 0),
+                        },
+                    }
                 else:
                     # Service returned error
                     error_msg = result.get("error", "Unknown error")

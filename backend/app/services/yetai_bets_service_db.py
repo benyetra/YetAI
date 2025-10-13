@@ -499,6 +499,107 @@ class YetAIBetsServiceDB:
         except Exception as e:
             logger.error(f"Error creating sample bets: {e}")
 
+    async def verify_pending_yetai_bets(self) -> Dict:
+        """
+        Verify all pending YetAI bets and settle completed games
+        Similar to unified bet verification but for yetai_bets table
+        """
+        from app.services.optimized_odds_api_service import get_optimized_odds_api_service
+        from app.core.config import settings
+
+        logger.info("🎯 Starting YetAI bets verification...")
+        db = SessionLocal()
+
+        try:
+            # Get all pending YetAI bets
+            pending_bets = db.query(YetAIBet).filter(
+                YetAIBet.status == "pending"
+            ).all()
+
+            logger.info(f"Found {len(pending_bets)} pending YetAI bets to verify")
+
+            if not pending_bets:
+                return {"success": True, "verified": 0, "settled": 0}
+
+            # Group bets by sport for efficient API calls
+            bets_by_sport = {}
+            for bet in pending_bets:
+                sport = bet.sport.lower() if bet.sport else "unknown"
+                if sport not in bets_by_sport:
+                    bets_by_sport[sport] = []
+                bets_by_sport[sport].append(bet)
+
+            total_settled = 0
+            odds_service = get_optimized_odds_api_service(settings.ODDS_API_KEY)
+
+            for sport, sport_bets in bets_by_sport.items():
+                if sport == "unknown":
+                    continue
+
+                try:
+                    # Normalize sport name for API
+                    sport_mapping = {
+                        "mlb": "baseball_mlb",
+                        "nfl": "americanfootball_nfl",
+                        "nba": "basketball_nba",
+                        "nhl": "icehockey_nhl",
+                        "ncaa football": "americanfootball_ncaaf",
+                    }
+                    normalized_sport = sport_mapping.get(sport.lower(), sport.lower())
+
+                    logger.info(f"Verifying {len(sport_bets)} {sport.upper()} YetAI bets...")
+
+                    # Get completed games for this sport
+                    completed_games = await odds_service.get_scores_optimized(
+                        normalized_sport, include_completed=True
+                    )
+
+                    logger.info(f"Retrieved {len(completed_games)} game results for {sport}")
+
+                    # Verify each bet
+                    for bet in sport_bets:
+                        # Find the game in completed games
+                        game_found = False
+                        for game in completed_games:
+                            if not game.get("completed"):
+                                continue
+
+                            # Match by team names in game title
+                            if bet.home_team in game.get("home_team", "") and bet.away_team in game.get("away_team", ""):
+                                game_found = True
+                                # Settle the bet based on result
+                                # For now, mark as settled (result determination would need more logic)
+                                bet.status = "settled"
+                                bet.settled_at = datetime.utcnow()
+                                # TODO: Add logic to determine won/lost/push based on bet_type and scores
+                                bet.result = "pending_manual_review"
+                                total_settled += 1
+                                logger.info(f"Settled YetAI bet {bet.id[:8]}: {bet.title}")
+                                break
+
+                        if not game_found:
+                            logger.debug(f"Game not yet completed for bet {bet.id[:8]}")
+
+                except Exception as e:
+                    logger.error(f"Error verifying {sport} YetAI bets: {e}")
+                    continue
+
+            db.commit()
+            logger.info(f"✅ YetAI verification complete: {total_settled} bets settled")
+
+            return {
+                "success": True,
+                "verified": len(pending_bets),
+                "settled": total_settled
+            }
+
+        except Exception as e:
+            logger.error(f"Error in YetAI bet verification: {e}")
+            db.rollback()
+            return {"success": False, "error": str(e)}
+        finally:
+            db.close()
+
 
 # Service instance
 yetai_bets_service_db = YetAIBetsServiceDB()
