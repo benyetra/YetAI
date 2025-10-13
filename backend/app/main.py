@@ -5845,15 +5845,11 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
             if friendly_sport not in games_by_sport:
                 continue
 
-            # Extract FanDuel odds from odds_data JSON (only FanDuel to reduce response size)
-            fanduel_odds = []
+            # Extract bookmakers odds from odds_data JSON
+            bookmakers_odds = []
             if game.odds_data and isinstance(game.odds_data, list):
-                for bookmaker in game.odds_data:
-                    if (
-                        isinstance(bookmaker, dict)
-                        and bookmaker.get("key") == "fanduel"
-                    ):
-                        fanduel_odds.append(bookmaker)
+                # Return all bookmakers (FanDuel, DraftKings, etc.)
+                bookmakers_odds = game.odds_data
 
             # Ensure UTC timezone is included in ISO format
             commence_time_iso = game.commence_time.isoformat()
@@ -5874,7 +5870,7 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
                 "home_team": game.home_team,
                 "away_team": game.away_team,
                 "commence_time": commence_time_iso,  # ISO format with timezone
-                "bookmakers": fanduel_odds,  # Only include FanDuel
+                "bookmakers": bookmakers_odds,  # Include all bookmakers
                 "broadcast": game.broadcast_info,  # Include broadcast info
             }
 
