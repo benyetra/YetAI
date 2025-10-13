@@ -481,25 +481,29 @@ class LiveBettingServiceDB:
                             logger.info(f"  Commence time: {game.commence_time}")
 
                             try:
-                                # Try time-based check first
-                                market = await self._create_simple_live_market(game)
-
-                                # If we have live scores, update the market with actual scores
-                                if market and game.id in live_scores:
+                                # ONLY create markets for games that are actually live (in live_scores)
+                                if game.id in live_scores:
                                     score_data = live_scores[game.id]
                                     logger.info(
-                                        f"  Updating with live scores: {score_data['home_score']}-{score_data['away_score']}"
+                                        f"  Game is LIVE with scores: {score_data['home_score']}-{score_data['away_score']}"
                                     )
-                                    market.home_score = score_data["home_score"]
-                                    market.away_score = score_data["away_score"]
 
-                                if market:
-                                    logger.info(
-                                        f"✓ Live market created: {market.home_team} vs {market.away_team} ({market.home_score}-{market.away_score})"
-                                    )
-                                    markets.append(market)
+                                    # Create the live market
+                                    market = await self._create_simple_live_market(game)
+
+                                    # Update with actual live scores
+                                    if market:
+                                        market.home_score = score_data["home_score"]
+                                        market.away_score = score_data["away_score"]
+
+                                        logger.info(
+                                            f"✓ Live market created: {market.home_team} vs {market.away_team} ({market.home_score}-{market.away_score})"
+                                        )
+                                        markets.append(market)
                                 else:
-                                    logger.info(f"✗ Game not currently live")
+                                    logger.info(
+                                        f"✗ Game not in live scores (upcoming or finished)"
+                                    )
                             except Exception as e:
                                 logger.error(f"✗ Error creating market: {e}")
                                 import traceback
@@ -663,45 +667,15 @@ class LiveBettingServiceDB:
 
     # Include all the helper methods from the original service
     async def _create_simple_live_market(self, game) -> Optional[LiveBettingMarket]:
-        """Create live betting market from real game data - ONLY for actually live games"""
+        """Create live betting market from real game data
+
+        Note: This method is only called for games that are confirmed live
+        (already checked via live_scores API), so no need for time-based filtering
+        """
         try:
             logger.info(
-                f"Checking game for live status: {game.home_team} vs {game.away_team}"
+                f"Creating live market for: {game.home_team} vs {game.away_team}"
             )
-
-            # Check if this game is actually live (started but not finished)
-            from datetime import datetime, timezone
-
-            now = datetime.now(timezone.utc)
-
-            if game.commence_time:
-                commence_time = datetime.fromisoformat(
-                    str(game.commence_time).replace("Z", "+00:00")
-                )
-                # Only consider games that started in the last 4 hours as potentially live
-                hours_since_start = (now - commence_time).total_seconds() / 3600
-
-                if hours_since_start < 0:
-                    # Game hasn't started yet - it's upcoming, not live
-                    logger.info(
-                        f"Game {game.home_team} vs {game.away_team} is upcoming (starts in {-hours_since_start:.1f} hours)"
-                    )
-                    return None
-                elif hours_since_start > 4:
-                    # Game started more than 4 hours ago - likely finished
-                    logger.info(
-                        f"Game {game.home_team} vs {game.away_team} started {hours_since_start:.1f} hours ago (likely finished)"
-                    )
-                    return None
-                else:
-                    logger.info(
-                        f"Game {game.home_team} vs {game.away_team} is potentially live (started {hours_since_start:.1f} hours ago)"
-                    )
-            else:
-                logger.info(
-                    f"Game {game.home_team} vs {game.away_team} has no commence_time - skipping"
-                )
-                return None
 
             # Extract odds from the game data
             moneyline_odds, moneyline_bookmaker = self._extract_odds_from_game(
