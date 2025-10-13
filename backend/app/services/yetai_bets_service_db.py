@@ -9,7 +9,7 @@ import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.database import SessionLocal
-from app.models.database_models import User, YetAIBet, SubscriptionTier
+from app.models.database_models import User, YetAIBet, SubscriptionTier, BetType
 from app.models.bet_models import (
     CreateYetAIBetRequest,
     CreateParlayBetRequest,
