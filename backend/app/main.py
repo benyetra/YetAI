@@ -2194,6 +2194,55 @@ async def create_yetai_bet(
         raise HTTPException(status_code=500, detail="Failed to create bet")
 
 
+@app.post("/api/admin/sync-games")
+async def sync_games(admin_user: dict = Depends(require_admin)):
+    """Sync today's games from Odds API and ESPN (Admin only)"""
+    try:
+        import sys
+        import subprocess
+        from pathlib import Path
+
+        script_path = Path(__file__).parent.parent / "scripts" / "fetch_todays_games.py"
+
+        logger.info(f"Admin {admin_user['id']} triggered game sync")
+
+        # Run the sync script
+        result = subprocess.run(
+            [sys.executable, str(script_path)],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        if result.returncode == 0:
+            # Parse output for summary
+            output_lines = result.stdout.split("\n")
+            summary = {
+                "status": "success",
+                "message": "Games synced successfully",
+                "details": [
+                    line
+                    for line in output_lines
+                    if "Total" in line or "Sync Results" in line or "✅" in line
+                ],
+            }
+            logger.info(f"Game sync completed successfully")
+            return summary
+        else:
+            logger.error(f"Game sync failed: {result.stderr}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Sync failed: {result.stderr[:200]}",
+            )
+
+    except subprocess.TimeoutExpired:
+        logger.error("Game sync timed out after 120 seconds")
+        raise HTTPException(status_code=500, detail="Sync timed out")
+    except Exception as e:
+        logger.error(f"Error syncing games: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to sync games: {str(e)}")
+
+
 @app.options("/api/admin/users")
 async def options_admin_get_users():
     """Handle CORS preflight for admin get users"""
