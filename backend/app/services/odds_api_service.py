@@ -404,20 +404,26 @@ class OddsAPIService:
             raise
 
     async def get_scores(
-        self, sport: str, days_from: int = 3, date_format: str = "iso"
+        self, sport: str, days_from: int = None, date_format: str = "iso"
     ) -> List[Score]:
         """
-        Get scores for completed and live games
+        Get scores for live and/or completed games
 
         Args:
             sport: Sport key (e.g., 'americanfootball_nfl')
-            days_from: Number of days in the past to return scores from (1-3)
+            days_from: Number of days in the past to return scores from (1-3).
+                      If None, only returns live games (costs 1 credit).
+                      If specified, returns completed + live games (costs 2 credits).
             date_format: Date format (iso, unix)
 
         Returns:
             List of Score objects
         """
-        params = {"daysFrom": days_from, "dateFormat": date_format}
+        params = {"dateFormat": date_format}
+
+        # Only include daysFrom if specified (omitting it gets only live games - cheaper!)
+        if days_from is not None:
+            params["daysFrom"] = days_from
 
         try:
             data = await self._make_request(f"/sports/{sport}/scores", params)

@@ -51,10 +51,11 @@ class LiveBettingServiceDB:
         self.game_details_cache: Dict[str, tuple] = {}
 
     async def get_real_live_scores(self, sport_key: str) -> Dict[str, Any]:
-        """Fetch real live scores from The Odds API"""
+        """Fetch real live scores from The Odds API (only live games, costs 1 credit)"""
         try:
             async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
-                scores = await odds_service.get_scores(sport_key, days_from=1)
+                # Don't pass days_from to get ONLY live games (cheaper - 1 credit vs 2)
+                scores = await odds_service.get_scores(sport_key)
 
                 # Convert scores to a game_id -> score mapping
                 live_scores = {}
