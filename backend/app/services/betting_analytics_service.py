@@ -780,8 +780,32 @@ class BettingAnalyticsService:
             "basketball_ncaab": "College Basketball",
             "americanfootball_ncaaf": "College Football",
             "basketball_wnba": "WNBA",
+            # Common variations (case-insensitive)
+            "nfl": "NFL",
+            "nba": "NBA",
+            "mlb": "MLB",
+            "nhl": "NHL",
         }
-        return sport_mapping.get(sport_key, sport_key.replace("_", " ").title())
+        # Try exact match first, then lowercase match
+        result = sport_mapping.get(sport_key)
+        if result:
+            return result
+
+        result = sport_mapping.get(sport_key.lower())
+        if result:
+            return result
+
+        # Fallback: title case but keep known acronyms uppercase
+        formatted = sport_key.replace("_", " ").title()
+        # Fix common acronyms that should be uppercase
+        formatted = formatted.replace("Nfl", "NFL")
+        formatted = formatted.replace("Nba", "NBA")
+        formatted = formatted.replace("Mlb", "MLB")
+        formatted = formatted.replace("Nhl", "NHL")
+        formatted = formatted.replace("Ncaa", "NCAA")
+        formatted = formatted.replace("Epl", "EPL")
+        formatted = formatted.replace("Wnba", "WNBA")
+        return formatted
 
     def _format_bet_type_name(self, bet_type: str) -> str:
         """Format bet type to readable name"""
