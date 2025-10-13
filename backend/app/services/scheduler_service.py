@@ -229,7 +229,7 @@ class SchedulerService:
         updated_count = 0
 
         async with OddsAPIService(settings.ODDS_API_KEY) as service:
-            for sport in popular_sports:
+            for i, sport in enumerate(popular_sports):
                 try:
                     # Get odds for this sport
                     games = await service.get_odds(sport.value)
@@ -282,6 +282,10 @@ class SchedulerService:
                 except Exception as e:
                     logger.error(f"Failed to update odds for {sport.value}: {e}")
                     continue
+
+                # Add delay between API calls to avoid rate limiting (except after last sport)
+                if i < len(popular_sports) - 1:
+                    await asyncio.sleep(1.5)  # 1.5 second delay between sports
 
         logger.info(
             f"Completed popular sports odds update: {updated_count} sports updated"
@@ -415,7 +419,7 @@ class SchedulerService:
         updated_count = 0
 
         async with OddsAPIService(settings.ODDS_API_KEY) as service:
-            for sport in sports_to_check:
+            for i, sport in enumerate(sports_to_check):
                 try:
                     scores = await service.get_scores(sport.value, days_from=1)
 
@@ -461,6 +465,10 @@ class SchedulerService:
                 except Exception as e:
                     logger.error(f"Failed to update scores for {sport.value}: {e}")
                     continue
+
+                # Add delay between API calls to avoid rate limiting (except after last sport)
+                if i < len(sports_to_check) - 1:
+                    await asyncio.sleep(1.5)  # 1.5 second delay between sports
 
         logger.info(f"Completed scores update: {updated_count} sports updated")
 

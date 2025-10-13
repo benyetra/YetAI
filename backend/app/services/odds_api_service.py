@@ -640,7 +640,7 @@ async def get_popular_sports_odds() -> List[Game]:
     failed_sports = []
 
     async with OddsAPIService(settings.ODDS_API_KEY) as service:
-        for sport in allowed_sports:
+        for i, sport in enumerate(allowed_sports):
             try:
                 sport_key = sport.value if hasattr(sport, "value") else sport
                 logger.info(f"Fetching odds for {sport_key}")
@@ -658,6 +658,10 @@ async def get_popular_sports_odds() -> List[Game]:
                 failed_sports.append(f"{sport_key}: {str(e)}")
                 logger.error(f"Failed to get odds for {sport_key}: {e}")
                 continue
+
+            # Add delay between API calls to avoid rate limiting (except after last sport)
+            if i < len(allowed_sports) - 1:
+                await asyncio.sleep(1.5)  # 1.5 second delay between sports
 
     logger.info(
         f"Popular odds fetch completed. Success: {successful_sports}, Failed: {failed_sports}"
@@ -702,7 +706,7 @@ async def get_live_games() -> List[Game]:
     live_games = []
 
     async with OddsAPIService(settings.ODDS_API_KEY) as service:
-        for sport in sports_to_check:
+        for i, sport in enumerate(sports_to_check):
             try:
                 sport_key = sport.value if hasattr(sport, "value") else sport
                 games = await service.get_odds(
@@ -715,5 +719,9 @@ async def get_live_games() -> List[Game]:
                 sport_key = sport.value if hasattr(sport, "value") else sport
                 logger.error(f"Failed to get live games for {sport_key}: {e}")
                 continue
+
+            # Add delay between API calls to avoid rate limiting (except after last sport)
+            if i < len(sports_to_check) - 1:
+                await asyncio.sleep(1.5)  # 1.5 second delay between sports
 
     return live_games
