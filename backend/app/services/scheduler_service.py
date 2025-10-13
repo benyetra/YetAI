@@ -284,8 +284,9 @@ class SchedulerService:
                     continue
 
                 # Add delay between API calls to avoid rate limiting (except after last sport)
+                # Use longer delay for scheduled background tasks
                 if i < len(popular_sports) - 1:
-                    await asyncio.sleep(1.5)  # 1.5 second delay between sports
+                    await asyncio.sleep(15)  # 15 second delay between sports
 
         logger.info(
             f"Completed popular sports odds update: {updated_count} sports updated"
@@ -467,8 +468,9 @@ class SchedulerService:
                     continue
 
                 # Add delay between API calls to avoid rate limiting (except after last sport)
+                # Use longer delay for scheduled background tasks
                 if i < len(sports_to_check) - 1:
-                    await asyncio.sleep(1.5)  # 1.5 second delay between sports
+                    await asyncio.sleep(15)  # 15 second delay between sports
 
         logger.info(f"Completed scores update: {updated_count} sports updated")
 

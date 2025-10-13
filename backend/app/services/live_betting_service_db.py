@@ -433,7 +433,7 @@ class LiveBettingServiceDB:
                         SportKey.BASEBALL_MLB,
                     ]
 
-                for sport_key in sports_to_check:
+                for idx, sport_key in enumerate(sports_to_check):
                     try:
                         # Fetch odds for this sport
                         logger.info(f"Fetching odds for sport: {sport_key.value}")
@@ -515,6 +515,10 @@ class LiveBettingServiceDB:
                     except Exception as e:
                         logger.error(f"Error fetching odds for {sport_key}: {e}")
                         continue
+
+                    # Add delay between sports to avoid rate limiting (except after last sport)
+                    if idx < len(sports_to_check) - 1:
+                        await asyncio.sleep(1.5)  # 1.5 second delay between sports
 
         except Exception as e:
             logger.error(f"Error in main try block: {e}")
