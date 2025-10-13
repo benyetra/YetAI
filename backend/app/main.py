@@ -5861,7 +5861,9 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
                 # Add UTC timezone if missing
                 from datetime import timezone as tz
 
-                commence_time_iso = game.commence_time.replace(tzinfo=tz.utc).isoformat()
+                commence_time_iso = game.commence_time.replace(
+                    tzinfo=tz.utc
+                ).isoformat()
 
             # Create game dict with all necessary fields
             game_dict = {
