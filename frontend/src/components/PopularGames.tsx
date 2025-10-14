@@ -10,7 +10,8 @@ import {
   Activity,
   Star,
   Users,
-  Calendar
+  Calendar,
+  User
 } from 'lucide-react';
 import { sportsAPI } from '../lib/api';
 import {
@@ -20,6 +21,8 @@ import {
   formatTimeFromNow,
   formatFriendlyDate
 } from '../lib/formatting';
+import PlayerPropsCard from './PlayerPropsCard';
+import PlayerPropBetModal from './PlayerPropBetModal';
 
 interface BroadcastInfo {
   networks?: string[];  // Array of network names (new format from ESPN API)
@@ -73,6 +76,10 @@ export function PopularGames({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [selectedGameForProps, setSelectedGameForProps] = useState<PopularGame | null>(null);
+  const [showPropsModal, setShowPropsModal] = useState(false);
+  const [selectedProp, setSelectedProp] = useState<any>(null);
+  const [showPropBetModal, setShowPropBetModal] = useState(false);
 
   const fetchPopularGames = useCallback(async (showLoader: boolean = true) => {
     try {
@@ -231,14 +238,30 @@ export function PopularGames({
           )}
         </div>
 
-        {onPlaceBet && (
-          <button
-            onClick={() => onPlaceBet(game)}
-            className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
-          >
-            View Odds
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {onPlaceBet && (
+            <button
+              onClick={() => onPlaceBet(game)}
+              className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
+            >
+              View Odds
+            </button>
+          )}
+
+          {/* Player Props Button - only for supported sports */}
+          {['americanfootball_nfl', 'basketball_nba', 'icehockey_nhl', 'baseball_mlb'].includes(game.sport_key) && (
+            <button
+              onClick={() => {
+                setSelectedGameForProps(game);
+                setShowPropsModal(true);
+              }}
+              className="text-xs bg-purple-600 text-white px-3 py-1 rounded hover:bg-purple-700 transition-colors flex items-center gap-1"
+            >
+              <User className="w-3 h-3" />
+              Props
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -362,6 +385,63 @@ export function PopularGames({
           {gamesData.message}
         </div>
       )}
+
+      {/* Player Props Modal */}
+      {showPropsModal && selectedGameForProps && (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center p-4 z-50">
+          <div className="bg-gray-900 rounded-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="p-6 border-b border-gray-700 flex items-center justify-between bg-gradient-to-r from-purple-900/50 to-blue-900/50">
+              <div>
+                <h2 className="text-2xl font-bold text-white flex items-center space-x-2">
+                  <User className="w-6 h-6 text-purple-400" />
+                  <span>Player Props</span>
+                </h2>
+                <p className="text-sm text-gray-400 mt-1">
+                  {selectedGameForProps.away_team} @ {selectedGameForProps.home_team}
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowPropsModal(false);
+                  setSelectedGameForProps(null);
+                }}
+                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <span className="text-gray-400 text-2xl">×</span>
+              </button>
+            </div>
+
+            {/* Player Props Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
+              <PlayerPropsCard
+                sportKey={selectedGameForProps.sport_key}
+                eventId={selectedGameForProps.id}
+                gameInfo={{
+                  home_team: selectedGameForProps.home_team,
+                  away_team: selectedGameForProps.away_team,
+                  commence_time: selectedGameForProps.commence_time
+                }}
+                onPlaceBet={(prop) => {
+                  setSelectedProp(prop);
+                  setShowPropBetModal(true);
+                  setShowPropsModal(false);
+                }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Player Prop Bet Modal */}
+      <PlayerPropBetModal
+        isOpen={showPropBetModal}
+        onClose={() => {
+          setShowPropBetModal(false);
+          setSelectedProp(null);
+        }}
+        propBet={selectedProp}
+      />
     </div>
   );
 }
