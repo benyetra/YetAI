@@ -209,80 +209,45 @@ class GamesSyncService:
 
         logger.info(f"Found {len(games)} games to check for broadcast info")
 
-        # ESPN API integration will be added here
-        # For now, we'll mark games as nationally televised based on simple heuristics
-        # TODO: Integrate with ESPN API to get real broadcast data
+        # Use ESPN API to get real broadcast data
+        from app.services.espn_api_service import ESPNAPIService
+
+        espn_service = ESPNAPIService()
+        updated_count = 0
 
         for game in games:
-            # Placeholder logic - will be replaced with ESPN API calls
-            # Mark prime time NFL games as nationally televised
-            if game.sport_key == "americanfootball_nfl":
-                game_time_et = game.commence_time.astimezone(eastern)
-                hour = game_time_et.hour
+            try:
+                # Query ESPN API for broadcast info
+                broadcast_data = espn_service.extract_broadcast_info(
+                    home_team=game.home_team,
+                    away_team=game.away_team,
+                    commence_time=game.commence_time,
+                    sport_key=game.sport_key,
+                )
 
-                # Thursday Night Football (typically 8:15 PM ET)
-                is_tnf = game_time_et.weekday() == 3 and 20 <= hour <= 21
+                if broadcast_data and broadcast_data.get("is_national"):
+                    # Get primary network (first one in the list)
+                    networks = broadcast_data.get("networks", [])
+                    if networks:
+                        primary_network = networks[0]  # Use first network
+                        game.is_nationally_televised = True
+                        game.broadcast_info = {
+                            "network": primary_network,
+                            "is_national": True,
+                            "updated_at": datetime.now(timezone.utc).isoformat(),
+                        }
+                        updated_count += 1
+                        logger.info(
+                            f"Updated broadcast info for {game.away_team} @ {game.home_team}: {primary_network}"
+                        )
 
-                # Sunday Night Football (typically 8:20 PM ET)
-                is_snf = game_time_et.weekday() == 6 and 20 <= hour <= 21
+            except Exception as e:
+                logger.warning(
+                    f"Failed to get ESPN broadcast info for {game.away_team} @ {game.home_team}: {e}"
+                )
+                continue
 
-                # Monday Night Football (typically 8:15 PM ET)
-                is_mnf = game_time_et.weekday() == 0 and 20 <= hour <= 21
-
-                if is_tnf or is_snf or is_mnf:
-                    game.is_nationally_televised = True
-                    game.broadcast_info = {
-                        "network": (
-                            "NBC" if is_snf else "ESPN" if is_mnf else "Prime Video"
-                        ),
-                        "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
-
-            # Mark MLB playoff games as nationally televised
-            elif game.sport_key == "baseball_mlb":
-                # During October (playoff season), mark games as national
-                if game.commence_time.month == 10:
-                    game.is_nationally_televised = True
-                    # Determine network based on day of week for playoffs
-                    # TBS typically has early playoff games
-                    game.broadcast_info = {
-                        "network": "TBS",
-                        "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
-
-            # Mark NBA nationally televised games (placeholder)
-            elif game.sport_key == "basketball_nba":
-                game_time_et = game.commence_time.astimezone(eastern)
-                # Assume games starting 7-10 PM ET might be national
-                if 19 <= game_time_et.hour <= 22:
-                    game.is_nationally_televised = True
-                    # Determine network based on day of week
-                    # TNT typically has Tue/Thu, ESPN has Wed/Fri
-                    weekday = game_time_et.weekday()
-                    network = "TNT" if weekday in [1, 3] else "ESPN"  # Tue=1, Thu=3
-                    game.broadcast_info = {
-                        "network": network,
-                        "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
-
-            # Mark NHL nationally televised games
-            elif game.sport_key == "icehockey_nhl":
-                game_time_et = game.commence_time.astimezone(eastern)
-                # NHL games on ESPN/TNT are typically 7-10 PM ET
-                if 19 <= game_time_et.hour <= 22:
-                    game.is_nationally_televised = True
-                    # Determine network based on day of week
-                    # ESPN typically has Tue, TNT has Wed
-                    weekday = game_time_et.weekday()
-                    network = "ESPN" if weekday == 1 else "TNT"  # Tue=1
-                    game.broadcast_info = {
-                        "network": network,
-                        "is_national": True,
-                        "updated_at": datetime.now(timezone.utc).isoformat(),
-                    }
+        logger.info(f"Updated broadcast info for {updated_count} games from ESPN API")
 
         self.db.commit()
         logger.info("Broadcast info update completed")
