@@ -177,39 +177,55 @@ class PlayerPropsService:
                 continue
 
             for market in bookmaker.markets:
-                market_key = market["key"]
+                try:
+                    market_key = (
+                        market.get("key") if isinstance(market, dict) else market["key"]
+                    )
 
-                # Initialize market if not exists
-                if market_key not in markets_dict:
-                    markets_dict[market_key] = {
-                        "market_key": market_key,
-                        "last_update": bookmaker.last_update.isoformat(),
-                        "players": {},
-                    }
+                    # Initialize market if not exists
+                    if market_key not in markets_dict:
+                        # Safely get last_update - handle if it's already a string or datetime
+                        last_update = bookmaker.last_update
+                        if isinstance(last_update, str):
+                            last_update_str = last_update
+                        else:
+                            last_update_str = last_update.isoformat()
 
-                # Group outcomes by player (description field contains player name)
-                for outcome in market.get("outcomes", []):
-                    player_name = outcome.get("description", "Unknown")
-                    over_under = outcome.get("name", "")  # "Over" or "Under"
-                    price = outcome.get("price", 0)  # American odds
-                    point = outcome.get("point")  # The line value
-
-                    # Initialize player if not exists
-                    if player_name not in markets_dict[market_key]["players"]:
-                        markets_dict[market_key]["players"][player_name] = {
-                            "player_name": player_name,
-                            "line": point,
-                            "over": None,
-                            "under": None,
+                        markets_dict[market_key] = {
+                            "market_key": market_key,
+                            "last_update": last_update_str,
+                            "players": {},
                         }
 
-                    # Add over/under odds
-                    if over_under == "Over":
-                        markets_dict[market_key]["players"][player_name]["over"] = price
-                    elif over_under == "Under":
-                        markets_dict[market_key]["players"][player_name][
-                            "under"
-                        ] = price
+                    # Group outcomes by player (description field contains player name)
+                    for outcome in market.get("outcomes", []):
+                        player_name = outcome.get("description", "Unknown")
+                        over_under = outcome.get("name", "")  # "Over" or "Under"
+                        price = outcome.get("price", 0)  # American odds
+                        point = outcome.get("point")  # The line value
+
+                        # Initialize player if not exists
+                        if player_name not in markets_dict[market_key]["players"]:
+                            markets_dict[market_key]["players"][player_name] = {
+                                "player_name": player_name,
+                                "line": point,
+                                "over": None,
+                                "under": None,
+                            }
+
+                        # Add over/under odds
+                        if over_under == "Over":
+                            markets_dict[market_key]["players"][player_name][
+                                "over"
+                            ] = price
+                        elif over_under == "Under":
+                            markets_dict[market_key]["players"][player_name][
+                                "under"
+                            ] = price
+
+                except Exception as e:
+                    logger.error(f"Error processing market {market}: {e}")
+                    continue
 
         # Convert players dict to list
         for market_key in markets_dict:
