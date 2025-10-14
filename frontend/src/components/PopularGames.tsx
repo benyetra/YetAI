@@ -73,6 +73,7 @@ export function PopularGames({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+  const [loadingLink, setLoadingLink] = useState<string | null>(null);
 
   const fetchPopularGames = useCallback(async (showLoader: boolean = true) => {
     try {
@@ -110,6 +111,38 @@ export function PopularGames({
 
     return () => clearInterval(interval);
   }, [autoRefresh, refreshInterval, fetchPopularGames]);
+
+  const handlePlaceBet = async (game: PopularGame) => {
+    // If custom handler provided, use it
+    if (onPlaceBet) {
+      onPlaceBet(game);
+      return;
+    }
+
+    // Otherwise, generate FanDuel link
+    try {
+      setLoadingLink(game.id);
+
+      const response = await sportsAPI.getSportsbookLink({
+        sportsbook: 'fanduel',
+        sport_key: game.sport_key,
+        home_team: game.home_team,
+        away_team: game.away_team,
+        bet_type: 'h2h',
+      });
+
+      if (response.status === 'success' && response.link) {
+        // Open FanDuel in new tab
+        window.open(response.link, '_blank');
+      } else {
+        console.error('Failed to generate sportsbook link:', response);
+      }
+    } catch (error) {
+      console.error('Error opening sportsbook link:', error);
+    } finally {
+      setLoadingLink(null);
+    }
+  };
 
   const getNetworkIcon = (network: string | null) => {
     if (!network) return <Tv className="w-4 h-4" />;
@@ -199,14 +232,25 @@ export function PopularGames({
           )}
         </div>
 
-        {onPlaceBet && (
-          <button
-            onClick={() => onPlaceBet(game)}
-            className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors"
-          >
-            View Odds
-          </button>
-        )}
+        <button
+          onClick={() => handlePlaceBet(game)}
+          disabled={loadingLink === game.id}
+          className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-1"
+        >
+          {loadingLink === game.id ? (
+            <>
+              <RefreshCw className="w-3 h-3 animate-spin" />
+              <span>Opening...</span>
+            </>
+          ) : (
+            <>
+              <span>Bet on FanDuel</span>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+              </svg>
+            </>
+          )}
+        </button>
       </div>
     </div>
   );
