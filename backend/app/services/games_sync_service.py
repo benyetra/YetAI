@@ -244,8 +244,10 @@ class GamesSyncService:
                 # During October (playoff season), mark games as national
                 if game.commence_time.month == 10:
                     game.is_nationally_televised = True
+                    # Determine network based on day of week for playoffs
+                    # TBS typically has early playoff games
                     game.broadcast_info = {
-                        "network": "TBS/FOX/ESPN",
+                        "network": "TBS",
                         "is_national": True,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -256,8 +258,12 @@ class GamesSyncService:
                 # Assume games starting 7-10 PM ET might be national
                 if 19 <= game_time_et.hour <= 22:
                     game.is_nationally_televised = True
+                    # Determine network based on day of week
+                    # TNT typically has Tue/Thu, ESPN has Wed/Fri
+                    weekday = game_time_et.weekday()
+                    network = "TNT" if weekday in [1, 3] else "ESPN"  # Tue=1, Thu=3
                     game.broadcast_info = {
-                        "network": "ESPN/TNT/ABC",
+                        "network": network,
                         "is_national": True,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
@@ -268,8 +274,12 @@ class GamesSyncService:
                 # NHL games on ESPN/TNT are typically 7-10 PM ET
                 if 19 <= game_time_et.hour <= 22:
                     game.is_nationally_televised = True
+                    # Determine network based on day of week
+                    # ESPN typically has Tue, TNT has Wed
+                    weekday = game_time_et.weekday()
+                    network = "ESPN" if weekday == 1 else "TNT"  # Tue=1
                     game.broadcast_info = {
-                        "network": "ESPN/TNT/ESPN+",
+                        "network": network,
                         "is_national": True,
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
