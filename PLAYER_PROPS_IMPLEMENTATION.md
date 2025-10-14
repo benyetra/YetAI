@@ -540,6 +540,93 @@ INFO: Parlay abc123: Found 2 legs via parlay_legs JSON field
 
 ---
 
+---
+
+## Frontend Components (Implemented)
+
+### Components Created
+
+1. **PlayerPropsCard** ([PlayerPropsCard.tsx](YetAI/frontend/src/components/PlayerPropsCard.tsx))
+   - Displays player props grouped by market
+   - Expandable/collapsible markets
+   - Over/Under buttons with odds
+   - Visual selection feedback
+   - Auto-fetches props for an event
+
+2. **PlayerPropBetModal** ([PlayerPropBetModal.tsx](YetAI/frontend/src/components/PlayerPropBetModal.tsx))
+   - Dedicated modal for placing player prop bets
+   - Shows player, prop type, line, and selection
+   - Quick amount buttons ($10, $25, $50, $100, $250)
+   - Potential win calculator
+   - Bet confirmation flow
+   - Success/error handling
+
+3. **GameDetailsWithProps** ([GameDetailsWithProps.tsx](YetAI/frontend/src/components/GameDetailsWithProps.tsx))
+   - Complete example showing game lines + player props
+   - Tabbed interface (Game Lines / Player Props)
+   - Integrates both traditional bets and player props
+   - Ready-to-use template for game pages
+
+### Usage Example
+
+```tsx
+import GameDetailsWithProps from '@/components/GameDetailsWithProps';
+
+function GamePage() {
+  const game = {
+    id: 'abc123',
+    sport: 'NFL',
+    sport_key: 'americanfootball_nfl',
+    home_team: 'Kansas City Chiefs',
+    away_team: 'Buffalo Bills',
+    commence_time: '2025-01-15T18:00:00Z',
+    home_odds: -150,
+    away_odds: +130,
+    spread: -3.5,
+    total: 52.5
+  };
+
+  return <GameDetailsWithProps game={game} />;
+}
+```
+
+### Integration into Existing Components
+
+To add player props to your existing game displays:
+
+```tsx
+// In your game card/details component
+import PlayerPropsCard from '@/components/PlayerPropsCard';
+import PlayerPropBetModal from '@/components/PlayerPropBetModal';
+
+const [showPropModal, setShowPropModal] = useState(false);
+const [selectedProp, setSelectedProp] = useState(null);
+
+// Add props card
+<PlayerPropsCard
+  sportKey={game.sport_key}
+  eventId={game.id}
+  gameInfo={{
+    home_team: game.home_team,
+    away_team: game.away_team,
+    commence_time: game.commence_time
+  }}
+  onPlaceBet={(prop) => {
+    setSelectedProp(prop);
+    setShowPropModal(true);
+  }}
+/>
+
+// Add modal
+<PlayerPropBetModal
+  isOpen={showPropModal}
+  onClose={() => setShowPropModal(false)}
+  propBet={selectedProp}
+/>
+```
+
+---
+
 **Last Updated:** 2025-01-14
-**Version:** 1.0
-**Status:** ✅ Backend Complete, Frontend Pending
+**Version:** 1.1
+**Status:** ✅ Backend Complete, ✅ Frontend Complete
