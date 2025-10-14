@@ -264,6 +264,13 @@ class BetVerificationService:
                         logger.info(
                             f"Parlay {parlay.id} could not be verified (not all legs final)"
                         )
+                        # NEW: Even if parlay itself can't be verified yet, check if we should settle based on already-settled legs
+                        try:
+                            await self._check_and_settle_parent_parlay(parlay.id)
+                        except Exception as check_error:
+                            logger.error(
+                                f"Error checking parlay {parlay.id} leg status: {check_error}"
+                            )
                 except Exception as e:
                     logger.error(f"Error verifying parlay {parlay.id}: {e}")
 
@@ -305,15 +312,49 @@ class BetVerificationService:
         """Get all pending parlay bets with their legs"""
         db = SessionLocal()
         try:
-            parlays = (
+            # Query both old ParlayBet model and new SimpleUnifiedBet model for parlays
+            old_parlays = (
                 db.query(ParlayBet).filter(ParlayBet.status == BetStatus.PENDING).all()
             )
+            new_parlays = (
+                db.query(SimpleUnifiedBet)
+                .filter(
+                    SimpleUnifiedBet.is_parlay == True,
+                    SimpleUnifiedBet.status == BetStatus.PENDING,
+                )
+                .all()
+            )
 
-            # Attach legs to each parlay
-            for parlay in parlays:
+            # Attach legs to old-style parlays
+            for parlay in old_parlays:
                 parlay.legs = db.query(Bet).filter(Bet.parlay_id == parlay.id).all()
 
-            return parlays
+            # Attach legs to new-style parlays
+            for parlay in new_parlays:
+                # Try parent_bet_id first
+                legs = (
+                    db.query(SimpleUnifiedBet)
+                    .filter(SimpleUnifiedBet.parent_bet_id == parlay.id)
+                    .all()
+                )
+
+                # If no legs via parent_bet_id, try parlay_legs JSON field
+                if not legs and hasattr(parlay, "parlay_legs") and parlay.parlay_legs:
+                    leg_ids = (
+                        parlay.parlay_legs
+                        if isinstance(parlay.parlay_legs, list)
+                        else []
+                    )
+                    if leg_ids:
+                        legs = (
+                            db.query(SimpleUnifiedBet)
+                            .filter(SimpleUnifiedBet.id.in_(leg_ids))
+                            .all()
+                        )
+
+                parlay.legs = legs
+
+            return old_parlays + new_parlays
         finally:
             db.close()
 
@@ -1179,8 +1220,28 @@ class BetVerificationService:
                 .filter(SimpleUnifiedBet.parent_bet_id == parlay_id)
                 .all()
             )
+
+            # NEW: If no legs found via parent_bet_id, try using parlay_legs JSON field
+            if not legs and hasattr(parlay, "parlay_legs") and parlay.parlay_legs:
+                logger.info(
+                    f"No legs found via parent_bet_id for parlay {parlay_id}, trying parlay_legs JSON field"
+                )
+                # parlay_legs is a JSON array of bet IDs
+                leg_ids = (
+                    parlay.parlay_legs if isinstance(parlay.parlay_legs, list) else []
+                )
+                if leg_ids:
+                    legs = (
+                        db.query(SimpleUnifiedBet)
+                        .filter(SimpleUnifiedBet.id.in_(leg_ids))
+                        .all()
+                    )
+                    logger.info(f"Found {len(legs)} legs via parlay_legs JSON field")
+
             if not legs:
-                logger.error(f"No legs found for parlay {parlay_id}")
+                logger.error(
+                    f"No legs found for parlay {parlay_id} via parent_bet_id or parlay_legs"
+                )
                 return
 
             won_legs = 0
