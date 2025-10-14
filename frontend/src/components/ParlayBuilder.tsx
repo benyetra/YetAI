@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { apiClient } from '@/lib/api';
-import { X, Plus, Calculator, Trash2, AlertCircle } from 'lucide-react';
+import { X, Plus, Calculator, Trash2, AlertCircle, TrendingUp } from 'lucide-react';
 
 interface ParlayLeg {
   gameId: string;
@@ -38,6 +38,9 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
   const [error, setError] = useState<string>('');
   const [gameFilter, setGameFilter] = useState<string>('');
   const [sportFilter, setSportFilter] = useState<string>('all');
+  const [selectedGameForProps, setSelectedGameForProps] = useState<string | null>(null);
+  const [playerProps, setPlayerProps] = useState<any>(null);
+  const [loadingProps, setLoadingProps] = useState(false);
 
   // Load any player props from sessionStorage on mount
   useEffect(() => {
@@ -245,6 +248,71 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     setLegs(legs.filter((_, i) => i !== index));
   };
 
+  const fetchPlayerProps = async (game: any) => {
+    setLoadingProps(true);
+    setSelectedGameForProps(game.id);
+    try {
+      // Map sport names to API format
+      const sportMap: Record<string, string> = {
+        'NFL': 'americanfootball_nfl',
+        'NBA': 'basketball_nba',
+        'NHL': 'icehockey_nhl',
+        'MLB': 'baseball_mlb'
+      };
+
+      const sportKey = sportMap[game.sport] || game.sport;
+      const response = await apiClient.get(
+        `/api/player-props/${sportKey}/${game.id}`,
+        localStorage.getItem('auth_token')
+      );
+
+      if (response.status === 'success' && response.data) {
+        setPlayerProps({ ...response.data, gameInfo: game });
+      } else {
+        setPlayerProps(null);
+        setError('No player props available for this game');
+      }
+    } catch (err) {
+      console.error('Failed to fetch player props:', err);
+      setPlayerProps(null);
+      setError('Failed to load player props');
+    } finally {
+      setLoadingProps(false);
+    }
+  };
+
+  const addPlayerPropLeg = (prop: any, selection: 'over' | 'under') => {
+    const outcome = prop.outcomes.find((o: any) => o.name.toLowerCase() === selection);
+    if (!outcome) return;
+
+    const propGame = playerProps?.gameInfo;
+    if (!propGame) return;
+
+    const legSelection = `${prop.description} ${selection.toUpperCase()} ${prop.point} (${outcome.price})`;
+
+    const newLeg: ParlayLeg = {
+      gameId: propGame.id,
+      betType: 'prop',
+      selection: legSelection,
+      odds: outcome.price,
+      gameInfo: `${propGame.teams[0]} @ ${propGame.teams[1]}`,
+      home_team: propGame.teams[1],
+      away_team: propGame.teams[0],
+      sport: propGame.sport,
+      commence_time: propGame.gameTime,
+      player_name: prop.description.split(' - ')[0], // Extract player name
+      prop_market: prop.name,
+      prop_line: prop.point,
+      prop_selection: selection
+    };
+
+    setLegs(prevLegs => [...prevLegs, newLeg]);
+    setError('');
+    // Close props view after adding
+    setSelectedGameForProps(null);
+    setPlayerProps(null);
+  };
+
   const calculateParlayOdds = () => {
     if (legs.length === 0) return 0;
     
@@ -357,7 +425,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
         <div className="p-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {/* Available Games */}
-            <div>
+            <div className="relative">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold">Available Games</h3>
                 <span className="text-sm text-gray-500">{filteredGames.length} games</span>
@@ -579,11 +647,93 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                           </button>
                         </div>
                       </div>
+
+                      {/* Player Props Button */}
+                      {(['NFL', 'NBA', 'NHL', 'MLB'].includes(game.sport)) && (
+                        <div className="mt-3 pt-3 border-t border-gray-200">
+                          <button
+                            onClick={() => fetchPlayerProps(game)}
+                            className="w-full px-3 py-2 text-sm border border-purple-300 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded transition-colors flex items-center justify-center gap-2"
+                          >
+                            <TrendingUp className="w-4 h-4" />
+                            View Player Props
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                   ))
                 )}
               </div>
+
+              {/* Player Props Overlay */}
+              {selectedGameForProps && (
+                <div className="absolute inset-0 bg-white z-10 rounded-lg p-4 overflow-y-auto">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold">Player Props</h3>
+                    <button
+                      onClick={() => {
+                        setSelectedGameForProps(null);
+                        setPlayerProps(null);
+                      }}
+                      className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
+
+                  {loadingProps ? (
+                    <div className="text-center py-8">
+                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto"></div>
+                      <p className="text-sm text-gray-500 mt-2">Loading props...</p>
+                    </div>
+                  ) : playerProps && Object.keys(playerProps.markets || {}).length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="bg-gray-50 p-3 rounded-lg">
+                        <p className="text-sm font-medium text-gray-700">
+                          {playerProps.away_team} @ {playerProps.home_team}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {new Date(playerProps.commence_time).toLocaleString()}
+                        </p>
+                      </div>
+
+                      {Object.entries(playerProps.markets).map(([marketKey, props]: [string, any]) => (
+                        <div key={marketKey} className="border border-gray-200 rounded-lg p-3">
+                          <h4 className="font-medium text-sm text-gray-800 mb-3">{props.display_name}</h4>
+                          <div className="space-y-2">
+                            {props.props.slice(0, 10).map((prop: any, idx: number) => (
+                              <div key={idx} className="bg-white border border-gray-200 rounded p-2">
+                                <p className="text-sm font-medium text-gray-800 mb-2">{prop.description}</p>
+                                <div className="grid grid-cols-2 gap-2">
+                                  <button
+                                    onClick={() => addPlayerPropLeg(prop, 'over')}
+                                    className="px-3 py-1.5 text-xs border border-green-300 bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors"
+                                  >
+                                    Over {prop.point} ({prop.outcomes.find((o: any) => o.name.toLowerCase() === 'over')?.price || 'N/A'})
+                                  </button>
+                                  <button
+                                    onClick={() => addPlayerPropLeg(prop, 'under')}
+                                    className="px-3 py-1.5 text-xs border border-red-300 bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors"
+                                  >
+                                    Under {prop.point} ({prop.outcomes.find((o: any) => o.name.toLowerCase() === 'under')?.price || 'N/A'})
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-500">
+                      <TrendingUp className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                      <p className="font-medium">No props available</p>
+                      <p className="text-sm">Check back closer to game time</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* Parlay Ticket */}
