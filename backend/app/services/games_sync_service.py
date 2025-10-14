@@ -262,6 +262,18 @@ class GamesSyncService:
                         "updated_at": datetime.now(timezone.utc).isoformat(),
                     }
 
+            # Mark NHL nationally televised games
+            elif game.sport_key == "icehockey_nhl":
+                game_time_et = game.commence_time.astimezone(eastern)
+                # NHL games on ESPN/TNT are typically 7-10 PM ET
+                if 19 <= game_time_et.hour <= 22:
+                    game.is_nationally_televised = True
+                    game.broadcast_info = {
+                        "network": "ESPN/TNT/ESPN+",
+                        "is_national": True,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+
         self.db.commit()
         logger.info("Broadcast info update completed")
 
