@@ -9,6 +9,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from contextlib import asynccontextmanager
+import asyncio
 import logging
 import os
 import time
@@ -323,23 +324,30 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler initialization failed: {e}")
 
-    # Sync upcoming games to database on startup
+    # Sync upcoming games to database on startup (non-blocking)
     if settings.ODDS_API_KEY:
-        try:
-            from app.services.game_sync_service import game_sync_service
 
-            logger.info("🔄 Syncing upcoming games to database...")
-            result = await game_sync_service.sync_upcoming_games(days_ahead=7)
-            if result.get("status") == "success":
-                logger.info(
-                    f"✅ Initial game sync: {result.get('total_created', 0)} games created, {result.get('total_updated', 0)} updated"
-                )
-            else:
-                logger.warning(
-                    f"⚠️  Game sync completed with status: {result.get('status')}"
-                )
-        except Exception as e:
-            logger.warning(f"⚠️  Initial game sync failed: {e}")
+        async def _background_game_sync():
+            """Run initial game sync in background to not block startup"""
+            try:
+                from app.services.game_sync_service import game_sync_service
+
+                logger.info("🔄 Starting background game sync...")
+                result = await game_sync_service.sync_upcoming_games(days_ahead=7)
+                if result.get("status") == "success":
+                    logger.info(
+                        f"✅ Initial game sync: {result.get('total_created', 0)} games created, {result.get('total_updated', 0)} updated"
+                    )
+                else:
+                    logger.warning(
+                        f"⚠️  Game sync completed with status: {result.get('status')}"
+                    )
+            except Exception as e:
+                logger.warning(f"⚠️  Initial game sync failed: {e}")
+
+        # Start sync in background - don't wait for it
+        asyncio.create_task(_background_game_sync())
+        logger.info("🔄 Game sync started in background")
 
     # Log service summary
     available_services = [
