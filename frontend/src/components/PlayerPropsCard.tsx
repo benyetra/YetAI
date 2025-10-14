@@ -59,19 +59,53 @@ const getMarketDisplayName = (marketKey: string): string => {
   const replacements: Record<string, string> = {
     player_pass_tds: 'Passing Touchdowns',
     player_pass_yds: 'Passing Yards',
+    player_pass_completions: 'Pass Completions',
+    player_pass_attempts: 'Pass Attempts',
+    player_pass_interceptions: 'Interceptions Thrown',
+    player_pass_longest_completion: 'Longest Completion',
     player_rush_yds: 'Rushing Yards',
+    player_rush_attempts: 'Rush Attempts',
+    player_rush_longest: 'Longest Rush',
     player_reception_yds: 'Receiving Yards',
     player_receptions: 'Receptions',
+    player_reception_longest: 'Longest Reception',
+    player_anytime_td: 'Anytime Touchdown',
+    player_1st_td: 'First Touchdown',
+    player_last_td: 'Last Touchdown',
     player_points: 'Points',
     player_rebounds: 'Rebounds',
     player_assists: 'Assists',
     player_threes: '3-Pointers Made',
     player_blocks: 'Blocks',
     player_steals: 'Steals',
+    player_turnovers: 'Turnovers',
+    player_double_double: 'Double-Double',
+    player_triple_double: 'Triple-Double',
+    player_points_rebounds_assists: 'Points + Rebounds + Assists',
+    player_points_rebounds: 'Points + Rebounds',
+    player_points_assists: 'Points + Assists',
+    player_rebounds_assists: 'Rebounds + Assists',
     player_pitcher_strikeouts: 'Pitcher Strikeouts',
     player_hits: 'Hits',
     player_home_runs: 'Home Runs',
-    player_rbis: 'RBIs'
+    player_rbis: 'RBIs',
+    player_runs_scored: 'Runs Scored',
+    player_hits_runs_rbis: 'Hits + Runs + RBIs',
+    player_singles: 'Singles',
+    player_doubles: 'Doubles',
+    player_triples: 'Triples',
+    player_total_bases: 'Total Bases',
+    player_stolen_bases: 'Stolen Bases',
+    player_walks: 'Walks',
+    player_strikeouts: 'Strikeouts',
+    player_earned_runs: 'Earned Runs',
+    player_hits_allowed: 'Hits Allowed',
+    player_walks_allowed: 'Walks Allowed',
+    player_shots_on_goal: 'Shots on Goal',
+    player_blocked_shots: 'Blocked Shots',
+    player_power_play_points: 'Power Play Points',
+    player_goal: 'To Score a Goal',
+    player_assists_hockey: 'Assists',
   };
 
   return replacements[marketKey] || marketKey.replace('player_', '').replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
@@ -238,21 +272,23 @@ export default function PlayerPropsCard({
             {/* Market Header - Improved styling */}
             <button
               onClick={() => toggleMarket(market.market_key)}
-              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-800/70 transition-all group"
+              className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-800/70 transition-all group"
             >
-              <div className="flex items-center space-x-3">
-                <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full" />
-                <span className="font-semibold text-white text-base group-hover:text-purple-300 transition-colors">
-                  {getMarketDisplayName(market.market_key)}
-                </span>
-                <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full">
-                  {market.players.length}
-                </span>
+              <div className="flex items-center gap-3 flex-1">
+                <div className="w-1 h-8 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full flex-shrink-0" />
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <h4 className="font-bold text-white text-lg group-hover:text-purple-300 transition-colors whitespace-nowrap">
+                    {getMarketDisplayName(market.market_key)}
+                  </h4>
+                  <span className="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
+                    {market.players.length}
+                  </span>
+                </div>
               </div>
               {expandedMarkets.has(market.market_key) ? (
-                <ChevronUp className="w-5 h-5 text-purple-400 group-hover:text-purple-300" />
+                <ChevronUp className="w-5 h-5 text-purple-400 group-hover:text-purple-300 flex-shrink-0 ml-2" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-gray-500 group-hover:text-purple-400" />
+                <ChevronDown className="w-5 h-5 text-gray-500 group-hover:text-purple-400 flex-shrink-0 ml-2" />
               )}
             </button>
 

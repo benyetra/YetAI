@@ -512,9 +512,10 @@ export function LiveOdds({
                   setShowPropsModal(false);
                   setSelectedGameForProps(null);
                 }}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
+                className="p-2 hover:bg-gray-700 rounded-lg transition-all hover:rotate-90 group"
+                aria-label="Close player props"
               >
-                <span className="text-gray-400 text-2xl">×</span>
+                <span className="text-gray-400 text-3xl font-light group-hover:text-white transition-colors">×</span>
               </button>
             </div>
 
