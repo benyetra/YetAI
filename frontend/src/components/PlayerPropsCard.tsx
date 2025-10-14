@@ -258,13 +258,7 @@ export default function PlayerPropsCard({
 
   return (
     <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg overflow-hidden shadow-xl border border-gray-700">
-      <div className="p-4 bg-gradient-to-r from-purple-600 to-blue-600 border-b border-gray-700">
-        <div className="flex items-center space-x-2">
-          <User className="w-5 h-5 text-white" />
-          <h3 className="text-lg font-semibold text-white">Player Props</h3>
-          <span className="text-xs text-purple-200 ml-auto">FanDuel</span>
-        </div>
-      </div>
+      {/* Remove this inner header since the modal already has a header */}
 
       <div className="divide-y divide-gray-700/50">
         {markets.map((market) => (
