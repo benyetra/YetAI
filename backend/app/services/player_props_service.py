@@ -7,6 +7,7 @@ This service handles fetching player props from The Odds API for:
 """
 
 import logging
+import aiohttp
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from app.services.odds_api_service import OddsAPIService, OddsFormat
@@ -88,6 +89,61 @@ class PlayerPropsService:
         """
         self.odds_api = odds_api_service
 
+    async def get_available_markets_for_event(
+        self, sport: str, event_id: str
+    ) -> List[str]:
+        """
+        Discover what markets FanDuel actually offers for this specific event
+
+        Args:
+            sport: Sport key (e.g., 'baseball_mlb')
+            event_id: The odds API event ID
+
+        Returns:
+            List of available market keys for this event
+        """
+        try:
+            url = f"https://api.the-odds-api.com/v4/sports/{sport}/events/{event_id}/markets"
+            params = {
+                "apiKey": self.odds_api.api_key,
+                "regions": "us",
+            }
+
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as response:
+                    if response.status != 200:
+                        logger.error(
+                            f"Failed to fetch available markets: {response.status}"
+                        )
+                        return []
+
+                    data = await response.json()
+
+                    # Find FanDuel bookmaker
+                    for bookmaker in data.get("bookmakers", []):
+                        if bookmaker.get("key") == "fanduel":
+                            # Extract market keys that are player props
+                            markets = [
+                                m["key"]
+                                for m in bookmaker.get("markets", [])
+                                if m["key"].startswith("player_")
+                                or m["key"].startswith("batter_")
+                                or m["key"].startswith("pitcher_")
+                            ]
+                            logger.info(
+                                f"Found {len(markets)} available player prop markets for {event_id}: {markets}"
+                            )
+                            return markets
+
+                    logger.warning(
+                        f"FanDuel not found in available bookmakers for {event_id}"
+                    )
+                    return []
+
+        except Exception as e:
+            logger.error(f"Error fetching available markets: {e}")
+            return []
+
     async def get_player_props_for_event(
         self,
         sport: str,
@@ -100,20 +156,30 @@ class PlayerPropsService:
         Args:
             sport: Sport key (e.g., 'americanfootball_nfl')
             event_id: The odds API event ID
-            markets: List of specific markets to fetch. If None, fetches all available for the sport.
+            markets: List of specific markets to fetch. If None, discovers available markets dynamically.
 
         Returns:
             Dictionary with event info and organized player props by market
         """
-        # Get available markets for this sport
-        available_markets = PLAYER_PROP_MARKETS.get(sport, [])
+        # If markets not specified, discover what's actually available for this event
+        if not markets:
+            logger.info(f"Discovering available markets for {sport} event {event_id}")
+            markets_to_fetch = await self.get_available_markets_for_event(
+                sport, event_id
+            )
 
-        if not available_markets:
-            logger.warning(f"No player prop markets configured for sport: {sport}")
-            return {"error": f"Sport {sport} not supported for player props"}
-
-        # Use specified markets or all available
-        markets_to_fetch = markets if markets else available_markets
+            if not markets_to_fetch:
+                logger.warning(
+                    f"No player prop markets available for event {event_id}"
+                )
+                return {
+                    "event_id": event_id,
+                    "sport_key": sport,
+                    "markets": {},
+                    "error": "No player prop markets available for this event",
+                }
+        else:
+            markets_to_fetch = markets
 
         # Join markets into comma-separated string
         markets_str = ",".join(markets_to_fetch)
