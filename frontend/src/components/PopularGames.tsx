@@ -22,10 +22,12 @@ import {
 } from '../lib/formatting';
 
 interface BroadcastInfo {
-  network: string | null;
+  networks?: string[];  // Array of network names (new format from ESPN API)
+  network?: string | null;  // Legacy single network field
   is_national: boolean;
-  is_prime_time: boolean;
-  popularity_score: number;
+  streaming?: string[];  // Streaming services
+  is_prime_time?: boolean;
+  popularity_score?: number;
 }
 
 interface PopularGame {
@@ -116,14 +118,18 @@ export function PopularGames({
     if (net.includes('ESPN')) return <span className="text-red-600 font-bold text-xs">ESPN</span>;
     if (net.includes('NBC')) return <span className="text-blue-600 font-bold text-xs">NBC</span>;
     if (net.includes('CBS')) return <span className="text-blue-700 font-bold text-xs">CBS</span>;
-    if (net.includes('FOX')) return <span className="text-blue-500 font-bold text-xs">FOX</span>;
+    if (net.includes('FOX') || net.includes('FS1')) return <span className="text-blue-500 font-bold text-xs">{net.includes('FS1') ? 'FS1' : 'FOX'}</span>;
     if (net.includes('ABC')) return <span className="text-gray-800 font-bold text-xs">ABC</span>;
     if (net.includes('TNT')) return <span className="text-orange-600 font-bold text-xs">TNT</span>;
+    if (net.includes('TBS')) return <span className="text-blue-600 font-bold text-xs">TBS</span>;
+    if (net.includes('HBO MAX') || net.includes('MAX')) return <span className="text-purple-600 font-bold text-xs">MAX</span>;
+    if (net.includes('TRUTV')) return <span className="text-green-600 font-bold text-xs">truTV</span>;
     if (net.includes('PRIME') || net.includes('AMAZON')) return <span className="text-blue-900 font-bold text-xs">PRIME</span>;
-    return <Tv className="w-4 h-4" />;
+    return <span className="text-gray-600 font-medium text-xs">{network}</span>;
   };
 
-  const getPopularityBadge = (score: number) => {
+  const getPopularityBadge = (score?: number) => {
+    if (!score) return null;  // Don't show badge if no score
     if (score >= 80) return <span className="bg-red-100 text-red-800 text-xs px-2 py-1 rounded-full font-medium">🔥 Prime Time</span>;
     if (score >= 60) return <span className="bg-orange-100 text-orange-800 text-xs px-2 py-1 rounded-full font-medium">📺 National TV</span>;
     if (score >= 40) return <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded-full font-medium">⭐ Featured</span>;
@@ -155,12 +161,28 @@ export function PopularGames({
       </div>
 
       {/* Network Info */}
-      {game.broadcast && (
+      {game.broadcast && (game.broadcast.networks?.length || game.broadcast.network) && (
         <div className="flex items-center justify-between text-sm text-gray-600 mb-3">
-          <div className="flex items-center space-x-2">
-            {getNetworkIcon(game.broadcast.network)}
-            {game.broadcast.network && (
-              <span className="text-sm font-medium">{game.broadcast.network}</span>
+          <div className="flex items-center flex-wrap gap-2">
+            <Tv className="w-4 h-4" />
+            {/* Show networks array (new format) */}
+            {game.broadcast.networks && game.broadcast.networks.length > 0 ? (
+              game.broadcast.networks.map((network, idx) => (
+                <span key={idx}>
+                  {getNetworkIcon(network)}
+                  {idx < game.broadcast.networks!.length - 1 && (
+                    <span className="mx-1 text-gray-400">•</span>
+                  )}
+                </span>
+              ))
+            ) : (
+              /* Fallback to legacy single network field */
+              game.broadcast.network && (
+                <>
+                  {getNetworkIcon(game.broadcast.network)}
+                  <span className="text-sm font-medium">{game.broadcast.network}</span>
+                </>
+              )
             )}
           </div>
         </div>
