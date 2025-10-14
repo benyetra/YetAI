@@ -106,6 +106,14 @@ class SimpleUnifiedBet(Base):
     total_points = Column(Float)
     over_under_selection = Column(Enum(OverUnder), default=OverUnder.NONE)
 
+    # Player prop bet details
+    player_name = Column(String(255))  # Player name for prop bets
+    prop_market = Column(
+        String(100)
+    )  # Market key (e.g., player_pass_tds, player_points)
+    prop_line = Column(Float)  # The line/point value for the prop
+    prop_selection = Column(Enum(OverUnder), default=OverUnder.NONE)  # Over or Under
+
     # === GAME CONTEXT AT BET PLACEMENT ===
     home_team = Column(String(255), nullable=False)
     away_team = Column(String(255), nullable=False)

@@ -120,6 +120,11 @@ class PlaceBetRequest(BaseModel):
     sport: Optional[str] = None
     commence_time: Optional[str] = None
     yetai_bet_id: Optional[str] = None  # Link to YetAI bet for tracking
+    # Player prop fields
+    player_name: Optional[str] = None  # For player prop bets
+    prop_market: Optional[str] = None  # Market key (e.g., player_pass_tds)
+    prop_line: Optional[float] = None  # The line/point value
+    prop_selection: Optional[str] = None  # 'over' or 'under'
 
 
 class ParlayLeg(BaseModel):
@@ -131,6 +136,11 @@ class ParlayLeg(BaseModel):
     away_team: Optional[str] = None
     sport: Optional[str] = None
     commence_time: Optional[str] = None
+    # Player prop fields
+    player_name: Optional[str] = None
+    prop_market: Optional[str] = None
+    prop_line: Optional[float] = None
+    prop_selection: Optional[str] = None
 
 
 class PlaceParlayRequest(BaseModel):
@@ -5828,6 +5838,129 @@ async def get_popular_sports_odds():
         "count": 0,
         "message": "ODDS_API_KEY not configured. Please set your API key to fetch real odds data.",
     }
+
+
+# === PLAYER PROPS ENDPOINTS ===
+
+
+@app.get("/api/player-props/{sport}/{event_id}")
+async def get_player_props(
+    sport: str,
+    event_id: str,
+    markets: Optional[str] = None,
+):
+    """
+    Get player props for a specific event
+
+    Args:
+        sport: Sport key (e.g., 'americanfootball_nfl', 'basketball_nba')
+        event_id: The odds API event ID
+        markets: Optional comma-separated list of specific markets to fetch
+
+    Returns:
+        Player props organized by market with FanDuel odds
+    """
+    if not settings.ODDS_API_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="ODDS_API_KEY not configured. Please set your API key.",
+        )
+
+    # Validate sport supports player props
+    supported_sports = [
+        "americanfootball_nfl",
+        "basketball_nba",
+        "icehockey_nhl",
+        "baseball_mlb",
+    ]
+    if sport not in supported_sports:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Sport {sport} not supported for player props. Supported: {', '.join(supported_sports)}",
+        )
+
+    try:
+        from app.services.odds_api_service import OddsAPIService
+        from app.services.player_props_service import PlayerPropsService
+
+        async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+            props_service = PlayerPropsService(odds_service)
+
+            # Parse markets if provided
+            markets_list = markets.split(",") if markets else None
+
+            props_data = await props_service.get_player_props_for_event(
+                sport=sport,
+                event_id=event_id,
+                markets=markets_list,
+            )
+
+            if "error" in props_data:
+                raise HTTPException(status_code=404, detail=props_data["error"])
+
+            return {
+                "status": "success",
+                "data": props_data,
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching player props for {sport} event {event_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/player-props/markets/{sport}")
+async def get_available_markets(sport: str):
+    """
+    Get list of available player prop markets for a sport
+
+    Args:
+        sport: Sport key (e.g., 'americanfootball_nfl')
+
+    Returns:
+        List of available market keys with display names
+    """
+    try:
+        from app.services.player_props_service import (
+            PlayerPropsService,
+            PLAYER_PROP_MARKETS,
+        )
+
+        # Get available markets for sport
+        markets = PLAYER_PROP_MARKETS.get(sport, [])
+
+        if not markets:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No player prop markets available for sport: {sport}",
+            )
+
+        # Create props service instance to get display names
+        from app.services.odds_api_service import OddsAPIService
+
+        async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+            props_service = PlayerPropsService(odds_service)
+
+            markets_with_names = [
+                {
+                    "key": market,
+                    "display_name": props_service.get_market_display_name(market),
+                }
+                for market in markets
+            ]
+
+        return {
+            "status": "success",
+            "sport": sport,
+            "markets": markets_with_names,
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching markets for {sport}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/api/popular-games")

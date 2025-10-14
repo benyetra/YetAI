@@ -137,6 +137,15 @@ class SimpleUnifiedBetService:
                     over_under_selection=parsed_selection.get(
                         "over_under_selection", OverUnder.NONE
                     ),
+                    # Player prop fields
+                    player_name=getattr(bet_data, "player_name", None),
+                    prop_market=getattr(bet_data, "prop_market", None),
+                    prop_line=getattr(bet_data, "prop_line", None),
+                    prop_selection=(
+                        OverUnder(bet_data.prop_selection.lower())
+                        if getattr(bet_data, "prop_selection", None)
+                        else OverUnder.NONE
+                    ),
                 )
 
                 db.add(unified_bet)
@@ -280,6 +289,15 @@ class SimpleUnifiedBetService:
                         total_points=parsed_selection.get("total_points"),
                         over_under_selection=parsed_selection.get(
                             "over_under_selection", OverUnder.NONE
+                        ),
+                        # Player prop fields
+                        player_name=getattr(leg, "player_name", None),
+                        prop_market=getattr(leg, "prop_market", None),
+                        prop_line=getattr(leg, "prop_line", None),
+                        prop_selection=(
+                            OverUnder(leg.prop_selection.lower())
+                            if getattr(leg, "prop_selection", None)
+                            else OverUnder.NONE
                         ),
                     )
 

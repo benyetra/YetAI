@@ -288,6 +288,11 @@ class UnifiedBetVerificationService:
             elif bet_type == BetType.PARLAY:
                 # Handle parlay bets (check all legs)
                 status, result_amount, reasoning = self._evaluate_parlay(bet)
+            elif bet_type == BetType.PROP:
+                # Player props require manual verification via external data sources
+                # They cannot be verified with game scores alone
+                logger.info(f"Bet {bet.id[:8]}: Player prop bet - requires manual verification")
+                return None  # Skip auto-verification for props
             else:
                 reasoning = f"Unknown bet type: {bet_type}"
                 logger.warning(reasoning)
