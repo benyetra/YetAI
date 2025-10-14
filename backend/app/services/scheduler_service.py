@@ -86,6 +86,13 @@ class SchedulerService:
             "cache_cleanup", self._cleanup_cache, interval_seconds=1800  # 30 minutes
         )
 
+        # Sync upcoming games to database every 6 hours
+        self.add_task(
+            "sync_upcoming_games",
+            self._sync_upcoming_games,
+            interval_seconds=21600,  # 6 hours
+        )
+
     def add_task(
         self,
         name: str,
@@ -484,6 +491,24 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Failed to cleanup cache: {e}")
+            raise
+
+    async def _sync_upcoming_games(self):
+        """Sync upcoming games to database for popular games display"""
+        if not settings.ODDS_API_KEY:
+            logger.warning("No Odds API key configured, skipping game sync")
+            return
+
+        try:
+            from app.services.game_sync_service import game_sync_service
+
+            result = await game_sync_service.sync_upcoming_games(days_ahead=7)
+            logger.info(
+                f"Game sync completed: {result.get('message', 'No message returned')}"
+            )
+
+        except Exception as e:
+            logger.error(f"Failed to sync upcoming games: {e}")
             raise
 
     def get_task_status(self) -> Dict[str, Dict]:

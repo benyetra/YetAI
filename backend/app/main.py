@@ -323,6 +323,22 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler initialization failed: {e}")
 
+    # Sync upcoming games to database on startup
+    if settings.ODDS_API_KEY:
+        try:
+            from app.services.game_sync_service import game_sync_service
+
+            logger.info("🔄 Syncing upcoming games to database...")
+            result = await game_sync_service.sync_upcoming_games(days_ahead=7)
+            if result.get("status") == "success":
+                logger.info(
+                    f"✅ Initial game sync: {result.get('total_created', 0)} games created, {result.get('total_updated', 0)} updated"
+                )
+            else:
+                logger.warning(f"⚠️  Game sync completed with status: {result.get('status')}")
+        except Exception as e:
+            logger.warning(f"⚠️  Initial game sync failed: {e}")
+
     # Log service summary
     available_services = [
         name
