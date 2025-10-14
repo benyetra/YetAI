@@ -136,10 +136,8 @@ export default function PlayerPropsCard({
       setLoading(true);
       setError(null);
 
-      // Fetch most popular markets based on sport
-      const popularMarkets = getPopularMarkets(sportKey);
-
-      const response = await sportsAPI.getPlayerProps(sportKey, eventId, popularMarkets, token);
+      // Don't pass markets - let backend dynamically discover what's available
+      const response = await sportsAPI.getPlayerProps(sportKey, eventId, undefined, token);
 
       if (response.status === 'success' && response.data) {
         setPropsData(response.data);
@@ -158,17 +156,6 @@ export default function PlayerPropsCard({
     } finally {
       setLoading(false);
     }
-  };
-
-  const getPopularMarkets = (sport: string): string[] => {
-    const markets: Record<string, string[]> = {
-      americanfootball_nfl: ['player_pass_tds', 'player_pass_yds', 'player_rush_yds', 'player_receptions', 'player_reception_yds'],
-      basketball_nba: ['player_points', 'player_rebounds', 'player_assists', 'player_threes'],
-      icehockey_nhl: ['player_points', 'player_assists', 'player_shots_on_goal', 'player_anytime_goal_scorer'],
-      baseball_mlb: ['player_hits', 'player_home_runs', 'player_rbis', 'player_pitcher_strikeouts']
-    };
-
-    return markets[sport] || [];
   };
 
   const toggleMarket = (marketKey: string) => {
