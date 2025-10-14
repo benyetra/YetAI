@@ -266,13 +266,13 @@ export default function PlayerPropsCard({
         </div>
       </div>
 
-      <div className="divide-y divide-gray-800">
+      <div className="divide-y divide-gray-700">
         {markets.map((market) => (
-          <div key={market.market_key} className="bg-gray-900">
+          <div key={market.market_key} className="bg-gray-800">
             {/* Market Header - Improved styling */}
             <button
               onClick={() => toggleMarket(market.market_key)}
-              className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-800/70 transition-all group"
+              className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-700 transition-all group bg-gray-800"
             >
               <div className="flex items-center gap-3 flex-1">
                 <div className="w-1 h-8 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full flex-shrink-0" />

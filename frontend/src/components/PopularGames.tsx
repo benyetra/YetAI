@@ -406,10 +406,10 @@ export function PopularGames({
                   setShowPropsModal(false);
                   setSelectedGameForProps(null);
                 }}
-                className="p-2 hover:bg-gray-700 rounded-lg transition-all hover:rotate-90 group"
+                className="p-2 bg-gray-800 hover:bg-red-600 rounded-lg transition-all hover:rotate-90 group"
                 aria-label="Close player props"
               >
-                <span className="text-gray-400 text-3xl font-light group-hover:text-white transition-colors">×</span>
+                <span className="text-white text-3xl font-bold group-hover:text-white transition-colors leading-none">×</span>
               </button>
             </div>
 
