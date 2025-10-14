@@ -335,7 +335,9 @@ async def lifespan(_app: FastAPI):
                     f"✅ Initial game sync: {result.get('total_created', 0)} games created, {result.get('total_updated', 0)} updated"
                 )
             else:
-                logger.warning(f"⚠️  Game sync completed with status: {result.get('status')}")
+                logger.warning(
+                    f"⚠️  Game sync completed with status: {result.get('status')}"
+                )
         except Exception as e:
             logger.warning(f"⚠️  Initial game sync failed: {e}")
 
