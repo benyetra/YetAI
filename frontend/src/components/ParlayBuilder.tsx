@@ -34,6 +34,23 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
   const [gameFilter, setGameFilter] = useState<string>('');
   const [sportFilter, setSportFilter] = useState<string>('all');
 
+  // Load any player props from sessionStorage on mount
+  useEffect(() => {
+    if (isOpen) {
+      const storedLegs = sessionStorage.getItem('parlayLegs');
+      if (storedLegs) {
+        try {
+          const parsedLegs = JSON.parse(storedLegs);
+          setLegs(parsedLegs);
+          // Clear sessionStorage after loading
+          sessionStorage.removeItem('parlayLegs');
+        } catch (e) {
+          console.error('Failed to load parlay legs:', e);
+        }
+      }
+    }
+  }, [isOpen]);
+
   // Sample games data (this would come from odds API)
   const sampleGames = [
     {
