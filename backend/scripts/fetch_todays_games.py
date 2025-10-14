@@ -59,13 +59,14 @@ def fetch_and_store_games():
         for sport in sports:
             print(f"🔄 Fetching {sport.upper()} games...")
 
-            # Call Odds API
+            # Call Odds API - only fetch FanDuel to conserve API tokens
             url = f"https://api.the-odds-api.com/v4/sports/{sport}/odds"
             params = {
                 "apiKey": settings.ODDS_API_KEY,
                 "regions": "us",
                 "markets": "h2h,spreads,totals",
                 "oddsFormat": "american",
+                "bookmakers": "fanduel",  # Only fetch FanDuel odds
             }
 
             try:

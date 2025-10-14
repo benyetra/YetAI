@@ -5897,7 +5897,7 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
             # Extract bookmakers odds from odds_data JSON
             bookmakers_odds = []
             if game.odds_data and isinstance(game.odds_data, list):
-                # Return all bookmakers (FanDuel, DraftKings, etc.)
+                # Return bookmakers (currently FanDuel only to conserve API tokens)
                 bookmakers_odds = game.odds_data
 
             # Ensure UTC timezone is included in ISO format
