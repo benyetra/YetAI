@@ -257,8 +257,8 @@ export default function PlayerPropsCard({
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg overflow-hidden shadow-xl">
-      <div className="p-4 bg-gradient-to-r from-purple-600 to-blue-600 border-b border-purple-500/30">
+    <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg overflow-hidden shadow-xl border border-gray-700">
+      <div className="p-4 bg-gradient-to-r from-purple-600 to-blue-600 border-b border-gray-700">
         <div className="flex items-center space-x-2">
           <User className="w-5 h-5 text-white" />
           <h3 className="text-lg font-semibold text-white">Player Props</h3>
@@ -266,99 +266,101 @@ export default function PlayerPropsCard({
         </div>
       </div>
 
-      <div className="divide-y divide-gray-700">
+      <div className="divide-y divide-gray-700/50">
         {markets.map((market) => (
-          <div key={market.market_key} className="bg-gray-800">
-            {/* Market Header - Improved styling */}
+          <div key={market.market_key} className="bg-transparent">
+            {/* Market Header - Match bet modal styling */}
             <button
               onClick={() => toggleMarket(market.market_key)}
-              className="w-full px-4 py-4 flex items-center justify-between hover:bg-gray-700 transition-all group bg-gray-800"
+              className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-700/30 transition-all group"
             >
               <div className="flex items-center gap-3 flex-1">
                 <div className="w-1 h-8 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full flex-shrink-0" />
                 <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <h4 className="font-bold text-white text-lg group-hover:text-purple-300 transition-colors whitespace-nowrap">
+                  <h4 className="font-bold text-white text-base group-hover:text-purple-400 transition-colors">
                     {getMarketDisplayName(market.market_key)}
                   </h4>
-                  <span className="text-xs text-gray-400 bg-gray-800 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
+                  <span className="text-xs text-gray-400 bg-gray-700/50 px-2.5 py-1 rounded-full font-medium flex-shrink-0">
                     {market.players.length}
                   </span>
                 </div>
               </div>
               {expandedMarkets.has(market.market_key) ? (
-                <ChevronUp className="w-5 h-5 text-purple-400 group-hover:text-purple-300 flex-shrink-0 ml-2" />
+                <ChevronUp className="w-5 h-5 text-purple-400 flex-shrink-0 ml-2" />
               ) : (
-                <ChevronDown className="w-5 h-5 text-gray-500 group-hover:text-purple-400 flex-shrink-0 ml-2" />
+                <ChevronDown className="w-5 h-5 text-gray-400 group-hover:text-purple-400 flex-shrink-0 ml-2" />
               )}
             </button>
 
-            {/* Player Props - Improved card styling */}
+            {/* Player Props - Match bet modal card styling */}
             {expandedMarkets.has(market.market_key) && (
-              <div className="px-4 pb-4 pt-2 space-y-3 bg-gray-800/30">
+              <div className="px-6 pb-4 pt-2 space-y-3 bg-gray-800/20">
                 {market.players.map((player) => (
                   <div
                     key={player.player_name}
-                    className="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-purple-500/50 transition-all shadow-md"
+                    className="bg-gray-700/30 rounded-lg p-4 border border-gray-600 hover:border-gray-500 transition-all"
                   >
                     <div className="flex items-center justify-between mb-3">
-                      <span className="font-semibold text-white text-sm">
-                        {player.player_name}
-                      </span>
-                      <span className="text-xs text-purple-400 font-medium bg-purple-500/10 px-2 py-1 rounded">
-                        Line: {player.line}
-                      </span>
+                      <div>
+                        <p className="text-base font-bold text-white">{player.player_name}</p>
+                        <p className="text-xs text-gray-400">{getMarketDisplayName(market.market_key)}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-gray-400">Line</p>
+                        <p className="text-base font-bold text-white">{player.line}</p>
+                      </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-3">
-                      {/* Over Button - Enhanced styling */}
+                    <div className="grid grid-cols-2 gap-3 pt-3 border-t border-gray-600">
+                      {/* Over Button - Match bet modal styling */}
                       <button
                         onClick={() => handlePropSelection(market, player, 'over')}
                         disabled={player.over === null}
                         className={`
-                          px-4 py-2.5 rounded-lg text-sm font-semibold transition-all
+                          px-3 py-2.5 rounded-lg text-sm font-medium transition-all
                           ${player.over === null
-                            ? 'bg-gray-700/50 text-gray-600 cursor-not-allowed'
+                            ? 'bg-gray-600/30 text-gray-500 cursor-not-allowed'
                             : selectedProp?.market === market.market_key &&
                               selectedProp?.player === player.player_name &&
                               selectedProp?.selection === 'over'
-                            ? 'bg-gradient-to-r from-green-600 to-green-500 text-white ring-2 ring-green-400 shadow-lg shadow-green-500/50'
-                            : 'bg-gray-700 text-white hover:bg-gradient-to-r hover:from-green-600 hover:to-green-500 hover:ring-2 hover:ring-green-500/50 hover:shadow-lg hover:shadow-green-500/30'
+                            ? 'bg-green-600 text-white ring-2 ring-green-400'
+                            : 'bg-gray-700/50 border border-gray-600 text-white hover:bg-green-600 hover:border-green-500'
                           }
                         `}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="flex items-center space-x-1.5">
-                            <TrendingUp className="w-4 h-4" />
+                          <span className="flex items-center gap-1.5">
+                            <TrendingUp className="w-4 h-4 text-green-400" />
                             <span>Over</span>
                           </span>
-                          <span className="font-bold">
+                          <span className={`font-bold ${player.over && player.over > 0 ? 'text-green-400' : 'text-white'}`}>
                             {formatOdds(player.over)}
                           </span>
                         </div>
                       </button>
 
-                      {/* Under Button - Enhanced styling */}
+                      {/* Under Button - Match bet modal styling */}
                       <button
                         onClick={() => handlePropSelection(market, player, 'under')}
                         disabled={player.under === null}
                         className={`
-                          px-4 py-2.5 rounded-lg text-sm font-semibold transition-all
+                          px-3 py-2.5 rounded-lg text-sm font-medium transition-all
                           ${player.under === null
-                            ? 'bg-gray-700/50 text-gray-600 cursor-not-allowed'
+                            ? 'bg-gray-600/30 text-gray-500 cursor-not-allowed'
                             : selectedProp?.market === market.market_key &&
                               selectedProp?.player === player.player_name &&
                               selectedProp?.selection === 'under'
-                            ? 'bg-gradient-to-r from-red-600 to-red-500 text-white ring-2 ring-red-400 shadow-lg shadow-red-500/50'
-                            : 'bg-gray-700 text-white hover:bg-gradient-to-r hover:from-red-600 hover:to-red-500 hover:ring-2 hover:ring-red-500/50 hover:shadow-lg hover:shadow-red-500/30'
+                            ? 'bg-red-600 text-white ring-2 ring-red-400'
+                            : 'bg-gray-700/50 border border-gray-600 text-white hover:bg-red-600 hover:border-red-500'
                           }
                         `}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="flex items-center space-x-1.5">
-                            <TrendingDown className="w-4 h-4" />
+                          <span className="flex items-center gap-1.5">
+                            <TrendingDown className="w-4 h-4 text-red-400" />
                             <span>Under</span>
                           </span>
-                          <span className="font-bold">
+                          <span className={`font-bold ${player.under && player.under > 0 ? 'text-green-400' : 'text-white'}`}>
                             {formatOdds(player.under)}
                           </span>
                         </div>
@@ -372,7 +374,7 @@ export default function PlayerPropsCard({
         ))}
       </div>
 
-      <div className="p-3 bg-gray-900 text-xs text-gray-500 text-center border-t border-gray-800">
+      <div className="p-3 bg-gray-800/50 text-xs text-gray-400 text-center border-t border-gray-700">
         Odds from FanDuel • Updated{' '}
         {new Date(markets[0]?.last_update).toLocaleTimeString()}
       </div>
