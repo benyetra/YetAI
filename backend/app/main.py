@@ -5988,14 +5988,13 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         )
         logger.info(f"Date range (UTC): {today_start} to {today_end}")
 
-        # Query database for games happening today
-        # TODO: Add ESPN API integration to filter by is_nationally_televised
-        # For now, show all games happening today
+        # Query database for games happening today that are nationally televised
         games_query = (
             db.query(Game)
             .filter(
                 Game.commence_time >= today_start,
                 Game.commence_time <= today_end,
+                Game.is_nationally_televised == True,  # Only nationally televised games
             )
             .order_by(Game.commence_time)
             .all()
