@@ -397,7 +397,7 @@ export function PopularGames({
                   <User className="w-6 h-6 text-purple-400" />
                   <span>Player Props</span>
                 </h2>
-                <p className="text-sm text-gray-400 mt-1">
+                <p className="text-sm text-gray-300 mt-1 font-medium">
                   {selectedGameForProps.away_team} @ {selectedGameForProps.home_team}
                 </p>
               </div>

@@ -247,10 +247,11 @@ export default function PlayerPropsCard({
 
   if (markets.length === 0) {
     return (
-      <div className="bg-gray-800 rounded-lg p-6">
-        <div className="text-center text-gray-400">
-          <User className="w-8 h-8 mx-auto mb-2 opacity-50" />
-          <p>No player props available for this game</p>
+      <div className="bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg p-8 border border-gray-700">
+        <div className="text-center">
+          <User className="w-12 h-12 mx-auto mb-3 text-gray-600" />
+          <p className="text-gray-300 font-medium text-base">No player props available for this game</p>
+          <p className="text-gray-500 text-sm mt-2">Check back closer to game time</p>
         </div>
       </div>
     );
