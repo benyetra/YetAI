@@ -108,11 +108,35 @@ class UnifiedBetVerificationService:
                     )
                     continue
 
-                # Skip parlay parent bets - they're verified through their legs
+                # Handle parlay parent bets separately (they check leg statuses, not game results)
                 if sport == "multiple sports":
                     logger.info(
-                        f"Skipping {len(sport_bets)} parlay parent bets (verified via legs)"
+                        f"Verifying {len(sport_bets)} parlay parent bets based on leg statuses..."
                     )
+                    parlay_results = []
+                    for parlay_bet in sport_bets:
+                        try:
+                            status, result_amount, reasoning = self._evaluate_parlay(
+                                parlay_bet
+                            )
+                            if status != BetStatus.PENDING:
+                                parlay_results.append(
+                                    UnifiedBetResult(
+                                        bet_id=parlay_bet.id,
+                                        status=status,
+                                        result_amount=result_amount,
+                                        reasoning=reasoning,
+                                    )
+                                )
+                                logger.info(
+                                    f"Parlay {parlay_bet.id}: {status.value} - {reasoning}"
+                                )
+                        except Exception as e:
+                            logger.error(
+                                f"Error evaluating parlay {parlay_bet.id}: {e}"
+                            )
+
+                    all_results.extend(parlay_results)
                     continue
 
                 try:
@@ -397,10 +421,106 @@ class UnifiedBetVerificationService:
             )
 
     def _evaluate_parlay(self, bet: SimpleUnifiedBet) -> Tuple[BetStatus, float, str]:
-        """Evaluate parlay bet - check all legs"""
-        # For now, return pending - parlay evaluation is complex
-        # Would need to check all legs in the parlay
-        return BetStatus.PENDING, 0.0, "Parlay evaluation not yet implemented"
+        """
+        Evaluate parlay bet based on leg statuses
+
+        Rules:
+        - If ANY leg is lost, entire parlay loses
+        - If all legs are won (ignoring pushed legs), parlay wins
+        - If all legs are pushed, parlay pushes
+        - If any legs are still pending, parlay remains pending
+        """
+        db = SessionLocal()
+        try:
+            # Get all legs for this parlay
+            legs = (
+                db.query(SimpleUnifiedBet)
+                .filter(SimpleUnifiedBet.parent_bet_id == bet.id)
+                .all()
+            )
+
+            # Fallback: try parlay_legs JSON field if no legs found via parent_bet_id
+            if not legs and hasattr(bet, "parlay_legs") and bet.parlay_legs:
+                leg_ids = bet.parlay_legs if isinstance(bet.parlay_legs, list) else []
+                if leg_ids:
+                    legs = (
+                        db.query(SimpleUnifiedBet)
+                        .filter(SimpleUnifiedBet.id.in_(leg_ids))
+                        .all()
+                    )
+                    logger.info(
+                        f"Parlay {bet.id}: Found {len(legs)} legs via parlay_legs JSON field"
+                    )
+
+            if not legs:
+                logger.warning(f"Parlay {bet.id}: No legs found, keeping as pending")
+                return BetStatus.PENDING, 0.0, "Parlay has no legs"
+
+            # Count leg statuses
+            won_legs = 0
+            lost_legs = 0
+            pushed_legs = 0
+            pending_legs = 0
+
+            for leg in legs:
+                if leg.status == BetStatus.WON:
+                    won_legs += 1
+                elif leg.status == BetStatus.LOST:
+                    lost_legs += 1
+                elif leg.status == BetStatus.PUSHED:
+                    pushed_legs += 1
+                elif leg.status == BetStatus.PENDING:
+                    pending_legs += 1
+
+            total_legs = len(legs)
+            active_legs = total_legs - pushed_legs  # Pushes don't count
+
+            logger.info(
+                f"Parlay {bet.id}: {won_legs} won, {lost_legs} lost, "
+                f"{pushed_legs} pushed, {pending_legs} pending out of {total_legs} total legs"
+            )
+
+            # RULE 1: If ANY leg lost, parlay loses
+            if lost_legs > 0:
+                return (
+                    BetStatus.LOST,
+                    0.0,
+                    f"Parlay lost: {lost_legs} of {total_legs} legs lost",
+                )
+
+            # RULE 2: If any legs still pending, keep parlay pending
+            if pending_legs > 0:
+                return (
+                    BetStatus.PENDING,
+                    0.0,
+                    f"Parlay pending: {pending_legs} legs still pending",
+                )
+
+            # RULE 3: All legs pushed - refund
+            if active_legs == 0:
+                return (
+                    BetStatus.PUSHED,
+                    bet.amount,
+                    f"Parlay pushed: All {total_legs} legs pushed",
+                )
+
+            # RULE 4: All active legs won - parlay wins
+            if won_legs == active_legs:
+                payout = bet.amount + bet.potential_win
+                return (
+                    BetStatus.WON,
+                    payout,
+                    f"Parlay won: All {active_legs} active legs won",
+                )
+
+            # Shouldn't reach here, but safety fallback
+            return BetStatus.PENDING, 0.0, "Unexpected parlay state"
+
+        except Exception as e:
+            logger.error(f"Error evaluating parlay {bet.id}: {e}")
+            return BetStatus.PENDING, 0.0, f"Error evaluating parlay: {str(e)}"
+        finally:
+            db.close()
 
     async def _apply_results(self, results: List[UnifiedBetResult], db: Session):
         """Apply verification results to database"""
