@@ -517,12 +517,22 @@ class OddsAPIService:
 
             bookmakers_list = []
             for bm_data in data.get("bookmakers", []):
+                # Handle last_update - it may not always be present in the API response
+                last_update = datetime.utcnow()  # Default to current time
+                if "last_update" in bm_data:
+                    try:
+                        last_update = datetime.fromisoformat(
+                            bm_data["last_update"].replace("Z", "+00:00")
+                        )
+                    except (ValueError, AttributeError) as e:
+                        logger.warning(
+                            f"Could not parse last_update for bookmaker {bm_data.get('key')}: {e}"
+                        )
+
                 bookmaker = Bookmaker(
                     key=bm_data["key"],
                     title=bm_data["title"],
-                    last_update=datetime.fromisoformat(
-                        bm_data["last_update"].replace("Z", "+00:00")
-                    ),
+                    last_update=last_update,
                     markets=bm_data.get("markets", []),
                 )
                 bookmakers_list.append(bookmaker)
