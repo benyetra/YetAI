@@ -6525,7 +6525,7 @@ async def get_nfl_games():
     if is_service_available("sports_pipeline"):
         try:
             sports_pipeline = get_service("sports_pipeline")
-            games = await sports_pipeline.get_nfl_games()
+            games = await sports_pipeline.get_nfl_games_today()
             return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL games: {e}")
@@ -6908,7 +6908,7 @@ async def get_todays_insights():
                 # Only support NFL for now to avoid undefined function
                 if league == "nfl" and is_service_available("sports_pipeline"):
                     sports_pipeline = get_service("sports_pipeline")
-                    games = await sports_pipeline.get_nfl_games()
+                    games = await sports_pipeline.get_nfl_games_today()
                     response = {"status": "success", "games": games}
                 else:
                     response = {"status": "success", "games": []}
