@@ -700,11 +700,20 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         </p>
                       </div>
 
-                      {Object.entries(playerProps.markets).map(([marketKey, market]: [string, any]) => (
+                      {Object.entries(playerProps.markets)
+                        .filter(([_, market]: [string, any]) => {
+                          // Only show markets that have at least one player with actual odds
+                          return market.players && market.players.some((p: any) => p.over !== null || p.under !== null);
+                        })
+                        .map(([marketKey, market]: [string, any]) => {
+                          // Filter out players with no odds
+                          const playersWithOdds = market.players.filter((p: any) => p.over !== null || p.under !== null);
+
+                          return (
                         <div key={marketKey} className="border border-gray-200 rounded-lg p-3">
                           <h4 className="font-medium text-sm text-gray-800 mb-3">{marketKey.replace(/_/g, ' ').toUpperCase()}</h4>
                           <div className="space-y-2">
-                            {market.players && market.players.slice(0, 10).map((player: any, idx: number) => (
+                            {playersWithOdds.slice(0, 10).map((player: any, idx: number) => (
                               <div key={idx} className="bg-white border border-gray-200 rounded p-2">
                                 <p className="text-sm font-medium text-gray-800 mb-2">
                                   {player.player_name} - {player.line}
@@ -737,7 +746,8 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                             ))}
                           </div>
                         </div>
-                      ))}
+                          );
+                        })}
                     </div>
                   ) : (
                     <div className="text-center py-8 text-gray-500">
