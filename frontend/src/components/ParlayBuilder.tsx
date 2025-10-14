@@ -17,6 +17,11 @@ interface ParlayLeg {
   away_team?: string;
   sport?: string;
   commence_time?: string;
+  // Player prop specific fields
+  player_name?: string;
+  prop_market?: string;
+  prop_line?: number;
+  prop_selection?: string;
 }
 
 interface ParlayBuilderProps {
@@ -295,7 +300,14 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
           home_team: leg.home_team,
           away_team: leg.away_team,
           sport: leg.sport,
-          commence_time: leg.commence_time
+          commence_time: leg.commence_time,
+          // Include player prop fields if present
+          ...(leg.player_name && {
+            player_name: leg.player_name,
+            prop_market: leg.prop_market,
+            prop_line: leg.prop_line,
+            prop_selection: leg.prop_selection
+          })
         })),
         amount: parseFloat(amount)
       };
