@@ -281,28 +281,30 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     }
   };
 
-  const addPlayerPropLeg = (prop: any, selection: 'over' | 'under') => {
-    const outcome = prop.outcomes.find((o: any) => o.name.toLowerCase() === selection);
-    if (!outcome) return;
+  const addPlayerPropLeg = (player: any, marketKey: string, selection: 'over' | 'under') => {
+    const odds = selection === 'over' ? player.over : player.under;
+    if (odds === null) return;
 
     const propGame = playerProps?.gameInfo;
     if (!propGame) return;
 
-    const legSelection = `${prop.description} ${selection.toUpperCase()} ${prop.point} (${outcome.price})`;
+    // Format market name nicely
+    const marketDisplay = marketKey.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase());
+    const legSelection = `${player.player_name} ${selection.toUpperCase()} ${player.line} ${marketDisplay}`;
 
     const newLeg: ParlayLeg = {
       gameId: propGame.id,
       betType: 'prop',
       selection: legSelection,
-      odds: outcome.price,
+      odds: odds,
       gameInfo: `${propGame.teams[0]} @ ${propGame.teams[1]}`,
       home_team: propGame.teams[1],
       away_team: propGame.teams[0],
       sport: propGame.sport,
       commence_time: propGame.gameTime,
-      player_name: prop.description.split(' - ')[0], // Extract player name
-      prop_market: prop.name,
-      prop_line: prop.point,
+      player_name: player.player_name,
+      prop_market: marketKey,
+      prop_line: player.line,
       prop_selection: selection
     };
 
@@ -698,25 +700,37 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         </p>
                       </div>
 
-                      {Object.entries(playerProps.markets).map(([marketKey, props]: [string, any]) => (
+                      {Object.entries(playerProps.markets).map(([marketKey, market]: [string, any]) => (
                         <div key={marketKey} className="border border-gray-200 rounded-lg p-3">
-                          <h4 className="font-medium text-sm text-gray-800 mb-3">{props.display_name}</h4>
+                          <h4 className="font-medium text-sm text-gray-800 mb-3">{marketKey.replace(/_/g, ' ').toUpperCase()}</h4>
                           <div className="space-y-2">
-                            {props.props.slice(0, 10).map((prop: any, idx: number) => (
+                            {market.players && market.players.slice(0, 10).map((player: any, idx: number) => (
                               <div key={idx} className="bg-white border border-gray-200 rounded p-2">
-                                <p className="text-sm font-medium text-gray-800 mb-2">{prop.description}</p>
+                                <p className="text-sm font-medium text-gray-800 mb-2">
+                                  {player.player_name} - {player.line}
+                                </p>
                                 <div className="grid grid-cols-2 gap-2">
                                   <button
-                                    onClick={() => addPlayerPropLeg(prop, 'over')}
-                                    className="px-3 py-1.5 text-xs border border-green-300 bg-green-50 hover:bg-green-100 text-green-700 rounded transition-colors"
+                                    onClick={() => addPlayerPropLeg(player, marketKey, 'over')}
+                                    disabled={player.over === null}
+                                    className={`px-3 py-1.5 text-xs border rounded transition-colors ${
+                                      player.over === null
+                                        ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        : 'border-green-300 bg-green-50 hover:bg-green-100 text-green-700'
+                                    }`}
                                   >
-                                    Over {prop.point} ({prop.outcomes.find((o: any) => o.name.toLowerCase() === 'over')?.price || 'N/A'})
+                                    Over {player.line} ({player.over !== null ? (player.over > 0 ? `+${player.over}` : player.over) : 'N/A'})
                                   </button>
                                   <button
-                                    onClick={() => addPlayerPropLeg(prop, 'under')}
-                                    className="px-3 py-1.5 text-xs border border-red-300 bg-red-50 hover:bg-red-100 text-red-700 rounded transition-colors"
+                                    onClick={() => addPlayerPropLeg(player, marketKey, 'under')}
+                                    disabled={player.under === null}
+                                    className={`px-3 py-1.5 text-xs border rounded transition-colors ${
+                                      player.under === null
+                                        ? 'border-gray-200 bg-gray-100 text-gray-400 cursor-not-allowed'
+                                        : 'border-red-300 bg-red-50 hover:bg-red-100 text-red-700'
+                                    }`}
                                   >
-                                    Under {prop.point} ({prop.outcomes.find((o: any) => o.name.toLowerCase() === 'under')?.price || 'N/A'})
+                                    Under {player.line} ({player.under !== null ? (player.under > 0 ? `+${player.under}` : player.under) : 'N/A'})
                                   </button>
                                 </div>
                               </div>
