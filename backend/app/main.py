@@ -6049,6 +6049,10 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
             if friendly_sport not in games_by_sport:
                 continue
 
+            # Skip games without broadcast info
+            if not game.broadcast_info:
+                continue
+
             # Extract bookmakers odds from odds_data JSON
             bookmakers_odds = []
             if game.odds_data and isinstance(game.odds_data, list):
