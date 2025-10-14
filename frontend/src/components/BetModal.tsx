@@ -14,15 +14,17 @@ import {
   Info,
   Lock,
   CheckCircle,
-  XCircle
+  XCircle,
+  ExternalLink
 } from 'lucide-react';
 import { useAuth } from './Auth';
-import { apiClient } from '@/lib/api';
+import { apiClient, sportsAPI } from '@/lib/api';
 
 // Types
 interface Game {
   id: string;
   sport: string;
+  sport_key?: string;  // Added for sportsbook linking
   home_team: string;
   away_team: string;
   commence_time: string;
@@ -73,6 +75,7 @@ export default function BetModal({
   const [error, setError] = useState<string>('');
   const [aiRecommendation, setAiRecommendation] = useState<AIRecommendation | null>(null);
   const [showAiInsights, setShowAiInsights] = useState(true);
+  const [loadingFanDuel, setLoadingFanDuel] = useState(false);
 
   // Quick bet amounts
   const quickAmounts = [10, 25, 50, 100, 250];
@@ -204,6 +207,46 @@ export default function BetModal({
       setShowConfirmation(false);
     } finally {
       setIsProcessing(false);
+    }
+  };
+
+  const handlePlaceOnFanDuel = async () => {
+    if (!game || !selection) return;
+
+    try {
+      setLoadingFanDuel(true);
+
+      // Map bet type to API format
+      const betTypeMap = {
+        'moneyline': 'h2h',
+        'spread': 'spreads',
+        'total': 'totals'
+      };
+
+      // Generate sport_key from sport if not available
+      const sportKey = game.sport_key || `${game.sport.toLowerCase()}_${game.sport.toLowerCase()}`;
+
+      const response = await sportsAPI.getSportsbookLink({
+        sportsbook: 'fanduel',
+        sport_key: sportKey,
+        home_team: game.home_team,
+        away_team: game.away_team,
+        bet_type: betTypeMap[betType],
+        bet_selection: selection
+      });
+
+      if (response.status === 'success' && response.link) {
+        // Open FanDuel in new tab
+        window.open(response.link, '_blank');
+      } else {
+        console.error('Failed to generate FanDuel link:', response);
+        setError('Could not generate FanDuel link. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error opening FanDuel:', error);
+      setError('Failed to open FanDuel. Please try again.');
+    } finally {
+      setLoadingFanDuel(false);
     }
   };
 
@@ -562,15 +605,45 @@ export default function BetModal({
 
         {/* Action Buttons */}
         {!showConfirmation && !betPlaced && (
-          <div className="p-6 bg-gray-50">
+          <div className="p-6 bg-gray-50 space-y-3">
+            {/* YetAI Internal Bet */}
             <button
               onClick={handlePlaceBet}
               disabled={!selection || !amount || parseFloat(amount) <= 0}
               className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
             >
-              Place Bet
+              Place Bet on YetAI
             </button>
-            
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-300"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-2 bg-gray-50 text-gray-500">or</span>
+              </div>
+            </div>
+
+            {/* FanDuel External Bet */}
+            <button
+              onClick={handlePlaceOnFanDuel}
+              disabled={!selection || loadingFanDuel}
+              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center space-x-2"
+            >
+              {loadingFanDuel ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <span>Opening FanDuel...</span>
+                </>
+              ) : (
+                <>
+                  <span>Place Bet on FanDuel</span>
+                  <ExternalLink className="w-4 h-4" />
+                </>
+              )}
+            </button>
+
             {/* Responsible Gambling Notice */}
             <p className="text-xs text-gray-500 text-center mt-4">
               Please bet responsibly. If you need help, call 1-800-GAMBLER.
