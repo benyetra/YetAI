@@ -169,9 +169,7 @@ class PlayerPropsService:
             )
 
             if not markets_to_fetch:
-                logger.warning(
-                    f"No player prop markets available for event {event_id}"
-                )
+                logger.warning(f"No player prop markets available for event {event_id}")
                 return {
                     "event_id": event_id,
                     "sport_key": sport,
