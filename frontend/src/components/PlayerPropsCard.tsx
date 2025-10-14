@@ -223,105 +223,106 @@ export default function PlayerPropsCard({
   }
 
   return (
-    <div className="bg-gray-800 rounded-lg overflow-hidden">
-      <div className="p-4 bg-gradient-to-r from-purple-900/50 to-blue-900/50 border-b border-gray-700">
+    <div className="bg-gray-900 rounded-lg overflow-hidden shadow-xl">
+      <div className="p-4 bg-gradient-to-r from-purple-600 to-blue-600 border-b border-purple-500/30">
         <div className="flex items-center space-x-2">
-          <User className="w-5 h-5 text-purple-400" />
+          <User className="w-5 h-5 text-white" />
           <h3 className="text-lg font-semibold text-white">Player Props</h3>
-          <span className="text-xs text-gray-400 ml-auto">FanDuel</span>
+          <span className="text-xs text-purple-200 ml-auto">FanDuel</span>
         </div>
       </div>
 
-      <div className="divide-y divide-gray-700">
+      <div className="divide-y divide-gray-800">
         {markets.map((market) => (
-          <div key={market.market_key} className="bg-gray-800/50">
-            {/* Market Header */}
+          <div key={market.market_key} className="bg-gray-900">
+            {/* Market Header - Improved styling */}
             <button
               onClick={() => toggleMarket(market.market_key)}
-              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-700/30 transition-colors"
+              className="w-full px-4 py-3 flex items-center justify-between hover:bg-gray-800/70 transition-all group"
             >
-              <div className="flex items-center space-x-2">
-                <span className="font-medium text-white">
+              <div className="flex items-center space-x-3">
+                <div className="w-1 h-6 bg-gradient-to-b from-purple-500 to-blue-500 rounded-full" />
+                <span className="font-semibold text-white text-base group-hover:text-purple-300 transition-colors">
                   {getMarketDisplayName(market.market_key)}
                 </span>
-                <span className="text-xs text-gray-400">
-                  ({market.players.length} players)
+                <span className="text-xs text-gray-500 bg-gray-800 px-2 py-1 rounded-full">
+                  {market.players.length}
                 </span>
               </div>
               {expandedMarkets.has(market.market_key) ? (
-                <ChevronUp className="w-4 h-4 text-gray-400" />
+                <ChevronUp className="w-5 h-5 text-purple-400 group-hover:text-purple-300" />
               ) : (
-                <ChevronDown className="w-4 h-4 text-gray-400" />
+                <ChevronDown className="w-5 h-5 text-gray-500 group-hover:text-purple-400" />
               )}
             </button>
 
-            {/* Player Props */}
+            {/* Player Props - Improved card styling */}
             {expandedMarkets.has(market.market_key) && (
-              <div className="px-4 pb-4 space-y-2">
+              <div className="px-4 pb-4 pt-2 space-y-3 bg-gray-800/30">
                 {market.players.map((player) => (
                   <div
                     key={player.player_name}
-                    className="bg-gray-700/30 rounded-lg p-3 border border-gray-700 hover:border-gray-600 transition-colors"
+                    className="bg-gray-800 rounded-lg p-3 border border-gray-700 hover:border-purple-500/50 transition-all shadow-md"
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-medium text-white text-sm">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-semibold text-white text-sm">
                         {player.player_name}
                       </span>
-                      <span className="text-xs text-gray-400">
+                      <span className="text-xs text-purple-400 font-medium bg-purple-500/10 px-2 py-1 rounded">
                         Line: {player.line}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
-                      {/* Over Button */}
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Over Button - Enhanced styling */}
                       <button
                         onClick={() => handlePropSelection(market, player, 'over')}
                         disabled={player.over === null}
                         className={`
-                          px-3 py-2 rounded-lg text-sm font-medium transition-all
+                          px-4 py-2.5 rounded-lg text-sm font-semibold transition-all
                           ${player.over === null
-                            ? 'bg-gray-600/30 text-gray-500 cursor-not-allowed'
+                            ? 'bg-gray-700/50 text-gray-600 cursor-not-allowed'
                             : selectedProp?.market === market.market_key &&
                               selectedProp?.player === player.player_name &&
                               selectedProp?.selection === 'over'
-                            ? 'bg-green-600 text-white ring-2 ring-green-400'
-                            : 'bg-gray-600/50 text-white hover:bg-gray-600 hover:ring-2 hover:ring-green-500/50'
+                            ? 'bg-gradient-to-r from-green-600 to-green-500 text-white ring-2 ring-green-400 shadow-lg shadow-green-500/50'
+                            : 'bg-gray-700 text-white hover:bg-gradient-to-r hover:from-green-600 hover:to-green-500 hover:ring-2 hover:ring-green-500/50 hover:shadow-lg hover:shadow-green-500/30'
                           }
                         `}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="flex items-center space-x-1">
-                            <TrendingUp className="w-3 h-3" />
+                          <span className="flex items-center space-x-1.5">
+                            <TrendingUp className="w-4 h-4" />
                             <span>Over</span>
                           </span>
-                          <span className={player.over && player.over > 0 ? 'text-green-400' : ''}>
+                          <span className="font-bold">
                             {formatOdds(player.over)}
                           </span>
                         </div>
                       </button>
 
-                      {/* Under Button */}
+                      {/* Under Button - Enhanced styling */}
                       <button
                         onClick={() => handlePropSelection(market, player, 'under')}
                         disabled={player.under === null}
                         className={`
-                          px-3 py-2 rounded-lg text-sm font-medium transition-all
+                          px-4 py-2.5 rounded-lg text-sm font-semibold transition-all
                           ${player.under === null
-                            ? 'bg-gray-600/30 text-gray-500 cursor-not-allowed'
+                            ? 'bg-gray-700/50 text-gray-600 cursor-not-allowed'
                             : selectedProp?.market === market.market_key &&
                               selectedProp?.player === player.player_name &&
                               selectedProp?.selection === 'under'
-                            ? 'bg-red-600 text-white ring-2 ring-red-400'
-                            : 'bg-gray-600/50 text-white hover:bg-gray-600 hover:ring-2 hover:ring-red-500/50'
+                            ? 'bg-gradient-to-r from-red-600 to-red-500 text-white ring-2 ring-red-400 shadow-lg shadow-red-500/50'
+                            : 'bg-gray-700 text-white hover:bg-gradient-to-r hover:from-red-600 hover:to-red-500 hover:ring-2 hover:ring-red-500/50 hover:shadow-lg hover:shadow-red-500/30'
                           }
                         `}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="flex items-center space-x-1">
-                            <TrendingDown className="w-3 h-3" />
+                          <span className="flex items-center space-x-1.5">
+                            <TrendingDown className="w-4 h-4" />
                             <span>Under</span>
                           </span>
-                          <span className={player.under && player.under > 0 ? 'text-green-400' : ''}>
+                          <span className="font-bold">
                             {formatOdds(player.under)}
                           </span>
                         </div>
@@ -335,7 +336,7 @@ export default function PlayerPropsCard({
         ))}
       </div>
 
-      <div className="p-3 bg-gray-900/50 text-xs text-gray-400 text-center border-t border-gray-700">
+      <div className="p-3 bg-gray-900 text-xs text-gray-500 text-center border-t border-gray-800">
         Odds from FanDuel • Updated{' '}
         {new Date(markets[0]?.last_update).toLocaleTimeString()}
       </div>
