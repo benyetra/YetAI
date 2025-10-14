@@ -65,19 +65,13 @@ PLAYER_PROP_MARKETS = {
         "player_first_goal",  # First goal scorer
     ],
     "baseball_mlb": [
+        # Only include markets that are confirmed to work with The Odds API
         "player_hits",  # Hits
         "player_total_bases",  # Total bases
-        "player_runs",  # Runs scored
-        "player_rbis",  # RBIs
-        "player_home_runs",  # Home runs
-        "player_stolen_bases",  # Stolen bases
         "player_strikeouts",  # Batter strikeouts
         "player_pitcher_strikeouts",  # Pitcher strikeouts
         "player_hits_allowed",  # Hits allowed (pitcher)
         "player_walks",  # Walks (batter)
-        "player_pitcher_walks",  # Walks allowed (pitcher)
-        "player_earned_runs",  # Earned runs (pitcher)
-        "player_outs",  # Outs pitched
     ],
 }
 
