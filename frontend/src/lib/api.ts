@@ -476,6 +476,55 @@ export const sportsAPI = {
       console.warn('Failed to fetch user performance data:', error);
       return fallbackData;
     }
+  },
+
+  // Get player props for an event
+  getPlayerProps: async (sportKey: string, eventId: string, markets?: string[], token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+
+    const params = new URLSearchParams();
+    if (markets && markets.length > 0) {
+      params.append('markets', markets.join(','));
+    }
+
+    const fallbackData = {
+      status: 'error',
+      data: {
+        event_id: eventId,
+        sport_key: sportKey,
+        markets: {}
+      },
+      message: 'Player props not available'
+    };
+
+    try {
+      const endpoint = `/api/player-props/${sportKey}/${eventId}${params.toString() ? '?' + params.toString() : ''}`;
+      const response = await enhancedApiClient.get(endpoint, authToken);
+      return response;
+    } catch (error) {
+      console.warn('Failed to fetch player props:', error);
+      return fallbackData;
+    }
+  },
+
+  // Get available player prop markets for a sport
+  getPlayerPropMarkets: async (sportKey: string, token?: string) => {
+    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+
+    const fallbackData = {
+      status: 'error',
+      sport: sportKey,
+      markets: [],
+      message: 'Markets not available'
+    };
+
+    try {
+      const response = await enhancedApiClient.get(`/api/player-props/markets/${sportKey}`, authToken);
+      return response;
+    } catch (error) {
+      console.warn('Failed to fetch player prop markets:', error);
+      return fallbackData;
+    }
   }
 };
 
