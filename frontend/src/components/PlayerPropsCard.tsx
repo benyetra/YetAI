@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Loader } from 'lucide-react';
+import { User, TrendingUp, TrendingDown, ChevronDown, ChevronUp, Loader, Plus } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 import { useAuth } from './Auth';
 
@@ -38,6 +38,7 @@ interface PlayerPropsCardProps {
     commence_time: string;
   };
   onPlaceBet?: (propBet: PropBet) => void;
+  onAddToParlay?: (propBet: PropBet) => void;
 }
 
 interface PropBet {
@@ -115,7 +116,8 @@ export default function PlayerPropsCard({
   sportKey,
   eventId,
   gameInfo,
-  onPlaceBet
+  onPlaceBet,
+  onAddToParlay
 }: PlayerPropsCardProps) {
   const { token } = useAuth();
   const [propsData, setPropsData] = useState<PlayerPropsData | null>(null);
@@ -123,6 +125,7 @@ export default function PlayerPropsCard({
   const [error, setError] = useState<string | null>(null);
   const [expandedMarkets, setExpandedMarkets] = useState<Set<string>>(new Set());
   const [selectedProp, setSelectedProp] = useState<{ market: string; player: string; selection: 'over' | 'under' } | null>(null);
+  const [selectedPropForAction, setSelectedPropForAction] = useState<PropBet | null>(null);
 
   useEffect(() => {
     fetchPlayerProps();
@@ -204,10 +207,7 @@ export default function PlayerPropsCard({
     };
 
     setSelectedProp({ market: market.market_key, player: player.player_name, selection });
-
-    if (onPlaceBet) {
-      onPlaceBet(propBet);
-    }
+    setSelectedPropForAction(propBet);
   };
 
   const formatOdds = (odds: number | null): string => {
@@ -368,6 +368,49 @@ export default function PlayerPropsCard({
           </div>
         ))}
       </div>
+
+      {/* Action Buttons when a prop is selected */}
+      {selectedPropForAction && (
+        <div className="p-4 bg-gray-800 border-t border-gray-700">
+          <div className="mb-3">
+            <p className="text-sm text-gray-400 mb-1">Selected:</p>
+            <p className="text-white font-medium">
+              {selectedPropForAction.player_name} - {selectedPropForAction.market_display}
+            </p>
+            <p className="text-gray-300 text-sm">
+              {selectedPropForAction.selection.toUpperCase()} {selectedPropForAction.line}
+              <span className={`ml-2 ${selectedPropForAction.odds > 0 ? 'text-green-400' : 'text-white'}`}>
+                ({formatOdds(selectedPropForAction.odds)})
+              </span>
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={() => {
+                if (onAddToParlay) {
+                  onAddToParlay(selectedPropForAction);
+                  setSelectedPropForAction(null);
+                  setSelectedProp(null);
+                }
+              }}
+              className="px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Add to Parlay
+            </button>
+            <button
+              onClick={() => {
+                if (onPlaceBet) {
+                  onPlaceBet(selectedPropForAction);
+                }
+              }}
+              className="px-4 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-colors"
+            >
+              Place Bet
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="p-3 bg-gray-800/50 text-xs text-gray-400 text-center border-t border-gray-700">
         Odds from FanDuel • Updated{' '}

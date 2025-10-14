@@ -428,6 +428,37 @@ export function PopularGames({
                   setShowPropBetModal(true);
                   setShowPropsModal(false);
                 }}
+                onAddToParlay={(prop) => {
+                  // Store the prop in session storage for the parlay builder
+                  const existingParlayLegs = sessionStorage.getItem('parlayLegs');
+                  const legs = existingParlayLegs ? JSON.parse(existingParlayLegs) : [];
+
+                  // Convert prop to parlay leg format
+                  const parlayLeg = {
+                    gameId: prop.game_id,
+                    betType: 'prop',
+                    selection: `${prop.player_name} ${prop.selection} ${prop.line} ${prop.market_display}`,
+                    odds: prop.odds,
+                    gameInfo: `${prop.away_team} @ ${prop.home_team}`,
+                    home_team: prop.home_team,
+                    away_team: prop.away_team,
+                    sport: prop.sport,
+                    commence_time: prop.commence_time,
+                    // Player prop specific fields
+                    player_name: prop.player_name,
+                    prop_market: prop.market_key,
+                    prop_line: prop.line,
+                    prop_selection: prop.selection
+                  };
+
+                  legs.push(parlayLeg);
+                  sessionStorage.setItem('parlayLegs', JSON.stringify(legs));
+
+                  // Show success message and close modal
+                  alert('Player prop added to parlay! Visit the Parlays page to complete your bet.');
+                  setShowPropsModal(false);
+                  setSelectedGameForProps(null);
+                }}
               />
             </div>
           </div>
