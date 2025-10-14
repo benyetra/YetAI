@@ -304,52 +304,57 @@ class GameSyncService:
         total_created = 0
         sports_synced = []
 
-        try:
-            for sport_key in self.sync_sports:
-                try:
-                    logger.info(f"Syncing upcoming games for {sport_key}")
+        # Use async context manager for odds API service
+        async with self.odds_api_service as api_service:
+            try:
+                for sport_key in self.sync_sports:
+                    try:
+                        logger.info(f"Syncing upcoming games for {sport_key}")
 
-                    # Fetch upcoming games from Odds API
-                    games = await self.odds_api_service.get_odds(
-                        sport=sport_key.value,
-                        commence_time_from=datetime.utcnow(),
-                        commence_time_to=datetime.utcnow() + timedelta(days=days_ahead),
-                    )
+                        # Fetch upcoming games from Odds API
+                        games = await api_service.get_odds(
+                            sport=sport_key.value,
+                            commence_time_from=datetime.utcnow(),
+                            commence_time_to=datetime.utcnow()
+                            + timedelta(days=days_ahead),
+                        )
 
-                    if not games:
-                        logger.info(f"No upcoming games found for {sport_key}")
+                        if not games:
+                            logger.info(f"No upcoming games found for {sport_key}")
+                            continue
+
+                        # Update database with game data
+                        updated, created = await self._update_games_from_odds(
+                            games, sport_key.value
+                        )
+                        total_updated += updated
+                        total_created += created
+                        sports_synced.append(sport_key.value)
+
+                        logger.info(
+                            f"Synced {sport_key}: {updated} updated, {created} created from {len(games)} games"
+                        )
+
+                        # Small delay between API calls to respect rate limits
+                        await asyncio.sleep(1)
+
+                    except Exception as e:
+                        logger.error(
+                            f"Error syncing upcoming games for {sport_key}: {e}"
+                        )
                         continue
 
-                    # Update database with game data
-                    updated, created = await self._update_games_from_odds(
-                        games, sport_key.value
-                    )
-                    total_updated += updated
-                    total_created += created
-                    sports_synced.append(sport_key.value)
+                return {
+                    "status": "success",
+                    "total_updated": total_updated,
+                    "total_created": total_created,
+                    "sports_synced": sports_synced,
+                    "message": f"Synced {total_updated + total_created} games across {len(sports_synced)} sports",
+                }
 
-                    logger.info(
-                        f"Synced {sport_key}: {updated} updated, {created} created from {len(games)} games"
-                    )
-
-                    # Small delay between API calls to respect rate limits
-                    await asyncio.sleep(1)
-
-                except Exception as e:
-                    logger.error(f"Error syncing upcoming games for {sport_key}: {e}")
-                    continue
-
-            return {
-                "status": "success",
-                "total_updated": total_updated,
-                "total_created": total_created,
-                "sports_synced": sports_synced,
-                "message": f"Synced {total_updated + total_created} games across {len(sports_synced)} sports",
-            }
-
-        except Exception as e:
-            logger.error(f"Critical error in sync_upcoming_games: {e}")
-            return {"status": "error", "error": str(e)}
+            except Exception as e:
+                logger.error(f"Critical error in sync_upcoming_games: {e}")
+                return {"status": "error", "error": str(e)}
 
     async def _update_games_from_odds(
         self, games: List, sport_key: str
