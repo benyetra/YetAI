@@ -350,6 +350,24 @@ export const sportsAPI = {
     return enhancedApiClient.getWithFallback(endpoint, fallbackData, undefined, useCache);
   },
 
+  // Generate sportsbook deep link
+  getSportsbookLink: async (data: {
+    sportsbook: string;
+    sport_key: string;
+    home_team: string;
+    away_team: string;
+    bet_type?: string;
+    bet_selection?: string;
+  }) => {
+    try {
+      const response = await apiClient.post('/api/v1/sportsbook-link', data);
+      return response;
+    } catch (error) {
+      console.error('Error generating sportsbook link:', error);
+      throw error;
+    }
+  },
+
   // Get live games
   getLiveGames: async (useCache: boolean = true) => {
     const fallbackData = {

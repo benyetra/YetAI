@@ -5982,6 +5982,60 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         }
 
 
+@app.post("/api/v1/sportsbook-link")
+async def generate_sportsbook_link(
+    request: dict,
+):
+    """
+    Generate a deep link to a sportsbook with bet information.
+
+    Request body:
+    {
+        "sportsbook": "fanduel",
+        "sport_key": "americanfootball_nfl",
+        "home_team": "Atlanta Falcons",
+        "away_team": "Buffalo Bills",
+        "bet_type": "h2h",  // h2h, spreads, totals
+        "bet_selection": "Buffalo Bills"  // optional
+    }
+    """
+    try:
+        from app.services.sportsbook_links_service import sportsbook_links_service
+
+        # Extract request data
+        sportsbook = request.get("sportsbook", "fanduel")
+        sport_key = request.get("sport_key", "")
+        home_team = request.get("home_team", "")
+        away_team = request.get("away_team", "")
+        bet_type = request.get("bet_type", "h2h")
+        bet_selection = request.get("bet_selection")
+
+        # Generate link
+        link_info = sportsbook_links_service.generate_link(
+            sportsbook=sportsbook,
+            sport_key=sport_key,
+            home_team=home_team,
+            away_team=away_team,
+            bet_type=bet_type,
+            bet_selection=bet_selection,
+        )
+
+        return {
+            "status": "success",
+            "link": link_info["url"],
+            "sportsbook": link_info["sportsbook"],
+            "requires_manual_selection": link_info["requires_manual_selection"],
+            "deep_link_supported": link_info["deep_link_supported"],
+            "message": f"Link generated for {sportsbook}. {'Deep linking supported - takes you to the game page.' if link_info['deep_link_supported'] else 'Generic link - you may need to find the game manually.'}",
+        }
+
+    except Exception as e:
+        logger.error(f"Error generating sportsbook link: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to generate sportsbook link: {str(e)}"
+        )
+
+
 async def _store_games_in_database(games_data: List, sport_key: str) -> int:
     """Store games from Odds API in the database for parlay creation"""
     if not games_data:
