@@ -500,11 +500,13 @@ class SchedulerService:
             return
 
         try:
-            from app.services.game_sync_service import game_sync_service
+            from app.services.games_sync_service import run_games_sync
 
-            result = await game_sync_service.sync_upcoming_games(days_ahead=7)
+            result = await run_games_sync()
             logger.info(
-                f"Game sync completed: {result.get('message', 'No message returned')}"
+                f"Game sync completed: {result.get('total_games_fetched', 0)} fetched, "
+                f"{result.get('total_games_created', 0)} created, "
+                f"{result.get('total_games_updated', 0)} updated"
             )
 
         except Exception as e:

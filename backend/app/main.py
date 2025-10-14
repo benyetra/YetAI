@@ -330,18 +330,15 @@ async def lifespan(_app: FastAPI):
         async def _background_game_sync():
             """Run initial game sync in background to not block startup"""
             try:
-                from app.services.game_sync_service import game_sync_service
+                from app.services.games_sync_service import run_games_sync
 
                 logger.info("🔄 Starting background game sync...")
-                result = await game_sync_service.sync_upcoming_games(days_ahead=7)
-                if result.get("status") == "success":
-                    logger.info(
-                        f"✅ Initial game sync: {result.get('total_created', 0)} games created, {result.get('total_updated', 0)} updated"
-                    )
-                else:
-                    logger.warning(
-                        f"⚠️  Game sync completed with status: {result.get('status')}"
-                    )
+                result = await run_games_sync()
+                logger.info(
+                    f"✅ Initial game sync: {result.get('total_games_fetched', 0)} fetched, "
+                    f"{result.get('total_games_created', 0)} created, "
+                    f"{result.get('total_games_updated', 0)} updated"
+                )
             except Exception as e:
                 logger.warning(f"⚠️  Initial game sync failed: {e}")
 
@@ -6014,14 +6011,13 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         )
         logger.info(f"Date range (UTC): {today_start} to {today_end}")
 
-        # Query database for games happening today
-        # NOTE: Broadcast filter temporarily removed until ESPN API integration is complete
+        # Query database for games happening today that are nationally televised
         games_query = (
             db.query(Game)
             .filter(
                 Game.commence_time >= today_start,
                 Game.commence_time <= today_end,
-                # Game.is_nationally_televised == True,  # TODO: Re-enable when ESPN API syncs broadcast info
+                Game.is_nationally_televised == True,  # Only nationally televised games
             )
             .order_by(Game.commence_time)
             .all()
