@@ -768,7 +768,29 @@ export default function AdminPage() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Pick</label>
-              {formData.bet_type && selectedGame ? (
+              {formData.bet_type === 'Player Props' ? (
+                // Custom input for player props
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={formData.pick}
+                    onChange={(e) => setFormData({...formData, pick: e.target.value})}
+                    placeholder="e.g., Patrick Mahomes over 2.5 Passing TDs"
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  />
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                    <p className="text-sm text-blue-800 font-medium mb-2">Player Prop Format:</p>
+                    <p className="text-xs text-blue-700 mb-1"><span className="font-mono bg-blue-100 px-1 rounded">Player Name over/under X.X Stat Type</span></p>
+                    <p className="text-xs text-blue-600 mt-2">Examples:</p>
+                    <ul className="text-xs text-blue-600 list-disc list-inside space-y-1">
+                      <li>Patrick Mahomes over 2.5 Passing TDs</li>
+                      <li>Alex Ovechkin over 0.5 Goals</li>
+                      <li>Yoshinobu Yamamoto under 16.5 Pitcher Outs</li>
+                      <li>LeBron James over 25.5 Points</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : formData.bet_type && selectedGame ? (
                 <select
                   value={(() => {
                     // Extract the key part from formatted pick for dropdown value matching
