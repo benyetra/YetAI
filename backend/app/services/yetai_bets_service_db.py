@@ -149,6 +149,30 @@ class YetAIBetsServiceDB:
             try:
                 parlay_id = str(uuid.uuid4())
 
+                # Find the earliest game time from all legs for the parlay
+                earliest_game_time = None
+                earliest_commence_time = None
+                for leg in parlay_request.legs:
+                    if hasattr(leg, "commence_time") and leg.commence_time:
+                        try:
+                            from dateutil import parser
+
+                            leg_commence = parser.isoparse(leg.commence_time)
+                            if (
+                                earliest_commence_time is None
+                                or leg_commence < earliest_commence_time
+                            ):
+                                earliest_commence_time = leg_commence
+                                earliest_game_time = (
+                                    leg.game_time if hasattr(leg, "game_time") else None
+                                )
+                        except Exception as e:
+                            logger.warning(f"Could not parse leg commence_time: {e}")
+                            continue
+
+                # Use the earliest time found, or default to "TBD"
+                parlay_game_time = earliest_game_time if earliest_game_time else "TBD"
+
                 # Create main parlay entry with legs stored as JSON
                 parlay_bet = YetAIBet(
                     id=parlay_id,
@@ -171,6 +195,8 @@ class YetAIBetsServiceDB:
                     status="pending",
                     created_at=datetime.utcnow(),
                     parlay_legs=[leg.dict() for leg in parlay_request.legs],
+                    game_time=parlay_game_time,
+                    commence_time=earliest_commence_time,
                 )
 
                 db.add(parlay_bet)
