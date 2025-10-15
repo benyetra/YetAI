@@ -93,6 +93,14 @@ class SchedulerService:
             interval_seconds=21600,  # 6 hours
         )
 
+        # Verify player props from previous day every morning at 6 AM UTC
+        # Run every 24 hours (86400 seconds)
+        self.add_task(
+            "verify_player_props",
+            self._verify_player_props,
+            interval_seconds=86400,  # 24 hours
+        )
+
     def add_task(
         self,
         name: str,
@@ -511,6 +519,52 @@ class SchedulerService:
 
         except Exception as e:
             logger.error(f"Failed to sync upcoming games: {e}")
+            raise
+
+    async def _verify_player_props(self):
+        """Verify player props from previous day using sport-specific APIs"""
+        logger.info("Starting scheduled player prop verification for previous day")
+
+        try:
+            from app.services.player_prop_verification_service import (
+                PlayerPropVerificationService,
+            )
+            from app.core.database import get_db
+
+            # Get database session
+            db = next(get_db())
+
+            try:
+                # Create service instance and verify props
+                prop_service = PlayerPropVerificationService(db)
+                result = await prop_service.verify_previous_day_props()
+
+                # Log detailed results
+                if result.get("success"):
+                    logger.info(
+                        f"Player prop verification completed: "
+                        f"{result.get('total_props_checked', 0)} props checked, "
+                        f"{result.get('total_settled', 0)} settled, "
+                        f"{result.get('total_errors', 0)} errors"
+                    )
+
+                    # Log sport-specific stats
+                    for sport, stats in result.get("sports", {}).items():
+                        if stats.get("settled", 0) > 0:
+                            logger.info(
+                                f"  {sport.upper()}: {stats['checked']} checked, "
+                                f"{stats['settled']} settled, {stats['errors']} errors"
+                            )
+                else:
+                    logger.error(
+                        f"Player prop verification failed: {result.get('error', 'Unknown error')}"
+                    )
+
+            finally:
+                db.close()
+
+        except Exception as e:
+            logger.error(f"Failed to verify player props: {e}", exc_info=True)
             raise
 
     def get_task_status(self) -> Dict[str, Dict]:
