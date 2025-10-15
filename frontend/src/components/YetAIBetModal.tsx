@@ -28,6 +28,18 @@ interface YetAIBet {
   status: 'pending' | 'won' | 'lost' | 'pushed';
   is_premium: boolean;
   game_time: string;
+  bet_category?: 'straight' | 'parlay';
+  parlay_legs?: Array<{
+    sport: string;
+    game: string;
+    game_id: string;
+    home_team: string;
+    away_team: string;
+    bet_type: string;
+    pick: string;
+    odds: string;
+    commence_time: string;
+  }>;
 }
 
 interface YetAIBetModalProps {
@@ -116,84 +128,130 @@ export default function YetAIBetModal({
     setError('');
 
     try {
-      // Map bet type to enum format
-      const betTypeMapping: { [key: string]: string } = {
-        'total (over/under)': 'total',
-        'total': 'total',
-        'over/under': 'total',
-        'spread': 'spread',
-        'point spread': 'spread',
-        'moneyline': 'moneyline',
-        'money line': 'moneyline',
-        'parlay': 'parlay',
-        'prop': 'prop'
-      };
+      // Check if this is a parlay
+      const isParlay = bet.bet_category === 'parlay' && bet.parlay_legs && bet.parlay_legs.length > 0;
 
-      const normalizedBetType = betTypeMapping[bet.bet_type.toLowerCase()] || 'total';
+      if (isParlay) {
+        // Handle parlay bet placement
+        const betTypeMapping: { [key: string]: string } = {
+          'total (over/under)': 'total',
+          'total': 'total',
+          'over/under': 'total',
+          'spread': 'spread',
+          'point spread': 'spread',
+          'moneyline': 'moneyline',
+          'money line': 'moneyline',
+          'player props': 'prop',
+          'prop': 'prop'
+        };
 
-      const requestPayload = {
-        game_id: bet.id, // Using bet ID as game ID for YetAI bets
-        yetai_bet_id: bet.id, // IMPORTANT: Pass YetAI bet ID so backend can get correct odds_api_event_id
-        bet_type: normalizedBetType,
-        selection: bet.pick,
-        odds: parseOdds(bet.odds),
-        amount: parseFloat(amount),
-        home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
-        away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
-        sport: bet.sport,
-        commence_time: (() => {
-          try {
-            if (!bet.game_time) {
-              console.warn('⚠️ No game_time provided for YetAI bet, using fallback');
-              return new Date().toISOString();
-            }
-            const date = new Date(bet.game_time);
-            if (isNaN(date.getTime())) {
-              console.warn('⚠️ Invalid game_time format:', bet.game_time, 'using fallback');
-              return new Date().toISOString();
-            }
-            return date.toISOString();
-          } catch (error) {
-            console.warn('⚠️ Date parsing error:', error, 'for game_time:', bet.game_time, 'using fallback');
-            return new Date().toISOString();
+        const parlayLegs = bet.parlay_legs!.map(leg => ({
+          game_id: leg.game_id,
+          bet_type: betTypeMapping[leg.bet_type.toLowerCase()] || 'total',
+          selection: leg.pick,
+          odds: parseOdds(leg.odds),
+          home_team: leg.home_team,
+          away_team: leg.away_team,
+          sport: leg.sport,
+          commence_time: leg.commence_time
+        }));
+
+        const parlayPayload = {
+          legs: parlayLegs,
+          amount: parseFloat(amount)
+        };
+
+        console.log('🚀 Placing parlay:', parlayPayload);
+
+        const response = await fetch(getApiUrl('/api/bets/parlay'), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(parlayPayload)
+        });
+
+        if (response.ok) {
+          setBetPlaced(true);
+          setShowConfirmation(true);
+          if (onBetPlaced) {
+            onBetPlaced();
           }
-        })()
-      };
-
-      console.log('🚀 Making API call:', {
-        url: getApiUrl('/api/bets/place'),
-        payload: requestPayload,
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      const response = await fetch(getApiUrl('/api/bets/place'), {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(requestPayload)
-      });
-
-      console.log('📡 API Response:', {
-        status: response.status,
-        statusText: response.statusText,
-        ok: response.ok
-      });
-
-      if (response.ok) {
-        setBetPlaced(true);
-        setShowConfirmation(true);
-        if (onBetPlaced) {
-          onBetPlaced();
+        } else {
+          const errorData = await response.json();
+          setError(errorData.detail || 'Failed to place parlay');
         }
       } else {
-        const errorData = await response.json();
-        console.log('❌ API Error:', errorData);
-        setError(errorData.detail || 'Failed to place bet');
+        // Handle straight bet placement
+        const betTypeMapping: { [key: string]: string } = {
+          'total (over/under)': 'total',
+          'total': 'total',
+          'over/under': 'total',
+          'spread': 'spread',
+          'point spread': 'spread',
+          'moneyline': 'moneyline',
+          'money line': 'moneyline',
+          'parlay': 'parlay',
+          'prop': 'prop'
+        };
+
+        const normalizedBetType = betTypeMapping[bet.bet_type.toLowerCase()] || 'total';
+
+        const requestPayload = {
+          game_id: bet.id, // Using bet ID as game ID for YetAI bets
+          yetai_bet_id: bet.id, // IMPORTANT: Pass YetAI bet ID so backend can get correct odds_api_event_id
+          bet_type: normalizedBetType,
+          selection: bet.pick,
+          odds: parseOdds(bet.odds),
+          amount: parseFloat(amount),
+          home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
+          away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
+          sport: bet.sport,
+          commence_time: (() => {
+            try {
+              if (!bet.game_time) {
+                console.warn('⚠️ No game_time provided for YetAI bet, using fallback');
+                return new Date().toISOString();
+              }
+              const date = new Date(bet.game_time);
+              if (isNaN(date.getTime())) {
+                console.warn('⚠️ Invalid game_time format:', bet.game_time, 'using fallback');
+                return new Date().toISOString();
+              }
+              return date.toISOString();
+            } catch (error) {
+              console.warn('⚠️ Date parsing error:', error, 'for game_time:', bet.game_time, 'using fallback');
+              return new Date().toISOString();
+            }
+          })()
+        };
+
+        console.log('🚀 Making API call:', {
+          url: getApiUrl('/api/bets/place'),
+          payload: requestPayload
+        });
+
+        const response = await fetch(getApiUrl('/api/bets/place'), {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(requestPayload)
+        });
+
+        if (response.ok) {
+          setBetPlaced(true);
+          setShowConfirmation(true);
+          if (onBetPlaced) {
+            onBetPlaced();
+          }
+        } else {
+          const errorData = await response.json();
+          console.log('❌ API Error:', errorData);
+          setError(errorData.detail || 'Failed to place bet');
+        }
       }
     } catch (err) {
       console.log('💥 Exception caught:', err);
