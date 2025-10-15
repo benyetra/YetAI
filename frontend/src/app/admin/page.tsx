@@ -58,6 +58,10 @@ export default function AdminPage() {
   const [loadingGames, setLoadingGames] = useState(false);
   const [selectedGame, setSelectedGame] = useState<any>(null);
 
+  // Player props states
+  const [availablePlayerProps, setAvailablePlayerProps] = useState<any[]>([]);
+  const [loadingPlayerProps, setLoadingPlayerProps] = useState(false);
+
   // Featured Games states
   const [activeTab, setActiveTab] = useState<'bets' | 'featured'>('bets');
   const [featuredGames, setFeaturedGames] = useState<any[]>([]);
@@ -422,9 +426,9 @@ export default function AdminPage() {
   };
 
   // Handle bet type selection - don't auto-populate, let user choose all options
-  const handleBetTypeSelection = (betType: string) => {
+  const handleBetTypeSelection = async (betType: string) => {
     if (!selectedGame) return;
-    
+
     // Reset pick and odds when bet type changes - user will select from dropdown
     setFormData(prev => ({
       ...prev,
@@ -432,6 +436,94 @@ export default function AdminPage() {
       pick: '',
       odds: ''
     }));
+
+    // Load player props if Player Props is selected
+    if (betType === 'Player Props' && selectedGame) {
+      await loadPlayerPropsForGame(selectedGame);
+    } else {
+      setAvailablePlayerProps([]);
+    }
+  };
+
+  // Load player props for selected game
+  const loadPlayerPropsForGame = async (game: any) => {
+    setLoadingPlayerProps(true);
+    try {
+      // Map sport names to API keys
+      const sportKeyMap: {[key: string]: string} = {
+        'NFL': 'americanfootball_nfl',
+        'NBA': 'basketball_nba',
+        'MLB': 'baseball_mlb',
+        'NHL': 'icehockey_nhl'
+      };
+
+      const sportKey = sportKeyMap[formData.sport] || game.sport_key;
+      if (!sportKey) return;
+
+      const result = await sportsAPI.getPlayerProps(sportKey, game.id);
+
+      if (result.status === 'success' && result.data?.markets) {
+        // Flatten all markets into a single list of props with market info
+        const allProps: any[] = [];
+        Object.entries(result.data.markets).forEach(([marketKey, marketData]: [string, any]) => {
+          marketData.players?.forEach((player: any) => {
+            if (player.over !== null) {
+              allProps.push({
+                player_name: player.player_name,
+                market_key: marketKey,
+                market_display: getMarketDisplayName(marketKey),
+                line: player.line,
+                selection: 'over',
+                odds: player.over,
+                display: `${player.player_name} over ${player.line} ${getMarketDisplayName(marketKey)}`
+              });
+            }
+            if (player.under !== null) {
+              allProps.push({
+                player_name: player.player_name,
+                market_key: marketKey,
+                market_display: getMarketDisplayName(marketKey),
+                line: player.line,
+                selection: 'under',
+                odds: player.under,
+                display: `${player.player_name} under ${player.line} ${getMarketDisplayName(marketKey)}`
+              });
+            }
+          });
+        });
+        setAvailablePlayerProps(allProps);
+      }
+    } catch (error) {
+      console.error('Error loading player props:', error);
+      setMessage({ type: 'error', text: 'Failed to load player props' });
+    } finally {
+      setLoadingPlayerProps(false);
+    }
+  };
+
+  // Market display names mapping (same as PlayerPropsCard)
+  const getMarketDisplayName = (marketKey: string): string => {
+    const replacements: Record<string, string> = {
+      player_pass_tds: 'Passing TDs',
+      player_pass_yds: 'Passing Yards',
+      player_rush_yds: 'Rushing Yards',
+      player_reception_yds: 'Receiving Yards',
+      player_receptions: 'Receptions',
+      player_points: 'Points',
+      player_rebounds: 'Rebounds',
+      player_assists: 'Assists',
+      player_threes: '3-Pointers Made',
+      player_pitcher_strikeouts: 'Pitcher Strikeouts',
+      player_hits: 'Hits',
+      player_home_runs: 'Home Runs',
+      player_rbis: 'RBIs',
+      player_total_bases: 'Total Bases',
+      player_goals: 'Goals',
+      player_assists_hockey: 'Assists',
+      player_points_hockey: 'Points',
+      player_shots_on_goal: 'Shots on Goal'
+    };
+    return replacements[marketKey] || marketKey.replace(/_/g, ' ').replace(/player /g, '');
   };
 
   // Handle bet option selection (works for all bet types)
@@ -767,29 +859,43 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Pick</label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Pick {formData.bet_type === 'Player Props' && loadingPlayerProps && <span className="text-xs text-blue-600">(Loading props...)</span>}
+              </label>
               {formData.bet_type === 'Player Props' ? (
-                // Custom input for player props
-                <div className="space-y-2">
-                  <input
-                    type="text"
+                // Dropdown for player props from API
+                availablePlayerProps.length > 0 ? (
+                  <select
                     value={formData.pick}
-                    onChange={(e) => setFormData({...formData, pick: e.target.value})}
-                    placeholder="e.g., Patrick Mahomes over 2.5 Passing TDs"
+                    onChange={(e) => {
+                      const selectedProp = availablePlayerProps.find(p => p.display === e.target.value);
+                      if (selectedProp) {
+                        setFormData({
+                          ...formData,
+                          pick: selectedProp.display,
+                          odds: selectedProp.odds > 0 ? `+${selectedProp.odds}` : `${selectedProp.odds}`
+                        });
+                      }
+                    }}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
-                    <p className="text-sm text-blue-800 font-medium mb-2">Player Prop Format:</p>
-                    <p className="text-xs text-blue-700 mb-1"><span className="font-mono bg-blue-100 px-1 rounded">Player Name over/under X.X Stat Type</span></p>
-                    <p className="text-xs text-blue-600 mt-2">Examples:</p>
-                    <ul className="text-xs text-blue-600 list-disc list-inside space-y-1">
-                      <li>Patrick Mahomes over 2.5 Passing TDs</li>
-                      <li>Alex Ovechkin over 0.5 Goals</li>
-                      <li>Yoshinobu Yamamoto under 16.5 Pitcher Outs</li>
-                      <li>LeBron James over 25.5 Points</li>
-                    </ul>
+                  >
+                    <option value="">Select a player prop...</option>
+                    {availablePlayerProps.map((prop, index) => (
+                      <option key={index} value={prop.display}>
+                        {prop.display} ({prop.odds > 0 ? '+' : ''}{prop.odds})
+                      </option>
+                    ))}
+                  </select>
+                ) : loadingPlayerProps ? (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 flex items-center">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
+                    Loading available player props...
                   </div>
-                </div>
+                ) : (
+                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                    No player props available for this game
+                  </div>
+                )
               ) : formData.bet_type && selectedGame ? (
                 <select
                   value={(() => {
