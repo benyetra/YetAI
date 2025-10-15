@@ -2235,9 +2235,7 @@ async def create_yetai_parlay(
     try:
         if is_service_available("yetai_bets_service"):
             yetai_service = get_service("yetai_bets_service")
-            result = await yetai_service.create_parlay_bet(
-                parlay_request, admin_user["id"]
-            )
+            result = await yetai_service.create_parlay(parlay_request, admin_user["id"])
 
             if result.get("success"):
                 return {
