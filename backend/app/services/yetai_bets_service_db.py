@@ -66,6 +66,8 @@ class YetAIBetsServiceDB:
                     "parlay": "parlay",
                     "prop": "prop",
                     "proposition": "prop",
+                    "player props": "prop",
+                    "player prop": "prop",
                 }
 
                 # Normalize bet type to enum value
