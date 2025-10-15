@@ -60,7 +60,7 @@ class PlayerPropVerificationService:
                 "mlb": 0,
                 "nfl": 0,
                 "nhl": 0,
-                "nba": 0
+                "nba": 0,
             }
 
             # Group props by sport for efficient API calls
@@ -68,25 +68,33 @@ class PlayerPropVerificationService:
 
             # Verify each sport
             if props_by_sport.get("mlb"):
-                mlb_results = await self._verify_mlb_props(props_by_sport["mlb"], yesterday)
+                mlb_results = await self._verify_mlb_props(
+                    props_by_sport["mlb"], yesterday
+                )
                 results["mlb"] = mlb_results["settled"]
                 results["settled"] += mlb_results["settled"]
                 results["errors"] += mlb_results["errors"]
 
             if props_by_sport.get("nfl"):
-                nfl_results = await self._verify_nfl_props(props_by_sport["nfl"], yesterday)
+                nfl_results = await self._verify_nfl_props(
+                    props_by_sport["nfl"], yesterday
+                )
                 results["nfl"] = nfl_results["settled"]
                 results["settled"] += nfl_results["settled"]
                 results["errors"] += nfl_results["errors"]
 
             if props_by_sport.get("nhl"):
-                nhl_results = await self._verify_nhl_props(props_by_sport["nhl"], yesterday)
+                nhl_results = await self._verify_nhl_props(
+                    props_by_sport["nhl"], yesterday
+                )
                 results["nhl"] = nhl_results["settled"]
                 results["settled"] += nhl_results["settled"]
                 results["errors"] += nhl_results["errors"]
 
             if props_by_sport.get("nba"):
-                nba_results = await self._verify_nba_props(props_by_sport["nba"], yesterday)
+                nba_results = await self._verify_nba_props(
+                    props_by_sport["nba"], yesterday
+                )
                 results["nba"] = nba_results["settled"]
                 results["settled"] += nba_results["settled"]
                 results["errors"] += nba_results["errors"]
@@ -113,23 +121,22 @@ class PlayerPropVerificationService:
         start_of_day = datetime.combine(target_date, datetime.min.time())
         end_of_day = datetime.combine(target_date, datetime.max.time())
 
-        return self.session.query(Bet).filter(
-            and_(
-                Bet.bet_type == BetType.PROP,
-                Bet.status == BetStatus.PENDING,
-                Bet.commence_time >= start_of_day,
-                Bet.commence_time <= end_of_day
+        return (
+            self.session.query(Bet)
+            .filter(
+                and_(
+                    Bet.bet_type == BetType.PROP,
+                    Bet.status == BetStatus.PENDING,
+                    Bet.commence_time >= start_of_day,
+                    Bet.commence_time <= end_of_day,
+                )
             )
-        ).all()
+            .all()
+        )
 
     def _group_props_by_sport(self, props: List[Bet]) -> Dict[str, List[Bet]]:
         """Group prop bets by sport for batch processing"""
-        grouped = {
-            "mlb": [],
-            "nfl": [],
-            "nhl": [],
-            "nba": []
-        }
+        grouped = {"mlb": [], "nfl": [], "nhl": [], "nba": []}
 
         for prop in props:
             sport = prop.sport.lower()
@@ -163,13 +170,13 @@ class PlayerPropVerificationService:
 
                 # Fetch player stats from MLB API
                 stats = self._fetch_mlb_player_stats(
-                    prop_details["player_name"],
-                    prop_details["stat_type"],
-                    game_date
+                    prop_details["player_name"], prop_details["stat_type"], game_date
                 )
 
                 if stats is None:
-                    logger.warning(f"No MLB stats found for: {prop_details['player_name']}")
+                    logger.warning(
+                        f"No MLB stats found for: {prop_details['player_name']}"
+                    )
                     errors += 1
                     continue
 
@@ -224,7 +231,7 @@ class PlayerPropVerificationService:
             "total bases": "totalBases",
             "runs": "runs",
             "rbis": "rbi",
-            "home runs": "homeRuns"
+            "home runs": "homeRuns",
         }
 
         stat_key = stat_mapping.get(stat_type.lower(), stat_type.lower())
@@ -233,14 +240,18 @@ class PlayerPropVerificationService:
             "player_name": player_name,
             "stat_type": stat_key,
             "line_value": line_value,
-            "is_over": over_under == "over"
+            "is_over": over_under == "over",
         }
 
-    def _fetch_mlb_player_stats(self, player_name: str, stat_type: str, game_date) -> Optional[Dict]:
+    def _fetch_mlb_player_stats(
+        self, player_name: str, stat_type: str, game_date
+    ) -> Optional[Dict]:
         """Fetch MLB player stats from MLB Stats API"""
         try:
             # First, search for player ID
-            search_url = f"https://statsapi.mlb.com/api/v1/people/search?names={player_name}"
+            search_url = (
+                f"https://statsapi.mlb.com/api/v1/people/search?names={player_name}"
+            )
             response = requests.get(search_url, timeout=10)
             response.raise_for_status()
 
@@ -265,14 +276,20 @@ class PlayerPropVerificationService:
 
             stats = data["people"][0].get("stats", [])
             game_logs = next(
-                (stat["splits"] for stat in stats if stat["type"]["displayName"] == "gameLog"),
-                []
+                (
+                    stat["splits"]
+                    for stat in stats
+                    if stat["type"]["displayName"] == "gameLog"
+                ),
+                [],
             )
 
             # Find the game from target date
             for game in game_logs:
                 game_date_str = game.get("date")
-                if game_date_str and game_date_str.startswith(game_date.strftime("%Y-%m-%d")):
+                if game_date_str and game_date_str.startswith(
+                    game_date.strftime("%Y-%m-%d")
+                ):
                     return game.get("stat", {})
 
             return None
@@ -303,7 +320,7 @@ class PlayerPropVerificationService:
         # Fetch week's play-by-play data
         try:
             pbp_data = nfl.import_pbp_data([season])
-            week_data = pbp_data[pbp_data['week'] == week]
+            week_data = pbp_data[pbp_data["week"] == week]
         except Exception as e:
             logger.error(f"Error fetching NFL data: {e}")
             return {"settled": 0, "errors": len(props)}
@@ -318,13 +335,13 @@ class PlayerPropVerificationService:
 
                 # Get player stats from play-by-play data
                 stats = self._extract_nfl_player_stats(
-                    week_data,
-                    prop_details["player_name"],
-                    prop_details["stat_type"]
+                    week_data, prop_details["player_name"], prop_details["stat_type"]
                 )
 
                 if stats is None:
-                    logger.warning(f"No NFL stats found for: {prop_details['player_name']}")
+                    logger.warning(
+                        f"No NFL stats found for: {prop_details['player_name']}"
+                    )
                     errors += 1
                     continue
 
@@ -359,10 +376,12 @@ class PlayerPropVerificationService:
             "player_name": match.group(1).strip(),
             "is_over": match.group(2).lower() == "over",
             "line_value": float(match.group(3)),
-            "stat_type": match.group(4).strip().lower().replace(" ", "_")
+            "stat_type": match.group(4).strip().lower().replace(" ", "_"),
         }
 
-    def _extract_nfl_player_stats(self, pbp_data, player_name: str, stat_type: str) -> Optional[Dict]:
+    def _extract_nfl_player_stats(
+        self, pbp_data, player_name: str, stat_type: str
+    ) -> Optional[Dict]:
         """Extract NFL player stats from play-by-play data"""
         try:
             # Map stat types to relevant columns
@@ -372,15 +391,15 @@ class PlayerPropVerificationService:
                 "receiving_yards": "receiving_yards",
                 "passing_touchdowns": "pass_touchdown",
                 "receptions": "complete_pass",
-                "field_goals_made": "field_goal_result"
+                "field_goals_made": "field_goal_result",
             }
 
             # Filter for plays involving the player
             player_filter = (
-                (pbp_data['passer_player_name'] == player_name) |
-                (pbp_data['rusher_player_name'] == player_name) |
-                (pbp_data['receiver_player_name'] == player_name) |
-                (pbp_data['kicker_player_name'] == player_name)
+                (pbp_data["passer_player_name"] == player_name)
+                | (pbp_data["rusher_player_name"] == player_name)
+                | (pbp_data["receiver_player_name"] == player_name)
+                | (pbp_data["kicker_player_name"] == player_name)
             )
 
             player_plays = pbp_data[player_filter]
@@ -394,7 +413,7 @@ class PlayerPropVerificationService:
                 return None
 
             if stat_type == "field_goals_made":
-                total = (player_plays[column] == 'made').sum()
+                total = (player_plays[column] == "made").sum()
             elif "touchdown" in stat_type:
                 total = player_plays[column].sum()
             else:
@@ -439,13 +458,13 @@ class PlayerPropVerificationService:
 
                 # Find player stats in games
                 stats = self._find_nhl_player_stats(
-                    games,
-                    prop_details["player_name"],
-                    prop_details["stat_type"]
+                    games, prop_details["player_name"], prop_details["stat_type"]
                 )
 
                 if stats is None:
-                    logger.warning(f"No NHL stats found for: {prop_details['player_name']}")
+                    logger.warning(
+                        f"No NHL stats found for: {prop_details['player_name']}"
+                    )
                     errors += 1
                     continue
 
@@ -481,7 +500,7 @@ class PlayerPropVerificationService:
             "assists": "assists",
             "points": "points",
             "saves": "saves",
-            "shots": "shots"
+            "shots": "shots",
         }
 
         stat_type = match.group(4).strip().lower()
@@ -491,13 +510,15 @@ class PlayerPropVerificationService:
             "player_name": match.group(1).strip(),
             "is_over": match.group(2).lower() == "over",
             "line_value": float(match.group(3)),
-            "stat_type": stat_key
+            "stat_type": stat_key,
         }
 
     def _fetch_nhl_games(self, game_date) -> List[Dict]:
         """Fetch NHL games and stats from NHL API"""
         try:
-            url = f"https://api-web.nhle.com/v1/schedule/{game_date.strftime('%Y-%m-%d')}"
+            url = (
+                f"https://api-web.nhle.com/v1/schedule/{game_date.strftime('%Y-%m-%d')}"
+            )
             response = requests.get(url, timeout=10)
             response.raise_for_status()
 
@@ -530,7 +551,9 @@ class PlayerPropVerificationService:
             logger.error(f"Error fetching NHL game {game_id} stats: {e}")
             return None
 
-    def _find_nhl_player_stats(self, games: List[Dict], player_name: str, stat_type: str) -> Optional[Dict]:
+    def _find_nhl_player_stats(
+        self, games: List[Dict], player_name: str, stat_type: str
+    ) -> Optional[Dict]:
         """Find player stats in NHL game data"""
         for game_data in games:
             if not game_data or "playerByGameStats" not in game_data:
@@ -545,30 +568,39 @@ class PlayerPropVerificationService:
 
                 # Check forwards
                 for player in team_stats.get("forwards", []):
-                    if player_name.lower() in player.get("name", {}).get("default", "").lower():
+                    if (
+                        player_name.lower()
+                        in player.get("name", {}).get("default", "").lower()
+                    ):
                         return {
                             "goals": player.get("goals", 0),
                             "assists": player.get("assists", 0),
                             "points": player.get("points", 0),
-                            "shots": player.get("shots", 0)
+                            "shots": player.get("shots", 0),
                         }
 
                 # Check defense
                 for player in team_stats.get("defense", []):
-                    if player_name.lower() in player.get("name", {}).get("default", "").lower():
+                    if (
+                        player_name.lower()
+                        in player.get("name", {}).get("default", "").lower()
+                    ):
                         return {
                             "goals": player.get("goals", 0),
                             "assists": player.get("assists", 0),
                             "points": player.get("points", 0),
-                            "shots": player.get("shots", 0)
+                            "shots": player.get("shots", 0),
                         }
 
                 # Check goalies
                 for player in team_stats.get("goalies", []):
-                    if player_name.lower() in player.get("name", {}).get("default", "").lower():
+                    if (
+                        player_name.lower()
+                        in player.get("name", {}).get("default", "").lower()
+                    ):
                         return {
                             "saves": player.get("saves", 0),
-                            "goals": player.get("goalsAgainst", 0)
+                            "goals": player.get("goalsAgainst", 0),
                         }
 
         return None
@@ -607,13 +639,13 @@ class PlayerPropVerificationService:
 
                 # Find player stats in games
                 stats = self._find_nba_player_stats(
-                    games,
-                    prop_details["player_name"],
-                    prop_details["stat_type"]
+                    games, prop_details["player_name"], prop_details["stat_type"]
                 )
 
                 if stats is None:
-                    logger.warning(f"No NBA stats found for: {prop_details['player_name']}")
+                    logger.warning(
+                        f"No NBA stats found for: {prop_details['player_name']}"
+                    )
                     errors += 1
                     continue
 
@@ -650,7 +682,7 @@ class PlayerPropVerificationService:
             "assists": "AST",
             "steals": "STL",
             "blocks": "BLK",
-            "three pointers": "FG3M"
+            "three pointers": "FG3M",
         }
 
         stat_type = match.group(4).strip().lower()
@@ -660,10 +692,12 @@ class PlayerPropVerificationService:
             "player_name": match.group(1).strip(),
             "is_over": match.group(2).lower() == "over",
             "line_value": float(match.group(3)),
-            "stat_type": stat_key
+            "stat_type": stat_key,
         }
 
-    def _find_nba_player_stats(self, games: List, player_name: str, stat_type: str) -> Optional[Dict]:
+    def _find_nba_player_stats(
+        self, games: List, player_name: str, stat_type: str
+    ) -> Optional[Dict]:
         """Find NBA player stats from games"""
         try:
             from nba_api.stats.endpoints import boxscoretraditionalv2
@@ -673,8 +707,7 @@ class PlayerPropVerificationService:
 
                 try:
                     boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(
-                        game_id=game_id,
-                        timeout=60
+                        game_id=game_id, timeout=60
                     )
                     player_stats = boxscore.player_stats.get_dict()["data"]
 
@@ -688,7 +721,7 @@ class PlayerPropVerificationService:
                                 "AST": player[21],  # Assists
                                 "STL": player[22],  # Steals
                                 "BLK": player[23],  # Blocks
-                                "FG3M": player[12]  # 3-pointers made
+                                "FG3M": player[12],  # 3-pointers made
                             }
 
                 except Exception as e:
@@ -703,14 +736,18 @@ class PlayerPropVerificationService:
 
     # ==================== COMMON UTILITIES ====================
 
-    def _check_prop_outcome(self, actual_value: float, line_value: float, is_over: bool) -> bool:
+    def _check_prop_outcome(
+        self, actual_value: float, line_value: float, is_over: bool
+    ) -> bool:
         """Check if prop bet won based on actual vs line value"""
         if is_over:
             return actual_value > line_value
         else:
             return actual_value < line_value
 
-    def _settle_prop_bet(self, bet: Bet, won: bool, actual_value: float, line_value: float) -> None:
+    def _settle_prop_bet(
+        self, bet: Bet, won: bool, actual_value: float, line_value: float
+    ) -> None:
         """Settle a prop bet and update database"""
         if won:
             bet.status = BetStatus.WON
@@ -728,7 +765,7 @@ class PlayerPropVerificationService:
         bet.metadata["prop_settlement"] = {
             "actual_value": actual_value,
             "line_value": line_value,
-            "settled_at": datetime.utcnow().isoformat()
+            "settled_at": datetime.utcnow().isoformat(),
         }
 
         self.session.commit()
@@ -736,7 +773,9 @@ class PlayerPropVerificationService:
         # Send notification to user
         asyncio.create_task(self._send_notification(bet, won, actual_value, line_value))
 
-    async def _send_notification(self, bet: Bet, won: bool, actual_value: float, line_value: float) -> None:
+    async def _send_notification(
+        self, bet: Bet, won: bool, actual_value: float, line_value: float
+    ) -> None:
         """Send websocket notification to user about settled prop"""
         try:
             await websocket_manager.send_personal_message(
@@ -749,7 +788,7 @@ class PlayerPropVerificationService:
                     "line_value": line_value,
                     "result_amount": bet.result_amount,
                 },
-                bet.user_id
+                bet.user_id,
             )
         except Exception as e:
             logger.error(f"Error sending prop settlement notification: {e}")
