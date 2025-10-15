@@ -21,6 +21,7 @@ from sqlalchemy import and_
 
 from app.core.database import SessionLocal
 from app.models.database_models import Bet, BetStatus, BetType
+from app.models.simple_unified_bet_model import SimpleUnifiedBet
 from app.services.websocket_manager import manager as websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,205 @@ logger = logging.getLogger(__name__)
 class PlayerPropVerificationService:
     """Service for verifying player prop bets using sport-specific stats APIs"""
 
-    def __init__(self):
-        self.session: Optional[Session] = None
+    def __init__(self, db: Optional[Session] = None):
+        self.session = db
+        self.db = db
+
+    async def verify_single_prop(self, bet: SimpleUnifiedBet) -> Optional[Dict]:
+        """
+        Verify a single prop bet immediately (used by unified verification service)
+
+        Args:
+            bet: SimpleUnifiedBet instance with prop bet
+
+        Returns:
+            Dict with status, result_amount, reasoning if verified, None otherwise
+        """
+        if not bet or bet.bet_type != BetType.PROP:
+            return None
+
+        # Ensure we have a database session
+        if not self.session:
+            self.session = SessionLocal()
+
+        try:
+            # Determine sport from the sport_key or league field
+            sport = self._determine_sport_from_bet(bet)
+            if not sport:
+                logger.warning(f"Could not determine sport for bet {bet.id[:8]}")
+                return None
+
+            # Get game date from bet
+            game_date = (
+                bet.game_commence_time.date()
+                if bet.game_commence_time
+                else datetime.utcnow().date()
+            )
+
+            # Verify based on sport
+            if sport == "mlb":
+                result = await self._verify_single_mlb_prop(bet, game_date)
+            elif sport == "nfl":
+                result = await self._verify_single_nfl_prop(bet, game_date)
+            elif sport == "nhl":
+                result = await self._verify_single_nhl_prop(bet, game_date)
+            elif sport == "nba":
+                result = await self._verify_single_nba_prop(bet, game_date)
+            else:
+                logger.warning(f"Unsupported sport for prop verification: {sport}")
+                return None
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Error verifying single prop {bet.id[:8]}: {e}", exc_info=True
+            )
+            return None
+
+    def _determine_sport_from_bet(self, bet: SimpleUnifiedBet) -> Optional[str]:
+        """Determine sport from bet's league or sport_key field"""
+        league = (bet.league or "").lower()
+        sport_key = (bet.sport_key or "").lower()
+
+        if "mlb" in league or "baseball" in sport_key:
+            return "mlb"
+        elif "nfl" in league or "americanfootball_nfl" in sport_key:
+            return "nfl"
+        elif "nhl" in league or "icehockey_nhl" in sport_key:
+            return "nhl"
+        elif "nba" in league or "basketball_nba" in sport_key:
+            return "nba"
+
+        return None
+
+    async def _verify_single_mlb_prop(
+        self, bet: SimpleUnifiedBet, game_date
+    ) -> Optional[Dict]:
+        """Verify a single MLB prop bet"""
+        try:
+            prop_details = self._parse_mlb_prop(bet.selection)
+            if not prop_details:
+                return None
+
+            stats = self._fetch_mlb_player_stats(
+                prop_details["player_name"], prop_details["stat_type"], game_date
+            )
+            if stats is None:
+                return None
+
+            actual_value = stats.get(prop_details["stat_type"])
+            line_value = prop_details["line_value"]
+            is_over = prop_details["is_over"]
+            won = self._check_prop_outcome(actual_value, line_value, is_over)
+
+            status = BetStatus.WON if won else BetStatus.LOST
+            result_amount = (bet.amount + bet.potential_win) if won else 0.0
+
+            return {
+                "status": status,
+                "result_amount": result_amount,
+                "reasoning": f"MLB prop: {prop_details['player_name']} - actual: {actual_value}, line: {line_value}",
+            }
+        except Exception as e:
+            logger.error(f"Error verifying MLB prop: {e}")
+            return None
+
+    async def _verify_single_nfl_prop(
+        self, bet: SimpleUnifiedBet, game_date
+    ) -> Optional[Dict]:
+        """Verify a single NFL prop bet"""
+        try:
+            prop_details = self._parse_nfl_prop(bet.selection)
+            if not prop_details:
+                return None
+
+            stats = await self._fetch_nfl_player_stats(
+                prop_details["player_name"], prop_details["stat_type"], game_date
+            )
+            if stats is None:
+                return None
+
+            actual_value = stats.get(prop_details["stat_type"])
+            line_value = prop_details["line_value"]
+            is_over = prop_details["is_over"]
+            won = self._check_prop_outcome(actual_value, line_value, is_over)
+
+            status = BetStatus.WON if won else BetStatus.LOST
+            result_amount = (bet.amount + bet.potential_win) if won else 0.0
+
+            return {
+                "status": status,
+                "result_amount": result_amount,
+                "reasoning": f"NFL prop: {prop_details['player_name']} - actual: {actual_value}, line: {line_value}",
+            }
+        except Exception as e:
+            logger.error(f"Error verifying NFL prop: {e}")
+            return None
+
+    async def _verify_single_nhl_prop(
+        self, bet: SimpleUnifiedBet, game_date
+    ) -> Optional[Dict]:
+        """Verify a single NHL prop bet"""
+        try:
+            prop_details = self._parse_nhl_prop(bet.selection)
+            if not prop_details:
+                return None
+
+            stats = self._fetch_nhl_player_stats(
+                prop_details["player_name"], prop_details["stat_type"], game_date
+            )
+            if stats is None:
+                return None
+
+            actual_value = stats.get(prop_details["stat_type"])
+            line_value = prop_details["line_value"]
+            is_over = prop_details["is_over"]
+            won = self._check_prop_outcome(actual_value, line_value, is_over)
+
+            status = BetStatus.WON if won else BetStatus.LOST
+            result_amount = (bet.amount + bet.potential_win) if won else 0.0
+
+            return {
+                "status": status,
+                "result_amount": result_amount,
+                "reasoning": f"NHL prop: {prop_details['player_name']} - actual: {actual_value}, line: {line_value}",
+            }
+        except Exception as e:
+            logger.error(f"Error verifying NHL prop: {e}")
+            return None
+
+    async def _verify_single_nba_prop(
+        self, bet: SimpleUnifiedBet, game_date
+    ) -> Optional[Dict]:
+        """Verify a single NBA prop bet"""
+        try:
+            prop_details = self._parse_nba_prop(bet.selection)
+            if not prop_details:
+                return None
+
+            stats = self._fetch_nba_player_stats(
+                prop_details["player_name"], prop_details["stat_type"], game_date
+            )
+            if stats is None:
+                return None
+
+            actual_value = stats.get(prop_details["stat_type"])
+            line_value = prop_details["line_value"]
+            is_over = prop_details["is_over"]
+            won = self._check_prop_outcome(actual_value, line_value, is_over)
+
+            status = BetStatus.WON if won else BetStatus.LOST
+            result_amount = (bet.amount + bet.potential_win) if won else 0.0
+
+            return {
+                "status": status,
+                "result_amount": result_amount,
+                "reasoning": f"NBA prop: {prop_details['player_name']} - actual: {actual_value}, line: {line_value}",
+            }
+        except Exception as e:
+            logger.error(f"Error verifying NBA prop: {e}")
+            return None
 
     async def verify_previous_day_props(self) -> Dict:
         """

@@ -289,12 +289,26 @@ class UnifiedBetVerificationService:
                 # Handle parlay bets (check all legs)
                 status, result_amount, reasoning = self._evaluate_parlay(bet)
             elif bet_type == BetType.PROP:
-                # Player props require manual verification via external data sources
-                # They cannot be verified with game scores alone
+                # Player props use sport-specific APIs for verification
                 logger.info(
-                    f"Bet {bet.id[:8]}: Player prop bet - requires manual verification"
+                    f"Bet {bet.id[:8]}: Player prop bet - verifying with sport-specific API"
                 )
-                return None  # Skip auto-verification for props
+                # Import here to avoid circular dependency
+                from app.services.player_prop_verification_service import (
+                    PlayerPropVerificationService,
+                )
+
+                # Verify the prop bet using sport-specific service
+                prop_service = PlayerPropVerificationService(self.db)
+                prop_result = await prop_service.verify_single_prop(bet)
+
+                if prop_result:
+                    status = prop_result["status"]
+                    result_amount = prop_result.get("result_amount", 0.0)
+                    reasoning = prop_result.get("reasoning", "Prop verified via API")
+                else:
+                    # Could not verify yet (game not complete or API error)
+                    return None
             else:
                 reasoning = f"Unknown bet type: {bet_type}"
                 logger.warning(reasoning)
