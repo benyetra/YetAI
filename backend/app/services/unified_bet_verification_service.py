@@ -260,9 +260,9 @@ class UnifiedBetVerificationService:
         )
 
         # Determine bet outcome
-        return self._evaluate_bet_outcome(bet, home_score, away_score)
+        return await self._evaluate_bet_outcome(bet, home_score, away_score)
 
-    def _evaluate_bet_outcome(
+    async def _evaluate_bet_outcome(
         self, bet: SimpleUnifiedBet, home_score: int, away_score: int
     ) -> UnifiedBetResult:
         """Evaluate bet outcome based on scores"""
