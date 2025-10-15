@@ -2227,6 +2227,48 @@ async def create_yetai_bet(
         raise HTTPException(status_code=500, detail="Failed to create bet")
 
 
+@app.post("/api/admin/yetai-parlays")
+async def create_yetai_parlay(
+    parlay_request: CreateParlayBetRequest, admin_user: dict = Depends(require_admin)
+):
+    """Create a new YetAI Parlay Bet (Admin only)"""
+    try:
+        if is_service_available("yetai_bets_service"):
+            yetai_service = get_service("yetai_bets_service")
+            result = await yetai_service.create_parlay_bet(
+                parlay_request, admin_user["id"]
+            )
+
+            if result.get("success"):
+                return {
+                    "status": "success",
+                    "message": result.get("message", "Parlay created successfully"),
+                    "parlay_id": result.get("bet_id"),
+                }
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail=result.get("error", "Failed to create parlay"),
+                )
+        else:
+            # Mock response when service unavailable
+            import uuid
+
+            mock_parlay_id = str(uuid.uuid4())
+            return {
+                "status": "success",
+                "message": "Mock YetAI parlay created successfully - service unavailable",
+                "parlay_id": mock_parlay_id,
+                "parlay_data": parlay_request.dict(),
+            }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating YetAI parlay: {e}")
+        raise HTTPException(status_code=500, detail="Failed to create parlay")
+
+
 @app.post("/api/admin/sync-games")
 async def sync_games(admin_user: dict = Depends(require_admin)):
     """Sync today's games from Odds API and ESPN (Admin only)"""

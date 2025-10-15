@@ -62,6 +62,12 @@ export default function AdminPage() {
   const [availablePlayerProps, setAvailablePlayerProps] = useState<any[]>([]);
   const [loadingPlayerProps, setLoadingPlayerProps] = useState(false);
 
+  // Parlay states
+  const [parlayLegs, setParlayLegs] = useState<any[]>([]);
+  const [parlayName, setParlayName] = useState('');
+  const [parlayReasoning, setParlayReasoning] = useState('');
+  const [parlayConfidence, setParlayConfidence] = useState(80);
+
   // Featured Games states
   const [activeTab, setActiveTab] = useState<'bets' | 'featured'>('bets');
   const [featuredGames, setFeaturedGames] = useState<any[]>([]);
@@ -286,6 +292,129 @@ export default function AdminPage() {
   if (!isAuthenticated || !user?.is_admin) {
     return null;
   }
+
+  // Parlay Management Functions
+  const addLegToParlay = () => {
+    if (!formData.game || !formData.bet_type || !formData.pick || !formData.odds) {
+      setMessage({ type: 'error', text: 'Please fill out all bet fields before adding to parlay' });
+      return;
+    }
+
+    const newLeg = {
+      sport: formData.sport,
+      game: formData.game,
+      game_id: formData.game_id,
+      home_team: formData.home_team,
+      away_team: formData.away_team,
+      commence_time: formData.commence_time,
+      bet_type: formData.bet_type,
+      pick: formData.pick,
+      odds: formData.odds,
+      game_time: formData.game_time,
+      confidence: formData.confidence,
+      reasoning: formData.reasoning,
+      is_premium: formData.is_premium
+    };
+
+    setParlayLegs([...parlayLegs, newLeg]);
+
+    // Reset form for next leg
+    setFormData({
+      sport: '',
+      game: '',
+      game_id: '',
+      home_team: '',
+      away_team: '',
+      commence_time: '',
+      bet_type: '',
+      pick: '',
+      odds: '',
+      confidence: 80,
+      reasoning: '',
+      game_time: '',
+      is_premium: true
+    });
+    setSelectedGame(null);
+    setAvailableGames([]);
+    setAvailablePlayerProps([]);
+
+    setMessage({ type: 'success', text: `Leg ${parlayLegs.length + 1} added to parlay!` });
+  };
+
+  const removeLegFromParlay = (index: number) => {
+    setParlayLegs(parlayLegs.filter((_, i) => i !== index));
+    setMessage({ type: 'success', text: 'Leg removed from parlay' });
+  };
+
+  const calculateParlayOdds = (legs: any[]): string => {
+    if (legs.length === 0) return '+0';
+
+    let decimalOdds = 1;
+    for (const leg of legs) {
+      const oddsValue = parseInt(leg.odds.replace('+', '').replace('-', ''));
+      if (leg.odds.startsWith('+')) {
+        decimalOdds *= (1 + oddsValue / 100);
+      } else {
+        decimalOdds *= (1 + 100 / oddsValue);
+      }
+    }
+
+    const americanOdds = Math.round((decimalOdds - 1) * 100);
+    return americanOdds > 0 ? `+${americanOdds}` : `${americanOdds}`;
+  };
+
+  const handleSubmitParlay = async () => {
+    if (parlayLegs.length < 2) {
+      setMessage({ type: 'error', text: 'Parlay must have at least 2 legs' });
+      return;
+    }
+
+    if (!parlayName || !parlayReasoning) {
+      setMessage({ type: 'error', text: 'Please provide parlay name and reasoning' });
+      return;
+    }
+
+    setIsSubmitting(true);
+    setMessage(null);
+
+    try {
+      const token = localStorage.getItem('auth_token');
+      const totalOdds = calculateParlayOdds(parlayLegs);
+
+      const response = await fetch(getApiUrl('/api/admin/yetai-parlays'), {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          name: parlayName,
+          legs: parlayLegs,
+          total_odds: totalOdds,
+          confidence: parlayConfidence,
+          reasoning: parlayReasoning,
+          is_premium: true
+        })
+      });
+
+      if (response.ok) {
+        setMessage({ type: 'success', text: 'Parlay created successfully!' });
+        // Reset parlay
+        setParlayLegs([]);
+        setParlayName('');
+        setParlayReasoning('');
+        setParlayConfidence(80);
+      } else {
+        const error = await response.json();
+        setMessage({ type: 'error', text: error.detail || 'Failed to create parlay' });
+      }
+    } catch (error) {
+      console.error('Error creating parlay:', error);
+      setMessage({ type: 'error', text: 'Network error. Please try again.' });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmitBet = async () => {
     setIsSubmitting(true);
@@ -783,10 +912,41 @@ export default function AdminPage() {
                 }`}
               >
                 <Layers className="w-4 h-4 mr-2" />
-                Parlay Bet (Coming Soon)
+                Parlay Bet
               </button>
             </div>
           </div>
+
+          {/* Parlay Summary (shown when in parlay mode) */}
+          {betType === 'parlay' && parlayLegs.length > 0 && (
+            <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                  <Layers className="w-5 h-5 text-blue-600 mr-2" />
+                  Parlay Legs ({parlayLegs.length})
+                </h3>
+                <div className="text-sm font-medium text-blue-600">
+                  Combined Odds: {calculateParlayOdds(parlayLegs)}
+                </div>
+              </div>
+              <div className="space-y-2">
+                {parlayLegs.map((leg, index) => (
+                  <div key={index} className="flex items-center justify-between bg-white p-3 rounded border border-gray-200">
+                    <div className="flex-1">
+                      <div className="font-medium text-gray-900">{leg.pick}</div>
+                      <div className="text-sm text-gray-600">{leg.game} • {leg.odds}</div>
+                    </div>
+                    <button
+                      onClick={() => removeLegFromParlay(index)}
+                      className="ml-3 text-red-600 hover:text-red-800"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Bet Form Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
@@ -1025,33 +1185,98 @@ export default function AdminPage() {
             </div>
           </div>
 
-          {/* Reasoning */}
-          <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Reasoning</label>
-            <textarea
-              value={formData.reasoning}
-              onChange={(e) => setFormData({...formData, reasoning: e.target.value})}
-              placeholder="Explain your analysis and reasoning for this bet..."
-              rows={4}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-            />
-          </div>
+          {/* Reasoning - different for parlay vs straight */}
+          {betType === 'straight' ? (
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Reasoning</label>
+              <textarea
+                value={formData.reasoning}
+                onChange={(e) => setFormData({...formData, reasoning: e.target.value})}
+                placeholder="Explain your analysis and reasoning for this bet..."
+                rows={4}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              />
+            </div>
+          ) : (
+            <div className="mb-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Parlay Name</label>
+                <input
+                  type="text"
+                  value={parlayName}
+                  onChange={(e) => setParlayName(e.target.value)}
+                  placeholder="e.g., 3-Team NFL Sunday Parlay"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Parlay Reasoning</label>
+                <textarea
+                  value={parlayReasoning}
+                  onChange={(e) => setParlayReasoning(e.target.value)}
+                  placeholder="Explain your overall parlay strategy and why these legs work together..."
+                  rows={4}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Parlay Confidence: {parlayConfidence}%
+                </label>
+                <input
+                  type="range"
+                  min="50"
+                  max="100"
+                  value={parlayConfidence}
+                  onChange={(e) => setParlayConfidence(Number(e.target.value))}
+                  className="w-full"
+                />
+              </div>
+            </div>
+          )}
 
-          {/* Submit Button */}
-          <button
-            onClick={handleSubmitBet}
-            disabled={isSubmitting || !formData.sport || !formData.game || !formData.bet_type || !formData.pick || !formData.odds || !formData.reasoning || !formData.game_time}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
-          >
-            {isSubmitting ? (
-              <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
-            ) : (
-              <>
-                <Save className="w-5 h-5 mr-2" />
-                Create Bet
-              </>
-            )}
-          </button>
+          {/* Submit Buttons - different for parlay vs straight */}
+          {betType === 'straight' ? (
+            <button
+              onClick={handleSubmitBet}
+              disabled={isSubmitting || !formData.sport || !formData.game || !formData.bet_type || !formData.pick || !formData.odds || !formData.reasoning || !formData.game_time}
+              className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
+            >
+              {isSubmitting ? (
+                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+              ) : (
+                <>
+                  <Save className="w-5 h-5 mr-2" />
+                  Create Bet
+                </>
+              )}
+            </button>
+          ) : (
+            <div className="space-y-3">
+              <button
+                onClick={addLegToParlay}
+                disabled={!formData.sport || !formData.game || !formData.bet_type || !formData.pick || !formData.odds || !formData.game_time}
+                className="w-full bg-green-600 text-white py-3 rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                <Plus className="w-5 h-5 mr-2" />
+                Add Leg to Parlay
+              </button>
+              <button
+                onClick={handleSubmitParlay}
+                disabled={isSubmitting || parlayLegs.length < 2 || !parlayName || !parlayReasoning}
+                className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed flex items-center justify-center"
+              >
+                {isSubmitting ? (
+                  <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"></div>
+                ) : (
+                  <>
+                    <Save className="w-5 h-5 mr-2" />
+                    Create Parlay ({parlayLegs.length} legs)
+                  </>
+                )}
+              </button>
+            </div>
+          )}
         </div>
         
         {/* Bet Verification Panel Modal */}
