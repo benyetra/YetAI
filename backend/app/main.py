@@ -49,7 +49,7 @@ from app.services.unified_bet_verification_service import (
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
-from app.models.bet_models import CreateYetAIBetRequest
+from app.models.bet_models import CreateYetAIBetRequest, CreateParlayBetRequest
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
