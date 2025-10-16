@@ -2096,7 +2096,7 @@ async def options_yetai_bets():
 
 @app.get("/api/yetai-bets")
 async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
-    """Get YetAI bets for user based on subscription tier"""
+    """Get all YetAI bets (both active and historical) for user based on subscription tier"""
     if is_service_available("yetai_bets_service"):
         try:
             yetai_service = get_service("yetai_bets_service")
@@ -2104,8 +2104,8 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             # Get user's subscription tier from the authenticated user
             user_tier = current_user.get("subscription_tier", "free")
 
-            # Fetch bets based on user tier
-            bets = await yetai_service.get_active_bets(user_tier)
+            # Fetch ALL bets (both active and settled) based on user tier
+            bets = await yetai_service.get_all_bets(include_settled=True)
 
             return {
                 "status": "success",
