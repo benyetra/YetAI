@@ -228,19 +228,17 @@ export default function YetAIBetsPage() {
 
       switch (period) {
         case 'today':
-          // Show today's games AND tomorrow's games (since games can be late night)
-          const isTodayOrTomorrow =
-            gameDate.getTime() === today.getTime() ||
-            gameDate.getTime() === tomorrow.getTime();
-          console.log(`Today check: ${isTodayOrTomorrow} (${gameDate.toDateString()} === ${today.toDateString()} or ${tomorrow.toDateString()})`);
-          return isTodayOrTomorrow;
-        case 'yesterday':
-          const isYesterday = gameDate.getTime() === yesterday.getTime();
-          console.log(`Yesterday check: ${isYesterday} (${gameDate.toDateString()} === ${yesterday.toDateString()})`);
-          return isYesterday;
+          const isToday = gameDate.getTime() === today.getTime();
+          console.log(`Today check: ${isToday} (${gameDate.toDateString()} === ${today.toDateString()})`);
+          return isToday;
+        case 'tomorrow':
+          const isTomorrow = gameDate.getTime() === tomorrow.getTime();
+          console.log(`Tomorrow check: ${isTomorrow} (${gameDate.toDateString()} === ${tomorrow.toDateString()})`);
+          return isTomorrow;
         case 'week':
-          const isInWeek = gameDate.getTime() >= weekAgo.getTime() && gameDate.getTime() <= weekAhead.getTime();
-          console.log(`Week check: ${isInWeek} (${gameDate.toDateString()} between ${weekAgo.toDateString()} and ${weekAhead.toDateString()})`);
+          // Show this week's games (today through 7 days ahead)
+          const isInWeek = gameDate.getTime() >= today.getTime() && gameDate.getTime() <= weekAhead.getTime();
+          console.log(`Week check: ${isInWeek} (${gameDate.toDateString()} between ${today.toDateString()} and ${weekAhead.toDateString()})`);
           return isInWeek;
         default:
           return false;
@@ -262,13 +260,17 @@ export default function YetAIBetsPage() {
 
   // Filter historical bets (won, lost, pushed - completed bets)
   const historicalBets = bets.filter(bet => {
-    return bet.status === 'won' || bet.status === 'lost' || bet.status === 'pushed';
+    const isCompleted = bet.status === 'won' || bet.status === 'lost' || bet.status === 'pushed';
+    console.log(`Historical filter - Bet ${bet.id}: status=${bet.status}, isCompleted=${isCompleted}`);
+    return isCompleted;
   }).sort((a, b) => {
     // Sort by game time, most recent first
     const dateA = new Date(a.game_time);
     const dateB = new Date(b.game_time);
     return dateB.getTime() - dateA.getTime();
   });
+
+  console.log(`Total bets: ${bets.length}, Active bets: ${activeBets.length}, Historical bets: ${historicalBets.length}`);
 
   const visibleActiveBets = isProUser ? activeBets : activeBets.slice(0, 1);
   const lockedActiveBets = isProUser ? [] : activeBets.slice(1);
@@ -515,7 +517,7 @@ export default function YetAIBetsPage() {
 
         {/* Period Selector */}
         <div className="flex space-x-4">
-          {['today', 'yesterday', 'week'].map((period) => (
+          {['today', 'tomorrow', 'week'].map((period) => (
             <button
               key={period}
               onClick={() => setSelectedPeriod(period)}
@@ -536,7 +538,7 @@ export default function YetAIBetsPage() {
             <h2 className="text-xl font-semibold text-gray-900 flex items-center">
               <Calendar className="w-5 h-5 mr-2" />
               Active Bets - {selectedPeriod === 'today' ? "Today" :
-               selectedPeriod === 'yesterday' ? "Yesterday" :
+               selectedPeriod === 'tomorrow' ? "Tomorrow" :
                "This Week"}
             </h2>
             <span className="text-sm text-gray-500">
