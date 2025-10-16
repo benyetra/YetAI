@@ -251,29 +251,27 @@ export default function YetAIBetsPage() {
     }
   };
 
-  // Filter bets based on selected period and user tier
-  const todaysBets = bets.filter(bet => {
+  // Filter active bets (pending only, for today/tomorrow/week)
+  const activeBets = bets.filter(bet => {
+    if (bet.status !== 'pending') return false;
+
     const matchesPeriod = isInPeriod(bet.game_time, selectedPeriod);
-    // For 'today' period, show pending bets for today
-    if (selectedPeriod === 'today') {
-      const result = bet.status === 'pending' && matchesPeriod;
-      console.log(`Today filter - Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
-      return result;
-    }
-    // For other periods (yesterday/week), show all bets (pending, won, lost) in that time range
-    const result = matchesPeriod;
-    console.log(`${selectedPeriod} filter - Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}, included=${result}`);
-    return result;
+    console.log(`Active filter - Bet ${bet.id} (${bet.game_time}): matchesPeriod=${matchesPeriod}, status=${bet.status}`);
+    return matchesPeriod;
   });
 
-  const recentResults = bets.filter(bet => {
-    // This is now only used for the "Recent Results" section when selectedPeriod !== 'today'
-    // For non-today periods, we show all bets in todaysBets, so this can be empty
-    return selectedPeriod === 'today' && (bet.status === 'won' || bet.status === 'lost') && isInPeriod(bet.game_time, selectedPeriod);
+  // Filter historical bets (won, lost, pushed - completed bets)
+  const historicalBets = bets.filter(bet => {
+    return bet.status === 'won' || bet.status === 'lost' || bet.status === 'pushed';
+  }).sort((a, b) => {
+    // Sort by game time, most recent first
+    const dateA = new Date(a.game_time);
+    const dateB = new Date(b.game_time);
+    return dateB.getTime() - dateA.getTime();
   });
 
-  const visibleBets = isProUser ? todaysBets : todaysBets.slice(0, 1);
-  const lockedBets = isProUser ? [] : todaysBets.slice(1);
+  const visibleActiveBets = isProUser ? activeBets : activeBets.slice(0, 1);
+  const lockedActiveBets = isProUser ? [] : activeBets.slice(1);
 
   // Helper function to check if a game is in the past
   const isGameInPast = (gameTimeStr: string) => {
@@ -532,19 +530,19 @@ export default function YetAIBetsPage() {
           ))}
         </div>
 
-        {/* Current Period Bets */}
-        <div>
+        {/* Active Bets Section */}
+        <div className="mb-12">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-semibold text-gray-900 flex items-center">
               <Calendar className="w-5 h-5 mr-2" />
-              {selectedPeriod === 'today' ? "Today's Best Bets" :
-               selectedPeriod === 'yesterday' ? "Yesterday's Bets" :
-               "This Week's Bets"}
+              Active Bets - {selectedPeriod === 'today' ? "Today" :
+               selectedPeriod === 'yesterday' ? "Yesterday" :
+               "This Week"}
             </h2>
             <span className="text-sm text-gray-500">
               {loadingBets ? 'Loading...' :
-                selectedPeriod === 'today' && !isProUser ? '1 free bet, 3 premium bets' :
-                `${todaysBets.length} bets available`}
+                !isProUser ? '1 free bet, upgrade for more' :
+                `${activeBets.length} active bets`}
             </span>
           </div>
 
@@ -554,29 +552,127 @@ export default function YetAIBetsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {selectedPeriod === 'today' ? (
-                <>
-                  {visibleBets.map((bet) => (
-                    <BetCard key={bet.id} bet={bet} />
-                  ))}
-                  {lockedBets.map((bet) => (
-                    <BetCard key={bet.id} bet={bet} isLocked={true} />
-                  ))}
-                </>
-              ) : (
-                <>
-                  {todaysBets.map((bet) => (
-                    <BetCard key={bet.id} bet={bet} />
-                  ))}
-                </>
-              )}
-              {!loadingBets && todaysBets.length === 0 && (
+              {visibleActiveBets.map((bet) => (
+                <BetCard key={bet.id} bet={bet} />
+              ))}
+              {lockedActiveBets.map((bet) => (
+                <BetCard key={bet.id} bet={bet} isLocked={true} />
+              ))}
+              {!loadingBets && activeBets.length === 0 && (
                 <div className="col-span-2 text-center py-8 text-gray-500">
-                  {selectedPeriod === 'today' ? 'No bets available today. Check back later!' :
-                   selectedPeriod === 'yesterday' ? 'No bets from yesterday.' :
-                   'No bets from this week.'}
+                  No active bets for this period. Check back later!
                 </div>
               )}
+            </div>
+          )}
+        </div>
+
+        {/* Historical Results Section */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2" />
+              Historical Results
+            </h2>
+            <span className="text-sm text-gray-500">
+              {historicalBets.length} completed bets
+            </span>
+          </div>
+
+          {loadingBets ? (
+            <div className="flex justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+            </div>
+          ) : historicalBets.length > 0 ? (
+            <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-gray-50 border-b border-gray-200">
+                    <tr>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Game
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Pick
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Odds
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Confidence
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Date/Time
+                      </th>
+                      <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        Result
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-200">
+                    {historicalBets.map((bet) => (
+                      <tr key={bet.id} className="hover:bg-gray-50 transition-colors">
+                        <td className="px-4 py-4">
+                          <div className="flex items-center">
+                            <div className="flex-shrink-0">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800">
+                                {bet.sport}
+                              </span>
+                            </div>
+                            <div className="ml-3">
+                              <div className="text-sm font-medium text-gray-900">{bet.game}</div>
+                              {bet.bet_category === 'parlay' && (
+                                <div className="text-xs text-gray-500 flex items-center mt-1">
+                                  <Layers className="w-3 h-3 mr-1" />
+                                  {bet.parlay_legs?.length || 0}-Team Parlay
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="text-sm text-gray-900">{bet.pick}</div>
+                          <div className="text-xs text-gray-500 capitalize">{bet.bet_type}</div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="text-sm font-medium text-gray-900">{bet.odds}</div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex items-center">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2 mr-2" style={{width: '60px'}}>
+                              <div
+                                className="bg-blue-600 h-2 rounded-full"
+                                style={{width: `${bet.confidence}%`}}
+                              ></div>
+                            </div>
+                            <span className="text-sm text-gray-700">{bet.confidence}%</span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="text-sm text-gray-900">{bet.game_time}</div>
+                        </td>
+                        <td className="px-4 py-4">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            bet.status === 'won'
+                              ? 'bg-green-100 text-green-800'
+                              : bet.status === 'lost'
+                              ? 'bg-red-100 text-red-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {bet.status === 'won' && <CheckCircle className="w-3 h-3 mr-1" />}
+                            {bet.status === 'lost' && <XCircle className="w-3 h-3 mr-1" />}
+                            {bet.status.toUpperCase()}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8 text-gray-500 bg-white rounded-lg border border-gray-200">
+              No historical results yet. Place some bets to see your history!
             </div>
           )}
         </div>
