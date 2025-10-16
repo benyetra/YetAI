@@ -190,8 +190,9 @@ export default function YetAIBetsPage() {
   // Helper function to check if a date string matches the selected period
   const isInPeriod = (gameTimeStr: string, period: string) => {
     try {
-      // Parse the game time string - handle different formats
-      // Format is "MM/DD/YYYY @HH:MM AM/PM EDT"
+      // Parse the game time string
+      // Format is "MM/DD/YYYY @HH:MM AM/PM EDT" but the time is actually in UTC
+      // Example: "10/17/2025 @12:15 AM EDT" means 12:15 AM UTC (which is 8:15 PM EDT on 10/16)
 
       // Get current time in user's local timezone
       const now = new Date();
@@ -203,15 +204,17 @@ export default function YetAIBetsPage() {
       // Extract date and time parts
       if (dateStr.includes(' @')) {
         [dateStr, timeStr] = dateStr.split(' @');
+        // Remove timezone suffix (EDT, EST, etc.) - it's misleading, the time is actually UTC
+        timeStr = timeStr.replace(/\s+(EDT|EST|PST|MST|CST|CDT|MDT|PDT)$/i, '').trim();
       }
 
       // Parse MM/DD/YYYY
       const [month, day, year] = dateStr.split('/').map(Number);
 
-      // Parse game time to create a full datetime in local timezone
+      // Parse game time as UTC
       let gameDateTime: Date;
       if (timeStr) {
-        // Parse "HH:MM AM/PM EDT" (ignore timezone suffix, treat as local)
+        // Parse "HH:MM AM/PM"
         const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
         if (timeMatch) {
           let hour = parseInt(timeMatch[1]);
@@ -222,14 +225,15 @@ export default function YetAIBetsPage() {
           if (isPM && hour !== 12) hour += 12;
           if (!isPM && hour === 12) hour = 0;
 
-          // Create date with full time in local timezone
-          gameDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+          // Create ISO string as UTC: "2025-10-17T00:15:00Z"
+          const isoString = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}:00Z`;
+          gameDateTime = new Date(isoString);
         } else {
           // Fallback if time parsing fails
-          gameDateTime = new Date(year, month - 1, day);
+          gameDateTime = new Date(Date.UTC(year, month - 1, day));
         }
       } else {
-        gameDateTime = new Date(year, month - 1, day);
+        gameDateTime = new Date(Date.UTC(year, month - 1, day));
       }
 
       // Ensure we have a valid date
@@ -238,7 +242,7 @@ export default function YetAIBetsPage() {
         return false;
       }
 
-      // Get just the date portion for comparison (midnight of each day in local timezone)
+      // Get just the date portion for comparison (midnight of each day in LOCAL timezone)
       const gameDate = new Date(gameDateTime);
       gameDate.setHours(0, 0, 0, 0);
 
@@ -251,11 +255,11 @@ export default function YetAIBetsPage() {
       const weekAhead = new Date(today);
       weekAhead.setDate(today.getDate() + 7);
 
-      // Extract game hour for early morning detection
+      // Extract game hour in LOCAL timezone for early morning detection
       const gameHour = gameDateTime.getHours();
 
       // Debug logging with local timezone info
-      console.log(`Parsing: "${gameTimeStr}" -> DateTime: ${gameDateTime.toLocaleString()}, Date: ${gameDate.toDateString()}, Hour: ${gameHour}, Current Hour: ${currentHour}, Current Date: ${today.toDateString()}`);
+      console.log(`Parsing: "${gameTimeStr}" (UTC) -> Local DateTime: ${gameDateTime.toLocaleString()}, Date: ${gameDate.toDateString()}, Hour: ${gameHour}, Current Hour: ${currentHour}, Current Date: ${today.toDateString()}`);
 
       // Smart late-night game handling:
       // If current time is after 6pm (18:00) and game is tomorrow but before 6am,
