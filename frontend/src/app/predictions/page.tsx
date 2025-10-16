@@ -192,20 +192,36 @@ export default function YetAIBetsPage() {
     try {
       // Parse the game time string - handle different formats
       // Format is "MM/DD/YYYY @HH:MM AM/PM EDT"
-      let dateStr = gameTimeStr;
+      const now = new Date();
+      const currentHour = now.getHours();
 
-      // If format includes time, extract just the date part
+      let dateStr = gameTimeStr;
+      let timeStr = '';
+
+      // Extract date and time parts
       if (dateStr.includes(' @')) {
-        dateStr = dateStr.split(' @')[0];
+        [dateStr, timeStr] = dateStr.split(' @');
       }
 
       // Parse MM/DD/YYYY as local date (not UTC)
       const [month, day, year] = dateStr.split('/').map(Number);
       const gameDate = new Date(year, month - 1, day); // Month is 0-indexed
-      const today = new Date();
+
+      // Parse game hour to determine if it's an early morning game
+      let gameHour = 0;
+      if (timeStr) {
+        const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+        if (timeMatch) {
+          let hour = parseInt(timeMatch[1]);
+          const isPM = timeMatch[3].toUpperCase() === 'PM';
+          if (isPM && hour !== 12) hour += 12;
+          if (!isPM && hour === 12) hour = 0;
+          gameHour = hour;
+        }
+      }
 
       // Debug logging
-      console.log(`Parsing date: "${dateStr}" -> ${gameDate.toDateString()}, Today: ${today.toDateString()}`);
+      console.log(`Parsing: "${gameTimeStr}" -> Date: ${gameDate.toDateString()}, Hour: ${gameHour}, Current Hour: ${currentHour}`);
 
       // Ensure we have a valid date
       if (isNaN(gameDate.getTime())) {
@@ -214,27 +230,35 @@ export default function YetAIBetsPage() {
       }
 
       // Set times to start of day for comparison
-      gameDate.setHours(0, 0, 0, 0);
+      const today = new Date();
       today.setHours(0, 0, 0, 0);
+      gameDate.setHours(0, 0, 0, 0);
 
-      const yesterday = new Date(today);
-      yesterday.setDate(today.getDate() - 1);
       const tomorrow = new Date(today);
       tomorrow.setDate(today.getDate() + 1);
-      const weekAgo = new Date(today);
-      weekAgo.setDate(today.getDate() - 7);
       const weekAhead = new Date(today);
       weekAhead.setDate(today.getDate() + 7);
 
+      // Smart late-night game handling:
+      // If current time is after 6pm (18:00) and game is tomorrow but before 6am,
+      // treat it as "tonight's game" for the "today" filter
+      const isLateEvening = currentHour >= 18; // After 6pm
+      const isEarlyMorningGame = gameHour < 6; // Before 6am
+      const isTomorrowDate = gameDate.getTime() === tomorrow.getTime();
+      const isEarlyTomorrowGame = isLateEvening && isTomorrowDate && isEarlyMorningGame;
+
       switch (period) {
         case 'today':
-          const isToday = gameDate.getTime() === today.getTime();
-          console.log(`Today check: ${isToday} (${gameDate.toDateString()} === ${today.toDateString()})`);
-          return isToday;
+          // Show today's games AND early morning tomorrow games if it's currently evening
+          const isTodayDate = gameDate.getTime() === today.getTime();
+          const showInToday = isTodayDate || isEarlyTomorrowGame;
+          console.log(`Today check: ${showInToday} (isToday: ${isTodayDate}, isEarlyTomorrowGame: ${isEarlyTomorrowGame})`);
+          return showInToday;
         case 'tomorrow':
-          const isTomorrow = gameDate.getTime() === tomorrow.getTime();
-          console.log(`Tomorrow check: ${isTomorrow} (${gameDate.toDateString()} === ${tomorrow.toDateString()})`);
-          return isTomorrow;
+          // Show tomorrow's games, but exclude early morning games if they're showing in "today"
+          const showInTomorrow = isTomorrowDate && !isEarlyTomorrowGame;
+          console.log(`Tomorrow check: ${showInTomorrow} (isTomorrowDate: ${isTomorrowDate}, excluded: ${isEarlyTomorrowGame})`);
+          return showInTomorrow;
         case 'week':
           // Show this week's games (today through 7 days ahead)
           const isInWeek = gameDate.getTime() >= today.getTime() && gameDate.getTime() <= weekAhead.getTime();
