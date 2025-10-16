@@ -192,8 +192,10 @@ export default function YetAIBetsPage() {
     try {
       // Parse the game time string - handle different formats
       // Format is "MM/DD/YYYY @HH:MM AM/PM EDT"
+
+      // Get current time in user's local timezone
       const now = new Date();
-      const currentHour = now.getHours();
+      const currentHour = now.getHours(); // Local hour (0-23)
 
       let dateStr = gameTimeStr;
       let timeStr = '';
@@ -203,47 +205,63 @@ export default function YetAIBetsPage() {
         [dateStr, timeStr] = dateStr.split(' @');
       }
 
-      // Parse MM/DD/YYYY as local date (not UTC)
+      // Parse MM/DD/YYYY
       const [month, day, year] = dateStr.split('/').map(Number);
-      const gameDate = new Date(year, month - 1, day); // Month is 0-indexed
 
-      // Parse game hour to determine if it's an early morning game
-      let gameHour = 0;
+      // Parse game time to create a full datetime in local timezone
+      let gameDateTime: Date;
       if (timeStr) {
+        // Parse "HH:MM AM/PM EDT" (ignore timezone suffix, treat as local)
         const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
         if (timeMatch) {
           let hour = parseInt(timeMatch[1]);
+          const minute = parseInt(timeMatch[2]);
           const isPM = timeMatch[3].toUpperCase() === 'PM';
+
+          // Convert to 24-hour format
           if (isPM && hour !== 12) hour += 12;
           if (!isPM && hour === 12) hour = 0;
-          gameHour = hour;
+
+          // Create date with full time in local timezone
+          gameDateTime = new Date(year, month - 1, day, hour, minute, 0, 0);
+        } else {
+          // Fallback if time parsing fails
+          gameDateTime = new Date(year, month - 1, day);
         }
+      } else {
+        gameDateTime = new Date(year, month - 1, day);
       }
 
-      // Debug logging
-      console.log(`Parsing: "${gameTimeStr}" -> Date: ${gameDate.toDateString()}, Hour: ${gameHour}, Current Hour: ${currentHour}`);
-
       // Ensure we have a valid date
-      if (isNaN(gameDate.getTime())) {
+      if (isNaN(gameDateTime.getTime())) {
         console.warn('Invalid date format:', gameTimeStr);
         return false;
       }
 
-      // Set times to start of day for comparison
+      // Get just the date portion for comparison (midnight of each day in local timezone)
+      const gameDate = new Date(gameDateTime);
+      gameDate.setHours(0, 0, 0, 0);
+
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      gameDate.setHours(0, 0, 0, 0);
 
       const tomorrow = new Date(today);
       tomorrow.setDate(today.getDate() + 1);
+
       const weekAhead = new Date(today);
       weekAhead.setDate(today.getDate() + 7);
+
+      // Extract game hour for early morning detection
+      const gameHour = gameDateTime.getHours();
+
+      // Debug logging with local timezone info
+      console.log(`Parsing: "${gameTimeStr}" -> DateTime: ${gameDateTime.toLocaleString()}, Date: ${gameDate.toDateString()}, Hour: ${gameHour}, Current Hour: ${currentHour}, Current Date: ${today.toDateString()}`);
 
       // Smart late-night game handling:
       // If current time is after 6pm (18:00) and game is tomorrow but before 6am,
       // treat it as "tonight's game" for the "today" filter
-      const isLateEvening = currentHour >= 18; // After 6pm
-      const isEarlyMorningGame = gameHour < 6; // Before 6am
+      const isLateEvening = currentHour >= 18; // After 6pm local time
+      const isEarlyMorningGame = gameHour < 6; // Before 6am local time
       const isTomorrowDate = gameDate.getTime() === tomorrow.getTime();
       const isEarlyTomorrowGame = isLateEvening && isTomorrowDate && isEarlyMorningGame;
 
