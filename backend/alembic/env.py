@@ -24,6 +24,17 @@ sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 from app.models.database_models import Base
 from app.core.config import settings
 
+# Import every model module so target_metadata is the full schema.
+# Without this, autogenerate proposes DROP statements for any table whose
+# model lives outside database_models.py.
+from app.models import bet_models  # noqa: F401
+from app.models import sports_models  # noqa: F401
+from app.models import live_bet_models  # noqa: F401
+from app.models import simple_unified_bet_model  # noqa: F401
+from app.models import fantasy_models  # noqa: F401
+from app.models import player_mapping  # noqa: F401
+from app.models import predictions_models  # noqa: F401
+
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,

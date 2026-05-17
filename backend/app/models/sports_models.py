@@ -80,36 +80,13 @@ class Sport(Base):
     )
 
     # Relationships
-    games = relationship("Game", back_populates="sport")
+    # (Game back-reference removed in Development-f09; no callers ever used this model.)
 
 
-class Game(Base):
-    """Game/match information table"""
-
-    __tablename__ = "games"
-
-    id = Column(String(100), primary_key=True, index=True)  # External API ID
-    sport_id = Column(Integer, ForeignKey("sports.id"), nullable=False)
-    sport_key = Column(String(100), nullable=False, index=True)
-    sport_title = Column(String(200), nullable=False)
-    home_team = Column(String(200), nullable=False)
-    away_team = Column(String(200), nullable=False)
-    commence_time = Column(DateTime(timezone=True), nullable=False, index=True)
-    status = Column(String(20), default=GameStatus.SCHEDULED, index=True)
-    home_score = Column(Integer)
-    away_score = Column(Integer)
-    completed = Column(Boolean, default=False)
-    last_odds_update = Column(DateTime(timezone=True))
-    last_score_update = Column(DateTime(timezone=True))
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    # Relationships
-    sport = relationship("Sport", back_populates="games")
-    odds = relationship("GameOdds", back_populates="game")
-    bookmaker_odds = relationship("BookmakerOdds", back_populates="game")
+# NOTE: A second `class Game(Base)` was previously defined here, conflicting with
+# database_models.Game (same __tablename__='games'). It had zero callers — every
+# `from app.models...import Game` in the codebase references database_models.Game,
+# which is the canonical mapping. Removed as part of Development-f09.
 
 
 class Bookmaker(Base):
@@ -158,7 +135,7 @@ class GameOdds(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    game = relationship("Game", back_populates="odds")
+    # (Game back-reference removed in Development-f09.)
 
 
 class BookmakerOdds(Base):
@@ -189,7 +166,7 @@ class BookmakerOdds(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    game = relationship("Game", back_populates="bookmaker_odds")
+    # (Game back-reference removed in Development-f09.)
     bookmaker = relationship("Bookmaker", back_populates="odds")
 
 

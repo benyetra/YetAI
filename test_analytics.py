@@ -5,7 +5,7 @@ Test analytics calculations with new 2025 data
 import asyncio
 import sys
 import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'backend'))
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker

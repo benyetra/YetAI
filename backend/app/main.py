@@ -171,48 +171,10 @@ class ShareBetRequest(BaseModel):
 
 
 # JWT Helper Functions
-def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Extract user from JWT token"""
-    try:
-        token = credentials.credentials
-
-        # Basic validation
-        invalid_token_value = (
-            "invalid"  # nosec B105 - this is a test token value, not a real password
-        )
-        if not token or token == invalid_token_value:
-            raise HTTPException(status_code=401, detail="Invalid token")
-
-        # Decode JWT token (without signature verification for now)
-        import jwt
-
-        try:
-            payload = jwt.decode(token, options={"verify_signature": False})
-            user_id = payload.get("sub")
-
-            if user_id:
-                # Convert user_id to integer if it's a string
-                user_id = int(user_id) if isinstance(user_id, str) else user_id
-                return {
-                    "user_id": user_id,
-                    "email": "user@example.com",
-                    "subscription_tier": "pro",
-                }
-            else:
-                raise HTTPException(status_code=401, detail="Invalid token payload")
-
-        except (jwt.InvalidTokenError, ValueError) as e:
-            # Fallback to mock user for development tokens
-            logger.warning(f"JWT decode failed, using mock user: {e}")
-            return {
-                "user_id": 123,  # Mock user as integer
-                "email": "user@example.com",
-                "subscription_tier": "pro",
-            }
-
-    except Exception as e:
-        logger.error(f"Authentication failed: {e}")
-        raise HTTPException(status_code=401, detail="Authentication failed")
+# Canonical get_current_user lives in app/core/auth.py — it validates JWTs against
+# the real auth_service. The previous main.py copy was a dev-only mock that returned
+# subscription_tier='pro' for any decodable token; consolidated in Development-22l.
+from app.core.auth import get_current_user  # noqa: F401
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)):
@@ -404,6 +366,10 @@ uploads_dir.mkdir(exist_ok=True)
 (uploads_dir / "avatars").mkdir(exist_ok=True)
 
 app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
+
+
+from app.api.v1.predictions import router as predictions_router
+app.include_router(predictions_router)
 
 
 # Debug endpoint to check avatar files
