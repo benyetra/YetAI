@@ -1,36 +1,64 @@
+import hashlib
+import hmac
 import os
 import secrets
+import time
 from typing import Dict, Optional
+
+import google.auth.transport.requests
 from google.auth.transport.requests import Request
 from google.oauth2 import id_token
 from google_auth_oauthlib.flow import Flow
-import google.auth.transport.requests
+
 from app.core.config import settings
+
+# State tokens are valid for 10 minutes
+_STATE_TTL = 600
+
+
+def _sign_state(nonce: str, ts: int) -> str:
+    key = settings.SECRET_KEY.encode()
+    msg = f"{nonce}:{ts}".encode()
+    return hmac.new(key, msg, hashlib.sha256).hexdigest()
+
+
+def _make_state() -> str:
+    nonce = secrets.token_urlsafe(24)
+    ts = int(time.time())
+    sig = _sign_state(nonce, ts)
+    return f"{nonce}.{ts}.{sig}"
+
+
+def _verify_state(state: str) -> bool:
+    """Return True if state is a valid, unexpired HMAC-signed token."""
+    try:
+        nonce, ts_str, sig = state.rsplit(".", 2)
+        ts = int(ts_str)
+        if int(time.time()) - ts > _STATE_TTL:
+            return False
+        expected = _sign_state(nonce, ts)
+        return hmac.compare_digest(sig, expected)
+    except Exception:
+        return False
 
 
 class GoogleOAuthService:
     def __init__(self):
-        # Use centralized settings
         self.client_id = settings.GOOGLE_CLIENT_ID or "your-google-client-id"
         self.client_secret = (
             settings.GOOGLE_CLIENT_SECRET or "your-google-client-secret"
         )
         self.redirect_uri = settings.get_google_redirect_uri()
 
-        # OAuth 2.0 scopes - use full URLs for consistency
         self.scopes = [
             "openid",
             "https://www.googleapis.com/auth/userinfo.email",
             "https://www.googleapis.com/auth/userinfo.profile",
         ]
 
-        # In-memory storage for state tokens (use Redis in production)
-        self.state_storage = {}
-
     def get_authorization_url(self) -> Dict[str, str]:
         """Generate Google OAuth authorization URL"""
         try:
-            # Create flow instance
             flow = Flow.from_client_config(
                 {
                     "web": {
@@ -45,16 +73,10 @@ class GoogleOAuthService:
             )
             flow.redirect_uri = self.redirect_uri
 
-            # Generate state for CSRF protection
-            state = secrets.token_urlsafe(32)
-
-            # Get authorization URL
+            state = _make_state()
             authorization_url, _ = flow.authorization_url(
                 access_type="offline", include_granted_scopes="true", state=state
             )
-
-            # Store state (use Redis or database in production)
-            self.state_storage[state] = True
 
             return {"authorization_url": authorization_url, "state": state}
 
@@ -65,12 +87,8 @@ class GoogleOAuthService:
     def handle_callback(self, code: str, state: str) -> Dict:
         """Handle OAuth callback and extract user info"""
         try:
-            # Verify state token
-            if state not in self.state_storage:
+            if not _verify_state(state):
                 return {"error": "Invalid state token"}
-
-            # Remove used state token
-            del self.state_storage[state]
 
             # Create flow instance
             flow = Flow.from_client_config(
