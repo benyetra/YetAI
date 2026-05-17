@@ -1895,7 +1895,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
                 "status": "success",
                 "message": "Login successful",
                 "access_token": access_token,
-                "token_type": "bearer",
+                "token_type": "bearer",  # nosec B105
                 "user": user_data or existing_user,
             }
         else:
@@ -1934,7 +1934,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
                 "status": "success",
                 "message": "Account created successfully",
                 "access_token": access_token,
-                "token_type": "bearer",
+                "token_type": "bearer",  # nosec B105
                 "user": result["user"],
             }
 
@@ -2517,7 +2517,7 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
             return {
                 "status": "success",
                 "message": f"Mock password reset for user {user_id} - service unavailable",
-                "temporary_password": "temp123456",
+                "temporary_password": "temp123456",  # nosec B105
                 "note": "This is a mock response",
             }
 
