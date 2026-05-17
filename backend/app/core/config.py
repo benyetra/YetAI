@@ -134,10 +134,17 @@ class Settings(BaseSettings):
 
     def odds_api_env_diagnostics(self) -> dict:
         """Non-secret hints for debugging env wiring (Railway vs Vercel)."""
+        raw = os.environ.get("ODDS_API_KEY") or os.environ.get("ODDS_API") or ""
+        key = self.ODDS_API_KEY or ""
         return {
-            "resolved_key_configured": bool(self.ODDS_API_KEY),
+            "resolved_key_configured": bool(key),
             "env_ODDS_API_KEY_set": bool(os.environ.get("ODDS_API_KEY")),
             "env_ODDS_API_set": bool(os.environ.get("ODDS_API")),
+            "raw_env_length": len(raw),
+            "resolved_key_length": len(key),
+            "resolved_key_preview": (
+                f"{key[:4]}...{key[-4:]}" if len(key) >= 8 else "too_short"
+            ),
         }
 
 
