@@ -21,16 +21,24 @@ def check_popular_games_data():
     db = SessionLocal()
 
     try:
-        # Get today's date range (same as popular_games endpoint)
-        now = datetime.now(timezone.utc)
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = now.replace(hour=23, minute=59, second=59, microsecond=999999)
+        # Get today's date range (same as popular_games endpoint — Eastern "sports day")
+        from datetime import timedelta
+        from zoneinfo import ZoneInfo
+
+        eastern = ZoneInfo("America/New_York")
+        now_et = datetime.now(eastern)
+        today_start_et = now_et - timedelta(hours=6)
+        today_end_et = now_et.replace(
+            hour=23, minute=59, second=59, microsecond=999999
+        )
+        today_start = today_start_et.astimezone(timezone.utc)
+        today_end = today_end_et.astimezone(timezone.utc)
 
         print("=" * 80)
         print("Popular Games Data Check")
         print("=" * 80)
-        print(f"Current UTC time: {now}")
-        print(f"Today range: {today_start} to {today_end}")
+        print(f"Current ET time: {now_et}")
+        print(f"Today range (UTC): {today_start} to {today_end}")
         print()
 
         # Query games (same as popular_games endpoint)
@@ -121,6 +129,7 @@ def check_popular_games_data():
         print("   → Run: python3 scripts/fetch_todays_games.py")
         print()
         print("3. To verify API endpoint directly:")
+        print("   → curl http://localhost:8000/api/popular-games")
         print("   → curl http://localhost:8000/api/v1/popular-games")
 
     finally:

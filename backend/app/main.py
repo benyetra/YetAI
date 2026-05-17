@@ -474,6 +474,13 @@ async def health_check():
         "google_oauth_available": GOOGLE_OAUTH_AVAILABLE,
         "google_client_id_set": bool(settings.GOOGLE_CLIENT_ID),
         "google_client_secret_set": bool(settings.GOOGLE_CLIENT_SECRET),
+        "odds_api": settings.odds_api_env_diagnostics(),
+        "scheduler_running": (
+            get_service("scheduler_service").running
+            if is_service_available("scheduler_service")
+            and get_service("scheduler_service")
+            else None
+        ),
     }
 
 
@@ -1792,8 +1799,13 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
 
         if existing_user:
             # User exists - log them in
+            user_data = (
+                await auth_service_db.apply_google_email_verification(
+                    existing_user["id"], user_info.get("email_verified", False)
+                )
+                or existing_user
+            )
             access_token = auth_service_db.generate_token(existing_user["id"])
-            user_data = existing_user
         else:
             # Create new user with Google OAuth
             # Generate unique username from email - sanitize to only allow valid characters
@@ -1817,6 +1829,7 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
                 username=username,
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
+                is_verified=user_info.get("email_verified", False),
             )
 
             if not result["success"]:
@@ -1873,6 +1886,9 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
 
         if existing_user:
             # User exists - log them in
+            user_data = await auth_service_db.apply_google_email_verification(
+                existing_user["id"], user_info.get("email_verified", False)
+            )
             access_token = auth_service_db.generate_token(existing_user["id"])
 
             return {
@@ -1880,7 +1896,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
                 "message": "Login successful",
                 "access_token": access_token,
                 "token_type": "bearer",
-                "user": existing_user,
+                "user": user_data or existing_user,
             }
         else:
             # Create new user with Google OAuth
@@ -1905,6 +1921,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
                 username=username,
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
+                is_verified=user_info.get("email_verified", False),
             )
 
             if not result["success"]:
@@ -5993,6 +6010,7 @@ async def get_available_markets(sport: str):
 
 
 @app.get("/api/popular-games")
+@app.get("/api/v1/popular-games")
 async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(get_db)):
     """Get popular games from database (cached by scheduled sync)"""
     try:
@@ -6017,19 +6035,46 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         )
         logger.info(f"Date range (UTC): {today_start} to {today_end}")
 
-        # Query database for games happening today
-        # NOTE: Showing all games until broadcast heuristics are tuned
-        games_query = (
-            db.query(Game)
-            .filter(
-                Game.commence_time >= today_start,
-                Game.commence_time <= today_end,
+        def _query_todays_games():
+            return (
+                db.query(Game)
+                .filter(
+                    Game.commence_time >= today_start,
+                    Game.commence_time <= today_end,
+                )
+                .order_by(Game.commence_time)
+                .all()
             )
-            .order_by(Game.commence_time)
-            .all()
-        )
+
+        # Query database for games happening today
+        games_query = _query_todays_games()
+        cache_refresh_attempted = False
+
+        # Empty window usually means the cache was never populated or is stale
+        # (common after YetiBets → YetAI DB cutover). Refresh once per request path.
+        if not games_query and settings.ODDS_API_KEY:
+            cache_refresh_attempted = True
+            try:
+                from app.services.games_sync_service import run_games_sync
+
+                logger.info(
+                    "No games in popular-games window — running on-demand games sync"
+                )
+                await run_games_sync()
+                db.expire_all()
+                games_query = _query_todays_games()
+            except Exception as sync_err:
+                logger.warning(f"On-demand games sync failed: {sync_err}")
 
         logger.info(f"Found {len(games_query)} games in database for today")
+
+        games_table_total = db.query(Game).count()
+        latest_commence = (
+            db.query(Game.commence_time)
+            .order_by(Game.commence_time.desc())
+            .limit(1)
+            .scalar()
+        )
 
         # Group by sport
         games_by_sport = {"nfl": [], "nba": [], "mlb": [], "nhl": []}
@@ -6053,10 +6098,6 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
 
             # Only include sports we're tracking
             if friendly_sport not in games_by_sport:
-                continue
-
-            # Skip games without broadcast info
-            if not game.broadcast_info:
                 continue
 
             # Extract bookmakers odds from odds_data JSON
@@ -6122,6 +6163,10 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
             # Add debug info
             response["debug"] = {
                 "total_in_db": len(games_query),
+                "games_table_total": games_table_total,
+                "latest_game_commence_utc": (
+                    latest_commence.isoformat() if latest_commence else None
+                ),
                 "date_range_utc": {
                     "start": today_start.isoformat(),
                     "end": today_end.isoformat(),
@@ -6129,6 +6174,9 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
                 "current_time_et": now_et.isoformat(),
                 "sport_counts": {k: len(v) for k, v in games_by_sport.items()},
                 "data_source": "database_cache",
+                "cache_refresh_attempted": cache_refresh_attempted,
+                "odds_api_configured": bool(settings.ODDS_API_KEY),
+                **settings.odds_api_env_diagnostics(),
             }
 
             return response
@@ -6619,107 +6667,58 @@ async def get_chat_suggestions():
 @app.get("/api/admin/featured-games")
 async def get_featured_games(db=Depends(get_db)):
     """Get admin-selected featured games"""
-    try:
-        from sqlalchemy import text
+    from sqlalchemy import text
 
-        # Clean up expired games first
-        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
-        db.execute(cleanup_query)
+    from app.db.featured_games import ensure_featured_games_table, row_to_featured_game
+
+    try:
+        ensure_featured_games_table(db)
+
+        db.execute(text("DELETE FROM featured_games WHERE start_time <= NOW()"))
         db.commit()
 
-        # First, try to get featured games from database (only future games)
-        query = text(
-            """
+        result = db.execute(
+            text(
+                """
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation, admin_notes, created_at
             FROM featured_games
             WHERE start_time > NOW()
             ORDER BY start_time ASC
         """
-        )
-
-        result = db.execute(query)
-        rows = result.fetchall()
-
-        featured_games = []
-        for row in rows:
-            featured_games.append(
-                {
-                    "id": row.game_id,
-                    "game_id": row.game_id,
-                    "home_team": row.home_team,
-                    "away_team": row.away_team,
-                    "start_time": (
-                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
-                        if row.start_time
-                        else None
-                    ),
-                    "commence_time": (
-                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
-                        if row.start_time
-                        else None
-                    ),
-                    "sport_key": row.sport_key,
-                    "status": "scheduled",
-                    "explanation": row.explanation,
-                    "admin_notes": row.admin_notes,
-                }
             )
+        )
+        featured_games = [
+            row_to_featured_game(row, include_admin_notes=True)
+            for row in result.fetchall()
+        ]
 
-        # If no featured games in database, return empty
         if not featured_games:
             logger.info("No featured games found in database")
 
         return {"status": "success", "featured_games": featured_games}
     except Exception as e:
+        db.rollback()
         logger.error(f"Error getting featured games: {e}")
-
-        # If the error is about table not existing, try to create it
-        if "featured_games" in str(e) and "does not exist" in str(e):
-            try:
-                logger.info("Featured games table doesn't exist, creating it...")
-                # Create featured_games table
-                create_table_sql = text(
-                    """
-                    CREATE TABLE IF NOT EXISTS featured_games (
-                        id SERIAL PRIMARY KEY,
-                        game_id VARCHAR(100) NOT NULL,
-                        home_team VARCHAR(100) NOT NULL,
-                        away_team VARCHAR(100) NOT NULL,
-                        start_time TIMESTAMP NOT NULL,
-                        sport_key VARCHAR(50) NOT NULL,
-                        explanation TEXT NOT NULL,
-                        admin_notes TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-                )
-                db.execute(create_table_sql)
-                db.commit()
-                logger.info("Featured games table created successfully")
-
-                # Return empty list since table was just created
-                return {"status": "success", "featured_games": []}
-            except Exception as create_error:
-                logger.error(f"Failed to create featured games table: {create_error}")
-
         return {"status": "error", "featured_games": []}
 
 
 @app.get("/api/featured-games")
 async def get_public_featured_games(db=Depends(get_db)):
     """Get featured games for public display"""
-    try:
-        from sqlalchemy import text
+    from sqlalchemy import text
 
-        # Clean up expired games first
-        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
-        db.execute(cleanup_query)
+    from app.db.featured_games import ensure_featured_games_table, row_to_featured_game
+
+    try:
+        ensure_featured_games_table(db)
+
+        db.execute(text("DELETE FROM featured_games WHERE start_time <= NOW()"))
         db.commit()
 
-        # Get only upcoming featured games for public display
-        query = text(
-            """
+        result = db.execute(
+            text(
+                """
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation
             FROM featured_games
@@ -6727,37 +6726,13 @@ async def get_public_featured_games(db=Depends(get_db)):
             ORDER BY start_time ASC
             LIMIT 10
         """
-        )
-
-        result = db.execute(query)
-        rows = result.fetchall()
-
-        featured_games = []
-        for row in rows:
-            featured_games.append(
-                {
-                    "id": row.game_id,
-                    "game_id": row.game_id,
-                    "home_team": row.home_team,
-                    "away_team": row.away_team,
-                    "start_time": (
-                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
-                        if row.start_time
-                        else None
-                    ),
-                    "commence_time": (
-                        row.start_time.replace(tzinfo=timezone.utc).isoformat()
-                        if row.start_time
-                        else None
-                    ),
-                    "sport_key": row.sport_key,
-                    "status": "scheduled",
-                    "explanation": row.explanation,
-                }
             )
+        )
+        featured_games = [row_to_featured_game(row) for row in result.fetchall()]
 
         return {"status": "success", "featured_games": featured_games}
     except Exception as e:
+        db.rollback()
         logger.error(f"Error getting public featured games: {e}")
         return {"status": "error", "featured_games": []}
 
@@ -6767,14 +6742,16 @@ async def cleanup_expired_featured_games(
     admin_user: dict = Depends(require_admin), db=Depends(get_db)
 ):
     """Remove expired featured games (games that have already ended)"""
+    from sqlalchemy import text
+
+    from app.db.featured_games import ensure_featured_games_table
+
     try:
-        from sqlalchemy import text
-
-        # Delete games that have already ended
-        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
-        result = db.execute(cleanup_query)
+        ensure_featured_games_table(db)
+        result = db.execute(
+            text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        )
         db.commit()
-
         expired_count = result.rowcount if hasattr(result, "rowcount") else 0
 
         return {
@@ -6783,6 +6760,7 @@ async def cleanup_expired_featured_games(
             "expired_removed": expired_count,
         }
     except Exception as e:
+        db.rollback()
         logger.error(f"Error cleaning up expired featured games: {e}")
         return {
             "status": "error",
@@ -6793,35 +6771,36 @@ async def cleanup_expired_featured_games(
 @app.post("/api/admin/featured-games")
 async def set_featured_games(request: dict, db=Depends(get_db)):
     """Set admin-selected featured games with explanations"""
+    from sqlalchemy import text
+
+    from app.db.featured_games import ensure_featured_games_table
+
+    featured_games_data = request.get("featured_games", [])
+    insert_query = text(
+        """
+        INSERT INTO featured_games (
+            game_id, home_team, away_team, start_time,
+            sport_key, explanation, admin_notes, created_at
+        ) VALUES (
+            :game_id, :home_team, :away_team, :start_time,
+            :sport_key, :explanation, :admin_notes, NOW()
+        )
+    """
+    )
+
     try:
-        from sqlalchemy import text
+        ensure_featured_games_table(db)
 
-        featured_games_data = request.get("featured_games", [])
-
-        # First, clean up expired games (games that have already ended)
-        cleanup_query = text("DELETE FROM featured_games WHERE start_time <= NOW()")
-        cleanup_result = db.execute(cleanup_query)
+        cleanup_result = db.execute(
+            text("DELETE FROM featured_games WHERE start_time <= NOW()")
+        )
         expired_count = (
             cleanup_result.rowcount if hasattr(cleanup_result, "rowcount") else 0
         )
 
-        # Clear existing featured games
         db.execute(text("DELETE FROM featured_games"))
 
-        # Insert new featured games
         for game_data in featured_games_data:
-            insert_query = text(
-                """
-                INSERT INTO featured_games (
-                    game_id, home_team, away_team, start_time,
-                    sport_key, explanation, admin_notes, created_at
-                ) VALUES (
-                    :game_id, :home_team, :away_team, :start_time,
-                    :sport_key, :explanation, :admin_notes, NOW()
-                )
-            """
-            )
-
             db.execute(
                 insert_query,
                 {
@@ -6848,77 +6827,8 @@ async def set_featured_games(request: dict, db=Depends(get_db)):
             "expired_removed": expired_count,
         }
     except Exception as e:
+        db.rollback()
         logger.error(f"Error setting featured games: {e}")
-
-        # If the error is about table not existing, try to create it and retry
-        if "featured_games" in str(e) and "does not exist" in str(e):
-            try:
-                logger.info("Featured games table doesn't exist, creating it...")
-                # Create featured_games table
-                create_table_sql = text(
-                    """
-                    CREATE TABLE IF NOT EXISTS featured_games (
-                        id SERIAL PRIMARY KEY,
-                        game_id VARCHAR(100) NOT NULL,
-                        home_team VARCHAR(100) NOT NULL,
-                        away_team VARCHAR(100) NOT NULL,
-                        start_time TIMESTAMP NOT NULL,
-                        sport_key VARCHAR(50) NOT NULL,
-                        explanation TEXT NOT NULL,
-                        admin_notes TEXT,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """
-                )
-                db.execute(create_table_sql)
-                db.commit()
-                logger.info("Featured games table created successfully")
-
-                # Retry the original operation
-                featured_games_data = request.get("featured_games", [])
-
-                # Clear existing featured games (will be empty since table just created)
-                db.execute(text("DELETE FROM featured_games"))
-
-                # Insert new featured games
-                for game_data in featured_games_data:
-                    insert_query = text(
-                        """
-                        INSERT INTO featured_games (
-                            game_id, home_team, away_team, start_time,
-                            sport_key, explanation, admin_notes, created_at
-                        ) VALUES (
-                            :game_id, :home_team, :away_team, :start_time,
-                            :sport_key, :explanation, :admin_notes, NOW()
-                        )
-                    """
-                    )
-
-                    db.execute(
-                        insert_query,
-                        {
-                            "game_id": game_data.get("game_id"),
-                            "home_team": game_data.get("home_team"),
-                            "away_team": game_data.get("away_team"),
-                            "start_time": game_data.get("start_time"),
-                            "sport_key": game_data.get(
-                                "sport_key", "americanfootball_nfl"
-                            ),
-                            "explanation": game_data.get("explanation", ""),
-                            "admin_notes": game_data.get("admin_notes", ""),
-                        },
-                    )
-
-                db.commit()
-
-                return {
-                    "status": "success",
-                    "message": f"Featured games table created and updated with {len(featured_games_data)} games",
-                    "count": len(featured_games_data),
-                }
-            except Exception as create_error:
-                logger.error(f"Failed to create featured games table: {create_error}")
-
         return {
             "status": "error",
             "message": f"Failed to update featured games: {str(e)}",
@@ -8882,35 +8792,16 @@ async def debug_analytics_status(db=Depends(get_db)):
 @app.post("/api/admin/setup-featured-games")
 async def setup_featured_games_table(db=Depends(get_db)):
     """Create featured_games table for admin curation"""
+    from app.db.featured_games import ensure_featured_games_table
+
     try:
-        from sqlalchemy import text
-
-        # Create featured_games table
-        create_table_sql = text(
-            """
-            CREATE TABLE IF NOT EXISTS featured_games (
-                id SERIAL PRIMARY KEY,
-                game_id VARCHAR(255) NOT NULL,
-                home_team VARCHAR(255) NOT NULL,
-                away_team VARCHAR(255) NOT NULL,
-                start_time TIMESTAMP,
-                sport_key VARCHAR(100) DEFAULT 'americanfootball_nfl',
-                explanation TEXT,
-                admin_notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """
-        )
-
-        db.execute(create_table_sql)
-        db.commit()
-
+        ensure_featured_games_table(db)
         return {
             "status": "success",
             "message": "Featured games table created successfully",
         }
     except Exception as e:
+        db.rollback()
         logger.error(f"Error creating featured games table: {e}")
         return {"status": "error", "message": f"Failed to create table: {str(e)}"}
 

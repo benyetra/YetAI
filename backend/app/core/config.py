@@ -1,8 +1,16 @@
-from pydantic_settings import BaseSettings
-from typing import Optional, List
+import os
+from typing import List, Optional
+
+from pydantic import AliasChoices, Field, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        extra="ignore",
+    )
     # App
     APP_NAME: str = "AI Sports Betting MVP"
     DEBUG: bool = True
@@ -13,8 +21,11 @@ class Settings(BaseSettings):
         "postgresql://sports_user:sports_pass@localhost:5432/sports_betting_ai"
     )
 
-    # External APIs
-    ODDS_API_KEY: Optional[str] = None
+    # External APIs — accept ODDS_API_KEY or ODDS_API (common Railway/Vercel typo)
+    ODDS_API_KEY: Optional[str] = Field(
+        default=None,
+        validation_alias=AliasChoices("ODDS_API_KEY", "ODDS_API"),
+    )
     OPENAI_API_KEY: Optional[str] = None
     WEATHER_API_KEY: Optional[str] = None
 
@@ -88,9 +99,22 @@ class Settings(BaseSettings):
         else:  # development
             return "http://localhost:8001/api/auth/google/callback"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    @model_validator(mode="after")
+    def _coalesce_odds_api_key(self) -> "Settings":
+        """Accept ODDS_API when dashboards use that name instead of ODDS_API_KEY."""
+        if not self.ODDS_API_KEY:
+            fallback = os.environ.get("ODDS_API") or os.environ.get("THE_ODDS_API_KEY")
+            if fallback:
+                self.ODDS_API_KEY = fallback
+        return self
+
+    def odds_api_env_diagnostics(self) -> dict:
+        """Non-secret hints for debugging env wiring (Railway vs Vercel)."""
+        return {
+            "resolved_key_configured": bool(self.ODDS_API_KEY),
+            "env_ODDS_API_KEY_set": bool(os.environ.get("ODDS_API_KEY")),
+            "env_ODDS_API_set": bool(os.environ.get("ODDS_API")),
+        }
 
 
 settings = Settings()

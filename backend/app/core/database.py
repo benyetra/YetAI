@@ -72,6 +72,16 @@ def init_db():
 
         # Create all tables
         Base.metadata.create_all(bind=engine)
+
+        # Admin-curated featured games (raw SQL table, not an ORM model)
+        from app.db.featured_games import ensure_featured_games_table
+
+        db = SessionLocal()
+        try:
+            ensure_featured_games_table(db)
+        finally:
+            db.close()
+
         logger.info("Database tables created successfully")
         return True
 

@@ -22,6 +22,7 @@ celery_app = Celery(
     include=[
         "app.tasks.live_pollers",
         "app.tasks.etl_pipeline",
+        "app.tasks.games_sync",
         "app.tasks.health",
     ],
 )
@@ -53,6 +54,11 @@ celery_app.conf.beat_schedule = {
     "refresh-prop-watchlist-every-5m": {
         "task": "app.tasks.live_pollers.refresh_prop_watchlist",
         "schedule": 300.0,
+    },
+    # Popular-games DB cache (Odds API + ESPN broadcast metadata)
+    "sync-games-cache-every-3h": {
+        "task": "app.tasks.games_sync.sync_games_cache",
+        "schedule": 10800.0,  # 3 hours — matches GamesSyncService design
     },
 
     # === ETL pipeline (u9t) — overnight orchestrator ===

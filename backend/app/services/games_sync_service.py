@@ -24,6 +24,13 @@ from app.core.database import get_db
 logger = logging.getLogger(__name__)
 
 
+def _normalize_commence_time(commence_time: datetime) -> datetime:
+    """Store commence_time as UTC-naive for consistent DB comparisons."""
+    if commence_time.tzinfo is not None:
+        return commence_time.astimezone(timezone.utc).replace(tzinfo=None)
+    return commence_time
+
+
 class GamesSyncService:
     """Service to sync games from external APIs to database"""
 
@@ -151,7 +158,9 @@ class GamesSyncService:
                         # Update existing game
                         existing_game.home_team = game.home_team
                         existing_game.away_team = game.away_team
-                        existing_game.commence_time = game.commence_time
+                        existing_game.commence_time = _normalize_commence_time(
+                            game.commence_time
+                        )
                         existing_game.odds_data = odds_data
                         existing_game.last_update = datetime.now(timezone.utc)
                         stats["games_updated"] += 1
@@ -163,7 +172,7 @@ class GamesSyncService:
                             sport_title=game.sport_title,
                             home_team=game.home_team,
                             away_team=game.away_team,
-                            commence_time=game.commence_time,
+                            commence_time=_normalize_commence_time(game.commence_time),
                             status=GameStatus.SCHEDULED,
                             odds_data=odds_data,
                             last_update=datetime.now(timezone.utc),
