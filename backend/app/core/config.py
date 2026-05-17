@@ -125,7 +125,10 @@ class Settings(BaseSettings):
             )
             if raw:
                 cleaned = raw.strip().strip('"').strip("'")
-                if cleaned and cleaned not in ("your_odds_api_key_here", "your-odds-api-key"):
+                if cleaned and cleaned not in (
+                    "your_odds_api_key_here",
+                    "your-odds-api-key",
+                ):
                     self.ODDS_API_KEY = cleaned
         return self
 

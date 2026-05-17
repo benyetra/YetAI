@@ -20,12 +20,12 @@ import pytz
 from app.services.live_betting.play_event_listener import PlayEventListener
 from app.services.live_betting.prop_watchlist import PropWatchlist
 
-logger = logging.getLogger('mlb_live_poller')
+logger = logging.getLogger("mlb_live_poller")
 
-ET = pytz.timezone('US/Eastern')
+ET = pytz.timezone("US/Eastern")
 
-MLB_SCHEDULE_URL = 'https://statsapi.mlb.com/api/v1/schedule'
-MLB_LIVE_FEED_URL = 'https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live'
+MLB_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+MLB_LIVE_FEED_URL = "https://statsapi.mlb.com/api/v1.1/game/{game_pk}/feed/live"
 
 
 class MLBLivePoller:
@@ -37,8 +37,9 @@ class MLBLivePoller:
         asyncio.run(poller.tick())  # one polling cycle
     """
 
-    def __init__(self, watchlist: PropWatchlist, listener: PlayEventListener,
-                 alert_callback=None):
+    def __init__(
+        self, watchlist: PropWatchlist, listener: PlayEventListener, alert_callback=None
+    ):
         self.watchlist = watchlist
         self.listener = listener
         self.alert_callback = alert_callback  # async fn(List[PropEvent])
@@ -52,7 +53,9 @@ class MLBLivePoller:
         """Single polling cycle. Called by the Celery beat schedule every 20s.
         Creates a fresh aiohttp session per tick (sessions don't survive between
         Celery tasks reliably)."""
-        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as session:
+        async with aiohttp.ClientSession(
+            timeout=aiohttp.ClientTimeout(total=15)
+        ) as session:
             self._session = session
             try:
                 await self._poll_cycle()
@@ -87,8 +90,8 @@ class MLBLivePoller:
         """Fetch today's MLB schedule for reference."""
         try:
             params = {
-                'sportId': 1,
-                'date': game_date.strftime('%Y-%m-%d'),
+                "sportId": 1,
+                "date": game_date.strftime("%Y-%m-%d"),
             }
             async with self._session.get(MLB_SCHEDULE_URL, params=params) as resp:
                 if resp.status != 200:
@@ -97,14 +100,22 @@ class MLBLivePoller:
                 data = await resp.json()
 
             self._todays_games.clear()
-            for game_date_info in data.get('dates', []):
-                for game in game_date_info.get('games', []):
-                    gpk = game.get('gamePk')
+            for game_date_info in data.get("dates", []):
+                for game in game_date_info.get("games", []):
+                    gpk = game.get("gamePk")
                     if gpk:
                         self._todays_games[gpk] = {
-                            'status': game.get('status', {}).get('abstractGameState', ''),
-                            'away': game.get('teams', {}).get('away', {}).get('team', {}).get('name', ''),
-                            'home': game.get('teams', {}).get('home', {}).get('team', {}).get('name', ''),
+                            "status": game.get("status", {}).get(
+                                "abstractGameState", ""
+                            ),
+                            "away": game.get("teams", {})
+                            .get("away", {})
+                            .get("team", {})
+                            .get("name", ""),
+                            "home": game.get("teams", {})
+                            .get("home", {})
+                            .get("team", {})
+                            .get("name", ""),
                         }
             logger.info(f"Loaded {len(self._todays_games)} games for {game_date}")
         except Exception:
@@ -120,34 +131,37 @@ class MLBLivePoller:
                     return
                 data = await resp.json()
 
-            game_data = data.get('gameData', {})
-            status = game_data.get('status', {}).get('abstractGameState', '')
+            game_data = data.get("gameData", {})
+            status = game_data.get("status", {}).get("abstractGameState", "")
 
             # Skip games that haven't started or are already final
-            if status == 'Preview':
+            if status == "Preview":
                 return
-            if status == 'Final':
+            if status == "Final":
                 # Process any remaining plays, then clean up
                 pass
 
             # Get all plays
-            live_data = data.get('liveData', {})
-            plays = live_data.get('plays', {})
-            all_plays = plays.get('allPlays', [])
+            live_data = data.get("liveData", {})
+            plays = live_data.get("plays", {})
+            all_plays = plays.get("allPlays", [])
 
             if not all_plays:
                 return
 
             # Only process plays we haven't seen
             last_index = self._last_play_index.get(game_pk, -1)
-            new_plays = [p for p in all_plays
-                         if p.get('about', {}).get('atBatIndex', -1) > last_index]
+            new_plays = [
+                p
+                for p in all_plays
+                if p.get("about", {}).get("atBatIndex", -1) > last_index
+            ]
 
             all_events = []
             for play in new_plays:
                 events = self.listener.on_play(game_pk, play)
                 all_events.extend(events)
-                play_idx = play.get('about', {}).get('atBatIndex', -1)
+                play_idx = play.get("about", {}).get("atBatIndex", -1)
                 if play_idx > last_index:
                     last_index = play_idx
 
@@ -158,7 +172,7 @@ class MLBLivePoller:
                 await self.alert_callback(all_events)
 
             # Clean up finished games
-            if status == 'Final':
+            if status == "Final":
                 self._last_play_index.pop(game_pk, None)
                 logger.info(f"Game {game_pk} final, cleaned up tracking state")
 

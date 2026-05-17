@@ -10,6 +10,7 @@ Two task groups:
 Per Development-vir (2026-05-17): no Discord notifications. Alerts route through
 WebSocket + Twilio only.
 """
+
 from celery import Celery
 from celery.schedules import crontab
 
@@ -60,7 +61,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.games_sync.sync_games_cache",
         "schedule": 10800.0,  # 3 hours — matches GamesSyncService design
     },
-
     # === ETL pipeline (u9t) — overnight orchestrator ===
     "nba-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",

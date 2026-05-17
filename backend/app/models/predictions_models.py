@@ -5,6 +5,7 @@ Tables are prefixed with `pred_` to keep the predictions namespace clean.
 This module is intentionally NOT imported by app/main.py yet; that wiring lands
 with the alembic baseline migration (Development-b0j).
 """
+
 from datetime import datetime, date
 from sqlalchemy import (
     Boolean,
@@ -24,7 +25,7 @@ from app.core.database import Base
 
 
 class HistoricalPitcherStats(Base):
-    __tablename__ = 'pred_historical_pitcher_stats'
+    __tablename__ = "pred_historical_pitcher_stats"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False)
     name = Column(String, nullable=False)
@@ -41,8 +42,9 @@ class HistoricalPitcherStats(Base):
     whip = Column(Float, nullable=False)
     numberOfPitches = Column(Integer, nullable=False)
 
+
 class Pitcher(Base):
-    __tablename__ = 'pred_pitcher'
+    __tablename__ = "pred_pitcher"
     id = Column(Integer, primary_key=True)
     name = Column(String(64), nullable=False)
     pitch_hand = Column(String(8), nullable=False)
@@ -56,16 +58,17 @@ class Pitcher(Base):
     combined_score = Column(Float, nullable=False)
     fanduel_point = Column(Float, nullable=False)
     fanduel_price = Column(Float, nullable=False)
-    fanduel_flag = Column(String(1), nullable=False, default='n')
+    fanduel_flag = Column(String(1), nullable=False, default="n")
     game_status = Column(String(32), nullable=False)
     pitcher_id = Column(String(64), nullable=False)
     projected_strikeouts = Column(Float, nullable=False)
     projected_innings = Column(Float, nullable=False)
     projected_at_bats = Column(Float, nullable=False)
     game_id = Column(Integer, nullable=False)
-    
+
+
 class Homer(Base):
-    __tablename__ = 'pred_homer'
+    __tablename__ = "pred_homer"
     id = Column(Integer, primary_key=True, autoincrement=True)
     player_id = Column(String(50), nullable=False)
     player_name = Column(String(100), nullable=False)
@@ -84,8 +87,9 @@ class Homer(Base):
     homer_score = Column(Float, nullable=True)
     game_id = Column(Integer, nullable=False)
 
+
 class Hitter(Base):
-    __tablename__ = 'pred_hitter'
+    __tablename__ = "pred_hitter"
     id = Column(Integer, primary_key=True, autoincrement=True)
     player_id = Column(String(50), nullable=False)
     player_name = Column(String(100), nullable=False)
@@ -102,11 +106,13 @@ class Hitter(Base):
     at_bats_vs_pitcher = Column(Integer, nullable=False)
     combined_score = Column(Float, nullable=False)
     game_id = Column(Integer, nullable=False)
+
     def __repr__(self):
-        return f'<BatterStats {self.player_name}>'
-    
+        return f"<BatterStats {self.player_name}>"
+
+
 class Weather(Base):
-    __tablename__ = 'pred_weather'
+    __tablename__ = "pred_weather"
     id = Column(Integer, primary_key=True, autoincrement=True)
     stadium = Column(String(100), nullable=False)
     game_time = Column(DateTime, nullable=False)
@@ -119,23 +125,26 @@ class Weather(Base):
     precipitation_probability = Column(Float, nullable=False)
     rain_intensity = Column(Float, nullable=False)
 
+
 class NFLTeam(Base):
-    __tablename__ = 'pred_nfl_team'
+    __tablename__ = "pred_nfl_team"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, unique=True, nullable=False)
     name = Column(String(50), nullable=False)
     location = Column(String(50), nullable=False)
+
     def __repr__(self):
         return f"<NFLTeam {self.name}>"
 
+
 class Kickers(Base):
-    __tablename__ = 'pred_kickers'
+    __tablename__ = "pred_kickers"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, unique=True, nullable=False)
     name = Column(String, nullable=False)
     team_id = Column(Integer, nullable=False)
     team_name = Column(String, nullable=False)
-    venue_name =  Column(String, nullable=False)
+    venue_name = Column(String, nullable=False)
     opponent_team_name = Column(String, nullable=False)
     team_red_zone_efficiency = Column(Float, nullable=True)
     opponent_red_zone_efficiency = Column(Float, nullable=True)
@@ -155,8 +164,9 @@ class Kickers(Base):
     venue_type = Column(String, nullable=True)  # dome/outdoor
     surface_type = Column(String, nullable=True)  # grass/turf
 
+
 class KickerActuals(Base):
-    __tablename__ = 'pred_kicker_actuals'
+    __tablename__ = "pred_kicker_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     kicker_id = Column(String, nullable=False)
@@ -178,8 +188,9 @@ class KickerActuals(Base):
     correct_prediction = Column(Boolean, nullable=True)  # Did our prediction match?
     prediction_confidence = Column(Float, nullable=True)  # How confident were we?
 
+
 class FieldGoalAttempt(Base):
-    __tablename__ = 'pred_field_goal_attempts'
+    __tablename__ = "pred_field_goal_attempts"
     id = Column(Integer, primary_key=True)
     game_id = Column(String(50), nullable=False)
     play_id = Column(Float, nullable=True)
@@ -219,8 +230,9 @@ class FieldGoalAttempt(Base):
     is_clutch = Column(Integer, nullable=False)
     is_game_winning = Column(Integer, nullable=False)
 
+
 class KickerPerformanceMetrics(Base):
-    __tablename__ = 'pred_kicker_performance_metrics'
+    __tablename__ = "pred_kicker_performance_metrics"
     id = Column(Integer, primary_key=True)
     kicker_player_id = Column(String(20), nullable=False)
     kicker_player_name = Column(String(100), nullable=False)
@@ -251,8 +263,9 @@ class KickerPerformanceMetrics(Base):
     dome_made = Column(Integer, nullable=False, default=0)
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class WeatherImpactMetrics(Base):
-    __tablename__ = 'pred_weather_impact_metrics'
+    __tablename__ = "pred_weather_impact_metrics"
     id = Column(Integer, primary_key=True)
     temp_band = Column(String(20), nullable=True)
     wind_band = Column(String(20), nullable=True)
@@ -261,8 +274,9 @@ class WeatherImpactMetrics(Base):
     success_rate = Column(Float, nullable=False)
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class KickerPredictions(Base):
-    __tablename__ = 'pred_kicker_predictions'
+    __tablename__ = "pred_kicker_predictions"
     id = Column(Integer, primary_key=True)
     kicker_player_id = Column(String(20), nullable=False)
     kicker_player_name = Column(String(100), nullable=False)
@@ -278,7 +292,7 @@ class KickerPredictions(Base):
     # Distance-specific predictions
     short_distance_prob = Column(Float, nullable=True)  # <30 yards
     medium_distance_prob = Column(Float, nullable=True)  # 30-49 yards
-    long_distance_prob = Column(Float, nullable=True)   # 50+ yards
+    long_distance_prob = Column(Float, nullable=True)  # 50+ yards
     # Situational predictions
     clutch_situation_prob = Column(Float, nullable=True)
     weather_adjusted_prob = Column(Float, nullable=True)
@@ -292,8 +306,19 @@ class KickerPredictions(Base):
     roof_type = Column(String(20), nullable=True)
     surface_type = Column(String(30), nullable=True)
 
-    def __init__(self, kicker_player_id, kicker_player_name, team_id, team_name, venue_name, opponent_team_name, game_date,
-                 predicted_fg_attempts, predicted_fg_made, predicted_success_rate):
+    def __init__(
+        self,
+        kicker_player_id,
+        kicker_player_name,
+        team_id,
+        team_name,
+        venue_name,
+        opponent_team_name,
+        game_date,
+        predicted_fg_attempts,
+        predicted_fg_made,
+        predicted_success_rate,
+    ):
         self.kicker_player_id = kicker_player_id
         self.kicker_player_name = kicker_player_name
         self.team_id = team_id
@@ -307,7 +332,7 @@ class KickerPredictions(Base):
 
 
 class TeamStats(Base):
-    __tablename__ = 'pred_team_stats'
+    __tablename__ = "pred_team_stats"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, unique=True, nullable=False)
     red_zone_efficiency = Column(Float, nullable=False)
@@ -315,8 +340,9 @@ class TeamStats(Base):
     fg_given_up = Column(Float, nullable=False)
     third_down_conversion_rate = Column(Float, nullable=False)
 
+
 class NFLWeather(Base):
-    __tablename__ = 'pred_nfl_weather'
+    __tablename__ = "pred_nfl_weather"
     id = Column(Integer, primary_key=True, autoincrement=True)
     stadium = Column(String(100), nullable=False)
     game_time = Column(DateTime, nullable=False)
@@ -329,8 +355,9 @@ class NFLWeather(Base):
     precipitation_probability = Column(Float, nullable=False)
     rain_intensity = Column(Float, nullable=False)
 
+
 class StrikeoutProjections(Base):
-    __tablename__ = 'pred_strikeout_projections'
+    __tablename__ = "pred_strikeout_projections"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     pitcher_id = Column(String, nullable=False)
@@ -342,8 +369,9 @@ class StrikeoutProjections(Base):
     fanduel_over_under = Column(String(7), nullable=True)
     park_id = Column(String, nullable=True)
 
+
 class StrikeoutActuals(Base):
-    __tablename__ = 'pred_strikeout_actuals'
+    __tablename__ = "pred_strikeout_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     pitcher_id = Column(String, nullable=False)
@@ -357,8 +385,9 @@ class StrikeoutActuals(Base):
     correct_prediction = Column(Boolean, nullable=True)
     park_id = Column(String, nullable=True)
 
+
 class ProjectedHits(Base):
-    __tablename__ = 'pred_projected_hits'
+    __tablename__ = "pred_projected_hits"
     id = Column(Integer, primary_key=True)
     batter_id = Column(Integer, nullable=False)
     batter_name = Column(String(100), nullable=False)
@@ -366,8 +395,9 @@ class ProjectedHits(Base):
     projected_hits = Column(Integer, nullable=False)
     actual_hits = Column(Integer, default=0)
 
+
 class ProjectedHomers(Base):
-    __tablename__ = 'pred_projected_homers'
+    __tablename__ = "pred_projected_homers"
     id = Column(Integer, primary_key=True)
     batter_id = Column(Integer, nullable=False)
     batter_name = Column(String(100), nullable=False)
@@ -375,8 +405,9 @@ class ProjectedHomers(Base):
     projected_homers = Column(Integer, nullable=False)
     actual_homers = Column(Integer, default=0)
 
+
 class HitActuals(Base):
-    __tablename__ = 'pred_hit_actuals'
+    __tablename__ = "pred_hit_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     batter_id = Column(String, nullable=False)
@@ -385,8 +416,9 @@ class HitActuals(Base):
     projected_hits = Column(Integer, nullable=False)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class HomerActuals(Base):
-    __tablename__ = 'pred_homer_actuals'
+    __tablename__ = "pred_homer_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     batter_id = Column(String, nullable=False)
@@ -395,21 +427,23 @@ class HomerActuals(Base):
     projected_homers = Column(Integer, nullable=False)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class BlowoutChances(Base):
-    __tablename__ = 'pred_blowout_chances'
+    __tablename__ = "pred_blowout_chances"
     id = Column(Integer, primary_key=True, autoincrement=True)
     game_id = Column(Integer, nullable=False)
     home_team = Column(String(100), nullable=False)
     away_team = Column(String(100), nullable=False)
-    home_expected_runs  = Column(Float, nullable=False)
+    home_expected_runs = Column(Float, nullable=False)
     away_expected_runs = Column(Float, nullable=False)
     home_pitcher_effectiveness = Column(Float, nullable=False)
     away_pitcher_effectiveness = Column(Float, nullable=False)
     run_differential = Column(Float, nullable=False)
     blowout_team = Column(String(10), nullable=False)
 
+
 class Quarterbacks(Base):
-    __tablename__ = 'pred_quarterbacks'
+    __tablename__ = "pred_quarterbacks"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, unique=True, nullable=False)
     name = Column(String, nullable=False)
@@ -420,7 +454,7 @@ class Quarterbacks(Base):
     game_time = Column(DateTime, nullable=False)
     fanduel_price = Column(Float, nullable=True)
     fanduel_point = Column(Float, nullable=True)
-    fanduel_flag = Column(String(1), nullable=True, default='n')
+    fanduel_flag = Column(String(1), nullable=True, default="n")
 
     # Season stats
     season_passing_yards = Column(Float, nullable=True)
@@ -479,17 +513,66 @@ class Quarterbacks(Base):
     # Projected stat
     projected_passing_yards = Column(Float, nullable=True)
 
-    def __init__(self, player_id, name, team_id, team_name, venue_name, opponent_team_name, game_time, fanduel_price,
-                 fanduel_point, fanduel_flag, season_passing_yards, career_passing_yards, completion_pct, completions,
-                 ESPN_qbr, interception_pct, interceptions, passing_attempts, passing_td_pct, passing_touchdowns,
-                 passing_yards, passing_yards_per_game, qb_rating, sacks, team_games_played, yards_per_completion,
-                 yards_per_game, yards_per_pass_attempt, quarterback_rating, career_completion_pct, career_completions,
-                 career_ESPN_qbr, career_interceptions, career_passing_attempts, career_passing_touchdowns,
-                 career_passing_yards_per_game, career_qbr, career_sacks, career_team_games_played,
-                 career_yards_per_completion, career_yards_per_game, career_yards_per_pass_attempt,
-                 opponent_pass_yards_allowed_per_game, hurries, avg_sack_yards, passes_batted_down, passes_defended,
-                 sacks_opponent, sack_yards_opponent, tackles_for_loss, total_tackles, points_allowed,
-                 defensive_interceptions, wind_speed, temperature, precipitation_probability, projected_passing_yards):
+    def __init__(
+        self,
+        player_id,
+        name,
+        team_id,
+        team_name,
+        venue_name,
+        opponent_team_name,
+        game_time,
+        fanduel_price,
+        fanduel_point,
+        fanduel_flag,
+        season_passing_yards,
+        career_passing_yards,
+        completion_pct,
+        completions,
+        ESPN_qbr,
+        interception_pct,
+        interceptions,
+        passing_attempts,
+        passing_td_pct,
+        passing_touchdowns,
+        passing_yards,
+        passing_yards_per_game,
+        qb_rating,
+        sacks,
+        team_games_played,
+        yards_per_completion,
+        yards_per_game,
+        yards_per_pass_attempt,
+        quarterback_rating,
+        career_completion_pct,
+        career_completions,
+        career_ESPN_qbr,
+        career_interceptions,
+        career_passing_attempts,
+        career_passing_touchdowns,
+        career_passing_yards_per_game,
+        career_qbr,
+        career_sacks,
+        career_team_games_played,
+        career_yards_per_completion,
+        career_yards_per_game,
+        career_yards_per_pass_attempt,
+        opponent_pass_yards_allowed_per_game,
+        hurries,
+        avg_sack_yards,
+        passes_batted_down,
+        passes_defended,
+        sacks_opponent,
+        sack_yards_opponent,
+        tackles_for_loss,
+        total_tackles,
+        points_allowed,
+        defensive_interceptions,
+        wind_speed,
+        temperature,
+        precipitation_probability,
+        projected_passing_yards,
+    ):
         self.player_id = player_id
         self.name = name
         self.team_id = team_id
@@ -556,8 +639,9 @@ class Quarterbacks(Base):
         # Projected stat
         self.projected_passing_yards = projected_passing_yards
 
+
 class PlayerCareerData(Base):
-    __tablename__ = 'pred_player_career_data'
+    __tablename__ = "pred_player_career_data"
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False)  # Reference to player
@@ -576,16 +660,17 @@ class PlayerCareerData(Base):
     personal_fouls = Column(Float, nullable=True)
     plus_minus = Column(Float, nullable=True)
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
-   
+
     __table_args__ = (
-        UniqueConstraint('player_id', 'season', name='unique_player_season_for_career'),
+        UniqueConstraint("player_id", "season", name="unique_player_season_for_career"),
     )
 
     def __repr__(self):
         return f"<PlayerCareerData Player ID: {self.player_id}, Season: {self.season}>"
 
+
 class TeamDefenseStats(Base):
-    __tablename__ = 'pred_team_defense_stats'
+    __tablename__ = "pred_team_defense_stats"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, nullable=False, unique=True)
     team_name = Column(String(100), nullable=True)
@@ -619,8 +704,9 @@ class TeamDefenseStats(Base):
     def __repr__(self):
         return f"<TeamDefenseStats Team ID: {self.team_id}, Team: {self.team_name}>"
 
+
 class TeamOffenseStats(Base):
-    __tablename__ = 'pred_team_offense_stats'
+    __tablename__ = "pred_team_offense_stats"
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, unique=True, nullable=False)
@@ -636,9 +722,11 @@ class TeamOffenseStats(Base):
     three_point_percentage = Column(Float, nullable=True)
 
     def __repr__(self):
-        return f'<TeamOffenseStats {self.team_name}>'
+        return f"<TeamOffenseStats {self.team_name}>"
+
+
 class RecentGames(Base):
-    __tablename__ = 'pred_recent_games'
+    __tablename__ = "pred_recent_games"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False)
     game_date = Column(Date, nullable=False)
@@ -698,10 +786,14 @@ class RecentGames(Base):
     close_shots = Column(Float, nullable=True)  # Close shots FGA (aggregated)
 
     __table_args__ = (
-        UniqueConstraint('player_id', 'game_date', name='unique_recent_games_player_game_date'),
+        UniqueConstraint(
+            "player_id", "game_date", name="unique_recent_games_player_game_date"
+        ),
     )
+
+
 class TeamRoster(Base):
-    __tablename__ = 'pred_team_roster'
+    __tablename__ = "pred_team_roster"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, nullable=False)
     player_id = Column(Integer, nullable=False)
@@ -711,9 +803,10 @@ class TeamRoster(Base):
 
     def __repr__(self):
         return f"<TeamRoster Team ID: {self.team_id}, Player ID: {self.player_id}>"
-    
+
+
 class PointsProjections(Base):
-    __tablename__ = 'pred_points_projections'
+    __tablename__ = "pred_points_projections"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     player_id = Column(Integer, nullable=False)
@@ -723,8 +816,9 @@ class PointsProjections(Base):
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
 
+
 class PointsActuals(Base):
-    __tablename__ = 'pred_points_actuals'
+    __tablename__ = "pred_points_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     player_id = Column(Integer, nullable=False)
@@ -734,9 +828,10 @@ class PointsActuals(Base):
     projected_points = Column(Float, nullable=False)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class ThreePointProjections(Base):
-    __tablename__ = 'pred_three_point_projections'
-    
+    __tablename__ = "pred_three_point_projections"
+
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     player_id = Column(Integer, nullable=False)
@@ -748,24 +843,30 @@ class ThreePointProjections(Base):
 
     def __repr__(self):
         return f"<ThreePointProjections Player ID: {self.player_id}, Date: {self.date}, Projected 3PT Made: {self.projected_three_pt_made}>"
-    
+
+
 class ActualThreePointMade(Base):
-    __tablename__ = 'pred_actual_three_point_made'
-    
+    __tablename__ = "pred_actual_three_point_made"
+
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     player_id = Column(Integer, nullable=False)
     player_name = Column(String(100), nullable=True)
     opponent_team_name = Column(String(100), nullable=True)
     actual_three_pt_made = Column(Float, nullable=False)
-    projected_three_pt_made = Column(Float, nullable=True)  # Optional for easier tracking of model performance
-    correct_prediction = Column(Boolean, nullable=True)     # True if projection was correct
+    projected_three_pt_made = Column(
+        Float, nullable=True
+    )  # Optional for easier tracking of model performance
+    correct_prediction = Column(
+        Boolean, nullable=True
+    )  # True if projection was correct
 
     def __repr__(self):
         return f"<ActualThreePointMade Player ID: {self.player_id}, Date: {self.date}, Actual 3PT Made: {self.actual_three_pt_made}>"
-    
+
+
 class TodayActivePlayers(Base):
-    __tablename__ = 'pred_today_active_players'
+    __tablename__ = "pred_today_active_players"
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False)
@@ -779,15 +880,16 @@ class TodayActivePlayers(Base):
     is_home_game = Column(Boolean, nullable=True)  # True if home game, False if away
 
     __table_args__ = (
-        UniqueConstraint('player_id', 'game_date', name='unique_player_game_date'),
+        UniqueConstraint("player_id", "game_date", name="unique_player_game_date"),
     )
 
     def __repr__(self):
         return f"<TodayActivePlayers Player ID: {self.player_id}, Game Date: {self.game_date}>"
-    
+
+
 class YesterdaysPlayers(Base):
-    __tablename__ = 'pred_yesterdays_players'
-    
+    __tablename__ = "pred_yesterdays_players"
+
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False)
     player_name = Column(String(50), nullable=False)
@@ -798,14 +900,16 @@ class YesterdaysPlayers(Base):
     opponent_team_name = Column(String(50), nullable=True)
     game_date = Column(Date, nullable=False)
 
+
 class PlayerStats(Base):
-    __tablename__ = 'pred_player_stats'
-    
+    __tablename__ = "pred_player_stats"
+
     player_id = Column(Integer, primary_key=True)
     avg_minutes = Column(Float, nullable=True)
 
+
 class FreeThrowPredictions(Base):
-    __tablename__ = 'pred_free_throw_predictions'
+    __tablename__ = "pred_free_throw_predictions"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -820,19 +924,21 @@ class FreeThrowPredictions(Base):
     def __repr__(self):
         return f"<FreeThrowPredictions Player ID: {self.player_id}, Predicted: {self.predicted_free_throws}>"
 
+
 class BettingCorner(Base):
-    __tablename__ = 'pred_betting_corner'
+    __tablename__ = "pred_betting_corner"
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), nullable=False)  # Name of the bet
-    odds = Column(String(50), nullable=False)   # Odds for the bet
-    date = Column(Date, nullable=False)         # Date of the bet
+    odds = Column(String(50), nullable=False)  # Odds for the bet
+    date = Column(Date, nullable=False)  # Date of the bet
     result = Column(String(20), nullable=False, default="Pending")  # Result of the bet
 
     def __repr__(self):
         return f"<BettingCorner {self.name} ({self.result})>"
-    
+
+
 class NoStealsProjections(Base):
-    __tablename__ = 'pred_no_steals_projections'
+    __tablename__ = "pred_no_steals_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -840,8 +946,10 @@ class NoStealsProjections(Base):
     player_name = Column(String(100), nullable=False)
     opponent_team_name = Column(String(100), nullable=False)
     probability_no_steals = Column(Float, nullable=False)
+
+
 class NoStealsActuals(Base):
-    __tablename__ = 'pred_no_steals_actuals'
+    __tablename__ = "pred_no_steals_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -852,8 +960,9 @@ class NoStealsActuals(Base):
     probability_no_steals = Column(Float, nullable=True)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class StealsProjections(Base):
-    __tablename__ = 'pred_steals_projections'
+    __tablename__ = "pred_steals_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -866,7 +975,7 @@ class StealsProjections(Base):
 
 
 class StealsActuals(Base):
-    __tablename__ = 'pred_steals_actuals'
+    __tablename__ = "pred_steals_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -879,7 +988,7 @@ class StealsActuals(Base):
 
 
 class BlocksProjections(Base):
-    __tablename__ = 'pred_blocks_projections'
+    __tablename__ = "pred_blocks_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -888,8 +997,9 @@ class BlocksProjections(Base):
     opponent_team_name = Column(String(100), nullable=False)
     projected_blocks = Column(Float, nullable=False)
 
+
 class BlocksActuals(Base):
-    __tablename__ = 'pred_blocks_actuals'
+    __tablename__ = "pred_blocks_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -900,8 +1010,9 @@ class BlocksActuals(Base):
     projected_blocks = Column(Float, nullable=True)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class AssistsProjections(Base):
-    __tablename__ = 'pred_assists_projections'
+    __tablename__ = "pred_assists_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -910,8 +1021,9 @@ class AssistsProjections(Base):
     opponent_team_name = Column(String(100), nullable=False)
     projected_assists = Column(Float, nullable=False)
 
+
 class AssistsActuals(Base):
-    __tablename__ = 'pred_assists_actuals'
+    __tablename__ = "pred_assists_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -922,8 +1034,9 @@ class AssistsActuals(Base):
     projected_assists = Column(Float, nullable=True)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class ReboundsProjections(Base):
-    __tablename__ = 'pred_rebounds_projections'
+    __tablename__ = "pred_rebounds_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -934,8 +1047,9 @@ class ReboundsProjections(Base):
     projected_offensive_rebounds = Column(Float, nullable=True)
     projected_defensive_rebounds = Column(Float, nullable=True)
 
+
 class ReboundsActuals(Base):
-    __tablename__ = 'pred_rebounds_actuals'
+    __tablename__ = "pred_rebounds_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -948,8 +1062,9 @@ class ReboundsActuals(Base):
     projected_rebounds = Column(Float, nullable=True)
     correct_prediction = Column(Boolean, nullable=True)
 
+
 class FreeThrowActuals(Base):
-    __tablename__ = 'pred_free_throw_actuals'
+    __tablename__ = "pred_free_throw_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -958,14 +1073,18 @@ class FreeThrowActuals(Base):
     opponent_team_name = Column(String(100), nullable=False)
     actual_free_throws = Column(Float, nullable=False)
     projected_free_throws = Column(Float, nullable=False)
-    correct_prediction = Column(Boolean, nullable=True)  # True if the prediction was correct
+    correct_prediction = Column(
+        Boolean, nullable=True
+    )  # True if the prediction was correct
 
     def __repr__(self):
         return f"<FreeThrowActuals Player ID: {self.player_id}, Date: {self.date}, Actual Free Throws: {self.actual_free_throws}>"
 
+
 class PRAProjections(Base):
     """Points + Rebounds + Assists combo prop projections"""
-    __tablename__ = 'pred_pra_projections'
+
+    __tablename__ = "pred_pra_projections"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -992,9 +1111,11 @@ class PRAProjections(Base):
     def __repr__(self):
         return f"<PRAProjections {self.player_name}: {self.projected_pra:.1f} PRA vs {self.opponent_team_name}>"
 
+
 class PRAActuals(Base):
     """Points + Rebounds + Assists actual results for accuracy tracking"""
-    __tablename__ = 'pred_pra_actuals'
+
+    __tablename__ = "pred_pra_actuals"
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -1016,11 +1137,14 @@ class PRAActuals(Base):
     correct_prediction = Column(Boolean, nullable=True)
 
     def __repr__(self):
-        return f"<PRAActuals {self.player_name}: {self.actual_pra:.1f} PRA on {self.date}>"
+        return (
+            f"<PRAActuals {self.player_name}: {self.actual_pra:.1f} PRA on {self.date}>"
+        )
+
 
 class TopPerformers(Base):
-    __tablename__ = 'pred_top_performers'
-    
+    __tablename__ = "pred_top_performers"
+
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     matchup = Column(String(100), nullable=False, unique=True)
@@ -1032,22 +1156,25 @@ class TopPerformers(Base):
     def __repr__(self):
         return f"<TopPerformers {self.matchup} - {self.game_date}>"
 
-class ValueBet(Base):
-    __tablename__ = 'pred_value_bets'
 
-    id              = Column(Integer, primary_key=True)
-    date            = Column(Date,   nullable=False, index=True, default=date.today)
-    game            = Column(String, nullable=False)
-    team            = Column(String, nullable=False)
-    estimated_prob  = Column(Float,  nullable=False)
-    implied_prob    = Column(Float,  nullable=False)
-    expected_value  = Column(Float,  nullable=False)
+class ValueBet(Base):
+    __tablename__ = "pred_value_bets"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False, index=True, default=date.today)
+    game = Column(String, nullable=False)
+    team = Column(String, nullable=False)
+    estimated_prob = Column(Float, nullable=False)
+    implied_prob = Column(Float, nullable=False)
+    expected_value = Column(Float, nullable=False)
 
     __table_args__ = (
-        UniqueConstraint('date', 'game', 'team', name='uq_date_game_team'),
+        UniqueConstraint("date", "game", "team", name="uq_date_game_team"),
     )
+
+
 class DailyHRPredictions(Base):
-    __tablename__ = 'pred_daily_hr_predictions'
+    __tablename__ = "pred_daily_hr_predictions"
     id = Column(Integer, primary_key=True, autoincrement=True)
     date = Column(Date, nullable=False, index=True, default=date.today)
     batter_id = Column(Integer, nullable=False)
@@ -1059,8 +1186,9 @@ class DailyHRPredictions(Base):
     def __repr__(self):
         return f"<DailyHRPredictions {self.date} - {self.batter_name} vs {self.pitcher_name} {self.predicted_prob:.3f}>"
 
+
 class QBPredictions(Base):
-    __tablename__ = 'pred_qb_predictions'
+    __tablename__ = "pred_qb_predictions"
     id = Column(Integer, primary_key=True)
     qb_player_id = Column(String(20), nullable=False)
     qb_player_name = Column(String(100), nullable=False)
@@ -1085,7 +1213,9 @@ class QBPredictions(Base):
     prediction_interval_upper = Column(Float, nullable=True)
 
     # Model metadata
-    prediction_method = Column(String(50), nullable=True)  # 'ml_ensemble', 'enhanced_features', etc.
+    prediction_method = Column(
+        String(50), nullable=True
+    )  # 'ml_ensemble', 'enhanced_features', etc.
     model_version = Column(String(20), nullable=True)
     features_used = Column(Integer, nullable=True)
     feature_importance = Column(JSON, nullable=True)
@@ -1114,10 +1244,14 @@ class QBPredictions(Base):
     under_odds = Column(Integer, nullable=True)  # Odds for under bet
     best_over_book = Column(String(50), nullable=True)  # Best bookmaker for over
     best_under_book = Column(String(50), nullable=True)  # Best bookmaker for under
-    betting_recommendation = Column(String(20), nullable=True)  # 'OVER', 'UNDER', 'PASS'
+    betting_recommendation = Column(
+        String(20), nullable=True
+    )  # 'OVER', 'UNDER', 'PASS'
     bet_size = Column(String(10), nullable=True)  # 'LARGE', 'MEDIUM', 'SMALL'
     edge_percentage = Column(Float, nullable=True)  # Calculated edge in percentage
-    recommendation_reason = Column(String(200), nullable=True)  # Reason for recommendation
+    recommendation_reason = Column(
+        String(200), nullable=True
+    )  # Reason for recommendation
 
     # Metadata
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -1126,8 +1260,9 @@ class QBPredictions(Base):
     def __repr__(self):
         return f"<QBPredictions {self.qb_player_name} vs {self.opponent_team_name} - {self.predicted_passing_yards} yards>"
 
+
 class QBActuals(Base):
-    __tablename__ = 'pred_qb_actuals'
+    __tablename__ = "pred_qb_actuals"
     id = Column(Integer, primary_key=True)
     game_date = Column(DateTime, nullable=False)
     qb_player_id = Column(String(20), nullable=False)
@@ -1179,9 +1314,10 @@ class QBActuals(Base):
     def __repr__(self):
         return f"<QBActuals {self.qb_player_name} vs {self.opponent_team_name} - {self.actual_passing_yards} yards>"
 
+
 # NHL Models
 class NHLTeam(Base):
-    __tablename__ = 'pred_nhl_teams'
+    __tablename__ = "pred_nhl_teams"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, unique=True, nullable=False)
     name = Column(String(100), nullable=False)
@@ -1190,8 +1326,9 @@ class NHLTeam(Base):
     division = Column(String(50), nullable=True)
     venue_name = Column(String(100), nullable=True)
 
+
 class NHLGoalie(Base):
-    __tablename__ = 'pred_nhl_goalies'
+    __tablename__ = "pred_nhl_goalies"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, unique=True, nullable=False)
     name = Column(String(100), nullable=False)
@@ -1239,20 +1376,28 @@ class NHLGoalie(Base):
     last_game_shots = Column(Integer, nullable=True)
 
     # Momentum tracking (hot/cold streaks)
-    last_5_sv_pct_trend = Column(Float, nullable=True)  # Positive = improving, Negative = declining
+    last_5_sv_pct_trend = Column(
+        Float, nullable=True
+    )  # Positive = improving, Negative = declining
     is_hot_streak = Column(Boolean, nullable=True)  # Last 3 games above season average
     is_cold_streak = Column(Boolean, nullable=True)  # Last 3 games below season average
 
     # Injury/Health tracking
-    injury_status = Column(String(50), nullable=True)  # 'healthy', 'day-to-day', 'ir', 'out'
+    injury_status = Column(
+        String(50), nullable=True
+    )  # 'healthy', 'day-to-day', 'ir', 'out'
     injury_description = Column(String(200), nullable=True)  # Brief injury description
-    games_since_injury = Column(Integer, nullable=True)  # Games played since returning from injury
+    games_since_injury = Column(
+        Integer, nullable=True
+    )  # Games played since returning from injury
     last_injury_date = Column(Date, nullable=True)  # Last reported injury date
 
     # Workload/Fatigue tracking
     games_in_last_7_days = Column(Integer, nullable=True)
     games_in_last_14_days = Column(Integer, nullable=True)
-    shots_faced_last_7_days = Column(Integer, nullable=True)  # Total shots in last 7 days
+    shots_faced_last_7_days = Column(
+        Integer, nullable=True
+    )  # Total shots in last 7 days
     avg_toi_last_5_games = Column(Float, nullable=True)  # Average time on ice (minutes)
     is_overworked = Column(Boolean, nullable=True)  # Flag for heavy recent workload
 
@@ -1262,8 +1407,9 @@ class NHLGoalie(Base):
 
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLTeamStats(Base):
-    __tablename__ = 'pred_nhl_team_stats'
+    __tablename__ = "pred_nhl_team_stats"
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, unique=True, nullable=False)
     team_name = Column(String(100), nullable=False)
@@ -1304,20 +1450,29 @@ class NHLTeamStats(Base):
     last_10_shooting_pct = Column(Float, nullable=True)  # Recent shooting efficiency
 
     # Shot quality metrics (for expected goals calculations)
-    high_danger_shots_for = Column(Integer, nullable=True)  # Shots from high-danger areas
+    high_danger_shots_for = Column(
+        Integer, nullable=True
+    )  # Shots from high-danger areas
     high_danger_goals = Column(Integer, nullable=True)  # Goals from high-danger shots
     expected_goals_for = Column(Float, nullable=True)  # xGF based on shot quality
-    expected_goals_against = Column(Float, nullable=True)  # xGA based on shot quality allowed
+    expected_goals_against = Column(
+        Float, nullable=True
+    )  # xGA based on shot quality allowed
 
     # Opponent quality ranking
-    offensive_rating = Column(Float, nullable=True)  # Composite offensive rating (0-100)
-    defensive_rating = Column(Float, nullable=True)  # Composite defensive rating (0-100)
+    offensive_rating = Column(
+        Float, nullable=True
+    )  # Composite offensive rating (0-100)
+    defensive_rating = Column(
+        Float, nullable=True
+    )  # Composite defensive rating (0-100)
     overall_strength = Column(Float, nullable=True)  # Overall team strength (0-100)
 
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLPlayer(Base):
-    __tablename__ = 'pred_nhl_players'
+    __tablename__ = "pred_nhl_players"
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, unique=True, nullable=False)
     name = Column(String(100), nullable=False)
@@ -1343,8 +1498,9 @@ class NHLPlayer(Base):
 
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLGameStats(Base):
-    __tablename__ = 'pred_nhl_game_stats'
+    __tablename__ = "pred_nhl_game_stats"
     id = Column(Integer, primary_key=True)
     game_id = Column(Integer, unique=True, nullable=False)
     season = Column(Integer, nullable=False)
@@ -1383,8 +1539,9 @@ class NHLGameStats(Base):
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLGoaliePredictions(Base):
-    __tablename__ = 'pred_nhl_goalie_predictions'
+    __tablename__ = "pred_nhl_goalie_predictions"
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     game_id = Column(Integer, nullable=True)  # NHL game ID
@@ -1399,7 +1556,9 @@ class NHLGoaliePredictions(Base):
     game_time = Column(DateTime, nullable=True)
     starter_confirmed = Column(Boolean, nullable=True, default=False)
     confirmation_time = Column(DateTime, nullable=True)  # When starter was confirmed
-    was_scratch = Column(Boolean, nullable=True, default=False)  # If goalie was scratched before game
+    was_scratch = Column(
+        Boolean, nullable=True, default=False
+    )  # If goalie was scratched before game
 
     # Predictions
     predicted_saves = Column(Float, nullable=False)
@@ -1412,14 +1571,16 @@ class NHLGoaliePredictions(Base):
     opponent_shots_avg = Column(Float, nullable=True)
 
     # Betting line from DraftKings
-    sportsbook = Column(String(50), nullable=True, default='DraftKings')
+    sportsbook = Column(String(50), nullable=True, default="DraftKings")
     saves_line = Column(Float, nullable=True)  # O/U line for saves
     over_odds = Column(Integer, nullable=True)  # American odds for OVER
     under_odds = Column(Integer, nullable=True)  # American odds for UNDER
     line_available = Column(Boolean, nullable=True, default=False)
 
     # Betting recommendation
-    betting_recommendation = Column(String(50), nullable=True)  # 'OVER 28.5', 'UNDER 28.5', 'PASS'
+    betting_recommendation = Column(
+        String(50), nullable=True
+    )  # 'OVER 28.5', 'UNDER 28.5', 'PASS'
     edge_category = Column(String(20), nullable=True)  # 'HIGH', 'MEDIUM', 'LOW'
     confidence = Column(Float, nullable=True)  # 0-100
     edge_saves = Column(Float, nullable=True)  # Difference between prediction and line
@@ -1438,8 +1599,9 @@ class NHLGoaliePredictions(Base):
 
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLGoalieActuals(Base):
-    __tablename__ = 'pred_nhl_goalie_actuals'
+    __tablename__ = "pred_nhl_goalie_actuals"
     id = Column(Integer, primary_key=True)
     game_id = Column(Integer, nullable=False)
     game_date = Column(Date, nullable=False)
@@ -1476,15 +1638,20 @@ class NHLGoalieActuals(Base):
     saves_line = Column(Float, nullable=True)
     over_odds = Column(Integer, nullable=True)
     under_odds = Column(Integer, nullable=True)
-    betting_recommendation = Column(String(50), nullable=True)  # e.g., "OVER 28.5", "UNDER 28.5", "PASS"
+    betting_recommendation = Column(
+        String(50), nullable=True
+    )  # e.g., "OVER 28.5", "UNDER 28.5", "PASS"
     edge_category = Column(String(20), nullable=True)  # HIGH, MEDIUM, LOW
     edge_saves = Column(Float, nullable=True)
-    recommendation_correct = Column(Boolean, nullable=True)  # Did the recommendation win?
+    recommendation_correct = Column(
+        Boolean, nullable=True
+    )  # Did the recommendation win?
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLTeamShotsPredictions(Base):
-    __tablename__ = 'pred_nhl_team_shots_predictions'
+    __tablename__ = "pred_nhl_team_shots_predictions"
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     team_id = Column(Integer, nullable=False)
@@ -1500,8 +1667,9 @@ class NHLTeamShotsPredictions(Base):
 
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLPlayerShotsPredictions(Base):
-    __tablename__ = 'pred_nhl_player_shots_predictions'
+    __tablename__ = "pred_nhl_player_shots_predictions"
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     game_time_et = Column(DateTime, nullable=True)
@@ -1518,8 +1686,9 @@ class NHLPlayerShotsPredictions(Base):
 
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
+
 class NHLTeamTotalsPredictions(Base):
-    __tablename__ = 'pred_nhl_team_totals_predictions'
+    __tablename__ = "pred_nhl_team_totals_predictions"
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     game_time_et = Column(DateTime, nullable=True)
@@ -1551,19 +1720,21 @@ class NHLTeamTotalsPredictions(Base):
 # NBA PREDICTION ENHANCEMENT MODELS
 # =============================================================================
 
+
 class PlayerInjuryStatus(Base):
     """
     Track player injury status for more accurate predictions.
     Updated daily from RotoWire and other sources.
     """
-    __tablename__ = 'pred_player_injury_status'
+
+    __tablename__ = "pred_player_injury_status"
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False, index=True)
     player_name = Column(String(100), nullable=False)
 
     # Injury status: healthy, questionable, doubtful, out, ir (injured reserve)
-    status = Column(String(20), nullable=False, default='healthy')
+    status = Column(String(20), nullable=False, default="healthy")
     injury_type = Column(String(100), nullable=True)  # e.g., "ankle", "knee", "rest"
 
     # Return tracking
@@ -1575,9 +1746,7 @@ class PlayerInjuryStatus(Base):
     date_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
     date_injured = Column(Date, nullable=True)
 
-    __table_args__ = (
-        UniqueConstraint('player_id', name='unique_player_injury'),
-    )
+    __table_args__ = (UniqueConstraint("player_id", name="unique_player_injury"),)
 
     def __repr__(self):
         return f"<PlayerInjuryStatus {self.player_name}: {self.status}>"
@@ -1587,7 +1756,7 @@ class PlayerInjuryStatus(Base):
         Calculate projection multiplier based on injury status.
         Returns a value between 0.0 and 1.0.
         """
-        if self.status == 'healthy':
+        if self.status == "healthy":
             # If returning from injury, apply recovery adjustment
             if self.games_missed and self.games_missed > 0:
                 # Gradual recovery: 85% first game back, increases each game
@@ -1599,11 +1768,11 @@ class PlayerInjuryStatus(Base):
                 else:
                     return 0.95
             return 1.0
-        elif self.status == 'questionable':
+        elif self.status == "questionable":
             return 0.90  # 10% reduction if questionable
-        elif self.status == 'doubtful':
+        elif self.status == "doubtful":
             return 0.80  # 20% reduction if doubtful
-        elif self.status in ['out', 'ir']:
+        elif self.status in ["out", "ir"]:
             return 0.0  # Don't project if out
         return 1.0
 
@@ -1613,7 +1782,8 @@ class PredictionAccuracy(Base):
     Track prediction accuracy for continuous improvement.
     Stores each prediction alongside its actual result for analysis.
     """
-    __tablename__ = 'pred_prediction_accuracy'
+
+    __tablename__ = "pred_prediction_accuracy"
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False, index=True)
@@ -1644,8 +1814,10 @@ class PredictionAccuracy(Base):
     updated_at = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('player_id', 'game_date', 'stat_type', name='unique_prediction_accuracy'),
-        Index('idx_accuracy_date_stat', 'game_date', 'stat_type'),
+        UniqueConstraint(
+            "player_id", "game_date", "stat_type", name="unique_prediction_accuracy"
+        ),
+        Index("idx_accuracy_date_stat", "game_date", "stat_type"),
     )
 
     def __repr__(self):
@@ -1667,7 +1839,8 @@ class PlayerExpectedMinutes(Base):
     Track expected minutes for players based on recent performance and role.
     Used to adjust projections when minutes are likely to change.
     """
-    __tablename__ = 'pred_player_expected_minutes'
+
+    __tablename__ = "pred_player_expected_minutes"
 
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, nullable=False, index=True)
@@ -1699,7 +1872,7 @@ class PlayerExpectedMinutes(Base):
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('player_id', name='unique_player_expected_minutes'),
+        UniqueConstraint("player_id", name="unique_player_expected_minutes"),
     )
 
     def __repr__(self):
@@ -1725,7 +1898,8 @@ class NBAGameLines(Base):
     - Pace prediction (high total = fast-paced game = more stats)
     - Game script modeling (favorites vs underdogs play differently)
     """
-    __tablename__ = 'pred_nba_game_lines'
+
+    __tablename__ = "pred_nba_game_lines"
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -1756,13 +1930,14 @@ class NBAGameLines(Base):
     moneyline_away = Column(Integer, nullable=True)  # e.g., +230
 
     # Source tracking
-    bookmaker = Column(String(50), nullable=True, default='consensus')
+    bookmaker = Column(String(50), nullable=True, default="consensus")
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('game_date', 'home_team_name', 'away_team_name',
-                           name='unique_nba_game_line'),
-        Index('idx_nba_game_lines_date', 'game_date'),
+        UniqueConstraint(
+            "game_date", "home_team_name", "away_team_name", name="unique_nba_game_line"
+        ),
+        Index("idx_nba_game_lines_date", "game_date"),
     )
 
     def __repr__(self):
@@ -1853,7 +2028,8 @@ class NBATotalsProjections(Base):
     Store NBA game totals (over/under) projections.
     Predicts expected total combined points for both teams.
     """
-    __tablename__ = 'pred_nba_totals_projections'
+
+    __tablename__ = "pred_nba_totals_projections"
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -1902,10 +2078,14 @@ class NBATotalsProjections(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('game_date', 'home_team_name', 'away_team_name',
-                           name='unique_nba_totals_projection'),
-        Index('idx_nba_totals_projections_date', 'game_date'),
-        Index('idx_nba_totals_projections_edge', 'edge'),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nba_totals_projection",
+        ),
+        Index("idx_nba_totals_projections_date", "game_date"),
+        Index("idx_nba_totals_projections_edge", "edge"),
     )
 
     def __repr__(self):
@@ -1921,20 +2101,21 @@ class NBATotalsProjections(Base):
 
         abs_edge = abs(self.edge)
         if abs_edge < 2:
-            return 'LOW'
+            return "LOW"
         elif abs_edge < 3:
-            return 'MEDIUM'
+            return "MEDIUM"
         elif abs_edge < 5:
-            return 'HIGH'
+            return "HIGH"
         else:
-            return 'VERY_HIGH'
+            return "VERY_HIGH"
 
 
 class NBATotalsActuals(Base):
     """
     Store actual game totals for accuracy tracking.
     """
-    __tablename__ = 'pred_nba_totals_actuals'
+
+    __tablename__ = "pred_nba_totals_actuals"
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -1964,9 +2145,13 @@ class NBATotalsActuals(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('game_date', 'home_team_name', 'away_team_name',
-                           name='unique_nba_totals_actual'),
-        Index('idx_nba_totals_actuals_date', 'game_date'),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nba_totals_actual",
+        ),
+        Index("idx_nba_totals_actuals_date", "game_date"),
     )
 
     def __repr__(self):
@@ -1978,7 +2163,8 @@ class NBATeamPaceEfficiency(Base):
     Store enhanced team pace and efficiency metrics for totals prediction.
     Updated daily with rolling averages.
     """
-    __tablename__ = 'pred_nba_team_pace_efficiency'
+
+    __tablename__ = "pred_nba_team_pace_efficiency"
 
     id = Column(Integer, primary_key=True)
     team_id = Column(Integer, nullable=False)
@@ -2001,7 +2187,9 @@ class NBATeamPaceEfficiency(Base):
     points_per_game = Column(Float, nullable=True)
 
     # Defensive efficiency
-    defensive_rating = Column(Float, nullable=True)  # Points allowed per 100 possessions
+    defensive_rating = Column(
+        Float, nullable=True
+    )  # Points allowed per 100 possessions
     defensive_rating_rank = Column(Integer, nullable=True)
     defensive_rating_l5 = Column(Float, nullable=True)
     defensive_rating_l10 = Column(Float, nullable=True)
@@ -2030,8 +2218,8 @@ class NBATeamPaceEfficiency(Base):
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('team_id', 'date', name='unique_team_pace_efficiency'),
-        Index('idx_team_pace_efficiency_date', 'date'),
+        UniqueConstraint("team_id", "date", name="unique_team_pace_efficiency"),
+        Index("idx_team_pace_efficiency_date", "date"),
     )
 
     def __repr__(self):
@@ -2042,7 +2230,8 @@ class NBATotalsAccuracy(Base):
     """
     Track accuracy metrics for totals predictions over time.
     """
-    __tablename__ = 'pred_nba_totals_accuracy'
+
+    __tablename__ = "pred_nba_totals_accuracy"
 
     id = Column(Integer, primary_key=True)
     date_range_start = Column(Date, nullable=False)
@@ -2079,7 +2268,7 @@ class NBATotalsAccuracy(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        Index('idx_nba_totals_accuracy_dates', 'date_range_start', 'date_range_end'),
+        Index("idx_nba_totals_accuracy_dates", "date_range_start", "date_range_end"),
     )
 
     def __repr__(self):
@@ -2090,13 +2279,15 @@ class NBATotalsAccuracy(Base):
 # NBA TANK WATCH MODELS
 # ============================================================================
 
+
 class TankTeam(Base):
     """Tracks NBA teams for the 2026 draft tank race.
 
     Core entity updated after each game via NBA API polling.
     Per PRD section 9.1.
     """
-    __tablename__ = 'pred_tank_teams'
+
+    __tablename__ = "pred_tank_teams"
     id = Column(Integer, primary_key=True)
 
     # Team identification
@@ -2113,22 +2304,32 @@ class TankTeam(Base):
     tank_rank = Column(Integer, nullable=True)
 
     # Pick status - OWN_PICK, PROTECTED, SWAP_RIGHTS, TRADED_AWAY
-    pick_status = Column(String(20), nullable=False, default='OWN_PICK')
+    pick_status = Column(String(20), nullable=False, default="OWN_PICK")
 
     # Protection details
-    protection_type = Column(String(50), nullable=True)  # e.g., top-4, top-8, 1-4 and 10-30
-    protection_safe = Column(Boolean, nullable=True, default=True)  # True if currently in protected range
-    pick_destination = Column(String(200), nullable=True)  # Team(s) that receive pick if protection fails
+    protection_type = Column(
+        String(50), nullable=True
+    )  # e.g., top-4, top-8, 1-4 and 10-30
+    protection_safe = Column(
+        Boolean, nullable=True, default=True
+    )  # True if currently in protected range
+    pick_destination = Column(
+        String(200), nullable=True
+    )  # Team(s) that receive pick if protection fails
 
     # Lottery odds
     lottery_odds_top1 = Column(Float, nullable=True)  # Probability of #1 overall pick
     lottery_odds_top4 = Column(Float, nullable=True)  # Probability of top-4 pick
 
     # Swap rights
-    swap_rights_holder = Column(String(100), nullable=True)  # Team holding swap rights, if any
+    swap_rights_holder = Column(
+        String(100), nullable=True
+    )  # Team holding swap rights, if any
 
     # Schedule analysis
-    remaining_schedule_sos = Column(Float, nullable=True)  # Strength of remaining schedule
+    remaining_schedule_sos = Column(
+        Float, nullable=True
+    )  # Strength of remaining schedule
 
     # Additional context
     notes = Column(Text, nullable=True)  # Additional context and trade details
@@ -2137,7 +2338,9 @@ class TankTeam(Base):
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     def __repr__(self):
-        return f"<TankTeam #{self.tank_rank} {self.team_name} ({self.wins}-{self.losses})>"
+        return (
+            f"<TankTeam #{self.tank_rank} {self.team_name} ({self.wins}-{self.losses})>"
+        )
 
 
 class DiscordFadeAlert(Base):
@@ -2146,7 +2349,8 @@ class DiscordFadeAlert(Base):
     Manages alert state, cooldowns, and outcomes.
     Per PRD section 9.2.
     """
-    __tablename__ = 'pred_discord_fade_alerts'
+
+    __tablename__ = "pred_discord_fade_alerts"
     id = Column(Integer, primary_key=True)
 
     # Game identification
@@ -2157,30 +2361,40 @@ class DiscordFadeAlert(Base):
     # Alert tracking
     alert_count = Column(Integer, nullable=False, default=0)  # Max 2
     last_alert_at = Column(DateTime, nullable=True)  # For cooldown logic
-    alert_message_id = Column(String(50), nullable=True)  # Discord message ID for threading
+    alert_message_id = Column(
+        String(50), nullable=True
+    )  # Discord message ID for threading
 
     # Game state
-    game_status = Column(String(20), nullable=False, default='SCHEDULED')  # SCHEDULED, LIVE, FINAL
+    game_status = Column(
+        String(20), nullable=False, default="SCHEDULED"
+    )  # SCHEDULED, LIVE, FINAL
     tank_team_score = Column(Integer, nullable=True)
     opponent_score = Column(Integer, nullable=True)
     quarter = Column(String(10), nullable=True)  # Q1, Q2, Q3, Q4, OT
     game_clock = Column(String(10), nullable=True)  # Time remaining
 
     # Alert state
-    fade_triggered = Column(Boolean, nullable=False, default=False)  # Whether a fade alert was sent
+    fade_triggered = Column(
+        Boolean, nullable=False, default=False
+    )  # Whether a fade alert was sent
     lead_at_alert = Column(Integer, nullable=True)  # Point lead when alert fired
 
     # Outcome tracking
-    fade_correct = Column(Boolean, nullable=True)  # Null while live; True if tank team lost
-    outcome_posted = Column(Boolean, nullable=False, default=False)  # Whether follow-up was posted
+    fade_correct = Column(
+        Boolean, nullable=True
+    )  # Null while live; True if tank team lost
+    outcome_posted = Column(
+        Boolean, nullable=False, default=False
+    )  # Whether follow-up was posted
 
     # Metadata
     game_date = Column(Date, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        Index('idx_fade_alerts_game_date', 'game_date'),
-        Index('idx_fade_alerts_tank_team', 'tank_team_id'),
+        Index("idx_fade_alerts_game_date", "game_date"),
+        Index("idx_fade_alerts_tank_team", "tank_team_id"),
     )
 
     def __repr__(self):
@@ -2193,14 +2407,17 @@ class FadeSeasonTracker(Base):
     Used for the running accuracy record displayed in Discord.
     Per PRD section 9.3.
     """
-    __tablename__ = 'pred_fade_season_tracker'
+
+    __tablename__ = "pred_fade_season_tracker"
     id = Column(Integer, primary_key=True)
 
     # Season identifier
     season = Column(String(10), unique=True, nullable=False)  # e.g., 2025-26
 
     # Fade tracking
-    total_fades = Column(Integer, nullable=False, default=0)  # Total fade alerts triggered
+    total_fades = Column(
+        Integer, nullable=False, default=0
+    )  # Total fade alerts triggered
     correct_fades = Column(Integer, nullable=False, default=0)  # Tank team lost
     incorrect_fades = Column(Integer, nullable=False, default=0)  # Tank team won
 
@@ -2208,8 +2425,12 @@ class FadeSeasonTracker(Base):
     fade_accuracy = Column(Float, nullable=True)  # correct_fades / total_fades
 
     # Lead analysis
-    avg_lead_at_alert = Column(Float, nullable=True)  # Average point lead when alert fired
-    avg_final_margin = Column(Float, nullable=True)  # Average final margin in faded games
+    avg_lead_at_alert = Column(
+        Float, nullable=True
+    )  # Average point lead when alert fired
+    avg_final_margin = Column(
+        Float, nullable=True
+    )  # Average final margin in faded games
 
     # Metadata
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
@@ -2220,8 +2441,9 @@ class FadeSeasonTracker(Base):
 
 # ─── MLB GAME-LEVEL PROJECTIONS (PRD v2.0) ────────────────────────────────────
 
+
 class GameProjections(Base):
-    __tablename__ = 'pred_game_projections'
+    __tablename__ = "pred_game_projections"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False, index=True)
     game_id = Column(Integer, nullable=False)
@@ -2278,12 +2500,12 @@ class GameProjections(Base):
     game_time = Column(DateTime, nullable=True)
 
     # Metadata
-    model_version = Column(String(20), nullable=True, default='v1.0')
+    model_version = Column(String(20), nullable=True, default="v1.0")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at = Column(DateTime, nullable=True)
 
     __table_args__ = (
-        UniqueConstraint('date', 'game_id', name='unique_game_projection'),
+        UniqueConstraint("date", "game_id", name="unique_game_projection"),
     )
 
     def __repr__(self):
@@ -2291,7 +2513,7 @@ class GameProjections(Base):
 
 
 class GameActuals(Base):
-    __tablename__ = 'pred_game_actuals'
+    __tablename__ = "pred_game_actuals"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False, index=True)
     game_id = Column(Integer, nullable=False)
@@ -2320,16 +2542,14 @@ class GameActuals(Base):
 
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
-    __table_args__ = (
-        UniqueConstraint('date', 'game_id', name='unique_game_actual'),
-    )
+    __table_args__ = (UniqueConstraint("date", "game_id", name="unique_game_actual"),)
 
     def __repr__(self):
         return f"<GameActuals {self.date} {self.away_team}@{self.home_team} {self.away_score}-{self.home_score}>"
 
 
 class ModelAccuracy(Base):
-    __tablename__ = 'pred_model_accuracy'
+    __tablename__ = "pred_model_accuracy"
     id = Column(Integer, primary_key=True)
 
     date_range_start = Column(Date, nullable=False)
@@ -2367,7 +2587,9 @@ class ModelAccuracy(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('date_range_end', 'window_type', name='unique_accuracy_window'),
+        UniqueConstraint(
+            "date_range_end", "window_type", name="unique_accuracy_window"
+        ),
     )
 
     def __repr__(self):
@@ -2375,7 +2597,7 @@ class ModelAccuracy(Base):
 
 
 class BullpenFatigue(Base):
-    __tablename__ = 'pred_bullpen_fatigue'
+    __tablename__ = "pred_bullpen_fatigue"
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False, index=True)
     team_name = Column(String(100), nullable=False)
@@ -2396,7 +2618,7 @@ class BullpenFatigue(Base):
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     __table_args__ = (
-        UniqueConstraint('date', 'team_id', name='unique_bullpen_fatigue'),
+        UniqueConstraint("date", "team_id", name="unique_bullpen_fatigue"),
     )
 
     def __repr__(self):
@@ -2407,12 +2629,17 @@ class BullpenFatigue(Base):
 # Pikkit Bet Ingestion + Prop Alert Models
 # --------------------------------------------------------------------------- #
 
+
 class PikkitBet(Base):
-    __tablename__ = 'pred_pikkit_bets'
+    __tablename__ = "pred_pikkit_bets"
     id = Column(Integer, primary_key=True)
     pikkit_id = Column(String(100), unique=True, nullable=False)
-    status = Column(String(20), nullable=False, default='open')  # open, active, pending, settled, void
-    bet_type = Column(String(20), nullable=False, default='straight')  # straight, parlay
+    status = Column(
+        String(20), nullable=False, default="open"
+    )  # open, active, pending, settled, void
+    bet_type = Column(
+        String(20), nullable=False, default="straight"
+    )  # straight, parlay
     sportsbook = Column(String(50), nullable=True)
     stake = Column(Float, nullable=True)
     odds = Column(String(20), nullable=True)  # e.g. "+220", "-110"
@@ -2422,25 +2649,29 @@ class PikkitBet(Base):
     result = Column(String(20), nullable=True)  # win, loss, push, void
     raw_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(
+        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
+    )
 
     def __repr__(self):
         return f"<PikkitBet {self.pikkit_id} {self.status}>"
 
 
 class PikkitPick(Base):
-    __tablename__ = 'pred_pikkit_picks'
+    __tablename__ = "pred_pikkit_picks"
     id = Column(Integer, primary_key=True)
     pikkit_id = Column(String(100), unique=True, nullable=False)
-    bet_id = Column(String(100), ForeignKey('pred_pikkit_bets.pikkit_id'), nullable=False)
+    bet_id = Column(
+        String(100), ForeignKey("pred_pikkit_bets.pikkit_id"), nullable=False
+    )
     market_id = Column(String(100), nullable=True)
     pick_name = Column(String(500), nullable=True)  # e.g. "Over 0.5 · Ohtani HR"
     player_name = Column(String(200), nullable=True)
-    player_id = Column(Integer, nullable=True)       # MLB Stats API player ID
-    game_pk = Column(Integer, nullable=True)          # MLB Stats API game PK
+    player_id = Column(Integer, nullable=True)  # MLB Stats API player ID
+    game_pk = Column(Integer, nullable=True)  # MLB Stats API game PK
     team = Column(String(100), nullable=True)
-    status = Column(String(20), nullable=True)        # pending, cleared, killed
-    result = Column(String(20), nullable=True)        # win, loss, push
+    status = Column(String(20), nullable=True)  # pending, cleared, killed
+    result = Column(String(20), nullable=True)  # win, loss, push
     raw_data = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
@@ -2449,12 +2680,12 @@ class PikkitPick(Base):
 
 
 class PropMarketDefinition(Base):
-    __tablename__ = 'pred_prop_market_definitions'
+    __tablename__ = "pred_prop_market_definitions"
     market_id = Column(String(100), primary_key=True)
-    sport_id = Column(String(20), nullable=False, default='mlb')
+    sport_id = Column(String(20), nullable=False, default="mlb")
     display_name = Column(String(100), nullable=False)  # e.g. "Home Runs"
-    stat_key = Column(String(50), nullable=False)        # e.g. "home_runs"
-    side = Column(String(10), nullable=False)            # 'batter' or 'pitcher'
+    stat_key = Column(String(50), nullable=False)  # e.g. "home_runs"
+    side = Column(String(10), nullable=False)  # 'batter' or 'pitcher'
     active = Column(Boolean, nullable=False, default=True)
 
     def __repr__(self):
@@ -2462,16 +2693,18 @@ class PropMarketDefinition(Base):
 
 
 class PropAlertLog(Base):
-    __tablename__ = 'pred_prop_alert_log'
+    __tablename__ = "pred_prop_alert_log"
     id = Column(Integer, primary_key=True)
     pick_id = Column(String(100), nullable=False, index=True)
     game_pk = Column(Integer, nullable=False)
     play_id = Column(String(50), nullable=False)
-    alert_type = Column(String(30), nullable=False)  # threshold_cleared, progress, under_killed
+    alert_type = Column(
+        String(30), nullable=False
+    )  # threshold_cleared, progress, under_killed
     stat_count = Column(Float, nullable=False)
     sent_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
     discord_message_id = Column(String(50), nullable=True)
 
     __table_args__ = (
-        UniqueConstraint('pick_id', 'play_id', 'alert_type', name='unique_prop_alert'),
+        UniqueConstraint("pick_id", "play_id", "alert_type", name="unique_prop_alert"),
     )

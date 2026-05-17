@@ -9,6 +9,7 @@ Today's auth path returns subscription_tier='pro' for any valid-looking JWT
 (see app/main.py:get_current_user), so the tier guard is effectively permissive
 in dev; the guard will start enforcing real tiers once auth is fixed.
 """
+
 from datetime import date as date_type
 from typing import Any
 
@@ -85,7 +86,9 @@ def mlb_predictions(
 ) -> dict[str, Any]:
     """Recent MLB props: strikeout projections + HR predictions."""
     return {
-        "strikeout_projections": _query_recent(db, StrikeoutProjections, "date", target_date, limit),
+        "strikeout_projections": _query_recent(
+            db, StrikeoutProjections, "date", target_date, limit
+        ),
         "home_run_predictions": _query_recent(db, Homer, None, None, limit),
     }
 
@@ -102,7 +105,9 @@ def nba_predictions(
         "points": _query_recent(db, PointsProjections, "date", target_date, limit),
         "assists": _query_recent(db, AssistsProjections, "date", target_date, limit),
         "rebounds": _query_recent(db, ReboundsProjections, "date", target_date, limit),
-        "three_point": _query_recent(db, ThreePointProjections, "date", target_date, limit),
+        "three_point": _query_recent(
+            db, ThreePointProjections, "date", target_date, limit
+        ),
         "steals": _query_recent(db, StealsProjections, "date", target_date, limit),
         "blocks": _query_recent(db, BlocksProjections, "date", target_date, limit),
         "pra": _query_recent(db, PRAProjections, "date", target_date, limit),
@@ -118,8 +123,12 @@ def nfl_predictions(
 ) -> dict[str, Any]:
     """Recent NFL props: QB passing/rushing + kicker FG predictions."""
     return {
-        "qb_predictions": _query_recent(db, QBPredictions, "game_date", target_date, limit),
-        "kicker_predictions": _query_recent(db, KickerPredictions, "game_date", target_date, limit),
+        "qb_predictions": _query_recent(
+            db, QBPredictions, "game_date", target_date, limit
+        ),
+        "kicker_predictions": _query_recent(
+            db, KickerPredictions, "game_date", target_date, limit
+        ),
     }
 
 
@@ -132,6 +141,10 @@ def nhl_predictions(
 ) -> dict[str, Any]:
     """Recent NHL props: goalie saves + player shots."""
     return {
-        "goalie_predictions": _query_recent(db, NHLGoaliePredictions, "game_date", target_date, limit),
-        "player_shots": _query_recent(db, NHLPlayerShotsPredictions, "game_date", target_date, limit),
+        "goalie_predictions": _query_recent(
+            db, NHLGoaliePredictions, "game_date", target_date, limit
+        ),
+        "player_shots": _query_recent(
+            db, NHLPlayerShotsPredictions, "game_date", target_date, limit
+        ),
     }

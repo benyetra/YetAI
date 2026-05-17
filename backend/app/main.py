@@ -369,6 +369,7 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 
 from app.api.v1.predictions import router as predictions_router
+
 app.include_router(predictions_router)
 
 
@@ -5658,9 +5659,7 @@ async def delete_fantasy_league(
 
 
 def _odds_not_configured_message(sport_label: str) -> str:
-    return (
-        f"ODDS_API_KEY not configured. Please set your API key to fetch real {sport_label} odds."
-    )
+    return f"ODDS_API_KEY not configured. Please set your API key to fetch real {sport_label} odds."
 
 
 def _odds_not_configured_payload(sport_label: str, *, odds_key: str = "games") -> dict:
