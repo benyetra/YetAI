@@ -39,11 +39,6 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Make the celery-worker entrypoint executable. Railway calls this from the
-# celery-worker service's start command — it forces cd /app before celery
-# runs so module imports work regardless of how Railway invokes the command.
-RUN chmod +x /app/start_celery_worker.sh
-
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser
