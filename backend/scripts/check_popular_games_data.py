@@ -28,9 +28,7 @@ def check_popular_games_data():
         eastern = ZoneInfo("America/New_York")
         now_et = datetime.now(eastern)
         today_start_et = now_et - timedelta(hours=6)
-        today_end_et = now_et.replace(
-            hour=23, minute=59, second=59, microsecond=999999
-        )
+        today_end_et = now_et.replace(hour=23, minute=59, second=59, microsecond=999999)
         today_start = today_start_et.astimezone(timezone.utc)
         today_end = today_end_et.astimezone(timezone.utc)
 

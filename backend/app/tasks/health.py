@@ -1,4 +1,5 @@
 """Trivial health-check task — used by deploy verification + Celery wiring tests."""
+
 from datetime import datetime
 
 from app.celery_app import celery_app

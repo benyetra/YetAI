@@ -12,6 +12,7 @@ Per Development-flm: model `.pkl` files load from `s3://yetibets/{sport}/...`
 once the runtime tasks are ported. The orchestrator skeleton is in place; each
 sub-task is marked TODO and will be ported individually as needed.
 """
+
 import logging
 from datetime import datetime
 from typing import List
@@ -27,47 +28,73 @@ logger = logging.getLogger(__name__)
 # and run it against the YetAI session + pred_* tables.
 # ============================================================================
 
+
 def _stub(task_name: str) -> dict:
-    logger.warning("ETL sub-task %s: NOT YET PORTED — skipping. See Development-u9t.", task_name)
+    logger.warning(
+        "ETL sub-task %s: NOT YET PORTED — skipping. See Development-u9t.", task_name
+    )
     return {"status": "skipped", "task": task_name, "reason": "not_ported"}
 
 
 # --- NBA sub-tasks (mirrors nba_update_runner.py's 26 scripts) -----------------
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_roster")
-def nba_update_team_roster(): return _stub("nba.update_team_roster")
+def nba_update_team_roster():
+    return _stub("nba.update_team_roster")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.yesterdays_players")
-def nba_yesterdays_players(): return _stub("nba.yesterdays_players")
+def nba_yesterdays_players():
+    return _stub("nba.yesterdays_players")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.today_active_players")
-def nba_today_active_players(): return _stub("nba.today_active_players")
+def nba_today_active_players():
+    return _stub("nba.today_active_players")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_recent_games")
-def nba_update_recent_games(): return _stub("nba.update_recent_games")
+def nba_update_recent_games():
+    return _stub("nba.update_recent_games")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.store_actuals")
-def nba_store_actuals(): return _stub("nba.store_actuals")
+def nba_store_actuals():
+    return _stub("nba.store_actuals")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_stats")
-def nba_update_team_stats(): return _stub("nba.update_team_stats")
+def nba_update_team_stats():
+    return _stub("nba.update_team_stats")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_player_data")
-def nba_update_player_data(): return _stub("nba.update_player_data")
+def nba_update_player_data():
+    return _stub("nba.update_player_data")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_injury_status")
-def nba_update_injury_status(): return _stub("nba.update_injury_status")
+def nba_update_injury_status():
+    return _stub("nba.update_injury_status")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_expected_minutes")
-def nba_update_expected_minutes(): return _stub("nba.update_expected_minutes")
+def nba_update_expected_minutes():
+    return _stub("nba.update_expected_minutes")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_game_lines")
-def nba_update_game_lines(): return _stub("nba.update_game_lines")
+def nba_update_game_lines():
+    return _stub("nba.update_game_lines")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_predictions")
-def nba_generate_predictions(): return _stub("nba.generate_predictions")
+def nba_generate_predictions():
+    return _stub("nba.generate_predictions")
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.find_top_performers")
-def nba_find_top_performers(): return _stub("nba.find_top_performers")
+def nba_find_top_performers():
+    return _stub("nba.find_top_performers")
 
 
 # ============================================================================
@@ -78,28 +105,43 @@ def nba_find_top_performers(): return _stub("nba.find_top_performers")
 
 # Maps the 5 logical phases of YetiBets's nba_update_runner.py to lists of sub-tasks.
 NBA_PHASES = [
-    ("data_collection", [
-        nba_update_team_roster,
-        nba_yesterdays_players,
-        nba_today_active_players,
-        nba_update_recent_games,
-    ]),
-    ("store_actuals", [
-        nba_store_actuals,
-    ]),
-    ("update_stats", [
-        nba_update_team_stats,
-        nba_update_player_data,
-    ]),
-    ("pre_prediction", [
-        nba_update_injury_status,
-        nba_update_expected_minutes,
-        nba_update_game_lines,
-    ]),
-    ("predictions", [
-        nba_generate_predictions,
-        nba_find_top_performers,
-    ]),
+    (
+        "data_collection",
+        [
+            nba_update_team_roster,
+            nba_yesterdays_players,
+            nba_today_active_players,
+            nba_update_recent_games,
+        ],
+    ),
+    (
+        "store_actuals",
+        [
+            nba_store_actuals,
+        ],
+    ),
+    (
+        "update_stats",
+        [
+            nba_update_team_stats,
+            nba_update_player_data,
+        ],
+    ),
+    (
+        "pre_prediction",
+        [
+            nba_update_injury_status,
+            nba_update_expected_minutes,
+            nba_update_game_lines,
+        ],
+    ),
+    (
+        "predictions",
+        [
+            nba_generate_predictions,
+            nba_find_top_performers,
+        ],
+    ),
 ]
 
 
@@ -120,11 +162,13 @@ def _run_phases(sport: str, phases: List) -> dict:
             except Exception as e:
                 logger.exception("Task %s failed in phase %s", task.name, phase_name)
                 results.append({"task": task.name, "error": str(e)})
-        phase_results.append({
-            "phase": phase_name,
-            "duration_s": (datetime.utcnow() - phase_started).total_seconds(),
-            "results": results,
-        })
+        phase_results.append(
+            {
+                "phase": phase_name,
+                "duration_s": (datetime.utcnow() - phase_started).total_seconds(),
+                "results": results,
+            }
+        )
 
     return {
         "sport": sport,

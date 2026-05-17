@@ -11,7 +11,7 @@ import re
 from collections import defaultdict
 from typing import Dict, List, Optional, Set, Tuple
 
-logger = logging.getLogger('prop_watchlist')
+logger = logging.getLogger("prop_watchlist")
 
 # Type alias for the watchlist key
 WatchKey = Tuple[int, int, str]  # (game_pk, player_id, stat_key)
@@ -19,25 +19,51 @@ WatchKey = Tuple[int, int, str]  # (game_pk, player_id, stat_key)
 
 class PickInfo:
     """Lightweight struct holding everything the alerter needs about a pick."""
+
     __slots__ = (
-        'pick_id', 'bet_id', 'player_id', 'player_name', 'game_pk',
-        'stat_key', 'side', 'line', 'bet_type', 'stake', 'odds',
-        'potential_payout', 'leg_index', 'total_legs',
+        "pick_id",
+        "bet_id",
+        "player_id",
+        "player_name",
+        "game_pk",
+        "stat_key",
+        "side",
+        "line",
+        "bet_type",
+        "stake",
+        "odds",
+        "potential_payout",
+        "leg_index",
+        "total_legs",
     )
 
-    def __init__(self, *, pick_id, bet_id, player_id, player_name, game_pk,
-                 stat_key, side, line, bet_type='straight', stake=None,
-                 odds=None, potential_payout=None, leg_index=None,
-                 total_legs=None):
+    def __init__(
+        self,
+        *,
+        pick_id,
+        bet_id,
+        player_id,
+        player_name,
+        game_pk,
+        stat_key,
+        side,
+        line,
+        bet_type="straight",
+        stake=None,
+        odds=None,
+        potential_payout=None,
+        leg_index=None,
+        total_legs=None,
+    ):
         self.pick_id = pick_id
         self.bet_id = bet_id
         self.player_id = player_id
         self.player_name = player_name
         self.game_pk = game_pk
         self.stat_key = stat_key
-        self.side = side            # 'over' or 'under'
-        self.line = line            # e.g. 0.5, 1.5
-        self.bet_type = bet_type    # 'straight' or 'parlay'
+        self.side = side  # 'over' or 'under'
+        self.line = line  # e.g. 0.5, 1.5
+        self.bet_type = bet_type  # 'straight' or 'parlay'
         self.stake = stake
         self.odds = odds
         self.potential_payout = potential_payout
@@ -53,7 +79,7 @@ def _parse_line_and_side(pick_name: str) -> Tuple[Optional[str], Optional[float]
     Parse 'Over 1.5' or 'Under 0.5' from a pick_name string.
     Returns (side, line) or (None, None) if unparseable.
     """
-    match = re.search(r'(over|under)\s+(\d+\.?\d*)', pick_name, re.IGNORECASE)
+    match = re.search(r"(over|under)\s+(\d+\.?\d*)", pick_name, re.IGNORECASE)
     if match:
         return match.group(1).lower(), float(match.group(2))
     return None, None
@@ -88,6 +114,7 @@ class PropWatchlist:
         but the caller doesn't have to manage the session lifecycle.
         """
         from app.core.database import SessionLocal
+
         with SessionLocal() as session:
             return self.sync_from_db(session)
 
@@ -127,7 +154,11 @@ class PropWatchlist:
         Rebuild watchlist from pikkit_bets + pikkit_picks tables.
         Returns the number of picks loaded.
         """
-        from app.models.predictions_models import PikkitBet, PikkitPick, PropMarketDefinition
+        from app.models.predictions_models import (
+            PikkitBet,
+            PikkitPick,
+            PropMarketDefinition,
+        )
 
         self.clear()
 
@@ -137,36 +168,44 @@ class PropWatchlist:
             market_defs[md.market_id] = md.stat_key
 
         # Load open bets with their picks
-        open_bets = db_session.query(PikkitBet).filter(
-            PikkitBet.status.in_(['open', 'active', 'pending'])
-        ).all()
+        open_bets = (
+            db_session.query(PikkitBet)
+            .filter(PikkitBet.status.in_(["open", "active", "pending"]))
+            .all()
+        )
 
         count = 0
         for bet in open_bets:
             picks = db_session.query(PikkitPick).filter_by(bet_id=bet.pikkit_id).all()
             total_legs = len(picks)
-            bet_type = 'parlay' if total_legs > 1 else 'straight'
+            bet_type = "parlay" if total_legs > 1 else "straight"
 
             for idx, pick in enumerate(picks, 1):
                 stat_key = market_defs.get(pick.market_id)
                 if not stat_key:
-                    logger.warning(f"Unknown market_id {pick.market_id} for pick {pick.pikkit_id}")
+                    logger.warning(
+                        f"Unknown market_id {pick.market_id} for pick {pick.pikkit_id}"
+                    )
                     continue
 
                 if not pick.game_pk or not pick.player_id:
-                    logger.warning(f"Pick {pick.pikkit_id} missing game_pk or player_id")
+                    logger.warning(
+                        f"Pick {pick.pikkit_id} missing game_pk or player_id"
+                    )
                     continue
 
-                side, line = _parse_line_and_side(pick.pick_name or '')
+                side, line = _parse_line_and_side(pick.pick_name or "")
                 if side is None:
-                    logger.warning(f"Could not parse side/line from pick_name: {pick.pick_name}")
+                    logger.warning(
+                        f"Could not parse side/line from pick_name: {pick.pick_name}"
+                    )
                     continue
 
                 info = PickInfo(
                     pick_id=pick.pikkit_id,
                     bet_id=bet.pikkit_id,
                     player_id=pick.player_id,
-                    player_name=pick.player_name or 'Unknown',
+                    player_name=pick.player_name or "Unknown",
                     game_pk=pick.game_pk,
                     stat_key=stat_key,
                     side=side,
@@ -181,5 +220,7 @@ class PropWatchlist:
                 self.add_pick(info)
                 count += 1
 
-        logger.info(f"Watchlist synced: {count} picks across {len(self._active_games)} games")
+        logger.info(
+            f"Watchlist synced: {count} picks across {len(self._active_games)} games"
+        )
         return count

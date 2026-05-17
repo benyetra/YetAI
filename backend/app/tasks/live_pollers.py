@@ -12,6 +12,7 @@ problem.)
 Per Development-vir: no Discord alerts. `alert_callback` routes through
 YetAI's notification path (Twilio for opted-in users, WebSocket for live UI).
 """
+
 import asyncio
 import logging
 from typing import List, Optional
@@ -76,7 +77,9 @@ def poll_nhl_live() -> dict:
     return {"status": "noop", "reason": "not_implemented"}
 
 
-@celery_app.task(name="app.tasks.live_pollers.refresh_prop_watchlist", ignore_result=True)
+@celery_app.task(
+    name="app.tasks.live_pollers.refresh_prop_watchlist", ignore_result=True
+)
 def refresh_prop_watchlist() -> dict:
     """Reload the prop watchlist from the DB. Fires every 5 minutes via Beat
     so newly-placed user props start being tracked promptly without the worker

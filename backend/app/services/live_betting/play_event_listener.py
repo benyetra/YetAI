@@ -6,10 +6,16 @@ watchlist and emits PropEvents when a play affects a tracked player prop.
 import logging
 from typing import Dict, List, Set, Tuple
 
-from app.services.live_betting.prop_events import STAT_MATCHERS, PropEvent, _event_type, _batter_id, _pitcher_id
+from app.services.live_betting.prop_events import (
+    STAT_MATCHERS,
+    PropEvent,
+    _event_type,
+    _batter_id,
+    _pitcher_id,
+)
 from app.services.live_betting.prop_watchlist import PropWatchlist, PickInfo
 
-logger = logging.getLogger('play_event_listener')
+logger = logging.getLogger("play_event_listener")
 
 
 class PlayEventListener:
@@ -40,11 +46,11 @@ class PlayEventListener:
 
         Only processes complete at-bats (about.isComplete == True).
         """
-        about = play.get('about', {})
-        if not about.get('isComplete', False):
+        about = play.get("about", {})
+        if not about.get("isComplete", False):
             return []
 
-        play_id = str(about.get('atBatIndex', ''))
+        play_id = str(about.get("atBatIndex", ""))
         if not play_id:
             return []
 
@@ -61,8 +67,8 @@ class PlayEventListener:
         batter = _batter_id(play)
         pitcher = _pitcher_id(play)
         runner_ids = set()
-        for runner in play.get('runners', []):
-            rid = runner.get('details', {}).get('runner', {}).get('id', 0)
+        for runner in play.get("runners", []):
+            rid = runner.get("details", {}).get("runner", {}).get("id", 0)
             if rid:
                 runner_ids.add(rid)
 
@@ -96,7 +102,9 @@ class PlayEventListener:
                     if alert_type is None:
                         continue
 
-                    play_desc = self._describe_play(event_type, pick.player_name, stat_key, delta)
+                    play_desc = self._describe_play(
+                        event_type, pick.player_name, stat_key, delta
+                    )
 
                     event = PropEvent(
                         pick_id=pick.pick_id,
@@ -119,8 +127,10 @@ class PlayEventListener:
                         play_description=play_desc,
                     )
                     events.append(event)
-                    logger.info(f"PropEvent: {alert_type} for {pick.player_name} "
-                                f"{stat_key}={new_total} (line {pick.side} {pick.line})")
+                    logger.info(
+                        f"PropEvent: {alert_type} for {pick.player_name} "
+                        f"{stat_key}={new_total} (line {pick.side} {pick.line})"
+                    )
 
         return events
 
@@ -132,50 +142,52 @@ class PlayEventListener:
         """
         threshold = int(line)  # e.g., 0.5 -> 0, 1.5 -> 1
 
-        if side == 'over':
+        if side == "over":
             if old_total <= threshold < new_total:
-                return 'threshold_cleared'
+                return "threshold_cleared"
             elif new_total <= threshold and line > 0.5:
-                return 'progress'
+                return "progress"
             # Already cleared or Over 0.5 progress — no alert
             return None
 
-        elif side == 'under':
+        elif side == "under":
             if old_total <= threshold < new_total:
-                return 'under_killed'
+                return "under_killed"
             # Under: silence is good news
             return None
 
         return None
 
     @staticmethod
-    def _describe_play(event_type: str, player_name: str, stat_key: str, delta: int) -> str:
+    def _describe_play(
+        event_type: str, player_name: str, stat_key: str, delta: int
+    ) -> str:
         """Generate a human-readable play description for the alert headline."""
         from app.services.live_betting.prop_events import EVENT_DESCRIPTIONS
 
-        verb = EVENT_DESCRIPTIONS.get(event_type, event_type.replace('_', ' '))
+        verb = EVENT_DESCRIPTIONS.get(event_type, event_type.replace("_", " "))
 
-        if stat_key == 'home_runs':
+        if stat_key == "home_runs":
             return f"{player_name} just homered!"
-        elif stat_key == 'hits':
+        elif stat_key == "hits":
             return f"{player_name} {verb}!"
-        elif stat_key == 'strikeouts_pitching':
+        elif stat_key == "strikeouts_pitching":
             return f"{player_name}'s strikeout"
-        elif stat_key == 'rbis':
+        elif stat_key == "rbis":
             return f"{player_name} drove in {delta} run{'s' if delta > 1 else ''}!"
-        elif stat_key == 'runs':
+        elif stat_key == "runs":
             return f"{player_name} scored!"
-        elif stat_key == 'stolen_bases':
+        elif stat_key == "stolen_bases":
             return f"{player_name} stole a base!"
-        elif stat_key == 'walks':
+        elif stat_key == "walks":
             return f"{player_name} drew a walk"
-        elif stat_key == 'total_bases':
+        elif stat_key == "total_bases":
             return f"{player_name} {verb} (+{delta} TB)!"
-        elif stat_key == 'earned_runs':
+        elif stat_key == "earned_runs":
             return f"{player_name} gave up {delta} earned run{'s' if delta > 1 else ''}"
-        elif stat_key == 'hits_allowed':
+        elif stat_key == "hits_allowed":
             return f"Hit allowed by {player_name}"
-        elif stat_key == 'outs_recorded':
+        elif stat_key == "outs_recorded":
             return f"{player_name} recorded {delta} out{'s' if delta > 1 else ''}"
         else:
             return f"{player_name}: {stat_key} +{delta}"
