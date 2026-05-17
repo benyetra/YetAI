@@ -5655,6 +5655,34 @@ async def delete_fantasy_league(
 
 
 # Odds and Markets API Endpoints
+
+
+def _odds_not_configured_message(sport_label: str) -> str:
+    return (
+        f"ODDS_API_KEY not configured. Please set your API key to fetch real {sport_label} odds."
+    )
+
+
+def _odds_not_configured_payload(sport_label: str, *, odds_key: str = "games") -> dict:
+    return {
+        "status": "error",
+        odds_key: [],
+        "message": _odds_not_configured_message(sport_label),
+        "odds_api_configured": False,
+    }
+
+
+def _odds_fetch_failure_payload(
+    sport_label: str, error: Exception, *, odds_key: str = "games"
+) -> dict:
+    return {
+        "status": "error",
+        odds_key: [],
+        "message": f"Failed to fetch {sport_label} odds: {error}",
+        "odds_api_configured": True,
+    }
+
+
 @app.options("/api/odds/americanfootball_nfl")
 async def options_nfl_odds():
     """Handle CORS preflight for NFL odds"""
@@ -5682,13 +5710,9 @@ async def get_nfl_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
+            return _odds_fetch_failure_payload("NFL", e)
 
-    # Return error if API key not configured
-    return {
-        "status": "error",
-        "games": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NFL odds.",
-    }
+    return _odds_not_configured_payload("NFL")
 
 
 @app.options("/api/odds/basketball_nba")
@@ -5716,12 +5740,9 @@ async def get_nba_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NBA odds: {e}")
+            return _odds_fetch_failure_payload("NBA", e)
 
-    return {
-        "status": "error",
-        "games": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NBA odds.",
-    }
+    return _odds_not_configured_payload("NBA")
 
 
 @app.options("/api/odds/baseball_mlb")
@@ -5749,12 +5770,9 @@ async def get_mlb_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching MLB odds: {e}")
+            return _odds_fetch_failure_payload("MLB", e)
 
-    return {
-        "status": "error",
-        "games": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real MLB odds.",
-    }
+    return _odds_not_configured_payload("MLB")
 
 
 @app.options("/api/odds/icehockey_nhl")
@@ -5782,12 +5800,9 @@ async def get_nhl_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NHL odds: {e}")
+            return _odds_fetch_failure_payload("NHL", e)
 
-    return {
-        "status": "error",
-        "games": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NHL odds.",
-    }
+    return _odds_not_configured_payload("NHL")
 
 
 @app.options("/api/odds/hockey")
@@ -5830,12 +5845,9 @@ async def get_ncaaf_odds():
                 return {"status": "success", "games": games}
         except Exception as e:
             logger.error(f"Error fetching NCAAF odds: {e}")
+            return _odds_fetch_failure_payload("NCAAF", e)
 
-    return {
-        "status": "error",
-        "games": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NCAAF odds.",
-    }
+    return _odds_not_configured_payload("NCAAF")
 
 
 @app.get("/api/odds/nfl")
@@ -5850,12 +5862,9 @@ async def get_nfl_odds_legacy():
                 return {"status": "success", "odds": games}
         except Exception as e:
             logger.error(f"Error fetching NFL odds: {e}")
+            return _odds_fetch_failure_payload("NFL", e, odds_key="odds")
 
-    return {
-        "status": "error",
-        "odds": [],
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real NFL odds.",
-    }
+    return _odds_not_configured_payload("NFL", odds_key="odds")
 
 
 @app.get("/api/odds/popular")
@@ -5870,20 +5879,13 @@ async def get_popular_sports_odds():
         except Exception as e:
             logger.error(f"Error fetching popular sports odds: {e}")
             # If real API fails, return empty games list instead of mock data
-            return {
-                "status": "error",
-                "games": [],
-                "count": 0,
-                "message": f"Failed to fetch odds: {str(e)}",
-            }
+            payload = _odds_fetch_failure_payload("popular sports", e)
+            payload["count"] = 0
+            return payload
 
-    # Return error if API key is not configured
-    return {
-        "status": "error",
-        "games": [],
-        "count": 0,
-        "message": "ODDS_API_KEY not configured. Please set your API key to fetch real odds data.",
-    }
+    payload = _odds_not_configured_payload("odds data")
+    payload["count"] = 0
+    return payload
 
 
 # === PLAYER PROPS ENDPOINTS ===

@@ -1,7 +1,7 @@
 import os
 from typing import List, Optional
 
-from pydantic import AliasChoices, Field, model_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -98,6 +98,19 @@ class Settings(BaseSettings):
             return "https://staging-api.yetai.app/api/auth/google/callback"
         else:  # development
             return "http://localhost:8001/api/auth/google/callback"
+
+    @field_validator("ODDS_API_KEY", mode="before")
+    @classmethod
+    def _normalize_odds_api_key(cls, value: Optional[str]) -> Optional[str]:
+        """Strip dashboard copy/paste artifacts (quotes, whitespace)."""
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            return value
+        cleaned = value.strip().strip('"').strip("'")
+        if not cleaned or cleaned == "your_odds_api_key_here":
+            return None
+        return cleaned
 
     @model_validator(mode="after")
     def _coalesce_odds_api_key(self) -> "Settings":
