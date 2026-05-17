@@ -3,8 +3,12 @@
 
 FROM python:3.11-slim
 
-# Set working directory
+# Set working directory + PYTHONPATH so `app.X` imports resolve from /app
+# regardless of which CWD the runtime command happens to use. Railway's
+# start-command override on the celery-worker service runs from /, not /app,
+# which broke `celery -A app.celery_app` until this was set.
 WORKDIR /app
+ENV PYTHONPATH=/app
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
