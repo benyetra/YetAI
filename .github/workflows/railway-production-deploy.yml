@@ -1,0 +1,40 @@
+name: Railway Production Deploy
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-api:
+    name: Deploy API to Railway
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy backend (api.yetai.app)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway link \
+            --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
+            --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
+            --service 421f0104-94c9-478a-8f11-d19955df0d37
+          railway up --detach
+
+      - name: Wait for health check
+        run: |
+          for i in $(seq 1 36); do
+            if curl -fsS https://api.yetai.app/health | grep -q '"odds_api"'; then
+              echo "Production health includes odds_api diagnostics."
+              curl -fsS https://api.yetai.app/health
+              exit 0
+            fi
+            echo "Waiting for deploy... ($i/36)"
+            sleep 15
+          done
+          echo "Timed out waiting for odds_api in /health"
+          curl -fsS https://api.yetai.app/health || true
+          exit 1
