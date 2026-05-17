@@ -98,6 +98,20 @@ export function formatOdds(odds: number): string {
 }
 
 /**
+ * Convert American odds to decimal odds (full payout multiplier including stake).
+ */
+export function americanToDecimal(odds: number): number {
+  return odds > 0 ? odds / 100 + 1 : 100 / Math.abs(odds) + 1;
+}
+
+/**
+ * Profit (not total return) from a stake at given American odds.
+ */
+export function calculatePotentialWin(stake: number, odds: number): number {
+  return odds > 0 ? stake * (odds / 100) : stake * (100 / Math.abs(odds));
+}
+
+/**
  * Format over/under total to clean decimal
  */
 export function formatTotal(total: number): string {

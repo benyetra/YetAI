@@ -5,6 +5,7 @@ import { Trophy, TrendingUp, Users } from 'lucide-react';
 import PlayerPropsCard from './PlayerPropsCard';
 import PlayerPropBetModal from './PlayerPropBetModal';
 import BetModal from './BetModal';
+import { formatOdds } from '@/lib/formatting';
 
 interface Game {
   id: string;
@@ -137,7 +138,7 @@ export default function GameDetailsWithProps({ game }: GameDetailsWithPropsProps
                 >
                   <div className="text-white font-medium">{game.away_team}</div>
                   <div className="text-xl font-bold text-white mt-1">
-                    {game.away_odds > 0 ? `+${game.away_odds}` : game.away_odds}
+                    {formatOdds(game.away_odds)}
                   </div>
                 </button>
                 <button
@@ -146,7 +147,7 @@ export default function GameDetailsWithProps({ game }: GameDetailsWithPropsProps
                 >
                   <div className="text-white font-medium">{game.home_team}</div>
                   <div className="text-xl font-bold text-white mt-1">
-                    {game.home_odds > 0 ? `+${game.home_odds}` : game.home_odds}
+                    {formatOdds(game.home_odds)}
                   </div>
                 </button>
               </div>

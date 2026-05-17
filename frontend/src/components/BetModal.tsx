@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { apiClient, sportsAPI } from '@/lib/api';
+import { formatOdds, calculatePotentialWin } from '@/lib/formatting';
 
 // Types
 interface Game {
@@ -79,15 +80,6 @@ export default function BetModal({
 
   // Quick bet amounts
   const quickAmounts = [10, 25, 50, 100, 250];
-
-  // Calculate potential winnings
-  const calculatePotentialWin = (betAmount: number, odds: number): number => {
-    if (odds > 0) {
-      return betAmount * (odds / 100);
-    } else {
-      return betAmount * (100 / Math.abs(odds));
-    }
-  };
 
   // Get odds based on selection
   const getOdds = (): number => {
@@ -397,7 +389,7 @@ export default function BetModal({
               >
                 <p className="font-medium text-gray-900">{game.away_team}</p>
                 <p className="text-lg font-bold text-blue-600 mt-1">
-                  {game.away_odds > 0 ? '+' : ''}{game.away_odds}
+                  {formatOdds(game.away_odds)}
                 </p>
               </button>
               <button
@@ -410,7 +402,7 @@ export default function BetModal({
               >
                 <p className="font-medium text-gray-900">{game.home_team}</p>
                 <p className="text-lg font-bold text-blue-600 mt-1">
-                  {game.home_odds > 0 ? '+' : ''}{game.home_odds}
+                  {formatOdds(game.home_odds)}
                 </p>
               </button>
             </div>

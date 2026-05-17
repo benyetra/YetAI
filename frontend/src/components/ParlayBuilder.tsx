@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { apiClient } from '@/lib/api';
+import { formatOdds, americanToDecimal } from '@/lib/formatting';
 import { X, Plus, Calculator, Trash2, AlertCircle, TrendingUp } from 'lucide-react';
 
 interface ParlayLeg {
@@ -320,8 +321,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     
     let totalOdds = 1.0;
     for (const leg of legs) {
-      const decimalOdds = leg.odds > 0 ? (leg.odds / 100) + 1 : (100 / Math.abs(leg.odds)) + 1;
-      totalOdds *= decimalOdds;
+      totalOdds *= americanToDecimal(leg.odds);
     }
     
     // Convert back to American odds and round to whole number
@@ -778,7 +778,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <div className="flex-1">
                           <p className="font-medium text-sm">{leg.selection}</p>
                           <p className="text-xs text-gray-500">{leg.gameInfo}</p>
-                          <p className="text-xs text-gray-600">{leg.odds > 0 ? '+' : ''}{leg.odds}</p>
+                          <p className="text-xs text-gray-600">{formatOdds(leg.odds)}</p>
                         </div>
                         <button
                           onClick={() => removeLeg(index)}

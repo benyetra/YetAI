@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { calculatePotentialWin } from '@/lib/formatting';
 import {
   X,
   DollarSign,
@@ -70,16 +71,6 @@ export default function YetAIBetModal({
     const cleanOdds = oddsStr.replace(/[+\-]/g, '');
     const numOdds = parseFloat(cleanOdds);
     return oddsStr.startsWith('-') ? -numOdds : numOdds;
-  };
-
-  // Calculate potential winnings
-  const calculatePotentialWin = (betAmount: number, oddsStr: string): number => {
-    const odds = parseOdds(oddsStr);
-    if (odds > 0) {
-      return betAmount * (odds / 100);
-    } else {
-      return betAmount * (100 / Math.abs(odds));
-    }
   };
 
   const handleAmountChange = (value: string) => {
@@ -277,7 +268,7 @@ export default function YetAIBetModal({
   if (!isOpen || !bet) return null;
 
   const betAmount = parseFloat(amount) || 0;
-  const potentialWin = betAmount > 0 ? calculatePotentialWin(betAmount, bet.odds) : 0;
+  const potentialWin = betAmount > 0 ? calculatePotentialWin(betAmount, parseOdds(bet.odds)) : 0;
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">

@@ -7,9 +7,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, MagicMock, AsyncMock
 import json
 
-# Import the applications to test
-from app.main import app as production_app  # Consolidated environment-aware app
-from simple_main import app as simple_app
+from app.main import app as production_app
 
 
 class TestProductionApp:
@@ -173,54 +171,12 @@ class TestProductionApp:
         assert all(isinstance(suggestion, str) for suggestion in data["suggestions"])
 
 
-class TestSimpleApp:
-    """Test the simple FastAPI application"""
-
-    @pytest.fixture
-    def client(self):
-        return TestClient(simple_app)
-
-    def test_root_endpoint(self, client):
-        """Test the root endpoint returns correct information"""
-        response = client.get("/")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["message"] == "YetAI Sports Betting MVP API"
-        assert data["version"] == "1.0.0"
-        assert data["status"] == "running"
-        assert "timestamp" in data
-
-    def test_health_endpoint(self, client):
-        """Test the health check endpoint"""
-        response = client.get("/health")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "timestamp" in data
-        assert "environment" in data
-
-    def test_api_status_endpoint(self, client):
-        """Test the API status endpoint"""
-        response = client.get("/api/status")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert data["api_status"] == "online"
-        assert data["database_status"] == "connected"
-        assert "timestamp" in data
-
-
 class TestHealthChecks:
-    """Test health check functionality across apps"""
+    """Test health check functionality"""
 
-    @pytest.mark.parametrize(
-        "app_client", [TestClient(production_app), TestClient(simple_app)]
-    )
-    def test_health_endpoints_respond(self, app_client):
-        """Test that all health endpoints respond correctly"""
-        response = app_client.get("/health")
+    def test_health_endpoints_respond(self):
+        client = TestClient(production_app)
+        response = client.get("/health")
         assert response.status_code == 200
 
         data = response.json()
