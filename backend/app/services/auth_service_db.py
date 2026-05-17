@@ -116,6 +116,7 @@ class AuthServiceDB:
         username: str,
         first_name: str = None,
         last_name: str = None,
+        is_verified: bool = False,
     ) -> Dict:
         """Create a new user account"""
         try:
@@ -153,8 +154,8 @@ class AuthServiceDB:
                     preferred_sports=["americanfootball_nfl"],
                     notification_settings={"email": True, "push": False},
                     is_active=True,
-                    is_verified=False,
-                    verification_token=verification_token,
+                    is_verified=is_verified,
+                    verification_token=None if is_verified else verification_token,
                     is_admin=False,
                     created_at=datetime.utcnow(),
                 )
@@ -163,26 +164,30 @@ class AuthServiceDB:
                 db.commit()
                 db.refresh(new_user)
 
-                # Send verification email asynchronously (don't block registration)
-                import threading
+                if not is_verified:
+                    # Send verification email asynchronously (don't block registration)
+                    import threading
 
-                def send_email_background():
-                    try:
-                        email_service.send_verification_email(
-                            to_email=email,
-                            verification_token=verification_token,
-                            first_name=first_name,
-                        )
-                    except Exception as email_error:
-                        logger.warning(
-                            f"Failed to send verification email: {email_error}"
-                        )
+                    def send_email_background():
+                        try:
+                            sent = email_service.send_verification_email(
+                                to_email=email,
+                                verification_token=verification_token,
+                                first_name=first_name,
+                            )
+                            if not sent:
+                                logger.warning(
+                                    f"Verification email was not sent to {email}"
+                                )
+                        except Exception as email_error:
+                            logger.warning(
+                                f"Failed to send verification email: {email_error}"
+                            )
 
-                # Start email sending in background thread
-                email_thread = threading.Thread(
-                    target=send_email_background, daemon=True
-                )
-                email_thread.start()
+                    email_thread = threading.Thread(
+                        target=send_email_background, daemon=True
+                    )
+                    email_thread.start()
 
                 # Generate access token
                 access_token = self.generate_token(new_user.id)
@@ -479,6 +484,19 @@ class AuthServiceDB:
         except Exception as e:
             logger.error(f"Error upgrading subscription: {e}")
             return {"success": False, "error": "Failed to upgrade subscription"}
+
+    async def apply_google_email_verification(
+        self, user_id: int, email_verified: bool
+    ) -> Optional[Dict]:
+        """Sync is_verified for Google OAuth users when Google confirms the email."""
+        if not email_verified:
+            return await self.get_user_by_id(user_id)
+        user = await self.get_user_by_id(user_id)
+        if not user or user.get("is_verified"):
+            return user
+        await self.update_user(user_id, {"is_verified": True})
+        user["is_verified"] = True
+        return user
 
     async def get_user_by_email(self, email: str) -> Optional[Dict]:
         """Get user by email address"""
@@ -938,12 +956,17 @@ class AuthServiceDB:
 
                 # Send verification email
                 try:
-                    email_service.send_verification_email(
+                    sent = email_service.send_verification_email(
                         to_email=email,
                         verification_token=verification_token,
                         first_name=user.first_name,
                     )
-                    return {"success": True, "message": "Verification email sent"}
+                    if sent:
+                        return {"success": True, "message": "Verification email sent"}
+                    return {
+                        "success": False,
+                        "error": "Failed to send verification email. Please try again later.",
+                    }
                 except Exception as email_error:
                     logger.error(f"Failed to send verification email: {email_error}")
                     return {
@@ -981,14 +1004,19 @@ class AuthServiceDB:
 
                 # Send password reset email
                 try:
-                    email_service.send_password_reset_email(
+                    sent = email_service.send_password_reset_email(
                         to_email=email,
                         reset_token=reset_token,
                         first_name=user.first_name,
                     )
+                    if sent:
+                        return {
+                            "success": True,
+                            "message": "If the email exists, a reset link has been sent",
+                        }
                     return {
-                        "success": True,
-                        "message": "If the email exists, a reset link has been sent",
+                        "success": False,
+                        "error": "Failed to send password reset email",
                     }
                 except Exception as email_error:
                     logger.error(f"Failed to send password reset email: {email_error}")

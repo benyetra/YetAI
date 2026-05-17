@@ -26,13 +26,18 @@ class EmailService:
         frontend_urls = settings.get_frontend_urls()
         self.app_url = frontend_urls[0] if frontend_urls else "http://localhost:3000"
 
-        # For development - simulate email sending
-        self.dev_mode = not self.api_key
+        # Log-only mode when API key missing in non-production only
+        self.dev_mode = not self.api_key and settings.ENVIRONMENT != "production"
 
-        if self.dev_mode:
-            logger.info(
-                "Email service running in development mode - emails will be logged only"
-            )
+        if not self.api_key:
+            if settings.ENVIRONMENT == "production":
+                logger.error(
+                    "BREVO_API_KEY is not set in production — verification emails will fail"
+                )
+            else:
+                logger.info(
+                    "Email service running in development mode - emails will be logged only"
+                )
         else:
             logger.info(
                 f"Email service initialized with Brevo API for {self.from_email}"
@@ -47,18 +52,22 @@ class EmailService:
     ) -> bool:
         """Send an email using Brevo API"""
         try:
-            if self.dev_mode:
-                # In development, just log the email
-                logger.info(
-                    f"""
+            if not self.api_key:
+                if self.dev_mode:
+                    logger.info(
+                        f"""
                 ========== EMAIL SIMULATION ==========
                 To: {to_email}
                 Subject: {subject}
                 Body: {text_body or 'HTML email'}
                 ======================================
                 """
+                    )
+                    return True
+                logger.error(
+                    f"Cannot send email to {to_email}: BREVO_API_KEY is not configured"
                 )
-                return True
+                return False
 
             # Prepare Brevo API payload
             payload = {

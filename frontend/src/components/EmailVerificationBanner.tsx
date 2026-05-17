@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { X, Mail, AlertCircle } from 'lucide-react';
 import { useAuth } from './Auth';
+import { getApiUrl } from '@/lib/api-config';
 
 export default function EmailVerificationBanner() {
   const { user } = useAuth();
@@ -20,7 +21,7 @@ export default function EmailVerificationBanner() {
     setMessage('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/resend-verification`, {
+      const response = await fetch(getApiUrl('/api/auth/resend-verification'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

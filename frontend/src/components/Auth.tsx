@@ -73,15 +73,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for stored token on app load
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUser = localStorage.getItem('user_data');
+    let cancelled = false;
 
-    if (storedToken && storedUser) {
+    const bootstrapAuth = async () => {
+      const storedToken = localStorage.getItem('auth_token');
+      const storedUser = localStorage.getItem('user_data');
+
+      if (!storedToken) {
+        if (!cancelled) setLoading(false);
+        return;
+      }
+
       setToken(storedToken);
-      setUser(JSON.parse(storedUser));
-    }
-    setLoading(false);
+      if (storedUser) {
+        setUser(JSON.parse(storedUser));
+      }
+
+      // Refresh from API so is_verified and other fields are current after deploy/merge
+      try {
+        const response = await authAPI.get('/api/auth/me', storedToken);
+        if (!cancelled && response.status === 'success' && response.user) {
+          setUser(response.user);
+          localStorage.setItem('user_data', JSON.stringify(response.user));
+        }
+      } catch (error) {
+        console.error('Failed to refresh user on load', error);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    bootstrapAuth();
 
     // Listen for storage changes (e.g., when email is verified)
     const handleStorageChange = () => {
@@ -92,7 +114,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
 
     window.addEventListener('storage', handleStorageChange);
-    return () => window.removeEventListener('storage', handleStorageChange);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('storage', handleStorageChange);
+    };
   }, []);
 
   const login = async (emailOrUsername: string, password: string) => {
