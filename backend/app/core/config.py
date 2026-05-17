@@ -114,11 +114,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def _coalesce_odds_api_key(self) -> "Settings":
-        """Accept ODDS_API when dashboards use that name instead of ODDS_API_KEY."""
+        """Read ODDS_API_KEY directly from os.environ as a safety net in case
+        pydantic-settings fails to resolve it via AliasChoices, then fall back
+        to alternate env var names used by some dashboards."""
         if not self.ODDS_API_KEY:
-            fallback = os.environ.get("ODDS_API") or os.environ.get("THE_ODDS_API_KEY")
-            if fallback:
-                self.ODDS_API_KEY = fallback
+            raw = (
+                os.environ.get("ODDS_API_KEY")
+                or os.environ.get("ODDS_API")
+                or os.environ.get("THE_ODDS_API_KEY")
+            )
+            if raw:
+                cleaned = raw.strip().strip('"').strip("'")
+                if cleaned and cleaned not in ("your_odds_api_key_here", "your-odds-api-key"):
+                    self.ODDS_API_KEY = cleaned
         return self
 
     def odds_api_env_diagnostics(self) -> dict:
