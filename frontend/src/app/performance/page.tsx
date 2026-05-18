@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import PageHeader from '@/components/yetai/PageHeader';
+import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { BarChart3, TrendingUp, TrendingDown, DollarSign, Target, Calendar, Info } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
@@ -222,7 +224,7 @@ export default function PerformancePage() {
 
   if (error || !performanceData) {
     return (
-      <Layout requiresAuth>
+      <Layout requiresAuth fullWidth>
         <div className="space-y-6">
           <h1 className="text-3xl font-bold text-gray-900">Performance Analytics</h1>
           
@@ -259,7 +261,7 @@ export default function PerformancePage() {
   // Add safety checks for overview data
   if (!overview) {
     return (
-      <Layout requiresAuth>
+      <Layout requiresAuth fullWidth>
         <div className="space-y-6">
           <h1 className="text-3xl font-bold text-gray-900">Performance Analytics</h1>
           <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
@@ -277,11 +279,12 @@ export default function PerformancePage() {
   }
 
   return (
-    <Layout requiresAuth>
+    <Layout requiresAuth fullWidth>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Performance Analytics</h1>
-          <div className="flex items-center space-x-2">
+        <PageHeader
+          title="Performance Analytics"
+          subtitle="Win rate, ROI, and trends across your bets"
+          actions={<div className="flex items-center space-x-2">
             <Calendar className="w-4 h-4 text-gray-500" />
             <select
               value={selectedPeriod}
@@ -294,7 +297,8 @@ export default function PerformancePage() {
               <option value={365}>All time</option>
             </select>
           </div>
-        </div>
+        }
+        />
 
         {/* Overview Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">

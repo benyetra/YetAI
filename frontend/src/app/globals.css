@@ -1,178 +1,199 @@
 @import "tailwindcss";
+@import "../styles/yetai-design.css";
 
-/* Simple, clean styling that works reliably */
+/* Tailwind v4 — Geist sans for UI, Geist Mono for numerics */
+@theme {
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, "SF Mono", Menlo, monospace;
+}
 
+/* YetAI brand tokens (accent tweakable via profile later) */
 :root {
-  --background: #ffffff;
-  --foreground: #1a202c;
-  
-  /* YetAI Brand Colors */
-  --brand-primary: #A855F7;
-  --brand-accent: #F59E0B;
+  --accent: #8b5cf6;
+  --brand-primary: var(--accent);
+  --brand-accent: #e8c57a;
 }
 
-/* Force light theme always - no dark mode interference */
-body {
-  background: #ffffff !important;
-  color: #1a202c !important;
-  font-family: Arial, Helvetica, sans-serif;
+/* App-wide typography: Geist (prose) + Geist Mono (numbers) */
+html {
+  font-family: var(--sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Clean button styling */
+body,
+button,
+input,
+select,
+textarea {
+  font-family: var(--sans);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--sans);
+  letter-spacing: -0.01em;
+}
+
+.font-mono,
+.mono,
+[class*="font-mono"] {
+  font-family: var(--mono) !important;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.01em;
+}
+
+/* Map common Tailwind utility classes to the dark design system */
+.bg-white,
+.bg-gray-50 {
+  background-color: var(--surface) !important;
+  color: var(--text) !important;
+}
+
+.bg-gray-100 {
+  background-color: var(--surface-2) !important;
+}
+
+.border-gray-200,
+.border-gray-300 {
+  border-color: var(--border) !important;
+}
+
+.text-gray-900,
+.text-gray-800 {
+  color: var(--text) !important;
+}
+
+.text-gray-700,
+.text-gray-600 {
+  color: var(--text-2) !important;
+}
+
+.text-gray-500,
+.text-gray-400 {
+  color: var(--text-3) !important;
+}
+
+.text-green-600,
+.text-green-500 {
+  color: var(--win) !important;
+}
+
+.text-red-600,
+.text-red-500 {
+  color: var(--loss) !important;
+}
+
+.bg-green-50,
+.bg-green-100 {
+  background-color: var(--win-soft) !important;
+}
+
+.bg-red-50,
+.bg-red-100 {
+  background-color: var(--loss-soft) !important;
+}
+
+.bg-blue-50 {
+  background-color: var(--accent-soft) !important;
+}
+
+.hover\:bg-gray-50:hover,
+.hover\:bg-gray-100:hover {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+.hover\:bg-red-50:hover {
+  background-color: var(--loss-soft) !important;
+}
+
+/* Buttons */
 .btn-primary {
-  background-color: #A855F7 !important;
-  color: #ffffff !important;
-  border: none !important;
-  padding: 0.5rem 1rem !important;
-  border-radius: 0.5rem !important;
-  font-weight: 500 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.15) inset,
+    0 8px 24px -10px var(--accent-glow);
+}
+
+.btn-primary:hover {
+  background: color-mix(in oklab, var(--accent) 88%, white);
 }
 
 .btn-secondary {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-  border: 1px solid #d1d5db !important;
-  padding: 0.5rem 1rem !important;
-  border-radius: 0.5rem !important;
-  font-weight: 500 !important;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .btn-secondary:hover {
-  background-color: #f9fafb !important;
-  border-color: #9ca3af !important;
+  background: var(--surface-3);
+  border-color: var(--border-focus);
 }
 
-/* Form elements */
-input, textarea, select {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-  border: 1px solid #d1d5db !important;
-  border-radius: 0.5rem !important;
-  padding: 0.75rem !important;
+/* Form controls */
+input,
+textarea,
+select {
+  background-color: var(--bg-elev) !important;
+  color: var(--text) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
 }
 
-input:focus, textarea:focus, select:focus {
-  outline: 2px solid #A855F7 !important;
-  outline-offset: 2px !important;
-  border-color: #A855F7 !important;
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none !important;
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 2px var(--accent-soft) !important;
 }
 
-input::placeholder, textarea::placeholder {
-  color: #9ca3af !important;
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-3) !important;
 }
 
-/* Avatar picker specific fixes */
-.avatar-picker-button {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-  border: 1px solid #d1d5db !important;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1) !important;
-}
-
-.avatar-picker-button:hover {
-  background-color: #f9fafb !important;
-}
-
-/* Profile page fixes */
-.profile-button,
-.secondary-button,
-button[class*="border-gray"] {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-  border: 1px solid #d1d5db !important;
-}
-
-/* Override any dark backgrounds */
-.bg-black,
-.bg-gray-900,
-.bg-gray-800 {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-}
-
-/* Text visibility fixes */
-.text-gray-700,
-.text-gray-600,
-.text-gray-500 {
-  color: #4a5568 !important;
-}
-
-/* Blue button text fix */
 button.bg-blue-600,
 button.bg-blue-700,
 button.bg-blue-500,
 .bg-blue-600,
 .bg-blue-700,
 .bg-blue-500 {
-  background-color: #2563eb !important;
+  background-color: var(--accent) !important;
   color: #ffffff !important;
-}
-
-/* Gradient button fixes */
-button[class*="bg-gradient"],
-.bg-gradient-to-r {
-  color: #ffffff !important;
-}
-
-/* Specific gradient button classes */
-.btn-gradient-blue-purple {
-  background: linear-gradient(to right, #2563eb, #7c3aed) !important;
-  color: #ffffff !important;
-  border: none !important;
-}
-
-.btn-gradient-blue-purple:hover {
-  background: linear-gradient(to right, #1d4ed8, #6d28d9) !important;
 }
 
 .btn-gradient-brand {
-  background: linear-gradient(to right, #A855F7, #F59E0B) !important;
+  background: linear-gradient(
+    135deg,
+    var(--accent),
+    color-mix(in oklab, var(--accent) 40%, #4f46e5)
+  ) !important;
   color: #ffffff !important;
   border: none !important;
 }
 
-.btn-gradient-brand:hover {
-  background: linear-gradient(to right, rgba(168, 85, 247, 0.9), rgba(245, 158, 11, 0.9)) !important;
-}
-
-/* Specific upload button fix */
-.upload-button,
-button:has(.w-4.h-4),
-label button,
-label div[class*="border"] {
-  background-color: #ffffff !important;
-  color: #1a202c !important;
-  border: 1px solid #d1d5db !important;
-}
-
-/* Navigation fixes */
-.sidebar-nav {
-  background-color: #ffffff !important;
-}
-
-/* Card backgrounds */
-.bg-white {
-  background-color: #ffffff !important;
-}
-
-/* Prevent dark mode detection override */
-@media (prefers-color-scheme: dark) {
-  body {
-    background: #ffffff !important;
-    color: #1a202c !important;
-  }
-  
-  input, textarea, select {
-    background-color: #ffffff !important;
-    color: #1a202c !important;
-  }
-  
-  button {
-    color: inherit !important;
-  }
-  
-  .btn-secondary {
-    background-color: #ffffff !important;
-    color: #1a202c !important;
-  }
+/* Loading spinner accent */
+.border-blue-600 {
+  border-color: var(--accent) !important;
 }

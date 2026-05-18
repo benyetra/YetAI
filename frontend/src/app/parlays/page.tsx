@@ -7,6 +7,9 @@ import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import ParlayBuilder from '@/components/ParlayBuilder';
 import ParlayList from '@/components/ParlayList';
+import AppLoading from '@/components/yetai/AppLoading';
+import PageHeader from '@/components/yetai/PageHeader';
+import { StatTile } from '@/components/yetai/primitives';
 import { sportsAPI } from '@/lib/api';
 import { Layers, TrendingUp, DollarSign, Plus } from 'lucide-react';
 
@@ -180,9 +183,7 @@ export default function ParlaysPage() {
   if (loading) {
     return (
       <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <AppLoading />
       </Layout>
     );
   }
@@ -192,54 +193,32 @@ export default function ParlaysPage() {
   }
 
   return (
-    <Layout requiresAuth>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Parlays</h1>
-          <button 
+    <Layout requiresAuth fullWidth>
+      <PageHeader
+        title="Parlays"
+        subtitle="Build multi-leg slips with boosted payouts"
+        actions={
+          <button
+            type="button"
             onClick={() => setShowParlayBuilder(true)}
             disabled={gamesLoading}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center disabled:opacity-50 disabled:cursor-not-allowed"
-            style={{ color: 'white', backgroundColor: '#2563eb' }}
+            className="btn btn-primary"
           >
-            <Plus className="w-4 h-4 mr-2" />
-            {gamesLoading ? 'Loading Games...' : 'Create Parlay'}
+            <Plus size={14} />
+            {gamesLoading ? 'Loading games…' : 'Create parlay'}
           </button>
-        </div>
+        }
+      />
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <Layers className="w-8 h-8 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{stats.activeParlays}</span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Active Parlays</h3>
-            <p className="text-sm text-gray-600">Pending settlement</p>
-          </div>
-          
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <TrendingUp className="w-8 h-8 text-green-600" />
-              <span className="text-2xl font-bold text-green-600">{stats.winRate}%</span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Win Rate</h3>
-            <p className="text-sm text-gray-600">All time</p>
-          </div>
+      <div className="stat-grid">
+        <StatTile label="Active parlays" value={stats.activeParlays} deltaKind="neutral" icon={<Layers size={12} />} />
+        <StatTile label="Win rate" value={`${stats.winRate}%`} deltaKind="up" icon={<TrendingUp size={12} />} />
+        <StatTile label="Total winnings" value={`$${stats.totalWinnings.toFixed(2)}`} deltaKind="up" icon={<DollarSign size={12} />} />
+      </div>
 
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <DollarSign className="w-8 h-8 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">${stats.totalWinnings.toFixed(2)}</span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Total Winnings</h3>
-            <p className="text-sm text-gray-600">All time</p>
-          </div>
-        </div>
-
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold mb-4">Your Parlays</h2>
-          <ParlayList refreshTrigger={refreshTrigger} />
-        </div>
+      <div className="card" style={{ marginTop: 8 }}>
+        <h2 className="section-title" style={{ marginBottom: 14 }}>Your parlays</h2>
+        <ParlayList refreshTrigger={refreshTrigger} />
       </div>
       
       {showParlayBuilder && (

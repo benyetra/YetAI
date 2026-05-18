@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import Layout from '@/components/Layout';
+import PageHeader from '@/components/yetai/PageHeader';
 import { LiveOdds } from '@/components/LiveOdds';
 import { SportsSelector } from '@/components/SportsSelector';
 import { LiveScores } from '@/components/LiveScores';
@@ -21,7 +22,7 @@ export default function OddsPage() {
   };
 
   return (
-    <Layout>
+    <Layout fullWidth>
       <div className="space-y-6">
         {/* Header */}
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">

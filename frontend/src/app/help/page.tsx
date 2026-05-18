@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import PageHeader from '@/components/yetai/PageHeader';
+import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { HelpCircle, Search, Book, MessageSquare, Mail, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -130,10 +132,10 @@ ${user.first_name || user.username || 'User'}`);
   };
 
   return (
-    <Layout requiresAuth>
+    <Layout requiresAuth fullWidth>
       <div className="space-y-6">
         <div className="text-center">
-          <h1 className="text-3xl font-bold text-gray-900 mb-4">Help Center</h1>
+          <PageHeader title="Help Center" subtitle="FAQs and support for YetAI" />
           <p className="text-gray-600 mb-8">Find answers to common questions or get in touch with our support team</p>
           
           <div className="max-w-md mx-auto relative">

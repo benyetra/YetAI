@@ -827,7 +827,7 @@ export default function FantasyPage() {
 
   if (loading) {
     return (
-      <Layout>
+      <Layout requiresAuth fullWidth>
         <div className="min-h-screen flex items-center justify-center">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
         </div>
@@ -840,7 +840,7 @@ export default function FantasyPage() {
   }
 
   return (
-    <Layout>
+    <Layout requiresAuth fullWidth>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-3xl font-bold text-gray-900">Fantasy Sports</h1>

@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import PageHeader from '@/components/yetai/PageHeader';
+import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { Trophy, Medal, Crown, TrendingUp, Users, Star } from 'lucide-react';
 
@@ -118,9 +120,9 @@ export default function LeaderboardPage() {
 
   if (error || !leaderboardData) {
     return (
-      <Layout requiresAuth>
+      <Layout requiresAuth fullWidth>
         <div className="space-y-6">
-          <h1 className="text-3xl font-bold text-gray-900">Leaderboard</h1>
+          <PageHeader title="Leaderboard" subtitle="See how you stack up against other bettors" />
 
           {error ? (
             <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
@@ -149,10 +151,10 @@ export default function LeaderboardPage() {
   }
 
   return (
-    <Layout requiresAuth>
+    <Layout requiresAuth fullWidth>
       <div className="space-y-6">
         <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Leaderboard</h1>
+          <PageHeader title="Leaderboard" subtitle="See how you stack up against other bettors" />
           <select
             value={selectedPeriod}
             onChange={(e) => setSelectedPeriod(e.target.value)}

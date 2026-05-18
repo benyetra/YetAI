@@ -1,0 +1,179 @@
+'use client';
+
+import React from 'react';
+import { ArrowDown, ArrowUp } from 'lucide-react';
+import { teamColor } from '@/lib/yetai-format';
+
+const LEAGUE_COLORS: Record<string, string> = {
+  NBA: '#C8102E',
+  MLB: '#002D72',
+  NFL: '#013369',
+  NHL: '#000000',
+  UCL: '#0D1B43',
+  UFC: '#D20A0A',
+  MLS: '#001E5E',
+  NCAAF: '#013369',
+  NCAAB: '#C8102E',
+};
+
+export function TeamGlyph({ abbr, size = 22 }: { abbr: string; size?: number }) {
+  return (
+    <span
+      className="team-glyph"
+      style={{
+        background: teamColor(abbr),
+        width: size,
+        height: size,
+        fontSize: Math.max(9, size * 0.42),
+      }}
+    >
+      {abbr.slice(0, 3)}
+    </span>
+  );
+}
+
+export function LeagueChip({ league }: { league: string }) {
+  const key = league.length <= 4 ? league : league.slice(0, 3).toUpperCase();
+  return (
+    <span
+      style={{
+        fontSize: 9.5,
+        fontWeight: 600,
+        letterSpacing: '.05em',
+        padding: '2px 6px',
+        borderRadius: 4,
+        background: LEAGUE_COLORS[key] || LEAGUE_COLORS[league] || '#333',
+        color: '#fff',
+      }}
+    >
+      {league}
+    </span>
+  );
+}
+
+export function ConfidenceBar({
+  value,
+  label = 'AI Confidence',
+}: {
+  value: number;
+  label?: string;
+}) {
+  const pct = value > 1 ? value : value * 100;
+  return (
+    <div className="confidence">
+      <div className="conf-row">
+        <span>{label}</span>
+        <b>{Math.round(pct)}%</b>
+      </div>
+      <div className="conf-bar">
+        <div className="conf-fill" style={{ width: `${Math.min(100, pct)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+export function StatTile({
+  label,
+  value,
+  delta,
+  deltaKind = 'up',
+  icon,
+}: {
+  label: React.ReactNode;
+  value: React.ReactNode;
+  delta?: React.ReactNode;
+  deltaKind?: 'up' | 'down' | 'neutral';
+  icon?: React.ReactNode;
+}) {
+  const deltaClass =
+    deltaKind === 'up' ? 'delta-up' : deltaKind === 'down' ? 'delta-down' : 'delta-neutral';
+  return (
+    <div className="stat">
+      <div className="stat-label">
+        {icon}
+        {label}
+      </div>
+      <div className="stat-value mono">{value}</div>
+      {delta != null && (
+        <span className={`stat-delta ${deltaClass}`}>
+          {deltaKind === 'up' && <ArrowUp size={11} />}
+          {deltaKind === 'down' && <ArrowDown size={11} />}
+          {delta}
+        </span>
+      )}
+    </div>
+  );
+}
+
+export function SummaryRow({
+  label,
+  value,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  highlight?: boolean;
+}) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12.5 }}>
+      <span className="dim">{label}</span>
+      <span
+        className="mono"
+        style={{
+          color: highlight ? 'var(--win)' : 'var(--text)',
+          fontWeight: highlight ? 500 : 400,
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+export function Sparkline({
+  data,
+  width = 80,
+  height = 28,
+  className,
+}: {
+  data: number[];
+  width?: number;
+  height?: number;
+  className?: string;
+}) {
+  if (!data.length) return null;
+  const max = Math.max(...data.map(Math.abs), 1);
+  const mid = height / 2;
+  const points = data
+    .map((v, i) => {
+      const x = (i / Math.max(data.length - 1, 1)) * width;
+      const y = mid - (v / max) * (mid - 2);
+      return `${x},${y}`;
+    })
+    .join(' ');
+  return (
+    <svg width={width} height={height} className={className} style={{ overflow: 'visible' }}>
+      <polyline
+        points={points}
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+export function YetiHero({ size = 200, className }: { size?: number; className?: string }) {
+  return (
+    <img
+      src="/logo.png"
+      alt=""
+      width={size}
+      height={size}
+      className={className}
+      style={{ opacity: 0.15, objectFit: 'contain' }}
+    />
+  );
+}

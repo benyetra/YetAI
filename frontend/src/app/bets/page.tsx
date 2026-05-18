@@ -3,6 +3,8 @@
 import { useAuth } from '@/components/Auth';
 import BetHistory from '@/components/BetHistory';
 import Layout from '@/components/Layout';
+import AppLoading from '@/components/yetai/AppLoading';
+import PageHeader from '@/components/yetai/PageHeader';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
 
@@ -19,9 +21,7 @@ export default function BetsPage() {
   if (loading) {
     return (
       <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <AppLoading />
       </Layout>
     );
   }
@@ -32,6 +32,7 @@ export default function BetsPage() {
 
   return (
     <Layout requiresAuth fullWidth>
+      <PageHeader title="Bet History" subtitle="Your wagers, results, and parlays" />
       <BetHistory />
     </Layout>
   );

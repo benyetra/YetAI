@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import PageHeader from '@/components/yetai/PageHeader';
+import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { MessageCircle, Send, Bot, User, Users } from 'lucide-react';
 
@@ -38,15 +40,18 @@ export default function ChatPage() {
   };
 
   return (
-    <Layout requiresAuth>
+    <Layout requiresAuth fullWidth>
       <div className="h-[calc(100vh-8rem)] flex flex-col">
-        <div className="flex items-center justify-between mb-6">
-          <h1 className="text-3xl font-bold text-gray-900">Chat & Community</h1>
-          <div className="flex items-center space-x-2 text-sm text-gray-500">
-            <Users className="w-4 h-4" />
-            <span>1,247 online</span>
-          </div>
-        </div>
+        <PageHeader
+          title="Chat & Community"
+          subtitle="Connect with bettors and the AI assistant"
+          actions={
+            <div className="flex items-center space-x-2 text-sm" style={{ color: 'var(--text-3)' }}>
+              <Users className="w-4 h-4" />
+              <span className="mono">1,247 online</span>
+            </div>
+          }
+        />
 
         <div className="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-6">
           <div className="lg:col-span-1 bg-white rounded-lg border border-gray-200 p-4">
