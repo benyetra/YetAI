@@ -17,7 +17,7 @@ export default function PageHeader({
         <h1 className="type-page-title">{title}</h1>
         {subtitle ? <p style={{ color: 'var(--text-3)', fontSize: 13, marginTop: 4 }}>{subtitle}</p> : null}
       </div>
-      {actions ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>{actions}</div> : null}
+      {actions ? <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>{actions}</div> : null}
     </div>
   );
 }

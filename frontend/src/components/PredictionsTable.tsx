@@ -5,29 +5,28 @@ import { Lock, AlertCircle } from 'lucide-react';
 
 export function PredictionsPaywall({ onUpgrade }: { onUpgrade: () => void }) {
   return (
-    <div className="bg-white rounded-lg border border-purple-200 p-8 text-center">
-      <Lock className="w-10 h-10 mx-auto text-purple-600 mb-3" />
-      <h3 className="text-xl font-semibold text-gray-900 mb-2">Predictions are a PRO feature</h3>
-      <p className="text-gray-600 mb-5 max-w-md mx-auto">
-        Upgrade to PRO or ELITE to unlock ML-powered projections across MLB, NBA, NFL, and NHL.
+    <section className="card" style={{ padding: 40, textAlign: 'center' }}>
+      <Lock size={40} style={{ margin: '0 auto 12px', color: 'var(--accent)' }} />
+      <h3 className="type-section-title" style={{ marginBottom: 8 }}>Predictions are a PRO feature</h3>
+      <p className="dim" style={{ maxWidth: 400, margin: '0 auto 20px', fontSize: 13 }}>
+        Upgrade to PRO to unlock ML-powered projections across MLB, NBA, NFL, and NHL.
       </p>
-      <button
-        onClick={onUpgrade}
-        className="bg-purple-600 text-white px-6 py-2.5 rounded-lg hover:bg-purple-700 font-medium transition-colors"
-      >
+      <button type="button" className="btn btn-primary" onClick={onUpgrade}>
         Upgrade Now
       </button>
-    </div>
+    </section>
   );
 }
 
 export function PredictionsError({ message }: { message: string }) {
   return (
-    <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-      <AlertCircle className="w-5 h-5 text-red-600 mt-0.5 flex-shrink-0" />
+    <div className="alert alert-error" style={{ display: 'flex', gap: 12, alignItems: 'start' }}>
+      <AlertCircle size={18} style={{ flexShrink: 0, marginTop: 2 }} />
       <div>
-        <p className="text-sm font-medium text-red-900">Failed to load predictions</p>
-        <p className="text-xs text-red-700 mt-1 font-mono">{message}</p>
+        <p style={{ fontWeight: 500, margin: 0 }}>Failed to load predictions</p>
+        <p className="mono dim" style={{ fontSize: 11, marginTop: 4 }}>
+          {message}
+        </p>
       </div>
     </div>
   );
@@ -39,6 +38,7 @@ export type ColumnDef = {
   format?: (value: unknown, row: Record<string, unknown>) => ReactNode;
   align?: 'left' | 'right' | 'center';
   className?: string;
+  mono?: boolean;
 };
 
 type PredictionsTableProps = {
@@ -57,58 +57,50 @@ export function PredictionsTable({
   emptyMessage = 'No predictions available for this date.',
 }: PredictionsTableProps) {
   return (
-    <section className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-      <header className="px-6 py-4 border-b border-gray-200 bg-gray-50">
-        <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+    <section className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <header className="card-head">
+        <h2>{title}</h2>
         {!loading && (
-          <p className="text-xs text-gray-500 mt-1">
+          <span className="card-meta">
             {rows.length} {rows.length === 1 ? 'projection' : 'projections'}
-          </p>
+          </span>
         )}
       </header>
 
       {loading ? (
-        <div className="px-6 py-12 text-center text-sm text-gray-500">Loading…</div>
+        <div className="card-body-empty">Loading…</div>
       ) : rows.length === 0 ? (
-        <div className="px-6 py-12 text-center text-sm text-gray-500">{emptyMessage}</div>
+        <div className="card-body-empty">{emptyMessage}</div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-white">
+        <div className="data-table-wrap">
+          <table className="data-table">
+            <thead>
               <tr>
                 {columns.map((c) => (
                   <th
                     key={c.key}
                     scope="col"
-                    className={`px-4 py-3 text-xs font-semibold text-gray-700 uppercase tracking-wider ${
-                      c.align === 'right'
-                        ? 'text-right'
-                        : c.align === 'center'
-                        ? 'text-center'
-                        : 'text-left'
-                    }`}
+                    className={
+                      c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : ''
+                    }
                   >
                     {c.label}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="bg-white divide-y divide-gray-100">
+            <tbody>
               {rows.map((row, i) => (
-                <tr key={(row.id as number | string) ?? i} className="hover:bg-gray-50">
+                <tr key={(row.id as number | string) ?? i}>
                   {columns.map((c) => {
                     const raw = row[c.key];
                     const content = c.format ? c.format(raw, row) : (raw as ReactNode);
+                    const align =
+                      c.align === 'right' ? 'text-right' : c.align === 'center' ? 'text-center' : '';
                     return (
                       <td
                         key={c.key}
-                        className={`px-4 py-3 whitespace-nowrap text-sm text-gray-800 ${
-                          c.align === 'right'
-                            ? 'text-right'
-                            : c.align === 'center'
-                            ? 'text-center'
-                            : 'text-left'
-                        } ${c.className ?? ''}`}
+                        className={`${align} ${c.mono || c.align === 'right' ? 'mono' : ''} ${c.className ?? ''}`}
                       >
                         {content as ReactNode}
                       </td>

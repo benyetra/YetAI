@@ -3,6 +3,9 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import { StatTile } from '@/components/yetai/primitives';
+import PageHeader from '@/components/yetai/PageHeader';
+import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { fantasyAPI } from '@/lib/api';
 import TradeAnalyzer from '@/components/TradeAnalyzer';
@@ -828,9 +831,7 @@ export default function FantasyPage() {
   if (loading) {
     return (
       <Layout requiresAuth fullWidth>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+        <AppLoading label="Loading fantasy…" />
       </Layout>
     );
   }
@@ -841,32 +842,31 @@ export default function FantasyPage() {
 
   return (
     <Layout requiresAuth fullWidth>
-      <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <h1 className="text-3xl font-bold text-gray-900">Fantasy Sports</h1>
+      <PageHeader title="Fantasy Sports" subtitle="Connected leagues, tools, and AI recommendations" />
+
+      {error && (
+        <div className="alert alert-error" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <AlertCircle className="w-5 h-5" />
+          <span>{error}</span>
         </div>
+      )}
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center space-x-2">
-            <AlertCircle className="w-5 h-5 text-red-600" />
-            <span className="text-red-800">{error}</span>
-          </div>
-        )}
+      <div className="stat-grid">
+        <StatTile label="Accounts" value={String(accounts.length)} icon={<Users size={16} />} />
+        <StatTile label="Leagues" value={String(leagues.length)} icon={<Trophy size={16} />} />
+      </div>
 
-        {isLoading ? (
-          <div className="text-center py-12">
-            <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-            <p className="text-gray-600">Loading fantasy data...</p>
-          </div>
-        ) : (
-          <div className="space-y-6">
+      {isLoading ? (
+        <AppLoading label="Loading fantasy data…" />
+      ) : (
+        <div className="space-y-6">
             {/* Connected Accounts Section */}
-            <div className="bg-white rounded-lg border border-gray-200 p-6">
+            <div className="card">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-xl font-semibold">Connected Accounts</h2>
                 <button
                   onClick={() => setShowConnectModal(true)}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center space-x-2"
+                  className="btn btn-primary flex items-center space-x-2"
                 >
                   <Plus className="w-4 h-4" />
                   <span>Connect Account</span>
@@ -874,7 +874,7 @@ export default function FantasyPage() {
               </div>
 
               {accounts.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 dim">
                   <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>No fantasy accounts connected</p>
                   <p className="text-sm">Connect your Sleeper account to get started</p>
@@ -882,7 +882,7 @@ export default function FantasyPage() {
               ) : (
                 <div className="space-y-3">
                   {accounts.map((account) => (
-                    <div key={account.id} className="flex items-center justify-between p-4 border border-gray-200 rounded-lg">
+                    <div key={account.id} className="flex items-center justify-between p-4 border border-[var(--border)] rounded-lg">
                       <div className="flex items-center space-x-3">
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center bg-purple-100">
                           <img 
@@ -898,7 +898,7 @@ export default function FantasyPage() {
                         </div>
                         <div>
                           <div className="font-medium">{account.platform}</div>
-                          <div className="text-sm text-gray-500">@{account.username}</div>
+                          <div className="text-sm dim">@{account.username}</div>
                         </div>
                       </div>
                       <div className="flex items-center space-x-2">
@@ -919,9 +919,9 @@ export default function FantasyPage() {
 
             {/* Quick Actions Section */}
             {leagues.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <h2 className="text-xl font-semibold mb-4">Fantasy Tools</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="fantasy-tool-grid">
                   <button
                     onClick={() => {
                       setShowPlayerSearch(true);
@@ -932,12 +932,12 @@ export default function FantasyPage() {
                       setShowLeagueRules(false);
                       setShowTradeAnalyzer(false);
                     }}
-                    className="flex items-center justify-center gap-3 p-4 border-2 border-blue-200 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors"
+                    className="fantasy-tool-btn"
                   >
                     <Search className="w-6 h-6 text-blue-600" />
                     <div className="text-left">
-                      <div className="font-semibold text-gray-900">Player Search</div>
-                      <div className="text-sm text-gray-500">Advanced player lookup & analysis</div>
+                      <div className="font-semibold ">Player Search</div>
+                      <div className="text-sm dim">Advanced player lookup & analysis</div>
                     </div>
                   </button>
                   
@@ -953,12 +953,12 @@ export default function FantasyPage() {
                       setShowLeagueRules(false);
                       setShowTradeAnalyzer(false);
                     }}
-                    className="flex items-center justify-center gap-3 p-4 border-2 border-purple-200 rounded-lg hover:border-purple-400 hover:bg-purple-50 transition-colors"
+                    className="fantasy-tool-btn"
                   >
                     <BarChart3 className="w-6 h-6 text-purple-600" />
                     <div className="text-left">
-                      <div className="font-semibold text-gray-900">Player Compare</div>
-                      <div className="text-sm text-gray-500">Side-by-side player analysis</div>
+                      <div className="font-semibold ">Player Compare</div>
+                      <div className="text-sm dim">Side-by-side player analysis</div>
                     </div>
                   </button>
                   
@@ -978,12 +978,12 @@ export default function FantasyPage() {
                         await loadStandingsData(selectedLeague);
                       }
                     }}
-                    className="flex items-center justify-center gap-3 p-4 border-2 border-green-200 rounded-lg hover:border-green-400 hover:bg-green-50 transition-colors"
+                    className="fantasy-tool-btn"
                   >
                     <RefreshCw className="w-6 h-6 text-green-600" />
                     <div className="text-left">
-                      <div className="font-semibold text-gray-900">Trade Analyzer</div>
-                      <div className="text-sm text-gray-500">AI-powered trade analysis</div>
+                      <div className="font-semibold ">Trade Analyzer</div>
+                      <div className="text-sm dim">AI-powered trade analysis</div>
                     </div>
                   </button>
                 </div>
@@ -992,21 +992,21 @@ export default function FantasyPage() {
 
             {/* Fantasy Leagues Section */}
             {leagues.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <h2 className="text-xl font-semibold mb-4">Fantasy Leagues</h2>
                 <div className="space-y-4">
                   {leagues.map((league) => (
-                    <div key={league.id} className="border border-gray-200 rounded-lg p-4">
+                    <div key={league.id} className="border border-[var(--border)] rounded-lg p-4">
                       <div className="flex items-center justify-between mb-3">
                         <div>
                           <h3 className="font-semibold">{league.name}</h3>
-                          <p className="text-sm text-gray-500">{league.platform} • {league.season}</p>
-                          <p className="text-sm text-gray-500">{league.total_teams} teams</p>
+                          <p className="text-sm dim">{league.platform} • {league.season}</p>
+                          <p className="text-sm dim">{league.total_teams} teams</p>
                         </div>
                         <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Synced</span>
                       </div>
                       {league.user_team && (
-                        <div className="text-sm text-gray-600 mb-3">
+                        <div className="text-sm muted mb-3">
                           <strong>{league.user_team.name}</strong> • {league.user_team.wins}-{league.user_team.losses} • {league.user_team.points_for} pts
                         </div>
                       )}
@@ -1052,14 +1052,14 @@ export default function FantasyPage() {
 
             {/* Trending Players Section */}
             {trendingPlayers.length > 0 && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <h2 className="text-xl font-semibold mb-4">Trending Players</h2>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="fantasy-tool-grid">
                   {trendingPlayers.slice(0, 6).map((player, index) => (
-                    <div key={index} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                    <div key={index} className="flex items-center justify-between p-3 border border-[var(--border)] rounded-lg">
                       <div>
                         <div className="font-medium">{player.first_name} {player.last_name}</div>
-                        <div className="text-sm text-gray-500">{player.position} • {player.team}</div>
+                        <div className="text-sm dim">{player.position} • {player.team}</div>
                       </div>
                       <div className="flex items-center space-x-1 text-green-600">
                         <TrendingUp className="w-4 h-4" />
@@ -1073,14 +1073,14 @@ export default function FantasyPage() {
 
             {/* AI Features */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <div className="mb-4">
                   <h2 className="text-xl font-semibold mb-3">AI Start/Sit Recommendations</h2>
                   <div className="flex items-center space-x-2">
                     <select 
                       value={selectedWeek} 
                       onChange={(e) => setSelectedWeek(Number(e.target.value))}
-                      className="px-3 py-1 border border-gray-300 rounded-md text-sm"
+                      className="px-3 py-1 border border-[var(--border)] rounded-md text-sm"
                     >
                       {[...Array(18)].map((_, i) => (
                         <option key={i + 1} value={i + 1}>Week {i + 1}</option>
@@ -1100,14 +1100,14 @@ export default function FantasyPage() {
                     </button>
                   </div>
                 </div>
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 dim">
                   <Target className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>AI-powered lineup optimization</p>
                   <p className="text-sm">Get personalized start/sit advice for your roster</p>
                 </div>
               </div>
 
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <div className="mb-4">
                   <h2 className="text-xl font-semibold mb-3">Waiver Wire Targets</h2>
                   <button
@@ -1128,7 +1128,7 @@ export default function FantasyPage() {
                     )}
                   </button>
                 </div>
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 dim">
                   <TrendingUp className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                   <p>Click above to get smart pickup recommendations</p>
                   <p className="text-sm">Based on trending players and your roster needs</p>
@@ -1138,7 +1138,7 @@ export default function FantasyPage() {
 
             {/* Start/Sit Recommendations View */}
             {showStartSitRecommendations && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">AI Start/Sit Recommendations - Week {selectedWeek}</h2>
                   <button
@@ -1146,7 +1146,7 @@ export default function FantasyPage() {
                       setShowStartSitRecommendations(false);
                       setStartSitRecommendations([]);
                     }}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="dim hover:muted"
                   >
                     ✕
                   </button>
@@ -1155,17 +1155,17 @@ export default function FantasyPage() {
                 {isLoadingStartSit ? (
                   <div className="text-center py-8">
                     <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-                    <p className="text-gray-600">Analyzing your lineups...</p>
+                    <p className="muted">Analyzing your lineups...</p>
                   </div>
                 ) : (startSitRecommendations || []).length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 dim">
                     <Target className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p>No start/sit recommendations available for Week {selectedWeek}</p>
                     <p className="text-sm">Make sure you have connected leagues with active rosters</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    <div className="flex items-center gap-4 mb-4 text-sm text-gray-600">
+                    <div className="flex items-center gap-4 mb-4 text-sm muted">
                       <div className="flex items-center gap-2">
                         <div className="w-3 h-3 bg-green-500 rounded-full"></div>
                         <span>START</span>
@@ -1177,21 +1177,21 @@ export default function FantasyPage() {
                     </div>
 
                     {(startSitRecommendations || []).map((rec, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div key={index} className="border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <div className={`w-3 h-3 rounded-full ${
-                              rec.recommendation === 'START' ? 'bg-green-500' : 'bg-red-500'
+rec.recommendation === 'START' ? 'bg-green-500' : 'bg-red-500'
                             }`}></div>
                             <div>
                               <div className="flex items-center gap-2">
                                 <span className="font-semibold">{rec.player_name}</span>
-                                <span className="px-2 py-1 bg-gray-100 text-gray-700 text-xs rounded">
+                                <span className="px-2 py-1 bg-gray-100 muted text-xs rounded">
                                   {rec.position}
                                 </span>
-                                <span className="text-sm text-gray-500">{rec.team}</span>
+                                <span className="text-sm dim">{rec.team}</span>
                                 {rec.opponent && (
-                                  <span className="text-sm text-gray-500">vs {rec.opponent}</span>
+                                  <span className="text-sm dim">vs {rec.opponent}</span>
                                 )}
                                 {rec.is_questionable && (
                                   <span className="px-2 py-1 bg-yellow-100 text-yellow-700 text-xs rounded">
@@ -1199,30 +1199,30 @@ export default function FantasyPage() {
                                   </span>
                                 )}
                               </div>
-                              <div className="text-sm text-gray-600 mt-1">
+                              <div className="text-sm muted mt-1">
                                 {rec.league_name}
                               </div>
                             </div>
                           </div>
                           <div className="text-right">
                             <div className={`text-lg font-bold ${
-                              rec.recommendation === 'START' ? 'text-green-600' : 'text-red-600'
+rec.recommendation === 'START' ? 'text-green-600' : 'text-red-600'
                             }`}>
                               {rec.recommendation}
                             </div>
-                            <div className="text-sm text-gray-600">
+                            <div className="text-sm muted">
                               {rec.projected_points.toFixed(1)} pts projected
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs dim">
                               {rec.confidence}% confidence
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs dim">
                               #{rec.rank_in_position} of {rec.total_in_position} at {rec.position}
                             </div>
                           </div>
                         </div>
-                        <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                          <p className="text-sm text-gray-700">{rec.reasoning}</p>
+                        <div className="mt-3 p-3 card card-tight">
+                          <p className="text-sm muted">{rec.reasoning}</p>
                         </div>
                       </div>
                     ))}
@@ -1233,7 +1233,7 @@ export default function FantasyPage() {
 
             {/* League Standings View */}
             {showStandings && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">League Standings</h2>
                   <button
@@ -1242,7 +1242,7 @@ export default function FantasyPage() {
                       setStandings([]);
                       setSelectedLeague(null);
                     }}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="dim hover:muted"
                   >
                     ✕
                   </button>
@@ -1251,10 +1251,10 @@ export default function FantasyPage() {
                 {isLoadingStandings ? (
                   <div className="text-center py-8">
                     <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-                    <p className="text-gray-600">Loading standings...</p>
+                    <p className="muted">Loading standings...</p>
                   </div>
                 ) : standings.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 dim">
                     <Trophy className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p>No standings available</p>
                     <p className="text-sm">Check back later for updated standings</p>
@@ -1263,47 +1263,47 @@ export default function FantasyPage() {
                   <div className="overflow-x-auto">
                     <table className="w-full">
                       <thead>
-                        <tr className="border-b border-gray-200 text-left">
-                          <th className="pb-2 font-medium text-gray-900">Rank</th>
-                          <th className="pb-2 font-medium text-gray-900">Team</th>
-                          <th className="pb-2 font-medium text-gray-900">Record</th>
-                          <th className="pb-2 font-medium text-gray-900">Points For</th>
-                          <th className="pb-2 font-medium text-gray-900">Points Against</th>
-                          <th className="pb-2 font-medium text-gray-900">Waiver</th>
+                        <tr className="border-b border-[var(--border)] text-left">
+                          <th className="pb-2 font-medium ">Rank</th>
+                          <th className="pb-2 font-medium ">Team</th>
+                          <th className="pb-2 font-medium ">Record</th>
+                          <th className="pb-2 font-medium ">Points For</th>
+                          <th className="pb-2 font-medium ">Points Against</th>
+                          <th className="pb-2 font-medium ">Waiver</th>
                         </tr>
                       </thead>
                       <tbody>
                         {standings.map((team, index) => (
-                          <tr key={team.rank || index} className={`border-b border-gray-100 ${
-                            team.is_user_team ? 'bg-blue-50' : ''
+                          <tr key={team.rank || index} className={`border-b border-[var(--border)] ${
+team.is_user_team ? 'bg-blue-50' : ''
                           }`}>
                             <td className="py-3 font-medium">{team.rank}</td>
                             <td className="py-3">
                               <div>
                                 <div className={`font-medium ${
-                                  team.is_user_team ? 'text-blue-700' : 'text-gray-900'
+team.is_user_team ? 'text-blue-700' : ''
                                 }`}>
                                   {team.team_name || team.name}
                                 </div>
-                                <div className="text-sm text-gray-500">{team.owner_name}</div>
+                                <div className="text-sm dim">{team.owner_name}</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
                                 <div>{team.wins || 0}-{team.losses || 0}{(team.ties || 0) > 0 ? `-${team.ties}` : ''}</div>
-                                <div className="text-gray-500">({((team.win_percentage || 0) * 100).toFixed(1)}%)</div>
+                                <div className="dim">({((team.win_percentage || 0) * 100).toFixed(1)}%)</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
                                 <div>{team.points_for?.toFixed(1) || '0.0'}</div>
-                                <div className="text-gray-500">({((team.points_for || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
+                                <div className="dim">({((team.points_for || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
                               </div>
                             </td>
                             <td className="py-3">
                               <div className="text-sm">
                                 <div>{team.points_against?.toFixed(1) || '0.0'}</div>
-                                <div className="text-gray-500">({((team.points_against || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
+                                <div className="dim">({((team.points_against || 0) / Math.max((team.wins || 0) + (team.losses || 0) + (team.ties || 0), 1)).toFixed(1)}/game)</div>
                               </div>
                             </td>
                             <td className="py-3 text-sm">{team.waiver_position || 'N/A'}</td>
@@ -1318,7 +1318,7 @@ export default function FantasyPage() {
 
             {/* Waiver Recommendations View */}
             {showWaiverRecommendations && (
-              <div className="bg-white rounded-lg border border-gray-200 p-6">
+              <div className="card">
                 <div className="flex items-center justify-between mb-4">
                   <h2 className="text-xl font-semibold">Smart Waiver Wire Recommendations</h2>
                   <button
@@ -1326,7 +1326,7 @@ export default function FantasyPage() {
                       setShowWaiverRecommendations(false);
                       setWaiverRecommendations([]);
                     }}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="dim hover:muted"
                   >
                     ✕
                   </button>
@@ -1335,10 +1335,10 @@ export default function FantasyPage() {
                 {isLoadingWaiver ? (
                   <div className="text-center py-8">
                     <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-                    <p className="text-gray-600">Finding the best pickup targets...</p>
+                    <p className="muted">Finding the best pickup targets...</p>
                   </div>
                 ) : waiverRecommendations.length === 0 ? (
-                  <div className="text-center py-8 text-gray-500">
+                  <div className="text-center py-8 dim">
                     <TrendingUp className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                     <p>No waiver recommendations available</p>
                     <p className="text-sm">Check back later for trending pickup targets</p>
@@ -1346,7 +1346,7 @@ export default function FantasyPage() {
                 ) : (
                   <div className="space-y-4">
                     {waiverRecommendations.map((rec, index) => (
-                      <div key={index} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div key={index} className="border border-[var(--border)] rounded-lg p-4 hover:shadow-md transition-shadow">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center space-x-3">
                             <div>
@@ -1355,12 +1355,12 @@ export default function FantasyPage() {
                                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
                                   {rec.position}
                                 </span>
-                                <span className="text-sm text-gray-500">{rec.team}</span>
+                                <span className="text-sm dim">{rec.team}</span>
                               </div>
-                              <div className="text-sm text-gray-600 mt-1">
+                              <div className="text-sm muted mt-1">
                                 {rec.league_name}
                               </div>
-                              <div className="text-sm text-gray-600 mt-1">
+                              <div className="text-sm muted mt-1">
                                 {rec.reason}
                               </div>
                             </div>
@@ -1369,10 +1369,10 @@ export default function FantasyPage() {
                             <div className="text-lg font-bold text-red-500">
                               HIGH
                             </div>
-                            <div className="text-sm font-medium text-gray-900">
+                            <div className="text-sm font-medium ">
                               {rec.priority_score.toFixed(1)}
                             </div>
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs dim">
                               {rec.waiver_suggestion?.suggestion_type === 'FAAB' ? (
                                 <>FAAB: {rec.waiver_suggestion.faab_percentage || rec.suggested_fab_percentage}%</>
                               ) : (
@@ -1380,7 +1380,7 @@ export default function FantasyPage() {
                               )}
                             </div>
                             {rec.trend_count > 0 && (
-                              <div className="text-xs text-gray-500 flex items-center gap-1 mt-1">
+                              <div className="text-xs dim flex items-center gap-1 mt-1">
                                 <TrendingUp className="w-3 h-3" />
                                 {rec.trend_count} adds
                               </div>
@@ -1402,12 +1402,10 @@ export default function FantasyPage() {
                 )}
               </div>
             )}
-          </div>
-        )}
 
         {/* League Rules View */}
         {showLeagueRules && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="card">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-xl font-semibold">League Rules & Settings</h2>
               <button
@@ -1416,7 +1414,7 @@ export default function FantasyPage() {
                   setLeagueRules(null);
                   setSelectedLeague(null);
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="dim hover:muted"
               >
                 ✕
               </button>
@@ -1425,10 +1423,10 @@ export default function FantasyPage() {
             {isLoadingRules ? (
               <div className="text-center py-8">
                 <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
-                <p className="text-gray-600">Loading league rules...</p>
+                <p className="muted">Loading league rules...</p>
               </div>
             ) : !leagueRules ? (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 dim">
                 <Settings className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>No league rules available</p>
                 <p className="text-sm">Unable to load league settings</p>
@@ -1436,23 +1434,23 @@ export default function FantasyPage() {
             ) : (
               <div className="space-y-6">
                 {/* League Overview */}
-                <div className="bg-gray-50 rounded-lg p-4">
+                <div className="card card-tight p-4">
                   <h3 className="text-lg font-medium mb-3">League Overview</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <span className="text-gray-500">League Type:</span>
+                      <span className="dim">League Type:</span>
                       <div className="font-medium">{leagueRules.league_type}</div>
                     </div>
                     <div>
-                      <span className="text-gray-500">Teams:</span>
+                      <span className="dim">Teams:</span>
                       <div className="font-medium">{leagueRules.team_count}</div>
                     </div>
                     <div>
-                      <span className="text-gray-500">Platform:</span>
+                      <span className="dim">Platform:</span>
                       <div className="font-medium capitalize">{leagueRules.platform}</div>
                     </div>
                     <div>
-                      <span className="text-gray-500">Season:</span>
+                      <span className="dim">Season:</span>
                       <div className="font-medium">{leagueRules.season}</div>
                     </div>
                   </div>
@@ -1543,7 +1541,7 @@ export default function FantasyPage() {
                           </span>
                         ))
                         : 
-                        <span className="text-gray-500 text-sm">Position requirements not available</span>
+                        <span className="dim text-sm">Position requirements not available</span>
                       }
                     </div>
                   </div>
@@ -1558,7 +1556,7 @@ export default function FantasyPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-purple-700">Volume Strategy:</span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            leagueRules.ai_context.prioritize_volume 
+leagueRules.ai_context.prioritize_volume 
                               ? 'bg-green-200 text-green-800' 
                               : 'bg-red-200 text-red-800'
                           }`}>
@@ -1568,7 +1566,7 @@ export default function FantasyPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-purple-700">RB Premium:</span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            leagueRules.ai_context.rb_premium 
+leagueRules.ai_context.rb_premium 
                               ? 'bg-green-200 text-green-800' 
                               : 'bg-yellow-200 text-yellow-800'
                           }`}>
@@ -1580,9 +1578,9 @@ export default function FantasyPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-purple-700">Flex Strategy:</span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            leagueRules.ai_context.flex_strategy 
+leagueRules.ai_context.flex_strategy 
                               ? 'bg-blue-200 text-blue-800' 
-                              : 'bg-gray-200 text-gray-800'
+                              : 'bg-gray-200 '
                           }`}>
                             {leagueRules.ai_context.flex_strategy ? 'Flex Available' : 'No Flex'}
                           </span>
@@ -1590,7 +1588,7 @@ export default function FantasyPage() {
                         <div className="flex items-center justify-between">
                           <span className="text-purple-700">QB Strategy:</span>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${
-                            leagueRules.ai_context.superflex 
+leagueRules.ai_context.superflex 
                               ? 'bg-red-200 text-red-800' 
                               : 'bg-blue-200 text-blue-800'
                           }`}>
@@ -1601,9 +1599,9 @@ export default function FantasyPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-3 text-gray-700">AI Strategy Context</h3>
-                    <p className="text-gray-600">AI context not available for this league</p>
+                  <div className="card card-tight p-4">
+                    <h3 className="text-lg font-medium mb-3 muted">AI Strategy Context</h3>
+                    <p className="muted">AI context not available for this league</p>
                   </div>
                 )}
 
@@ -1628,7 +1626,7 @@ export default function FantasyPage() {
                             : leagueRules.features.waiver_type || 'Unknown'}
                         </div>
                         {leagueRules.features.waiver_type && (
-                          <div className="text-xs text-gray-500 mt-1">
+                          <div className="text-xs dim mt-1">
                             DB: {leagueRules.features.waiver_type}
                             {leagueRules.features.waiver_budget && ` | Budget: $${leagueRules.features.waiver_budget}`}
                           </div>
@@ -1641,9 +1639,9 @@ export default function FantasyPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-gray-50 rounded-lg p-4">
-                    <h3 className="text-lg font-medium mb-3 text-gray-700">League Features</h3>
-                    <p className="text-gray-600">League features not available</p>
+                  <div className="card card-tight p-4">
+                    <h3 className="text-lg font-medium mb-3 muted">League Features</h3>
+                    <p className="muted">League features not available</p>
                   </div>
                 )}
               </div>
@@ -1653,7 +1651,7 @@ export default function FantasyPage() {
 
         {/* Advanced Player Search Interface */}
         {showPlayerSearch && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="card">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Player Search & Analysis</h2>
               <button
@@ -1661,7 +1659,7 @@ export default function FantasyPage() {
                   setShowPlayerSearch(false);
                   resetSearch();
                 }}
-                className="text-gray-400 hover:text-gray-600"
+                className="dim hover:muted"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -1676,14 +1674,14 @@ export default function FantasyPage() {
                     placeholder="Search players by name..."
                     value={searchFilters.query}
                     onChange={(e) => setSearchFilters(prev => ({ ...prev, query: e.target.value }))}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-4 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => setShowFilters(!showFilters)}
                     className={`px-4 py-2 border rounded-lg flex items-center gap-2 ${
-                      showFilters ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 hover:bg-gray-50'
+showFilters ? 'bg-blue-600 text-white border-blue-600' : 'border-[var(--border)] '
                     }`}
                   >
                     <Filter className="w-4 h-4" />
@@ -1692,7 +1690,7 @@ export default function FantasyPage() {
                   <button
                     onClick={handlePlayerSearch}
                     disabled={isLoadingSearch}
-                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
+                    className="btn btn-primary disabled:opacity-50 flex items-center gap-2"
                   >
                     {isLoadingSearch ? (
                       <RefreshCw className="w-4 h-4 animate-spin" />
@@ -1706,14 +1704,14 @@ export default function FantasyPage() {
 
               {/* Advanced Filters */}
               {showFilters && (
-                <div className="bg-gray-50 rounded-lg p-4 space-y-4">
+                <div className="card card-tight p-4 space-y-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Position</label>
+                      <label className="block text-sm font-medium muted mb-1">Position</label>
                       <select
                         value={searchFilters.position}
                         onChange={(e) => setSearchFilters(prev => ({ ...prev, position: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">All Positions</option>
                         <option value="QB">QB</option>
@@ -1726,11 +1724,11 @@ export default function FantasyPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Team</label>
+                      <label className="block text-sm font-medium muted mb-1">Team</label>
                       <select
                         value={searchFilters.team}
                         onChange={(e) => setSearchFilters(prev => ({ ...prev, team: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">All Teams</option>
                         <option value="ARI">Cardinals</option>
@@ -1769,11 +1767,11 @@ export default function FantasyPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Injury Status</label>
+                      <label className="block text-sm font-medium muted mb-1">Injury Status</label>
                       <select
                         value={searchFilters.injury_status}
                         onChange={(e) => setSearchFilters(prev => ({ ...prev, injury_status: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">All</option>
                         <option value="healthy">Healthy</option>
@@ -1784,11 +1782,11 @@ export default function FantasyPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Trending</label>
+                      <label className="block text-sm font-medium muted mb-1">Trending</label>
                       <select
                         value={searchFilters.trending}
                         onChange={(e) => setSearchFilters(prev => ({ ...prev, trending: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">All</option>
                         <option value="hot">Trending Up</option>
@@ -1797,11 +1795,11 @@ export default function FantasyPage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">League Context</label>
+                      <label className="block text-sm font-medium muted mb-1">League Context</label>
                       <select
                         value={searchFilters.league_id}
                         onChange={(e) => setSearchFilters(prev => ({ ...prev, league_id: e.target.value }))}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                       >
                         <option value="">No League Context</option>
                         {leagues.map((league) => (
@@ -1816,7 +1814,7 @@ export default function FantasyPage() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Min Age</label>
+                        <label className="block text-sm font-medium muted mb-1">Min Age</label>
                         <input
                           type="number"
                           min="20"
@@ -1826,11 +1824,11 @@ export default function FantasyPage() {
                             ...prev, 
                             age_min: e.target.value ? parseInt(e.target.value) : null 
                           }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                       <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Max Age</label>
+                        <label className="block text-sm font-medium muted mb-1">Max Age</label>
                         <input
                           type="number"
                           min="20"
@@ -1840,14 +1838,14 @@ export default function FantasyPage() {
                             ...prev, 
                             age_max: e.target.value ? parseInt(e.target.value) : null 
                           }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                     </div>
 
                     <div className="flex gap-2">
                       <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Min Experience</label>
+                        <label className="block text-sm font-medium muted mb-1">Min Experience</label>
                         <input
                           type="number"
                           min="0"
@@ -1857,11 +1855,11 @@ export default function FantasyPage() {
                             ...prev, 
                             experience_min: e.target.value ? parseInt(e.target.value) : null 
                           }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                       <div className="flex-1">
-                        <label className="block text-sm font-medium text-gray-700 mb-1">Max Experience</label>
+                        <label className="block text-sm font-medium muted mb-1">Max Experience</label>
                         <input
                           type="number"
                           min="0"
@@ -1871,7 +1869,7 @@ export default function FantasyPage() {
                             ...prev, 
                             experience_max: e.target.value ? parseInt(e.target.value) : null 
                           }))}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                         />
                       </div>
                     </div>
@@ -1880,7 +1878,7 @@ export default function FantasyPage() {
                   <div className="flex justify-end">
                     <button
                       onClick={resetSearch}
-                      className="px-4 py-2 text-gray-600 hover:text-gray-800"
+                      className="px-4 py-2 muted hover:"
                     >
                       Reset Filters
                     </button>
@@ -1896,13 +1894,13 @@ export default function FantasyPage() {
                   <div>
                     <span className="font-medium">{selectedPlayers.length} player(s) selected</span>
                     {selectedPlayers.length >= 2 && (
-                      <span className="text-sm text-gray-600 ml-2">Ready to compare</span>
+                      <span className="text-sm muted ml-2">Ready to compare</span>
                     )}
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => setSelectedPlayers([])}
-                      className="px-3 py-1 text-gray-600 hover:text-gray-800"
+                      className="px-3 py-1 muted hover:"
                     >
                       Clear
                     </button>
@@ -1910,7 +1908,7 @@ export default function FantasyPage() {
                       <button
                         onClick={handleCompareSelected}
                         disabled={isLoadingSearch}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                        className="btn btn-primary disabled:opacity-50"
                       >
                         Compare Players
                       </button>
@@ -1929,9 +1927,9 @@ export default function FantasyPage() {
                     <div
                       key={player.player_id}
                       className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-                        selectedPlayers.includes(player.player_id)
+selectedPlayers.includes(player.player_id)
                           ? 'border-blue-500 bg-blue-50'
-                          : 'border-gray-200 hover:border-gray-300'
+                          : 'border-[var(--border)] hover:border-[var(--border)]'
                       }`}
                       onClick={() => handlePlayerSelect(player.player_id)}
                     >
@@ -1946,7 +1944,7 @@ export default function FantasyPage() {
                             />
                             <div>
                               <div className="font-semibold">{player.name}</div>
-                              <div className="text-sm text-gray-500">
+                              <div className="text-sm dim">
                                 {player.position} • {player.team}
                                 {player.age && ` • Age ${player.age}`}
                                 {player.experience !== undefined && ` • ${player.experience} yrs`}
@@ -1958,7 +1956,7 @@ export default function FantasyPage() {
                         <div className="flex items-center gap-4">
                           {/* Injury Status */}
                           <div className={`px-2 py-1 rounded text-xs font-medium ${
-                            player.injury_status === 'Healthy' 
+player.injury_status === 'Healthy' 
                               ? 'bg-green-100 text-green-700'
                               : player.injury_status === 'Questionable'
                               ? 'bg-yellow-100 text-yellow-700'
@@ -1970,7 +1968,7 @@ export default function FantasyPage() {
                           {/* Trending Status */}
                           {player.trending_status && player.trending_status !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
-                              player.trending_status === 'hot'
+player.trending_status === 'hot'
                                 ? 'bg-orange-100 text-orange-700'
                                 : 'bg-blue-100 text-blue-700'
                             }`}>
@@ -1980,7 +1978,7 @@ export default function FantasyPage() {
 
                           {/* League Context */}
                           {player.league_metrics?.position_value && (
-                            <div className="text-xs text-gray-500">
+                            <div className="text-xs dim">
                               {player.league_metrics.position_value}
                             </div>
                           )}
@@ -1994,7 +1992,7 @@ export default function FantasyPage() {
 
             {/* No Results */}
             {!isLoadingSearch && searchResults.length === 0 && searchFilters.query && (
-              <div className="text-center py-8 text-gray-500">
+              <div className="text-center py-8 dim">
                 <Search className="w-12 h-12 mx-auto mb-4 text-gray-300" />
                 <p>No players found matching your search criteria</p>
                 <p className="text-sm">Try adjusting your filters or search terms</p>
@@ -2011,7 +2009,7 @@ export default function FantasyPage() {
                       setShowComparison(false);
                       setComparisonData(null);
                     }}
-                    className="text-gray-500 hover:text-gray-700"
+                    className="dim hover:muted"
                   >
                     ✕ Close
                   </button>
@@ -2031,7 +2029,7 @@ export default function FantasyPage() {
                         </div>
                         <div className="flex items-center gap-2 mt-2">
                           <div className={`px-2 py-1 rounded text-xs font-medium ${
-                            player.injury_status === 'Healthy' 
+player.injury_status === 'Healthy' 
                               ? 'bg-green-500 bg-opacity-20 text-green-100'
                               : player.injury_status === 'Questionable'
                               ? 'bg-yellow-500 bg-opacity-20 text-yellow-100'
@@ -2041,7 +2039,7 @@ export default function FantasyPage() {
                           </div>
                           {player.trending?.type && player.trending.type !== 'normal' && (
                             <div className={`px-2 py-1 rounded text-xs font-medium ${
-                              player.trending.type === 'hot'
+player.trending.type === 'hot'
                                 ? 'bg-orange-500 bg-opacity-20 text-orange-100'
                                 : 'bg-blue-300 bg-opacity-20 text-blue-100'
                             }`}>
@@ -2055,8 +2053,8 @@ export default function FantasyPage() {
                       <div className="p-4">
                         <div className="space-y-3">
                           {/* Basic Info Section */}
-                          <div className="bg-gray-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                          <div className="card card-tight p-3">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <Eye className="w-4 h-4" />
                               Basic Info
                             </h5>
@@ -2072,7 +2070,7 @@ export default function FantasyPage() {
                           {/* Usage Analytics Section */}
                           {(player.analytics && Object.keys(player.analytics).length > 0) && (
                           <div className="bg-green-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <BarChart3 className="w-4 h-4" />
                               Usage Analytics
                             </h5>
@@ -2152,7 +2150,7 @@ export default function FantasyPage() {
                           {/* Efficiency Metrics Section */}
                           {(player.analytics && (player.analytics.points_per_snap || player.analytics.points_per_touch)) && (
                           <div className="bg-blue-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <Target className="w-4 h-4" />
                               Efficiency
                             </h5>
@@ -2198,7 +2196,7 @@ export default function FantasyPage() {
                                   })()
                                 )}
                                 <span className="font-medium">Floor:</span>
-                                <span className="ml-1 text-gray-600">
+                                <span className="ml-1 muted">
                                   {player.analytics?.floor_score ? player.analytics.floor_score.toFixed(1) : '--'}
                                 </span>
                               </div>
@@ -2212,7 +2210,7 @@ export default function FantasyPage() {
                                   })()
                                 )}
                                 <span className="font-medium">Ceiling:</span>
-                                <span className="ml-1 text-gray-600">
+                                <span className="ml-1 muted">
                                   {player.analytics?.ceiling_score ? player.analytics.ceiling_score.toFixed(1) : '--'}
                                 </span>
                               </div>
@@ -2223,7 +2221,7 @@ export default function FantasyPage() {
                           {/* Season Performance Stats Section */}
                           {(player.season_stats?.games_played > 0) && (
                           <div className="bg-purple-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <BarChart3 className="w-4 h-4" />
                               Season Performance
                             </h5>
@@ -2265,7 +2263,7 @@ export default function FantasyPage() {
                           {/* Consistency Section */}
                           {(player.analytics && player.analytics.consistency_score !== undefined) && (
                           <div className="bg-yellow-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <TrendingUp className="w-4 h-4" />
                               Consistency
                             </h5>
@@ -2304,7 +2302,7 @@ export default function FantasyPage() {
                             Math.abs(player.trends.fantasy_points_trend || 0) > 0.05
                           )) && (
                           <div className="bg-purple-50 rounded-lg p-3">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <TrendingUp className="w-4 h-4" />
                               Recent Trends
                             </h5>
@@ -2350,14 +2348,14 @@ export default function FantasyPage() {
                                Math.abs(player.trends?.snap_share_trend || 0) <= 0.1 &&
                                Math.abs(player.trends?.target_share_trend || 0) <= 0.005 &&
                                Math.abs(player.trends?.red_zone_usage_trend || 0) <= 0.005 && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 muted">
                                   📊 Stable Usage
                                 </span>
                               )}
                               
                               {/* Loading State */}
                               {(!player.trends || Object.keys(player.trends).length === 0) && (
-                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-600">
+                                <span className="inline-flex items-center px-2 py-1 rounded-full text-xs bg-gray-100 muted">
                                   📊 Analytics Loading...
                                 </span>
                               )}
@@ -2371,7 +2369,7 @@ export default function FantasyPage() {
                             leagueRules.ai_context &&
                             !leagueRules.ai_context.prioritize_volume) && (
                           <div className="bg-gradient-to-r from-green-50 to-emerald-50 rounded-lg p-3 border border-green-200">
-                            <h5 className="font-semibold text-gray-800 mb-2 flex items-center gap-1">
+                            <h5 className="font-semibold mb-2 flex items-center gap-1">
                               <Users className="w-4 h-4" />
                               Team Fit Analysis
                             </h5>
@@ -2379,11 +2377,11 @@ export default function FantasyPage() {
                               {/* League Selector for Multiple Leagues */}
                               {leagues.length > 1 && (
                                 <div className="flex items-center justify-between mb-2">
-                                  <span className="font-medium text-gray-700">League:</span>
+                                  <span className="font-medium muted">League:</span>
                                   <select 
                                     value={selectedLeague || ''} 
                                     onChange={(e) => e.target.value ? loadLeagueForAnalysis(e.target.value) : null}
-                                    className="text-xs px-2 py-1 border border-gray-300 rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
+                                    className="text-xs px-2 py-1 border border-[var(--border)] rounded focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
                                   >
                                     <option value="">Select League...</option>
                                     {leagues.map(league => (
@@ -2404,7 +2402,7 @@ export default function FantasyPage() {
                                       return (
                                         <div className="flex items-center justify-between">
                                           <span className="font-medium">Position Need:</span>
-                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 ">
                                             N/A
                                           </span>
                                         </div>
@@ -2427,7 +2425,7 @@ export default function FantasyPage() {
                                       <div className="flex items-center justify-between">
                                         <span className="font-medium">Position Need:</span>
                                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                          needLevel === 'critical' ? 'bg-red-100 text-red-800' :
+needLevel === 'critical' ? 'bg-red-100 text-red-800' :
                                           needLevel === 'moderate' ? 'bg-yellow-100 text-yellow-800' :
                                           'bg-green-100 text-green-800'
                                         }`}>
@@ -2446,7 +2444,7 @@ export default function FantasyPage() {
                                       return (
                                         <div className="flex items-center justify-between">
                                           <span className="font-medium">Scoring Fit:</span>
-                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 ">
                                             N/A
                                           </span>
                                         </div>
@@ -2495,7 +2493,7 @@ export default function FantasyPage() {
                                       return (
                                         <div className="flex items-center justify-between">
                                           <span className="font-medium">League Context:</span>
-                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 text-gray-800">
+                                          <span className="px-2 py-1 rounded text-xs font-medium bg-gray-100 ">
                                             N/A
                                           </span>
                                         </div>
@@ -2536,7 +2534,7 @@ export default function FantasyPage() {
                                     ) : (
                                       <div className="flex items-center justify-between">
                                         <span className="font-medium">League Match:</span>
-                                        <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">
+                                        <span className="px-2 py-1 bg-gray-100 muted rounded text-xs">
                                           📋 Standard Fit
                                         </span>
                                       </div>
@@ -2556,7 +2554,7 @@ export default function FantasyPage() {
                               ) : (
                                 <div className="text-center py-2">
                                   {leagues.length === 0 ? (
-                                    <span className="text-gray-500 text-xs">
+                                    <span className="dim text-xs">
                                       🔗 Connect a fantasy league to see personalized team fit analysis
                                     </span>
                                   ) : leagues.length === 1 ? (
@@ -2564,7 +2562,7 @@ export default function FantasyPage() {
                                       📊 Loading league data for team fit analysis...
                                     </span>
                                   ) : (
-                                    <span className="text-gray-500 text-xs">
+                                    <span className="dim text-xs">
                                       👆 Select a league above to see personalized team fit analysis
                                     </span>
                                   )}
@@ -2721,8 +2719,8 @@ export default function FantasyPage() {
                               📊 USAGE METRICS
                             </td>
                           </tr>
-                          <tr className="hover:bg-gray-50 transition-colors">
-                            <td className="p-3 border-b border-gray-200 font-medium text-gray-700">Snap Share</td>
+                          <tr className=" transition-colors">
+                            <td className="p-3 border-b border-[var(--border)] font-medium muted">Snap Share</td>
                             {(() => {
                               const snapValues = comparisonData.players.map((p: any) => p.analytics?.snap_percentage || 0);
                               const maxSnap = Math.max(...snapValues);
@@ -2734,22 +2732,22 @@ export default function FantasyPage() {
                                 const isMin = value === minSnap && value > 0 && comparisonData.players.length > 1;
                                 
                                 return (
-                                  <td key={player.player_id} className="text-center p-3 border-b border-gray-200">
+                                  <td key={player.player_id} className="text-center p-3 border-b border-[var(--border)]">
                                     {value ? (
                                       <div className="relative">
                                         {isMax && <span className="absolute -top-1 -right-1 text-green-500 text-xs">👑</span>}
                                         <span className={`font-semibold text-lg ${
-                                          isMax ? 'text-green-600' : 
+isMax ? 'text-green-600' : 
                                           isMin ? 'text-red-500' : 
                                           value >= 70 ? 'text-blue-600' : 
-                                          value >= 50 ? 'text-gray-700' : 'text-gray-500'
+                                          value >= 50 ? 'muted' : 'dim'
                                         }`}>
                                           {value.toFixed(0)}%
                                         </span>
                                         <div className="w-full bg-gray-200 rounded-full h-1 mt-1">
                                           <div 
                                             className={`h-1 rounded-full transition-all ${
-                                              isMax ? 'bg-green-500' : 
+isMax ? 'bg-green-500' : 
                                               isMin ? 'bg-red-400' : 
                                               'bg-blue-500'
                                             }`}
@@ -2758,7 +2756,7 @@ export default function FantasyPage() {
                                         </div>
                                       </div>
                                     ) : (
-                                      <span className="text-gray-400">--</span>
+                                      <span className="dim">--</span>
                                     )}
                                   </td>
                                 );
@@ -2767,11 +2765,11 @@ export default function FantasyPage() {
                           </tr>
                           {comparisonData.players.some((p: any) => ['WR', 'TE', 'RB'].includes(p.position)) && (
                             <tr>
-                              <td className="p-2 border border-blue-200 text-gray-700 font-medium">Target Share</td>
+                              <td className="p-2 border border-blue-200 muted font-medium">Target Share</td>
                               {comparisonData.players.map((player: any) => (
                                 <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                   {['WR', 'TE', 'RB'].includes(player.position) && player.analytics?.target_share ? 
-                                    <span className={`font-medium ${player.analytics.target_share >= 0.25 ? 'text-green-600' : player.analytics.target_share >= 0.15 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                    <span className={`font-medium ${player.analytics.target_share >= 0.25 ? 'text-green-600' : player.analytics.target_share >= 0.15 ? 'text-blue-600' : 'muted'}`}>
                                       {(player.analytics.target_share * 100).toFixed(0)}%
                                     </span> : '--'}
                                 </td>
@@ -2779,11 +2777,11 @@ export default function FantasyPage() {
                             </tr>
                           )}
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Red Zone Share</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">Red Zone Share</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.analytics?.red_zone_share ? 
-                                  <span className={`font-medium ${player.analytics.red_zone_share >= 0.3 ? 'text-red-600' : player.analytics.red_zone_share >= 0.2 ? 'text-orange-600' : 'text-gray-600'}`}>
+                                  <span className={`font-medium ${player.analytics.red_zone_share >= 0.3 ? 'text-red-600' : player.analytics.red_zone_share >= 0.2 ? 'text-orange-600' : 'muted'}`}>
                                     {(player.analytics.red_zone_share * 100).toFixed(0)}%
                                   </span> : '--'}
                               </td>
@@ -2792,16 +2790,16 @@ export default function FantasyPage() {
                           
                           {/* Efficiency Metrics */}
                           <tr className="bg-blue-50">
-                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 muted">
                               ⚡ Efficiency Metrics
                             </td>
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Points/Snap</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">Points/Snap</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.analytics?.points_per_snap ? 
-                                  <span className={`font-medium ${player.analytics.points_per_snap >= 0.3 ? 'text-purple-600' : player.analytics.points_per_snap >= 0.2 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                  <span className={`font-medium ${player.analytics.points_per_snap >= 0.3 ? 'text-purple-600' : player.analytics.points_per_snap >= 0.2 ? 'text-blue-600' : 'muted'}`}>
                                     {player.analytics.points_per_snap.toFixed(2)}
                                   </span> : '--'}
                               </td>
@@ -2809,11 +2807,11 @@ export default function FantasyPage() {
                           </tr>
                           {comparisonData.players.some((p: any) => p.position === 'RB') && (
                             <tr>
-                              <td className="p-2 border border-blue-200 text-gray-700 font-medium">Points/Touch</td>
+                              <td className="p-2 border border-blue-200 muted font-medium">Points/Touch</td>
                               {comparisonData.players.map((player: any) => (
                                 <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                   {player.position === 'RB' && player.analytics?.points_per_touch ? 
-                                    <span className={`font-medium ${player.analytics.points_per_touch >= 0.8 ? 'text-purple-600' : player.analytics.points_per_touch >= 0.6 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                    <span className={`font-medium ${player.analytics.points_per_touch >= 0.8 ? 'text-purple-600' : player.analytics.points_per_touch >= 0.6 ? 'text-blue-600' : 'muted'}`}>
                                       {player.analytics.points_per_touch.toFixed(2)}
                                     </span> : '--'}
                                 </td>
@@ -2823,49 +2821,49 @@ export default function FantasyPage() {
                           
                           {/* Fantasy Scoring */}
                           <tr className="bg-purple-50">
-                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                            <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 muted">
                               🎯 Fantasy Scoring
                             </td>
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">PPG</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">PPG</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.season_stats?.points_per_game ? 
-                                  <span className={`font-bold ${player.season_stats.points_per_game >= 15 ? 'text-green-600' : player.season_stats.points_per_game >= 10 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                  <span className={`font-bold ${player.season_stats.points_per_game >= 15 ? 'text-green-600' : player.season_stats.points_per_game >= 10 ? 'text-blue-600' : 'muted'}`}>
                                     {player.season_stats.points_per_game.toFixed(1)}
                                   </span> : '--'}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Floor</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">Floor</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.analytics?.floor_score ? 
-                                  <span className="font-medium text-gray-600">
+                                  <span className="font-medium muted">
                                     {player.analytics.floor_score.toFixed(1)}
                                   </span> : '--'}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Ceiling</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">Ceiling</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.analytics?.ceiling_score ? 
-                                  <span className={`font-medium ${player.analytics.ceiling_score >= 25 ? 'text-indigo-600' : player.analytics.ceiling_score >= 20 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                  <span className={`font-medium ${player.analytics.ceiling_score >= 25 ? 'text-indigo-600' : player.analytics.ceiling_score >= 20 ? 'text-blue-600' : 'muted'}`}>
                                     {player.analytics.ceiling_score.toFixed(1)}
                                   </span> : '--'}
                               </td>
                             ))}
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 text-gray-700 font-medium">Consistency</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">Consistency</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.analytics?.consistency_score ? 
-                                  <span className={`font-medium ${player.analytics.consistency_score >= 0.8 ? 'text-emerald-600' : player.analytics.consistency_score >= 0.6 ? 'text-green-600' : 'text-gray-600'}`}>
+                                  <span className={`font-medium ${player.analytics.consistency_score >= 0.8 ? 'text-emerald-600' : player.analytics.consistency_score >= 0.6 ? 'text-green-600' : 'muted'}`}>
                                     {(player.analytics.consistency_score * 100).toFixed(0)}%
                                   </span> : '--'}
                               </td>
@@ -2876,38 +2874,38 @@ export default function FantasyPage() {
                           {comparisonData.players.some((p: any) => p.position === 'RB') && (
                             <>
                               <tr className="bg-orange-50">
-                                <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 text-gray-700">
+                                <td colSpan={comparisonData.players.length + 1} className="font-semibold p-2 border border-blue-200 muted">
                                   🏈 RB Specific
                                 </td>
                               </tr>
                               <tr>
-                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">Touches/Game</td>
+                                <td className="p-2 border border-blue-200 muted font-medium">Touches/Game</td>
                                 {comparisonData.players.map((player: any) => (
                                   <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                     {player.position === 'RB' && player.analytics?.touches_per_game ? 
-                                      <span className={`font-medium ${player.analytics.touches_per_game >= 20 ? 'text-green-600' : player.analytics.touches_per_game >= 15 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                      <span className={`font-medium ${player.analytics.touches_per_game >= 20 ? 'text-green-600' : player.analytics.touches_per_game >= 15 ? 'text-blue-600' : 'muted'}`}>
                                         {player.analytics.touches_per_game.toFixed(1)}
                                       </span> : '--'}
                                   </td>
                                 ))}
                               </tr>
                               <tr>
-                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">Rush Yds/Game</td>
+                                <td className="p-2 border border-blue-200 muted font-medium">Rush Yds/Game</td>
                                 {comparisonData.players.map((player: any) => (
                                   <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                     {player.position === 'RB' && player.analytics?.rush_yards_per_game ?
-                                      <span className={`font-medium ${player.analytics.rush_yards_per_game >= 80 ? 'text-green-600' : player.analytics.rush_yards_per_game >= 60 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                      <span className={`font-medium ${player.analytics.rush_yards_per_game >= 80 ? 'text-green-600' : player.analytics.rush_yards_per_game >= 60 ? 'text-blue-600' : 'muted'}`}>
                                         {player.analytics.rush_yards_per_game.toFixed(1)}
                                       </span> : '--'}
                                   </td>
                                 ))}
                               </tr>
                               <tr>
-                                <td className="p-2 border border-blue-200 text-gray-700 font-medium">YPC</td>
+                                <td className="p-2 border border-blue-200 muted font-medium">YPC</td>
                                 {comparisonData.players.map((player: any) => (
                                   <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                     {player.position === 'RB' && player.analytics?.yards_per_carry ? 
-                                      <span className={`font-medium ${player.analytics.yards_per_carry >= 5.0 ? 'text-green-600' : player.analytics.yards_per_carry >= 4.0 ? 'text-blue-600' : 'text-gray-600'}`}>
+                                      <span className={`font-medium ${player.analytics.yards_per_carry >= 5.0 ? 'text-green-600' : player.analytics.yards_per_carry >= 4.0 ? 'text-blue-600' : 'muted'}`}>
                                         {player.analytics.yards_per_carry.toFixed(1)}
                                       </span> : '--'}
                                   </td>
@@ -2968,41 +2966,41 @@ export default function FantasyPage() {
                                   <div className="text-3xl">🏆</div>
                                   <div>
                                     <div className="text-lg font-bold text-green-700">{winner.player.name}</div>
-                                    <div className="text-sm text-gray-600">Overall Score: {winner.score.toFixed(1)}</div>
+                                    <div className="text-sm muted">Overall Score: {winner.score.toFixed(1)}</div>
                                   </div>
                                 </div>
                                 <div className="text-right">
                                   <div className="text-2xl font-bold text-green-600">+{(winner.score - (loser?.score || 0)).toFixed(1)}</div>
-                                  <div className="text-xs text-gray-500">Point Advantage</div>
+                                  <div className="text-xs dim">Point Advantage</div>
                                 </div>
                               </div>
                               
                               {/* Key Advantages */}
                               <div className="border-t pt-3">
-                                <div className="text-sm font-medium text-gray-700 mb-2">Key Advantages:</div>
+                                <div className="text-sm font-medium muted mb-2">Key Advantages:</div>
                                 <div className="grid grid-cols-2 gap-2 text-xs">
                                   {winner.player.season_stats?.points_per_game > (loser?.player.season_stats?.points_per_game || 0) && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-green-500">✓</span>
-                                      <span className="text-gray-700">Higher PPG (+{(winner.player.season_stats.points_per_game - (loser?.player.season_stats?.points_per_game || 0)).toFixed(1)})</span>
+                                      <span className="muted">Higher PPG (+{(winner.player.season_stats.points_per_game - (loser?.player.season_stats?.points_per_game || 0)).toFixed(1)})</span>
                                     </div>
                                   )}
                                   {winner.player.analytics?.snap_percentage > (loser?.player.analytics?.snap_percentage || 0) && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-green-500">✓</span>
-                                      <span className="text-gray-700">More Snaps (+{(winner.player.analytics.snap_percentage - (loser?.player.analytics?.snap_percentage || 0)).toFixed(0)}%)</span>
+                                      <span className="muted">More Snaps (+{(winner.player.analytics.snap_percentage - (loser?.player.analytics?.snap_percentage || 0)).toFixed(0)}%)</span>
                                     </div>
                                   )}
                                   {winner.player.analytics?.consistency_score > (loser?.player.analytics?.consistency_score || 0) && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-green-500">✓</span>
-                                      <span className="text-gray-700">More Consistent</span>
+                                      <span className="muted">More Consistent</span>
                                     </div>
                                   )}
                                   {winner.player.analytics?.red_zone_share > (loser?.player.analytics?.red_zone_share || 0) && (
                                     <div className="flex items-center gap-1">
                                       <span className="text-green-500">✓</span>
-                                      <span className="text-gray-700">Red Zone Usage</span>
+                                      <span className="muted">Red Zone Usage</span>
                                     </div>
                                   )}
                                 </div>
@@ -3060,7 +3058,7 @@ export default function FantasyPage() {
 
                 {/* Comparison Date */}
                 {comparisonData.comparison_date && (
-                  <div className="text-xs text-gray-500 text-center">
+                  <div className="text-xs dim text-center">
                     Comparison generated on {new Date(comparisonData.comparison_date).toLocaleDateString()}
                   </div>
                 )}
@@ -3069,7 +3067,7 @@ export default function FantasyPage() {
 
             {/* Initial State */}
             {!isLoadingSearch && searchResults.length === 0 && !searchFilters.query && !showComparison && (
-              <div className="text-center py-12 text-gray-500">
+              <div className="text-center py-12 dim">
                 <Search className="w-16 h-16 mx-auto mb-4 text-gray-300" />
                 <h3 className="text-lg font-medium mb-2">Search NFL Players</h3>
                 <p className="mb-4">Use the search bar and filters to find players</p>
@@ -3086,12 +3084,12 @@ export default function FantasyPage() {
 
         {/* Trade Analyzer Section */}
         {showTradeAnalyzer && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
+          <div className="card">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-semibold">Trade Analyzer</h2>
               <button
                 onClick={() => setShowTradeAnalyzer(false)}
-                className="text-gray-400 hover:text-gray-600"
+                className="dim hover:muted"
               >
                 <X className="w-6 h-6" />
               </button>
@@ -3117,7 +3115,7 @@ export default function FantasyPage() {
               <h2 className="text-xl font-semibold text-center mb-4">Disconnect League</h2>
               
               <div className="mb-6 text-center">
-                <p className="text-gray-700 mb-2">
+                <p className="muted mb-2">
                   Are you sure you want to disconnect <strong>"{leagueToDisconnect.name}"</strong>?
                 </p>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
@@ -3146,7 +3144,7 @@ export default function FantasyPage() {
                     setLeagueToDisconnect(null);
                   }}
                   disabled={isDisconnecting}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 border border-[var(--border)] muted rounded-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -3185,7 +3183,7 @@ export default function FantasyPage() {
               <h3 className="text-lg font-semibold text-center mb-2">Disconnect Account</h3>
               
               <div className="mb-6 text-center">
-                <p className="text-gray-700 mb-2">
+                <p className="muted mb-2">
                   Are you sure you want to disconnect <strong>@{accountToDisconnect.username}</strong> from <strong>{accountToDisconnect.platform}</strong>?
                 </p>
                 <div className="bg-red-50 border border-red-200 rounded-lg p-3 mt-4">
@@ -3212,7 +3210,7 @@ export default function FantasyPage() {
                     setAccountToDisconnect(null);
                   }}
                   disabled={isDisconnectingAccount}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                  className="flex-1 px-4 py-2 border border-[var(--border)] muted rounded-lg disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -3246,13 +3244,13 @@ export default function FantasyPage() {
               
               <form onSubmit={handleConnectAccount} className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium muted mb-2">
                     Platform
                   </label>
                   <select
                     value={connectPlatform}
                     onChange={(e) => setConnectPlatform(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="sleeper">Sleeper</option>
                     <option value="yahoo" disabled>Yahoo (Coming Soon)</option>
@@ -3261,14 +3259,14 @@ export default function FantasyPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                  <label className="block text-sm font-medium muted mb-2">
                     Username
                   </label>
                   <input
                     type="text"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder="Enter your Sleeper username"
                     required
                   />
@@ -3278,14 +3276,14 @@ export default function FantasyPage() {
                   <button
                     type="button"
                     onClick={() => setShowConnectModal(false)}
-                    className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50"
+                    className="flex-1 px-4 py-2 border border-[var(--border)] muted rounded-lg "
                   >
                     Cancel
                   </button>
                   <button
                     type="submit"
                     disabled={isConnecting}
-                    className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
+                    className="flex-1 btn btn-primary disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center"
                   >
                     {isConnecting ? (
                       <>
@@ -3301,7 +3299,8 @@ export default function FantasyPage() {
             </div>
           </div>
         )}
-      </div>
+        </div>
+      )}
     </Layout>
   );
 }

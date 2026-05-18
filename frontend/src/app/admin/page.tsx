@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import AppLoading from '@/components/yetai/AppLoading';
+import PageHeader from '@/components/yetai/PageHeader';
 import { useAuth } from '@/components/Auth';
 import {
   Shield,
@@ -281,10 +283,8 @@ export default function AdminPage() {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
+      <Layout requiresAuth fullWidth>
+        <AppLoading label="Loading admin…" />
       </Layout>
     );
   }
@@ -793,33 +793,26 @@ export default function AdminPage() {
   };
 
   return (
-    <Layout requiresAuth>
+    <Layout requiresAuth fullWidth>
+      <PageHeader
+        title="Admin Dashboard"
+        subtitle="Create and manage YetAI Bets for all users"
+      />
+
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center">
-              <Shield className="w-8 h-8 text-red-600 mr-3" />
-              Admin Dashboard
-            </h1>
-            <p className="text-gray-600 mt-1">
-              Create and manage YetAI Bets for all users
-            </p>
-          </div>
-        </div>
-        
         {/* Quick Actions */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
           <button
             onClick={() => router.push('/admin/users')}
-            className="bg-white rounded-lg border border-gray-200 p-6 hover:border-blue-500 transition-colors group"
+            className="card hover:border-blue-500 transition-colors group"
           >
             <div className="flex items-center">
               <Users className="w-8 h-8 text-blue-600 mr-4" />
               <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-blue-600">
+                <h3 className="text-lg font-semibold group-hover:text-blue-600">
                   User Management
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm muted">
                   View, edit, and manage all user accounts
                 </p>
               </div>
@@ -828,15 +821,15 @@ export default function AdminPage() {
           
           <button
             onClick={() => setShowVerificationPanel(true)}
-            className="bg-white rounded-lg border border-gray-200 p-6 hover:border-green-500 transition-colors group"
+            className="card hover:border-green-500 transition-colors group"
           >
             <div className="flex items-center">
               <Target className="w-8 h-8 text-green-600 mr-4" />
               <div className="text-left">
-                <h3 className="text-lg font-semibold text-gray-900 group-hover:text-green-600">
+                <h3 className="text-lg font-semibold group-hover:text-green-600">
                   Bet Verification
                 </h3>
-                <p className="text-sm text-gray-600">
+                <p className="text-sm muted">
                   Monitor and control automatic bet verification
                 </p>
               </div>
@@ -847,34 +840,19 @@ export default function AdminPage() {
         {/* Message Alert */}
         {message && (
           <div className={`p-4 rounded-lg ${
-            message.type === 'success' ? 'bg-green-50 text-green-800' : 'bg-red-50 text-red-800'
+message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
           }`}>
             {message.text}
           </div>
         )}
 
-        {/* Tab Navigation */}
-        <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-6">
-          <button
-            onClick={() => setActiveTab('bets')}
-            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'bets'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            <Plus className="w-4 h-4 mr-2" />
+        <div className="chip-row admin-tabs">
+          <button type="button" onClick={() => setActiveTab('bets')} className={`chip ${activeTab === 'bets' ? 'active' : ''}`}>
+            <Plus className="w-4 h-4" />
             Create Bets
           </button>
-          <button
-            onClick={() => setActiveTab('featured')}
-            className={`flex-1 flex items-center justify-center py-2 px-4 rounded-md text-sm font-medium transition-colors ${
-              activeTab === 'featured'
-                ? 'bg-white text-blue-600 shadow-sm'
-                : 'text-gray-700 hover:text-gray-900'
-            }`}
-          >
-            <Crown className="w-4 h-4 mr-2" />
+          <button type="button" onClick={() => setActiveTab('featured')} className={`chip ${activeTab === 'featured' ? 'active' : ''}`}>
+            <Crown className="w-4 h-4" />
             Featured Games
           </button>
         </div>
@@ -882,34 +860,26 @@ export default function AdminPage() {
         {activeTab === 'bets' && (
           <>
             {/* Bet Constructor */}
-        <div className="bg-white rounded-lg border border-gray-200 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+        <div className="card">
+          <h2 className="text-xl font-semibold mb-4 flex items-center">
             <Plus className="w-5 h-5 mr-2" />
             Create New Bet
           </h2>
 
           {/* Bet Type Selector */}
           <div className="mb-6">
-            <label className="block text-sm font-medium text-gray-700 mb-2">Bet Type</label>
+            <label className="block text-sm font-medium muted mb-2">Bet Type</label>
             <div className="flex space-x-4">
               <button
                 onClick={() => setBetType('straight')}
-                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                  betType === 'straight'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`chip ${betType === 'straight' ? 'active' : ''}`}
               >
                 <Target className="w-4 h-4 mr-2" />
                 Straight Bet
               </button>
               <button
                 onClick={() => setBetType('parlay')}
-                className={`flex items-center px-4 py-2 rounded-lg font-medium transition-colors ${
-                  betType === 'parlay'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                }`}
+                className={`chip ${betType === 'parlay' ? 'active' : ''}`}
               >
                 <Layers className="w-4 h-4 mr-2" />
                 Parlay Bet
@@ -921,7 +891,7 @@ export default function AdminPage() {
           {betType === 'parlay' && parlayLegs.length > 0 && (
             <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-lg font-semibold text-gray-900 flex items-center">
+                <h3 className="text-lg font-semiboldflex items-center">
                   <Layers className="w-5 h-5 text-blue-600 mr-2" />
                   Parlay Legs ({parlayLegs.length})
                 </h3>
@@ -931,10 +901,10 @@ export default function AdminPage() {
               </div>
               <div className="space-y-2">
                 {parlayLegs.map((leg, index) => (
-                  <div key={index} className="flex items-center justify-between bg-white p-3 rounded border border-gray-200">
+                  <div key={index} className="flex items-center justify-between bg-white p-3 rounded border border-[var(--border)]">
                     <div className="flex-1">
-                      <div className="font-medium text-gray-900">{leg.pick}</div>
-                      <div className="text-sm text-gray-600">{leg.game} • {leg.odds}</div>
+                      <div className="font-medium ">{leg.pick}</div>
+                      <div className="text-sm muted">{leg.game} • {leg.odds}</div>
                     </div>
                     <button
                       onClick={() => removeLegFromParlay(index)}
@@ -951,11 +921,11 @@ export default function AdminPage() {
           {/* Bet Form Fields */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Sport</label>
+              <label className="block text-sm font-medium muted mb-2">Sport</label>
               <select
                 value={formData.sport}
                 onChange={(e) => handleSportChange(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select Sport</option>
                 <option value="NFL">NFL</option>
@@ -970,14 +940,14 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium muted mb-2">
                 Game {loadingGames && <span className="text-xs text-blue-600">(Loading...)</span>}
               </label>
               {availableGames.length > 0 ? (
                 <select
                   value={selectedGame?.id || ''}
                   onChange={(e) => handleGameSelection(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select Game</option>
                   {availableGames.map((game) => (
@@ -993,18 +963,18 @@ export default function AdminPage() {
                   onChange={(e) => setFormData({...formData, game: e.target.value})}
                   placeholder={formData.sport ? "Loading games..." : "Select a sport first"}
                   disabled={loadingGames || !formData.sport}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
                 />
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Bet Type</label>
+              <label className="block text-sm font-medium muted mb-2">Bet Type</label>
               <select
                 value={formData.bet_type}
                 onChange={(e) => handleBetTypeSelection(e.target.value)}
                 disabled={!selectedGame}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
               >
                 <option value="">{selectedGame ? "Select Bet Type" : "Select a game first"}</option>
                 <option value="Spread">Spread</option>
@@ -1019,7 +989,7 @@ export default function AdminPage() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium muted mb-2">
                 Pick {formData.bet_type === 'Player Props' && loadingPlayerProps && <span className="text-xs text-blue-600">(Loading props...)</span>}
               </label>
               {formData.bet_type === 'Player Props' ? (
@@ -1037,7 +1007,7 @@ export default function AdminPage() {
                         });
                       }
                     }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Select a player prop...</option>
                     {availablePlayerProps.map((prop, index) => (
@@ -1047,12 +1017,12 @@ export default function AdminPage() {
                     ))}
                   </select>
                 ) : loadingPlayerProps ? (
-                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500 flex items-center">
+                  <div className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-gray-50 dim flex items-center">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600 mr-2"></div>
                     Loading available player props...
                   </div>
                 ) : (
-                  <div className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-500">
+                  <div className="w-full px-3 py-2 border border-[var(--border)] rounded-lg bg-gray-50 dim">
                     No player props available for this game
                   </div>
                 )
@@ -1075,7 +1045,7 @@ export default function AdminPage() {
                     return formData.pick;
                   })()}
                   onChange={(e) => handleBetOptionSelection(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 >
                   <option value="">Select {formData.bet_type.toLowerCase()} option</option>
                   {formData.bet_type === 'Spread' && selectedGame.bookmakers?.[0]?.markets?.find((m: any) => m.key === 'spreads')?.outcomes?.map((outcome: any) => {
@@ -1104,30 +1074,30 @@ export default function AdminPage() {
                   onChange={(e) => setFormData({...formData, pick: e.target.value})}
                   placeholder={formData.bet_type ? "Select a bet type first" : "e.g., Chiefs -3.5, Over 228.5"}
                   disabled={!formData.bet_type}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:bg-gray-100"
                 />
               )}
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Odds</label>
+              <label className="block text-sm font-medium muted mb-2">Odds</label>
               <input
                 type="text"
                 value={formData.odds}
                 onChange={(e) => setFormData({...formData, odds: e.target.value})}
                 placeholder="e.g., -110, +150"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Game Time</label>
+              <label className="block text-sm font-medium muted mb-2">Game Time</label>
               <input
                 type="text"
                 value={formData.game_time}
                 onChange={(e) => setFormData({...formData, game_time: e.target.value})}
                 placeholder="e.g., 8:20 PM EST"
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           </div>
@@ -1135,7 +1105,7 @@ export default function AdminPage() {
           {/* Confidence and Access Level */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
+              <label className="block text-sm font-medium muted mb-2">
                 Confidence Level: {formData.confidence}%
               </label>
               <input
@@ -1146,14 +1116,14 @@ export default function AdminPage() {
                 onChange={(e) => setFormData({...formData, confidence: parseInt(e.target.value)})}
                 className="w-full"
               />
-              <div className="flex justify-between text-xs text-gray-500 mt-1">
+              <div className="flex justify-between text-xs dim mt-1">
                 <span>50%</span>
                 <span>100%</span>
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Access Level</label>
+              <label className="block text-sm font-medium muted mb-2">Access Level</label>
               <div className="flex items-center space-x-4">
                 <button
                   onClick={() => setFormData({...formData, is_premium: false})}
@@ -1188,39 +1158,39 @@ export default function AdminPage() {
           {/* Reasoning - different for parlay vs straight */}
           {betType === 'straight' ? (
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-700 mb-2">Reasoning</label>
+              <label className="block text-sm font-medium muted mb-2">Reasoning</label>
               <textarea
                 value={formData.reasoning}
                 onChange={(e) => setFormData({...formData, reasoning: e.target.value})}
                 placeholder="Explain your analysis and reasoning for this bet..."
                 rows={4}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
             </div>
           ) : (
             <div className="mb-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Parlay Name</label>
+                <label className="block text-sm font-medium muted mb-2">Parlay Name</label>
                 <input
                   type="text"
                   value={parlayName}
                   onChange={(e) => setParlayName(e.target.value)}
                   placeholder="e.g., 3-Team NFL Sunday Parlay"
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Parlay Reasoning</label>
+                <label className="block text-sm font-medium muted mb-2">Parlay Reasoning</label>
                 <textarea
                   value={parlayReasoning}
                   onChange={(e) => setParlayReasoning(e.target.value)}
                   placeholder="Explain your overall parlay strategy and why these legs work together..."
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium muted mb-2">
                   Parlay Confidence: {parlayConfidence}%
                 </label>
                 <input
@@ -1283,15 +1253,15 @@ export default function AdminPage() {
         {showVerificationPanel && (
           <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-gray-200">
+              <div className="p-6 border-b border-[var(--border)]">
                 <div className="flex items-center justify-between">
-                  <h2 className="text-2xl font-bold text-gray-900 flex items-center">
+                  <h2 className="text-2xl font-bold flex items-center">
                     <Target className="w-6 h-6 text-green-600 mr-2" />
                     Bet Verification System
                   </h2>
                   <button
                     onClick={() => setShowVerificationPanel(false)}
-                    className="text-gray-400 hover:text-gray-600"
+                    className="dim hover:muted"
                   >
                     <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -1329,8 +1299,8 @@ export default function AdminPage() {
                 {verificationStats && (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                     {/* Scheduler Status */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-gray-900 mb-2">Scheduler Status</h3>
+                    <div className="card card-tight">
+                      <h3 className="font-semibold mb-2">Scheduler Status</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span>Status:</span>
@@ -1352,8 +1322,8 @@ export default function AdminPage() {
                     </div>
                     
                     {/* Run Statistics */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-gray-900 mb-2">Run Statistics</h3>
+                    <div className="card card-tight">
+                      <h3 className="font-semibold mb-2">Run Statistics</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span>Total Runs:</span>
@@ -1371,8 +1341,8 @@ export default function AdminPage() {
                     </div>
                     
                     {/* Bet Statistics */}
-                    <div className="bg-gray-50 p-4 rounded-lg">
-                      <h3 className="font-semibold text-gray-900 mb-2">Bet Statistics</h3>
+                    <div className="card card-tight">
+                      <h3 className="font-semibold mb-2">Bet Statistics</h3>
                       <div className="space-y-2 text-sm">
                         <div className="flex justify-between">
                           <span>Total Verified:</span>
@@ -1398,8 +1368,8 @@ export default function AdminPage() {
                 
                 {/* Recent Activity */}
                 {verificationStats?.stats && (
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-gray-900 mb-2">Recent Activity</h3>
+                  <div className="card card-tight">
+                    <h3 className="font-semibold mb-2">Recent Activity</h3>
                     <div className="space-y-2 text-sm">
                       {verificationStats.stats.last_run_time && (
                         <div className="flex justify-between">
@@ -1439,8 +1409,8 @@ export default function AdminPage() {
                 
                 {/* Configuration */}
                 {verificationStats?.config && (
-                  <div className="bg-gray-50 p-4 rounded-lg">
-                    <h3 className="font-semibold text-gray-900 mb-2">Configuration</h3>
+                  <div className="card card-tight">
+                    <h3 className="font-semibold mb-2">Configuration</h3>
                     <div className="grid grid-cols-2 gap-4 text-sm">
                       <div className="flex justify-between">
                         <span>Check Interval:</span>
@@ -1471,25 +1441,25 @@ export default function AdminPage() {
         )}
 
         {activeTab === 'featured' && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold text-gray-900 mb-4 flex items-center">
+          <div className="card">
+            <h2 className="text-xl font-semibold mb-4 flex items-center">
               <Crown className="w-5 h-5 mr-2 text-yellow-600" />
               Manage Featured Games
             </h2>
-            <p className="text-gray-600 mb-6">
+            <p className="muted mb-6">
               Create curated featured games with professional explanations that will be highlighted on the dashboard.
             </p>
 
             {/* Add New Featured Game Form */}
-            <div className="bg-gray-50 rounded-lg p-6 mb-6">
-              <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center">
+            <div className="card card-tight p-6 mb-6">
+              <h3 className="text-lg font-medium mb-4 flex items-center">
                 <Plus className="w-4 h-4 mr-2" />
                 Add New Featured Game
               </h3>
 
               {/* Game Selector */}
               <div className="mb-6">
-                <label className="block text-sm font-medium text-gray-700 mb-2">
+                <label className="block text-sm font-medium muted mb-2">
                   Select Game from Today's Schedule
                   {loadingTodaysGames && <span className="text-xs text-blue-600 ml-2">(Loading...)</span>}
                 </label>
@@ -1498,7 +1468,7 @@ export default function AdminPage() {
                   <select
                     value={selectedGameForFeatured?.id || ''}
                     onChange={(e) => handleGameSelectionForFeatured(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   >
                     <option value="">Select a game from today's schedule...</option>
                     {availableTodaysGames.map((game) => (
@@ -1508,12 +1478,12 @@ export default function AdminPage() {
                     ))}
                   </select>
                 ) : loadingTodaysGames ? (
-                  <div className="flex items-center justify-center py-4 text-gray-500">
+                  <div className="flex items-center justify-center py-4 dim">
                     <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600 mr-2"></div>
                     Loading today's games...
                   </div>
                 ) : (
-                  <div className="text-center py-4 text-gray-500 bg-gray-100 rounded-lg">
+                  <div className="text-center py-4 dim bg-gray-100 rounded-lg">
                     <Trophy className="w-8 h-8 text-gray-300 mx-auto mb-2" />
                     <p>No games found for today</p>
                     <p className="text-sm">Games typically load closer to game day</p>
@@ -1550,24 +1520,24 @@ export default function AdminPage() {
               )}
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Professional Explanation</label>
+                <label className="block text-sm font-medium muted mb-2">Professional Explanation</label>
                 <textarea
                   value={newFeaturedGame.explanation}
                   onChange={(e) => setNewFeaturedGame({...newFeaturedGame, explanation: e.target.value})}
                   placeholder="Provide a detailed analysis explaining why this game is featured. Include key factors, player insights, statistical analysis, etc."
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
 
               <div className="mb-4">
-                <label className="block text-sm font-medium text-gray-700 mb-2">Admin Notes (Internal)</label>
+                <label className="block text-sm font-medium muted mb-2">Admin Notes (Internal)</label>
                 <textarea
                   value={newFeaturedGame.admin_notes}
                   onChange={(e) => setNewFeaturedGame({...newFeaturedGame, admin_notes: e.target.value})}
                   placeholder="Internal notes for other admins (not shown to users)"
                   rows={2}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  className="w-full px-3 py-2 border border-[var(--border)] rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
             </div>
@@ -1575,7 +1545,7 @@ export default function AdminPage() {
             {/* Current Featured Games List */}
             <div className="mb-6">
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-medium text-gray-900 flex items-center">
+                <h3 className="text-lg font-mediumflex items-center">
                   <Crown className="w-4 h-4 mr-2 text-yellow-600" />
                   Current Featured Games ({featuredGames.length})
                 </h3>
@@ -1595,7 +1565,7 @@ export default function AdminPage() {
               </div>
 
               {featuredGames.length === 0 ? (
-                <div className="text-center py-8 text-gray-500">
+                <div className="text-center py-8 dim">
                   <Trophy className="w-12 h-12 text-gray-300 mx-auto mb-3" />
                   <p>No featured games configured</p>
                   <p className="text-sm">Add your first featured game above</p>
@@ -1603,12 +1573,12 @@ export default function AdminPage() {
               ) : (
                 <div className="space-y-4">
                   {featuredGames.map((game, index) => (
-                    <div key={index} className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                    <div key={index} className="border border-[var(--border)] rounded-lg p-4 bg-gray-50">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
                           <div className="flex items-center mb-2">
                             <Crown className="w-4 h-4 text-yellow-600 mr-2" />
-                            <h4 className="font-semibold text-gray-900">
+                            <h4 className="font-semibold ">
                               {game.away_team} @ {game.home_team}
                             </h4>
                             <span className="ml-2 px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded">
@@ -1617,19 +1587,19 @@ export default function AdminPage() {
                           </div>
 
                           {game.start_time && (
-                            <div className="flex items-center text-sm text-gray-600 mb-2">
+                            <div className="flex items-center text-sm muted mb-2">
                               <Calendar className="w-4 h-4 mr-1" />
                               {new Date(game.start_time).toLocaleString()}
                             </div>
                           )}
 
-                          <div className="text-sm text-gray-700 mb-2">
+                          <div className="text-sm muted mb-2">
                             <strong>Game ID:</strong> {game.game_id}
                           </div>
 
                           {game.explanation && (
-                            <div className="bg-white p-3 rounded border border-gray-200">
-                              <p className="text-sm text-gray-800">
+                            <div className="bg-white p-3 rounded border border-[var(--border)]">
+                              <p className="text-sm ">
                                 <strong>Explanation:</strong> {game.explanation}
                               </p>
                             </div>
@@ -1675,12 +1645,12 @@ export default function AdminPage() {
             </div>
 
             {!selectedGameForFeatured && (
-              <p className="text-sm text-gray-600 text-right mt-2">
+              <p className="text-sm muted text-right mt-2">
                 Select a game from today's schedule to continue
               </p>
             )}
             {selectedGameForFeatured && !newFeaturedGame.explanation.trim() && (
-              <p className="text-sm text-gray-600 text-right mt-2">
+              <p className="text-sm muted text-right mt-2">
                 Add a professional explanation to save the featured game
               </p>
             )}

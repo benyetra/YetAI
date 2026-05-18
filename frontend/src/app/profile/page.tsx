@@ -3,6 +3,8 @@
 import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
+import AppLoading from '@/components/yetai/AppLoading';
+import PageHeader from '@/components/yetai/PageHeader';
 import { useAuth } from '@/components/Auth';
 import { useNotifications } from '@/components/NotificationProvider';
 import { DetailedWebSocketStatus } from '@/components/WebSocketIndicator';
@@ -629,10 +631,8 @@ export default function ProfilePage() {
 
   if (loading) {
     return (
-      <Layout>
-        <div className="min-h-screen flex items-center justify-center">
-          <div className="text-lg">Loading...</div>
-        </div>
+      <Layout requiresAuth>
+        <AppLoading label="Loading profile…" />
       </Layout>
     );
   }
@@ -642,44 +642,16 @@ export default function ProfilePage() {
   }
 
   return (
-    <Layout>
-      <style jsx>{`
-        .sport-selected {
-          border-color: #9333ea !important;
-          background-color: #f3f4f6 !important;
-          color: #9333ea !important;
-        }
-        .sport-unselected {
-          border-color: #d1d5db !important;
-          background-color: #ffffff !important;
-          color: #374151 !important;
-        }
-      `}</style>
-      <div className="min-h-screen bg-gray-50">
-        {/* Header */}
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div className="py-8">
-              <div className="flex items-center space-x-3">
-                <div className="p-3 bg-[#A855F7]/10 rounded-xl">
-                  <UserCircle className="w-8 h-8 text-[#A855F7]" />
-                </div>
-                <div>
-                  <h1 className="text-3xl font-bold text-gray-900">Profile</h1>
-                  <p className="text-gray-600 mt-1">Manage your account, preferences, and security settings</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+    <Layout requiresAuth>
+      <PageHeader
+        title="Profile"
+        subtitle="Manage your account, preferences, and security settings"
+      />
 
-        {/* Main Content */}
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div className="grid grid-cols-1 lg:grid-cols-5 xl:grid-cols-4 gap-8">
+      <div className="profile-grid">
             
             {/* Account Info Sidebar */}
-            <div className="lg:col-span-2 xl:col-span-1">
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+            <div className="card h-auto">
                 {/* User Info */}
                 <div className="text-center mb-6">
                   <Avatar 
@@ -687,17 +659,17 @@ export default function ProfilePage() {
                     size="xl" 
                     className="mx-auto mb-4 min-w-[80px] min-h-[80px] lg:min-w-[96px] lg:min-h-[96px] flex-shrink-0"
                   />
-                  <h3 className="font-semibold text-gray-900">{user?.first_name} {user?.last_name}</h3>
-                  <p className="text-sm text-gray-600 capitalize">{user?.subscription_tier} Member</p>
+                  <h3 className="font-semibold ">{user?.first_name} {user?.last_name}</h3>
+                  <p className="text-sm muted capitalize">{user?.subscription_tier} Member</p>
                 </div>
 
-                <div className="pt-4 border-t border-gray-100">
-                  <h3 className="text-sm font-medium text-gray-900 mb-3">Account Info</h3>
-                  <div className="space-y-2 text-sm text-gray-600">
+                <div className="pt-4 border-t border-[var(--border)]">
+                  <h3 className="text-sm font-medium mb-3">Account Info</h3>
+                  <div className="space-y-2 text-sm muted">
                     <div className="flex justify-between">
                       <span>Plan</span>
                       <span className={`font-medium capitalize ${
-                        user?.subscription_tier === 'free' ? 'text-gray-600' :
+user?.subscription_tier === 'free' ? 'muted' :
                         user?.subscription_tier === 'pro' ? 'text-blue-600' : 'text-purple-600'
                       }`}>
                         {user?.subscription_tier}
@@ -705,7 +677,7 @@ export default function ProfilePage() {
                     </div>
                     <div className="flex justify-between">
                       <span>2FA</span>
-                      <span className={`font-medium ${twoFAStatus.enabled ? 'text-green-600' : 'text-gray-400'}`}>
+                      <span className={`font-medium ${twoFAStatus.enabled ? 'text-green-600' : 'dim'}`}>
                         {twoFAStatus.enabled ? 'Enabled' : 'Disabled'}
                       </span>
                     </div>
@@ -721,14 +693,13 @@ export default function ProfilePage() {
             </div>
 
             {/* Profile Content */}
-            <div className="lg:col-span-3 xl:col-span-3">
-              <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            <div className="profile-grid" style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "var(--gap-grid)" }}>
 
               {/* Avatar Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+              <div className="card h-auto">
                 <div className="flex items-center space-x-3 mb-6">
                   <Camera className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Profile Picture</h2>
+                  <h2 className="text-xl font-semibold ">Profile Picture</h2>
                 </div>
 
                 <div className="space-y-6">
@@ -750,16 +721,16 @@ export default function ProfilePage() {
 
                   <div className="text-center space-y-4">
                     <div>
-                      <h3 className="font-medium text-gray-900 mb-2">
+                      <h3 className="font-medium mb-2">
                         {user?.first_name} {user?.last_name}
                       </h3>
-                      <p className="text-sm text-gray-600">
+                      <p className="text-sm muted">
                         Upload a new profile picture or remove the current one
                       </p>
                     </div>
 
                     <div className="flex flex-col sm:flex-row justify-center gap-3">
-                      <label className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center justify-center space-x-2 whitespace-nowrap">
+                      <label className="px-4 py-2 btn-primary text-white rounded-lg hover:bg-[#9333EA] transition-colors cursor-pointer flex items-center justify-center space-x-2 whitespace-nowrap">
                         <Upload className="w-4 h-4" />
                         <span>Upload New</span>
                         <input
@@ -776,7 +747,7 @@ export default function ProfilePage() {
                       {avatarUrl && (
                         <button
                           onClick={handleDeleteAvatar}
-                          className="px-4 py-2 border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2 whitespace-nowrap"
+                          className="px-4 py-2 border border-[var(--border)] muted rounded-lg transition-colors flex items-center justify-center space-x-2 whitespace-nowrap"
                         >
                           <Trash2 className="w-4 h-4" />
                           <span>Remove</span>
@@ -789,10 +760,10 @@ export default function ProfilePage() {
 
               {/* Subscription Management Card - Only show for Pro members */}
               {user?.subscription_tier === 'pro' && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+                <div className="card h-auto">
                   <div className="flex items-center space-x-3 mb-6">
                     <Crown className="w-6 h-6 text-[#F59E0B]" />
-                    <h2 className="text-xl font-semibold text-gray-900">Subscription</h2>
+                    <h2 className="text-xl font-semibold ">Subscription</h2>
                   </div>
 
                   <div className="space-y-6">
@@ -808,21 +779,21 @@ export default function ProfilePage() {
 
                     <div className="space-y-4">
                       <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-700">Current Plan</span>
+                        <span className="text-sm font-medium muted">Current Plan</span>
                         <span className="text-sm font-bold text-[#A855F7]">Pro</span>
                       </div>
                       <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium text-gray-700">Status</span>
+                        <span className="text-sm font-medium muted">Status</span>
                         <span className="text-sm font-bold text-green-600">
                           {user?.subscription_status === 'canceling' ? 'Canceling' : 'Active'}
                         </span>
                       </div>
                       {user?.subscription_current_period_end && (
                         <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium text-gray-700">
+                          <span className="text-sm font-medium muted">
                             {user?.subscription_status === 'canceling' ? 'Access Until' : 'Next Billing'}
                           </span>
-                          <span className="text-sm font-medium text-gray-600">
+                          <span className="text-sm font-medium muted">
                             {new Date(user.subscription_current_period_end).toLocaleDateString()}
                           </span>
                         </div>
@@ -830,7 +801,7 @@ export default function ProfilePage() {
                     </div>
 
                     {user?.subscription_status !== 'canceling' && (
-                      <div className="pt-4 border-t border-gray-200">
+                      <div className="pt-4 border-t border-[var(--border)]">
                         {!showCancelConfirm ? (
                           <button
                             onClick={() => setShowCancelConfirm(true)}
@@ -867,7 +838,7 @@ export default function ProfilePage() {
                               <button
                                 onClick={() => setShowCancelConfirm(false)}
                                 disabled={isCancelingSubscription}
-                                className="flex-1 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="flex-1 px-4 py-2 bg-gray-100 muted rounded-lg hover:bg-gray-200 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                               >
                                 Keep Subscription
                               </button>
@@ -892,17 +863,17 @@ export default function ProfilePage() {
               )}
 
               {/* Personal Information Card */}
-              <div className="xl:col-span-2 bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+              <div className="xl:col-span-2 card">
                 <div className="flex items-center space-x-3 mb-4">
                   <User className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Personal Information</h2>
+                  <h2 className="text-xl font-semibold ">Personal Information</h2>
                 </div>
 
                 <form onSubmit={handleSubmit} className="space-y-4">
                   {/* Message */}
                   {message && (
                     <div className={`p-4 rounded-xl border ${
-                      message.type === 'success' 
+message.type === 'success' 
                         ? 'border-green-200 bg-green-50 text-green-800' 
                         : 'border-red-200 bg-red-50 text-red-800'
                     }`}>
@@ -919,43 +890,43 @@ export default function ProfilePage() {
                   {/* Basic Info */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">
+                      <label className="block text-sm font-medium mb-3">
                         First Name *
                       </label>
                       <input
                         type="text"
                         value={profileData.first_name}
                         onChange={(e) => handleInputChange('first_name', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full px-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                         required
                       />
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">
+                      <label className="block text-sm font-medium mb-3">
                         Last Name
                       </label>
                       <input
                         type="text"
                         value={profileData.last_name}
                         onChange={(e) => handleInputChange('last_name', e.target.value)}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full px-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                       />
                     </div>
                   </div>
 
                   {/* Email */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-3">
+                    <label className="block text-sm font-medium mb-3">
                       Email Address *
                     </label>
                     <div className="relative">
-                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <Mail className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 dim" />
                       <input
                         type="email"
                         value={profileData.email}
                         onChange={(e) => handleInputChange('email', e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full pl-12 pr-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                         required
                       />
                     </div>
@@ -969,39 +940,39 @@ export default function ProfilePage() {
 
                   {/* Username */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-3">
+                    <label className="block text-sm font-medium mb-3">
                       Username *
                     </label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+                      <User className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 dim" />
                       <input
                         type="text"
                         value={profileData.username}
                         onChange={(e) => handleInputChange('username', e.target.value)}
-                        className="w-full pl-12 pr-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full pl-12 pr-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                         placeholder="john_doe"
                         required
                       />
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs dim mt-1">
                       3+ characters, letters, numbers, underscores and hyphens only
                     </p>
                   </div>
 
                   {/* Password Section */}
-                  <div className="pt-6 border-t border-gray-100">
-                    <h3 className="text-lg font-medium text-gray-900 mb-4 flex items-center space-x-2">
+                  <div className="pt-6 border-t border-[var(--border)]">
+                    <h3 className="text-lg font-medium mb-4 flex items-center space-x-2">
                       <Lock className="w-5 h-5" />
                       <span>Change Password</span>
                     </h3>
-                    <p className="text-sm text-gray-600 mb-6">
+                    <p className="text-sm muted mb-6">
                       Leave blank to keep your current password
                     </p>
 
                     <div className="space-y-4">
                       {/* Current Password */}
                       <div>
-                        <label className="block text-sm font-medium text-gray-900 mb-3">
+                        <label className="block text-sm font-medium mb-3">
                           Current Password
                         </label>
                         <div className="relative">
@@ -1009,12 +980,12 @@ export default function ProfilePage() {
                             type={showCurrentPassword ? 'text' : 'password'}
                             value={profileData.current_password}
                             onChange={(e) => handleInputChange('current_password', e.target.value)}
-                            className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                            className="w-full px-4 py-3 pr-12 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                           />
                           <button
                             type="button"
                             onClick={() => setShowCurrentPassword(!showCurrentPassword)}
-                            className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                            className="absolute right-3 top-1/2 transform -translate-y-1/2 dim hover:muted"
                           >
                             {showCurrentPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                           </button>
@@ -1024,7 +995,7 @@ export default function ProfilePage() {
                       {/* New Password */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-3">
+                          <label className="block text-sm font-medium mb-3">
                             New Password
                           </label>
                           <div className="relative">
@@ -1032,13 +1003,13 @@ export default function ProfilePage() {
                               type={showNewPassword ? 'text' : 'password'}
                               value={profileData.new_password}
                               onChange={(e) => handleInputChange('new_password', e.target.value)}
-                              className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                              className="w-full px-4 py-3 pr-12 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                               minLength={6}
                             />
                             <button
                               type="button"
                               onClick={() => setShowNewPassword(!showNewPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 dim hover:muted"
                             >
                               {showNewPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                             </button>
@@ -1046,7 +1017,7 @@ export default function ProfilePage() {
                         </div>
 
                         <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-3">
+                          <label className="block text-sm font-medium mb-3">
                             Confirm New Password
                           </label>
                           <div className="relative">
@@ -1054,12 +1025,12 @@ export default function ProfilePage() {
                               type={showConfirmPassword ? 'text' : 'password'}
                               value={profileData.confirm_password}
                               onChange={(e) => handleInputChange('confirm_password', e.target.value)}
-                              className="w-full px-4 py-3 pr-12 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                              className="w-full px-4 py-3 pr-12 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                             />
                             <button
                               type="button"
                               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                              className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              className="absolute right-3 top-1/2 transform -translate-y-1/2 dim hover:muted"
                             >
                               {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
                             </button>
@@ -1074,7 +1045,7 @@ export default function ProfilePage() {
                     <button
                       type="submit"
                       disabled={isSubmitting}
-                      className="px-8 py-3 bg-[#A855F7] text-white rounded-xl hover:bg-[#9333EA] transition-colors disabled:opacity-50 flex items-center space-x-2 font-medium"
+                      className="px-8 py-3 btn-primary text-white rounded-xl hover:bg-[#9333EA] transition-colors disabled:opacity-50 flex items-center space-x-2 font-medium"
                     >
                       <Save className="w-5 h-5" />
                       <span>{isSubmitting ? 'Saving...' : 'Save Changes'}</span>
@@ -1084,16 +1055,16 @@ export default function ProfilePage() {
               </div>
 
               {/* Preferences Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+              <div className="card h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Heart className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Preferences</h2>
+                  <h2 className="text-xl font-semibold ">Preferences</h2>
                 </div>
 
                 <div className="space-y-4">
                   {/* Preferred Sports */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-900 mb-3">
+                    <label className="block text-sm font-medium mb-3">
                       Preferred Sports
                     </label>
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
@@ -1120,9 +1091,8 @@ export default function ProfilePage() {
                             className="sr-only"
                           />
                           <div 
-                            className={`flex-1 px-4 py-3 rounded-xl border-2 transition-all cursor-pointer ${
-                              preferences.preferred_sports.includes(sport.key) || preferences.preferred_sports.includes(sport.title)
-                                ? 'sport-selected' : 'sport-unselected'
+                            className={`chip ${
+preferences.preferred_sports.includes(sport.key) || preferences.preferred_sports.includes(sport.title) ? 'active' : ''
                             }`}
                           >
                             <span className="font-medium text-sm">{sport.title}</span>
@@ -1135,13 +1105,13 @@ export default function ProfilePage() {
                   {/* App Preferences */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">
+                      <label className="block text-sm font-medium mb-3">
                         Default Sport
                       </label>
                       <select
                         value={appPreferences.default_sport}
                         onChange={(e) => setAppPreferences(prev => ({ ...prev, default_sport: e.target.value }))}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full px-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                       >
                         {sportsList
                           .filter(sport => ['baseball_mlb', 'basketball_nba', 'americanfootball_nfl', 'icehockey_nhl', 'basketball_ncaab', 'americanfootball_ncaaf', 'basketball_wnba', 'soccer_epl'].includes(sport.key))
@@ -1154,13 +1124,13 @@ export default function ProfilePage() {
                     </div>
 
                     <div>
-                      <label className="block text-sm font-medium text-gray-900 mb-3">
+                      <label className="block text-sm font-medium mb-3">
                         Theme
                       </label>
                       <select
                         value={appPreferences.theme}
                         onChange={(e) => setAppPreferences(prev => ({ ...prev, theme: e.target.value }))}
-                        className="w-full px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                        className="w-full px-4 py-3 border border-[var(--border)] rounded-xl focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                       >
                         <option value="light">Light</option>
                         <option value="dark">Dark</option>
@@ -1172,10 +1142,10 @@ export default function ProfilePage() {
               </div>
 
               {/* Notifications Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+              <div className="card h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Bell className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Notifications</h2>
+                  <h2 className="text-xl font-semibold ">Notifications</h2>
                 </div>
 
                 <div className="space-y-4">
@@ -1187,10 +1157,10 @@ export default function ProfilePage() {
                       game_alerts: 'Game Alerts',
                       login_alerts: 'Login Alerts'
                     }).map(([key, label]) => (
-                      <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-gray-100">
+                      <div key={key} className="flex items-center justify-between p-4 rounded-xl border border-[var(--border)]">
                         <div>
-                          <div className="font-medium text-gray-900">{label}</div>
-                          <div className="text-sm text-gray-600">
+                          <div className="font-medium ">{label}</div>
+                          <div className="text-sm muted">
                             {key === 'bet_updates' && 'Get notified when your bets win or lose'}
                             {key === 'ai_predictions' && 'Receive new AI prediction alerts'}
                             {key === 'game_alerts' && 'Game start and score notifications'}
@@ -1211,12 +1181,12 @@ export default function ProfilePage() {
                             className="sr-only"
                           />
                           <div className={`w-11 h-6 rounded-full transition-colors ${
-                            preferences.notification_settings[key as keyof typeof preferences.notification_settings]
-                              ? 'bg-[#A855F7]'
+preferences.notification_settings[key as keyof typeof preferences.notification_settings]
+                              ? 'btn-primary'
                               : 'bg-gray-200'
                           }`}>
                             <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
-                              preferences.notification_settings[key as keyof typeof preferences.notification_settings]
+preferences.notification_settings[key as keyof typeof preferences.notification_settings]
                                 ? 'translate-x-5'
                                 : 'translate-x-0.5'
                             } mt-0.5`}></div>
@@ -1227,15 +1197,15 @@ export default function ProfilePage() {
                   </div>
 
                   {/* Delivery Methods */}
-                  <div className="pt-6 border-t border-gray-100">
-                    <h3 className="font-medium text-gray-900 mb-4">Delivery Methods</h3>
+                  <div className="pt-6 border-t border-[var(--border)]">
+                    <h3 className="font-medium mb-4">Delivery Methods</h3>
                     <div className="space-y-3">
                       {Object.entries({
                         email: 'Email Notifications',
                         push: 'Push Notifications'
                       }).map(([key, label]) => (
                         <div key={key} className="flex items-center justify-between">
-                          <span className="text-gray-700">{label}</span>
+                          <span className="muted">{label}</span>
                           <label className="relative inline-flex items-center cursor-pointer">
                             <input
                               type="checkbox"
@@ -1250,12 +1220,12 @@ export default function ProfilePage() {
                               className="sr-only"
                             />
                             <div className={`w-11 h-6 rounded-full transition-colors ${
-                              preferences.notification_settings[key as keyof typeof preferences.notification_settings]
-                                ? 'bg-[#A855F7]'
+preferences.notification_settings[key as keyof typeof preferences.notification_settings]
+                                ? 'btn-primary'
                                 : 'bg-gray-200'
                             }`}>
                               <div className={`w-5 h-5 bg-white rounded-full shadow-md transform transition-transform ${
-                                preferences.notification_settings[key as keyof typeof preferences.notification_settings]
+preferences.notification_settings[key as keyof typeof preferences.notification_settings]
                                   ? 'translate-x-5'
                                   : 'translate-x-0.5'
                               } mt-0.5`}></div>
@@ -1269,26 +1239,26 @@ export default function ProfilePage() {
               </div>
 
               {/* Security Card */}
-              <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+              <div className="card h-auto">
                 <div className="flex items-center space-x-3 mb-4">
                   <Shield className="w-6 h-6 text-[#A855F7]" />
-                  <h2 className="text-xl font-semibold text-gray-900">Security</h2>
+                  <h2 className="text-xl font-semibold ">Security</h2>
                 </div>
 
                 <div className="space-y-4">
                   {/* 2FA Section */}
-                  <div className="p-4 rounded-xl border border-gray-100">
+                  <div className="p-4 rounded-xl border border-[var(--border)]">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h3 className="font-medium text-gray-900">Two-Factor Authentication</h3>
-                        <p className="text-sm text-gray-600 mt-1">
+                        <h3 className="font-medium ">Two-Factor Authentication</h3>
+                        <p className="text-sm muted mt-1">
                           Add an extra layer of security to your account
                         </p>
                       </div>
                       <div className={`px-3 py-1 rounded-full text-xs font-medium ${
-                        twoFAStatus.enabled 
+twoFAStatus.enabled 
                           ? 'bg-green-100 text-green-800' 
-                          : 'bg-gray-100 text-gray-600'
+                          : 'bg-gray-100 muted'
                       }`}>
                         {twoFAStatus.enabled ? 'Enabled' : 'Disabled'}
                       </div>
@@ -1306,7 +1276,7 @@ export default function ProfilePage() {
                       {!twoFAStatus.enabled ? (
                         <button
                           onClick={setup2FA}
-                          className="px-4 py-2 bg-[#A855F7] text-white rounded-lg hover:bg-[#9333EA] transition-colors"
+                          className="px-4 py-2 btn-primary text-white rounded-lg hover:bg-[#9333EA] transition-colors"
                         >
                           Enable 2FA
                         </button>
@@ -1322,9 +1292,9 @@ export default function ProfilePage() {
                   </div>
 
                   {/* Session Info */}
-                  <div className="p-4 rounded-xl border border-gray-100">
-                    <h3 className="font-medium text-gray-900 mb-2">Active Session</h3>
-                    <p className="text-sm text-gray-600 mb-4">
+                  <div className="p-4 rounded-xl border border-[var(--border)]">
+                    <h3 className="font-medium mb-2">Active Session</h3>
+                    <p className="text-sm muted mb-4">
                       You are currently signed in on this device
                     </p>
                     <DetailedWebSocketStatus />
@@ -1334,14 +1304,14 @@ export default function ProfilePage() {
 
               {/* Developer Tools Card - Admin Only */}
               {user?.is_admin && (
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6 h-auto">
+                <div className="card h-auto">
                   <div className="flex items-center space-x-3 mb-4">
                     <TestTube className="w-6 h-6 text-[#A855F7]" />
-                    <h2 className="text-xl font-semibold text-gray-900">Developer Tools</h2>
+                    <h2 className="text-xl font-semibold ">Developer Tools</h2>
                   </div>
 
                   <div className="space-y-6">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm muted">
                       Test notification system functionality
                     </p>
 
@@ -1365,22 +1335,14 @@ export default function ProfilePage() {
                 </div>
               )}
 
-              </div>
-
               {/* Save Button */}
-              <div className="flex justify-end mt-6">
-                <button
-                  onClick={savePreferences}
-                  disabled={isLoading}
-                  className="px-8 py-3 bg-[#A855F7] text-white rounded-xl hover:bg-[#9333EA] transition-colors disabled:opacity-50 flex items-center space-x-2 font-medium"
-                >
+              <div className="flex justify-end mt-6" style={{ gridColumn: '1 / -1' }}>
+                <button type="button" onClick={savePreferences} disabled={isLoading} className="btn btn-primary">
                   <Save className="w-5 h-5" />
                   <span>{isLoading ? 'Saving...' : 'Save All Changes'}</span>
                 </button>
               </div>
-            </div>
-          </div>
-        </div>
+      </div>
 
         {/* 2FA Setup Modal */}
         {show2FAModal && (
@@ -1390,8 +1352,8 @@ export default function ProfilePage() {
                 <>
                   <div className="text-center mb-6">
                     <QrCode className="w-12 h-12 text-[#A855F7] mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900">Setup 2FA</h3>
-                    <p className="text-gray-600 mt-2">
+                    <h3 className="text-xl font-semibold ">Setup 2FA</h3>
+                    <p className="muted mt-2">
                       Scan this QR code with your authenticator app
                     </p>
                   </div>
@@ -1401,9 +1363,9 @@ export default function ProfilePage() {
                       <img 
                         src={qrCodeData} 
                         alt="2FA QR Code" 
-                        className="mx-auto border border-gray-200 rounded-lg"
+                        className="mx-auto border border-[var(--border)] rounded-lg"
                       />
-                      <p className="text-xs text-gray-500 mt-2">
+                      <p className="text-xs dim mt-2">
                         Manual entry: {secretKey}
                       </p>
                     </div>
@@ -1411,7 +1373,7 @@ export default function ProfilePage() {
                   
                   <button
                     onClick={() => setSetupStep(2)}
-                    className="w-full py-3 bg-[#A855F7] text-white rounded-xl hover:bg-[#9333EA] transition-colors"
+                    className="w-full py-3 btn-primary text-white rounded-xl hover:bg-[#9333EA] transition-colors"
                   >
                     I've Scanned the QR Code
                   </button>
@@ -1422,8 +1384,8 @@ export default function ProfilePage() {
                 <>
                   <div className="text-center mb-6">
                     <Smartphone className="w-12 h-12 text-[#A855F7] mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900">Verify Setup</h3>
-                    <p className="text-gray-600 mt-2">
+                    <h3 className="text-xl font-semibold ">Verify Setup</h3>
+                    <p className="muted mt-2">
                       Enter the 6-digit code from your authenticator app
                     </p>
                   </div>
@@ -1434,7 +1396,7 @@ export default function ProfilePage() {
                       value={verificationCode}
                       onChange={(e) => setVerificationCode(e.target.value)}
                       placeholder="000000"
-                      className="w-full px-4 py-3 border border-gray-200 rounded-xl text-center text-lg font-mono tracking-widest focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
+                      className="w-full px-4 py-3 border border-[var(--border)] rounded-xl text-center text-lg font-mono tracking-widest focus:ring-2 focus:ring-[#A855F7] focus:border-transparent"
                       maxLength={6}
                     />
                   </div>
@@ -1442,14 +1404,14 @@ export default function ProfilePage() {
                   <div className="flex space-x-3">
                     <button
                       onClick={() => setSetupStep(1)}
-                      className="flex-1 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors"
+                      className="flex-1 py-3 border border-[var(--border)] muted rounded-xltransition-colors"
                     >
                       Back
                     </button>
                     <button
                       onClick={verify2FASetup}
                       disabled={verificationCode.length !== 6}
-                      className="flex-1 py-3 bg-[#A855F7] text-white rounded-xl hover:bg-[#9333EA] transition-colors disabled:opacity-50"
+                      className="flex-1 py-3 btn-primary text-white rounded-xl hover:bg-[#9333EA] transition-colors disabled:opacity-50"
                     >
                       Verify
                     </button>
@@ -1461,8 +1423,8 @@ export default function ProfilePage() {
                 <>
                   <div className="text-center mb-6">
                     <Check className="w-12 h-12 text-green-600 mx-auto mb-4" />
-                    <h3 className="text-xl font-semibold text-gray-900">2FA Enabled!</h3>
-                    <p className="text-gray-600 mt-2">
+                    <h3 className="text-xl font-semibold ">2FA Enabled!</h3>
+                    <p className="muted mt-2">
                       Save these backup codes in a safe place
                     </p>
                   </div>
@@ -1480,14 +1442,14 @@ export default function ProfilePage() {
                   <div className="flex space-x-3">
                     <button
                       onClick={copyBackupCodes}
-                      className="flex-1 py-3 border border-gray-200 text-gray-700 rounded-xl hover:bg-gray-50 transition-colors flex items-center justify-center space-x-2"
+                      className="flex-1 py-3 border border-[var(--border)] muted rounded-xltransition-colors flex items-center justify-center space-x-2"
                     >
                       {copiedCodes ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                       <span>{copiedCodes ? 'Copied!' : 'Copy Codes'}</span>
                     </button>
                     <button
                       onClick={() => setShow2FAModal(false)}
-                      className="flex-1 py-3 bg-[#A855F7] text-white rounded-xl hover:bg-[#9333EA] transition-colors"
+                      className="flex-1 py-3 btn-primary text-white rounded-xl hover:bg-[#9333EA] transition-colors"
                     >
                       Done
                     </button>
@@ -1497,14 +1459,13 @@ export default function ProfilePage() {
 
               <button
                 onClick={() => setShow2FAModal(false)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+                className="absolute top-4 right-4 dim hover:muted"
               >
                 <X className="w-6 h-6" />
               </button>
             </div>
           </div>
         )}
-      </div>
     </Layout>
   );
 }

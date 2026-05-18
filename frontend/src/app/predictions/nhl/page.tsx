@@ -1,94 +1,41 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Layout from '@/components/Layout';
-import { useAuth } from '@/components/Auth';
-import { Crown } from 'lucide-react';
+import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
-  PredictionsTable,
-  PredictionsPaywall,
-  PredictionsError,
   formatNumber,
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
-import { usePredictions } from '@/lib/usePredictions';
 
 const GOALIE_COLUMNS: ColumnDef[] = [
   { key: 'goalie_name', label: 'Goalie', format: (v) => formatString(v) },
   { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
-  { key: 'predicted_saves', label: 'Proj Saves', align: 'right', format: (v) => formatNumber(v, 1) },
-  { key: 'saves_line', label: 'Saves Line', align: 'right', format: (v) => formatNumber(v, 1) },
+  { key: 'predicted_saves', label: 'Proj Saves', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
+  { key: 'saves_line', label: 'Saves Line', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'betting_recommendation', label: 'Pick', format: (v) => formatString(v) },
-  { key: 'confidence', label: 'Conf', align: 'right', format: (v) => formatNumber(v, 2) },
+  { key: 'confidence', label: 'Conf', align: 'right', mono: true, format: (v) => formatNumber(v, 2) },
 ];
 
 const SHOTS_COLUMNS: ColumnDef[] = [
   { key: 'player_name', label: 'Player', format: (v) => formatString(v) },
   { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
-  { key: 'predicted_shots', label: 'Proj SOG', align: 'right', format: (v) => formatNumber(v, 1) },
-  { key: 'shots_line', label: 'Line', align: 'right', format: (v) => formatNumber(v, 1) },
+  { key: 'predicted_shots', label: 'Proj SOG', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
+  { key: 'shots_line', label: 'Line', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'betting_recommendation', label: 'Pick', format: (v) => formatString(v) },
-  { key: 'confidence', label: 'Conf', align: 'right', format: (v) => formatNumber(v, 2) },
+  { key: 'confidence', label: 'Conf', align: 'right', mono: true, format: (v) => formatNumber(v, 2) },
 ];
 
 export default function NHLPredictionsPage() {
-  const { isAuthenticated, loading: authLoading } = useAuth();
-  const router = useRouter();
-  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
-  const { data, loading, error, paywalled } = usePredictions('nhl', date, { enabled: isAuthenticated });
-
-  useEffect(() => {
-    if (!authLoading && !isAuthenticated) {
-      router.push('/?login=true');
-    }
-  }, [authLoading, isAuthenticated, router]);
-
-  if (!isAuthenticated) return null;
-
   return (
-    <Layout>
-      <div className="space-y-6">
-        <header className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-3">
-              <span>🏒 NHL Predictions</span>
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
-                <Crown className="w-3 h-3" /> PRO
-              </span>
-            </h1>
-            <p className="text-gray-600 mt-1">Goalie save projections and player shots-on-goal predictions.</p>
-          </div>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
-          />
-        </header>
-
-        {paywalled ? (
-          <PredictionsPaywall onUpgrade={() => router.push('/upgrade')} />
-        ) : error ? (
-          <PredictionsError message={error} />
-        ) : (
-          <div className="space-y-6">
-            <PredictionsTable
-              title="Goalie Predictions"
-              rows={data?.goalie_predictions ?? []}
-              columns={GOALIE_COLUMNS}
-              loading={loading}
-            />
-            <PredictionsTable
-              title="Player Shots Predictions"
-              rows={data?.player_shots ?? []}
-              columns={SHOTS_COLUMNS}
-              loading={loading}
-            />
-          </div>
-        )}
-      </div>
-    </Layout>
+    <SportPredictionsPage
+      sport="nhl"
+      leagueLabel="NHL"
+      emoji="🏒"
+      subtitle="Goalie save projections and player shots-on-goal predictions."
+      groups={[
+        { title: 'Goalie Predictions', responseKey: 'goalie_predictions', columns: GOALIE_COLUMNS },
+        { title: 'Player Shots Predictions', responseKey: 'player_shots', columns: SHOTS_COLUMNS },
+      ]}
+    />
   );
 }
