@@ -153,6 +153,13 @@ class PropWatchlist:
         """
         Rebuild watchlist from pikkit_bets + pikkit_picks tables.
         Returns the number of picks loaded.
+
+        Pikkit's RDS-derived schema stores bets/picks verbatim from Pikkit's
+        API (no MLB enrichment). For watchlist lookups we need integer
+        game_pk and player_id (MLB Stats API). Those are not direct columns
+        — when present they live inside the `raw` JSONB blob. Picks that
+        cannot be resolved to a game_pk + player_id pair are skipped with
+        a warning rather than indexed.
         """
         from app.models.predictions_models import (
             PikkitBet,
@@ -167,10 +174,20 @@ class PropWatchlist:
         for md in db_session.query(PropMarketDefinition).filter_by(active=True).all():
             market_defs[md.market_id] = md.stat_key
 
-        # Load open bets with their picks
+        # Load open bets with their picks. Pikkit statuses are uppercase
+        # ("OPEN", "ACTIVE", "PENDING"); legacy lowercase variants kept
+        # for forward-compat.
+        open_statuses = [
+            "OPEN",
+            "ACTIVE",
+            "PENDING",
+            "open",
+            "active",
+            "pending",
+        ]
         open_bets = (
             db_session.query(PikkitBet)
-            .filter(PikkitBet.status.in_(["open", "active", "pending"]))
+            .filter(PikkitBet.status.in_(open_statuses))
             .all()
         )
 
@@ -180,6 +197,20 @@ class PropWatchlist:
             total_legs = len(picks)
             bet_type = "parlay" if total_legs > 1 else "straight"
 
+            # raw JSONB may contain MLB enrichment (game_pk, player resolution)
+            bet_raw = bet.raw or {}
+            picks_raw = {p.get("_id") or p.get("id"): p for p in bet_raw.get("picks", []) if isinstance(p, dict)}
+
+            # Stake/odds/payout derived from RDS-faithful columns.
+            stake = float(bet.amount) if bet.amount is not None else None
+            odds = float(bet.odds) if bet.odds is not None else None
+            # Pikkit profit is net-of-stake; payout = stake + profit when known.
+            potential_payout = (
+                float(bet.amount) + float(bet.profit)
+                if bet.amount is not None and bet.profit is not None
+                else None
+            )
+
             for idx, pick in enumerate(picks, 1):
                 stat_key = market_defs.get(pick.market_id)
                 if not stat_key:
@@ -188,9 +219,32 @@ class PropWatchlist:
                     )
                     continue
 
-                if not pick.game_pk or not pick.player_id:
+                # Resolve MLB integer ids from the raw blob; pick.player_id
+                # is Pikkit's own player_id (string), not the MLB Stats API id.
+                raw_pick = picks_raw.get(pick.pikkit_id, {})
+                game_pk = raw_pick.get("game_pk") or bet_raw.get("game_pk")
+                mlb_player_id = (
+                    raw_pick.get("mlb_player_id")
+                    or raw_pick.get("player_id_mlb")
+                )
+                player_name = (
+                    raw_pick.get("player_name")
+                    or raw_pick.get("name")
+                    or "Unknown"
+                )
+
+                if not game_pk or not mlb_player_id:
                     logger.warning(
-                        f"Pick {pick.pikkit_id} missing game_pk or player_id"
+                        f"Pick {pick.pikkit_id} missing MLB game_pk or player_id"
+                    )
+                    continue
+
+                try:
+                    game_pk = int(game_pk)
+                    mlb_player_id = int(mlb_player_id)
+                except (TypeError, ValueError):
+                    logger.warning(
+                        f"Pick {pick.pikkit_id} has non-integer game_pk/player_id"
                     )
                     continue
 
@@ -204,16 +258,16 @@ class PropWatchlist:
                 info = PickInfo(
                     pick_id=pick.pikkit_id,
                     bet_id=bet.pikkit_id,
-                    player_id=pick.player_id,
-                    player_name=pick.player_name or "Unknown",
-                    game_pk=pick.game_pk,
+                    player_id=mlb_player_id,
+                    player_name=player_name,
+                    game_pk=game_pk,
                     stat_key=stat_key,
                     side=side,
                     line=line,
                     bet_type=bet_type,
-                    stake=bet.stake,
-                    odds=bet.odds,
-                    potential_payout=bet.potential_payout,
+                    stake=stake,
+                    odds=odds,
+                    potential_payout=potential_payout,
                     leg_index=idx,
                     total_legs=total_legs,
                 )

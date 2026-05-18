@@ -17,10 +17,12 @@ from sqlalchemy import (
     Index,
     Integer,
     JSON,
+    Numeric,
     String,
     Text,
     UniqueConstraint,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from app.core.database import Base
 
 
@@ -2631,49 +2633,58 @@ class BullpenFatigue(Base):
 
 
 class PikkitBet(Base):
+    """Pikkit bet record, RDS-derived schema (preserved verbatim from
+    YetiBets RDS during the YetAI migration). Primary key is pikkit_id
+    (Pikkit's own bet UUID); there is no surrogate integer id column.
+    """
+
     __tablename__ = "pred_pikkit_bets"
-    id = Column(Integer, primary_key=True)
-    pikkit_id = Column(String(100), unique=True, nullable=False)
-    status = Column(
-        String(20), nullable=False, default="open"
-    )  # open, active, pending, settled, void
-    bet_type = Column(
-        String(20), nullable=False, default="straight"
-    )  # straight, parlay
-    sportsbook = Column(String(50), nullable=True)
-    stake = Column(Float, nullable=True)
-    odds = Column(String(20), nullable=True)  # e.g. "+220", "-110"
-    potential_payout = Column(Float, nullable=True)
-    placed_at = Column(DateTime, nullable=True)
-    settled_at = Column(DateTime, nullable=True)
-    result = Column(String(20), nullable=True)  # win, loss, push, void
-    raw_data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
-    updated_at = Column(
-        DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow
-    )
+    pikkit_id = Column(String, primary_key=True)
+    institution_id = Column(String, nullable=False)
+    type = Column(String, nullable=False)  # e.g. straight, parlay
+    is_sgp = Column(Boolean, nullable=True)
+    is_live = Column(Boolean, nullable=True)
+    is_dfs = Column(Boolean, nullable=True)
+    is_future = Column(Boolean, nullable=True)
+    status = Column(String, nullable=False)  # open, active, settled, etc.
+    amount = Column(Numeric(10, 2), nullable=False)  # stake
+    amount_units = Column(Numeric(10, 4), nullable=True)
+    profit = Column(Numeric(10, 2), nullable=True)
+    profit_units = Column(Numeric(10, 4), nullable=True)
+    odds = Column(Numeric(12, 4), nullable=False)
+    promo_info = Column(JSONB, nullable=True)
+    placed_at = Column(DateTime(timezone=True), nullable=True)
+    settled_at = Column(DateTime(timezone=True), nullable=True)
+    raw = Column(JSONB, nullable=False)
+    first_seen_at = Column(DateTime(timezone=True), nullable=False)
+    last_synced_at = Column(DateTime(timezone=True), nullable=False)
 
     def __repr__(self):
         return f"<PikkitBet {self.pikkit_id} {self.status}>"
 
 
 class PikkitPick(Base):
+    """Pikkit pick (leg) record, RDS-derived schema. Primary key is pikkit_id
+    (Pikkit's own pick UUID). bet_id FKs to PikkitBet.pikkit_id.
+    """
+
     __tablename__ = "pred_pikkit_picks"
-    id = Column(Integer, primary_key=True)
-    pikkit_id = Column(String(100), unique=True, nullable=False)
+    pikkit_id = Column(String, primary_key=True)
     bet_id = Column(
-        String(100), ForeignKey("pred_pikkit_bets.pikkit_id"), nullable=False
+        String, ForeignKey("pred_pikkit_bets.pikkit_id"), nullable=False
     )
-    market_id = Column(String(100), nullable=True)
-    pick_name = Column(String(500), nullable=True)  # e.g. "Over 0.5 · Ohtani HR"
-    player_name = Column(String(200), nullable=True)
-    player_id = Column(Integer, nullable=True)  # MLB Stats API player ID
-    game_pk = Column(Integer, nullable=True)  # MLB Stats API game PK
-    team = Column(String(100), nullable=True)
-    status = Column(String(20), nullable=True)  # pending, cleared, killed
-    result = Column(String(20), nullable=True)  # win, loss, push
-    raw_data = Column(JSON, nullable=True)
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    pick_name = Column(Text, nullable=False)  # e.g. "Over 0.5 - Ohtani HR"
+    status = Column(String, nullable=False)
+    odds = Column(Numeric(12, 4), nullable=False)
+    sport_id = Column(String, nullable=False)
+    league_id = Column(String, nullable=False)
+    event_id = Column(String, nullable=False)
+    market_id = Column(String, nullable=False)
+    outcome_id = Column(String, nullable=False)
+    team_id = Column(String, nullable=True)
+    player_id = Column(String, nullable=True)
+    event_starts_at = Column(DateTime(timezone=True), nullable=True)
+    event_is_final = Column(Boolean, nullable=True)
 
     def __repr__(self):
         return f"<PikkitPick {self.pikkit_id} {self.pick_name}>"
