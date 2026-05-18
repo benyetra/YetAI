@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sidebar, Header, MobileBottomNav } from './Navigation';
+import { Sidebar, Header, MobileBottomNav, MobileNavProvider } from './Navigation';
 import { useAuth } from './Auth';
 import EmailVerificationBanner from './EmailVerificationBanner';
 
@@ -14,6 +14,7 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
   const showBanner = user && !user.is_verified;
 
   return (
+    <MobileNavProvider>
     <div className="app">
       <Sidebar />
       <div className="main">
@@ -29,5 +30,6 @@ export default function Layout({ children, fullWidth = false }: LayoutProps) {
       </div>
       <MobileBottomNav />
     </div>
+    </MobileNavProvider>
   );
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import {
   Home,
@@ -89,6 +89,51 @@ function getUserInitials(user: { first_name?: string; last_name?: string; userna
   return (user.username || 'U').slice(0, 2).toUpperCase();
 }
 
+type MobileNavContextValue = {
+  isMobileOpen: boolean;
+  toggleMobileNav: () => void;
+  closeMobileNav: () => void;
+};
+
+const MobileNavContext = createContext<MobileNavContextValue | null>(null);
+
+function useMobileNav() {
+  const ctx = useContext(MobileNavContext);
+  if (!ctx) {
+    throw new Error('useMobileNav must be used within MobileNavProvider');
+  }
+  return ctx;
+}
+
+export function MobileNavProvider({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  useEffect(() => {
+    setIsMobileOpen(false);
+  }, [pathname]);
+
+  useEffect(() => {
+    if (!isMobileOpen) return;
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, [isMobileOpen]);
+
+  const value = useMemo<MobileNavContextValue>(
+    () => ({
+      isMobileOpen,
+      toggleMobileNav: () => setIsMobileOpen((open) => !open),
+      closeMobileNav: () => setIsMobileOpen(false),
+    }),
+    [isMobileOpen],
+  );
+
+  return <MobileNavContext.Provider value={value}>{children}</MobileNavContext.Provider>;
+}
+
 function NavButton({
   item,
   active,
@@ -124,17 +169,14 @@ export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout, isAuthenticated } = useAuth();
-  const [isMobileOpen, setIsMobileOpen] = useState(false);
-
-  useEffect(() => {
-    setIsMobileOpen(false);
-  }, [pathname]);
+  const { isMobileOpen, closeMobileNav } = useMobileNav();
 
   const handleNavClick = (item: NavItem) => {
     if (item.requiresAuth && !isAuthenticated) {
       router.push('/?login=true');
       return;
     }
+    closeMobileNav();
     router.push(item.href);
   };
 
@@ -155,35 +197,13 @@ export function Sidebar() {
     <>
       <button
         type="button"
-        onClick={() => setIsMobileOpen(!isMobileOpen)}
-        className="lg:hidden fixed top-4 left-4 z-50 icon-btn"
-        aria-label="Toggle menu"
-      >
-        {isMobileOpen ? <X size={18} /> : <Menu size={18} />}
-      </button>
+        className={`nav-mobile-backdrop ${isMobileOpen ? 'is-visible' : ''}`}
+        onClick={closeMobileNav}
+        aria-label="Close menu"
+        tabIndex={isMobileOpen ? 0 : -1}
+      />
 
-      {isMobileOpen && (
-        <div
-          className="lg:hidden fixed inset-0 z-40"
-          style={{ background: 'rgba(0,0,0,0.55)' }}
-          onClick={() => setIsMobileOpen(false)}
-          aria-hidden
-        />
-      )}
-
-      <aside
-        className={`sidebar ${isMobileOpen ? 'sidebar--open' : ''}`}
-        style={
-          isMobileOpen
-            ? {
-                position: 'fixed',
-                zIndex: 45,
-                display: 'flex',
-                transform: 'translateX(0)',
-              }
-            : undefined
-        }
-      >
+      <aside className={`sidebar ${isMobileOpen ? 'sidebar--open' : ''}`}>
         <div className="brand">
           <div className="brand-mark">
             <img src="/logo.png" alt="" width={20} height={20} style={{ borderRadius: 4 }} />
@@ -286,6 +306,21 @@ export function Sidebar() {
   );
 }
 
+function MobileMenuToggle() {
+  const { isMobileOpen, toggleMobileNav } = useMobileNav();
+  return (
+    <button
+      type="button"
+      onClick={toggleMobileNav}
+      className="nav-mobile-toggle icon-btn"
+      aria-label={isMobileOpen ? 'Close menu' : 'Open menu'}
+      aria-expanded={isMobileOpen}
+    >
+      {isMobileOpen ? <X size={18} /> : <Menu size={18} />}
+    </button>
+  );
+}
+
 export function Header() {
   const { isAuthenticated } = useAuth();
   const { unreadCount } = useNotifications();
@@ -296,6 +331,7 @@ export function Header() {
 
   return (
     <header className="topbar">
+      <MobileMenuToggle />
       <div className="crumb">
         <span>YetAI</span>
         <ChevronRight size={12} style={{ opacity: 0.5 }} />
