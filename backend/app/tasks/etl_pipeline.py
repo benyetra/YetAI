@@ -152,6 +152,48 @@ def nba_generate_blocks_predictions():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_pra_predictions")
+def nba_generate_pra_predictions():
+    from app.services.etl.nba.generate_pra_predictions import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_no_steals")
+def nba_generate_no_steals():
+    from app.services.etl.nba.generate_no_steals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.store_no_steals_actuals")
+def nba_store_no_steals_actuals():
+    from app.services.etl.nba.generate_no_steals import store_no_steals_actuals
+
+    return store_no_steals_actuals()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.totals_projector")
+def nba_totals_projector():
+    from app.services.etl.nba.totals_projector import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.totals_accuracy_tracker")
+def nba_totals_accuracy_tracker():
+    from app.services.etl.nba.totals_accuracy_tracker import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.calculate_prediction_accuracy")
+def nba_calculate_prediction_accuracy():
+    from app.services.etl.nba.calculate_prediction_accuracy import run
+
+    return run()
+
+
 # ============================================================================
 # Pipeline orchestrators — one per sport.
 # Run the sub-tasks in dependency order. Failures of a non-critical task
@@ -173,6 +215,14 @@ NBA_PHASES = [
         "store_actuals",
         [
             nba_store_actuals,
+            nba_store_no_steals_actuals,
+        ],
+    ),
+    (
+        "grading",
+        [
+            nba_totals_accuracy_tracker,
+            nba_calculate_prediction_accuracy,
         ],
     ),
     (
@@ -193,13 +243,16 @@ NBA_PHASES = [
     (
         "predictions",
         [
-            nba_generate_predictions,
-            nba_generate_rebounds_predictions,
-            nba_generate_assists_predictions,
-            nba_generate_three_pt_made_predictions,
-            nba_generate_free_throws_made_predictions,
+            nba_generate_no_steals,
             nba_generate_steals_predictions,
             nba_generate_blocks_predictions,
+            nba_generate_assists_predictions,
+            nba_generate_rebounds_predictions,
+            nba_generate_predictions,
+            nba_generate_three_pt_made_predictions,
+            nba_generate_free_throws_made_predictions,
+            nba_generate_pra_predictions,
+            nba_totals_projector,
             nba_find_top_performers,
         ],
     ),
@@ -251,17 +304,45 @@ def run_nba_update_pipeline(self) -> dict:
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_mlb_update_pipeline", bind=True)
 def run_mlb_update_pipeline(self) -> dict:
-    """MLB daily pipeline orchestrator — stub.
+    """MLB daily maintenance: refresh games cache + report pred_* row counts.
 
-    Sub-tasks to port from YetiBets/scripts/mlb/:
-      - update_pitcher_stats.py
-      - update_hitter_stats.py
-      - homer_predictions.py + strikeout_projections.py
-      - meta_learner.py
-      - value_bets.py
+    Strikeout/HR/game projections are populated by existing YetAI/legacy jobs;
+    this orchestrator does not stub — it syncs Odds API games and surfaces
+  what is already in Railway Postgres for the slate date.
     """
+    from datetime import datetime
+
+    from app.core.database import SessionLocal
+    from app.models.predictions_models import GameProjections, Homer, StrikeoutProjections
+    from app.services.etl.nba._espn import now_eastern
+    from app.tasks.games_sync import sync_games_cache
+
     logger.info("MLB update pipeline starting (task_id=%s)", self.request.id)
-    return {"status": "skeleton_only", "sport": "mlb"}
+    today = now_eastern().date()
+    games_sync = sync_games_cache.run()
+
+    db = SessionLocal()
+    try:
+        table_counts = {
+            "strikeout_projections": db.query(StrikeoutProjections)
+            .filter(StrikeoutProjections.date == today)
+            .count(),
+            "game_projections": db.query(GameProjections)
+            .filter(GameProjections.date == today)
+            .count(),
+            "home_run_predictions": db.query(Homer).count(),
+        }
+    finally:
+        db.close()
+
+    return {
+        "status": "ok",
+        "sport": "mlb",
+        "date": today.isoformat(),
+        "finished_at": datetime.utcnow().isoformat() + "Z",
+        "games_sync": games_sync,
+        "table_counts": table_counts,
+    }
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)

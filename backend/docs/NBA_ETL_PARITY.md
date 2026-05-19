@@ -14,23 +14,23 @@ Orchestrator: `app.tasks.etl_pipeline.NBA_PHASES` + Celery Beat `nba-update-pipe
 | `*_predictions_v2.py --store-actuals` (multi) | `store_actuals.py` | `nba.store_actuals` |
 | `update_team_offense/defense *_api_sports` | `update_team_offense_stats.py` + `update_team_defense_stats.py` | `nba.update_team_stats` |
 | `update_player_career_data_api_sports.py` | `update_player_career_data.py` | `nba.update_player_data` |
-| `update_injury_status.py` | `update_injury_status.py` | `nba.update_injury_status` |
+| `update_injury_status.py` | `update_injury_status.py` (CBS only) | `nba.update_injury_status` |
 | `update_expected_minutes.py` | `update_expected_minutes.py` | `nba.update_expected_minutes` |
 | `update_game_lines.py` | `update_game_lines.py` | `nba.update_game_lines` |
+| `no_steals.py` | `generate_no_steals.py` | `nba.generate_no_steals` |
 | `points_predictions_v2.py` | `generate_points_predictions.py` | `nba.generate_predictions` |
 | `rebounds/assists/steals/blocks/freethrows *_v2` | `generate_*_predictions.py` | matching tasks |
 | `three_point_predictions_v2.py` | `generate_three_pt_made_predictions.py` | `nba.generate_three_pt_made_predictions` |
+| `pra_predictions.py` | `generate_pra_predictions.py` | `nba.generate_pra_predictions` |
+| `totals_projector.py` | `totals_projector.py` | `nba.totals_projector` |
+| `totals_accuracy_tracker.py` | `totals_accuracy_tracker.py` | `nba.totals_accuracy_tracker` |
+| `calculate_prediction_accuracy.py` | `calculate_prediction_accuracy.py` | `nba.calculate_prediction_accuracy` |
 | `find_top_performers.py` | `find_top_performers.py` | `nba.find_top_performers` |
 
 ## Not yet ported
 
 | YetiBets script | Notes |
 |-----------------|--------|
-| `no_steals.py` | Qualitative steals picks; separate from numeric steals v2 |
-| `pra_predictions.py` | Combo prop after individual stats |
-| `totals_projector.py` | Game O/U team totals |
-| `totals_accuracy_tracker.py` | Grades totals vs actuals |
-| `calculate_prediction_accuracy.py` | Aggregate accuracy metrics |
 | `store_free_throw_actuals.py` | Partially covered by `store_actuals` free_throw stat |
 
 Track new ports as Celery sub-tasks under `NBA_PHASES`; do not re-add logic to YetiBets.

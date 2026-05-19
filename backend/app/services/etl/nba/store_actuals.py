@@ -37,6 +37,8 @@ from app.models.predictions_models import (
     FreeThrowPredictions,
     PointsActuals,
     PointsProjections,
+    PRAActuals,
+    PRAProjections,
     ReboundsActuals,
     ReboundsProjections,
     RecentGames,
@@ -285,6 +287,94 @@ def _store_stat(
     }
 
 
+def _store_pra(db: Session, target_date: date) -> dict[str, int]:
+    """PRA actuals = points + rebounds + assists from RecentGames."""
+    written = 0
+    missing_actual = 0
+    errors = 0
+
+    projections = (
+        db.query(PRAProjections).filter(PRAProjections.date == target_date).all()
+    )
+    if not projections:
+        return {
+            "written": 0,
+            "missing_actual": 0,
+            "errors": 0,
+            "projections_found": 0,
+        }
+
+    player_ids = [p.player_id for p in projections]
+    recent_rows = (
+        db.query(RecentGames)
+        .filter(
+            RecentGames.game_date == target_date,
+            RecentGames.player_id.in_(player_ids),
+        )
+        .all()
+    )
+    recent_by_pid = {r.player_id: r for r in recent_rows}
+
+    for proj in projections:
+        try:
+            recent = recent_by_pid.get(proj.player_id)
+            if recent is None:
+                missing_actual += 1
+                continue
+            ap = recent.points or 0
+            ar = recent.rebounds or 0
+            aa = recent.assists or 0
+            actual_pra = float(ap + ar + aa)
+            correct = _compute_correct_prediction(
+                proj, actual_pra, bool(proj.fanduel_line)
+            )
+            existing = (
+                db.query(PRAActuals)
+                .filter(
+                    PRAActuals.date == target_date,
+                    PRAActuals.player_id == proj.player_id,
+                )
+                .first()
+            )
+            payload = {
+                "player_name": proj.player_name,
+                "opponent_team_name": proj.opponent_team_name,
+                "actual_points": float(ap),
+                "actual_rebounds": float(ar),
+                "actual_assists": float(aa),
+                "actual_pra": actual_pra,
+                "projected_pra": proj.projected_pra,
+                "prediction_error": actual_pra - proj.projected_pra,
+                "correct_prediction": correct,
+            }
+            if existing:
+                for k, v in payload.items():
+                    setattr(existing, k, v)
+            else:
+                db.add(
+                    PRAActuals(
+                        date=target_date,
+                        player_id=proj.player_id,
+                        **payload,
+                    )
+                )
+            db.commit()
+            written += 1
+        except Exception:
+            logger.exception(
+                "store_actuals[pra]: failed for player_id=%s", proj.player_id
+            )
+            db.rollback()
+            errors += 1
+
+    return {
+        "written": written,
+        "missing_actual": missing_actual,
+        "errors": errors,
+        "projections_found": len(projections),
+    }
+
+
 def run(target_date: date | None = None) -> dict:
     """Run store_actuals for every configured stat.
 
@@ -306,6 +396,8 @@ def run(target_date: date | None = None) -> dict:
         for stat_key, cfg in STAT_CONFIG.items():
             summary["stats"][stat_key] = _store_stat(db, stat_key, cfg, target_date)
             logger.info("store_actuals[%s]: %s", stat_key, summary["stats"][stat_key])
+        summary["stats"]["pra"] = _store_pra(db, target_date)
+        logger.info("store_actuals[pra]: %s", summary["stats"]["pra"])
     finally:
         db.close()
 
