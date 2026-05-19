@@ -49,6 +49,9 @@ twilio==9.1.0
 boto3==1.35.0
 botocore>=1.35.0
 
+# ML inference (XGBoost points model — Development-flm)
+xgboost>=2.0.0
+
 # Environment Management
 python-dotenv==1.0.0
 

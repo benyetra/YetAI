@@ -112,7 +112,9 @@ def nba_update_game_lines():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_predictions")
 def nba_generate_predictions():
-    return _stub("nba.generate_predictions")
+    from app.services.etl.nba.generate_points_predictions import run
+
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.find_top_performers")

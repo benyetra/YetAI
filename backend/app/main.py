@@ -2370,6 +2370,11 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     # Expected minutes: pure Python over pred_recent_games; bounded by active
     # players or roster size. Usually <30s.
     "app.tasks.etl_pipeline.nba.update_expected_minutes": 120.0,
+    # Points predictions: per-active-player feature build (~50 games of pandas
+    # ops + a few SQLAlchemy joins) then a single XGBoost predict per player.
+    # Cold-start adds an S3 model download (~1-2 MB). Typical run <60s, ceiling
+    # bumped for cold cache + 100+ active players on a busy night.
+    "app.tasks.etl_pipeline.nba.generate_predictions": 300.0,
 }
 
 
