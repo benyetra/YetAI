@@ -39,6 +39,9 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
+# Worker entrypoint for Railway (start-command override may skip Dockerfile ENTRYPOINT)
+RUN chmod +x /app/scripts/railway-celery.sh
+
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
 USER appuser

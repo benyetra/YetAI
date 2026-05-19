@@ -109,6 +109,58 @@ Health check configuration:
 - **Start Period**: 40 seconds (Docker healthcheck)
 - **Interval**: 30 seconds
 
+## Celery worker (`celery-worker` service)
+
+The API and worker share `backend/Dockerfile`. Two common failures:
+
+1. **Wrong Docker build context** — if the worker builds from the **repo root** instead of `backend/`, the image has `/app/backend/app/` not `/app/app/`. `PYTHONPATH=/app` cannot fix that; use `PYTHONPATH=/app/backend` or fix build settings below.
+2. **Custom start command bypasses ENTRYPOINT** — use the start script, not bare `celery -A ...`.
+
+### Worker settings (must match API)
+
+In Railway → **celery-worker** → **Settings**:
+
+| Setting | Correct value |
+|--------|----------------|
+| **Root Directory** | Same as API (usually empty = repo root, or `backend`) |
+| **Builder** | Dockerfile |
+| **Dockerfile** | If root is repo root: `backend/Dockerfile` + variable `RAILWAY_DOCKERFILE_PATH=backend/Dockerfile` if needed |
+| **Config file** | Root `railway.json` sets `"dockerContext": "backend"` — worker must be in the same project and not override builder to Nixpacks |
+
+Compare **Build logs** on API vs worker: both should show `Using detected Dockerfile` and the same context. If worker image layout is wrong, run a one-off start command to confirm:
+
+```text
+bash -c 'ls -la /app/app 2>&1; ls -la /app/backend/app 2>&1'
+```
+
+### Worker start command
+
+After deploy includes `scripts/railway-celery.sh`:
+
+```text
+/app/scripts/railway-celery.sh
+```
+
+**Immediate workaround** (repo-root context, no new deploy):
+
+```text
+bash -c 'cd /app/backend && PYTHONPATH=/app/backend exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=1'
+```
+
+Do not use bare `celery -A app.celery_app ...` without resolving `APP_ROOT` first.
+
+After changing the start command or `backend/Dockerfile`, redeploy the worker:
+
+```bash
+railway service          # link celery-worker
+railway redeploy -y
+railway logs --deployment
+```
+
+Success looks like a Celery banner with `transport: redis://...`, not `No module named 'app'`.
+
+Ensure `REDIS_URL` on the worker references the Railway Redis plugin (not `localhost:6379`).
+
 ## Troubleshooting
 
 ### Deployment Fails to Start
