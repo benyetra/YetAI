@@ -251,9 +251,9 @@ def store_actual_result(projection: NBATotalsProjections, actual: Dict):
                 was_over=was_over,
                 correct_prediction=correct_prediction
             )
-            db.session.add(new_actual)
+            db.add(new_actual)
 
-        db.session.commit()
+        db.commit()
 
         logger.info(
             f"Stored actual: {projection.away_team_name} @ {projection.home_team_name} "
@@ -263,7 +263,7 @@ def store_actual_result(projection: NBATotalsProjections, actual: Dict):
 
     except Exception as e:
         logger.error(f"Error storing actual result: {e}")
-        db.session.rollback()
+        db.rollback()
 
 
 def calculate_accuracy_metrics(days: int = 30) -> Dict:
@@ -422,14 +422,14 @@ def save_accuracy_metrics(metrics: Dict):
                 edge_5_plus_count=metrics.get('edge_5_plus_count'),
                 edge_5_plus_accuracy=metrics.get('edge_5_plus_accuracy'),
             )
-            db.session.add(new_record)
+            db.add(new_record)
 
-        db.session.commit()
+        db.commit()
         logger.info("Saved accuracy metrics to database")
 
     except Exception as e:
         logger.error(f"Error saving accuracy metrics: {e}")
-        db.session.rollback()
+        db.rollback()
 
 
 def update_yesterdays_results():

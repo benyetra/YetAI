@@ -666,14 +666,14 @@ def save_projection(projection: Dict):
                 home_starters=projection.get('home_starters'),
                 away_starters=projection.get('away_starters'),
             )
-            db.session.add(new_proj)
+            db.add(new_proj)
 
-        db.session.commit()
+        db.commit()
         logger.info(f"Saved projection for {projection['away_team']} @ {projection['home_team']}")
 
     except Exception as e:
         logger.error(f"Error saving projection: {e}")
-        db.session.rollback()
+        db.rollback()
 
 
 def get_todays_games() -> List[Dict]:
