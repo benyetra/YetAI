@@ -214,11 +214,10 @@ def _run_phases(sport: str, phases: List) -> dict:
         results = []
         for task in tasks:
             try:
-                # .apply() runs synchronously in the current worker (rather than
-                # enqueuing a new message). For a sequential pipeline that's
-                # exactly what we want — sub-task results are visible in the
-                # parent's logs and a failure aborts the phase.
-                r = task.apply().get()
+                # .run() executes the task body in-process (no broker, no result
+                # backend). Avoids "Never call result.get() within a task!" from
+                # task.apply().get() when the orchestrator itself is a Celery task.
+                r = task.run()
                 results.append({"task": task.name, "result": r})
             except Exception as e:
                 logger.exception("Task %s failed in phase %s", task.name, phase_name)
@@ -244,8 +243,8 @@ def _run_phases(sport: str, phases: List) -> dict:
 def run_nba_update_pipeline(self) -> dict:
     """Daily NBA prediction pipeline (03:30 ET, celery_app beat_schedule).
 
-    Runs NBA_PHASES sequentially via task.apply(). See NBA_ETL_PARITY.md for
-  gaps vs the 28-step YetiBets daily_pipeline list."""
+    Runs NBA_PHASES sequentially via task.run() (in-process). See NBA_ETL_PARITY.md
+    for gaps vs the 28-step YetiBets daily_pipeline list."""
     logger.info("NBA update pipeline starting (task_id=%s)", self.request.id)
     return _run_phases("nba", NBA_PHASES)
 

@@ -55,7 +55,7 @@ xgboost>=2.0.0
 # Environment Management
 python-dotenv==1.0.0
 
-# Injury scrape (CBS Sports + RotoWire HTML) — Development-1nt
+# Injury scrape (CBS Sports HTML) — Development-1nt
 # (nba-api==1.5.2 already pinned above at line 20 from the original sports
 # stats deps block; do not re-add as nba_api with a different version — pip
 # normalizes hyphen↔underscore and errors on the conflict.)

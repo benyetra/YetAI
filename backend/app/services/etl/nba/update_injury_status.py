@@ -1,8 +1,8 @@
-"""Refresh pred_player_injury_status from CBS Sports + RotoWire scrapes.
+"""Refresh pred_player_injury_status from CBS Sports injury scrape.
 
-Port of YetiBets/scripts/nba/update_injury_status.py. Both sources are HTML
-scrapes; we de-duplicate by player_name (lowercase) and keep the more severe
-status when two sources disagree. Players who have played in the last 7 days
+Port of YetiBets/scripts/nba/update_injury_status.py (RotoWire source removed:
+legacy nba-injury-report.php returns 404 and the replacement page no longer
+exposes scrape-friendly markup). Players who have played in the last 7 days
 with positive minutes are auto-cleared back to 'healthy'.
 """
 
@@ -105,37 +105,6 @@ def _fetch_cbs() -> list[dict]:
     return out
 
 
-def _fetch_rotowire() -> list[dict]:
-    out: list[dict] = []
-    try:
-        r = requests.get(
-            "https://www.rotowire.com/basketball/nba-injury-report.php",
-            headers=HEADERS,
-            timeout=30,
-        )
-        r.raise_for_status()
-        soup = BeautifulSoup(r.text, "html.parser")
-        for item in soup.find_all("div", class_="injury-item"):
-            player_elem = item.find("a", class_="injury-item__player")
-            status_elem = item.find("span", class_="injury-item__status")
-            injury_elem = item.find("span", class_="injury-item__injury")
-            if not (player_elem and status_elem):
-                continue
-            out.append(
-                {
-                    "player_name": player_elem.get_text(strip=True),
-                    "injury_type": (
-                        injury_elem.get_text(strip=True) if injury_elem else None
-                    ),
-                    "status": _normalize_status(status_elem.get_text(strip=True)),
-                }
-            )
-        logger.info("injury_status: RotoWire returned %d entries", len(out))
-    except Exception:
-        logger.exception("injury_status: RotoWire scrape failed")
-    return out
-
-
 def _find_player_id(db, player_name: str) -> int | None:
     """Match injury-report name to TeamRoster.player_id. Tries exact, then full
     first+last match, then first-initial+last fallback. All case-insensitive
@@ -195,7 +164,7 @@ def _calc_games_missed(db, player_id: int) -> int:
 
 
 def run() -> dict:
-    all_injuries = _fetch_cbs() + _fetch_rotowire()
+    all_injuries = _fetch_cbs()
     if not all_injuries:
         return {
             "status": "ok",
@@ -290,7 +259,7 @@ def run() -> dict:
 
         return {
             "status": "ok",
-            "cbs_plus_rotowire_raw": len(all_injuries),
+            "cbs_raw": len(all_injuries),
             "unique_players": len(injury_map),
             "created": created,
             "updated": updated,
