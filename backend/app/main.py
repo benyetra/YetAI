@@ -2337,6 +2337,52 @@ async def admin_celery_health(
     return response
 
 
+# Allow-list of ETL tasks that can be fired on demand via the admin endpoint.
+# Listed by Celery task name (matches @celery_app.task(name=...)). Kept narrow
+# on purpose: anything destructive or expensive is left off until it's earned
+# a place via real operational need.
+ADMIN_FIREABLE_TASKS: dict[str, float] = {
+    "app.tasks.health.ping": 10.0,
+    "app.tasks.games_sync.sync_games_cache": 180.0,
+    "app.tasks.etl_pipeline.nba.yesterdays_players": 120.0,
+    "app.tasks.etl_pipeline.nba.today_active_players": 120.0,
+}
+
+
+@app.post("/api/admin/celery/run-task")
+async def admin_celery_run_task(
+    task_name: str,
+    admin_user: dict = Depends(require_admin),
+):
+    """Fire one Celery task by name and return its result synchronously.
+
+    Strictly limited to ADMIN_FIREABLE_TASKS — adding new entries is an
+    intentional code change, not a runtime config knob. Used to verify newly
+    ported ETL services without waiting for the daily Beat schedule.
+    """
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+    from app.celery_app import celery_app
+
+    timeout = ADMIN_FIREABLE_TASKS.get(task_name)
+    if timeout is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"task '{task_name}' is not in the admin allow-list",
+        )
+
+    def _send_and_wait() -> dict:
+        async_result = celery_app.send_task(task_name)
+        try:
+            payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
+            return {"status": "ok", "task_id": async_result.id, "result": payload}
+        except CeleryTimeoutError:
+            return {"status": "timeout", "task_id": async_result.id, "timeout_s": timeout}
+        except Exception as exc:
+            return {"status": "error", "task_id": async_result.id, "error": str(exc)}
+
+    return await asyncio.to_thread(_send_and_wait)
+
+
 @app.options("/api/admin/users")
 async def options_admin_get_users():
     """Handle CORS preflight for admin get users"""

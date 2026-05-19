@@ -44,12 +44,14 @@ def nba_update_team_roster():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.yesterdays_players")
 def nba_yesterdays_players():
-    return _stub("nba.yesterdays_players")
+    from app.services.etl.nba.yesterdays_players import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.today_active_players")
 def nba_today_active_players():
-    return _stub("nba.today_active_players")
+    from app.services.etl.nba.today_active_players import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_recent_games")
