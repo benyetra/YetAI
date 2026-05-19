@@ -19,6 +19,7 @@ from app.models.predictions_models import (
     TeamDefenseStats,
     TeamOffenseStats,
     TeamRoster,
+    TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
 
@@ -79,13 +80,26 @@ TEAM_ID_TO_NAME: dict[int, str] = {}
 
 
 def load_team_data() -> None:
-    """Build team name/id maps from pred_team_roster."""
+    """Build team name/id maps from pred_team_offense_stats / pred_team_defense_stats."""
     global TEAM_NAME_TO_ID, TEAM_ID_TO_NAME
     if TEAM_NAME_TO_ID:
         return
+    for model in (TeamOffenseStats, TeamDefenseStats):
+        rows = (
+            db.query(model.team_id, model.team_name)
+            .distinct(model.team_id)
+            .all()
+        )
+        for team_id, team_name in rows:
+            if team_id is None or not team_name:
+                continue
+            TEAM_NAME_TO_ID[team_name.lower()] = int(team_id)
+            TEAM_ID_TO_NAME[int(team_id)] = team_name
+    if TEAM_NAME_TO_ID:
+        return
     rows = (
-        db.query(TeamRoster.team_id, TeamRoster.team_name)
-        .distinct(TeamRoster.team_id)
+        db.query(TodayActivePlayers.team_id, TodayActivePlayers.team_name)
+        .distinct(TodayActivePlayers.team_id)
         .all()
     )
     for team_id, team_name in rows:
