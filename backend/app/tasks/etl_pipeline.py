@@ -39,7 +39,8 @@ def _stub(task_name: str) -> dict:
 # --- NBA sub-tasks (mirrors nba_update_runner.py's 26 scripts) -----------------
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_roster")
 def nba_update_team_roster():
-    return _stub("nba.update_team_roster")
+    from app.services.etl.nba.update_team_roster import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.yesterdays_players")

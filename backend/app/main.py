@@ -2346,6 +2346,9 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.games_sync.sync_games_cache": 180.0,
     "app.tasks.etl_pipeline.nba.yesterdays_players": 120.0,
     "app.tasks.etl_pipeline.nba.today_active_players": 120.0,
+    # 30 teams × ~2s per /players call + roster delete + 0.2s sleep ≈ 90s typical;
+    # padding for api-sports cold cache or 429s pushes the conservative ceiling to 5min.
+    "app.tasks.etl_pipeline.nba.update_team_roster": 300.0,
 }
 
 
