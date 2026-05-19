@@ -21,10 +21,7 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Cache buster: 2025-01-12-v1
-# Worker-rebuild trigger 2026-05-19: celery-worker service has watchPatterns
-# ["backend/**"], so changes to root requirements.txt alone do not retrigger
-# its build. Touching the Dockerfile is enough.
+# Cache buster: 2026-05-19-mlb-statsapi
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
@@ -37,16 +34,16 @@ RUN pip install --no-cache-dir --upgrade pip && \
     echo "=== Verifying google-auth installation ===" && \
     pip show google-auth && \
     python -c "import google.auth; print('google-auth successfully imported')" && \
-    echo "=== google-auth successfully installed ==="
+    echo "=== google-auth successfully installed ===" && \
+    echo "=== Verifying MLB-StatsAPI (import statsapi) ===" && \
+    pip show MLB-StatsAPI && \
+    python -c "import statsapi; print('statsapi successfully imported')"
 
 # Copy application code
 COPY . .
 
-# Worker entrypoint for Railway (start-command override may skip Dockerfile ENTRYPOINT).
-# Worker service builds from repo root (script at /app/backend/scripts/),
-# API service builds from backend/ (script at /app/scripts/). Handle either.
-RUN if [ -f /app/scripts/railway-celery.sh ]; then chmod +x /app/scripts/railway-celery.sh; fi && \
-    if [ -f /app/backend/scripts/railway-celery.sh ]; then chmod +x /app/backend/scripts/railway-celery.sh; fi
+# Worker entrypoint for Railway (start-command override may skip Dockerfile ENTRYPOINT)
+RUN chmod +x /app/scripts/railway-celery.sh
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
