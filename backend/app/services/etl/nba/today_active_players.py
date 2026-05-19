@@ -29,8 +29,16 @@ def run() -> dict:
     # ongoing-game state. Matches YetiBets's behavior.
     games = fetch_games_for_date(None)
     if not games:
-        logger.info("today_active_players: no NBA games for %s — keeping existing data", today)
-        return {"status": "ok", "date": today.isoformat(), "games": 0, "players": 0, "kept_stale": True}
+        logger.info(
+            "today_active_players: no NBA games for %s — keeping existing data", today
+        )
+        return {
+            "status": "ok",
+            "date": today.isoformat(),
+            "games": 0,
+            "players": 0,
+            "kept_stale": True,
+        }
 
     team_ids, matchups = build_matchups(games)
 
@@ -75,7 +83,9 @@ def run() -> dict:
         db.commit()
         logger.info(
             "today_active_players: stored %d players across %d games for %s",
-            len(entries), len(games), today,
+            len(entries),
+            len(games),
+            today,
         )
         return {
             "status": "ok",

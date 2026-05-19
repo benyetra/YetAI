@@ -40,24 +40,28 @@ def _stub(task_name: str) -> dict:
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_roster")
 def nba_update_team_roster():
     from app.services.etl.nba.update_team_roster import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.yesterdays_players")
 def nba_yesterdays_players():
     from app.services.etl.nba.yesterdays_players import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.today_active_players")
 def nba_today_active_players():
     from app.services.etl.nba.today_active_players import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_recent_games")
 def nba_update_recent_games():
     from app.services.etl.nba.update_recent_games import run
+
     return run()
 
 
@@ -74,30 +78,35 @@ def nba_update_team_stats():
     defense is freshest right after update_recent_games runs."""
     from app.services.etl.nba.update_team_offense_stats import run as run_off
     from app.services.etl.nba.update_team_defense_stats import run as run_def
+
     return {"offense": run_off(), "defense": run_def()}
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_player_data")
 def nba_update_player_data():
     from app.services.etl.nba.update_player_career_data import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_injury_status")
 def nba_update_injury_status():
     from app.services.etl.nba.update_injury_status import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_expected_minutes")
 def nba_update_expected_minutes():
     from app.services.etl.nba.update_expected_minutes import run
+
     return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_game_lines")
 def nba_update_game_lines():
     from app.services.etl.nba.update_game_lines import run
+
     return run()
 
 

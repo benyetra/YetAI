@@ -25,9 +25,11 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = "https://v2.nba.api-sports.io"
 API_KEY_ENV = "NBA_API_KEY"
 
+
 def get_current_season() -> int:
     """NBA league year starts in October."""
     from datetime import datetime
+
     now = datetime.now()
     return now.year if now.month >= 10 else now.year - 1
 
@@ -36,14 +38,37 @@ def get_current_season() -> int:
 # scripts/nba/team_id_mapping.json (30 NBA teams; ids 31 and 37 both map to
 # the Spurs in source data — preserved as-is).
 API_SPORTS_TO_NBA: dict[int, int] = {
-    1: 1610612737, 2: 1610612738, 4: 1610612751, 5: 1610612766,
-    6: 1610612741, 7: 1610612739, 8: 1610612742, 9: 1610612743,
-    10: 1610612765, 11: 1610612744, 14: 1610612745, 15: 1610612754,
-    16: 1610612746, 17: 1610612747, 19: 1610612763, 20: 1610612748,
-    21: 1610612749, 22: 1610612750, 23: 1610612740, 24: 1610612752,
-    25: 1610612760, 26: 1610612753, 27: 1610612755, 28: 1610612756,
-    29: 1610612757, 30: 1610612758, 31: 1610612759, 37: 1610612759,
-    38: 1610612761, 40: 1610612762, 41: 1610612764,
+    1: 1610612737,
+    2: 1610612738,
+    4: 1610612751,
+    5: 1610612766,
+    6: 1610612741,
+    7: 1610612739,
+    8: 1610612742,
+    9: 1610612743,
+    10: 1610612765,
+    11: 1610612744,
+    14: 1610612745,
+    15: 1610612754,
+    16: 1610612746,
+    17: 1610612747,
+    19: 1610612763,
+    20: 1610612748,
+    21: 1610612749,
+    22: 1610612750,
+    23: 1610612740,
+    24: 1610612752,
+    25: 1610612760,
+    26: 1610612753,
+    27: 1610612755,
+    28: 1610612756,
+    29: 1610612757,
+    30: 1610612758,
+    31: 1610612759,
+    37: 1610612759,
+    38: 1610612761,
+    40: 1610612762,
+    41: 1610612764,
 }
 
 # Players missing from nba_api's static list — usually recent draftees.
@@ -86,7 +111,9 @@ def api_request(endpoint: str, params: dict | None = None) -> dict | None:
             response.raise_for_status()
             return response.json()
         except requests.RequestException as exc:
-            logger.warning("api-sports %s failed (attempt %d/3): %s", endpoint, attempt + 1, exc)
+            logger.warning(
+                "api-sports %s failed (attempt %d/3): %s", endpoint, attempt + 1, exc
+            )
             if attempt < 2:
                 time.sleep(5)
     return None

@@ -2322,7 +2322,11 @@ async def admin_celery_health(
             payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
             return {"status": "ok", "task_id": async_result.id, "result": payload}
         except CeleryTimeoutError:
-            return {"status": "timeout", "task_id": async_result.id, "timeout_s": timeout}
+            return {
+                "status": "timeout",
+                "task_id": async_result.id,
+                "timeout_s": timeout,
+            }
         except Exception as exc:
             return {"status": "error", "task_id": async_result.id, "error": str(exc)}
 
@@ -2396,7 +2400,11 @@ async def admin_celery_run_task(
             payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
             return {"status": "ok", "task_id": async_result.id, "result": payload}
         except CeleryTimeoutError:
-            return {"status": "timeout", "task_id": async_result.id, "timeout_s": timeout}
+            return {
+                "status": "timeout",
+                "task_id": async_result.id,
+                "timeout_s": timeout,
+            }
         except Exception as exc:
             return {"status": "error", "task_id": async_result.id, "error": str(exc)}
 

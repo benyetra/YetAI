@@ -92,12 +92,10 @@ def run() -> dict:
 
     db = SessionLocal()
     try:
-        roster = (
-            db.query(TeamRoster.player_id, TeamRoster.player_name)
-            .distinct()
-            .all()
+        roster = db.query(TeamRoster.player_id, TeamRoster.player_name).distinct().all()
+        logger.info(
+            "update_player_career_data: %d roster players to process", len(roster)
         )
-        logger.info("update_player_career_data: %d roster players to process", len(roster))
 
         updated = 0
         skipped_no_api_id = 0
@@ -126,11 +124,19 @@ def run() -> dict:
                     continue
 
                 totals = {
-                    "points": 0.0, "fg_attempts": 0.0, "fg_made": 0.0,
-                    "three_pt_attempts": 0.0, "three_pt_made": 0.0,
-                    "ft_attempts": 0.0, "ft_made": 0.0,
-                    "minutes": 0.0, "steals": 0.0, "turnovers": 0.0,
-                    "blocks": 0.0, "personal_fouls": 0.0, "plus_minus": 0.0,
+                    "points": 0.0,
+                    "fg_attempts": 0.0,
+                    "fg_made": 0.0,
+                    "three_pt_attempts": 0.0,
+                    "three_pt_made": 0.0,
+                    "ft_attempts": 0.0,
+                    "ft_made": 0.0,
+                    "minutes": 0.0,
+                    "steals": 0.0,
+                    "turnovers": 0.0,
+                    "blocks": 0.0,
+                    "personal_fouls": 0.0,
+                    "plus_minus": 0.0,
                 }
                 for g in games:
                     totals["points"] += _safe_int(g.get("points"))
@@ -153,11 +159,17 @@ def run() -> dict:
                 career = {
                     "points": round(totals["points"], 1),
                     "fg_attempts": round(totals["fg_attempts"], 1),
-                    "fg_percentage": round(pct(totals["fg_made"], totals["fg_attempts"]), 3),
+                    "fg_percentage": round(
+                        pct(totals["fg_made"], totals["fg_attempts"]), 3
+                    ),
                     "three_pt_attempts": round(totals["three_pt_attempts"], 1),
-                    "three_pt_percentage": round(pct(totals["three_pt_made"], totals["three_pt_attempts"]), 3),
+                    "three_pt_percentage": round(
+                        pct(totals["three_pt_made"], totals["three_pt_attempts"]), 3
+                    ),
                     "ft_attempts": round(totals["ft_attempts"], 1),
-                    "ft_percentage": round(pct(totals["ft_made"], totals["ft_attempts"]), 3),
+                    "ft_percentage": round(
+                        pct(totals["ft_made"], totals["ft_attempts"]), 3
+                    ),
                     "minutes": round(totals["minutes"], 1),
                     "steals": round(totals["steals"], 1),
                     "turnovers": round(totals["turnovers"], 1),
@@ -176,15 +188,19 @@ def run() -> dict:
                     for k, v in career.items():
                         setattr(existing, k, v)
                 else:
-                    db.add(PlayerCareerData(
-                        player_id=nba_player_id,
-                        season=season_str,
-                        **career,
-                    ))
+                    db.add(
+                        PlayerCareerData(
+                            player_id=nba_player_id,
+                            season=season_str,
+                            **career,
+                        )
+                    )
                 db.commit()
                 updated += 1
             except Exception:
-                logger.exception("update_player_career_data: failed for %s", player_name)
+                logger.exception(
+                    "update_player_career_data: failed for %s", player_name
+                )
                 db.rollback()
 
             time.sleep(0.15)

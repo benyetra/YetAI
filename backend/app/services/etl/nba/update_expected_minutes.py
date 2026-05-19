@@ -33,11 +33,13 @@ RECENCY_WEIGHTS = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.05, 0.025, 0.025]
 def _calc_for(db, player_id: int, player_name: str) -> dict | None:
     games = (
         db.query(RecentGames)
-        .filter(and_(
-            RecentGames.player_id == player_id,
-            RecentGames.minutes.isnot(None),
-            RecentGames.minutes > 0,
-        ))
+        .filter(
+            and_(
+                RecentGames.player_id == player_id,
+                RecentGames.minutes.isnot(None),
+                RecentGames.minutes > 0,
+            )
+        )
         .order_by(RecentGames.game_date.desc())
         .limit(30)
         .all()
@@ -127,19 +129,23 @@ def run() -> dict:
                 if metrics is None:
                     skipped += 1
                     continue
-                existing = db.query(PlayerExpectedMinutes).filter_by(player_id=pid).first()
+                existing = (
+                    db.query(PlayerExpectedMinutes).filter_by(player_id=pid).first()
+                )
                 if existing:
                     for k, v in metrics.items():
                         setattr(existing, k, v)
                     existing.last_updated = datetime.utcnow()
                     updated += 1
                 else:
-                    db.add(PlayerExpectedMinutes(
-                        player_id=pid,
-                        player_name=pname,
-                        **metrics,
-                        last_updated=datetime.utcnow(),
-                    ))
+                    db.add(
+                        PlayerExpectedMinutes(
+                            player_id=pid,
+                            player_name=pname,
+                            **metrics,
+                            last_updated=datetime.utcnow(),
+                        )
+                    )
                     created += 1
                 db.commit()
             except Exception:

@@ -80,9 +80,7 @@ def run() -> dict:
                     "pace": round(pace, 1),
                 }
                 existing = (
-                    db.query(TeamOffenseStats)
-                    .filter_by(team_id=nba_team_id)
-                    .first()
+                    db.query(TeamOffenseStats).filter_by(team_id=nba_team_id).first()
                 )
                 if existing:
                     for k, v in payload.items():

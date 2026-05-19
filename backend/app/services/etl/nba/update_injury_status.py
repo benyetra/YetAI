@@ -42,7 +42,15 @@ def _normalize_status(status_str: str | None) -> str:
         return "out"
     if "doubtful" in s or "d " in s:
         return "doubtful"
-    if "questionable" in s or "q " in s or "probable" in s or "p " in s or "gtd" in s or "game-time" in s or "day-to-day" in s:
+    if (
+        "questionable" in s
+        or "q " in s
+        or "probable" in s
+        or "p " in s
+        or "gtd" in s
+        or "game-time" in s
+        or "day-to-day" in s
+    ):
         return "questionable"
     if "ir" in s or "injured reserve" in s:
         return "ir"
@@ -70,7 +78,9 @@ def _clean_cbs_name(name: str) -> str:
 def _fetch_cbs() -> list[dict]:
     out: list[dict] = []
     try:
-        r = requests.get("https://www.cbssports.com/nba/injuries/", headers=HEADERS, timeout=30)
+        r = requests.get(
+            "https://www.cbssports.com/nba/injuries/", headers=HEADERS, timeout=30
+        )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
         for table in soup.find_all("table", class_="TableBase-table"):
@@ -82,7 +92,13 @@ def _fetch_cbs() -> list[dict]:
                 injury = cells[3].get_text(strip=True) if len(cells) > 3 else None
                 status = cells[4].get_text(strip=True) if len(cells) > 4 else None
                 if name and status:
-                    out.append({"player_name": name, "injury_type": injury, "status": _normalize_status(status)})
+                    out.append(
+                        {
+                            "player_name": name,
+                            "injury_type": injury,
+                            "status": _normalize_status(status),
+                        }
+                    )
         logger.info("injury_status: CBS returned %d entries", len(out))
     except Exception:
         logger.exception("injury_status: CBS scrape failed")
@@ -94,7 +110,8 @@ def _fetch_rotowire() -> list[dict]:
     try:
         r = requests.get(
             "https://www.rotowire.com/basketball/nba-injury-report.php",
-            headers=HEADERS, timeout=30,
+            headers=HEADERS,
+            timeout=30,
         )
         r.raise_for_status()
         soup = BeautifulSoup(r.text, "html.parser")
@@ -104,11 +121,15 @@ def _fetch_rotowire() -> list[dict]:
             injury_elem = item.find("span", class_="injury-item__injury")
             if not (player_elem and status_elem):
                 continue
-            out.append({
-                "player_name": player_elem.get_text(strip=True),
-                "injury_type": injury_elem.get_text(strip=True) if injury_elem else None,
-                "status": _normalize_status(status_elem.get_text(strip=True)),
-            })
+            out.append(
+                {
+                    "player_name": player_elem.get_text(strip=True),
+                    "injury_type": (
+                        injury_elem.get_text(strip=True) if injury_elem else None
+                    ),
+                    "status": _normalize_status(status_elem.get_text(strip=True)),
+                }
+            )
         logger.info("injury_status: RotoWire returned %d entries", len(out))
     except Exception:
         logger.exception("injury_status: RotoWire scrape failed")
@@ -135,13 +156,21 @@ def _find_player_id(db, player_name: str) -> int | None:
     # full-name pass
     for pid, pname in roster:
         rp = _strip_accents(pname).split()
-        if len(rp) >= 2 and rp[-1].lower() == last.lower() and rp[0].lower() == first.lower():
+        if (
+            len(rp) >= 2
+            and rp[-1].lower() == last.lower()
+            and rp[0].lower() == first.lower()
+        ):
             return pid
     # initial+last fallback
     first_init = first[:1].lower()
     for pid, pname in roster:
         rp = _strip_accents(pname).split()
-        if len(rp) >= 2 and rp[-1].lower() == last.lower() and rp[0][:1].lower() == first_init:
+        if (
+            len(rp) >= 2
+            and rp[-1].lower() == last.lower()
+            and rp[0][:1].lower() == first_init
+        ):
             return pid
     return None
 
@@ -168,13 +197,21 @@ def _calc_games_missed(db, player_id: int) -> int:
 def run() -> dict:
     all_injuries = _fetch_cbs() + _fetch_rotowire()
     if not all_injuries:
-        return {"status": "ok", "reason": "no_sources_returned_data", "created": 0, "updated": 0, "cleared": 0}
+        return {
+            "status": "ok",
+            "reason": "no_sources_returned_data",
+            "created": 0,
+            "updated": 0,
+            "cleared": 0,
+        }
 
     # Dedup by name, keep more severe status.
     injury_map: dict[str, dict] = {}
     for inj in all_injuries:
         name = inj["player_name"].lower()
-        if name not in injury_map or STATUS_SEVERITY.get(inj["status"], 0) > STATUS_SEVERITY.get(injury_map[name]["status"], 0):
+        if name not in injury_map or STATUS_SEVERITY.get(
+            inj["status"], 0
+        ) > STATUS_SEVERITY.get(injury_map[name]["status"], 0):
             injury_map[name] = inj
 
     created = 0
@@ -202,25 +239,31 @@ def run() -> dict:
                         row.date_injured = today
                     updated += 1
                 else:
-                    db.add(PlayerInjuryStatus(
-                        player_id=pid,
-                        player_name=inj["player_name"],
-                        status=inj["status"],
-                        injury_type=inj.get("injury_type"),
-                        games_missed=gm,
-                        date_updated=datetime.utcnow(),
-                        date_injured=today if inj["status"] != "healthy" else None,
-                    ))
+                    db.add(
+                        PlayerInjuryStatus(
+                            player_id=pid,
+                            player_name=inj["player_name"],
+                            status=inj["status"],
+                            injury_type=inj.get("injury_type"),
+                            games_missed=gm,
+                            date_updated=datetime.utcnow(),
+                            date_injured=today if inj["status"] != "healthy" else None,
+                        )
+                    )
                     created += 1
                 db.commit()
             except Exception:
-                logger.exception("injury_status: failed to upsert %s", inj.get("player_name"))
+                logger.exception(
+                    "injury_status: failed to upsert %s", inj.get("player_name")
+                )
                 db.rollback()
 
         # Auto-clear: anyone currently flagged non-healthy who isn't in today's
         # scrape AND has played minutes in the last week.
         currently_injured = (
-            db.query(PlayerInjuryStatus).filter(PlayerInjuryStatus.status != "healthy").all()
+            db.query(PlayerInjuryStatus)
+            .filter(PlayerInjuryStatus.status != "healthy")
+            .all()
         )
         injured_names = set(injury_map.keys())
         cutoff = today - timedelta(days=7)
@@ -233,7 +276,12 @@ def run() -> dict:
                 .order_by(RecentGames.game_date.desc())
                 .first()
             )
-            if recent and recent.game_date >= cutoff and recent.minutes and recent.minutes > 0:
+            if (
+                recent
+                and recent.game_date >= cutoff
+                and recent.minutes
+                and recent.minutes > 0
+            ):
                 player.status = "healthy"
                 player.date_updated = datetime.utcnow()
                 player.games_missed = 0

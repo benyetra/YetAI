@@ -61,7 +61,7 @@ def _process_day(target_date: date) -> tuple[int, int]:
                         continue
 
                     player_team_api_id = (ps.get("team") or {}).get("id")
-                    is_home = (player_team_api_id == home_api_id)
+                    is_home = player_team_api_id == home_api_id
                     opponent_api_id = away_api_id if is_home else home_api_id
                     opponent_nba_id = API_SPORTS_TO_NBA.get(opponent_api_id, 0)
 
@@ -108,7 +108,9 @@ def _process_day(target_date: date) -> tuple[int, int]:
                         )
                         added += 1
                 except Exception:
-                    logger.exception("update_recent_games: failed line for game %s", game_id)
+                    logger.exception(
+                        "update_recent_games: failed line for game %s", game_id
+                    )
                     db.rollback()
                     continue
 

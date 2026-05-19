@@ -51,7 +51,9 @@ def _odds_get(path: str, params: dict) -> list | dict | None:
             timeout=30,
         )
         if r.status_code != 200:
-            logger.warning("odds-api %s returned %d: %s", path, r.status_code, r.text[:200])
+            logger.warning(
+                "odds-api %s returned %d: %s", path, r.status_code, r.text[:200]
+            )
             return None
         return r.json()
     except requests.RequestException:
@@ -78,10 +80,15 @@ def _fetch_odds_for(event_id: str) -> dict | None:
 
 def _parse_odds(odds_data: dict | None, home_team: str, away_team: str) -> dict:
     result = {
-        "spread_home": None, "spread_away": None,
-        "spread_home_odds": None, "spread_away_odds": None,
-        "total": None, "over_odds": None, "under_odds": None,
-        "moneyline_home": None, "moneyline_away": None,
+        "spread_home": None,
+        "spread_away": None,
+        "spread_home_odds": None,
+        "spread_away_odds": None,
+        "total": None,
+        "over_odds": None,
+        "under_odds": None,
+        "moneyline_home": None,
+        "moneyline_away": None,
         "bookmaker": None,
     }
     if not odds_data or "bookmakers" not in odds_data:
@@ -123,7 +130,12 @@ def _parse_odds(odds_data: dict | None, home_team: str, away_team: str) -> dict:
 def run() -> dict:
     events = _fetch_events()
     if not events:
-        return {"status": "ok", "reason": "no_events_returned", "processed": 0, "updated": 0}
+        return {
+            "status": "ok",
+            "reason": "no_events_returned",
+            "processed": 0,
+            "updated": 0,
+        }
 
     today = now_eastern().date()
     tomorrow = today + timedelta(days=1)
@@ -172,15 +184,17 @@ def run() -> dict:
                         setattr(existing, k, v)
                     existing.last_updated = datetime.utcnow()
                 else:
-                    db.add(NBAGameLines(
-                        game_date=game_date,
-                        home_team_name=home_norm,
-                        away_team_name=away_norm,
-                        odds_api_event_id=event_id,
-                        game_time=game_dt,
-                        last_updated=datetime.utcnow(),
-                        **odds,
-                    ))
+                    db.add(
+                        NBAGameLines(
+                            game_date=game_date,
+                            home_team_name=home_norm,
+                            away_team_name=away_norm,
+                            odds_api_event_id=event_id,
+                            game_time=game_dt,
+                            last_updated=datetime.utcnow(),
+                            **odds,
+                        )
+                    )
                 db.commit()
                 upserted += 1
             except Exception:

@@ -53,21 +53,25 @@ def run() -> dict:
                 teams_no_data += 1
                 continue
 
-            totals = db.query(
-                func.sum(RecentGames.points).label("points"),
-                func.sum(RecentGames.assists).label("assists"),
-                func.sum(RecentGames.rebounds).label("rebounds"),
-                func.sum(RecentGames.offensive_rebounds).label("oreb"),
-                func.sum(RecentGames.defensive_rebounds).label("dreb"),
-                func.sum(RecentGames.three_pt_made).label("tpm"),
-                func.sum(RecentGames.three_pt_attempts).label("tpa"),
-                func.sum(RecentGames.free_throws_made).label("ftm"),
-                func.sum(RecentGames.steals).label("steals"),
-                func.sum(RecentGames.blocks).label("blocks"),
-                func.sum(RecentGames.turnovers).label("turnovers"),
-                func.sum(RecentGames.personal_fouls).label("fouls"),
-                func.avg(RecentGames.fg_percentage).label("avg_fg_pct"),
-            ).filter(*base_filter).first()
+            totals = (
+                db.query(
+                    func.sum(RecentGames.points).label("points"),
+                    func.sum(RecentGames.assists).label("assists"),
+                    func.sum(RecentGames.rebounds).label("rebounds"),
+                    func.sum(RecentGames.offensive_rebounds).label("oreb"),
+                    func.sum(RecentGames.defensive_rebounds).label("dreb"),
+                    func.sum(RecentGames.three_pt_made).label("tpm"),
+                    func.sum(RecentGames.three_pt_attempts).label("tpa"),
+                    func.sum(RecentGames.free_throws_made).label("ftm"),
+                    func.sum(RecentGames.steals).label("steals"),
+                    func.sum(RecentGames.blocks).label("blocks"),
+                    func.sum(RecentGames.turnovers).label("turnovers"),
+                    func.sum(RecentGames.personal_fouls).label("fouls"),
+                    func.avg(RecentGames.fg_percentage).label("avg_fg_pct"),
+                )
+                .filter(*base_filter)
+                .first()
+            )
 
             def per_game(value):
                 return round((value or 0) / games_as_opp, 1)

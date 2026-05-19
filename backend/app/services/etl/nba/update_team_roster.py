@@ -78,9 +78,9 @@ def run() -> dict:
                     continue
                 seen_player_ids.add(nba_player_id)
 
-                position = (
-                    (player.get("leagues") or {}).get("standard", {}).get("pos") or "Unknown"
-                )
+                position = (player.get("leagues") or {}).get("standard", {}).get(
+                    "pos"
+                ) or "Unknown"
                 db.add(
                     TeamRoster(
                         player_id=nba_player_id,
@@ -94,7 +94,9 @@ def run() -> dict:
                 total_players += 1
 
             db.commit()
-            logger.info("update_team_roster: %s — inserted %d players", team_name, team_inserts)
+            logger.info(
+                "update_team_roster: %s — inserted %d players", team_name, team_inserts
+            )
             teams_processed += 1
             time.sleep(0.2)
 

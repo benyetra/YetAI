@@ -72,7 +72,9 @@ def run() -> dict:
         db.commit()
         logger.info(
             "yesterdays_players: stored %d players across %d games for %s",
-            len(entries), len(games), yesterday,
+            len(entries),
+            len(games),
+            yesterday,
         )
         return {
             "status": "ok",

@@ -23,15 +23,15 @@ EASTERN = ZoneInfo("America/New_York")
 # Static map: ESPN team id (string) → NBA.com team id.
 # Verified against http://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams
 ESPN_TO_NBA_TEAM_ID: dict[str, int] = {
-    "1": 1610612737,   # Atlanta Hawks
-    "2": 1610612738,   # Boston Celtics
-    "3": 1610612740,   # New Orleans Pelicans
-    "4": 1610612741,   # Chicago Bulls
-    "5": 1610612739,   # Cleveland Cavaliers
-    "6": 1610612742,   # Dallas Mavericks
-    "7": 1610612743,   # Denver Nuggets
-    "8": 1610612765,   # Detroit Pistons
-    "9": 1610612744,   # Golden State Warriors
+    "1": 1610612737,  # Atlanta Hawks
+    "2": 1610612738,  # Boston Celtics
+    "3": 1610612740,  # New Orleans Pelicans
+    "4": 1610612741,  # Chicago Bulls
+    "5": 1610612739,  # Cleveland Cavaliers
+    "6": 1610612742,  # Dallas Mavericks
+    "7": 1610612743,  # Denver Nuggets
+    "8": 1610612765,  # Detroit Pistons
+    "9": 1610612744,  # Golden State Warriors
     "10": 1610612745,  # Houston Rockets
     "11": 1610612754,  # Indiana Pacers
     "12": 1610612746,  # LA Clippers
