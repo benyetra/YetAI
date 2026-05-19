@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import PageHeader from '@/components/yetai/PageHeader';
 import AppLoading from '@/components/yetai/AppLoading';
 import { Check } from 'lucide-react';
+import { getApiUrl } from '@/lib/api-config';
 
 function SuccessContent() {
   const router = useRouter();
@@ -17,14 +18,14 @@ function SuccessContent() {
       if (!sessionId) return;
       try {
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/api/subscription/session-status/${sessionId}`,
+          getApiUrl(`/api/subscription/session-status/${sessionId}`),
           {
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
           },
         );
         const data = await response.json();
         if (data.status === 'complete') {
-          const userResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/me`, {
+          const userResponse = await fetch(getApiUrl('/api/auth/me'), {
             headers: { Authorization: `Bearer ${localStorage.getItem('auth_token')}` },
           });
           if (userResponse.ok) {

@@ -74,7 +74,12 @@ export default function LoginPage() {
       const data = await result.json();
       if (data.status === 'success') {
         localStorage.setItem('auth_token', data.access_token);
-        router.push('/dashboard');
+        if (data.user) {
+          localStorage.setItem('user_data', JSON.stringify(data.user));
+        }
+        // Full reload so AuthProvider picks up token + user (same as /auth/callback)
+        window.location.href = '/dashboard';
+        return;
       } else {
         setError(data.message || 'Google Sign-in failed');
       }

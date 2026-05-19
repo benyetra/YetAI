@@ -6,6 +6,7 @@ import { Lock, Eye, EyeOff, CheckCircle, XCircle, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthCentered } from '@/components/yetai/auth/AuthShell';
 import AppLoading from '@/components/yetai/AppLoading';
+import { getApiUrl } from '@/lib/api-config';
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -55,7 +56,7 @@ function ResetPasswordContent() {
     setMessage('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/reset-password`, {
+      const response = await fetch(getApiUrl('/api/auth/reset-password'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token, new_password: formData.newPassword }),

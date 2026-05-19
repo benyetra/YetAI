@@ -6,6 +6,7 @@ import { CheckCircle, XCircle, Mail, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { AuthCentered } from '@/components/yetai/auth/AuthShell';
 import AppLoading from '@/components/yetai/AppLoading';
+import { getApiUrl } from '@/lib/api-config';
 
 function VerifyEmailContent() {
   const router = useRouter();
@@ -28,7 +29,7 @@ function VerifyEmailContent() {
 
   const verifyEmail = async (verificationToken: string) => {
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/verify-email`, {
+      const response = await fetch(getApiUrl('/api/auth/verify-email'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: verificationToken }),

@@ -1,9 +1,9 @@
 'use client';
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
-import { User, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
+import { User as UserIcon, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { getApiUrl, apiRequest } from '@/lib/api-config';
+import { apiRequest, parseApiErrorResponse } from '@/lib/api-config';
 
 // Auth Context
 const AuthContext = createContext<any>(null);
@@ -26,7 +26,8 @@ const authAPI = {
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const message = await parseApiErrorResponse(response);
+        return { status: 'error', message, detail: message };
       }
       
       return await response.json();
@@ -52,7 +53,8 @@ const authAPI = {
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const message = await parseApiErrorResponse(response);
+        return { status: 'error', message, detail: message };
       }
       
       return await response.json();
@@ -247,7 +249,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
     if (result.success) {
       onSuccess?.();
     } else {
-      setError(result.error);
+      setError(result.message || 'Login failed');
     }
     
     setLoading(false);
@@ -381,6 +383,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
 }) {
   const [formData, setFormData] = useState({
     email: '',
+    username: '',
     password: '',
     firstName: '',
     lastName: ''
@@ -407,8 +410,14 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
     setLoading(true);
     setError('');
 
+    const username =
+      formData.username.trim() ||
+      formData.email.split('@')[0].replace(/[^a-zA-Z0-9_-]/g, '') ||
+      'user';
+
     const result = await signup(
       formData.email,
+      username,
       formData.password,
       formData.firstName,
       formData.lastName
@@ -417,7 +426,7 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
     if (result.success) {
       onSuccess?.();
     } else {
-      setError(result.error);
+      setError(result.message || 'Signup failed');
     }
     
     setLoading(false);
@@ -480,6 +489,23 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
                 className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">
+              Username
+            </label>
+            <div className="relative">
+              <UserIcon className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
+              <input
+                type="text"
+                name="username"
+                value={formData.username}
+                onChange={handleChange}
+                className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="john_doe (optional)"
               />
             </div>
           </div>
@@ -560,7 +586,7 @@ export function UserMenu() {
         className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100"
       >
         <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center">
-          <User className="w-5 h-5 text-white" />
+          <UserIcon className="w-5 h-5 text-white" />
         </div>
         <div className="hidden sm:block text-left">
           <p className="text-sm font-medium text-gray-900">

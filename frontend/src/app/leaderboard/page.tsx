@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import PageHeader from '@/components/yetai/PageHeader';
 import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
+import { getApiUrl } from '@/lib/api-config';
 import { Trophy, Medal, Crown, TrendingUp, Users, Star } from 'lucide-react';
 
 interface LeaderboardEntry {
@@ -62,7 +63,7 @@ export default function LeaderboardPage() {
         return;
       }
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/leaderboard?period=${selectedPeriod}`, {
+      const response = await fetch(getApiUrl(`/api/leaderboard?period=${selectedPeriod}`), {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',

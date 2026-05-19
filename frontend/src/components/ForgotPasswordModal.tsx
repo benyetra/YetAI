@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { X, Mail, Loader2, CheckCircle } from 'lucide-react';
+import { getApiUrl } from '@/lib/api-config';
 
 interface ForgotPasswordModalProps {
   isOpen: boolean;
@@ -21,7 +22,7 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
     setMessage('');
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/auth/forgot-password`, {
+      const response = await fetch(getApiUrl('/api/auth/forgot-password'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

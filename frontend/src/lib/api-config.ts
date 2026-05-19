@@ -136,6 +136,30 @@ export async function apiRequest(
 }
 
 /**
+ * Extract a human-readable error message from a failed API response.
+ */
+export async function parseApiErrorResponse(response: Response): Promise<string> {
+  try {
+    const data = await response.json();
+    const detail = data?.detail;
+    if (typeof detail === 'string') {
+      return detail;
+    }
+    if (Array.isArray(detail)) {
+      return detail
+        .map((item: { msg?: string }) => item?.msg || String(item))
+        .join(', ');
+    }
+    if (data?.message) {
+      return data.message;
+    }
+  } catch {
+    // Response body was not JSON
+  }
+  return `HTTP ${response.status}: ${response.statusText}`;
+}
+
+/**
  * Debug information (useful for development)
  */
 export function getApiDebugInfo(): {

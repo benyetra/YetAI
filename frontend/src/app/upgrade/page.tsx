@@ -9,6 +9,7 @@ import PageHeader from '@/components/yetai/PageHeader';
 import { StatTile } from '@/components/yetai/primitives';
 import { Check, Brain, TrendingUp, Shield, Users, ArrowLeft } from 'lucide-react';
 import EmbeddedCheckout from '@/components/EmbeddedCheckout';
+import { getApiUrl } from '@/lib/api-config';
 
 export default function UpgradePage() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -38,7 +39,7 @@ export default function UpgradePage() {
     setCheckoutLoading(true);
     setError('');
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/subscription/create-checkout`, {
+      const response = await fetch(getApiUrl('/api/subscription/create-checkout'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
