@@ -102,11 +102,11 @@ def project_at_bats_faced(pitcher_id, recent_data, projected_innings, mean_absol
         result = db_session.execute(query, {"pitcher_id": str(pitcher_id)})
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
-            if df.empty:
-                logger.warning(f"No data found for pitcher {pitcher_id}")
-                return None
+        if df.empty:
+            logger.warning(f"No data found for pitcher {pitcher_id}")
+            return None
 
-            # Prevent division by zero
+        # Prevent division by zero
             df['k_per_inning'] = np.where(df['innings_pitched'] > 0, df['strikeouts'] / df['innings_pitched'], 0)
             df['bb_per_inning'] = np.where(df['innings_pitched'] > 0, df['walks'] / df['innings_pitched'], 0)
 

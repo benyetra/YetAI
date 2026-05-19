@@ -42,8 +42,13 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Copy application code
 COPY . .
 
-# Worker entrypoint for Railway (start-command override may skip Dockerfile ENTRYPOINT)
-RUN chmod +x /app/scripts/railway-celery.sh
+# Celery worker entrypoint: Railway may use backend/ or repo-root build context.
+# Normalize to /app/scripts/railway-celery.sh so start-command overrides stay consistent.
+RUN mkdir -p /app/scripts && \
+    if [ ! -f /app/scripts/railway-celery.sh ] && [ -f /app/backend/scripts/railway-celery.sh ]; then \
+      cp /app/backend/scripts/railway-celery.sh /app/scripts/railway-celery.sh; \
+    fi && \
+    if [ -f /app/scripts/railway-celery.sh ]; then chmod +x /app/scripts/railway-celery.sh; fi
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

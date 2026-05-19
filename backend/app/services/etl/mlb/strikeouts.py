@@ -499,10 +499,6 @@ def fetch_and_update_app_data():
     except Exception as e:
         print(f"Error fetching and storing data: {e}")
 
-if __name__ == '__main__':
-    with app.app_context():
-        fetch_and_update_app_data()
-
 def run() -> dict:
     """Rebuild pred_pitcher (strikeout board) for today's slate."""
     from app.services.etl.mlb._db import init_session, close_session
