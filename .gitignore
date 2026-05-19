@@ -15,8 +15,12 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
+# Python virtualenv libs only (do not use bare `lib/` — it ignores frontend/src/lib)
 lib64/
+venv/lib/
+.venv/lib/
+ENV/lib/
+env/lib/
 parts/
 sdist/
 var/
