@@ -2302,6 +2302,41 @@ async def sync_games(admin_user: dict = Depends(require_admin)):
         raise HTTPException(status_code=500, detail=f"Failed to sync games: {str(e)}")
 
 
+@app.get("/api/admin/celery/health")
+async def admin_celery_health(
+    admin_user: dict = Depends(require_admin),
+    include_games_sync: bool = False,
+):
+    """Round-trip a task through the Celery broker + result backend.
+
+    Always fires app.tasks.health.ping (cheap, ~ms). If include_games_sync=true,
+    also fires app.tasks.games_sync.sync_games_cache and waits up to 180s for
+    the worker to upsert the games table. Admin-only since it triggers real work.
+    """
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+    from app.celery_app import celery_app
+
+    def _send_and_wait(task_name: str, timeout: float) -> dict:
+        async_result = celery_app.send_task(task_name)
+        try:
+            payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
+            return {"status": "ok", "task_id": async_result.id, "result": payload}
+        except CeleryTimeoutError:
+            return {"status": "timeout", "task_id": async_result.id, "timeout_s": timeout}
+        except Exception as exc:
+            return {"status": "error", "task_id": async_result.id, "error": str(exc)}
+
+    ping = await asyncio.to_thread(_send_and_wait, "app.tasks.health.ping", 10.0)
+    response = {"ping": ping}
+
+    if include_games_sync:
+        response["games_sync"] = await asyncio.to_thread(
+            _send_and_wait, "app.tasks.games_sync.sync_games_cache", 180.0
+        )
+
+    return response
+
+
 @app.options("/api/admin/users")
 async def options_admin_get_users():
     """Handle CORS preflight for admin get users"""
