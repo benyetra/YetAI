@@ -22,6 +22,9 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 
 # Cache buster: 2025-01-12-v1
+# Worker-rebuild trigger 2026-05-19: celery-worker service has watchPatterns
+# ["backend/**"], so changes to root requirements.txt alone do not retrigger
+# its build. Touching the Dockerfile is enough.
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt && \
