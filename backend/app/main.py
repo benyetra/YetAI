@@ -2375,6 +2375,18 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     # Cold-start adds an S3 model download (~1-2 MB). Typical run <60s, ceiling
     # bumped for cold cache + 100+ active players on a busy night.
     "app.tasks.etl_pipeline.nba.generate_predictions": 300.0,
+    # Per-stat XGBoost projections — same shape as generate_predictions (points),
+    # one model download per stat on first cold-start per worker.
+    "app.tasks.etl_pipeline.nba.generate_rebounds_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_assists_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_three_pt_made_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_free_throws_made_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_steals_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_blocks_predictions": 600.0,
+    # store_actuals: yesterday's RecentGames + prior projections -> 7 actuals tables.
+    "app.tasks.etl_pipeline.nba.store_actuals": 600.0,
+    # find_top_performers: reads today's projections, upserts into pred_top_performers.
+    "app.tasks.etl_pipeline.nba.find_top_performers": 180.0,
 }
 
 

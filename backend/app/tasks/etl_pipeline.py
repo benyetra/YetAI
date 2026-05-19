@@ -1,16 +1,12 @@
 """
-ETL pipeline Celery tasks (Development-u9t).
+ETL pipeline Celery tasks — daily prediction pipelines on Railway (Celery Beat).
 
-Each sport's pipeline is one task scheduled by Beat (see app/celery_app.py).
-The pipeline orchestrators are ported skeletons of YetiBets's nba_update_runner.py
-and its sibling sport-specific runners.
+NBA orchestrator mirrors YetiBets ``nba_update_runner.py`` / ``daily_pipeline.py``
+(reference repo is read-only; see YetiBets ``ARCHIVE.md``).
 
-Per Development-vir: no Discord notifications. Pipeline status surfaces via
-WebSocket events + admin dashboard logs only.
+Pipeline status: WebSocket + logs (no Discord). XGBoost models: ``s3://yetibets/``.
 
-Per Development-flm: model `.pkl` files load from `s3://yetibets/{sport}/...`
-once the runtime tasks are ported. The orchestrator skeleton is in place; each
-sub-task is marked TODO and will be ported individually as needed.
+Parity checklist: ``backend/docs/NBA_ETL_PARITY.md``.
 """
 
 import logging
@@ -22,21 +18,7 @@ from app.celery_app import celery_app
 logger = logging.getLogger(__name__)
 
 
-# ============================================================================
-# Sub-task stubs — one Celery task per YetiBets script.
-# Each is a TODO: import the actual logic from YetiBets's scripts/<sport>/
-# and run it against the YetAI session + pred_* tables.
-# ============================================================================
-
-
-def _stub(task_name: str) -> dict:
-    logger.warning(
-        "ETL sub-task %s: NOT YET PORTED — skipping. See Development-u9t.", task_name
-    )
-    return {"status": "skipped", "task": task_name, "reason": "not_ported"}
-
-
-# --- NBA sub-tasks (mirrors nba_update_runner.py's 26 scripts) -----------------
+# --- NBA sub-tasks (ported from YetiBets scripts/nba → app/services/etl/nba) ----
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_roster")
 def nba_update_team_roster():
     from app.services.etl.nba.update_team_roster import run
@@ -67,7 +49,9 @@ def nba_update_recent_games():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.store_actuals")
 def nba_store_actuals():
-    return _stub("nba.store_actuals")
+    from app.services.etl.nba.store_actuals import run
+
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_stats")
@@ -119,7 +103,53 @@ def nba_generate_predictions():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.find_top_performers")
 def nba_find_top_performers():
-    return _stub("nba.find_top_performers")
+    from app.services.etl.nba.find_top_performers import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_rebounds_predictions")
+def nba_generate_rebounds_predictions():
+    from app.services.etl.nba.generate_rebounds_predictions import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_assists_predictions")
+def nba_generate_assists_predictions():
+    from app.services.etl.nba.generate_assists_predictions import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_three_pt_made_predictions")
+def nba_generate_three_pt_made_predictions():
+    from app.services.etl.nba.generate_three_pt_made_predictions import run
+
+    return run()
+
+
+@celery_app.task(
+    name="app.tasks.etl_pipeline.nba.generate_free_throws_made_predictions"
+)
+def nba_generate_free_throws_made_predictions():
+    from app.services.etl.nba.generate_free_throws_made_predictions import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_steals_predictions")
+def nba_generate_steals_predictions():
+    from app.services.etl.nba.generate_steals_predictions import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.generate_blocks_predictions")
+def nba_generate_blocks_predictions():
+    from app.services.etl.nba.generate_blocks_predictions import run
+
+    return run()
 
 
 # ============================================================================
@@ -164,6 +194,12 @@ NBA_PHASES = [
         "predictions",
         [
             nba_generate_predictions,
+            nba_generate_rebounds_predictions,
+            nba_generate_assists_predictions,
+            nba_generate_three_pt_made_predictions,
+            nba_generate_free_throws_made_predictions,
+            nba_generate_steals_predictions,
+            nba_generate_blocks_predictions,
             nba_find_top_performers,
         ],
     ),
@@ -206,13 +242,10 @@ def _run_phases(sport: str, phases: List) -> dict:
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nba_update_pipeline", bind=True)
 def run_nba_update_pipeline(self) -> dict:
-    """Daily NBA prediction-pipeline run. Mirrors nba_update_runner.py.
+    """Daily NBA prediction pipeline (03:30 ET, celery_app beat_schedule).
 
-    Fires nightly at 03:30 ET (see celery_app.beat_schedule). All 12 sub-tasks
-    are currently stubs — they no-op and log a TODO. The orchestrator structure
-    is what matters: it preserves the phase ordering from the original script
-    so individual sub-tasks can be filled in incrementally without re-touching
-    the pipeline."""
+    Runs NBA_PHASES sequentially via task.apply(). See NBA_ETL_PARITY.md for
+  gaps vs the 28-step YetiBets daily_pipeline list."""
     logger.info("NBA update pipeline starting (task_id=%s)", self.request.id)
     return _run_phases("nba", NBA_PHASES)
 

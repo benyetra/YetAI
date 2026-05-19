@@ -1,4 +1,4 @@
-"""Player feature extraction for the XGBoost points model.
+"""Player feature extraction for XGBoost stat-projection models (multi-stat).
 
 Direct port of `_extract_features` from YetiBets/scripts/nba/ml_models/predict.py.
 This is intentionally a separate code path from the rule-based
@@ -6,16 +6,17 @@ This is intentionally a separate code path from the rule-based
 that one mixes columns the training pipeline never saw, and what matters for
 model accuracy is *bit-for-bit reproducing the training feature vector*.
 
-Each call to `build_points_features(...)` returns a dict keyed by the
-training-time feature names. Features the model expects but we can't compute
-(e.g. `trend` and `trend_pct` — distinct from `points_trend` /
-`points_trend_pct`, neither of which YetiBets's predictor produced either) are
-simply absent from the dict; `_ml_predict.predict_points` fills them with 0
-when ordering the vector. That matches how the model was trained.
+Each call to `build_features(...)` returns a dict keyed by the training-time
+feature names for the requested stat. Features the model expects but we can't
+compute (e.g. the un-prefixed `trend` and `trend_pct` — distinct from the
+`<stat>_trend` / `<stat>_trend_pct` features, neither of which YetiBets's
+predictor produced either) are simply absent from the dict; `_ml_predict.predict`
+fills them with 0 when ordering the vector. That matches how the model was
+trained.
 
-Note on stat column naming: the trained model is points-only. `stat_col` is
-hard-coded to "points" here; for other stat types you'd want a parallel
-service file. This matches the surgical-port scope of Development-flm.
+Backward-compat wrapper `build_points_features(db, player_id, game_date,
+opponent_team_id)` is preserved for existing imports — it calls into
+`build_features(..., stat_col="points")`.
 """
 
 from __future__ import annotations
@@ -37,7 +38,25 @@ from app.models.predictions_models import (
 
 logger = logging.getLogger(__name__)
 
-STAT_COL = "points"
+
+# Per-stat `opp_stat_allowed` column on TeamDefenseStats. Mapping is lifted
+# verbatim from YetiBets/scripts/nba/ml_models/predict.py (see the
+# stat_defense_map dict around line ~350). Note the quirks:
+#   * `steals` uses `turnovers` (a team that forces turnovers also lets the
+#     opposing star steal less, roughly).
+#   * `blocks` uses the team's own `blocks` count as a proxy for the
+#     shot-blocking environment.
+# These are odd-looking but they're what the model was TRAINED on, so we have
+# to reproduce them exactly or the model gets garbage at inference.
+_OPP_STAT_ALLOWED_COL: dict[str, str] = {
+    "points": "points_allowed_per_game",
+    "rebounds": "rebounds_allowed_per_game",
+    "assists": "assists_allowed_per_game",
+    "three_pt_made": "three_pt_made_allowed_per_game",
+    "free_throws_made": "free_throws_allowed_per_game",
+    "steals": "turnovers",
+    "blocks": "blocks",
+}
 
 
 def _games_to_df(games) -> pd.DataFrame:
@@ -74,26 +93,32 @@ def _games_to_df(games) -> pd.DataFrame:
     )
 
 
-def build_points_features(
+def build_features(
     db,
     player_id: int,
     game_date: date,
     opponent_team_id: int,
+    stat_col: str,
 ) -> Optional[dict]:
-    """Build the points-model feature vector for one player-vs-opponent matchup.
+    """Build a stat-specific feature vector for one player-vs-opponent matchup.
 
     Args:
         db: an open SessionLocal()
         player_id: NBA.com player_id
         game_date: target game date (features use only games BEFORE this)
         opponent_team_id: NBA.com opponent team_id
+        stat_col: target stat key — one of the keys in _OPP_STAT_ALLOWED_COL
 
     Returns:
         A dict keyed by the training-time feature names, or None if the player
         has fewer than 5 historical games (insufficient data — caller should
         skip).
     """
-    stat_col = STAT_COL
+    if stat_col not in _OPP_STAT_ALLOWED_COL:
+        raise ValueError(
+            f"Unknown stat_col {stat_col!r}; supported: "
+            f"{sorted(_OPP_STAT_ALLOWED_COL)}"
+        )
 
     historical_games = (
         db.query(RecentGames)
@@ -243,11 +268,8 @@ def build_points_features(
     if defense:
         features["opp_def_rating"] = getattr(defense, "defensive_rating", None) or 0
         features["opp_pace"] = getattr(defense, "pace", None) or 0
-        # Points model only — opponent points_allowed_per_game is what gates
-        # the stat-specific defensive prior.
-        features["opp_stat_allowed"] = (
-            getattr(defense, "points_allowed_per_game", None) or 0
-        )
+        defense_col = _OPP_STAT_ALLOWED_COL[stat_col]
+        features["opp_stat_allowed"] = getattr(defense, defense_col, None) or 0
     else:
         features["opp_def_rating"] = 0
         features["opp_pace"] = 0
@@ -309,3 +331,20 @@ def build_points_features(
         features["home_away_split"] = 0
 
     return features
+
+
+def build_points_features(
+    db,
+    player_id: int,
+    game_date: date,
+    opponent_team_id: int,
+) -> Optional[dict]:
+    """Backward-compat wrapper. Calls `build_features(..., stat_col="points")`
+    to preserve the existing import in generate_points_predictions.py."""
+    return build_features(
+        db=db,
+        player_id=player_id,
+        game_date=game_date,
+        opponent_team_id=opponent_team_id,
+        stat_col="points",
+    )
