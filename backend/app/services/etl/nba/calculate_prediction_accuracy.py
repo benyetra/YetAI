@@ -127,7 +127,7 @@ def calculate_accuracy_for_date(target_date):
                 continue
 
             # Get projections for the date
-            projections = projection_model.query.filter_by(date=target_date).all()
+            projections = db.query(projection_model).filter_by(date=target_date).all()
 
             if not projections:
                 logger.debug(f"No {stat_type} projections found for {target_date}")
@@ -173,7 +173,7 @@ def calculate_accuracy_for_date(target_date):
 
                     # FALLBACK: If no RecentGames data, try Actuals table
                     if actual_value is None and actual_model is not None:
-                        actual = actual_model.query.filter_by(
+                        actual = db.query(actual_model).filter_by(
                             player_id=player_id,
                             date=target_date
                         ).first()
