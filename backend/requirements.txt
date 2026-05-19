@@ -52,9 +52,10 @@ botocore>=1.35.0
 # Environment Management
 python-dotenv==1.0.0
 
-# NBA ETL — static NBA.com player ID lookups (Development-1nt)
-nba_api==1.4.1
-# Injury scrape (CBS Sports + RotoWire HTML)
+# Injury scrape (CBS Sports + RotoWire HTML) — Development-1nt
+# (nba-api==1.5.2 already pinned above at line 20 from the original sports
+# stats deps block; do not re-add as nba_api with a different version — pip
+# normalizes hyphen↔underscore and errors on the conflict.)
 beautifulsoup4==4.12.3
 
 # Development
