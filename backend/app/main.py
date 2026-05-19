@@ -2357,6 +2357,15 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nba.update_injury_status": 120.0,
     # Game lines: 1 events call + 1 odds call per game × today+tomorrow (~10-20 games).
     "app.tasks.etl_pipeline.nba.update_game_lines": 120.0,
+    # Team stats: offense = 30 api-sports stats calls; defense = pure SQL over
+    # pred_recent_games. Together <90s typical, 5min ceiling on api-sports slow days.
+    "app.tasks.etl_pipeline.nba.update_team_stats": 300.0,
+    # Player career: roster (~400 players) × 2 api-sports calls (search + stats)
+    # × 0.15s sleep ≈ 2 min wall, padding for 429 backoffs pushes ceiling.
+    "app.tasks.etl_pipeline.nba.update_player_data": 900.0,
+    # Expected minutes: pure Python over pred_recent_games; bounded by active
+    # players or roster size. Usually <30s.
+    "app.tasks.etl_pipeline.nba.update_expected_minutes": 120.0,
 }
 
 

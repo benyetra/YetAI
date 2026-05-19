@@ -25,6 +25,13 @@ logger = logging.getLogger(__name__)
 API_BASE_URL = "https://v2.nba.api-sports.io"
 API_KEY_ENV = "NBA_API_KEY"
 
+def get_current_season() -> int:
+    """NBA league year starts in October."""
+    from datetime import datetime
+    now = datetime.now()
+    return now.year if now.month >= 10 else now.year - 1
+
+
 # API-Sports team_id → NBA.com team_id. Embedded from YetiBets
 # scripts/nba/team_id_mapping.json (30 NBA teams; ids 31 and 37 both map to
 # the Spurs in source data — preserved as-is).

@@ -68,12 +68,19 @@ def nba_store_actuals():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_team_stats")
 def nba_update_team_stats():
-    return _stub("nba.update_team_stats")
+    """Refresh both pred_team_offense_stats (API-Sports) + pred_team_defense_stats
+    (derived from pred_recent_games). Defense must run after offense isn't a
+    requirement — they touch different tables — but recent_games-derived
+    defense is freshest right after update_recent_games runs."""
+    from app.services.etl.nba.update_team_offense_stats import run as run_off
+    from app.services.etl.nba.update_team_defense_stats import run as run_def
+    return {"offense": run_off(), "defense": run_def()}
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_player_data")
 def nba_update_player_data():
-    return _stub("nba.update_player_data")
+    from app.services.etl.nba.update_player_career_data import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_injury_status")
@@ -84,7 +91,8 @@ def nba_update_injury_status():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_expected_minutes")
 def nba_update_expected_minutes():
-    return _stub("nba.update_expected_minutes")
+    from app.services.etl.nba.update_expected_minutes import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_game_lines")
