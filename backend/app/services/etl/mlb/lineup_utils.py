@@ -6,12 +6,16 @@ import statsapi
 
 # If these imports fail in your env, keep the try/except fallbacks.
 try:
-    from mlb_pitcher_analysis import fetch_pitcher_data as fetch_pitch_data
+    from app.services.etl.mlb.mlb_pitcher_analysis import (
+        fetch_pitcher_data as fetch_pitch_data,
+    )
 except Exception:
     fetch_pitch_data = None
 
 try:
-    from mlb_batter_analysis import fetch_batter_performance_vs_pitches
+    from app.services.etl.mlb.mlb_batter_analysis import (
+        fetch_batter_performance_vs_pitches,
+    )
 except Exception:
     fetch_batter_performance_vs_pitches = None
 

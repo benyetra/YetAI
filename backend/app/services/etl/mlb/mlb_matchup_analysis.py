@@ -1,8 +1,8 @@
 import requests
 import statsapi
 from datetime import datetime, timedelta
-from mlb_pitcher_analysis import fetch_pitcher_data
-from mlb_batter_analysis import fetch_batter_performance_vs_pitches
+from app.services.etl.mlb.mlb_batter_analysis import fetch_batter_performance_vs_pitches
+from app.services.etl.mlb.mlb_pitcher_analysis import fetch_pitcher_data
 
 def fetch_last_start_date(pitcher_id):
     """

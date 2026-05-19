@@ -24,6 +24,8 @@ REPLACEMENTS = [
     (r"from scripts\.mlb import", "from app.services.etl.mlb import"),
     (r"^from regression_analysis import", "from app.services.etl.mlb.regression_analysis import"),
     (r"^from mlb_matchup_analysis import", "from app.services.etl.mlb.mlb_matchup_analysis import"),
+    (r"^from mlb_pitcher_analysis import", "from app.services.etl.mlb.mlb_pitcher_analysis import"),
+    (r"^from mlb_batter_analysis import", "from app.services.etl.mlb.mlb_batter_analysis import"),
     (r"^from pitcher_game_logs import", "from app.services.etl.mlb.pitcher_game_logs import"),
     (r"datetime\.timedelta", "timedelta"),
 ]

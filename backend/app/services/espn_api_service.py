@@ -7,7 +7,7 @@ from ESPN's unofficial/hidden API endpoints.
 
 import logging
 from typing import Dict, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import requests
 
 logger = logging.getLogger(__name__)
@@ -88,6 +88,11 @@ class ESPNAPIService:
         if not scoreboard or "events" not in scoreboard:
             return None
 
+        if commence_time.tzinfo is None:
+            commence_time = commence_time.replace(tzinfo=timezone.utc)
+        else:
+            commence_time = commence_time.astimezone(timezone.utc)
+
         # Try to find matching game
         for event in scoreboard.get("events", []):
             # Check if game time matches (within 1 hour tolerance)
@@ -95,6 +100,10 @@ class ESPNAPIService:
                 event_time = datetime.fromisoformat(
                     event.get("date", "").replace("Z", "+00:00")
                 )
+                if event_time.tzinfo is None:
+                    event_time = event_time.replace(tzinfo=timezone.utc)
+                else:
+                    event_time = event_time.astimezone(timezone.utc)
                 time_diff = abs((event_time - commence_time).total_seconds())
                 if time_diff > 3600:  # More than 1 hour difference
                     continue
