@@ -51,8 +51,7 @@ const toolsNavigation: NavItem[] = [
   { name: "Owen's Corner", href: '/tools/owens-betting-corner', icon: Sparkles, requiresAuth: true },
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW', pillClass: 'pill-new' },
   { name: 'Fantasy', href: '/fantasy', icon: Trophy, requiresAuth: true },
-  { name: 'Performance', href: '/performance', icon: BarChart3, requiresAuth: true },
-  { name: 'Bet History', href: '/bets', icon: History, requiresAuth: true },
+  { name: 'My Bets', href: '/bets', icon: History, requiresAuth: true },
   { name: 'Leaderboard', href: '/leaderboard', icon: Users },
 ];
 
@@ -63,8 +62,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/live-betting': 'Live',
   '/parlays': 'Parlays',
   '/fantasy': 'Fantasy',
-  '/performance': 'Performance',
-  '/bets': 'History',
+  '/bets': 'My Bets',
   '/leaderboard': 'Leaderboard',
   '/profile': 'Profile',
   '/admin': 'Admin',

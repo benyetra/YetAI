@@ -98,7 +98,9 @@ interface ParlayDetails {
   total_odds: number;
 }
 
-const BetHistory: React.FC = () => {
+type BetHistoryProps = { embedded?: boolean };
+
+const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
   const { user, token } = useAuth();
   const { isConnected } = useWebSocket();
   const [bets, setBets] = useState<Bet[]>([]);
@@ -437,30 +439,47 @@ const BetHistory: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        {/* Header */}
-        <div className="mb-8">
-          <div className="flex items-center space-x-3">
-            <h1 className="text-3xl font-bold text-gray-900">Bet History</h1>
-            <div className="flex items-center space-x-1">
-              {isConnected ? (
-                <Wifi className="w-4 h-4 text-green-600" />
-              ) : (
-                <WifiOff className="w-4 h-4 text-red-600" />
-              )}
-              <span className={`text-xs font-medium ${
-                isConnected ? 'text-green-600' : 'text-red-600'
-              }`}>
-                {isConnected ? 'Live' : 'Offline'}
-              </span>
+    <div className={embedded ? "" : "min-h-screen bg-gray-50 py-8"}>
+      <div className={embedded ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"}>
+        {!embedded && (
+          <div className="mb-8">
+            <div className="flex items-center space-x-3">
+              <h1 className="text-3xl font-bold text-gray-900">Bet History</h1>
+              <div className="flex items-center space-x-1">
+                {isConnected ? (
+                  <Wifi className="w-4 h-4 text-green-600" />
+                ) : (
+                  <WifiOff className="w-4 h-4 text-red-600" />
+                )}
+                <span className={`text-xs font-medium ${
+                  isConnected ? 'text-green-600' : 'text-red-600'
+                }`}>
+                  {isConnected ? 'Live' : 'Offline'}
+                </span>
+              </div>
             </div>
+            <p className="text-gray-600 mt-2">Track your betting performance and statistics</p>
           </div>
-          <p className="text-gray-600 mt-2">Track your betting performance and statistics</p>
-        </div>
+        )}
+
+        {embedded && (
+          <div className="flex items-center justify-end gap-2 mb-4 text-xs font-medium">
+            {isConnected ? (
+              <>
+                <Wifi className="w-4 h-4 text-green-600" />
+                <span className="text-green-600">Live updates</span>
+              </>
+            ) : (
+              <>
+                <WifiOff className="w-4 h-4 text-red-600" />
+                <span className="text-red-600">Offline</span>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Stats Grid */}
-        {stats && (
+        {stats && !embedded && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
             <StatCard
               title="Total Bets"
