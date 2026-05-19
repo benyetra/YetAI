@@ -199,7 +199,11 @@ class PropWatchlist:
 
             # raw JSONB may contain MLB enrichment (game_pk, player resolution)
             bet_raw = bet.raw or {}
-            picks_raw = {p.get("_id") or p.get("id"): p for p in bet_raw.get("picks", []) if isinstance(p, dict)}
+            picks_raw = {
+                p.get("_id") or p.get("id"): p
+                for p in bet_raw.get("picks", [])
+                if isinstance(p, dict)
+            }
 
             # Stake/odds/payout derived from RDS-faithful columns.
             stake = float(bet.amount) if bet.amount is not None else None
@@ -223,14 +227,11 @@ class PropWatchlist:
                 # is Pikkit's own player_id (string), not the MLB Stats API id.
                 raw_pick = picks_raw.get(pick.pikkit_id, {})
                 game_pk = raw_pick.get("game_pk") or bet_raw.get("game_pk")
-                mlb_player_id = (
-                    raw_pick.get("mlb_player_id")
-                    or raw_pick.get("player_id_mlb")
+                mlb_player_id = raw_pick.get("mlb_player_id") or raw_pick.get(
+                    "player_id_mlb"
                 )
                 player_name = (
-                    raw_pick.get("player_name")
-                    or raw_pick.get("name")
-                    or "Unknown"
+                    raw_pick.get("player_name") or raw_pick.get("name") or "Unknown"
                 )
 
                 if not game_pk or not mlb_player_id:

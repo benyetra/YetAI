@@ -88,7 +88,11 @@ def _event_to_dict(ev: Any) -> Dict[str, Any]:
     if isinstance(ev, dict):
         return dict(ev)
     # Fallback: pluck public attributes
-    return {k: getattr(ev, k) for k in dir(ev) if not k.startswith("_") and not callable(getattr(ev, k, None))}
+    return {
+        k: getattr(ev, k)
+        for k in dir(ev)
+        if not k.startswith("_") and not callable(getattr(ev, k, None))
+    }
 
 
 def _resolve_user_for_pick(pick_id: str) -> Optional[Tuple[int, Dict[str, Any]]]:
@@ -119,7 +123,9 @@ def _resolve_user_for_pick(pick_id: str) -> Optional[Tuple[int, Dict[str, Any]]]
                 logger.debug("No PikkitPick found for pick_id=%s", pick_id)
                 return None
 
-            bet = session.query(PikkitBet).filter_by(pikkit_id=pick.bet_id).one_or_none()
+            bet = (
+                session.query(PikkitBet).filter_by(pikkit_id=pick.bet_id).one_or_none()
+            )
             if bet is None:
                 logger.debug("No PikkitBet found for bet_id=%s", pick.bet_id)
                 return None
@@ -144,12 +150,16 @@ def _resolve_user_for_pick(pick_id: str) -> Optional[Tuple[int, Dict[str, Any]]]
             try:
                 user_id = int(user_ref)
             except (TypeError, ValueError):
-                logger.warning("PikkitBet %s user_id is non-integer: %r", bet.pikkit_id, user_ref)
+                logger.warning(
+                    "PikkitBet %s user_id is non-integer: %r", bet.pikkit_id, user_ref
+                )
                 return None
 
             user = session.query(User).filter_by(id=user_id).one_or_none()
             if user is None:
-                logger.warning("User id=%s referenced by bet %s not found", user_id, bet.pikkit_id)
+                logger.warning(
+                    "User id=%s referenced by bet %s not found", user_id, bet.pikkit_id
+                )
                 return None
 
             # Snapshot the settings while the session is open.
@@ -170,7 +180,9 @@ def _format_sms_body(ev_data: Dict[str, Any]) -> str:
     alert_type = ev_data.get("alert_type") or "update"
     desc = ev_data.get("play_description") or ""
 
-    head = f"[YetAI] {player} {stat} now {new_total} (line {line} {side}) — {alert_type}"
+    head = (
+        f"[YetAI] {player} {stat} now {new_total} (line {line} {side}) — {alert_type}"
+    )
     if desc:
         head = f"{head}: {desc}"
     # SMS segments are 160 chars; trim defensively.

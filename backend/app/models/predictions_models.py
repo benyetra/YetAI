@@ -2670,9 +2670,7 @@ class PikkitPick(Base):
 
     __tablename__ = "pred_pikkit_picks"
     pikkit_id = Column(String, primary_key=True)
-    bet_id = Column(
-        String, ForeignKey("pred_pikkit_bets.pikkit_id"), nullable=False
-    )
+    bet_id = Column(String, ForeignKey("pred_pikkit_bets.pikkit_id"), nullable=False)
     pick_name = Column(Text, nullable=False)  # e.g. "Over 0.5 - Ohtani HR"
     status = Column(String, nullable=False)
     odds = Column(Numeric(12, 4), nullable=False)
