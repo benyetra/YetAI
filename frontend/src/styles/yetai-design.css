@@ -623,6 +623,88 @@ input { font: inherit; }
 .card-head .card-meta { font-size: 11.5px; color: var(--text-3); }
 .card-body-empty { padding: 40px 20px; text-align: center; color: var(--text-3); font-size: 13px; }
 
+.predictions-stack {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-grid);
+}
+.predictions-toolbar {
+  padding: 12px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+.predictions-toolbar-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.predictions-toolbar-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+.predictions-chip {
+  font-size: 12px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.predictions-chip:hover { border-color: var(--text-3); color: var(--text); }
+.predictions-chip.is-active {
+  background: color-mix(in oklab, var(--accent) 14%, var(--bg-elev));
+  border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
+  color: var(--text);
+}
+.predictions-table-head { align-items: center; }
+.predictions-table-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+.predictions-table-toggle h2 { margin: 0; }
+.predictions-table-toggle:hover h2 { color: var(--accent); }
+.data-table th.sortable { padding: 0; }
+.data-table-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 10px 14px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: inherit;
+}
+.data-table th.text-right .data-table-sort-btn { justify-content: flex-end; }
+.data-table th.text-center .data-table-sort-btn { justify-content: center; }
+.data-table-sort-btn:hover { color: var(--text); }
+.data-table-sort {
+  font-size: 10px;
+  opacity: 0.85;
+  line-height: 1;
+}
+.data-table-sort-idle { opacity: 0.35; }
+.data-table-sort-btn:hover .data-table-sort-idle { opacity: 0.65; }
+
 .profile-grid {
   display: grid;
   grid-template-columns: 1fr;

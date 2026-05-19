@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
@@ -20,6 +20,10 @@ export type PropGroup = {
   responseKey: string;
   columns: ColumnDef[];
 };
+
+function expandedMap(groups: PropGroup[], value: boolean): Record<string, boolean> {
+  return Object.fromEntries(groups.map((g) => [g.responseKey, value]));
+}
 
 export default function SportPredictionsPage({
   sport,
@@ -44,6 +48,57 @@ export default function SportPredictionsPage({
   const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
 
+  const storageKey = `yetai-predictions-expanded:${sport}`;
+  const [expandedByKey, setExpandedByKey] = useState<Record<string, boolean>>(() => {
+    const defaults = expandedMap(groups, true);
+    if (typeof window === 'undefined') return defaults;
+    try {
+      const raw = window.localStorage.getItem(`yetai-predictions-expanded:${sport}`);
+      if (!raw) return defaults;
+      const parsed = JSON.parse(raw) as Record<string, boolean>;
+      for (const g of groups) {
+        if (typeof parsed[g.responseKey] === 'boolean') {
+          defaults[g.responseKey] = parsed[g.responseKey];
+        }
+      }
+    } catch {
+      /* ignore corrupt storage */
+    }
+    return defaults;
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(expandedByKey));
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [expandedByKey, storageKey]);
+
+  useEffect(() => {
+    setExpandedByKey((prev) => {
+      const next = { ...prev };
+      for (const g of groups) {
+        if (!(g.responseKey in next)) next[g.responseKey] = true;
+      }
+      return next;
+    });
+  }, [groups]);
+
+  const setAllExpanded = useCallback((value: boolean) => {
+    setExpandedByKey(expandedMap(groups, value));
+  }, [groups]);
+
+  const allExpanded = useMemo(
+    () => groups.every((g) => expandedByKey[g.responseKey] !== false),
+    [groups, expandedByKey]
+  );
+  const allCollapsed = useMemo(
+    () => groups.every((g) => expandedByKey[g.responseKey] === false),
+    [groups, expandedByKey]
+  );
+
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
       router.push('/?login=true');
@@ -61,6 +116,8 @@ export default function SportPredictionsPage({
       style={{ width: 'auto' }}
     />
   );
+
+  const showPropToolbar = groups.length > 1;
 
   return (
     <Layout requiresAuth fullWidth>
@@ -83,8 +140,53 @@ export default function SportPredictionsPage({
       ) : error ? (
         <PredictionsError message={error} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div className="predictions-stack">
           {topSection ? topSection({ data, loading }) : null}
+
+          {showPropToolbar && (
+            <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table visibility">
+              <div className="predictions-toolbar-actions">
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setAllExpanded(true)}
+                  disabled={allExpanded}
+                >
+                  Show all
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => setAllExpanded(false)}
+                  disabled={allCollapsed}
+                >
+                  Hide all
+                </button>
+              </div>
+              <div className="predictions-toolbar-chips">
+                {groups.map((g) => {
+                  const isOpen = expandedByKey[g.responseKey] !== false;
+                  return (
+                    <button
+                      key={g.responseKey}
+                      type="button"
+                      className={`predictions-chip ${isOpen ? 'is-active' : ''}`}
+                      aria-pressed={isOpen}
+                      onClick={() =>
+                        setExpandedByKey((prev) => ({
+                          ...prev,
+                          [g.responseKey]: !isOpen,
+                        }))
+                      }
+                    >
+                      {g.title}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {groups.map((g) => (
             <PredictionsTable
               key={g.responseKey}
@@ -92,6 +194,10 @@ export default function SportPredictionsPage({
               rows={(data?.[g.responseKey] as Array<Record<string, unknown>>) ?? []}
               columns={g.columns}
               loading={loading}
+              expanded={expandedByKey[g.responseKey] !== false}
+              onExpandedChange={(next) =>
+                setExpandedByKey((prev) => ({ ...prev, [g.responseKey]: next }))
+              }
             />
           ))}
         </div>
