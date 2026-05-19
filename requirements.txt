@@ -20,6 +20,8 @@ requests==2.32.4
 # root file (build context is repo root for that service), the API service uses
 # backend/. Keep them in sync until the two files are consolidated.
 nba_api==1.4.1
+# Injury scrape (CBS Sports + RotoWire HTML).
+beautifulsoup4==4.12.3
 
 # AI/ML
 openai==1.3.9

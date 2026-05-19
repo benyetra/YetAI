@@ -57,7 +57,8 @@ def nba_today_active_players():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_recent_games")
 def nba_update_recent_games():
-    return _stub("nba.update_recent_games")
+    from app.services.etl.nba.update_recent_games import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.store_actuals")
@@ -77,7 +78,8 @@ def nba_update_player_data():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_injury_status")
 def nba_update_injury_status():
-    return _stub("nba.update_injury_status")
+    from app.services.etl.nba.update_injury_status import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_expected_minutes")
@@ -87,7 +89,8 @@ def nba_update_expected_minutes():
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_game_lines")
 def nba_update_game_lines():
-    return _stub("nba.update_game_lines")
+    from app.services.etl.nba.update_game_lines import run
+    return run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_predictions")

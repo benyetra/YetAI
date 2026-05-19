@@ -54,6 +54,8 @@ python-dotenv==1.0.0
 
 # NBA ETL — static NBA.com player ID lookups (Development-1nt)
 nba_api==1.4.1
+# Injury scrape (CBS Sports + RotoWire HTML)
+beautifulsoup4==4.12.3
 
 # Development
 pytest==7.4.3

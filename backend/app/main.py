@@ -2349,6 +2349,14 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     # 30 teams × ~2s per /players call + roster delete + 0.2s sleep ≈ 90s typical;
     # padding for api-sports cold cache or 429s pushes the conservative ceiling to 5min.
     "app.tasks.etl_pipeline.nba.update_team_roster": 300.0,
+    # Recent games: 7-day default × ~10 games/day × 2 api-sports calls per game,
+    # each ~0.3s + retry padding. 5min ceiling typical, 15min if backfilling 30d.
+    "app.tasks.etl_pipeline.nba.update_recent_games": 900.0,
+    # Injury status: two HTML scrapes + per-player roster matches + clear-pass.
+    # Usually <30s, ceiling at 2min.
+    "app.tasks.etl_pipeline.nba.update_injury_status": 120.0,
+    # Game lines: 1 events call + 1 odds call per game × today+tomorrow (~10-20 games).
+    "app.tasks.etl_pipeline.nba.update_game_lines": 120.0,
 }
 
 
