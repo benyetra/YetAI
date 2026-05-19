@@ -17,7 +17,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import pickle
+import pickle  # nosec B403 - model artifact loaded from our own private S3 bucket
+import tempfile
 import threading
 from typing import Optional
 
@@ -30,8 +31,9 @@ S3_BUCKET = "yetibets"
 S3_MODEL_KEY = "nba/ml_models/xgb_points.pkl"
 S3_METADATA_KEY = "nba/ml_models/xgb_points_metadata.json"
 
-LOCAL_MODEL_PATH = "/tmp/xgb_points.pkl"
-LOCAL_METADATA_PATH = "/tmp/xgb_points_metadata.json"
+_TMP_DIR = tempfile.gettempdir()
+LOCAL_MODEL_PATH = os.path.join(_TMP_DIR, "xgb_points.pkl")
+LOCAL_METADATA_PATH = os.path.join(_TMP_DIR, "xgb_points_metadata.json")
 
 _model = None
 _metadata: Optional[dict] = None
@@ -82,7 +84,8 @@ def _ensure_loaded() -> None:
             _download_from_s3(S3_BUCKET, S3_METADATA_KEY, LOCAL_METADATA_PATH)
 
         with open(LOCAL_MODEL_PATH, "rb") as f:
-            model = pickle.load(f)
+            # nosec B301 - artifact is fetched from our own private S3 bucket
+            model = pickle.load(f)  # nosec B301
         _model = _fix_model_gpu_id(model)
 
         with open(LOCAL_METADATA_PATH, "r") as f:
