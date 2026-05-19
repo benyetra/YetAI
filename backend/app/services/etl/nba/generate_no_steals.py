@@ -607,7 +607,7 @@ def fetch_yesterdays_games():
     """
     Fetch games from yesterday.
     """
-    yesterday = _today() - datetime.timedelta(days=1)
+    yesterday = _today() - timedelta(days=1)
     try:
         players = db.query(TodayActivePlayers).filter_by(game_date=yesterday).all()
         logger.info(f"Found {len(players)} players for yesterday ({yesterday}).")
@@ -620,7 +620,7 @@ def save_yesterdays_results():
     """
     Compare yesterday's predictions with actual results and store them.
     """
-    yesterday = _today() - datetime.timedelta(days=1)
+    yesterday = _today() - timedelta(days=1)
     players = fetch_yesterdays_games()
     if not players:
         logger.warning(f"No players found for yesterday ({yesterday}).")
