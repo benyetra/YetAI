@@ -6,7 +6,7 @@ NBA orchestrator mirrors YetiBets ``nba_update_runner.py`` / ``daily_pipeline.py
 
 Pipeline status: WebSocket + logs (no Discord). XGBoost models: ``s3://yetibets/``.
 
-Parity checklist: ``backend/docs/NBA_ETL_PARITY.md``.
+Parity checklists: ``backend/docs/NBA_ETL_PARITY.md``, ``backend/docs/MLB_ETL_PARITY.md``.
 """
 
 import logging
@@ -194,6 +194,77 @@ def nba_calculate_prediction_accuracy():
     return run()
 
 
+# --- MLB sub-tasks (ported from YetiBets scripts/mlb → app/services/etl/mlb) ----
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.strikeouts")
+def mlb_strikeouts():
+    from app.services.etl.mlb.strikeouts import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.hits")
+def mlb_hits():
+    from app.services.etl.mlb.hits import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.store_strikeout_projections")
+def mlb_store_strikeout_projections():
+    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_projections
+
+    return run_store_strikeout_projections()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.game_projections")
+def mlb_game_projections():
+    from app.services.etl.mlb.game_projection_pipeline import run_game_projections
+
+    return run_game_projections()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.batter_projections")
+def mlb_batter_projections():
+    from app.services.etl.mlb.daily_batter_projection import run_projections
+
+    return run_projections()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.weather")
+def mlb_weather():
+    from app.services.etl.mlb.weather import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.blowouts")
+def mlb_blowouts():
+    from app.services.etl.mlb.blowouts import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.store_strikeout_actuals")
+def mlb_store_strikeout_actuals():
+    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_actuals
+
+    return run_store_strikeout_actuals()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.store_game_actuals")
+def mlb_store_game_actuals():
+    from app.services.etl.mlb.game_projection_pipeline import run_store_game_actuals
+
+    return run_store_game_actuals()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.store_batter_actuals")
+def mlb_store_batter_actuals():
+    from app.services.etl.mlb.daily_batter_projection import run_store_batter_actuals
+
+    return run_store_batter_actuals()
+
+
 # ============================================================================
 # Pipeline orchestrators — one per sport.
 # Run the sub-tasks in dependency order. Failures of a non-critical task
@@ -258,6 +329,47 @@ NBA_PHASES = [
     ),
 ]
 
+# YetiBets mlb_daily_projections.yml — strikeouts before archiving K projections.
+MLB_PROJECTION_PHASES = [
+    (
+        "sync",
+        [],  # games cache runs on its own 3h beat; optional inline below
+    ),
+    (
+        "props",
+        [
+            mlb_strikeouts,
+            mlb_hits,
+        ],
+    ),
+    (
+        "persist",
+        [
+            mlb_store_strikeout_projections,
+            mlb_game_projections,
+            mlb_batter_projections,
+        ],
+    ),
+    (
+        "enrichment",
+        [
+            mlb_weather,
+            mlb_blowouts,
+        ],
+    ),
+]
+
+MLB_ACTUALS_PHASES = [
+    (
+        "actuals",
+        [
+            mlb_store_game_actuals,
+            mlb_store_strikeout_actuals,
+            mlb_store_batter_actuals,
+        ],
+    ),
+]
+
 
 def _run_phases(sport: str, phases: List) -> dict:
     started = datetime.utcnow()
@@ -304,45 +416,21 @@ def run_nba_update_pipeline(self) -> dict:
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_mlb_update_pipeline", bind=True)
 def run_mlb_update_pipeline(self) -> dict:
-    """MLB daily maintenance: refresh games cache + report pred_* row counts.
-
-    Strikeout/HR/game projections are populated by existing YetAI/legacy jobs;
-    this orchestrator does not stub — it syncs Odds API games and surfaces
-  what is already in Railway Postgres for the slate date.
-    """
-    from datetime import datetime
-
-    from app.core.database import SessionLocal
-    from app.models.predictions_models import GameProjections, Homer, StrikeoutProjections
-    from app.services.etl.nba._espn import now_eastern
+    """MLB pre-game projections (10:00 ET beat). See MLB_ETL_PARITY.md."""
+    logger.info("MLB projections pipeline starting (task_id=%s)", self.request.id)
     from app.tasks.games_sync import sync_games_cache
 
-    logger.info("MLB update pipeline starting (task_id=%s)", self.request.id)
-    today = now_eastern().date()
-    games_sync = sync_games_cache.run()
+    sync = sync_games_cache.run()
+    result = _run_phases("mlb", MLB_PROJECTION_PHASES)
+    result["games_sync"] = sync
+    return result
 
-    db = SessionLocal()
-    try:
-        table_counts = {
-            "strikeout_projections": db.query(StrikeoutProjections)
-            .filter(StrikeoutProjections.date == today)
-            .count(),
-            "game_projections": db.query(GameProjections)
-            .filter(GameProjections.date == today)
-            .count(),
-            "home_run_predictions": db.query(Homer).count(),
-        }
-    finally:
-        db.close()
 
-    return {
-        "status": "ok",
-        "sport": "mlb",
-        "date": today.isoformat(),
-        "finished_at": datetime.utcnow().isoformat() + "Z",
-        "games_sync": games_sync,
-        "table_counts": table_counts,
-    }
+@celery_app.task(name="app.tasks.etl_pipeline.run_mlb_store_actuals", bind=True)
+def run_mlb_store_actuals(self) -> dict:
+    """MLB post-game actuals (04:30 ET beat)."""
+    logger.info("MLB actuals pipeline starting (task_id=%s)", self.request.id)
+    return _run_phases("mlb", MLB_ACTUALS_PHASES)
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)

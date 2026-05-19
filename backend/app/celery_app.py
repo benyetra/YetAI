@@ -66,9 +66,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "schedule": crontab(hour=3, minute=30),
     },
-    "mlb-update-pipeline-daily": {
+    "mlb-projections-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
-        "schedule": crontab(hour=4, minute=0),
+        "schedule": crontab(hour=10, minute=0),
+    },
+    "mlb-actuals-daily": {
+        "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",
+        "schedule": crontab(hour=4, minute=30),
     },
     "nfl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
