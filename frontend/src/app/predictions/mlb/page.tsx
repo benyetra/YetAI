@@ -1,5 +1,6 @@
 'use client';
 
+import MlbGameProjectionsGrid from '@/components/yetai/MlbGameProjectionsGrid';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -29,7 +30,18 @@ export default function MLBPredictionsPage() {
       sport="mlb"
       leagueLabel="MLB"
       emoji="⚾"
-      subtitle="Pitcher strikeout projections and home run picks."
+      subtitle="Game slate projections, pitcher strikeouts, and home run picks."
+      topSection={({ data, loading }) => (
+        <>
+          <h2 className="type-section-title" style={{ margin: '0 0 8px' }}>
+            Game projections
+          </h2>
+          <MlbGameProjectionsGrid
+            rows={(data?.game_projections as Array<Record<string, unknown>>) ?? []}
+            loading={loading}
+          />
+        </>
+      )}
       groups={[
         { title: 'Pitcher Strikeout Projections', responseKey: 'strikeout_projections', columns: STRIKEOUT_COLUMNS },
         { title: 'Home Run Predictions', responseKey: 'home_run_predictions', columns: HR_COLUMNS },

@@ -369,8 +369,10 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 
 from app.api.v1.predictions import router as predictions_router
+from app.api.v1.tools import router as tools_router
 
 app.include_router(predictions_router)
+app.include_router(tools_router)
 
 
 # Debug endpoint to check avatar files
@@ -5682,6 +5684,215 @@ def _odds_fetch_failure_payload(
     }
 
 
+# -----------------------------------------------------------------------------
+# Odds caching layer
+#
+# The Odds API has a 20K/month quota. Every direct call from the frontend
+# (page loads, polling) used to hit the API. We now serve from cache by
+# default with two TTLs:
+#   - FRESH (5 min): served as success; no API call
+#   - LAST_KNOWN_GOOD (24 hr): served with stale=True when the API errors
+#     out (quota exceeded, 401, network error, etc.) so the UI never goes
+#     blank just because we hit the cap.
+# -----------------------------------------------------------------------------
+
+_ODDS_CACHE_TTL_FRESH = 300  # 5 minutes
+_ODDS_CACHE_TTL_LKG = 86400  # 24 hours (stale fallback)
+_ODDS_QUOTA_SAFETY_THRESHOLD = 50  # stop calling API when fewer than N credits left
+_ODDS_QUOTA_KEY = "odds:quota"
+_ODDS_QUOTA_TTL = 7 * 24 * 3600  # 1 week — quota state survives restarts
+
+
+def _odds_cache_key_fresh(sport_key: str) -> str:
+    return f"odds:fresh:{sport_key}"
+
+
+def _odds_cache_key_lkg(sport_key: str) -> str:
+    return f"odds:lkg:{sport_key}"
+
+
+async def _odds_quota_remaining() -> Optional[int]:
+    """Return last-known remaining quota from the-odds-api, or None if unknown."""
+    from app.services.cache_service import cache_service
+
+    quota = await cache_service.get(_ODDS_QUOTA_KEY)
+    if quota and isinstance(quota.get("remaining"), int):
+        return quota["remaining"]
+    return None
+
+
+async def _odds_quota_update(remaining: int, used: int) -> None:
+    """Persist the latest quota counters reported by the-odds-api response."""
+    from app.services.cache_service import cache_service
+
+    await cache_service.set(
+        _ODDS_QUOTA_KEY,
+        {
+            "remaining": int(remaining),
+            "used": int(used),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        },
+        expire_seconds=_ODDS_QUOTA_TTL,
+    )
+
+
+def _serialize_games(games) -> list:
+    """Convert OddsAPIService Game dataclasses to JSON-safe dicts."""
+    from dataclasses import asdict
+
+    result = []
+    for g in games:
+        if hasattr(g, "__dataclass_fields__"):
+            result.append(asdict(g))
+        elif isinstance(g, dict):
+            result.append(g)
+    return result
+
+
+async def _get_odds_with_cache(
+    sport_key: str,
+    sport_label: str,
+    *,
+    odds_key: str = "games",
+    ttl: int = _ODDS_CACHE_TTL_FRESH,
+) -> dict:
+    """Cache-first odds fetch.
+
+    1. Returns fresh cached payload if within TTL (no API call).
+    2. On cache miss, calls Odds API, stores fresh + last-known-good, returns success.
+    3. On API failure (quota exceeded, network, etc.), returns last-known-good
+       payload with stale=True instead of failing the request.
+    """
+    from app.services.cache_service import cache_service
+
+    if not settings.ODDS_API_KEY:
+        return _odds_not_configured_payload(sport_label, odds_key=odds_key)
+
+    fresh_key = _odds_cache_key_fresh(sport_key)
+    lkg_key = _odds_cache_key_lkg(sport_key)
+
+    cached = await cache_service.get(fresh_key)
+    if cached and "games" in cached:
+        return {
+            "status": "success",
+            odds_key: cached["games"],
+            "cached": True,
+            "stale": False,
+            "cached_at": cached.get("cached_at"),
+        }
+
+    remaining = await _odds_quota_remaining()
+    if remaining is not None and remaining < _ODDS_QUOTA_SAFETY_THRESHOLD:
+        logger.warning(
+            f"{sport_label}: skipping Odds API call, quota at {remaining} (threshold {_ODDS_QUOTA_SAFETY_THRESHOLD})"
+        )
+        lkg = await cache_service.get(lkg_key)
+        if lkg and "games" in lkg:
+            return {
+                "status": "success",
+                odds_key: lkg["games"],
+                "cached": True,
+                "stale": True,
+                "cached_at": lkg.get("cached_at"),
+                "quota_remaining": remaining,
+                "message": f"Showing cached {sport_label} odds; monthly quota nearly exhausted ({remaining} credits left).",
+            }
+        return {
+            "status": "error",
+            odds_key: [],
+            "message": f"Odds API monthly quota exhausted ({remaining} credits left) and no cached {sport_label} data.",
+            "odds_api_configured": True,
+            "quota_remaining": remaining,
+        }
+
+    try:
+        from app.services.odds_api_service import OddsAPIService
+
+        async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            games = await service.get_odds(sport_key)
+            try:
+                await _odds_quota_update(
+                    service.rate_limit_remaining, service.rate_limit_used
+                )
+            except Exception as quota_err:
+                logger.warning(f"Quota tracking update failed: {quota_err}")
+            try:
+                stored_count = await _store_games_in_database(games, sport_key)
+                logger.info(
+                    f"{sport_label}: Fetched {len(games)} games, stored {stored_count} in database"
+                )
+            except Exception as db_err:
+                logger.warning(f"DB store failed for {sport_label}: {db_err}")
+
+            serialized = _serialize_games(games)
+            payload_to_cache = {
+                "games": serialized,
+                "cached_at": datetime.now(timezone.utc).isoformat(),
+            }
+            await cache_service.set(fresh_key, payload_to_cache, expire_seconds=ttl)
+            await cache_service.set(
+                lkg_key, payload_to_cache, expire_seconds=_ODDS_CACHE_TTL_LKG
+            )
+
+            return {
+                "status": "success",
+                odds_key: serialized,
+                "cached": False,
+                "stale": False,
+                "cached_at": payload_to_cache["cached_at"],
+            }
+    except Exception as e:
+        logger.error(f"Error fetching {sport_label} odds: {e}")
+        lkg = await cache_service.get(lkg_key)
+        if lkg and "games" in lkg:
+            logger.info(f"{sport_label}: serving last-known-good cache after API error")
+            return {
+                "status": "success",
+                odds_key: lkg["games"],
+                "cached": True,
+                "stale": True,
+                "cached_at": lkg.get("cached_at"),
+                "message": f"Showing cached {sport_label} odds; live data unavailable: {e}",
+            }
+        return _odds_fetch_failure_payload(sport_label, e, odds_key=odds_key)
+
+
+@app.get("/api/odds/quota")
+async def get_odds_quota_status():
+    """Report cached Odds API quota state and cache freshness."""
+    from app.services.cache_service import cache_service
+
+    quota = await cache_service.get(_ODDS_QUOTA_KEY)
+    sports = [
+        "americanfootball_nfl",
+        "americanfootball_ncaaf",
+        "basketball_nba",
+        "basketball_wnba",
+        "baseball_mlb",
+        "icehockey_nhl",
+        "soccer_epl",
+        "soccer_mls",
+    ]
+    cache_status = {}
+    for sk in sports:
+        fresh = await cache_service.get(_odds_cache_key_fresh(sk))
+        lkg = await cache_service.get(_odds_cache_key_lkg(sk))
+        cache_status[sk] = {
+            "fresh_cached": bool(fresh),
+            "fresh_cached_at": fresh.get("cached_at") if fresh else None,
+            "lkg_cached": bool(lkg),
+            "lkg_cached_at": lkg.get("cached_at") if lkg else None,
+        }
+    return {
+        "status": "success",
+        "quota": quota or {"remaining": None, "used": None, "updated_at": None},
+        "safety_threshold": _ODDS_QUOTA_SAFETY_THRESHOLD,
+        "cache_ttl_fresh_seconds": _ODDS_CACHE_TTL_FRESH,
+        "cache_ttl_lkg_seconds": _ODDS_CACHE_TTL_LKG,
+        "sports": cache_status,
+    }
+
+
 @app.options("/api/odds/americanfootball_nfl")
 async def options_nfl_odds():
     """Handle CORS preflight for NFL odds"""
@@ -5690,28 +5901,8 @@ async def options_nfl_odds():
 
 @app.get("/api/odds/americanfootball_nfl")
 async def get_nfl_odds():
-    """Get NFL odds directly"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("americanfootball_nfl")
-
-                # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(
-                    games, "americanfootball_nfl"
-                )
-                logger.info(
-                    f"NFL: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-
-                return {"status": "success", "games": games}
-        except Exception as e:
-            logger.error(f"Error fetching NFL odds: {e}")
-            return _odds_fetch_failure_payload("NFL", e)
-
-    return _odds_not_configured_payload("NFL")
+    """Get NFL odds (cache-first, served from cache when possible)."""
+    return await _get_odds_with_cache("americanfootball_nfl", "NFL")
 
 
 @app.options("/api/odds/basketball_nba")
@@ -5722,26 +5913,8 @@ async def options_nba_odds():
 
 @app.get("/api/odds/basketball_nba")
 async def get_nba_odds():
-    """Get NBA odds directly"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("basketball_nba")
-
-                # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(games, "basketball_nba")
-                logger.info(
-                    f"NBA: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-
-                return {"status": "success", "games": games}
-        except Exception as e:
-            logger.error(f"Error fetching NBA odds: {e}")
-            return _odds_fetch_failure_payload("NBA", e)
-
-    return _odds_not_configured_payload("NBA")
+    """Get NBA odds (cache-first)."""
+    return await _get_odds_with_cache("basketball_nba", "NBA")
 
 
 @app.options("/api/odds/baseball_mlb")
@@ -5752,26 +5925,8 @@ async def options_mlb_odds():
 
 @app.get("/api/odds/baseball_mlb")
 async def get_mlb_odds():
-    """Get MLB odds directly"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("baseball_mlb")
-
-                # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(games, "baseball_mlb")
-                logger.info(
-                    f"MLB: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-
-                return {"status": "success", "games": games}
-        except Exception as e:
-            logger.error(f"Error fetching MLB odds: {e}")
-            return _odds_fetch_failure_payload("MLB", e)
-
-    return _odds_not_configured_payload("MLB")
+    """Get MLB odds (cache-first)."""
+    return await _get_odds_with_cache("baseball_mlb", "MLB")
 
 
 @app.options("/api/odds/icehockey_nhl")
@@ -5782,26 +5937,8 @@ async def options_nhl_odds():
 
 @app.get("/api/odds/icehockey_nhl")
 async def get_nhl_odds():
-    """Get NHL (Ice Hockey) odds"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("icehockey_nhl")
-
-                # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(games, "icehockey_nhl")
-                logger.info(
-                    f"NHL: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-
-                return {"status": "success", "games": games}
-        except Exception as e:
-            logger.error(f"Error fetching NHL odds: {e}")
-            return _odds_fetch_failure_payload("NHL", e)
-
-    return _odds_not_configured_payload("NHL")
+    """Get NHL odds (cache-first)."""
+    return await _get_odds_with_cache("icehockey_nhl", "NHL")
 
 
 @app.options("/api/odds/hockey")
@@ -5825,66 +5962,54 @@ async def options_ncaaf_odds():
 
 @app.get("/api/odds/americanfootball_ncaaf")
 async def get_ncaaf_odds():
-    """Get NCAAF (College Football) odds"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("americanfootball_ncaaf")
-
-                # Store games in database for parlay creation
-                stored_count = await _store_games_in_database(
-                    games, "americanfootball_ncaaf"
-                )
-                logger.info(
-                    f"NCAAF: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-
-                return {"status": "success", "games": games}
-        except Exception as e:
-            logger.error(f"Error fetching NCAAF odds: {e}")
-            return _odds_fetch_failure_payload("NCAAF", e)
-
-    return _odds_not_configured_payload("NCAAF")
+    """Get NCAAF odds (cache-first)."""
+    return await _get_odds_with_cache("americanfootball_ncaaf", "NCAAF")
 
 
 @app.get("/api/odds/nfl")
 async def get_nfl_odds_legacy():
-    """Get NFL odds (legacy endpoint)"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import OddsAPIService
-
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
-                games = await service.get_odds("americanfootball_nfl")
-                return {"status": "success", "odds": games}
-        except Exception as e:
-            logger.error(f"Error fetching NFL odds: {e}")
-            return _odds_fetch_failure_payload("NFL", e, odds_key="odds")
-
-    return _odds_not_configured_payload("NFL", odds_key="odds")
+    """Get NFL odds (legacy endpoint, cache-first, returns under 'odds' key)."""
+    return await _get_odds_with_cache("americanfootball_nfl", "NFL", odds_key="odds")
 
 
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
-    """Get odds for popular sports (NFL, NBA, MLB, NHL)"""
-    if settings.ODDS_API_KEY:
-        try:
-            from app.services.odds_api_service import get_popular_sports_odds
+    """Get odds for popular sports via shared per-sport cache.
 
-            games = await get_popular_sports_odds()
-            return {"status": "success", "games": games, "count": len(games)}
-        except Exception as e:
-            logger.error(f"Error fetching popular sports odds: {e}")
-            # If real API fails, return empty games list instead of mock data
-            payload = _odds_fetch_failure_payload("popular sports", e)
-            payload["count"] = 0
-            return payload
+    Each sport is fetched through _get_odds_with_cache, so cache hits are
+    shared with the per-sport endpoints (one cache fill serves both).
+    """
+    if not settings.ODDS_API_KEY:
+        payload = _odds_not_configured_payload("odds data")
+        payload["count"] = 0
+        return payload
 
-    payload = _odds_not_configured_payload("odds data")
-    payload["count"] = 0
-    return payload
+    sports = [
+        ("americanfootball_nfl", "NFL"),
+        ("americanfootball_ncaaf", "NCAAF"),
+        ("basketball_nba", "NBA"),
+        ("basketball_wnba", "WNBA"),
+        ("baseball_mlb", "MLB"),
+        ("icehockey_nhl", "NHL"),
+        ("soccer_epl", "EPL"),
+        ("soccer_mls", "MLS"),
+    ]
+
+    all_games = []
+    any_stale = False
+    for sport_key, sport_label in sports:
+        result = await _get_odds_with_cache(sport_key, sport_label)
+        if result.get("status") == "success":
+            all_games.extend(result.get("games", []))
+            if result.get("stale"):
+                any_stale = True
+
+    return {
+        "status": "success",
+        "games": all_games,
+        "count": len(all_games),
+        "stale": any_stale,
+    }
 
 
 # === PLAYER PROPS ENDPOINTS ===

@@ -22,6 +22,8 @@ import {
   Sparkles,
   Shield,
   Search,
+  Calculator,
+  LineChart,
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { useNotifications } from './NotificationProvider';
@@ -44,6 +46,9 @@ const mainNavigation: NavItem[] = [
 ];
 
 const toolsNavigation: NavItem[] = [
+  { name: 'Stat Projections', href: '/predictions/stats', icon: LineChart, requiresAuth: true },
+  { name: 'Bet Calculator', href: '/tools/bet-calculator', icon: Calculator, requiresAuth: true },
+  { name: "Owen's Corner", href: '/tools/owens-betting-corner', icon: Sparkles, requiresAuth: true },
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW', pillClass: 'pill-new' },
   { name: 'Fantasy', href: '/fantasy', icon: Trophy, requiresAuth: true },
   { name: 'Performance', href: '/performance', icon: BarChart3, requiresAuth: true },
@@ -67,6 +72,13 @@ const ROUTE_LABELS: Record<string, string> = {
   '/odds': 'Odds',
   '/chat': 'Chat',
   '/help': 'Help',
+  '/predictions/stats': 'Stat Projections',
+  '/tools/bet-calculator': 'Bet Calculator',
+  '/tools/owens-betting-corner': "Owen's Corner",
+  '/predictions/mlb': 'MLB Stats',
+  '/predictions/nba': 'NBA Stats',
+  '/predictions/nfl': 'NFL Stats',
+  '/predictions/nhl': 'NHL Stats',
 };
 
 function getRouteLabel(pathname: string): string {

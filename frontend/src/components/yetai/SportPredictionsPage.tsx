@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
@@ -27,12 +27,17 @@ export default function SportPredictionsPage({
   emoji,
   subtitle,
   groups,
+  topSection,
 }: {
   sport: PredictionSport;
   leagueLabel: string;
   emoji: string;
   subtitle: string;
   groups: PropGroup[];
+  topSection?: (ctx: {
+    data: Record<string, Array<Record<string, unknown>>> | null;
+    loading: boolean;
+  }) => ReactNode;
 }) {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
@@ -60,7 +65,7 @@ export default function SportPredictionsPage({
   return (
     <Layout requiresAuth fullWidth>
       <PageHeader
-        title={`${emoji} ${leagueLabel} Predictions`}
+        title={`${emoji} ${leagueLabel} Stat Projections`}
         subtitle={subtitle}
         actions={
           <>
@@ -79,6 +84,7 @@ export default function SportPredictionsPage({
         <PredictionsError message={error} />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          {topSection ? topSection({ data, loading }) : null}
           {groups.map((g) => (
             <PredictionsTable
               key={g.responseKey}

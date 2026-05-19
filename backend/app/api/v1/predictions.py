@@ -21,6 +21,7 @@ from app.core.database import get_db
 from app.models.predictions_models import (
     AssistsProjections,
     BlocksProjections,
+    GameProjections,
     Homer,
     KickerPredictions,
     NHLGoaliePredictions,
@@ -84,12 +85,15 @@ def mlb_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent MLB props: strikeout projections + HR predictions."""
+    """Recent MLB props: strikeout projections, HR predictions, game-level slate."""
     return {
         "strikeout_projections": _query_recent(
             db, StrikeoutProjections, "date", target_date, limit
         ),
         "home_run_predictions": _query_recent(db, Homer, None, None, limit),
+        "game_projections": _query_recent(
+            db, GameProjections, "date", target_date, limit
+        ),
     }
 
 
