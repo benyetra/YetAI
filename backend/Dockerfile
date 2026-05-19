@@ -50,5 +50,15 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:${PORT:-8000}/health || exit 1
 
+# ENTRYPOINT forces `cd /app` before any exec so module imports work regardless
+# of where Railway's start-command override runs from. Shape: receives the
+# CMD/override as args, cd's, then exec's them. Works for both:
+#   - API service (default CMD below, shell-form → Docker wraps it as
+#     ["/bin/sh", "-c", "uvicorn ..."] before passing to ENTRYPOINT)
+#   - celery-worker service (Railway start-command override is wrapped by
+#     Railway as sh -c too, same arg shape)
+# This unblocks Development-7l5.
+ENTRYPOINT ["/bin/bash", "-c", "cd /app && exec \"$@\"", "--"]
+
 # Use shell form to allow environment variable expansion
 CMD uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1
