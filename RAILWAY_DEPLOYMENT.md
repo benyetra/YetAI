@@ -78,21 +78,18 @@ Set these in Railway dashboard:
 
 ### Manual Deployment (Emergency)
 
-**GitHub Actions:** use a **project token** in secret `RAILWAY_TOKEN`. Account tokens will fail with `Unauthorized` on `railway up`.
+**GitHub Actions:** set **both** secrets — `RAILWAY_API_TOKEN` (account, for `link`) and `RAILWAY_TOKEN` (project, for `up`). See `CICD_SETUP.md`.
 
 ```bash
-npm install -g @railway/cli
+npm install -g @railway/cli@latest
+railway logout   # important: otherwise login session overrides env tokens
 
-# Project token (Railway → Project → Settings → Tokens)
-export RAILWAY_TOKEN='...'
-railway up --detach \
-  --service 421f0104-94c9-478a-8f11-d19955df0d37 \
-  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402
+RAILWAY_API_TOKEN='...' railway link \
+  --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
+  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
+  --service 421f0104-94c9-478a-8f11-d19955df0d37
 
-# Interactive laptop deploy (account login + link still works locally)
-railway login
-railway link
-railway up
+RAILWAY_TOKEN='...' railway up --detach   # no --environment flag
 ```
 
 ## Health Check
