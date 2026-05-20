@@ -13,7 +13,9 @@ import pytest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 STRIKEOUTS_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "strikeouts.py"
 OFFSETS_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "offsets.py"
-REGRESSION_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "regression_analysis.py"
+REGRESSION_PY = (
+    BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "regression_analysis.py"
+)
 
 
 def _read(path: Path) -> str:
