@@ -42,11 +42,11 @@ def run_projections_phase(target_date: date | None = None) -> dict:
 
     results["batter_projections"] = run_projections(today)
 
-    results["hr_predictions"] = _run_hr_predictions_optional()
-
     from app.services.etl.mlb.weather import run as run_weather
 
     results["weather"] = run_weather()
+
+    results["hr_predictions"] = _run_hr_predictions_optional()
 
     from app.services.etl.mlb.blowouts import run as run_blowouts
 
@@ -90,26 +90,41 @@ def run_actuals_phase(target_date: date | None = None) -> dict:
 
 
 def _run_hr_predictions_optional() -> dict:
-    model = os.getenv("MLB_HR_MODEL_S3", "s3://yetibets/mlb/hr_model.pkl")
-    daily_csv = os.getenv("MLB_DAILY_FEATURES_S3")
-    lineup_csv = os.getenv("MLB_LINEUP_CSV_S3")
-    if not daily_csv or not lineup_csv:
-        logger.info(
-            "Skipping HR ML predict_today (set MLB_DAILY_FEATURES_S3 and MLB_LINEUP_CSV_S3)"
-        )
-        return {"status": "skipped", "reason": "missing_feature_csv_env"}
-    from app.services.etl.mlb.dingerParlay.predict_today import predict_and_store
+    from app.services.etl.mlb.hr_ml_build import (
+        build_hr_inputs,
+        hr_ml_auto_build_enabled,
+        hr_ml_enabled,
+        resolve_hr_paths,
+    )
 
+    if not hr_ml_enabled():
+        logger.info(
+            "Skipping HR ML (set MLB_HR_AUTO_BUILD=1 or MLB_DAILY_FEATURES_S3 + MLB_LINEUP_CSV_S3)"
+        )
+        return {"status": "skipped", "reason": "hr_ml_disabled"}
+
+    model = os.getenv("MLB_HR_MODEL_S3", "s3://yetibets/mlb/hr_model.pkl")
+    lineup_csv, daily_csv = resolve_hr_paths()
+
+    from app.services.etl.mlb.dingerParlay.predict_today import predict_and_store
     from app.services.etl.mlb._db import close_session, init_session
 
     init_session()
     try:
-        predict_and_store(
+        build_result = None
+        if hr_ml_auto_build_enabled():
+            build_result = build_hr_inputs()
+        stored = predict_and_store(
             daily_csv,
             lineup_csv,
             model,
             top_n=int(os.getenv("MLB_HR_TOP_N", "50")),
         )
-        return {"status": "ok", "model": model}
+        return {
+            "status": "ok",
+            "model": model,
+            "hr_predictions_stored": stored,
+            "build": build_result,
+        }
     finally:
         close_session()

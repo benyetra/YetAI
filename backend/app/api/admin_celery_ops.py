@@ -100,7 +100,7 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "label": "MLB HR ML",
         "sport": "mlb",
         "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.hr_predictions"],
-        "description": "dingerParlay predict_today when MLB_DAILY_FEATURES_S3 + MLB_LINEUP_CSV_S3 set.",
+        "description": "HR ML: build lineup/features (MLB_HR_AUTO_BUILD=1) then predict_today → pred_daily_hr_predictions.",
     },
     {
         "task_name": "app.tasks.etl_pipeline.mlb.strikeouts",

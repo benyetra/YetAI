@@ -129,7 +129,9 @@ def predict_and_store(daily_csv, lineup_csv, model_pkl, top_n):
             )
         )
     db_session.commit()
-    logging.info("Stored %s HR predictions for %s", len(out), today)
+    stored = len(out)
+    logging.info("Stored %s HR predictions for %s", stored, today)
+    return stored
 
 
 def main():

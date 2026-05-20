@@ -254,9 +254,7 @@ def mlb_hits():
 
 @celery_app.task(name="app.tasks.etl_pipeline.mlb.store_strikeout_projections")
 def mlb_store_strikeout_projections():
-    from app.services.etl.mlb.daily_projection_update import (
-        run_store_strikeout_projections,
-    )
+    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_projections
 
     return run_store_strikeout_projections()
 
@@ -388,22 +386,25 @@ NBA_PHASES = [
     ),
 ]
 
-
 # YetiBets mlb_daily_projections.yml — strikeouts before archiving K projections.
 def _mlb_projection_phases():
-    """Build MLB projection phases; optional HR ML when S3 feature CSVs are set."""
+    """Build MLB projection phases; optional HR ML after weather when enabled."""
+    from app.services.etl.mlb.hr_ml_build import hr_ml_enabled
+
     persist = [
         mlb_store_strikeout_projections,
         mlb_game_projections,
         mlb_batter_projections,
     ]
-    if os.getenv("MLB_DAILY_FEATURES_S3") and os.getenv("MLB_LINEUP_CSV_S3"):
-        persist.append(mlb_hr_predictions)
+    enrichment = [mlb_weather]
+    if hr_ml_enabled():
+        enrichment.append(mlb_hr_predictions)
+    enrichment.extend([mlb_blowouts, mlb_ev])
     return [
         ("sync", []),  # games cache runs on its own 3h beat; optional inline below
         ("props", [mlb_strikeouts, mlb_hits]),
         ("persist", persist),
-        ("enrichment", [mlb_weather, mlb_blowouts, mlb_ev]),
+        ("enrichment", enrichment),
     ]
 
 
@@ -442,9 +443,7 @@ def _run_phases(sport: str, phases: List) -> dict:
                 results.append({"task": task.name, "critical": critical, "result": r})
             except Exception as e:
                 logger.exception("Task %s failed in phase %s", task.name, phase_name)
-                results.append(
-                    {"task": task.name, "critical": critical, "error": str(e)}
-                )
+                results.append({"task": task.name, "critical": critical, "error": str(e)})
                 failed_tasks.append(task.name)
                 phase_errors += 1
                 if critical:

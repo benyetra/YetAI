@@ -34,7 +34,8 @@ def read_csv_anywhere(path, **kwargs):
 
 # your project imports
 from app.services.etl.mlb._db import db_session
-from app.services.etl.mlb._enrichment_helpers import game_odds_key
+from app.services.etl.mlb._enrichment_helpers import game_odds_key, match_team_price
+from app.services.etl.nba._espn import now_eastern
 
 from app.models.predictions_models import ValueBet
 
@@ -47,6 +48,7 @@ BASE_URL = "https://api.the-odds-api.com/v4/sports/"
 CURRENT_SEASON = datetime.today().year
 HOME_FIELD_EDGE = float(os.getenv("EV_HOME_FIELD_EDGE", 0.04))
 K_LOGISTIC = float(os.getenv("EV_K", 5.0))
+EV_MIN_EDGE = float(os.getenv("EV_MIN_EDGE", "0"))
 
 # Path to your normalized park factors CSV (columns: park_id,hr_factor)
 PARK_FACTORS_CSV = "s3://yetibets/mlb/park_factors.csv"
@@ -158,45 +160,49 @@ def bullpen_usage_7d(team_id):
     return 0.0
 
 
-# ─── FETCH ODDS ─────────────────────────────────────────────────────────────────
+# ─── FETCH ODDS (bulk — one API call) ───────────────────────────────────────────
 def get_odds(schedule):
-    ev_url = f"{BASE_URL}{SPORT}/events"
-    params = {"apiKey": ODDS_API_KEY, "regions": "us"}
-    ev_resp = requests.get(ev_url, params=params)
-    ev_resp.raise_for_status()
-    all_events = ev_resp.json()
+    """Return h2h prices keyed by ``away @ home`` for today's scheduled games."""
+    if not ODDS_API_KEY:
+        return {}
 
-    today_iso = datetime.utcnow().date().isoformat()
-    todays_events = [
-        e for e in all_events if e.get("commence_time", "").startswith(today_iso)
-    ]
-    lookup = {f"{e['away_team']} @ {e['home_team']}": e["id"] for e in todays_events}
+    schedule_keys = {game_odds_key(g) for g in schedule}
+    today_iso = now_eastern().date().isoformat()
+    preferred = ("fanduel", "draftkings", "fanatics")
+
+    try:
+        resp = requests.get(
+            f"{BASE_URL}{SPORT}/odds/",
+            params={
+                "apiKey": ODDS_API_KEY,
+                "regions": "us",
+                "markets": "h2h",
+                "oddsFormat": "american",
+                "bookmakers": ",".join(preferred),
+            },
+            timeout=30,
+        )
+        resp.raise_for_status()
+        events = resp.json()
+    except Exception as e:
+        logging.warning("bulk odds fetch failed: %s", e)
+        return {}
 
     odds_map = {}
-    for g in schedule:
-        key = f"{g['away_name']} @ {g['home_name']}"
-        eid = lookup.get(key)
-        if not eid:
-            logging.warning(f"no event ID for {key}")
+    for event in events:
+        commence = event.get("commence_time", "")
+        if not commence.startswith(today_iso):
             continue
-        url = (
-            f"{BASE_URL}{SPORT}/events/{eid}/odds"
-            f"?regions=us&oddsFormat=american&apiKey={ODDS_API_KEY}"
-            "&markets=h2h"
-        )
-        r = requests.get(url, timeout=30)
-        if r.status_code != 200:
-            logging.warning(f"odds failed for {key}: {r.status_code}")
+        key = f"{event['away_team']} @ {event['home_team']}"
+        if key not in schedule_keys:
             continue
-        data = r.json()
-        preferred = ("fanduel", "draftkings", "fanatics")
-        for bm in data.get("bookmakers", []):
+        for bm in event.get("bookmakers", []):
             if bm.get("key") not in preferred:
                 continue
-            for m in bm.get("markets", []):
-                if m.get("key") != "h2h":
+            for market in bm.get("markets", []):
+                if market.get("key") != "h2h":
                     continue
-                odds_map[key] = {o["name"]: o["price"] for o in m["outcomes"]}
+                odds_map[key] = {o["name"]: o["price"] for o in market["outcomes"]}
                 logging.info("%s → %s (%s)", key, odds_map[key], bm.get("key"))
                 break
             if key in odds_map:
@@ -330,14 +336,24 @@ def evaluate_pitcher(pid):
 
 
 # ─── MAIN EV CALCULATION ───────────────────────────────────────────────────────
-def run_ev() -> int:
-    """Compute +EV moneyline value bets for today's slate. Returns rows stored."""
+def run_ev() -> tuple[int, dict]:
+    """Compute +EV moneyline value bets for today's slate."""
+    stats = {
+        "schedule_games": 0,
+        "games_with_odds": 0,
+        "sides_priced": 0,
+        "sides_positive_ev": 0,
+        "max_ev": None,
+        "games_missing_odds": [],
+        "teams_unmatched": [],
+    }
     if not ODDS_API_KEY:
         logging.warning("ODDS_API_KEY not set; skipping MLB EV")
-        return 0
+        stats["error"] = "missing_odds_api_key"
+        return 0, stats
 
     park_map = _load_park_factor_map()
-    today = date.today()
+    today = now_eastern().date()
     # delete any stale rows for today
     db_session.query(ValueBet).filter(ValueBet.date == today).delete(
         synchronize_session=False
@@ -348,14 +364,17 @@ def run_ev() -> int:
     db_session.commit()
 
     schedule = get_todays_games()
+    stats["schedule_games"] = len(schedule)
     odds_map = get_odds(schedule)
     stored = []
-    seen = set()  # <— track which pairs we’ve added
+    seen = set()
 
     for g in schedule:
         key = game_odds_key(g)
         if key not in odds_map:
+            stats["games_missing_odds"].append(key)
             continue
+        stats["games_with_odds"] += 1
 
         # intermediate logs
         h_ops = weighted_lineup_ops(get_lineup_ids(g["home_id"]))
@@ -396,14 +415,19 @@ def run_ev() -> int:
             # skip exact duplicates within this run
             if (key, team_name) in seen:
                 continue
-            odds = odds_map[key].get(team_name)
+            odds, matched_name = match_team_price(team_name, odds_map[key])
             if odds is None:
+                stats["teams_unmatched"].append({"game": key, "team": team_name})
                 continue
+            stats["sides_priced"] += 1
             imp = convert_american_to_implied(odds)
             ev = (prob - imp) * 100
-            if ev <= 0:
+            if stats["max_ev"] is None or ev > stats["max_ev"]:
+                stats["max_ev"] = round(ev, 3)
+            if ev <= EV_MIN_EDGE:
                 continue
 
+            stats["sides_positive_ev"] += 1
             seen.add((key, team_name))
             vb = ValueBet(
                 date=today,
@@ -418,7 +442,7 @@ def run_ev() -> int:
 
     db_session.commit()
     logging.info("Stored %s value bets for %s", len(stored), today)
-    return len(stored)
+    return len(stored), stats
 
 
 def run() -> dict:
@@ -427,12 +451,14 @@ def run() -> dict:
 
     init_session()
     try:
-        count = run_ev()
+        count, ev_stats = run_ev()
         return {
             "status": "ok",
             "task": "mlb_ev",
-            "date": str(date.today()),
+            "date": str(now_eastern().date()),
             "value_bets_stored": count,
+            "ev_min_edge": EV_MIN_EDGE,
+            **ev_stats,
         }
     finally:
         close_session()
@@ -443,7 +469,7 @@ if __name__ == "__main__":
 
     init_session()
     try:
-        n = run_ev()
-        print(f"[DONE] stored {n} value bets for {date.today()}.")
+        n, stats = run_ev()
+        print(f"[DONE] stored {n} value bets for {now_eastern().date()}. stats={stats}")
     finally:
         close_session()

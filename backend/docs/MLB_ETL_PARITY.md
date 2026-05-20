@@ -42,17 +42,20 @@ YetiBets GHA ran `daily_projection_update` **before** `strikeouts`, which archiv
 | `DATABASE_URL` | Postgres |
 | `ODDS_API_KEY` | FanDuel lines, game odds |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 models (`s3://yetibets/mlb/`) |
-| `MLB_DAILY_FEATURES_S3` | Optional HR ML daily features CSV |
-| `MLB_LINEUP_CSV_S3` | Optional HR ML lineup names CSV |
+| `MLB_HR_AUTO_BUILD` | `1` → build lineup + daily_features on S3 before predict (after weather) |
+| `MLB_HR_S3_PREFIX` | Default `s3://yetibets/mlb/` for generated + static HR artifacts |
+| `MLB_DAILY_FEATURES_S3` / `MLB_LINEUP_CSV_S3` | Override paths (defaults under prefix) |
+| `MLB_HR_POWER_SCORES_S3`, `MLB_HR_PITCHER_STATS_S3`, etc. | Static training CSVs on S3 |
+| `EV_MIN_EDGE` | Min EV % to store value bet (default `0`) |
 | `MLB_HR_MODEL_S3` | HR model path (default `s3://yetibets/mlb/hr_model.pkl`) |
 | `TOMORROW_IO_API_KEY` or `WEATHER_API_KEY` | `weather.py` |
 
 ## Enrichment (daily pipeline)
 
 - `blowouts.py` → `pred_blowout_chances` — `flatten_batters` accepts flat hitter dicts; season year is dynamic (current + prior fallback)
-- `mlb_ev.py` → `pred_value_bets` — odds key matches `away @ home` (no `game_id` suffix); Fanduel/DK/Fanatics h2h; lazy S3 park factors; requires `ODDS_API_KEY`
+- `mlb_ev.py` → `pred_value_bets` — bulk Odds API h2h, fuzzy team match, `max_ev` / `games_with_odds` in task result
 - `hits.py` + `daily_batter_projection.py` — hitter filter min score 2; `pred_projected_hits` scoped to today's `game_time` on boards
-- `dingerParlay/predict_today.py` — task `mlb.hr_predictions` when `MLB_DAILY_FEATURES_S3` + `MLB_LINEUP_CSV_S3` set
+- `hr_ml_build.py` + `dingerParlay/predict_today.py` — `mlb.hr_predictions` after weather when `MLB_HR_AUTO_BUILD=1` or CSV env set
 
 ## Still manual / future
 

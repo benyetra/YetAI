@@ -37,23 +37,17 @@ def log(msg):
     print(f"[{datetime.now():%H:%M:%S}] {msg}", flush=True)
 
 
-def main():
-    p = argparse.ArgumentParser(description="Build daily feature file for HR model")
-    p.add_argument("--lineup", required=True, help="today_lineup.csv")
-    p.add_argument("--power-scores", required=True, help="power_scores.csv")
-    p.add_argument("--pitcher-stats", required=True, help="pitcher_stats.csv")
-    p.add_argument("--park-factors", required=True, help="park_factors.csv")
-    p.add_argument("--weather", required=True, help="weather_normalized.csv")
-    p.add_argument("--output", required=True, help="where to save daily_features.csv")
-    args = p.parse_args()
-
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
-    )
-
-    # 1) load and dedupe lineup, rename hand → starter_hand
+def build_daily_features(
+    lineup_path: str,
+    power_scores_path: str,
+    pitcher_stats_path: str,
+    park_factors_path: str,
+    weather_path: str,
+    output_path: str,
+) -> int:
+    """Merge lineup + static S3 artifacts into daily feature rows. Returns row count."""
     log("Loading today’s lineup")
-    df = smart_read_csv(args.lineup, parse_dates=["game_date"])
+    df = smart_read_csv(lineup_path, parse_dates=["game_date"])
     if "pitcher_hand" not in df.columns:
         sys.exit("Error: your lineup.csv must include a 'pitcher_hand' column")
     df = df.rename(columns={"pitcher_hand": "starter_hand"})
@@ -62,7 +56,7 @@ def main():
 
     # 2) merge PowerScore
     log("Merging PowerScore")
-    ps = smart_read_csv(args.power_scores)
+    ps = smart_read_csv(power_scores_path)
     df = df.merge(
         ps[["player_id", "PowerScore"]],
         left_on="batter_id",
@@ -73,13 +67,13 @@ def main():
 
     # 3) merge pitcher HR9, K9
     log("Merging PitcherStats")
-    pstats = smart_read_csv(args.pitcher_stats)
+    pstats = smart_read_csv(pitcher_stats_path)
     df = df.merge(pstats[["pitcher_id", "HR9", "K9"]], on="pitcher_id", how="left")
     df = df.dropna(subset=["HR9", "K9"])
 
     # 4) merge park factors
     log("Merging ParkFactors")
-    parks = smart_read_csv(args.park_factors)
+    parks = smart_read_csv(park_factors_path)
     df = df.merge(
         parks[["park_id", "year", "hr_factor"]], on=["park_id", "year"], how="left"
     )
@@ -87,7 +81,7 @@ def main():
 
     # 5) merge weather
     log("Merging Weather")
-    w = smart_read_csv(args.weather, parse_dates=["game_date"])
+    w = smart_read_csv(weather_path, parse_dates=["game_date"])
     if "wind_to_out" in w.columns and "wind_speed" not in w.columns:
         w["wind_speed"] = w["wind_to_out"]
     w = w.drop_duplicates(subset=["park_id", "game_date"])
@@ -114,14 +108,37 @@ def main():
 
     out = df[["batter_id", "pitcher_id", "park_id", "game_date"] + feats]
 
-    # 8) write back out
-    log(f"Writing {len(out)} rows to {args.output}")
-    if args.output.startswith("s3://"):
-        write_s3_csv(out, args.output)
+    log(f"Writing {len(out)} rows to {output_path}")
+    if output_path.startswith("s3://"):
+        write_s3_csv(out, output_path)
     else:
-        out.to_csv(args.output, index=False)
+        out.to_csv(output_path, index=False)
 
     log("Done.")
+    return len(out)
+
+
+def main():
+    p = argparse.ArgumentParser(description="Build daily feature file for HR model")
+    p.add_argument("--lineup", required=True, help="today_lineup.csv")
+    p.add_argument("--power-scores", required=True, help="power_scores.csv")
+    p.add_argument("--pitcher-stats", required=True, help="pitcher_stats.csv")
+    p.add_argument("--park-factors", required=True, help="park_factors.csv")
+    p.add_argument("--weather", required=True, help="weather_normalized.csv")
+    p.add_argument("--output", required=True, help="where to save daily_features.csv")
+    args = p.parse_args()
+
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
+    )
+    build_daily_features(
+        lineup_path=args.lineup,
+        power_scores_path=args.power_scores,
+        pitcher_stats_path=args.pitcher_stats,
+        park_factors_path=args.park_factors,
+        weather_path=args.weather,
+        output_path=args.output,
+    )
 
 
 if __name__ == "__main__":
