@@ -478,7 +478,10 @@ def main():
     )
     args = parser.parse_args()
 
-    with app.app_context():
+    from app.services.etl.mlb._db import close_session, init_session
+
+    init_session()
+    try:
         if args.date:
             target_date = date.fromisoformat(args.date)
         else:
@@ -493,6 +496,8 @@ def main():
             run_game_projection_pipeline(target_date)
         else:
             parser.print_help()
+    finally:
+        close_session()
 
 
 if __name__ == "__main__":

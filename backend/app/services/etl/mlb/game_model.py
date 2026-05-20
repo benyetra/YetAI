@@ -2092,7 +2092,10 @@ def main():
     )
     args = parser.parse_args()
 
-    with app.app_context():
+    from app.services.etl.mlb._db import close_session, init_session
+
+    init_session()
+    try:
         load_park_factors()
 
         if args.train:
@@ -2175,6 +2178,8 @@ def main():
                 )
         else:
             parser.print_help()
+    finally:
+        close_session()
 
 
 if __name__ == "__main__":

@@ -17,6 +17,7 @@ from app.models.predictions_models import (
 from datetime import datetime, date
 import numpy as np
 from collections import defaultdict
+from sqlalchemy import and_, or_
 
 
 def calculate_goalie_recent_form(goalie_id, games_back=10, use_weighted=True):
@@ -366,7 +367,7 @@ def get_venue_adjustment(goalie_id, venue_name):
     venue_games = (
         db_session.query(NHLGoalieActuals)
         .filter(
-            db.and_(
+            and_(
                 NHLGoalieActuals.goalie_id == goalie_id,
                 NHLGoalieActuals.venue_name == venue_name,
             )
@@ -416,7 +417,7 @@ def get_team_familiarity_adjustment(goalie_id, opponent_team_name):
     opponent_games = (
         db_session.query(NHLGoalieActuals)
         .filter(
-            db.and_(
+            and_(
                 NHLGoalieActuals.goalie_id == goalie_id,
                 NHLGoalieActuals.opponent_team_name.ilike(f"%{opponent_team_name}%"),
             )
@@ -484,7 +485,7 @@ def calculate_workload_fatigue(goalie_id, game_date):
     recent_games_7d = (
         db_session.query(NHLGoalieActuals)
         .filter(
-            db.and_(
+            and_(
                 NHLGoalieActuals.goalie_id == goalie_id,
                 NHLGoalieActuals.game_date >= seven_days_ago,
                 NHLGoalieActuals.game_date < game_date,
@@ -497,7 +498,7 @@ def calculate_workload_fatigue(goalie_id, game_date):
     recent_games_14d = (
         db_session.query(NHLGoalieActuals)
         .filter(
-            db.and_(
+            and_(
                 NHLGoalieActuals.goalie_id == goalie_id,
                 NHLGoalieActuals.game_date >= fourteen_days_ago,
                 NHLGoalieActuals.game_date < game_date,
@@ -871,7 +872,7 @@ def analyze_season_long_trends(goalie_id, game_date):
     season_games = (
         db_session.query(NHLGoalieActuals)
         .filter(
-            db.and_(
+            and_(
                 NHLGoalieActuals.goalie_id == goalie_id,
                 NHLGoalieActuals.game_date >= season_start,
                 NHLGoalieActuals.game_date < game_date,
@@ -1019,7 +1020,7 @@ def get_opponent_rolling_form(opponent_team_name, games_back=10):
     opponent_games = (
         db_session.query(NHLGameStats)
         .filter(
-            db.or_(
+            or_(
                 NHLGameStats.home_team_name == opponent_team_name,
                 NHLGameStats.away_team_name == opponent_team_name,
             )

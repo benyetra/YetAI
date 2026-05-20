@@ -4,9 +4,14 @@ Uses historical nflverse data with statistical analysis instead of ML models
 More reliable and easier to integrate than complex ML pipeline
 """
 
-import pandas as pd
-import numpy as np
+import os
 from datetime import datetime, timedelta
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+_NFL_DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "nfl"
 
 
 class StatisticalKickerPredictor:
@@ -19,7 +24,7 @@ class StatisticalKickerPredictor:
     def load_historical_data(self):
         """Load pre-processed historical data"""
         try:
-            data_dir = "/Users/byetz/Development/YetAI/YetAI/backend/data/nfl"
+            data_dir = str(_NFL_DATA_DIR)
 
             # Load field goal data
             fg_path = os.path.join(data_dir, "field_goal_data.csv")

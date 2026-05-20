@@ -222,7 +222,10 @@ def main():
     parser.add_argument("--lookback", type=int, default=30, help="Days of data to use")
     args = parser.parse_args()
 
-    with app.app_context():
+    from app.services.etl.mlb._db import close_session, init_session
+
+    init_session()
+    try:
         if args.train:
             df = build_stacking_data(args.lookback)
             if df is None or len(df) < 30:
@@ -235,6 +238,8 @@ def main():
             logger.info("Meta-learner training complete")
         else:
             parser.print_help()
+    finally:
+        close_session()
 
 
 if __name__ == "__main__":
