@@ -86,7 +86,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Verify YetAI ETL in production")
     parser.add_argument("--api", default=os.getenv("YETAI_API_URL", DEFAULT_API))
     parser.add_argument("--enqueue-all", action="store_true")
-    parser.add_argument("--wait", type=int, default=0, help="Seconds to wait after enqueue")
+    parser.add_argument(
+        "--wait", type=int, default=0, help="Seconds to wait after enqueue"
+    )
     parser.add_argument("--poll", metavar="TASK_ID", help="Poll one task until ready")
     parser.add_argument("--poll-timeout", type=int, default=7200)
     args = parser.parse_args()

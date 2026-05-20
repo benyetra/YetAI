@@ -21,7 +21,9 @@ def main() -> int:
 
     in_season = date.today().month in NFL_IN_SEASON_MONTHS
     if not in_season:
-        print("NFL off-season — skipping prediction row requirements (orchestrator-only check)")
+        print(
+            "NFL off-season — skipping prediction row requirements (orchestrator-only check)"
+        )
 
     engine = create_engine(url)
     today = date.today()
@@ -45,9 +47,12 @@ def main() -> int:
                 n = conn.execute(q, {"d": d}).scalar() or 0
                 label = f"{table} ({date_col}>={d})"
             else:
-                n = conn.execute(
-                    text(f"SELECT COUNT(*) FROM {table}")  # nosec B608
-                ).scalar() or 0
+                n = (
+                    conn.execute(
+                        text(f"SELECT COUNT(*) FROM {table}")  # nosec B608
+                    ).scalar()
+                    or 0
+                )
                 label = table
             status = "ok" if n > 0 else "empty"
             if n == 0 and table.endswith("_predictions") and in_season:
@@ -55,7 +60,9 @@ def main() -> int:
             print(f"  [{status}] {label}: {n} rows")
 
     if not in_season:
-        print("PASS (off-season): run run_nfl_update_pipeline in-season for full table check.")
+        print(
+            "PASS (off-season): run run_nfl_update_pipeline in-season for full table check."
+        )
         return 0
     return 0 if ok else 1
 

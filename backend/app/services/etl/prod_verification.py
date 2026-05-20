@@ -50,14 +50,8 @@ def verify_mlb() -> dict[str, Any]:
             .filter(StrikeoutProjections.date == today)
             .count()
         )
-        games = (
-            db.query(GameProjections)
-            .filter(GameProjections.date == today)
-            .count()
-        )
-        hits_today = (
-            db.query(ProjectedHits).filter(ProjectedHits.date == today).count()
-        )
+        games = db.query(GameProjections).filter(GameProjections.date == today).count()
+        hits_today = db.query(ProjectedHits).filter(ProjectedHits.date == today).count()
         blowouts = db.query(BlowoutChances).count()
         homers = db.query(Homer).count()
     finally:
@@ -95,7 +89,9 @@ def verify_nba() -> dict[str, Any]:
     warnings: list[str] = []
     db = SessionLocal()
     try:
-        points = db.query(PointsProjections).filter(PointsProjections.date == today).count()
+        points = (
+            db.query(PointsProjections).filter(PointsProjections.date == today).count()
+        )
         pra = db.query(PRAProjections).filter(PRAProjections.date == today).count()
         totals_today = (
             db.query(NBATotalsProjections)
@@ -107,7 +103,9 @@ def verify_nba() -> dict[str, Any]:
 
     passed = points >= 20 and pra >= 10
     if totals_today == 0:
-        warnings.append("no totals projections today (off-day or totals_projector failed)")
+        warnings.append(
+            "no totals projections today (off-day or totals_projector failed)"
+        )
 
     return {
         "sport": "nba",
@@ -184,8 +182,7 @@ def verify_nfl(*, in_season: bool | None = None) -> dict[str, Any]:
         kickers = (
             db.query(KickerPredictions)
             .filter(
-                KickerPredictions.game_date
-                >= today - timedelta(days=today.weekday())
+                KickerPredictions.game_date >= today - timedelta(days=today.weekday())
             )
             .count()
         )
@@ -225,7 +222,9 @@ def verify_all_sports() -> dict[str, Any]:
     all_passed = all(s["passed"] for s in sports)
     any_failed = any(s["status"] == "failed" for s in sports)
     return {
-        "overall": "verified" if all_passed else ("failed" if any_failed else "partial"),
+        "overall": (
+            "verified" if all_passed else ("failed" if any_failed else "partial")
+        ),
         "sports": sports,
         "summary": {s["sport"]: s["status"] for s in sports},
     }

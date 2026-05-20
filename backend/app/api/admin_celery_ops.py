@@ -25,6 +25,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
         return current_user
     raise HTTPException(status_code=403, detail="Admin privileges required")
 
+
 router = APIRouter(prefix="/api/admin/celery", tags=["admin-celery"])
 
 PIPELINE_ORCHESTRATORS: frozenset[str] = frozenset(
