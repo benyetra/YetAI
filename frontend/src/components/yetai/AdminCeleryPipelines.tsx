@@ -17,13 +17,28 @@ type EnqueueResult = {
   at: string;
 };
 
+type FireableTask = EnqueueTask & { timeout_s: number };
+
+type RunTaskResult = {
+  task_name: string;
+  status: string;
+  task_id?: string;
+  result?: unknown;
+  error?: string;
+  timeout_s?: number;
+  at: string;
+};
+
 export default function AdminCeleryPipelines() {
   const [tasks, setTasks] = useState<EnqueueTask[]>([]);
+  const [fireableTasks, setFireableTasks] = useState<FireableTask[]>([]);
   const [loadingCatalog, setLoadingCatalog] = useState(true);
   const [enqueueing, setEnqueueing] = useState<string | null>(null);
+  const [firing, setFiring] = useState<string | null>(null);
   const [pingStatus, setPingStatus] = useState<string | null>(null);
   const [checkingPing, setCheckingPing] = useState(false);
   const [lastEnqueue, setLastEnqueue] = useState<EnqueueResult | null>(null);
+  const [lastRunTask, setLastRunTask] = useState<RunTaskResult | null>(null);
   const [verifyReport, setVerifyReport] = useState<Record<string, unknown> | null>(null);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +63,13 @@ export default function AdminCeleryPipelines() {
         throw new Error(data.detail || res.statusText);
       }
       setTasks(data.enqueue_tasks ?? []);
+      const fireRes = await fetch(getApiUrl('/api/admin/celery/fireable-catalog'), {
+        headers: authHeaders(),
+      });
+      const fireData = await fireRes.json();
+      if (fireRes.ok) {
+        setFireableTasks(fireData.fireable_tasks ?? []);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load pipeline catalog');
     } finally {
@@ -100,6 +122,32 @@ export default function AdminCeleryPipelines() {
       setError(e instanceof Error ? e.message : 'Verification failed');
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const runFireableTask = async (task: FireableTask) => {
+    setFiring(task.task_name);
+    setError(null);
+    try {
+      const url = `${getApiUrl('/api/admin/celery/run-task')}?task_name=${encodeURIComponent(task.task_name)}`;
+      const res = await fetch(url, { method: 'POST', headers: authHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || res.statusText);
+      }
+      setLastRunTask({
+        task_name: task.task_name,
+        status: data.status,
+        task_id: data.task_id,
+        result: data.result,
+        error: data.error,
+        timeout_s: data.timeout_s,
+        at: new Date().toISOString(),
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Run task failed');
+    } finally {
+      setFiring(null);
     }
   };
 
@@ -196,6 +244,16 @@ export default function AdminCeleryPipelines() {
           </pre>
         </div>
       )}
+      {lastRunTask && (
+        <div className="mb-4 p-3 rounded-lg border border-[var(--border)] text-xs mono overflow-auto max-h-48">
+          <p className="text-sm font-medium mb-2" style={{ fontFamily: 'inherit' }}>
+            Last fire-task — {lastRunTask.task_name} ({lastRunTask.status})
+          </p>
+          <pre className="whitespace-pre-wrap break-all">
+            {JSON.stringify(lastRunTask, null, 2)}
+          </pre>
+        </div>
+      )}
       {lastEnqueue && (
         <div className="mb-4 p-3 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklab,var(--accent)_8%,transparent)]">
           <p className="text-sm font-medium">Last enqueue</p>
@@ -246,10 +304,51 @@ export default function AdminCeleryPipelines() {
         </div>
       )}
 
+      {fireableTasks.length > 0 && (
+        <>
+          <h3 className="text-sm font-semibold mt-6 mb-2">Debug tasks (fire-and-wait)</h3>
+          <p className="text-xs muted mb-3">
+            Runs one Celery step synchronously on the worker (blocks until done or timeout). Use{' '}
+            <strong>MLB value bets (EV)</strong> after projections exist.
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {fireableTasks.map((task) => (
+              <article
+                key={task.task_name}
+                className="card card-tight flex flex-col gap-3"
+                style={{ padding: 14 }}
+              >
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="badge">{task.sport.toUpperCase()}</span>
+                    <h4 className="font-semibold text-sm">{task.label}</h4>
+                  </div>
+                  <p className="text-xs muted mt-2">{task.description}</p>
+                  <p className="text-xs dim mt-1">timeout {task.timeout_s}s</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => runFireableTask(task)}
+                  disabled={firing !== null}
+                  className="chip w-full justify-center"
+                >
+                  {firing === task.task_name ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  Run now
+                </button>
+              </article>
+            ))}
+          </div>
+        </>
+      )}
+
       <p className="text-xs dim mt-4">
         Do not use <code>celery call</code> over SSH — it blocks until the pipeline finishes (~10–30+ min) and
-        fails if Redis is slow. Use this UI or{' '}
-        <code>POST /api/admin/celery/enqueue-task</code> instead.
+        fails if Redis is slow. Use enqueue for full pipelines or{' '}
+        <code>POST /api/admin/celery/run-task?task_name=...</code> for single steps.
       </p>
     </section>
   );

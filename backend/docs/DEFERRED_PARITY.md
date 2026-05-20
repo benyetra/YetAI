@@ -8,6 +8,7 @@ Items previously listed as "not ported" that are now wired into YetAI Celery pip
 |------|--------|
 | Module | `app/services/etl/mlb/mlb_ev.py` → `pred_value_bets` |
 | Celery | `app.tasks.etl_pipeline.mlb.ev` |
+| Admin | `POST /api/admin/celery/run-task?task_name=app.tasks.etl_pipeline.mlb.ev` (fireable catalog) |
 | Pipeline | `run_mlb_update_pipeline` enrichment phase (after weather + blowouts) |
 | Env | `ODDS_API_KEY`, optional `EV_HOME_FIELD_EDGE`, `EV_K`, S3 park factors CSV |
 
@@ -27,7 +28,7 @@ Items previously listed as "not ported" that are now wired into YetAI Celery pip
 | Models | `backend/models/nfl/*.pkl` (copied from YetiBets) |
 | Modules | `ml_feature_mapping.py`, `ml_kicker_ensemble.py` |
 | Integration | Blends into `kickers.py` after statistical prediction |
-| Env | `NFL_KICKER_ML_BLEND_WEIGHT` (default `0.35`) |
+| Env | `NFL_MODELS_S3_PREFIX` (e.g. `s3://yetibets/nfl/`), `NFL_KICKER_ML_BLEND_WEIGHT` (default `0.35`) |
 
 QB **passing-yard** ML (`advanced_qb_predictor.py`) remains deferred — current path uses nflverse + Odds API in `qb_dynamic` / `qb_betting`.
 

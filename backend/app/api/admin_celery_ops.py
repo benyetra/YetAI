@@ -1,4 +1,4 @@
-"""Admin Celery ops: task polling and production ETL verification."""
+"""Admin Celery ops: health, enqueue, fire-and-wait, verify, task status."""
 
 from __future__ import annotations
 
@@ -9,6 +9,127 @@ from pydantic import BaseModel
 
 from app.core.auth import get_current_user
 from app.core.service_loader import get_service, is_service_available
+
+# Allow-list of ETL tasks for POST /run-task (sync fire-and-wait).
+ADMIN_FIREABLE_TASKS: dict[str, float] = {
+    "app.tasks.health.ping": 10.0,
+    "app.tasks.games_sync.sync_games_cache": 180.0,
+    "app.tasks.etl_pipeline.nba.yesterdays_players": 120.0,
+    "app.tasks.etl_pipeline.nba.today_active_players": 120.0,
+    "app.tasks.etl_pipeline.nba.update_team_roster": 300.0,
+    "app.tasks.etl_pipeline.nba.update_recent_games": 900.0,
+    "app.tasks.etl_pipeline.nba.update_injury_status": 120.0,
+    "app.tasks.etl_pipeline.nba.update_game_lines": 120.0,
+    "app.tasks.etl_pipeline.nba.update_team_stats": 300.0,
+    "app.tasks.etl_pipeline.nba.update_player_data": 900.0,
+    "app.tasks.etl_pipeline.nba.update_expected_minutes": 120.0,
+    "app.tasks.etl_pipeline.nba.generate_predictions": 300.0,
+    "app.tasks.etl_pipeline.nba.generate_rebounds_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_assists_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_three_pt_made_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_steals_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.generate_blocks_predictions": 600.0,
+    "app.tasks.etl_pipeline.nba.store_actuals": 600.0,
+    "app.tasks.etl_pipeline.nba.find_top_performers": 180.0,
+    "app.tasks.etl_pipeline.nba.totals_projector": 300.0,
+    "app.tasks.etl_pipeline.mlb.strikeouts": 600.0,
+    "app.tasks.etl_pipeline.mlb.hits": 600.0,
+    "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.game_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.batter_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.weather": 180.0,
+    "app.tasks.etl_pipeline.mlb.blowouts": 180.0,
+    "app.tasks.etl_pipeline.mlb.hr_predictions": 900.0,
+    "app.tasks.etl_pipeline.mlb.ev": 600.0,
+    "app.tasks.etl_pipeline.nhl.collect_ingest": 1200.0,
+    "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
+    "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
+    "app.tasks.etl_pipeline.nhl.collect_goalie_actuals": 300.0,
+    "app.tasks.etl_pipeline.nfl.collect_qb_actuals": 600.0,
+    "app.tasks.etl_pipeline.nfl.collect_kicker_actuals": 300.0,
+    "app.tasks.etl_pipeline.nfl.qb_dynamic": 600.0,
+    "app.tasks.etl_pipeline.nfl.qb_betting": 300.0,
+    "app.tasks.etl_pipeline.nfl.qb_weekly": 900.0,
+    "app.tasks.etl_pipeline.nfl.kickers": 600.0,
+}
+
+PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
+    {
+        "task_name": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "label": "MLB daily projections",
+        "sport": "mlb",
+        "description": "Strikeouts, hits, boards, weather, blowouts, value bets (EV); optional HR ML when S3 CSVs set.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_mlb_store_actuals",
+        "label": "MLB store actuals",
+        "sport": "mlb",
+        "description": "Post-game actuals for game, strikeout, and batter projection tables.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nba_update_pipeline",
+        "label": "NBA daily pipeline",
+        "sport": "nba",
+        "description": "Full NBA ETL: roster, stats, injury, all prop models, game totals.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
+        "label": "NFL weekly pipeline",
+        "sport": "nfl",
+        "description": "QB actuals + kicker actuals, QB yards/lines, kicker projections (optional ML blend).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
+        "label": "NHL daily pipeline",
+        "sport": "nhl",
+        "description": "Ingest + goalie/SOG/totals with DraftKings edges.",
+    },
+]
+
+# Subset exposed in admin UI for one-off debug runs (sync, blocks until timeout).
+FIREABLE_CATALOG: list[dict[str, str | float]] = [
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.ev",
+        "label": "MLB value bets (EV)",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.ev"],
+        "description": "Refresh pred_value_bets for today (requires ODDS_API_KEY + projections).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.hr_predictions",
+        "label": "MLB HR ML",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.hr_predictions"],
+        "description": "dingerParlay predict_today when MLB_DAILY_FEATURES_S3 + MLB_LINEUP_CSV_S3 set.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.strikeouts",
+        "label": "MLB strikeouts",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.strikeouts"],
+        "description": "Populate pred_pitcher + strikeout boards.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",
+        "label": "NHL daily predictions",
+        "sport": "nhl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nhl.daily_predictions"
+        ],
+        "description": "Goalie, SOG, team totals automation.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.kickers",
+        "label": "NFL kickers",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.nfl.kickers"],
+        "description": "Kicker projections; ML blend when NFL_MODELS_S3_PREFIX or local models.",
+    },
+]
+
+ADMIN_ENQUEUE_TASKS: frozenset[str] = frozenset(
+    entry["task_name"] for entry in PIPELINE_ENQUEUE_CATALOG
+)
 
 
 async def require_admin(current_user: dict = Depends(get_current_user)):
@@ -28,20 +149,117 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
 
 router = APIRouter(prefix="/api/admin/celery", tags=["admin-celery"])
 
-PIPELINE_ORCHESTRATORS: frozenset[str] = frozenset(
-    {
-        "app.tasks.etl_pipeline.run_mlb_update_pipeline",
-        "app.tasks.etl_pipeline.run_mlb_store_actuals",
-        "app.tasks.etl_pipeline.run_nba_update_pipeline",
-        "app.tasks.etl_pipeline.run_nfl_update_pipeline",
-        "app.tasks.etl_pipeline.run_nhl_update_pipeline",
-    }
-)
+PIPELINE_ORCHESTRATORS = ADMIN_ENQUEUE_TASKS
+
+
+class CeleryEnqueueRequest(BaseModel):
+    task_name: str
 
 
 class CeleryVerifyEtlRequest(BaseModel):
     enqueue_all: bool = False
     wait_seconds: int = 0
+
+
+@router.get("/health")
+async def admin_celery_health(
+    admin_user: dict = Depends(require_admin),
+    include_games_sync: bool = False,
+):
+    """Round-trip ping (and optional games sync) through Celery."""
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+    from app.celery_app import celery_app
+
+    def _send_and_wait(task: str, timeout: float) -> dict:
+        async_result = celery_app.send_task(task)
+        try:
+            payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
+            return {"status": "ok", "task_id": async_result.id, "result": payload}
+        except CeleryTimeoutError:
+            return {
+                "status": "timeout",
+                "task_id": async_result.id,
+                "timeout_s": timeout,
+            }
+        except Exception as exc:
+            return {"status": "error", "task_id": async_result.id, "error": str(exc)}
+
+    ping = await asyncio.to_thread(_send_and_wait, "app.tasks.health.ping", 10.0)
+    response = {"ping": ping}
+    if include_games_sync:
+        response["games_sync"] = await asyncio.to_thread(
+            _send_and_wait, "app.tasks.games_sync.sync_games_cache", 180.0
+        )
+    return response
+
+
+@router.get("/pipeline-catalog")
+async def admin_celery_pipeline_catalog(admin_user: dict = Depends(require_admin)):
+    """Orchestrator tasks for fire-and-forget enqueue."""
+    return {
+        "enqueue_tasks": PIPELINE_ENQUEUE_CATALOG,
+        "fireable_count": len(ADMIN_FIREABLE_TASKS),
+    }
+
+
+@router.get("/fireable-catalog")
+async def admin_celery_fireable_catalog(admin_user: dict = Depends(require_admin)):
+    """Curated sub-tasks for admin debug runs (POST /run-task)."""
+    return {"fireable_tasks": FIREABLE_CATALOG}
+
+
+@router.post("/enqueue-task")
+async def admin_celery_enqueue_task(
+    body: CeleryEnqueueRequest,
+    admin_user: dict = Depends(require_admin),
+):
+    """Enqueue a Celery orchestrator; returns immediately with task_id."""
+    from app.celery_app import celery_app
+
+    if body.task_name not in ADMIN_ENQUEUE_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"task '{body.task_name}' is not in the admin enqueue allow-list",
+        )
+    async_result = celery_app.send_task(body.task_name)
+    return {
+        "status": "enqueued",
+        "task_id": async_result.id,
+        "task_name": body.task_name,
+    }
+
+
+@router.post("/run-task")
+async def admin_celery_run_task(
+    task_name: str,
+    admin_user: dict = Depends(require_admin),
+):
+    """Fire one allow-listed Celery task and wait for its result."""
+    from celery.exceptions import TimeoutError as CeleryTimeoutError
+    from app.celery_app import celery_app
+
+    timeout = ADMIN_FIREABLE_TASKS.get(task_name)
+    if timeout is None:
+        raise HTTPException(
+            status_code=400,
+            detail=f"task '{task_name}' is not in the admin allow-list",
+        )
+
+    def _send_and_wait() -> dict:
+        async_result = celery_app.send_task(task_name)
+        try:
+            payload = async_result.get(timeout=timeout, disable_sync_subtasks=False)
+            return {"status": "ok", "task_id": async_result.id, "result": payload}
+        except CeleryTimeoutError:
+            return {
+                "status": "timeout",
+                "task_id": async_result.id,
+                "timeout_s": timeout,
+            }
+        except Exception as exc:
+            return {"status": "error", "task_id": async_result.id, "error": str(exc)}
+
+    return await asyncio.to_thread(_send_and_wait)
 
 
 @router.get("/task-status/{task_id}")
@@ -79,7 +297,6 @@ async def admin_celery_verify_etl(
     admin_user: dict = Depends(require_admin),
 ):
     """DB checks for all four sport pipelines; optional enqueue of orchestrators."""
-    from celery.exceptions import TimeoutError as CeleryTimeoutError
     from app.celery_app import celery_app
     from app.services.etl.prod_verification import (
         prediction_api_counts,
@@ -97,22 +314,14 @@ async def admin_celery_verify_etl(
     if body.wait_seconds > 0 and enqueued:
         await asyncio.sleep(min(body.wait_seconds, 3600))
 
-    def _ping() -> dict:
-        async_result = celery_app.send_task("app.tasks.health.ping")
-        try:
-            payload = async_result.get(timeout=10.0, disable_sync_subtasks=False)
-            return {"status": "ok", "task_id": async_result.id, "result": payload}
-        except CeleryTimeoutError:
-            return {"status": "timeout", "task_id": async_result.id, "timeout_s": 10.0}
-        except Exception as exc:
-            return {"status": "error", "task_id": async_result.id, "error": str(exc)}
-
-    ping = await asyncio.to_thread(_ping)
+    ping_response = await admin_celery_health(
+        admin_user=admin_user, include_games_sync=False
+    )
     verification = await asyncio.to_thread(verify_all_sports)
     api_counts = await asyncio.to_thread(prediction_api_counts)
 
     return {
-        "celery_ping": ping,
+        "celery_ping": ping_response.get("ping"),
         "enqueued": enqueued,
         "verification": verification,
         "prediction_api_counts": api_counts,

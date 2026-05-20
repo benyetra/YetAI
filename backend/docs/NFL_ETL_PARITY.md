@@ -62,9 +62,14 @@ During NFL season, expect rows in `pred_qb_predictions` / `pred_kicker_predictio
 
 ## Kicker ML ensemble (ported)
 
-- Models: `backend/models/nfl/*.pkl`
+- Models: local `backend/models/nfl/*.pkl` **or** S3 prefix (recommended on Railway)
 - `ml_kicker_ensemble.py` blends ML FG probability with statistical score in `kickers.py`
-- Env: `NFL_KICKER_ML_BLEND_WEIGHT` (default `0.35`)
+
+| Variable | Purpose |
+|----------|---------|
+| `NFL_MODELS_S3_PREFIX` | e.g. `s3://yetibets/nfl/` — loads `logistic_model.pkl`, `xgboost_model.pkl`, `main_scaler.pkl`, etc. |
+| `NFL_KICKER_ML_BLEND_WEIGHT` | Blend weight (default `0.35`) |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Required when using S3 prefix |
 
 ## Still deferred
 
