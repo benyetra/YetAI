@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 
 import pandas as pd
 from sqlalchemy import text
@@ -18,6 +19,7 @@ from app.services.etl.mlb._db import db_session
 from app.models.predictions_models import Pitcher
 from app.services.etl.mlb._mlb_utils import *
 from app.services.etl.mlb.regression_analysis import (
+    _at_bats_heuristic,
     calculate_performance_metrics,
     fetch_past_performance_metrics,
     perform_regression_analysis,
@@ -48,6 +50,7 @@ from app.services.etl.mlb.mlb_matchup_analysis import (
     fetch_last_start_date,
 )
 
+logger = logging.getLogger(__name__)
 
 # Database configuration
 
@@ -176,6 +179,18 @@ def get_event_id_for_game(team1, team2):
     return None
 
 
+def _resolve_at_bats(projected, pitcher_id, innings, mae, build_stats):
+    """Never skip a probable starter solely because AB regression returned None."""
+    if projected is not None:
+        return projected
+    build_stats["ab_fallback_used"] += 1
+    logger.warning(
+        "AB projection returned None for pitcher %s; using innings heuristic",
+        pitcher_id,
+    )
+    return _at_bats_heuristic(innings, mae)
+
+
 def fetch_pitcher_data():
     EDGE_GATE = 0.02  # require ≥2% EV to call a side; otherwise neutral 'n'
     schedule = get_todays_games()
@@ -183,6 +198,7 @@ def fetch_pitcher_data():
     build_stats = {
         "probables_seen": 0,
         "skipped_ab_projection": 0,
+        "ab_fallback_used": 0,
         "build_errors": 0,
     }
 
@@ -370,16 +386,18 @@ def fetch_pitcher_data():
                         "strikeouts": pitcher_data["k_per_9"] * projected_innings,
                         "walks": pitcher_data["walks_per_9"] * projected_innings,
                     }
-                    projected_at_bats_base = project_at_bats_faced(
+                    projected_at_bats_base = _resolve_at_bats(
+                        project_at_bats_faced(
+                            pitcher_id,
+                            recent_data_base,
+                            projected_innings,
+                            mean_absolute_at_bats_error,
+                        ),
                         pitcher_id,
-                        recent_data_base,
                         projected_innings,
                         mean_absolute_at_bats_error,
+                        build_stats,
                     )
-                    if projected_at_bats_base is None:
-                        build_stats["skipped_ab_projection"] += 1
-                        print(f"Not enough data to project AB for {pitcher_name}")
-                        continue
 
                     projected_strikeouts_base = (
                         perform_regression_analysis(
@@ -402,13 +420,18 @@ def fetch_pitcher_data():
                         "strikeouts": pitcher_data["k_per_9"] * adj_ip,
                         "walks": pitcher_data["walks_per_9"] * adj_ip,
                     }
-                    projected_at_bats = project_at_bats_faced(
-                        pitcher_id, recent_data, adj_ip, mean_absolute_at_bats_error
+                    projected_at_bats = _resolve_at_bats(
+                        project_at_bats_faced(
+                            pitcher_id,
+                            recent_data,
+                            adj_ip,
+                            mean_absolute_at_bats_error,
+                        ),
+                        pitcher_id,
+                        adj_ip,
+                        mean_absolute_at_bats_error,
+                        build_stats,
                     )
-                    if projected_at_bats is None:
-                        build_stats["skipped_ab_projection"] += 1
-                        print(f"Not enough data to project AB (adj) for {pitcher_name}")
-                        continue
 
                     # 6) Re-run K regression with adjusted IP/AB and blend with debiased K
                     proj_k_reg = (

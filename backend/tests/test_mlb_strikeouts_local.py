@@ -31,6 +31,8 @@ def test_strikeouts_fetch_pitcher_returns_build_stats_tuple():
     text = _read(STRIKEOUTS_PY)
     assert "return pitchers, build_stats" in text
     assert '"probables_seen"' in text
+    assert "_resolve_at_bats" in text
+    assert '"ab_fallback_used"' in text
 
 
 def test_offsets_use_pred_strikeout_tables():
