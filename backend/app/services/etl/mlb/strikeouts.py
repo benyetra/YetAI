@@ -643,7 +643,7 @@ def fetch_and_update_app_data():
 
         print("Data updated successfully.")
         stored = db_session.query(Pitcher).count()
-        return stored, built
+        return stored, built, build_stats
     except Exception as e:
         db_session.rollback()
         print(f"Error fetching and storing data: {e}")
@@ -656,7 +656,7 @@ def run() -> dict:
 
     init_session()
     try:
-        count, built = fetch_and_update_app_data()
+        count, built, build_stats = fetch_and_update_app_data()
         if not count:
             return {
                 "status": "error",
