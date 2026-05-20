@@ -1,9 +1,12 @@
 """Unit tests for MLB enrichment helpers (no statsapi import chain)."""
 
 from app.services.etl.mlb._enrichment_helpers import (
+    commence_date_et,
     flatten_batters,
+    find_event_for_game,
     game_odds_key,
     match_team_price,
+    teams_match,
 )
 
 
@@ -18,6 +21,27 @@ def test_flatten_batters_already_flat():
 def test_flatten_batters_nested_lists():
     inner = [{"player_id": "1", "team": "Yankees"}]
     assert flatten_batters([inner]) == inner
+
+
+def test_commence_date_et_evening_game():
+    # 7:05 PM ET May 20 → UTC May 21
+    assert commence_date_et("2026-05-21T00:05:00Z").isoformat() == "2026-05-20"
+
+
+def test_teams_match_athletics_alias():
+    assert teams_match("Athletics", "Oakland Athletics")
+
+
+def test_find_event_for_game_fuzzy_teams():
+    game = {"away_name": "Athletics", "home_name": "Los Angeles Angels"}
+    events = [
+        {
+            "away_team": "Oakland Athletics",
+            "home_team": "Los Angeles Angels",
+            "bookmakers": [],
+        }
+    ]
+    assert find_event_for_game(game, events) is events[0]
 
 
 def test_match_team_price_fuzzy():

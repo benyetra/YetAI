@@ -34,7 +34,13 @@ def read_csv_anywhere(path, **kwargs):
 
 # your project imports
 from app.services.etl.mlb._db import db_session
-from app.services.etl.mlb._enrichment_helpers import game_odds_key, match_team_price
+from app.services.etl.mlb._enrichment_helpers import (
+    commence_date_et,
+    extract_h2h_prices,
+    find_event_for_game,
+    game_odds_key,
+    match_team_price,
+)
 from app.services.etl.nba._espn import now_eastern
 
 from app.models.predictions_models import ValueBet
@@ -161,13 +167,12 @@ def bullpen_usage_7d(team_id):
 
 
 # ─── FETCH ODDS (bulk — one API call) ───────────────────────────────────────────
-def get_odds(schedule):
-    """Return h2h prices keyed by ``away @ home`` for today's scheduled games."""
+def get_odds(schedule, stats: dict | None = None):
+    """Return h2h prices keyed by StatsAPI ``away @ home`` for today's ET slate."""
     if not ODDS_API_KEY:
         return {}
 
-    schedule_keys = {game_odds_key(g) for g in schedule}
-    today_iso = now_eastern().date().isoformat()
+    today_et = now_eastern().date()
     preferred = ("fanduel", "draftkings", "fanatics")
 
     try:
@@ -186,27 +191,28 @@ def get_odds(schedule):
         events = resp.json()
     except Exception as e:
         logging.warning("bulk odds fetch failed: %s", e)
+        if stats is not None:
+            stats["odds_fetch_error"] = str(e)
         return {}
 
+    events_today = [
+        e for e in events if commence_date_et(e.get("commence_time", "")) == today_et
+    ]
+    if stats is not None:
+        stats["odds_events_fetched"] = len(events)
+        stats["odds_events_today_et"] = len(events_today)
+        stats["odds_slate_date_et"] = today_et.isoformat()
+
     odds_map = {}
-    for event in events:
-        commence = event.get("commence_time", "")
-        if not commence.startswith(today_iso):
+    for g in schedule:
+        key = game_odds_key(g)
+        event = find_event_for_game(g, events_today)
+        if not event:
             continue
-        key = f"{event['away_team']} @ {event['home_team']}"
-        if key not in schedule_keys:
-            continue
-        for bm in event.get("bookmakers", []):
-            if bm.get("key") not in preferred:
-                continue
-            for market in bm.get("markets", []):
-                if market.get("key") != "h2h":
-                    continue
-                odds_map[key] = {o["name"]: o["price"] for o in market["outcomes"]}
-                logging.info("%s → %s (%s)", key, odds_map[key], bm.get("key"))
-                break
-            if key in odds_map:
-                break
+        prices = extract_h2h_prices(event, preferred)
+        if prices:
+            odds_map[key] = prices
+            logging.info("%s → %s", key, prices)
     return odds_map
 
 
@@ -365,7 +371,7 @@ def run_ev() -> tuple[int, dict]:
 
     schedule = get_todays_games()
     stats["schedule_games"] = len(schedule)
-    odds_map = get_odds(schedule)
+    odds_map = get_odds(schedule, stats)
     stored = []
     seen = set()
 
