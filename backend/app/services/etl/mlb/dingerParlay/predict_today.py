@@ -35,13 +35,20 @@ def read_csv_any(path, **kwargs):
 
 def load_model(path):
     """Load joblib pipeline from S3 or local."""
-    if path.startswith("s3://"):
-        bucket, key = path.split("/")[2], "/".join(path.split("/")[3:])
-        s3 = boto3.client("s3")
-        buf = BytesIO(s3.get_object(Bucket=bucket, Key=key)["Body"].read())
-        return joblib.load(buf)
-    else:
+    try:
+        if path.startswith("s3://"):
+            bucket, key = path.split("/")[2], "/".join(path.split("/")[3:])
+            s3 = boto3.client("s3")
+            buf = BytesIO(s3.get_object(Bucket=bucket, Key=key)["Body"].read())
+            return joblib.load(buf)
         return joblib.load(path)
+    except ModuleNotFoundError as exc:
+        if "numpy._core" in str(exc):
+            raise RuntimeError(
+                "HR model requires numpy>=2.0 at runtime (joblib pickle mismatch). "
+                "Rebuild the celery-worker image after updating backend/requirements.txt."
+            ) from exc
+        raise
 
 
 def extract_feature_names(model):
