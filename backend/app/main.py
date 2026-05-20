@@ -2389,6 +2389,34 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nba.find_top_performers": 180.0,
 }
 
+ADMIN_ENQUEUE_TASKS: frozenset[str] = frozenset(
+    {
+        "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "app.tasks.etl_pipeline.run_mlb_store_actuals",
+        "app.tasks.etl_pipeline.run_nba_update_pipeline",
+        "app.tasks.etl_pipeline.run_nfl_update_pipeline",
+        "app.tasks.etl_pipeline.run_nhl_update_pipeline",
+    }
+)
+
+
+@app.post("/api/admin/celery/enqueue-task")
+async def admin_celery_enqueue_task(
+    task_name: str,
+    admin_user: dict = Depends(require_admin),
+):
+    """Enqueue a Celery task and return immediately with task_id."""
+    from app.celery_app import celery_app
+
+    if task_name not in ADMIN_ENQUEUE_TASKS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"task '{task_name}' is not in the admin enqueue allow-list",
+        )
+
+    async_result = celery_app.send_task(task_name)
+    return {"status": "enqueued", "task_id": async_result.id, "task_name": task_name}
+
 
 @app.post("/api/admin/celery/run-task")
 async def admin_celery_run_task(
