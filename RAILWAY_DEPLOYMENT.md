@@ -78,18 +78,15 @@ Set these in Railway dashboard:
 
 ### Manual Deployment (Emergency)
 
-**GitHub Actions:** set **both** secrets — `RAILWAY_API_TOKEN` (account, for `link`) and `RAILWAY_TOKEN` (project, for `up`). See `CICD_SETUP.md`.
+**GitHub Actions:** secret `RAILWAY_TOKEN` only (production project token). See `CICD_SETUP.md`.
 
 ```bash
-npm install -g @railway/cli@latest
-railway logout   # important: otherwise login session overrides env tokens
+npm i -g @railway/cli@latest
+railway logout
+unset RAILWAY_API_TOKEN   # only one token env var at a time
+export RAILWAY_TOKEN='...'
 
-RAILWAY_API_TOKEN='...' railway link \
-  --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
-  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-  --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
-
-RAILWAY_TOKEN='...' railway up --detach   # no --environment flag
+railway up --detach --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
 ```
 
 ## Health Check

@@ -36,31 +36,30 @@ Set these in your GitHub repository under Settings → Secrets and variables →
 
 ## 🚀 Setup Instructions
 
-### Step 1: Get both Railway tokens (GitHub Actions deploy)
+### Step 1: Railway project token (GitHub Actions deploy)
 
-The deploy workflow needs **two** secrets. A project token alone is not enough for `railway link`; an account token alone fails on `railway up` (401).
+The deploy workflow uses **one** secret: `RAILWAY_TOKEN` (project token for **production**).
 
-| GitHub secret | Create at | Used for |
-|---------------|---------|----------|
-| `RAILWAY_API_TOKEN` | [railway.com/account/tokens](https://railway.com/account/tokens) — **No workspace** | `railway link` |
-| `RAILWAY_TOKEN` | Project → Settings → Tokens — pick **production** env | `railway up` |
+| GitHub secret | Create at |
+|---------------|---------|
+| `RAILWAY_TOKEN` | **yetai-backend** project → Settings → Tokens → **production** environment |
 
-**Local test** (from repo root; logout first so the CLI does not ignore env tokens):
+Optional `RAILWAY_API_TOKEN` (account token) is only for local `railway link` / admin — **not** used in CI.
+
+**Critical:** Railway allows **only one** of `RAILWAY_TOKEN` or `RAILWAY_API_TOKEN` in the environment. If both are set, `link` and `up` fail with `Unauthorized`. Always `unset` the other before testing.
+
+**Local test** (repo root; API service = `YetAI` / `9fe8f0dc-...`):
 
 ```bash
+npm i -g @railway/cli@latest
 railway logout
+unset RAILWAY_API_TOKEN
+export RAILWAY_TOKEN='your-production-project-token'
 
-RAILWAY_API_TOKEN='your-account-token' railway link \
-  --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
-  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-  --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
-
-RAILWAY_TOKEN='your-project-token' railway up --detach
+railway up --detach --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
 ```
 
-Do **not** pass `--environment` on `railway up` when using a project token — the token is already scoped to one environment. Passing a different environment ID causes `Unauthorized`.
-
-Upgrade CLI if needed: `npm i -g @railway/cli@latest` (4.10+).
+Do **not** pass `--environment` on `up` — the project token is already bound to one environment.
 
 ### Step 2: Get Vercel Tokens
 

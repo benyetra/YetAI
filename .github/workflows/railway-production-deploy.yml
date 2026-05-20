@@ -14,19 +14,14 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
 
-      # Railway uses TWO token types (do not swap them):
-      # - RAILWAY_API_TOKEN: Account token (Account Settings → Tokens, no workspace)
-      #   → railway link
-      # - RAILWAY_TOKEN: Project token (Project → Settings → Tokens, production env)
-      #   → railway up
-      # Project tokens are bound to ONE environment; do not pass --environment on `up`.
+      # Project token only (Project → Settings → Tokens → production environment).
+      # Do NOT set RAILWAY_API_TOKEN in the same step — Railway rejects both at once.
+      # No `railway link` needed: pass the API service id on `up`.
       - name: Deploy backend (api.yetai.app)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          RAILWAY_API_TOKEN="${{ secrets.RAILWAY_API_TOKEN }}" railway link \
-            --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
-            --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-            --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
-          RAILWAY_TOKEN="${{ secrets.RAILWAY_TOKEN }}" railway up --detach
+          railway up --detach --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
 
       - name: Wait for health check
         run: |
