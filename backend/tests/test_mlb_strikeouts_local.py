@@ -2,6 +2,10 @@
 
 Tier 1: source contract tests — always run, no MLB/scikit-learn imports.
 Tier 2: behavior tests — skip if optional deps are missing.
+
+We do not import app.services.etl.mlb.strikeouts here: module init needs S3 park
+factors and a strikeout classifier pickle. run() wiring is covered by
+test_run_logic_simulation_no_name_error.
 """
 
 from __future__ import annotations
@@ -13,9 +17,7 @@ import pytest
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 STRIKEOUTS_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "strikeouts.py"
 OFFSETS_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "offsets.py"
-REGRESSION_PY = (
-    BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "regression_analysis.py"
-)
+REGRESSION_PY = BACKEND_ROOT / "app" / "services" / "etl" / "mlb" / "regression_analysis.py"
 
 
 def _read(path: Path) -> str:
@@ -110,6 +112,3 @@ def test_project_at_bats_empty_history_uses_heuristic():
 
     assert out is not None
     assert 17.0 <= out <= 40.0
-
-    # strikeouts.run() is covered by test_run_logic_simulation_no_name_error (no S3 import).
-    # Importing app.services.etl.mlb.strikeouts in CI requires classifier + park_factors S3.
