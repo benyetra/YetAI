@@ -23,13 +23,17 @@ except Exception:
 def projected_lineup(team_id: int) -> List[int]:
     """Fallback projected lineup: first 9 active players."""
     try:
-        roster = statsapi.get("team_roster", {"teamId": team_id, "rosterType": "active"})["roster"]
+        roster = statsapi.get(
+            "team_roster", {"teamId": team_id, "rosterType": "active"}
+        )["roster"]
         return [p["person"]["id"] for p in roster[:9]]
     except Exception:
         return []
 
 
-def batter_k_rate_vs_hand(batter_id: int, hand_code: str, season: Optional[str] = None) -> float:
+def batter_k_rate_vs_hand(
+    batter_id: int, hand_code: str, season: Optional[str] = None
+) -> float:
     """
     Approx strikeout rate (K per AB) vs pitcher hand. hand_code: 'R' or 'L'.
     """
@@ -46,7 +50,7 @@ def batter_k_rate_vs_hand(batter_id: int, hand_code: str, season: Optional[str] 
         )
         s = data["people"][0]["stats"][0]["splits"][0]["stat"]
         ab = float(s.get("atBats", 0) or 0.0)
-        k  = float(s.get("strikeOuts", 0) or 0.0)
+        k = float(s.get("strikeOuts", 0) or 0.0)
         return (k / ab) if ab > 0 else 0.20
     except Exception:
         return 0.20  # safe fallback
@@ -61,7 +65,9 @@ def lineup_k_rate_vs_hand(team_id: int, pitcher_hand_code: str) -> Optional[floa
     return (sum(vals) / len(vals)) if vals else None
 
 
-def lineup_matchup_adjusted_strikeouts(pitcher_id: int, batter_ids: List[int], pitcher_hand_code: str) -> float:
+def lineup_matchup_adjusted_strikeouts(
+    pitcher_id: int, batter_ids: List[int], pitcher_hand_code: str
+) -> float:
     """
     Lineup-weighted matchup factor using pitch-type whiffs + location cold zones.
     """
@@ -81,7 +87,9 @@ def lineup_matchup_adjusted_strikeouts(pitcher_id: int, batter_ids: List[int], p
     if fetch_batter_performance_vs_pitches is not None:
         for bid in batter_ids:
             try:
-                perf_by_batter[bid] = fetch_batter_performance_vs_pitches(bid, pitcher_hand_code)
+                perf_by_batter[bid] = fetch_batter_performance_vs_pitches(
+                    bid, pitcher_hand_code
+                )
             except Exception:
                 perf_by_batter[bid] = {}
 

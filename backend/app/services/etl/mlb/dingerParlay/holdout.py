@@ -22,17 +22,19 @@ def main():
         description="Check is_HR distribution in hold-out slice"
     )
     parser.add_argument(
-        "--data", required=True,
-        help="Path to full dataset CSV (local or s3://)"
+        "--data", required=True, help="Path to full dataset CSV (local or s3://)"
     )
     parser.add_argument(
-        "--start-date", default="2025-06-01",
-        help="Inclusive start date for hold-out (YYYY-MM-DD)"
+        "--start-date",
+        default="2025-06-01",
+        help="Inclusive start date for hold-out (YYYY-MM-DD)",
     )
     args = parser.parse_args()
 
     # Logging
-    logging.basicConfig(format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO)
+    logging.basicConfig(
+        format="%(asctime)s %(levelname)s: %(message)s", level=logging.INFO
+    )
     logging.info(f"Loading data from {args.data}")
 
     # Load data

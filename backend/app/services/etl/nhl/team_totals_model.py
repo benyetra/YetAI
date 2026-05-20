@@ -34,17 +34,22 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
         game_date = date.today()
 
     # Get team data
-    home_team = db_session.query(NHLTeamStats).filter_by(team_name=home_team_name).first()
-    away_team = db_session.query(NHLTeamStats).filter_by(team_name=away_team_name).first()
+    home_team = (
+        db_session.query(NHLTeamStats).filter_by(team_name=home_team_name).first()
+    )
+    away_team = (
+        db_session.query(NHLTeamStats).filter_by(team_name=away_team_name).first()
+    )
 
     if not home_team or not away_team:
-        return {'error': 'Team not found'}
+        return {"error": "Team not found"}
 
     # === HOME TEAM EXPECTED GOALS ===
 
     # Start with home offense vs away defense
-    home_base_goals = (home_team.goals_for_per_game or 0) * 0.5 + \
-                      (away_team.goals_against_per_game or 0) * 0.5
+    home_base_goals = (home_team.goals_for_per_game or 0) * 0.5 + (
+        away_team.goals_against_per_game or 0
+    ) * 0.5
 
     # Apply home ice advantage
     home_ice_boost = 1.10  # 10% boost for home team
@@ -71,8 +76,9 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
     # === AWAY TEAM EXPECTED GOALS ===
 
     # Start with away offense vs home defense
-    away_base_goals = (away_team.goals_for_per_game or 0) * 0.5 + \
-                      (home_team.goals_against_per_game or 0) * 0.5
+    away_base_goals = (away_team.goals_for_per_game or 0) * 0.5 + (
+        home_team.goals_against_per_game or 0
+    ) * 0.5
 
     # Away teams score slightly less
     away_penalty = 0.95  # -5% for away team
@@ -111,16 +117,24 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
     # Recent form adjustment (use last 10 games data)
     recent_form_adj = 1.0
 
-    home_recent_gpg = home_team.last_10_goals_for_per_game or home_team.goals_for_per_game or 0
-    away_recent_gpg = away_team.last_10_goals_for_per_game or away_team.goals_for_per_game or 0
+    home_recent_gpg = (
+        home_team.last_10_goals_for_per_game or home_team.goals_for_per_game or 0
+    )
+    away_recent_gpg = (
+        away_team.last_10_goals_for_per_game or away_team.goals_for_per_game or 0
+    )
 
     # If both teams are hot offensively
-    if home_recent_gpg > (home_team.goals_for_per_game or 0) * 1.15 and \
-       away_recent_gpg > (away_team.goals_for_per_game or 0) * 1.15:
+    if (
+        home_recent_gpg > (home_team.goals_for_per_game or 0) * 1.15
+        and away_recent_gpg > (away_team.goals_for_per_game or 0) * 1.15
+    ):
         recent_form_adj = 1.08  # Both teams hot
     # If both teams are cold offensively
-    elif home_recent_gpg < (home_team.goals_for_per_game or 0) * 0.85 and \
-         away_recent_gpg < (away_team.goals_for_per_game or 0) * 0.85:
+    elif (
+        home_recent_gpg < (home_team.goals_for_per_game or 0) * 0.85
+        and away_recent_gpg < (away_team.goals_for_per_game or 0) * 0.85
+    ):
         recent_form_adj = 0.92  # Both teams cold
 
     total_goals *= recent_form_adj
@@ -155,7 +169,9 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
 
     # If teams have big gaps between recent and season averages, adjust confidence
     if home_team.last_10_goals_for_per_game and home_team.goals_for_per_game:
-        home_variance = abs(home_team.last_10_goals_for_per_game - home_team.goals_for_per_game)
+        home_variance = abs(
+            home_team.last_10_goals_for_per_game - home_team.goals_for_per_game
+        )
         if home_variance > 1.0:
             home_consistency = 0.85  # Very inconsistent
         elif home_variance > 0.5:
@@ -164,7 +180,9 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
             home_consistency = 1.08  # Very consistent, boost confidence
 
     if away_team.last_10_goals_for_per_game and away_team.goals_for_per_game:
-        away_variance = abs(away_team.last_10_goals_for_per_game - away_team.goals_for_per_game)
+        away_variance = abs(
+            away_team.last_10_goals_for_per_game - away_team.goals_for_per_game
+        )
         if away_variance > 1.0:
             away_consistency = 0.85  # Very inconsistent
         elif away_variance > 0.5:
@@ -209,28 +227,26 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
 
     # Build result
     result = {
-        'game_date': game_date,
-        'home_team': home_team_name,
-        'away_team': away_team_name,
-
+        "game_date": game_date,
+        "home_team": home_team_name,
+        "away_team": away_team_name,
         # Predictions
-        'predicted_total_goals': round(total_goals, 2),
-        'predicted_home_goals': round(home_expected, 2),
-        'predicted_away_goals': round(away_expected, 2),
-        'suggested_ou_line': ou_line,
-        'recommendation': recommendation,
-        'confidence': confidence,
-
+        "predicted_total_goals": round(total_goals, 2),
+        "predicted_home_goals": round(home_expected, 2),
+        "predicted_away_goals": round(away_expected, 2),
+        "suggested_ou_line": ou_line,
+        "recommendation": recommendation,
+        "confidence": confidence,
         # Supporting metrics
-        'home_offense_rating': round(home_team.goals_for_per_game or 0, 2),
-        'away_offense_rating': round(away_team.goals_for_per_game or 0, 2),
-        'home_defense_rating': round(home_team.goals_against_per_game or 0, 2),
-        'away_defense_rating': round(away_team.goals_against_per_game or 0, 2),
-        'combined_pace': round(combined_shots, 1),
-        'home_pp_pct': round((home_team.power_play_pct or 0) * 100, 1),
-        'away_pp_pct': round((away_team.power_play_pct or 0) * 100, 1),
-        'home_pk_pct': round((home_team.penalty_kill_pct or 0) * 100, 1),
-        'away_pk_pct': round((away_team.penalty_kill_pct or 0) * 100, 1),
+        "home_offense_rating": round(home_team.goals_for_per_game or 0, 2),
+        "away_offense_rating": round(away_team.goals_for_per_game or 0, 2),
+        "home_defense_rating": round(home_team.goals_against_per_game or 0, 2),
+        "away_defense_rating": round(away_team.goals_against_per_game or 0, 2),
+        "combined_pace": round(combined_shots, 1),
+        "home_pp_pct": round((home_team.power_play_pct or 0) * 100, 1),
+        "away_pp_pct": round((away_team.power_play_pct or 0) * 100, 1),
+        "home_pk_pct": round((home_team.penalty_kill_pct or 0) * 100, 1),
+        "away_pk_pct": round((away_team.penalty_kill_pct or 0) * 100, 1),
     }
 
     return result
@@ -250,14 +266,14 @@ def generate_daily_totals_predictions(game_date=None):
 
     # Sample matchups (in real use, would get from actual schedule)
     matchups = [
-        ('Toronto', 'Boston'),
-        ('Vegas', 'Colorado'),
-        ('Tampa Bay', 'Florida'),
-        ('Edmonton', 'Calgary'),
-        ('New York Rangers', 'New Jersey'),
-        ('Dallas', 'Minnesota'),
-        ('Carolina', 'Pittsburgh'),
-        ('Los Angeles', 'Seattle'),
+        ("Toronto", "Boston"),
+        ("Vegas", "Colorado"),
+        ("Tampa Bay", "Florida"),
+        ("Edmonton", "Calgary"),
+        ("New York Rangers", "New Jersey"),
+        ("Dallas", "Minnesota"),
+        ("Carolina", "Pittsburgh"),
+        ("Los Angeles", "Seattle"),
     ]
 
     predictions = []
@@ -265,23 +281,35 @@ def generate_daily_totals_predictions(game_date=None):
     for home, away in matchups:
         pred = predict_team_total_goals(home, away, game_date)
 
-        if 'error' not in pred:
+        if "error" not in pred:
             predictions.append(pred)
 
             # Display prediction
             print(f"{pred['away_team']:25} @ {pred['home_team']:25}")
             print(f"  Predicted Total: {pred['predicted_total_goals']:.1f} goals")
-            print(f"    Home: {pred['predicted_home_goals']:.1f} | Away: {pred['predicted_away_goals']:.1f}")
+            print(
+                f"    Home: {pred['predicted_home_goals']:.1f} | Away: {pred['predicted_away_goals']:.1f}"
+            )
             print(f"  Suggested O/U Line: {pred['suggested_ou_line']}")
-            print(f"  Recommendation: {pred['recommendation']:15} | Confidence: {pred['confidence']}%")
+            print(
+                f"  Recommendation: {pred['recommendation']:15} | Confidence: {pred['confidence']}%"
+            )
 
             # Show key factors
-            print(f"\n  Offense: {pred['home_team'][:15]:15} {pred['home_offense_rating']:.2f} GPG | "
-                  f"{pred['away_team'][:15]:15} {pred['away_offense_rating']:.2f} GPG")
-            print(f"  Defense: {pred['home_team'][:15]:15} {pred['home_defense_rating']:.2f} GA/G | "
-                  f"{pred['away_team'][:15]:15} {pred['away_defense_rating']:.2f} GA/G")
-            print(f"  Special Teams: {pred['home_team'][:15]:15} PP {pred['home_pp_pct']:.1f}% / PK {pred['home_pk_pct']:.1f}%")
-            print(f"                 {pred['away_team'][:15]:15} PP {pred['away_pp_pct']:.1f}% / PK {pred['away_pk_pct']:.1f}%")
+            print(
+                f"\n  Offense: {pred['home_team'][:15]:15} {pred['home_offense_rating']:.2f} GPG | "
+                f"{pred['away_team'][:15]:15} {pred['away_offense_rating']:.2f} GPG"
+            )
+            print(
+                f"  Defense: {pred['home_team'][:15]:15} {pred['home_defense_rating']:.2f} GA/G | "
+                f"{pred['away_team'][:15]:15} {pred['away_defense_rating']:.2f} GA/G"
+            )
+            print(
+                f"  Special Teams: {pred['home_team'][:15]:15} PP {pred['home_pp_pct']:.1f}% / PK {pred['home_pk_pct']:.1f}%"
+            )
+            print(
+                f"                 {pred['away_team'][:15]:15} PP {pred['away_pp_pct']:.1f}% / PK {pred['away_pk_pct']:.1f}%"
+            )
             print(f"  Pace: {pred['combined_pace']:.1f} combined shots/game")
             print()
 
@@ -293,29 +321,29 @@ def generate_daily_totals_predictions(game_date=None):
 
 
 if __name__ == "__main__":
-    
-        # Test the model
-        print("\nTesting NHL Team Total Goals Prediction Model\n")
 
-        # Test with a specific matchup
-        print(f"=== SINGLE PREDICTION TEST ===")
-        pred = predict_team_total_goals('Toronto', 'Boston')
+    # Test the model
+    print("\nTesting NHL Team Total Goals Prediction Model\n")
 
-        print(f"\nMatchup: {pred['away_team']} @ {pred['home_team']}")
-        print(f"\nPredicted Total: {pred['predicted_total_goals']:.2f} goals")
-        print(f"  Home expected: {pred['predicted_home_goals']:.2f}")
-        print(f"  Away expected: {pred['predicted_away_goals']:.2f}")
-        print(f"\nSuggested O/U Line: {pred['suggested_ou_line']}")
-        print(f"Recommendation: {pred['recommendation']}")
-        print(f"Confidence: {pred['confidence']}%")
+    # Test with a specific matchup
+    print(f"=== SINGLE PREDICTION TEST ===")
+    pred = predict_team_total_goals("Toronto", "Boston")
 
-        print(f"\nKey Metrics:")
-        print(f"  Home offense: {pred['home_offense_rating']:.2f} GPG")
-        print(f"  Away offense: {pred['away_offense_rating']:.2f} GPG")
-        print(f"  Home defense: {pred['home_defense_rating']:.2f} GA/G")
-        print(f"  Away defense: {pred['away_defense_rating']:.2f} GA/G")
-        print(f"  Combined pace: {pred['combined_pace']:.1f} shots/game")
-        print()
+    print(f"\nMatchup: {pred['away_team']} @ {pred['home_team']}")
+    print(f"\nPredicted Total: {pred['predicted_total_goals']:.2f} goals")
+    print(f"  Home expected: {pred['predicted_home_goals']:.2f}")
+    print(f"  Away expected: {pred['predicted_away_goals']:.2f}")
+    print(f"\nSuggested O/U Line: {pred['suggested_ou_line']}")
+    print(f"Recommendation: {pred['recommendation']}")
+    print(f"Confidence: {pred['confidence']}%")
 
-        # Generate daily predictions
-        generate_daily_totals_predictions()
+    print(f"\nKey Metrics:")
+    print(f"  Home offense: {pred['home_offense_rating']:.2f} GPG")
+    print(f"  Away offense: {pred['away_offense_rating']:.2f} GPG")
+    print(f"  Home defense: {pred['home_defense_rating']:.2f} GA/G")
+    print(f"  Away defense: {pred['away_defense_rating']:.2f} GA/G")
+    print(f"  Combined pace: {pred['combined_pace']:.1f} shots/game")
+    print()
+
+    # Generate daily predictions
+    generate_daily_totals_predictions()

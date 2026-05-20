@@ -31,7 +31,9 @@ def main() -> int:
     yesterday = today - timedelta(days=1)
     db = SessionLocal()
     try:
-        points = db.query(PointsProjections).filter(PointsProjections.date == today).count()
+        points = (
+            db.query(PointsProjections).filter(PointsProjections.date == today).count()
+        )
         pra = db.query(PRAProjections).filter(PRAProjections.date == today).count()
         totals_today = (
             db.query(NBATotalsProjections)
@@ -59,9 +61,7 @@ def main() -> int:
             .filter(PointsProjections.date == yesterday)
             .count()
         )
-        rg_y = (
-            db.query(RecentGames).filter(RecentGames.game_date == yesterday).count()
-        )
+        rg_y = db.query(RecentGames).filter(RecentGames.game_date == yesterday).count()
         by_stat = (
             db.query(PredictionAccuracy.stat_type, func.count())
             .filter(PredictionAccuracy.game_date == yesterday)
@@ -87,7 +87,9 @@ def main() -> int:
     print(
         "  NOTE: game O/U accuracy uses pred_nba_totals_* tables, not player stat_type in"
     )
-    print("        pred_prediction_accuracy (see calculate_prediction_accuracy STAT_CONFIGS).")
+    print(
+        "        pred_prediction_accuracy (see calculate_prediction_accuracy STAT_CONFIGS)."
+    )
     print()
     print("--- Yesterday accuracy (player props) ---")
     print(f"  projections (points, {yesterday}): {proj_y}")

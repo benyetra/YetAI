@@ -28,7 +28,9 @@ def run_projections_phase(target_date: date | None = None) -> dict:
 
     results["hits"] = run_hits()
 
-    from app.services.etl.mlb.daily_projection_update import run_store_strikeout_projections
+    from app.services.etl.mlb.daily_projection_update import (
+        run_store_strikeout_projections,
+    )
 
     results["strikeout_projections"] = run_store_strikeout_projections(today)
 
@@ -50,7 +52,12 @@ def run_projections_phase(target_date: date | None = None) -> dict:
 
     results["blowouts"] = run_blowouts()
 
-    return {"status": "ok", "date": today.isoformat(), "phase": "projections", "results": results}
+    return {
+        "status": "ok",
+        "date": today.isoformat(),
+        "phase": "projections",
+        "results": results,
+    }
 
 
 def run_actuals_phase(target_date: date | None = None) -> dict:
@@ -70,7 +77,12 @@ def run_actuals_phase(target_date: date | None = None) -> dict:
 
     results["batter_actuals"] = run_store_batter_actuals(yesterday)
 
-    return {"status": "ok", "date": yesterday.isoformat(), "phase": "actuals", "results": results}
+    return {
+        "status": "ok",
+        "date": yesterday.isoformat(),
+        "phase": "actuals",
+        "results": results,
+    }
 
 
 def _run_hr_predictions_optional() -> dict:

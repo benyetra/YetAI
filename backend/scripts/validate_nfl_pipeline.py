@@ -32,13 +32,18 @@ def main() -> int:
     with engine.connect() as conn:
         for table, date_col, d in checks:
             if date_col and d:
-                q = text(
-                    f"SELECT COUNT(*) FROM {table} WHERE {date_col} >= :d"  # noqa: S608
+                q = text(  # nosec B608 — table/column from internal allowlist
+                    f"SELECT COUNT(*) FROM {table} WHERE {date_col} >= :d"
                 )
                 n = conn.execute(q, {"d": d}).scalar() or 0
                 label = f"{table} ({date_col}>={d})"
             else:
-                n = conn.execute(text(f"SELECT COUNT(*) FROM {table}")).scalar() or 0
+                n = (
+                    conn.execute(
+                        text(f"SELECT COUNT(*) FROM {table}")  # nosec B608
+                    ).scalar()
+                    or 0
+                )
                 label = table
             status = "ok" if n > 0 else "empty"
             if n == 0 and table.endswith("_predictions"):

@@ -97,9 +97,7 @@ def mlb_predictions(
         "game_projections": _query_recent(
             db, GameProjections, "date", target_date, limit
         ),
-        "projected_hits": _query_recent(
-            db, ProjectedHits, "date", target_date, limit
-        ),
+        "projected_hits": _query_recent(db, ProjectedHits, "date", target_date, limit),
         "projected_homers": _query_recent(
             db, ProjectedHomers, "date", target_date, limit
         ),

@@ -7,6 +7,7 @@ import requests
 from datetime import datetime, timedelta
 import time
 
+
 class NHLAPIClient:
     def __init__(self):
         self.base_url = "https://api-web.nhle.com/v1"
@@ -18,7 +19,7 @@ class NHLAPIClient:
         date format: YYYY-MM-DD (defaults to today)
         """
         if date is None:
-            date = datetime.now().strftime('%Y-%m-%d')
+            date = datetime.now().strftime("%Y-%m-%d")
 
         url = f"{self.base_url}/schedule/{date}"
         response = requests.get(url)
@@ -123,10 +124,10 @@ class NHLAPIClient:
         """
         schedule = self.get_team_schedule(team_abbrev, season)
 
-        if not schedule or 'games' not in schedule:
+        if not schedule or "games" not in schedule:
             return []
 
-        games = [g for g in schedule['games'] if g['gameType'] == game_type]
+        games = [g for g in schedule["games"] if g["gameType"] == game_type]
         return games
 
     def get_game_details_batch(self, game_ids, delay=0.5):
@@ -253,5 +254,9 @@ if __name__ == "__main__":
     print("\nTesting boxscore endpoint...")
     boxscore = client.get_game_boxscore(2024020001)
     if boxscore:
-        print(f"Game: {boxscore['awayTeam']['abbrev']} @ {boxscore['homeTeam']['abbrev']}")
-        print(f"Score: {boxscore['awayTeam']['score']} - {boxscore['homeTeam']['score']}")
+        print(
+            f"Game: {boxscore['awayTeam']['abbrev']} @ {boxscore['homeTeam']['abbrev']}"
+        )
+        print(
+            f"Score: {boxscore['awayTeam']['score']} - {boxscore['homeTeam']['score']}"
+        )

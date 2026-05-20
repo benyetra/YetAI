@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from app.services.etl.mlb.mlb_batter_analysis import fetch_batter_performance_vs_pitches
 from app.services.etl.mlb.mlb_pitcher_analysis import fetch_pitcher_data
 
+
 def fetch_last_start_date(pitcher_id):
     """
     Return the date of the pitcher’s most recent start this season.
@@ -11,9 +12,7 @@ def fetch_last_start_date(pitcher_id):
     """
     try:
         data = statsapi.player_stat_data(
-            pitcher_id,
-            group="pitching",
-            type="gameLog"        # no season filter here
+            pitcher_id, group="pitching", type="gameLog"  # no season filter here
         )
         splits = data.get("stats", [{}])[0].get("splits", [])
 
@@ -23,7 +22,7 @@ def fetch_last_start_date(pitcher_id):
             split["date"]
             for split in splits
             if split.get("stat", {}).get("gamesStarted", 0) > 0
-               and split.get("date", "").startswith(this_year)
+            and split.get("date", "").startswith(this_year)
         ]
 
         if start_dates:
@@ -51,17 +50,13 @@ def matchup_adjusted_strikeouts(pitcher_id, batter_id):
     data = resp.json()
 
     if "people" in data and data["people"]:
-        pitcher_hand = data["people"][0] \
-            .get("pitchHand", {}) \
-            .get("code", "R")
+        pitcher_hand = data["people"][0].get("pitchHand", {}).get("code", "R")
     else:
         print(f"Warning: Unable to fetch pitcher handedness for {pitcher_id}")
         pitcher_hand = "R"
 
     # Batter performance vs. that hand
-    batter_performance = fetch_batter_performance_vs_pitches(
-        batter_id, pitcher_hand
-    )
+    batter_performance = fetch_batter_performance_vs_pitches(batter_id, pitcher_hand)
 
     strikeout_factor = 0.0
 
@@ -82,7 +77,8 @@ def matchup_adjusted_strikeouts(pitcher_id, batter_id):
         if lo_pct > 30 and "lowOutside" in bp["cold_zones"]:
             location_advantage += 0.15
 
-        strikeout_factor += (whiff_rate_weight + location_advantage) \
-                             * stats["usage_rate"]
+        strikeout_factor += (whiff_rate_weight + location_advantage) * stats[
+            "usage_rate"
+        ]
 
     return round(strikeout_factor, 2)

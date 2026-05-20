@@ -119,9 +119,7 @@ def run() -> dict:
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
                     existing.fanduel_line = fd_line if fd_line > 0 else None
-                    existing.fanduel_over_under = (
-                        fd_flag if fd_flag != "n" else None
-                    )
+                    existing.fanduel_over_under = fd_flag if fd_flag != "n" else None
                     updated += 1
                 else:
                     db.add(
@@ -132,9 +130,7 @@ def run() -> dict:
                             opponent_team_name=player.opponent_team_name,
                             projected_three_pt_made=projected,
                             fanduel_line=fd_line if fd_line > 0 else None,
-                            fanduel_over_under=(
-                                fd_flag if fd_flag != "n" else None
-                            ),
+                            fanduel_over_under=(fd_flag if fd_flag != "n" else None),
                         )
                     )
                     created += 1

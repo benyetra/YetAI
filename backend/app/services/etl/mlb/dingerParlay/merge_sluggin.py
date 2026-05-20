@@ -8,6 +8,7 @@ import pandas as pd
 import boto3
 from io import StringIO, BytesIO
 
+
 def list_s3_files(bucket, prefix, pattern):
     s3 = boto3.client("s3")
     paginator = s3.get_paginator("list_objects_v2")
@@ -19,12 +20,14 @@ def list_s3_files(bucket, prefix, pattern):
                 files.append(f"s3://{bucket}/{key}")
     return sorted(files)
 
+
 def read_csv_s3(s3_uri):
     bucket = s3_uri.split("/")[2]
     key = "/".join(s3_uri.split("/")[3:])
     s3 = boto3.client("s3")
     response = s3.get_object(Bucket=bucket, Key=key)
     return pd.read_csv(BytesIO(response["Body"].read()))
+
 
 def write_csv_s3(df, s3_uri):
     bucket = s3_uri.split("/")[2]
@@ -34,7 +37,11 @@ def write_csv_s3(df, s3_uri):
     boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=csv_buffer.getvalue())
     print(f"🔗 Merged files → {s3_uri} ({len(df)} rows)")
 
-def main(input_pattern="scripts/mlb/dingerParlay/data/slugging_*.csv", output_path="scripts/mlb/dingerParlay/data/slugging_all.csv"):
+
+def main(
+    input_pattern="scripts/mlb/dingerParlay/data/slugging_*.csv",
+    output_path="scripts/mlb/dingerParlay/data/slugging_all.csv",
+):
     # S3 or local?
     if input_pattern.startswith("s3://"):
         bucket = input_pattern.split("/")[2]
@@ -71,12 +78,22 @@ def main(input_pattern="scripts/mlb/dingerParlay/data/slugging_*.csv", output_pa
         career.to_csv(output_path, index=False)
         print(f"🔗 Merged {len(paths)} files → {output_path} ({len(career)} rows)")
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Merge slugging_*.csv to slugging_all.csv (local or S3)")
-    parser.add_argument("--input", default="scripts/mlb/dingerParlay/data/slugging_*.csv",
-                        help="Glob or S3 URI pattern for input CSVs (e.g. s3://bucket/slugging/slugging_*.csv)")
-    parser.add_argument("--output", default="scripts/mlb/dingerParlay/data/slugging_all.csv",
-                        help="Output path (local file or s3://bucket/slugging_all.csv)")
+
+    parser = argparse.ArgumentParser(
+        description="Merge slugging_*.csv to slugging_all.csv (local or S3)"
+    )
+    parser.add_argument(
+        "--input",
+        default="scripts/mlb/dingerParlay/data/slugging_*.csv",
+        help="Glob or S3 URI pattern for input CSVs (e.g. s3://bucket/slugging/slugging_*.csv)",
+    )
+    parser.add_argument(
+        "--output",
+        default="scripts/mlb/dingerParlay/data/slugging_all.csv",
+        help="Output path (local file or s3://bucket/slugging_all.csv)",
+    )
     args = parser.parse_args()
     main(args.input, args.output)

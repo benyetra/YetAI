@@ -1,20 +1,17 @@
 import requests
 
+
 def fetch_batter_performance_vs_pitches(batter_id, pitcher_hand, season=None):
     """
-    Fetches a batter's performance against different pitch types and locations, 
+    Fetches a batter's performance against different pitch types and locations,
     considering the pitcher's handedness.
     """
     if season is None:
         from datetime import datetime
+
         season = str(datetime.today().year)
     url = f"https://statsapi.mlb.com/api/v1/people/{batter_id}/stats"
-    params = {
-        "stats": "hitting",
-        "group": "hitting",
-        "season": season,
-        "gameType": "R"
-    }
+    params = {"stats": "hitting", "group": "hitting", "season": season, "gameType": "R"}
     response = requests.get(url, params=params)
     data = response.json()
 
@@ -38,7 +35,7 @@ def fetch_batter_performance_vs_pitches(batter_id, pitcher_hand, season=None):
                             "slugging": split.get("sluggingPercentage", 0),
                             "whiff_rate": split.get("whiffPercentage", 0),
                             "hot_zones": split.get("hotZone", {}),
-                            "cold_zones": split.get("coldZone", {})
+                            "cold_zones": split.get("coldZone", {}),
                         }
 
     return pitch_performance

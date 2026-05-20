@@ -28,14 +28,8 @@ def main() -> int:
             .filter(StrikeoutProjections.date == today)
             .count()
         )
-        games = (
-            db.query(GameProjections)
-            .filter(GameProjections.date == today)
-            .count()
-        )
-        hits_today = (
-            db.query(ProjectedHits).filter(ProjectedHits.date == today).count()
-        )
+        games = db.query(GameProjections).filter(GameProjections.date == today).count()
+        hits_today = db.query(ProjectedHits).filter(ProjectedHits.date == today).count()
         blowouts = db.query(BlowoutChances).count()
     finally:
         db.close()

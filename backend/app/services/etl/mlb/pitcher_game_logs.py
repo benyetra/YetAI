@@ -1,4 +1,5 @@
 """Fetch pitcher game logs and persist to pred_historical_pitcher_stats."""
+
 import logging
 from datetime import datetime
 
@@ -25,7 +26,10 @@ def fetch_pitcher_game_logs(pitcher_id):
         return []
     stats = data["people"][0].get("stats") or []
     for stat in stats:
-        if stat.get("type", {}).get("displayName") == "gameLog" and stat.get("group", {}).get("displayName") == "pitching":
+        if (
+            stat.get("type", {}).get("displayName") == "gameLog"
+            and stat.get("group", {}).get("displayName") == "pitching"
+        ):
             return stat.get("splits") or []
     return []
 
@@ -216,9 +220,7 @@ def ingest_todays_pitchers() -> dict:
                 else:
                     skipped += 1
         except SQLAlchemyError as e:
-            logger.warning(
-                "DB error for pitcher %s: %s", pitcher.get("name"), e
-            )
+            logger.warning("DB error for pitcher %s: %s", pitcher.get("name"), e)
             db_session.rollback()
         except Exception as e:
             logger.warning("Error processing pitcher %s: %s", pitcher.get("name"), e)

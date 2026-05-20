@@ -5,6 +5,7 @@ import pandas as pd
 import requests
 from io import StringIO
 
+
 def download_savant_3yr_park_factors(season: int, output_csv: str):
     """
     Scrape Baseball Savant’s “3-year rolling” Park Factors (Year view) for a given season.
@@ -25,13 +26,13 @@ def download_savant_3yr_park_factors(season: int, output_csv: str):
 
     base_url = "https://baseballsavant.mlb.com/leaderboard/statcast-park-factors"
     params = {
-        "type":      "year",          # “Year” view (3-year rolling)
-        "year":      season,
-        "batSide":   "",
-        "stat":      "index_wOBA",
+        "type": "year",  # “Year” view (3-year rolling)
+        "year": season,
+        "batSide": "",
+        "stat": "index_wOBA",
         "condition": "All",
-        "rolling":   "3",
-        "parks":     "mlb"
+        "rolling": "3",
+        "parks": "mlb",
     }
 
     try:
@@ -59,7 +60,9 @@ def download_savant_3yr_park_factors(season: int, output_csv: str):
             break
 
     if pf_table is None:
-        print("Error: could not locate a table containing ‘Team’, ‘Year’, and ‘HR’ columns.")
+        print(
+            "Error: could not locate a table containing ‘Team’, ‘Year’, and ‘HR’ columns."
+        )
         sys.exit(1)
 
     # 3) Standardize column names to stripped strings
@@ -79,14 +82,16 @@ def download_savant_3yr_park_factors(season: int, output_csv: str):
     #    • HR_factor = numeric(“HR”)
     #    • R_factor  = placeholder NaN
     #    • BA_factor = placeholder NaN
-    out = pd.DataFrame({
-        "park_id":   pf_table["Team"].astype(str).str.strip().str.lower(),
-        "park":      pf_table["Team"].astype(str).str.strip().str.lower(),
-        "year":      [season] * len(pf_table),
-        "HR_factor": pd.to_numeric(pf_table["HR"], errors="coerce"),
-        "R_factor":  pd.NA,
-        "BA_factor": pd.NA
-    })
+    out = pd.DataFrame(
+        {
+            "park_id": pf_table["Team"].astype(str).str.strip().str.lower(),
+            "park": pf_table["Team"].astype(str).str.strip().str.lower(),
+            "year": [season] * len(pf_table),
+            "HR_factor": pd.to_numeric(pf_table["HR"], errors="coerce"),
+            "R_factor": pd.NA,
+            "BA_factor": pd.NA,
+        }
+    )
 
     # 6) Drop any rows where HR_factor couldn’t be parsed
     before = len(out)
@@ -114,12 +119,12 @@ if __name__ == "__main__":
         description="Download 3-year rolling park factors (Year view) from Baseball Savant."
     )
     parser.add_argument(
-        "--season", type=int, required=True,
-        help="Season year (e.g. 2025)"
+        "--season", type=int, required=True, help="Season year (e.g. 2025)"
     )
     parser.add_argument(
-        "--output", required=True,
-        help="Path to output CSV (e.g. data/park_factors.csv)"
+        "--output",
+        required=True,
+        help="Path to output CSV (e.g. data/park_factors.csv)",
     )
     args = parser.parse_args()
 

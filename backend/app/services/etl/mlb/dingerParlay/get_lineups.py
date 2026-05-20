@@ -11,6 +11,7 @@ import statsapi
 import boto3
 from io import StringIO, BytesIO
 
+
 def smart_to_csv(df, path, **kwargs):
     """Write a DataFrame to S3 or local file depending on path."""
     if path.startswith("s3://"):
@@ -18,12 +19,17 @@ def smart_to_csv(df, path, **kwargs):
         key = "/".join(path.split("/")[3:])
         csv_buffer = StringIO()
         df.to_csv(csv_buffer, index=False, **kwargs)
-        boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=csv_buffer.getvalue())
+        boto3.client("s3").put_object(
+            Bucket=bucket, Key=key, Body=csv_buffer.getvalue()
+        )
         logging.info(f"Uploaded {len(df)} rows → s3://{bucket}/{key}")
     else:
         df.to_csv(path, index=False, **kwargs)
         logging.info(f"Wrote {len(df)} rows → {path}")
+
+
 # ---------------------------------------------
+
 
 def fetch_player_name_and_hand(pid):
     try:
@@ -48,11 +54,13 @@ def fetch_player_name_and_hand(pid):
         pass
     return "", "UNK"
 
+
 def fetch_hand_by_name(name):
     matches = statsapi.lookup_player(name)
     if matches and "pitchHand" in matches[0]:
         return matches[0]["pitchHand"].get("code", "UNK")
     return "UNK"
+
 
 def resolve_pitcher_id(pitcher):
     if pitcher is None or pitcher == "":
@@ -69,6 +77,7 @@ def resolve_pitcher_id(pitcher):
         pass
     return None
 
+
 def get_game_starters(game):
     home_pitcher = game.get("home_probable_pitcher")
     away_pitcher = game.get("away_probable_pitcher")
@@ -78,9 +87,13 @@ def get_game_starters(game):
 
     if not home_pid or not away_pid:
         try:
-            box = statsapi.get("game", {"gamePk": game["game_id"]})["liveData"]["boxscore"]["teams"]
+            box = statsapi.get("game", {"gamePk": game["game_id"]})["liveData"][
+                "boxscore"
+            ]["teams"]
             for side, key in [("home", "home"), ("away", "away")]:
-                if (side == "home" and not home_pid) or (side == "away" and not away_pid):
+                if (side == "home" and not home_pid) or (
+                    side == "away" and not away_pid
+                ):
                     team = box.get(side, {})
                     for pid_str, info in team.get("players", {}).items():
                         person = info.get("person", {})
@@ -95,6 +108,7 @@ def get_game_starters(game):
             print(f"DEBUG: Fallback to boxscore failed for {game['game_id']} — {e}")
 
     return home_pid, away_pid
+
 
 def get_batters(game_id):
     game_data = statsapi.get("game", {"gamePk": game_id})
@@ -127,14 +141,17 @@ def get_batters(game_id):
             bat_side = p.get("batSide", {}).get("code")
             if bat_side not in ("L", "R", "S"):
                 continue
-            batters.append({
-                "id":           pid,
-                "fullName":     p.get("fullName", ""),
-                "batSide":      bat_side,
-                "team":         box["teams"][side]["team"]["name"],
-                "battingOrder": bo
-            })
+            batters.append(
+                {
+                    "id": pid,
+                    "fullName": p.get("fullName", ""),
+                    "batSide": bat_side,
+                    "team": box["teams"][side]["team"]["name"],
+                    "battingOrder": bo,
+                }
+            )
     return batters
+
 
 def get_probable_batters(game_id, home_name, away_name):
     url = (
@@ -164,28 +181,35 @@ def get_probable_batters(game_id, home_name, away_name):
             if bat_side not in ("L", "R", "S"):
                 continue
             bo = ent.get("batOrder") or ent.get("lineupSlot") or None
-            batters.append({
-                "id":           pid,
-                "fullName":     p.get("fullName", ""),
-                "batSide":      bat_side,
-                "team":         team_label,
-                "battingOrder": bo
-            })
+            batters.append(
+                {
+                    "id": pid,
+                    "fullName": p.get("fullName", ""),
+                    "batSide": bat_side,
+                    "team": team_label,
+                    "battingOrder": bo,
+                }
+            )
     return batters
+
 
 def get_todays_games():
     today = datetime.today().strftime("%Y-%m-%d")
     sched = statsapi.schedule(date=today)
-    return [{
-        "game_id":   g["game_id"],
-        "home_name": g["home_name"],
-        "away_name": g["away_name"],
-        "home_id":   g["home_id"],
-        "away_id":   g["away_id"],
-        "game_date": g.get("game_date"),
-        "home_probable_pitcher": g.get("home_probable_pitcher"),
-        "away_probable_pitcher": g.get("away_probable_pitcher"),
-    } for g in sched]
+    return [
+        {
+            "game_id": g["game_id"],
+            "home_name": g["home_name"],
+            "away_name": g["away_name"],
+            "home_id": g["home_id"],
+            "away_id": g["away_id"],
+            "game_date": g.get("game_date"),
+            "home_probable_pitcher": g.get("home_probable_pitcher"),
+            "away_probable_pitcher": g.get("away_probable_pitcher"),
+        }
+        for g in sched
+    ]
+
 
 def build_today_lineup(output_csv):
     games = get_todays_games()
@@ -202,9 +226,11 @@ def build_today_lineup(output_csv):
 
         home_pid, away_pid = get_game_starters(g)
         if not home_pid or not away_pid:
-            logging.warning(f"{gid}: missing starter(s) after all attempts. "
-                            f"Schedule home_prob: {g.get('home_probable_pitcher')} "
-                            f"away_prob: {g.get('away_probable_pitcher')}")
+            logging.warning(
+                f"{gid}: missing starter(s) after all attempts. "
+                f"Schedule home_prob: {g.get('home_probable_pitcher')} "
+                f"away_prob: {g.get('away_probable_pitcher')}"
+            )
             continue
 
         hname, hh = fetch_player_name_and_hand(home_pid) if home_pid else ("", "")
@@ -222,8 +248,12 @@ def build_today_lineup(output_csv):
 
         tinfo = statsapi.get("team", {"teamId": g["home_id"]}).get("teams", [{}])[0]
         park_id = tinfo.get("abbreviation", "").lower()
-        park_nm = statsapi.get("game", {"gamePk": gid}) \
-                          .get("gameData", {}).get("venue", {}).get("name", "")
+        park_nm = (
+            statsapi.get("game", {"gamePk": gid})
+            .get("gameData", {})
+            .get("venue", {})
+            .get("name", "")
+        )
         if not park_id or not park_nm:
             logging.warning(f"{gid}: missing park info → skipping")
             continue
@@ -245,17 +275,19 @@ def build_today_lineup(output_csv):
             else:
                 opp_id, opp_name, opp_hand = home_pid, hname, hh
 
-            rows.append({
-                "batter_name":  b["fullName"],
-                "batter_hand":  b["batSide"],
-                "batter_id":    bid,
-                "pitcher_id":   opp_id or '',
-                "pitcher_name": opp_name or '',
-                "pitcher_hand": opp_hand or 'UNK',
-                "park_id":      park_id,
-                "park_name":    park_nm,
-                "game_date":    game_date,
-            })
+            rows.append(
+                {
+                    "batter_name": b["fullName"],
+                    "batter_hand": b["batSide"],
+                    "batter_id": bid,
+                    "pitcher_id": opp_id or "",
+                    "pitcher_name": opp_name or "",
+                    "pitcher_hand": opp_hand or "UNK",
+                    "park_id": park_id,
+                    "park_name": park_nm,
+                    "game_date": game_date,
+                }
+            )
 
         if not home_pid or not away_pid:
             logging.warning(
@@ -269,20 +301,33 @@ def build_today_lineup(output_csv):
         sys.exit(1)
 
     final_cols = [
-        "batter_name", "batter_hand", "batter_id",
-        "pitcher_id", "pitcher_name", "pitcher_hand",
-        "park_id", "park_name", "game_date"
+        "batter_name",
+        "batter_hand",
+        "batter_id",
+        "pitcher_id",
+        "pitcher_name",
+        "pitcher_hand",
+        "park_id",
+        "park_name",
+        "game_date",
     ]
     df = df[final_cols]
     smart_to_csv(df, output_csv)
+
 
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s — %(levelname)s — %(message)s",
-        datefmt="%Y%m%d %H:%M:%S"
+        datefmt="%Y%m%d %H:%M:%S",
     )
-    p = argparse.ArgumentParser(description="Fetch today’s lineups → CSV with batter_id & game_date")
-    p.add_argument("--output", default="today_lineup.csv", help="Output CSV path or s3://bucket/key.csv")
+    p = argparse.ArgumentParser(
+        description="Fetch today’s lineups → CSV with batter_id & game_date"
+    )
+    p.add_argument(
+        "--output",
+        default="today_lineup.csv",
+        help="Output CSV path or s3://bucket/key.csv",
+    )
     args = p.parse_args()
     build_today_lineup(args.output)

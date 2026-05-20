@@ -61,7 +61,9 @@ def fetch_past_performance_metrics(pitcher_id):
             return None
         return df
     except SQLAlchemyError as e:
-        logger.error("Database error fetching past performance for pitcher %s: %s", pitcher_id, e)
+        logger.error(
+            "Database error fetching past performance for pitcher %s: %s", pitcher_id, e
+        )
         return None
 
 
@@ -72,7 +74,11 @@ def calculate_performance_metrics(df):
     if df is None or df.empty:
         return 0.0, 0.0, 0.0
 
-    return df['strikeout_error'].mean(), df['innings_error'].mean(), df['at_bats_error'].mean()
+    return (
+        df["strikeout_error"].mean(),
+        df["innings_error"].mean(),
+        df["at_bats_error"].mean(),
+    )
 
 
 from sklearn.preprocessing import StandardScaler
@@ -85,7 +91,10 @@ from sklearn.ensemble import GradientBoostingRegressor
 import numpy as np
 import pandas as pd
 
-def project_at_bats_faced(pitcher_id, recent_data, projected_innings, mean_absolute_at_bats_error):
+
+def project_at_bats_faced(
+    pitcher_id, recent_data, projected_innings, mean_absolute_at_bats_error
+):
     """
     Predicts number of at-bats a pitcher will face using regression, incorporating projected innings.
     Ensures the projected at-bats are within a realistic range.
@@ -106,21 +115,41 @@ def project_at_bats_faced(pitcher_id, recent_data, projected_innings, mean_absol
             logger.warning(f"No data found for pitcher {pitcher_id}")
             return None
 
-        # Prevent division by zero
-            df['k_per_inning'] = np.where(df['innings_pitched'] > 0, df['strikeouts'] / df['innings_pitched'], 0)
-            df['bb_per_inning'] = np.where(df['innings_pitched'] > 0, df['walks'] / df['innings_pitched'], 0)
+            # Prevent division by zero
+            df["k_per_inning"] = np.where(
+                df["innings_pitched"] > 0, df["strikeouts"] / df["innings_pitched"], 0
+            )
+            df["bb_per_inning"] = np.where(
+                df["innings_pitched"] > 0, df["walks"] / df["innings_pitched"], 0
+            )
 
             # Add projected innings as an additional feature
-            df['projected_innings'] = df['innings_pitched']  # Initially set to past values
+            df["projected_innings"] = df[
+                "innings_pitched"
+            ]  # Initially set to past values
 
             # New: Factor in opposing team’s discipline (walk rate, chase rate)
-            df['discipline_factor'] = (df['walks'] + df['baseOnBalls']) / np.maximum(df['at_bats'], 1)
+            df["discipline_factor"] = (df["walks"] + df["baseOnBalls"]) / np.maximum(
+                df["at_bats"], 1
+            )
 
-            X = df[['innings_pitched', 'projected_innings', 'k_per_inning', 'bb_per_inning', 'whip', 'discipline_factor', 'numberOfPitches']]
-            y = df['at_bats']
+            X = df[
+                [
+                    "innings_pitched",
+                    "projected_innings",
+                    "k_per_inning",
+                    "bb_per_inning",
+                    "whip",
+                    "discipline_factor",
+                    "numberOfPitches",
+                ]
+            ]
+            y = df["at_bats"]
 
             if len(df) < 5:
-                logger.warning(f"Not enough data to train model for pitcher {pitcher_id}")
+                logger.warning(
+                    f"Not enough data to train model for pitcher {pitcher_id}"
+                )
                 return None
 
             # Use StandardScaler for stable regression
@@ -128,38 +157,63 @@ def project_at_bats_faced(pitcher_id, recent_data, projected_innings, mean_absol
             X_scaled = scaler.fit_transform(X)
 
             # Use a robust regression model
-            model = GradientBoostingRegressor(n_estimators=150, learning_rate=0.1, max_depth=4)
+            model = GradientBoostingRegressor(
+                n_estimators=150, learning_rate=0.1, max_depth=4
+            )
             model.fit(X_scaled, y)
 
             # Prepare recent game data
-            recent_innings = recent_data['innings_pitched']
-            recent_k_per_inning = recent_data['strikeouts'] / recent_innings if recent_innings > 0 else 0
-            recent_bb_per_inning = recent_data['walks'] / recent_innings if recent_innings > 0 else 0
+            recent_innings = recent_data["innings_pitched"]
+            recent_k_per_inning = (
+                recent_data["strikeouts"] / recent_innings if recent_innings > 0 else 0
+            )
+            recent_bb_per_inning = (
+                recent_data["walks"] / recent_innings if recent_innings > 0 else 0
+            )
 
             # Use projected innings instead of past innings
-            X_recent = pd.DataFrame([[recent_innings, projected_innings, recent_k_per_inning, recent_bb_per_inning, 0, 0, 0]], 
-                                    columns=X.columns)
+            X_recent = pd.DataFrame(
+                [
+                    [
+                        recent_innings,
+                        projected_innings,
+                        recent_k_per_inning,
+                        recent_bb_per_inning,
+                        0,
+                        0,
+                        0,
+                    ]
+                ],
+                columns=X.columns,
+            )
             X_recent_scaled = scaler.transform(X_recent)
 
             projected_at_bats = model.predict(X_recent_scaled)[0]
 
             # Adjust based on projected innings: Multiply by a dynamic factor
-            projected_at_bats = projected_at_bats * (projected_innings / max(1, recent_innings))
+            projected_at_bats = projected_at_bats * (
+                projected_innings / max(1, recent_innings)
+            )
 
             # Apply a confidence adjustment instead of absolute error subtraction
-            confidence_adjustment = mean_absolute_at_bats_error * 0.35  # Less aggressive error impact
+            confidence_adjustment = (
+                mean_absolute_at_bats_error * 0.35
+            )  # Less aggressive error impact
             projected_at_bats = projected_at_bats + confidence_adjustment
 
             # Use realistic min/max values for at-bats (based on MLB averages)
             projected_at_bats = max(17, min(40, projected_at_bats))
 
-            logger.info(f"Final projected at-bats for pitcher {pitcher_id}: {projected_at_bats}")
+            logger.info(
+                f"Final projected at-bats for pitcher {pitcher_id}: {projected_at_bats}"
+            )
             return round(projected_at_bats, 2)
 
     except Exception as e:
         logger.error(f"Error in projecting at-bats faced for pitcher {pitcher_id}: {e}")
         return None
-    
+
+
 def project_innings_pitched(pitcher_data, mean_absolute_innings_error):
     """
     Predicts innings pitched using weighted regression.
@@ -171,15 +225,17 @@ def project_innings_pitched(pitcher_data, mean_absolute_innings_error):
         avg_innings_weight = 0.45
         error_weight = 0.1  # New weight for historical error
 
-        innings_pitched = pitcher_data.get('innings_pitched', 0.0)
-        avg_innings_pitched = innings_pitched / max(pitcher_data.get('games_played', 1), 1)
+        innings_pitched = pitcher_data.get("innings_pitched", 0.0)
+        avg_innings_pitched = innings_pitched / max(
+            pitcher_data.get("games_played", 1), 1
+        )
 
         projected_innings_pitched = (
-            k_per_9_weight * pitcher_data.get('k_per_9', 0.0) +
-            last_5_avg_k_per_9_weight * pitcher_data.get('last_5_avg_k_per_9', 0.0) +
-            combined_score_weight * pitcher_data.get('combined_score', 0.0) +
-            avg_innings_weight * avg_innings_pitched +
-            error_weight * mean_absolute_innings_error
+            k_per_9_weight * pitcher_data.get("k_per_9", 0.0)
+            + last_5_avg_k_per_9_weight * pitcher_data.get("last_5_avg_k_per_9", 0.0)
+            + combined_score_weight * pitcher_data.get("combined_score", 0.0)
+            + avg_innings_weight * avg_innings_pitched
+            + error_weight * mean_absolute_innings_error
         )
 
         return round(min(max(projected_innings_pitched, 1.0), 9.0), 2)
@@ -190,6 +246,7 @@ def project_innings_pitched(pitcher_data, mean_absolute_innings_error):
 
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import PolynomialFeatures
+
 
 def perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats):
     """
@@ -257,14 +314,17 @@ def perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats)
         logger.error("Error in regression analysis for pitcher %s: %s", pitcher_id, e)
         return None
 
+
 # ✅ Example Usage
 if __name__ == "__main__":
-    pitcher_id = '669467'  # Example pitcher_id
-    batter_id = '545361'   # Example batter_id
+    pitcher_id = "669467"  # Example pitcher_id
+    batter_id = "545361"  # Example batter_id
     innings_pitched = 5.0  # Example innings pitched
-    at_bats = 20           # Example at-bats faced
+    at_bats = 20  # Example at-bats faced
 
     # ✅ Get projected strikeouts
-    projected_strikeouts = perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats)
+    projected_strikeouts = perform_regression_analysis(
+        pitcher_id, batter_id, innings_pitched, at_bats
+    )
 
     logger.info(f"Final Projected Strikeouts: {projected_strikeouts}")

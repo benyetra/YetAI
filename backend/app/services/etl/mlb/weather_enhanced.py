@@ -14,61 +14,107 @@ Formula: Expected_Runs_Adjustment = (T-72)*0.05 + wind_component + (altitude/100
 
 Technical Playbook §5 — Weather Coefficients.
 """
+
 import sys
 import os
 
 import logging
 import math
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 
 # Stadium altitude in feet (above sea level)
 STADIUM_ALTITUDE = {
-    'Chase Field': 1082, 'Truist Park': 1050, 'Oriole Park at Camden Yards': 130,
-    'Fenway Park': 20, 'Wrigley Field': 595, 'Guaranteed Rate Field': 595,
-    'Great American Ball Park': 550, 'Progressive Field': 650,
-    'Coors Field': 5280, 'Comerica Park': 600, 'Minute Maid Park': 40,
-    'Kauffman Stadium': 750, 'Angel Stadium': 160, 'Dodger Stadium': 515,
-    'loanDepot park': 6, 'American Family Field': 640, 'Target Field': 830,
-    'Citi Field': 10, 'Yankee Stadium': 10,
-    'Sutter Health Park': 30, 'Oakland Coliseum': 5,
-    'Citizens Bank Park': 20, 'PNC Park': 730, 'Petco Park': 15,
-    'Oracle Park': 5, 'T-Mobile Park': 5, 'Busch Stadium': 455,
-    'Tropicana Field': 25, 'Globe Life Field': 545, 'Rogers Centre': 250,
-    'Nationals Park': 15,
+    "Chase Field": 1082,
+    "Truist Park": 1050,
+    "Oriole Park at Camden Yards": 130,
+    "Fenway Park": 20,
+    "Wrigley Field": 595,
+    "Guaranteed Rate Field": 595,
+    "Great American Ball Park": 550,
+    "Progressive Field": 650,
+    "Coors Field": 5280,
+    "Comerica Park": 600,
+    "Minute Maid Park": 40,
+    "Kauffman Stadium": 750,
+    "Angel Stadium": 160,
+    "Dodger Stadium": 515,
+    "loanDepot park": 6,
+    "American Family Field": 640,
+    "Target Field": 830,
+    "Citi Field": 10,
+    "Yankee Stadium": 10,
+    "Sutter Health Park": 30,
+    "Oakland Coliseum": 5,
+    "Citizens Bank Park": 20,
+    "PNC Park": 730,
+    "Petco Park": 15,
+    "Oracle Park": 5,
+    "T-Mobile Park": 5,
+    "Busch Stadium": 455,
+    "Tropicana Field": 25,
+    "Globe Life Field": 545,
+    "Rogers Centre": 250,
+    "Nationals Park": 15,
 }
 
 # Stadium home plate orientation (degrees from north, 0=N, 90=E, 180=S, 270=W)
 # Used to compute wind relative to home plate
 STADIUM_HP_ORIENTATION = {
-    'Chase Field': 0, 'Truist Park': 225, 'Oriole Park at Camden Yards': 210,
-    'Fenway Park': 250, 'Wrigley Field': 235, 'Guaranteed Rate Field': 225,
-    'Great American Ball Park': 210, 'Progressive Field': 215,
-    'Coors Field': 210, 'Comerica Park': 220, 'Minute Maid Park': 295,
-    'Kauffman Stadium': 245, 'Angel Stadium': 255, 'Dodger Stadium': 220,
-    'loanDepot park': 220, 'American Family Field': 0, 'Target Field': 220,
-    'Citi Field': 225, 'Yankee Stadium': 210,
-    'Sutter Health Park': 225, 'Oakland Coliseum': 195,
-    'Citizens Bank Park': 225, 'PNC Park': 270, 'Petco Park': 270,
-    'Oracle Park': 215, 'T-Mobile Park': 315, 'Busch Stadium': 230,
-    'Tropicana Field': 0, 'Globe Life Field': 0, 'Rogers Centre': 0,
-    'Nationals Park': 225,
+    "Chase Field": 0,
+    "Truist Park": 225,
+    "Oriole Park at Camden Yards": 210,
+    "Fenway Park": 250,
+    "Wrigley Field": 235,
+    "Guaranteed Rate Field": 225,
+    "Great American Ball Park": 210,
+    "Progressive Field": 215,
+    "Coors Field": 210,
+    "Comerica Park": 220,
+    "Minute Maid Park": 295,
+    "Kauffman Stadium": 245,
+    "Angel Stadium": 255,
+    "Dodger Stadium": 220,
+    "loanDepot park": 220,
+    "American Family Field": 0,
+    "Target Field": 220,
+    "Citi Field": 225,
+    "Yankee Stadium": 210,
+    "Sutter Health Park": 225,
+    "Oakland Coliseum": 195,
+    "Citizens Bank Park": 225,
+    "PNC Park": 270,
+    "Petco Park": 270,
+    "Oracle Park": 215,
+    "T-Mobile Park": 315,
+    "Busch Stadium": 230,
+    "Tropicana Field": 0,
+    "Globe Life Field": 0,
+    "Rogers Centre": 0,
+    "Nationals Park": 225,
 }
 
 # Domed/retractable roof stadiums (weather effects reduced)
 DOMED_STADIUMS = {
-    'Tropicana Field', 'Globe Life Field', 'loanDepot park',
-    'Minute Maid Park', 'American Family Field', 'Rogers Centre',
-    'Chase Field', 'T-Mobile Park',
+    "Tropicana Field",
+    "Globe Life Field",
+    "loanDepot park",
+    "Minute Maid Park",
+    "American Family Field",
+    "Rogers Centre",
+    "Chase Field",
+    "T-Mobile Park",
 }
 
 # Standard barometric pressure at sea level (inches Hg)
 STANDARD_PRESSURE = 29.92
 
 
-def compute_air_density_factor(temperature_f, humidity_pct, altitude_ft, pressure_inhg=None):
+def compute_air_density_factor(
+    temperature_f, humidity_pct, altitude_ft, pressure_inhg=None
+):
     """Compute relative air density factor compared to standard conditions.
 
     Lower air density = less drag = more carry on batted balls.
@@ -100,7 +146,9 @@ def compute_air_density_factor(temperature_f, humidity_pct, altitude_ft, pressur
     rho = (pressure_hpa * 100 - 0.378 * e_actual * 100) / (287.05 * temp_k)
 
     # Standard density at 72F, 50% humidity, sea level
-    rho_standard = (STANDARD_PRESSURE * 33.8639 * 100 - 0.378 * 12.0 * 100) / (287.05 * 295.37)
+    rho_standard = (STANDARD_PRESSURE * 33.8639 * 100 - 0.378 * 12.0 * 100) / (
+        287.05 * 295.37
+    )
 
     return round(rho / rho_standard, 4)
 
@@ -159,8 +207,14 @@ def compute_altitude_adjustment(venue_name):
     return round((altitude / 1000.0) * 0.15, 3)
 
 
-def compute_weather_run_adjustment(temperature_f, wind_speed_mph, wind_direction_deg,
-                                    humidity_pct, venue_name, pressure_inhg=None):
+def compute_weather_run_adjustment(
+    temperature_f,
+    wind_speed_mph,
+    wind_direction_deg,
+    humidity_pct,
+    venue_name,
+    pressure_inhg=None,
+):
     """Compute total weather-based run adjustment.
 
     Combines temperature, wind, altitude, and air density effects.
@@ -176,12 +230,12 @@ def compute_weather_run_adjustment(temperature_f, wind_speed_mph, wind_direction
     """
     if venue_name in DOMED_STADIUMS:
         return {
-            'total_adjustment': 0.0,
-            'temperature_adj': 0.0,
-            'wind_adj': 0.0,
-            'altitude_adj': 0.0,
-            'air_density': 1.0,
-            'is_domed': True,
+            "total_adjustment": 0.0,
+            "temperature_adj": 0.0,
+            "wind_adj": 0.0,
+            "altitude_adj": 0.0,
+            "air_density": 1.0,
+            "is_domed": True,
         }
 
     temp_adj = compute_temperature_adjustment(temperature_f)
@@ -199,13 +253,13 @@ def compute_weather_run_adjustment(temperature_f, wind_speed_mph, wind_direction
     total = temp_adj + wind_adj + alt_adj + density_adj
 
     return {
-        'total_adjustment': round(total, 3),
-        'temperature_adj': temp_adj,
-        'wind_adj': wind_adj,
-        'altitude_adj': alt_adj,
-        'density_adj': round(density_adj, 3),
-        'air_density': air_density,
-        'is_domed': False,
+        "total_adjustment": round(total, 3),
+        "temperature_adj": temp_adj,
+        "wind_adj": wind_adj,
+        "altitude_adj": alt_adj,
+        "density_adj": round(density_adj, 3),
+        "air_density": air_density,
+        "is_domed": False,
     }
 
 

@@ -12,13 +12,14 @@ Research basis:
 
 Technical Playbook §9 — Umpires and ABS.
 """
+
 import sys
 import os
 
 import logging
 import statsapi as mlbstatsapi
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 # ABS Challenge System adjustment factor for 2026
@@ -31,40 +32,38 @@ ABS_REDUCTION_FACTOR = 0.75
 # These represent the top/bottom umpires — most fall within +/-0.2
 UMPIRE_RUN_ADJUSTMENTS = {
     # Hitter-friendly umpires (wide zone, generous strikes)
-    'Marvin Hudson': -0.35,
+    "Marvin Hudson": -0.35,
     # Angel Hernandez retired after 2024 season
-    'CB Bucknor': 0.30,
-    'Laz Diaz': 0.25,
-    'Jeff Nelson': -0.30,
-    'Doug Eddings': 0.20,
-    'Hunter Wendelstedt': 0.25,
-    'Bill Miller': -0.20,
-    'Sam Holbrook': -0.25,
-    'Ron Kulpa': 0.20,
-
+    "CB Bucknor": 0.30,
+    "Laz Diaz": 0.25,
+    "Jeff Nelson": -0.30,
+    "Doug Eddings": 0.20,
+    "Hunter Wendelstedt": 0.25,
+    "Bill Miller": -0.20,
+    "Sam Holbrook": -0.25,
+    "Ron Kulpa": 0.20,
     # Pitcher-friendly umpires (tight zone, fewer calls)
-    'Pat Hoberg': -0.40,
-    'Dan Iassogna': -0.30,
-    'Mark Carlson': -0.25,
-    'Chris Guccione': -0.20,
-    'Brian ONora': -0.20,
-    'Quinn Wolcott': -0.15,
-    'David Rackley': -0.15,
-    'Chad Whitson': -0.10,
-    'Jansen Visconti': -0.10,
-    'Alan Porter': 0.15,
-
+    "Pat Hoberg": -0.40,
+    "Dan Iassogna": -0.30,
+    "Mark Carlson": -0.25,
+    "Chris Guccione": -0.20,
+    "Brian ONora": -0.20,
+    "Quinn Wolcott": -0.15,
+    "David Rackley": -0.15,
+    "Chad Whitson": -0.10,
+    "Jansen Visconti": -0.10,
+    "Alan Porter": 0.15,
     # Neutral-ish umpires
-    'James Hoye': 0.05,
-    'John Tumpane': -0.05,
-    'Jordan Baker': 0.10,
-    'Tripp Gibson': -0.10,
-    'Andy Fletcher': 0.05,
-    'Nick Mahrley': 0.00,
-    'Adam Beck': -0.05,
-    'Nic Lentz': 0.10,
-    'Lance Barksdale': 0.15,
-    'Todd Tichenor': -0.15,
+    "James Hoye": 0.05,
+    "John Tumpane": -0.05,
+    "Jordan Baker": 0.10,
+    "Tripp Gibson": -0.10,
+    "Andy Fletcher": 0.05,
+    "Nick Mahrley": 0.00,
+    "Adam Beck": -0.05,
+    "Nic Lentz": 0.10,
+    "Lance Barksdale": 0.15,
+    "Todd Tichenor": -0.15,
 }
 
 
@@ -75,11 +74,13 @@ def get_umpire_for_game(game_id):
         str or None: umpire name
     """
     try:
-        game_data = mlbstatsapi.get('game', {'gamePk': game_id})
-        officials = game_data.get('liveData', {}).get('boxscore', {}).get('officials', [])
+        game_data = mlbstatsapi.get("game", {"gamePk": game_id})
+        officials = (
+            game_data.get("liveData", {}).get("boxscore", {}).get("officials", [])
+        )
         for official in officials:
-            if official.get('officialType') == 'Home Plate':
-                return official.get('official', {}).get('fullName')
+            if official.get("officialType") == "Home Plate":
+                return official.get("official", {}).get("fullName")
     except Exception:
         pass
     return None
@@ -107,17 +108,17 @@ def compute_umpire_adjustment(umpire_name):
 
     # Classify tendency
     if adjusted > 0.10:
-        tendency = 'hitter_friendly'
+        tendency = "hitter_friendly"
     elif adjusted < -0.10:
-        tendency = 'pitcher_friendly'
+        tendency = "pitcher_friendly"
     else:
-        tendency = 'neutral'
+        tendency = "neutral"
 
     return {
-        'umpire_name': umpire_name or 'Unknown',
-        'raw_adjustment': raw_adj,
-        'adjusted': round(adjusted, 3),
-        'tendency': tendency,
+        "umpire_name": umpire_name or "Unknown",
+        "raw_adjustment": raw_adj,
+        "adjusted": round(adjusted, 3),
+        "tendency": tendency,
     }
 
 
@@ -136,4 +137,4 @@ def get_umpire_run_adjustment(game_id=None, umpire_name=None):
         return 0.0
 
     result = compute_umpire_adjustment(umpire_name)
-    return result['adjusted']
+    return result["adjusted"]

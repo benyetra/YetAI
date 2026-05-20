@@ -14,14 +14,16 @@ REQ-BT-056 through REQ-BT-064.
 """
 import sys
 import os
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 import logging
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 
 # Import from the package — works because this file is run directly,
 # so scripts.mlb.backtest resolves to the package directory.
 from app.services.etl.mlb.backtest.cli import main
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

@@ -7,9 +7,11 @@ import math
 
 V2_START = date(2025, 8, 1)
 
+
 def _read_df(sql: str) -> pd.DataFrame:
     res = db_session.execute(text(sql))
     return pd.DataFrame(res.fetchall(), columns=res.keys())
+
 
 def get_global_offsets():
     sql = f"""
@@ -28,6 +30,7 @@ def get_global_offsets():
     k_off = (df["actual_strikeouts"] - df["projected_strikeouts"]).mean()
     ip_off = (df["actual_innings_pitched"] - df["projected_innings_pitched"]).mean()
     return float(k_off), float(ip_off)
+
 
 def get_pitcher_offsets(pitcher_id: str, n_last: int = 4):
     sql = f"""
@@ -50,6 +53,7 @@ def get_pitcher_offsets(pitcher_id: str, n_last: int = 4):
     ip_off = (df["actual_innings_pitched"] - df["projected_innings_pitched"]).mean()
     return float(k_off), float(ip_off), int(len(df))
 
+
 def apply_shrunk_offsets(proj_k, proj_ip, pid):
     gk, gip = get_global_offsets()
     pk, pip, n = get_pitcher_offsets(pid)
@@ -62,10 +66,10 @@ def apply_shrunk_offsets(proj_k, proj_ip, pid):
     k_bias = w * pk + (1 - w) * gk
     ip_bias = w * pip + (1 - w) * gip
 
-    adj_k  = proj_k  + k_bias
+    adj_k = proj_k + k_bias
     adj_ip = proj_ip + ip_bias
 
     # keep things sane
-    adj_k  = max(0.0, adj_k)
+    adj_k = max(0.0, adj_k)
     adj_ip = min(9.0, max(1.0, adj_ip))
     return adj_k, adj_ip, {"k_bias": k_bias, "ip_bias": ip_bias, "n": n}

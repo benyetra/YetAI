@@ -10,9 +10,18 @@ NHL_ROOT = Path(__file__).resolve().parents[1] / "app" / "services" / "etl" / "n
 
 REPLACEMENTS = [
     (r"from database\.models import", "from app.models.predictions_models import"),
-    (r"from database\.database import db_session", "from app.services.etl.nhl._db import db_session"),
-    (r"from utilities\.config import db", "from app.services.etl.nhl._db import db_session"),
-    (r"from utilities\.config import db, Config", "from app.services.etl.nhl._db import db_session"),
+    (
+        r"from database\.database import db_session",
+        "from app.services.etl.nhl._db import db_session",
+    ),
+    (
+        r"from utilities\.config import db",
+        "from app.services.etl.nhl._db import db_session",
+    ),
+    (
+        r"from utilities\.config import db, Config",
+        "from app.services.etl.nhl._db import db_session",
+    ),
     (r"from scripts\.nhl\.", "from app.services.etl.nhl."),
     (r"import scripts\.nhl\.", "import app.services.etl.nhl."),
     (r"from scripts\.nhl import", "from app.services.etl.nhl import"),
@@ -45,7 +54,11 @@ def transform_file(path: Path) -> bool:
         text = text.replace(old, new)
 
     # Dedent one level where we stripped `with app.app_context():`
-    if path.name in ("collect_historical_data.py", "daily_predictions.py", "collect_goalie_actuals.py"):
+    if path.name in (
+        "collect_historical_data.py",
+        "daily_predictions.py",
+        "collect_goalie_actuals.py",
+    ):
         lines = text.splitlines(keepends=True)
         out = []
         for line in lines:
@@ -91,7 +104,9 @@ def run_update_daily_stats(season: int = 20252026) -> dict:
 """
 
     if path.name == "collect_goalie_actuals.py" and "def run(" not in text:
-        text = text.replace("def update_goalie_actuals():", "def _update_goalie_actuals_core():")
+        text = text.replace(
+            "def update_goalie_actuals():", "def _update_goalie_actuals_core():"
+        )
         text += """
 
 def run() -> dict:

@@ -12,6 +12,7 @@ Research basis:
 
 Technical Playbook §8 — Calibration.
 """
+
 import sys
 import os
 
@@ -22,10 +23,10 @@ from datetime import date, timedelta
 import numpy as np
 from sklearn.isotonic import IsotonicRegression
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-CALIBRATOR_PATH = os.path.join(os.path.dirname(__file__), 'venn_abers_calibrator.pkl')
+CALIBRATOR_PATH = os.path.join(os.path.dirname(__file__), "venn_abers_calibrator.pkl")
 
 
 class VennAbersCalibrator:
@@ -68,7 +69,7 @@ class VennAbersCalibrator:
         self.cal_labels = labels.copy()
 
         # Also fit isotonic regression as primary calibrator
-        self.iso_reg = IsotonicRegression(y_min=0.01, y_max=0.99, out_of_bounds='clip')
+        self.iso_reg = IsotonicRegression(y_min=0.01, y_max=0.99, out_of_bounds="clip")
         self.iso_reg.fit(scores, labels)
 
         self.is_fitted = True
@@ -77,20 +78,24 @@ class VennAbersCalibrator:
     def _fit_temperature(self, scores, labels):
         """Fit temperature scaling parameter using grid search on log-loss."""
         best_temp = 1.0
-        best_loss = float('inf')
+        best_loss = float("inf")
 
         for temp in np.arange(0.5, 3.0, 0.1):
             calibrated = self._apply_temperature(scores, temp)
             calibrated = np.clip(calibrated, 1e-7, 1 - 1e-7)
-            loss = -np.mean(labels * np.log(calibrated) + (1 - labels) * np.log(1 - calibrated))
+            loss = -np.mean(
+                labels * np.log(calibrated) + (1 - labels) * np.log(1 - calibrated)
+            )
             if loss < best_loss:
                 best_loss = loss
                 best_temp = temp
 
         self.temperature = best_temp
         self.is_fitted = True
-        logger.info(f"Temperature scaling fitted: T={self.temperature:.2f} "
-                     f"(log-loss: {best_loss:.4f}, n={self.n_samples})")
+        logger.info(
+            f"Temperature scaling fitted: T={self.temperature:.2f} "
+            f"(log-loss: {best_loss:.4f}, n={self.n_samples})"
+        )
 
     def _apply_temperature(self, scores, temperature):
         """Apply temperature scaling to logit space."""
@@ -120,7 +125,9 @@ class VennAbersCalibrator:
             return np.clip(calibrated, 0.01, 0.99)
         else:
             # Temperature scaling fallback
-            return np.clip(self._apply_temperature(scores, self.temperature), 0.01, 0.99)
+            return np.clip(
+                self._apply_temperature(scores, self.temperature), 0.01, 0.99
+            )
 
     def predict_single(self, score):
         """Calibrate a single probability score."""
@@ -129,16 +136,18 @@ class VennAbersCalibrator:
     def get_calibration_stats(self):
         """Return calibration statistics."""
         return {
-            'is_fitted': self.is_fitted,
-            'n_samples': self.n_samples,
-            'method': 'venn_abers' if self.iso_reg is not None else 'temperature_scaling',
-            'temperature': self.temperature,
+            "is_fitted": self.is_fitted,
+            "n_samples": self.n_samples,
+            "method": (
+                "venn_abers" if self.iso_reg is not None else "temperature_scaling"
+            ),
+            "temperature": self.temperature,
         }
 
     def save(self, path=None):
         """Save calibrator to disk."""
         path = path or CALIBRATOR_PATH
-        with open(path, 'wb') as f:
+        with open(path, "wb") as f:
             pickle.dump(self, f)
         logger.info(f"Saved calibrator to {path}")
 
@@ -147,10 +156,12 @@ class VennAbersCalibrator:
         """Load calibrator from disk."""
         path = path or CALIBRATOR_PATH
         if os.path.exists(path):
-            with open(path, 'rb') as f:
+            with open(path, "rb") as f:
                 cal = pickle.load(f)
-            logger.info(f"Loaded calibrator ({cal.n_samples} samples, "
-                        f"{'venn_abers' if cal.iso_reg else 'temperature'})")
+            logger.info(
+                f"Loaded calibrator ({cal.n_samples} samples, "
+                f"{'venn_abers' if cal.iso_reg else 'temperature'})"
+            )
             return cal
         return cls()
 
@@ -164,20 +175,22 @@ def build_calibration_data(lookback_days=90):
     from app.models.predictions_models import GameProjections, GameActuals
 
     cutoff = date.today() - timedelta(days=lookback_days)
-    results = db_session.query(
-        GameProjections.home_win_prob,
-        GameActuals.winner
-    ).join(
-        GameActuals,
-        (GameProjections.date == GameActuals.date) &
-        (GameProjections.game_id == GameActuals.game_id)
-    ).filter(GameProjections.date >= cutoff).all()
+    results = (
+        db_session.query(GameProjections.home_win_prob, GameActuals.winner)
+        .join(
+            GameActuals,
+            (GameProjections.date == GameActuals.date)
+            & (GameProjections.game_id == GameActuals.game_id),
+        )
+        .filter(GameProjections.date >= cutoff)
+        .all()
+    )
 
     if not results:
         return None, None
 
     scores = np.array([r[0] for r in results])
-    labels = np.array([1 if r[1] == 'home' else 0 for r in results])
+    labels = np.array([1 if r[1] == "home" else 0 for r in results])
     return scores, labels
 
 
@@ -210,7 +223,12 @@ def compute_brier_decomposition(scores, labels):
     n = len(scores)
 
     if n == 0:
-        return {'brier': None, 'reliability': None, 'resolution': None, 'uncertainty': None}
+        return {
+            "brier": None,
+            "reliability": None,
+            "resolution": None,
+            "uncertainty": None,
+        }
 
     # Full Brier score
     brier = np.mean((scores - labels) ** 2)
@@ -241,8 +259,8 @@ def compute_brier_decomposition(scores, labels):
     resolution /= n
 
     return {
-        'brier': round(brier, 5),
-        'reliability': round(reliability, 5),
-        'resolution': round(resolution, 5),
-        'uncertainty': round(uncertainty, 5),
+        "brier": round(brier, 5),
+        "reliability": round(reliability, 5),
+        "resolution": round(resolution, 5),
+        "uncertainty": round(uncertainty, 5),
     }

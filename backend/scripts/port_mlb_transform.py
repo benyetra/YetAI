@@ -10,23 +10,56 @@ MLB_ROOT = Path(__file__).resolve().parents[1] / "app" / "services" / "etl" / "m
 
 REPLACEMENTS = [
     (r"from database\.models import", "from app.models.predictions_models import"),
-    (r"from database\.database import db_session", "from app.services.etl.mlb._db import db_session"),
-    (r"from utilities\.utilities_functions import \*", "from app.services.etl.mlb._mlb_utils import *"),
-    (r"from utilities\.utilities_functions import", "from app.services.etl.mlb._mlb_utils import"),
+    (
+        r"from database\.database import db_session",
+        "from app.services.etl.mlb._db import db_session",
+    ),
+    (
+        r"from utilities\.utilities_functions import \*",
+        "from app.services.etl.mlb._mlb_utils import *",
+    ),
+    (
+        r"from utilities\.utilities_functions import",
+        "from app.services.etl.mlb._mlb_utils import",
+    ),
     (r"from utilities\.config import db, Config", ""),
     (r"from utilities\.config import Config, db", ""),
     (r"from utilities\.config import Config", ""),
-    (r"from utilities\.data\.stadium_zipcode import", "from app.services.etl.mlb.data.stadium_zipcode import"),
-    (r"from utilities\.data\.special_characters_mapping import", "from app.services.etl.mlb.data.special_characters_mapping import"),
-    (r"from utilities\.venues import venues", "from app.services.etl.mlb._venues import venues"),
+    (
+        r"from utilities\.data\.stadium_zipcode import",
+        "from app.services.etl.mlb.data.stadium_zipcode import",
+    ),
+    (
+        r"from utilities\.data\.special_characters_mapping import",
+        "from app.services.etl.mlb.data.special_characters_mapping import",
+    ),
+    (
+        r"from utilities\.venues import venues",
+        "from app.services.etl.mlb._venues import venues",
+    ),
     (r"from scripts\.mlb\.", "from app.services.etl.mlb."),
     (r"import scripts\.mlb\.", "import app.services.etl.mlb."),
     (r"from scripts\.mlb import", "from app.services.etl.mlb import"),
-    (r"^from regression_analysis import", "from app.services.etl.mlb.regression_analysis import"),
-    (r"^from mlb_matchup_analysis import", "from app.services.etl.mlb.mlb_matchup_analysis import"),
-    (r"^from mlb_pitcher_analysis import", "from app.services.etl.mlb.mlb_pitcher_analysis import"),
-    (r"^from mlb_batter_analysis import", "from app.services.etl.mlb.mlb_batter_analysis import"),
-    (r"^from pitcher_game_logs import", "from app.services.etl.mlb.pitcher_game_logs import"),
+    (
+        r"^from regression_analysis import",
+        "from app.services.etl.mlb.regression_analysis import",
+    ),
+    (
+        r"^from mlb_matchup_analysis import",
+        "from app.services.etl.mlb.mlb_matchup_analysis import",
+    ),
+    (
+        r"^from mlb_pitcher_analysis import",
+        "from app.services.etl.mlb.mlb_pitcher_analysis import",
+    ),
+    (
+        r"^from mlb_batter_analysis import",
+        "from app.services.etl.mlb.mlb_batter_analysis import",
+    ),
+    (
+        r"^from pitcher_game_logs import",
+        "from app.services.etl.mlb.pitcher_game_logs import",
+    ),
     (r"datetime\.timedelta", "timedelta"),
 ]
 
@@ -71,7 +104,10 @@ def transform_file(path: Path) -> bool:
     if path.name == "hits.py":
         for old, new in HITS_FIX:
             text = text.replace(old, new)
-        if "from app.models.predictions_models import" in text and "Hitter" not in text.split("import")[1][:200]:
+        if (
+            "from app.models.predictions_models import" in text
+            and "Hitter" not in text.split("import")[1][:200]
+        ):
             text = text.replace(
                 "from app.models.predictions_models import Homer",
                 "from app.models.predictions_models import Hitter, Homer",
@@ -106,7 +142,10 @@ def run() -> dict:
     finally:
         close_session()
 """
-    if path.name == "game_projection_pipeline.py" and "def run_game_projections(" not in text:
+    if (
+        path.name == "game_projection_pipeline.py"
+        and "def run_game_projections(" not in text
+    ):
         text += """
 
 def run_game_projections(target_date=None) -> dict:

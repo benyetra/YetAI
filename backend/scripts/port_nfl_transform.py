@@ -10,16 +10,27 @@ NFL_ROOT = Path(__file__).resolve().parents[1] / "app" / "services" / "etl" / "n
 DATA_NFL = Path(__file__).resolve().parents[1] / "data" / "nfl"
 
 MODELS = [
-    "Kickers", "KickerActuals", "KickerPredictions", "FieldGoalAttempt",
-    "KickerPerformanceMetrics", "WeatherImpactMetrics",
-    "QBPredictions", "QBActuals",
+    "Kickers",
+    "KickerActuals",
+    "KickerPredictions",
+    "FieldGoalAttempt",
+    "KickerPerformanceMetrics",
+    "WeatherImpactMetrics",
+    "QBPredictions",
+    "QBActuals",
 ]
 
 REPLACEMENTS = [
     (r"from database\.models import", "from app.models.predictions_models import"),
-    (r"from utilities\.config import db", "from app.services.etl.nfl._db import db_session"),
+    (
+        r"from utilities\.config import db",
+        "from app.services.etl.nfl._db import db_session",
+    ),
     (r"from scripts\.nfl\.", "from app.services.etl.nfl."),
-    (r"from statistical_kicker_prediction import", "from app.services.etl.nfl.statistical_kicker_prediction import"),
+    (
+        r"from statistical_kicker_prediction import",
+        "from app.services.etl.nfl.statistical_kicker_prediction import",
+    ),
 ]
 
 STRIP = [
@@ -77,7 +88,10 @@ def transform_file(path: Path) -> None:
     for m in MODELS:
         text = text.replace(f"{m}.query", f"db_session.query({m})")
 
-    if "db_session" in text and "from app.services.etl.nfl._db import db_session" not in text:
+    if (
+        "db_session" in text
+        and "from app.services.etl.nfl._db import db_session" not in text
+    ):
         if "from app.models.predictions_models import" in text:
             text = text.replace(
                 "from app.models.predictions_models import",
@@ -136,7 +150,7 @@ def run() -> dict:
     if path.name == "kickers.py":
         text = text.replace(
             'if __name__ == "__main__":',
-            "def _run_kickers_core():\n    pass  # replaced below\n\nif False and __name__ == \"__main__\":",
+            'def _run_kickers_core():\n    pass  # replaced below\n\nif False and __name__ == "__main__":',
         )
         # Extract __main__ body into _run_kickers_core
         marker = 'if False and __name__ == "__main__":'

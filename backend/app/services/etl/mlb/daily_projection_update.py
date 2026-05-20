@@ -1,9 +1,21 @@
 import sys
 import os
 import datetime
-from app.services.etl.mlb.pitcher_game_logs import fetch_days_pitchers, fetch_pitcher_game_logs, fetch_todays_pitchers, calculate_metrics_actuals_v_projections
+from app.services.etl.mlb.pitcher_game_logs import (
+    fetch_days_pitchers,
+    fetch_pitcher_game_logs,
+    fetch_todays_pitchers,
+    calculate_metrics_actuals_v_projections,
+)
 from app.services.etl.mlb.regression_analysis import perform_regression_analysis
-from app.models.predictions_models import db, StrikeoutActuals, StrikeoutProjections, Pitcher, GameProjections, GameActuals
+from app.models.predictions_models import (
+    db,
+    StrikeoutActuals,
+    StrikeoutProjections,
+    Pitcher,
+    GameProjections,
+    GameActuals,
+)
 
 from app.services.etl.mlb._db import db_session
 import logging
@@ -17,13 +29,20 @@ import traceback
 # Widen fanduel_over_under columns from varchar(5) to varchar(7)
 from sqlalchemy import text as sa_text
 from database.database import engine as _engine
+
 with _engine.connect() as _conn:
-    for _tbl in ['strikeout_projections', 'points_projections',
-                'steals_projections', 'pra_projections']:
+    for _tbl in [
+        "strikeout_projections",
+        "points_projections",
+        "steals_projections",
+        "pra_projections",
+    ]:
         try:
-            _conn.execute(sa_text(
-                f'ALTER TABLE {_tbl} ALTER COLUMN fanduel_over_under TYPE varchar(7)'
-            ))
+            _conn.execute(
+                sa_text(
+                    f"ALTER TABLE {_tbl} ALTER COLUMN fanduel_over_under TYPE varchar(7)"
+                )
+            )
             _conn.commit()
             print(f"Widened {_tbl}.fanduel_over_under to varchar(7)")
         except Exception as e:
@@ -33,6 +52,7 @@ with _engine.connect() as _conn:
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
 
 def store_projections(date):
     pitchers = db_session.query(Pitcher).all()
@@ -46,18 +66,22 @@ def store_projections(date):
         fanduel_line = pitcher.fanduel_point
         fanduel_flag = pitcher.fanduel_flag  # 'o' for over, 'u' for under
 
-        existing_projection = db_session.query(StrikeoutProjections).filter_by(date=date, pitcher_id=pitcher_id).first()
+        existing_projection = (
+            db_session.query(StrikeoutProjections)
+            .filter_by(date=date, pitcher_id=pitcher_id)
+            .first()
+        )
         if existing_projection:
             existing_projection.projected_strikeouts = projected_strikeouts
             existing_projection.projected_innings_pitched = innings_pitched
             existing_projection.projected_at_bats = at_bats
             existing_projection.fanduel_line = fanduel_line
-            if fanduel_flag == 'o':
-                existing_projection.fanduel_over_under = 'over'
-            elif fanduel_flag == 'u':
-                existing_projection.fanduel_over_under = 'under'
+            if fanduel_flag == "o":
+                existing_projection.fanduel_over_under = "over"
+            elif fanduel_flag == "u":
+                existing_projection.fanduel_over_under = "under"
             else:
-                existing_projection.fanduel_over_under = 'push'
+                existing_projection.fanduel_over_under = "push"
 
         else:
             new_projection = StrikeoutProjections(
@@ -67,43 +91,60 @@ def store_projections(date):
                 projected_strikeouts=projected_strikeouts,
                 projected_innings_pitched=innings_pitched,
                 projected_at_bats=at_bats,
-                fanduel_line = fanduel_line,
-                fanduel_over_under = 'over' if fanduel_flag == 'o' else 'under'
+                fanduel_line=fanduel_line,
+                fanduel_over_under="over" if fanduel_flag == "o" else "under",
             )
             db_session.add(new_projection)
         db_session.commit()
+
 
 def store_actuals(date):
     pitchers = fetch_days_pitchers(date)
 
     for pitcher in pitchers:
-        pitcher_id = str(pitcher['pitcher_id'])
-        pitcher_name = pitcher['name']
+        pitcher_id = str(pitcher["pitcher_id"])
+        pitcher_name = pitcher["name"]
         game_logs = fetch_pitcher_game_logs(pitcher_id)
-        innings_pitched, strikeouts, at_bats, walks, hits = calculate_metrics_actuals_v_projections(game_logs, date)
+        innings_pitched, strikeouts, at_bats, walks, hits = (
+            calculate_metrics_actuals_v_projections(game_logs, date)
+        )
 
         if innings_pitched is None or at_bats is None:
             continue
 
-        projection = db_session.query(StrikeoutProjections).filter_by(date=date, pitcher_id=pitcher_id).first()
+        projection = (
+            db_session.query(StrikeoutProjections)
+            .filter_by(date=date, pitcher_id=pitcher_id)
+            .first()
+        )
         if not projection:
             continue
 
         # Handle None fanduel_line
         if projection.fanduel_line is None:
-            logger.warning(f"No fanduel_line available for pitcher {pitcher_name} on {date}. Skipping over/under comparison.")
+            logger.warning(
+                f"No fanduel_line available for pitcher {pitcher_name} on {date}. Skipping over/under comparison."
+            )
             continue
-        
-        actual_over_under_result = 'over' if strikeouts > projection.fanduel_line else 'under'
-        correct_prediction = (actual_over_under_result == projection.fanduel_over_under)
 
-        existing_actual = db_session.query(StrikeoutActuals).filter_by(date=date, pitcher_id=pitcher_id).first()
+        actual_over_under_result = (
+            "over" if strikeouts > projection.fanduel_line else "under"
+        )
+        correct_prediction = actual_over_under_result == projection.fanduel_over_under
+
+        existing_actual = (
+            db_session.query(StrikeoutActuals)
+            .filter_by(date=date, pitcher_id=pitcher_id)
+            .first()
+        )
         if existing_actual:
             existing_actual.actual_strikeouts = strikeouts
             existing_actual.actual_innings_pitched = innings_pitched
             existing_actual.actual_at_bats = at_bats
             existing_actual.projected_strikeouts = projection.projected_strikeouts
-            existing_actual.projected_innings_pitched = projection.projected_innings_pitched
+            existing_actual.projected_innings_pitched = (
+                projection.projected_innings_pitched
+            )
             existing_actual.projected_at_bats = projection.projected_at_bats
             existing_actual.correct_prediction = correct_prediction
         else:
@@ -117,15 +158,19 @@ def store_actuals(date):
                 projected_strikeouts=projection.projected_strikeouts,
                 projected_innings_pitched=projection.projected_innings_pitched,
                 projected_at_bats=projection.projected_at_bats,
-                correct_prediction=correct_prediction
+                correct_prediction=correct_prediction,
             )
             db_session.add(new_actual)
         db_session.commit()
 
+
 def store_game_projections_pipeline(date):
     """Run the game-level projection pipeline and store results."""
     try:
-        from app.services.etl.mlb.game_projection_pipeline import run_game_projection_pipeline
+        from app.services.etl.mlb.game_projection_pipeline import (
+            run_game_projection_pipeline,
+        )
+
         count = run_game_projection_pipeline(date)
         logger.info(f"Game projection pipeline stored {count} projections for {date}")
     except Exception as e:
@@ -137,6 +182,7 @@ def store_game_actuals_pipeline(date):
     """Fetch final scores and store game actuals."""
     try:
         from app.services.etl.mlb.game_projection_pipeline import store_game_actuals
+
         count = store_game_actuals(date)
         logger.info(f"Stored {count} game actuals for {date}")
     except Exception as e:
@@ -146,10 +192,26 @@ def store_game_actuals_pipeline(date):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument('--store-actuals', action='store_true', help="Store actual game data after games have ended")
-    parser.add_argument('--store-game-projections', action='store_true', help="Run game-level projection pipeline")
-    parser.add_argument('--store-game-actuals', action='store_true', help="Store game-level actuals (post-game)")
-    parser.add_argument('--all-projections', action='store_true', help="Run both K projections and game projections")
+    parser.add_argument(
+        "--store-actuals",
+        action="store_true",
+        help="Store actual game data after games have ended",
+    )
+    parser.add_argument(
+        "--store-game-projections",
+        action="store_true",
+        help="Run game-level projection pipeline",
+    )
+    parser.add_argument(
+        "--store-game-actuals",
+        action="store_true",
+        help="Store game-level actuals (post-game)",
+    )
+    parser.add_argument(
+        "--all-projections",
+        action="store_true",
+        help="Run both K projections and game projections",
+    )
     args = parser.parse_args()
 
     today = datetime.date.today()
@@ -171,6 +233,7 @@ if __name__ == "__main__":
 def run_store_strikeout_projections(target_date=None) -> dict:
     from datetime import date as date_cls
     from app.services.etl.mlb._db import init_session, close_session
+
     init_session()
     try:
         d = target_date or date_cls.today()
@@ -183,6 +246,7 @@ def run_store_strikeout_projections(target_date=None) -> dict:
 def run_store_strikeout_actuals(target_date=None) -> dict:
     from datetime import date as date_cls, timedelta
     from app.services.etl.mlb._db import init_session, close_session
+
     init_session()
     try:
         d = target_date or (date_cls.today() - timedelta(days=1))

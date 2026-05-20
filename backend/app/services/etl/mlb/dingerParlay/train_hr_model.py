@@ -22,6 +22,7 @@ try:
 except ImportError:
     boto3 = None
 
+
 def read_csv_any(path, **kwargs):
     """Read CSV from S3 or local."""
     if path.startswith("s3://"):
@@ -32,6 +33,7 @@ def read_csv_any(path, **kwargs):
         raw = obj["Body"].read()
         return pd.read_csv(BytesIO(raw), **kwargs)
     return pd.read_csv(path, **kwargs)
+
 
 def save_model_any(obj, path):
     """Save joblib model to S3 or local."""
@@ -46,6 +48,7 @@ def save_model_any(obj, path):
         joblib.dump(obj, path)
         logging.info(f"Saved model to {path}")
 
+
 def save_plot_any(fig, path):
     """Save matplotlib figure to S3 or local."""
     if path.startswith("s3://"):
@@ -55,90 +58,120 @@ def save_plot_any(fig, path):
         buf = BytesIO()
         fig.savefig(buf, format="png", bbox_inches="tight")
         buf.seek(0)
-        boto3.client("s3").put_object(Bucket=bucket, Key=key, Body=buf.getvalue(), ContentType='image/png')
+        boto3.client("s3").put_object(
+            Bucket=bucket, Key=key, Body=buf.getvalue(), ContentType="image/png"
+        )
         logging.info(f"Saved plot to {path}")
     else:
         fig.savefig(path, bbox_inches="tight")
         logging.info(f"Saved plot to {path}")
 
+
 def main():
     p = argparse.ArgumentParser(
         description="Train an HR model with randomized search and hold-out eval (regressor version)"
     )
-    p.add_argument('--training',    required=True, help='Path to training CSV')
-    p.add_argument('--output',      required=True, help='Where to save final model .pkl')
-    p.add_argument('--model-type',  choices=['xgb','lgbm'], default='xgb')
-    p.add_argument('--holdout-date',required=True, help='YYYY-MM-DD hold-out split date')
-    p.add_argument('--splits',      type=int, default=5, help='TimeSeriesSplit folds')
-    p.add_argument('--iters',       type=int, default=50, help='RandomizedSearchCV iterations')
-    p.add_argument('--seed',        type=int, default=42, help='Random seed')
-    p.add_argument('--plot-path',   help='Optional path to save feature importance plot (local or s3://)')
+    p.add_argument("--training", required=True, help="Path to training CSV")
+    p.add_argument("--output", required=True, help="Where to save final model .pkl")
+    p.add_argument("--model-type", choices=["xgb", "lgbm"], default="xgb")
+    p.add_argument(
+        "--holdout-date", required=True, help="YYYY-MM-DD hold-out split date"
+    )
+    p.add_argument("--splits", type=int, default=5, help="TimeSeriesSplit folds")
+    p.add_argument(
+        "--iters", type=int, default=50, help="RandomizedSearchCV iterations"
+    )
+    p.add_argument("--seed", type=int, default=42, help="Random seed")
+    p.add_argument(
+        "--plot-path",
+        help="Optional path to save feature importance plot (local or s3://)",
+    )
     args = p.parse_args()
 
-    logging.basicConfig(level=logging.INFO,
-                        format='%(asctime)s %(levelname)s: %(message)s')
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s"
+    )
     logging.info("Loading data…")
-    df = read_csv_any(args.training, parse_dates=['game_date'])
-    df = df.dropna(subset=['is_HR'])
-    df['game_date'] = pd.to_datetime(df['game_date'])
+    df = read_csv_any(args.training, parse_dates=["game_date"])
+    df = df.dropna(subset=["is_HR"])
+    df["game_date"] = pd.to_datetime(df["game_date"])
 
-    min_date, max_date = df['game_date'].min().date(), df['game_date'].max().date()
+    min_date, max_date = df["game_date"].min().date(), df["game_date"].max().date()
     logging.info(f"Data covers {min_date} → {max_date}")
 
     user_hold = pd.to_datetime(args.holdout_date).date()
-    cutoff_date = (df['game_date'].quantile(0.8).date()
-                   if user_hold >= max_date else user_hold)
+    cutoff_date = (
+        df["game_date"].quantile(0.8).date() if user_hold >= max_date else user_hold
+    )
     if user_hold >= max_date:
-        logging.warning(f"holdout-date {user_hold} ≥ max data date; falling back to 80th percentile: {cutoff_date}")
+        logging.warning(
+            f"holdout-date {user_hold} ≥ max data date; falling back to 80th percentile: {cutoff_date}"
+        )
 
-    train_mask = df['game_date'] < pd.to_datetime(cutoff_date)
-    X = df[['PowerScore','HR9','K9','hr_factor','temp','wind_speed','platoon']].astype(float)
-    y = df['is_HR'].astype(float)
+    train_mask = df["game_date"] < pd.to_datetime(cutoff_date)
+    X = df[
+        ["PowerScore", "HR9", "K9", "hr_factor", "temp", "wind_speed", "platoon"]
+    ].astype(float)
+    y = df["is_HR"].astype(float)
     X_train, y_train = X[train_mask], y[train_mask]
-    X_hold,  y_hold  = X[~train_mask], y[~train_mask]
+    X_hold, y_hold = X[~train_mask], y[~train_mask]
     if len(X_hold) == 0:
         raise RuntimeError(f"No hold-out rows after {cutoff_date}")
     logging.info(f"Train size: {len(X_train)}, Hold-out size: {len(X_hold)}")
 
-    bad_cols = [col for col in X.columns if X[col].nunique() <= 1 or X[col].isna().any() or np.isinf(X[col]).any()]
+    bad_cols = [
+        col
+        for col in X.columns
+        if X[col].nunique() <= 1 or X[col].isna().any() or np.isinf(X[col]).any()
+    ]
     if bad_cols:
         logging.warning(f"Dropping constant or invalid feature columns: {bad_cols}")
         X = X.drop(columns=bad_cols)
         X_train = X_train.drop(columns=bad_cols)
         X_hold = X_hold.drop(columns=bad_cols)
 
-    if args.model_type == 'xgb':
-        base = xgb.XGBRegressor(objective='reg:squarederror', random_state=args.seed, n_jobs=-1, tree_method='auto')
+    if args.model_type == "xgb":
+        base = xgb.XGBRegressor(
+            objective="reg:squarederror",
+            random_state=args.seed,
+            n_jobs=-1,
+            tree_method="auto",
+        )
         param_dist = {
-            'clf__max_depth':        [3, 6, 9],
-            'clf__learning_rate':    [0.01, 0.05, 0.1],
-            'clf__n_estimators':     [100, 200, 400],
-            'clf__subsample':        [0.6, 0.8, 1.0],
-            'clf__colsample_bytree': [0.6, 0.8, 1.0],
+            "clf__max_depth": [3, 6, 9],
+            "clf__learning_rate": [0.01, 0.05, 0.1],
+            "clf__n_estimators": [100, 200, 400],
+            "clf__subsample": [0.6, 0.8, 1.0],
+            "clf__colsample_bytree": [0.6, 0.8, 1.0],
         }
     else:
-        base = lgb.LGBMRegressor(objective='regression', random_state=args.seed, n_jobs=-1)
+        base = lgb.LGBMRegressor(
+            objective="regression", random_state=args.seed, n_jobs=-1
+        )
         param_dist = {
-            'clf__num_leaves':       [31, 64, 128],
-            'clf__learning_rate':    [0.01, 0.05, 0.1],
-            'clf__n_estimators':     [100, 200, 400],
-            'clf__subsample':        [0.6, 0.8, 1.0],
+            "clf__num_leaves": [31, 64, 128],
+            "clf__learning_rate": [0.01, 0.05, 0.1],
+            "clf__n_estimators": [100, 200, 400],
+            "clf__subsample": [0.6, 0.8, 1.0],
         }
 
-    pipe = Pipeline([
-        ('scaler', StandardScaler()),
-        ('clf',    base),
-    ])
+    pipe = Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("clf", base),
+        ]
+    )
 
     tscv = TimeSeriesSplit(n_splits=args.splits)
     search = RandomizedSearchCV(
-        pipe, param_dist,
+        pipe,
+        param_dist,
         cv=tscv,
-        scoring='neg_mean_squared_error',
+        scoring="neg_mean_squared_error",
         n_iter=args.iters,
         random_state=args.seed,
         n_jobs=-1,
-        verbose=1
+        verbose=1,
     )
     logging.info("Starting RandomizedSearchCV…")
     search.fit(X_train, y_train)
@@ -148,7 +181,7 @@ def main():
     logging.info("Evaluating on hold-out…")
     preds = best.predict(X_hold)
     rmse = np.sqrt(mean_squared_error(y_hold, preds))
-    r2   = r2_score(y_hold, preds)
+    r2 = r2_score(y_hold, preds)
     logging.info(f"Hold-out RMSE: {rmse:.5f}, R²: {r2:.4f}")
 
     # Optional plot
@@ -156,12 +189,12 @@ def main():
         logging.info(f"Generating feature importance plot…")
         features = list(X_train.columns)
         importances = (
-            best.named_steps['clf'].feature_importances_
-            if args.model_type == 'lgbm'
-            else best.named_steps['clf'].get_booster().get_score(importance_type='gain')
+            best.named_steps["clf"].feature_importances_
+            if args.model_type == "lgbm"
+            else best.named_steps["clf"].get_booster().get_score(importance_type="gain")
         )
 
-        if args.model_type == 'xgb':
+        if args.model_type == "xgb":
             importances = {k: importances.get(k, 0.0) for k in features}
             sorted_items = sorted(importances.items(), key=lambda x: x[1])
             labels, values = zip(*sorted_items)
@@ -183,5 +216,6 @@ def main():
     save_model_any(best, args.output)
     logging.info("🎉 Done!")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     main()

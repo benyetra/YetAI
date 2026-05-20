@@ -5,6 +5,7 @@ recent usage (3/5/7-day innings pitched windows). Higher index = more fatigued.
 
 PRD v2.0 §5.2 — Bullpen Usage Tracker (P1, Phase 1).
 """
+
 import sys
 import os
 
@@ -16,7 +17,7 @@ from app.models.predictions_models import BullpenFatigue
 from app.services.etl.mlb._db import db_session
 
 
-logging.basicConfig(level=logging.INFO, format='[%(levelname)s] %(message)s')
+logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
 # League-average bullpen IP baselines for normalization
@@ -34,11 +35,11 @@ CURRENT_SEASON = date.today().year
 
 def get_all_team_ids():
     """Fetch all 30 MLB team IDs and names."""
-    teams = mlbstatsapi.get('teams', {'sportId': 1, 'season': CURRENT_SEASON})
+    teams = mlbstatsapi.get("teams", {"sportId": 1, "season": CURRENT_SEASON})
     return [
-        {'id': t['id'], 'name': t['name']}
-        for t in teams.get('teams', [])
-        if t.get('sport', {}).get('id') == 1
+        {"id": t["id"], "name": t["name"]}
+        for t in teams.get("teams", [])
+        if t.get("sport", {}).get("id") == 1
     ]
 
 
@@ -56,9 +57,9 @@ def fetch_team_bullpen_usage(team_id, target_date=None, lookback_days=7):
 
     try:
         games = mlbstatsapi.schedule(
-            start_date=start_date.strftime('%Y-%m-%d'),
-            end_date=end_date.strftime('%Y-%m-%d'),
-            team=team_id
+            start_date=start_date.strftime("%Y-%m-%d"),
+            end_date=end_date.strftime("%Y-%m-%d"),
+            team=team_id,
         )
     except Exception as e:
         logger.warning(f"Failed to fetch schedule for team {team_id}: {e}")
@@ -69,17 +70,17 @@ def fetch_team_bullpen_usage(team_id, target_date=None, lookback_days=7):
     reliever_usage = {}
 
     for g in games:
-        if g.get('status', '') not in ('Final', 'Game Over', 'Completed Early'):
+        if g.get("status", "") not in ("Final", "Game Over", "Completed Early"):
             continue
 
-        game_date = g.get('game_date', '')[:10]
+        game_date = g.get("game_date", "")[:10]
         try:
-            bs = mlbstatsapi.boxscore_data(g['game_id'])
+            bs = mlbstatsapi.boxscore_data(g["game_id"])
         except Exception as e:
             logger.warning(f"Failed to fetch boxscore for game {g['game_id']}: {e}")
             continue
 
-        side = 'home' if g.get('home_id') == team_id else 'away'
+        side = "home" if g.get("home_id") == team_id else "away"
         pitchers_key = f"{side}Pitchers"
         pitchers = bs.get(pitchers_key, [])
 
@@ -88,18 +89,18 @@ def fetch_team_bullpen_usage(team_id, target_date=None, lookback_days=7):
         game_bp_ip = 0.0
 
         for p in bullpen:
-            ip_str = p.get('ip', '0') or '0'
+            ip_str = p.get("ip", "0") or "0"
             try:
                 ip = float(ip_str)
             except (ValueError, TypeError):
                 ip = 0.0
             game_bp_ip += ip
 
-            p_name = p.get('name', 'Unknown')
+            p_name = p.get("name", "Unknown")
             if p_name not in reliever_usage:
-                reliever_usage[p_name] = {'ip_total': 0.0, 'appearances': 0}
-            reliever_usage[p_name]['ip_total'] += ip
-            reliever_usage[p_name]['appearances'] += 1
+                reliever_usage[p_name] = {"ip_total": 0.0, "appearances": 0}
+            reliever_usage[p_name]["ip_total"] += ip
+            reliever_usage[p_name]["appearances"] += 1
 
         daily_ip[game_date] = daily_ip.get(game_date, 0.0) + game_bp_ip
 
@@ -124,19 +125,23 @@ def fetch_team_bullpen_usage(team_id, target_date=None, lookback_days=7):
     # Build reliever details
     reliever_details = [
         {
-            'name': name,
-            'ip': round(data['ip_total'], 1),
-            'appearances': data['appearances']
+            "name": name,
+            "ip": round(data["ip_total"], 1),
+            "appearances": data["appearances"],
         }
-        for name, data in sorted(reliever_usage.items(), key=lambda x: -x[1]['ip_total'])
+        for name, data in sorted(
+            reliever_usage.items(), key=lambda x: -x[1]["ip_total"]
+        )
     ]
 
     return {
-        'ip_last_3_days': round(ip_3, 1),
-        'ip_last_5_days': round(ip_5, 1),
-        'ip_last_7_days': round(ip_7, 1),
-        'high_leverage_ip_last_3': round(ip_3 * 0.6, 1),  # Approximate high-leverage portion
-        'reliever_details': reliever_details
+        "ip_last_3_days": round(ip_3, 1),
+        "ip_last_5_days": round(ip_5, 1),
+        "ip_last_7_days": round(ip_7, 1),
+        "high_leverage_ip_last_3": round(
+            ip_3 * 0.6, 1
+        ),  # Approximate high-leverage portion
+        "reliever_details": reliever_details,
     }
 
 
@@ -161,44 +166,48 @@ def store_bullpen_fatigue(fatigue_data_list, target_date=None):
         target_date = date.today()
 
     for data in fatigue_data_list:
-        existing = db_session.query(BullpenFatigue).filter_by(
-            date=target_date,
-            team_id=data['team_id']
-        ).first()
+        existing = (
+            db_session.query(BullpenFatigue)
+            .filter_by(date=target_date, team_id=data["team_id"])
+            .first()
+        )
 
         if existing:
-            existing.ip_last_3_days = data['ip_last_3_days']
-            existing.ip_last_5_days = data['ip_last_5_days']
-            existing.ip_last_7_days = data['ip_last_7_days']
-            existing.high_leverage_ip_last_3 = data['high_leverage_ip_last_3']
-            existing.fatigue_index = data['fatigue_index']
-            existing.reliever_details = data['reliever_details']
+            existing.ip_last_3_days = data["ip_last_3_days"]
+            existing.ip_last_5_days = data["ip_last_5_days"]
+            existing.ip_last_7_days = data["ip_last_7_days"]
+            existing.high_leverage_ip_last_3 = data["high_leverage_ip_last_3"]
+            existing.fatigue_index = data["fatigue_index"]
+            existing.reliever_details = data["reliever_details"]
         else:
             entry = BullpenFatigue(
                 date=target_date,
-                team_name=data['team_name'],
-                team_id=data['team_id'],
-                ip_last_3_days=data['ip_last_3_days'],
-                ip_last_5_days=data['ip_last_5_days'],
-                ip_last_7_days=data['ip_last_7_days'],
-                high_leverage_ip_last_3=data['high_leverage_ip_last_3'],
-                fatigue_index=data['fatigue_index'],
-                reliever_details=data['reliever_details']
+                team_name=data["team_name"],
+                team_id=data["team_id"],
+                ip_last_3_days=data["ip_last_3_days"],
+                ip_last_5_days=data["ip_last_5_days"],
+                ip_last_7_days=data["ip_last_7_days"],
+                high_leverage_ip_last_3=data["high_leverage_ip_last_3"],
+                fatigue_index=data["fatigue_index"],
+                reliever_details=data["reliever_details"],
             )
             db_session.add(entry)
 
     db_session.commit()
-    logger.info(f"Stored bullpen fatigue for {len(fatigue_data_list)} teams on {target_date}")
+    logger.info(
+        f"Stored bullpen fatigue for {len(fatigue_data_list)} teams on {target_date}"
+    )
 
 
 def get_team_fatigue(team_id, target_date=None):
     """Retrieve fatigue index for a specific team. Returns 0.5 (league avg) as fallback."""
     if target_date is None:
         target_date = date.today()
-    entry = db_session.query(BullpenFatigue).filter_by(
-        date=target_date,
-        team_id=team_id
-    ).first()
+    entry = (
+        db_session.query(BullpenFatigue)
+        .filter_by(date=target_date, team_id=team_id)
+        .first()
+    )
     return entry.fatigue_index if entry else 0.5
 
 
@@ -247,5 +256,5 @@ def main():
         close_session()
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

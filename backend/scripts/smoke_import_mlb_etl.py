@@ -107,7 +107,9 @@ def main() -> int:
         for name, err in failed:
             print(f"  - {name}: {err}")
         print()
-        print("Tip: activate backend/.venv and install requirements.txt (pandas, statsapi, etc.)")
+        print(
+            "Tip: activate backend/.venv and install requirements.txt (pandas, statsapi, etc.)"
+        )
         return 1
 
     print(f"PASS: all {len(modules)} targeted MLB ETL modules imported")
