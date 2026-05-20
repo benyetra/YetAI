@@ -216,6 +216,14 @@ def run_store_strikeout_projections(target_date=None) -> dict:
             .filter(StrikeoutProjections.date == d)
             .count()
         )
+        if pitchers <= 0:
+            return {
+                "status": "error",
+                "date": d.isoformat(),
+                "error": "pred_pitcher empty — run mlb.strikeouts first",
+                "pred_pitcher_rows": 0,
+                "strikeout_projections_today": k_today,
+            }
         return {
             "status": "ok",
             "date": d.isoformat(),

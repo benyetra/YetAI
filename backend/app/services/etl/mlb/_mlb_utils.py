@@ -12,9 +12,7 @@ import pandas as pd
 import requests
 import statsapi
 
-from app.services.etl.mlb.data.special_characters_mapping import (
-    special_characters_mapping,
-)
+from app.services.etl.mlb.data.special_characters_mapping import special_characters_mapping
 from app.services.etl.mlb.data.stadium_zipcode import stadium_to_zip
 
 logger = logging.getLogger(__name__)
@@ -33,9 +31,7 @@ def read_csv_anywhere(path: str, **kwargs) -> pd.DataFrame:
 
 def replace_special_characters(name: str) -> str:
     normalized_name = unicodedata.normalize("NFC", name)
-    return "".join(
-        special_characters_mapping.get(char, char) for char in normalized_name
-    )
+    return "".join(special_characters_mapping.get(char, char) for char in normalized_name)
 
 
 def extract_numeric_value(fanduel_point_str: str) -> float | None:
@@ -74,6 +70,17 @@ def get_weather_by_gametime(game_time, stadium: str):
         if forecast_time.hour == game_hour_utc:
             return entry["values"]
     return None
+
+
+def convert_to_est(time_str: str, input_format: str = "%Y-%m-%dT%H:%M:%SZ") -> datetime:
+    """Parse MLB statsapi game_datetime into naive local display time (legacy YetiBets)."""
+    return datetime.strptime(time_str, input_format)
+
+
+def isGameOver(game: dict) -> str:
+    """Return 'future' or 'past' for slate filtering (ported from YetiBets utilities)."""
+    est_time = convert_to_est(game["game_datetime"])
+    return "future" if est_time > datetime.now() else "past"
 
 
 def get_todays_games():
