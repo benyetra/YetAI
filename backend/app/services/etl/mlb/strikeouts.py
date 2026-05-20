@@ -614,8 +614,10 @@ def fetch_and_update_app_data():
             )
 
         print("Data updated successfully.")
+        return db_session.query(Pitcher).count()
     except Exception as e:
         print(f"Error fetching and storing data: {e}")
+        raise
 
 
 def run() -> dict:
@@ -624,7 +626,14 @@ def run() -> dict:
 
     init_session()
     try:
-        fetch_and_update_app_data()
-        return {"status": "ok", "task": "strikeouts"}
+        count = fetch_and_update_app_data()
+        if not count:
+            return {
+                "status": "error",
+                "task": "strikeouts",
+                "error": "no pitchers stored (check ODDS_API_KEY, lineups, worker logs)",
+                "pred_pitcher_rows": 0,
+            }
+        return {"status": "ok", "task": "strikeouts", "pred_pitcher_rows": count}
     finally:
         close_session()

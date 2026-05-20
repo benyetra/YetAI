@@ -96,7 +96,7 @@ def store_projections(date):
                 fanduel_over_under="over" if fanduel_flag == "o" else "under",
             )
             db_session.add(new_projection)
-        db_session.commit()
+    db_session.commit()
 
 
 def store_actuals(date):
@@ -239,7 +239,20 @@ def run_store_strikeout_projections(target_date=None) -> dict:
     try:
         d = target_date or date_cls.today()
         store_projections(d)
-        return {"status": "ok", "date": d.isoformat()}
+        from app.models.predictions_models import Pitcher, StrikeoutProjections
+
+        pitchers = db_session.query(Pitcher).count()
+        k_today = (
+            db_session.query(StrikeoutProjections)
+            .filter(StrikeoutProjections.date == d)
+            .count()
+        )
+        return {
+            "status": "ok",
+            "date": d.isoformat(),
+            "pred_pitcher_rows": pitchers,
+            "strikeout_projections_today": k_today,
+        }
     finally:
         close_session()
 

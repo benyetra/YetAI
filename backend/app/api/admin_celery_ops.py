@@ -34,7 +34,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nba.totals_projector": 300.0,
     "app.tasks.etl_pipeline.mlb.strikeouts": 600.0,
     "app.tasks.etl_pipeline.mlb.hits": 600.0,
-    "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 600.0,
     "app.tasks.etl_pipeline.mlb.game_projections": 300.0,
     "app.tasks.etl_pipeline.mlb.batter_projections": 300.0,
     "app.tasks.etl_pipeline.mlb.weather": 180.0,
@@ -282,6 +282,10 @@ async def admin_celery_run_task(
                 "status": "timeout",
                 "task_id": async_result.id,
                 "timeout_s": timeout,
+                "hint": (
+                    "Task may still be running on celery-worker (concurrency=1). "
+                    f"Poll GET /api/admin/celery/task-status/{async_result.id}"
+                ),
             }
         except Exception as exc:
             return {"status": "error", "task_id": async_result.id, "error": str(exc)}
