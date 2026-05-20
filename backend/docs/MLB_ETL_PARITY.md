@@ -57,5 +57,8 @@ YetiBets GHA ran `daily_projection_update` **before** `strikeouts`, which archiv
 ## Validation
 
 ```bash
+cd backend && PYTHONPATH=. python scripts/smoke_import_mlb_etl.py
 cd backend && PYTHONPATH=. python scripts/validate_mlb_pipeline.py
 ```
+
+`smoke_import_mlb_etl.py` defaults to pipeline-critical modules (Celery daily path). Use `--all` for the full tree (excludes `backtest.py` / `verify_backtest_prd.py`).

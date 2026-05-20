@@ -34,3 +34,12 @@ Orchestrator: `app.tasks.etl_pipeline.NBA_PHASES` + Celery Beat `nba-update-pipe
 | `store_free_throw_actuals.py` | Partially covered by `store_actuals` free_throw stat |
 
 Track new ports as Celery sub-tasks under `NBA_PHASES`; do not re-add logic to YetiBets.
+
+## Validation
+
+```bash
+cd backend && PYTHONPATH=. python -m pytest tests/test_nba_totals_projector.py -v
+cd backend && PYTHONPATH=. python scripts/validate_nba_pipeline.py
+```
+
+Game O/U accuracy uses `pred_nba_totals_projections`, `pred_nba_totals_actuals`, and `pred_nba_totals_accuracy` — not `pred_prediction_accuracy` player stat types.
