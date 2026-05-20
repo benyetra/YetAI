@@ -12,9 +12,10 @@ Living document while Railway deploys are paused (post-outage). Update after eac
 | Field | Value |
 |-------|--------|
 | Date | 2026-05-20 |
-| Branch / tip | Local — NFL port + docs (not yet deployed) |
-| Railway | API up; **deploys paused**; Redis was timing out — re-verify before prod run |
+| Branch / tip | `origin/main` @ `f09e9b97` (NFL/NHL port + CI + Railway deploy fix) |
+| Railway | API + celery-worker deployed; `RAILWAY_TOKEN` in GitHub Actions |
 | Local tooling | MLB/NBA/NHL/NFL smoke + validators; admin enqueue API |
+| **Next** | Run post-deploy matrix below (enqueue → validate → API/UI) |
 
 ---
 
@@ -22,10 +23,10 @@ Living document while Railway deploys are paused (post-outage). Update after eac
 
 | Sport | Orchestrator | Beat | Prod verified |
 |-------|--------------|------|---------------|
-| MLB | `run_mlb_update_pipeline`, `run_mlb_store_actuals` | Yes | **No** (blocked by Redis / deploy pause) |
-| NBA | `run_nba_update_pipeline` | Yes | Partial (totals fixes pending deploy) |
-| NHL | `run_nhl_update_pipeline` | TBD | **No** |
-| NFL | `run_nfl_update_pipeline` | **No** (enqueue / admin only) | **No** |
+| MLB | `run_mlb_update_pipeline`, `run_mlb_store_actuals` | Yes | **Pending** — enqueue + validator after deploy |
+| NBA | `run_nba_update_pipeline` | Yes | **Pending** — totals fixes now on `main` |
+| NHL | `run_nhl_update_pipeline` | TBD | **Pending** |
+| NFL | `run_nfl_update_pipeline` | **No** (enqueue / admin only) | **Pending** |
 
 ---
 
@@ -207,11 +208,17 @@ PYTHONPATH=/app/backend python3 scripts/validate_nfl_pipeline.py
 - [ ] NFL Celery Beat schedule (e.g. Tue AM after MNF grading)
 - [ ] `scripts/enqueue_nfl_pipeline.py` mirroring MLB helper
 - [ ] Port NFL ML ensemble / warehouse FG models
-- [ ] Re-enable Railway deploys + confirm Redis stable
+- [x] Railway deploys re-enabled (`railway up` + `RAILWAY_TOKEN` project secret)
 
 ---
 
 ## Session log
+
+### 2026-05-20 — Production redeploy + verification start
+
+- `origin/main` @ `f09e9b97`; API `/health` healthy in production.
+- GitHub `RAILWAY_TOKEN` set; Railway Production Deploy workflow green.
+- **In progress:** post-deploy matrix (enqueue orchestrators, validators, UI).
 
 ### 2026-05-20 — NFL port + post-deploy test matrix
 
