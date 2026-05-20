@@ -6,16 +6,59 @@ NBA orchestrator mirrors YetiBets ``nba_update_runner.py`` / ``daily_pipeline.py
 
 Pipeline status: WebSocket + logs (no Discord). XGBoost models: ``s3://yetibets/``.
 
-Parity checklists: ``backend/docs/NBA_ETL_PARITY.md``, ``backend/docs/MLB_ETL_PARITY.md``.
+Parity checklists: ``backend/docs/NBA_ETL_PARITY.md``, ``backend/docs/MLB_ETL_PARITY.md``,
+``backend/docs/NHL_ETL_PARITY.md``, ``backend/docs/NFL_ETL_PARITY.md``.
 """
 
 import logging
+import os
 from datetime import datetime
 from typing import List
 
 from app.celery_app import celery_app
 
 logger = logging.getLogger(__name__)
+
+# Tasks whose failure should surface as pipeline partial_failure and block
+# treating the run as fully healthy. Enrichment / grading / optional ML are not critical.
+CRITICAL_PIPELINE_TASKS: frozenset[str] = frozenset(
+    {
+        # NBA — slate + core projections
+        "app.tasks.etl_pipeline.nba.update_team_roster",
+        "app.tasks.etl_pipeline.nba.today_active_players",
+        "app.tasks.etl_pipeline.nba.update_recent_games",
+        "app.tasks.etl_pipeline.nba.update_team_stats",
+        "app.tasks.etl_pipeline.nba.update_injury_status",
+        "app.tasks.etl_pipeline.nba.update_expected_minutes",
+        "app.tasks.etl_pipeline.nba.update_game_lines",
+        "app.tasks.etl_pipeline.nba.generate_predictions",
+        "app.tasks.etl_pipeline.nba.generate_rebounds_predictions",
+        "app.tasks.etl_pipeline.nba.generate_assists_predictions",
+        "app.tasks.etl_pipeline.nba.generate_three_pt_made_predictions",
+        "app.tasks.etl_pipeline.nba.generate_steals_predictions",
+        "app.tasks.etl_pipeline.nba.generate_blocks_predictions",
+        "app.tasks.etl_pipeline.nba.generate_pra_predictions",
+        "app.tasks.etl_pipeline.nba.totals_projector",
+        # MLB — prop boards + persist
+        "app.tasks.etl_pipeline.mlb.strikeouts",
+        "app.tasks.etl_pipeline.mlb.hits",
+        "app.tasks.etl_pipeline.mlb.store_strikeout_projections",
+        "app.tasks.etl_pipeline.mlb.game_projections",
+        "app.tasks.etl_pipeline.mlb.batter_projections",
+        # MLB actuals orchestrator
+        "app.tasks.etl_pipeline.mlb.store_game_actuals",
+        "app.tasks.etl_pipeline.mlb.store_strikeout_actuals",
+        "app.tasks.etl_pipeline.mlb.store_batter_actuals",
+        # NHL — ingest, stats, predictions, actuals
+        "app.tasks.etl_pipeline.nhl.collect_ingest",
+        "app.tasks.etl_pipeline.nhl.update_daily_stats",
+        "app.tasks.etl_pipeline.nhl.daily_predictions",
+        "app.tasks.etl_pipeline.nhl.collect_goalie_actuals",
+        # NFL — weekly QB + kicker boards
+        "app.tasks.etl_pipeline.nfl.qb_weekly",
+        "app.tasks.etl_pipeline.nfl.kickers",
+    }
+)
 
 
 # --- NBA sub-tasks (ported from YetiBets scripts/nba → app/services/etl/nba) ----
@@ -244,6 +287,20 @@ def mlb_blowouts():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.hr_predictions")
+def mlb_hr_predictions():
+    from app.services.etl.mlb.pipeline import _run_hr_predictions_optional
+
+    return _run_hr_predictions_optional()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.ev")
+def mlb_ev():
+    from app.services.etl.mlb.mlb_ev import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.mlb.store_strikeout_actuals")
 def mlb_store_strikeout_actuals():
     from app.services.etl.mlb.daily_projection_update import run_store_strikeout_actuals
@@ -330,34 +387,25 @@ NBA_PHASES = [
 ]
 
 # YetiBets mlb_daily_projections.yml — strikeouts before archiving K projections.
-MLB_PROJECTION_PHASES = [
-    (
-        "sync",
-        [],  # games cache runs on its own 3h beat; optional inline below
-    ),
-    (
-        "props",
-        [
-            mlb_strikeouts,
-            mlb_hits,
-        ],
-    ),
-    (
-        "persist",
-        [
-            mlb_store_strikeout_projections,
-            mlb_game_projections,
-            mlb_batter_projections,
-        ],
-    ),
-    (
-        "enrichment",
-        [
-            mlb_weather,
-            mlb_blowouts,
-        ],
-    ),
-]
+def _mlb_projection_phases():
+    """Build MLB projection phases; optional HR ML when S3 feature CSVs are set."""
+    persist = [
+        mlb_store_strikeout_projections,
+        mlb_game_projections,
+        mlb_batter_projections,
+    ]
+    if os.getenv("MLB_DAILY_FEATURES_S3") and os.getenv("MLB_LINEUP_CSV_S3"):
+        persist.append(mlb_hr_predictions)
+    return [
+        ("sync", []),  # games cache runs on its own 3h beat; optional inline below
+        ("props", [mlb_strikeouts, mlb_hits]),
+        ("persist", persist),
+        ("enrichment", [mlb_weather, mlb_blowouts]),
+    ]
+
+
+# Static snapshot for docs/tests; daily orchestrator uses _mlb_projection_phases().
+MLB_PROJECTION_PHASES = _mlb_projection_phases()
 
 MLB_ACTUALS_PHASES = [
     (
@@ -374,32 +422,48 @@ MLB_ACTUALS_PHASES = [
 def _run_phases(sport: str, phases: List) -> dict:
     started = datetime.utcnow()
     phase_results = []
+    failed_tasks: list[str] = []
+    critical_failed_tasks: list[str] = []
+
     for phase_name, tasks in phases:
         phase_started = datetime.utcnow()
         results = []
+        phase_errors = 0
         for task in tasks:
+            critical = task.name in CRITICAL_PIPELINE_TASKS
             try:
                 # .run() executes the task body in-process (no broker, no result
                 # backend). Avoids "Never call result.get() within a task!" from
                 # task.apply().get() when the orchestrator itself is a Celery task.
                 r = task.run()
-                results.append({"task": task.name, "result": r})
+                results.append({"task": task.name, "critical": critical, "result": r})
             except Exception as e:
                 logger.exception("Task %s failed in phase %s", task.name, phase_name)
-                results.append({"task": task.name, "error": str(e)})
+                results.append({"task": task.name, "critical": critical, "error": str(e)})
+                failed_tasks.append(task.name)
+                phase_errors += 1
+                if critical:
+                    critical_failed_tasks.append(task.name)
         phase_results.append(
             {
                 "phase": phase_name,
+                "status": "error" if phase_errors else "ok",
+                "errors": phase_errors,
                 "duration_s": (datetime.utcnow() - phase_started).total_seconds(),
                 "results": results,
             }
         )
 
+    status = "partial_failure" if failed_tasks else "ok"
+
     return {
+        "status": status,
         "sport": sport,
         "started_at": started.isoformat() + "Z",
         "finished_at": datetime.utcnow().isoformat() + "Z",
         "duration_s": (datetime.utcnow() - started).total_seconds(),
+        "failed_tasks": failed_tasks,
+        "critical_failed_tasks": critical_failed_tasks,
         "phases": phase_results,
     }
 
@@ -421,7 +485,7 @@ def run_mlb_update_pipeline(self) -> dict:
     from app.tasks.games_sync import sync_games_cache
 
     sync = sync_games_cache.run()
-    result = _run_phases("mlb", MLB_PROJECTION_PHASES)
+    result = _run_phases("mlb", _mlb_projection_phases())
     result["games_sync"] = sync
     return result
 
@@ -433,26 +497,123 @@ def run_mlb_store_actuals(self) -> dict:
     return _run_phases("mlb", MLB_ACTUALS_PHASES)
 
 
+# --- NFL sub-tasks (ported from YetiBets scripts/nfl → app/services/etl/nfl) ----
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.collect_qb_actuals")
+def nfl_collect_qb_actuals():
+    from app.services.etl.nfl.collect_qb_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.collect_kicker_actuals")
+def nfl_collect_kicker_actuals():
+    from app.services.etl.nfl.collect_kicker_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.qb_dynamic")
+def nfl_qb_dynamic():
+    from app.services.etl.nfl.qb_dynamic import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.qb_betting")
+def nfl_qb_betting():
+    from app.services.etl.nfl.qb_betting import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.qb_weekly")
+def nfl_qb_weekly():
+    """Dynamic QB yards from nflverse, then Odds API O/U lines (YetiBets chain)."""
+    from app.services.etl.nfl.qb_weekly import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.kickers")
+def nfl_kickers():
+    from app.services.etl.nfl.kickers import run
+
+    return run()
+
+
+# Grade last week, then refresh current-week QB + kicker projections.
+NFL_PHASES = [
+    (
+        "actuals",
+        [
+            nfl_collect_qb_actuals,
+            nfl_collect_kicker_actuals,
+        ],
+    ),
+    (
+        "predictions",
+        [
+            nfl_qb_weekly,
+            nfl_kickers,
+        ],
+    ),
+]
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)
 def run_nfl_update_pipeline(self) -> dict:
-    """NFL weekly pipeline orchestrator — stub.
+    """NFL weekly pipeline — QB passing yards + kicker props.
 
-    Sub-tasks to port from YetiBets/scripts/nfl/:
-      - ml_kicker_prediction.py, advanced_qb_predictor.py, enhanced_qb_integration.py
-      - ml_pipeline.py (loads NFL .pkl ensemble — depends on Development-flm)
+    Mirrors YetiBets ``qb_dynamic_heroku`` → ``qb_betting_heroku`` and ``kickers.py``.
+    See ``backend/docs/NFL_ETL_PARITY.md``. Not on Beat until schedule is configured.
     """
     logger.info("NFL update pipeline starting (task_id=%s)", self.request.id)
-    return {"status": "skeleton_only", "sport": "nfl"}
+    return _run_phases("nfl", NFL_PHASES)
+
+
+# --- NHL sub-tasks (ported from YetiBets scripts/nhl → app/services/etl/nhl) ----
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_ingest")
+def nhl_collect_ingest():
+    from app.services.etl.nhl.collect_historical_data import run_ingest
+
+    return run_ingest()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.update_daily_stats")
+def nhl_update_daily_stats():
+    from app.services.etl.nhl.collect_historical_data import run_update_daily_stats
+
+    return run_update_daily_stats()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_goalie_actuals")
+def nhl_collect_goalie_actuals():
+    from app.services.etl.nhl.collect_goalie_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.daily_predictions")
+def nhl_daily_predictions():
+    from app.services.etl.nhl.daily_predictions import run
+
+    return run()
+
+
+# Ingest refreshes game/goalie/team tables; daily_predictions mirrors YetiBets
+# automated_daily_predictions (stats refresh + goalie/player/totals + actuals).
+NHL_PHASES = [
+    ("ingest", [nhl_collect_ingest]),
+    ("automation", [nhl_daily_predictions]),
+]
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nhl_update_pipeline", bind=True)
 def run_nhl_update_pipeline(self) -> dict:
-    """NHL daily pipeline orchestrator — stub.
+    """NHL daily pipeline — ingest, stats, yesterday actuals, today's predictions.
 
-    Sub-tasks to port from YetiBets/scripts/nhl/:
-      - goalie_saves_model.py
-      - player_shots_predictions.py
-      - team_totals_predictions.py
+    Mirrors YetiBets ``run_daily_automation.sh`` + ``automated_daily_predictions.py``.
+    See ``backend/docs/NHL_ETL_PARITY.md``.
     """
     logger.info("NHL update pipeline starting (task_id=%s)", self.request.id)
-    return {"status": "skeleton_only", "sport": "nhl"}
+    return _run_phases("nhl", NHL_PHASES)

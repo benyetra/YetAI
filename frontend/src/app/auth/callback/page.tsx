@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
+import { persistAuthToken } from '@/lib/auth-session';
 
 function AuthCallbackContent() {
   const router = useRouter();
@@ -20,8 +21,7 @@ function AuthCallbackContent() {
           return;
         }
 
-        // Store the token in localStorage
-        localStorage.setItem('auth_token', token);
+        persistAuthToken(token);
 
         // Decode and store user data from URL parameter
         if (userEncoded) {

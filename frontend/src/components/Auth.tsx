@@ -4,6 +4,14 @@ import React, { useState, useEffect, createContext, useContext } from 'react';
 import { User as UserIcon, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiRequest, parseApiErrorResponse } from '@/lib/api-config';
+import {
+  cancelSessionMonitoring,
+  clearAuthStorage,
+  isTokenExpired,
+  persistAuthToken,
+  registerSessionEndHandler,
+  scheduleTokenExpiryLogout,
+} from '@/lib/auth-session';
 
 // Auth Context
 const AuthContext = createContext<any>(null);
@@ -27,7 +35,12 @@ const authAPI = {
       
       if (!response.ok) {
         const message = await parseApiErrorResponse(response);
-        return { status: 'error', message, detail: message };
+        return {
+          status: 'error',
+          httpStatus: response.status,
+          message,
+          detail: message,
+        };
       }
       
       return await response.json();
@@ -54,7 +67,12 @@ const authAPI = {
       
       if (!response.ok) {
         const message = await parseApiErrorResponse(response);
-        return { status: 'error', message, detail: message };
+        return {
+          status: 'error',
+          httpStatus: response.status,
+          message,
+          detail: message,
+        };
       }
       
       return await response.json();
@@ -75,18 +93,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    registerSessionEndHandler(() => {
+      setUser(null);
+      setToken(null);
+    });
+    return () => registerSessionEndHandler(null);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     const bootstrapAuth = async () => {
       const storedToken = localStorage.getItem('auth_token');
       const storedUser = localStorage.getItem('user_data');
 
-      if (!storedToken) {
+      if (!storedToken || isTokenExpired(storedToken)) {
+        clearAuthStorage();
         if (!cancelled) setLoading(false);
         return;
       }
 
       setToken(storedToken);
+      scheduleTokenExpiryLogout(storedToken);
       if (storedUser) {
         setUser(JSON.parse(storedUser));
       }
@@ -97,6 +125,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!cancelled && response.status === 'success' && response.user) {
           setUser(response.user);
           localStorage.setItem('user_data', JSON.stringify(response.user));
+        } else if (
+          !cancelled &&
+          (response.httpStatus === 401 ||
+            /invalid|expired token/i.test(response.message || response.detail || ''))
+        ) {
+          clearAuthStorage();
+          setUser(null);
+          setToken(null);
         }
       } catch (error) {
         console.error('Failed to refresh user on load', error);
@@ -132,7 +168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(userData);
         setToken(access_token);
         
-        localStorage.setItem('auth_token', access_token);
+        persistAuthToken(access_token);
         localStorage.setItem('user_data', JSON.stringify(userData));
         
         return { success: true };
@@ -160,7 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(userData);
         setToken(access_token);
 
-        localStorage.setItem('auth_token', access_token);
+        persistAuthToken(access_token);
         localStorage.setItem('user_data', JSON.stringify(userData));
 
         // In dev mode, show verification URL
@@ -180,10 +216,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = () => {
+    cancelSessionMonitoring();
+    clearAuthStorage();
     setUser(null);
     setToken(null);
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('user_data');
   };
 
   const refreshUser = async () => {
@@ -211,7 +247,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signup,
     logout,
     refreshUser,
-    isAuthenticated: !!user,
+    isAuthenticated: !!user && !!token && !isTokenExpired(token),
     loading
   };
 

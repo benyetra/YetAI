@@ -4,6 +4,23 @@
  * Updated: 2025-10-08 - Vercel env vars configured for api.yetai.app
  */
 
+import { endSession, getStoredAuthToken } from './auth-session';
+
+const AUTH_ENDPOINTS_WITHOUT_SESSION = [
+  '/api/auth/login',
+  '/api/auth/register',
+  '/api/auth/google',
+  '/api/auth/forgot-password',
+  '/api/auth/reset-password',
+  '/api/auth/verify-email',
+];
+
+function shouldEndSessionOn401(endpoint: string, hadAuthToken: boolean, status: number): boolean {
+  if (status !== 401 || !hadAuthToken) return false;
+  const normalized = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  return !AUTH_ENDPOINTS_WITHOUT_SESSION.some((path) => normalized.startsWith(path));
+}
+
 interface ApiConfig {
   baseURL: string;
   wsURL: string;
@@ -119,7 +136,7 @@ export async function apiRequest(
   };
   
   // Add auth token if available
-  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const token = getStoredAuthToken();
   if (token) {
     (defaultHeaders as Record<string, string>).Authorization = `Bearer ${token}`;
   }
@@ -132,7 +149,11 @@ export async function apiRequest(
     },
   };
   
-  return fetch(url, config);
+  const response = await fetch(url, config);
+  if (shouldEndSessionOn401(endpoint, Boolean(token), response.status)) {
+    endSession('unauthorized');
+  }
+  return response;
 }
 
 /**

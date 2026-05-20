@@ -24,10 +24,14 @@ from app.models.predictions_models import (
     GameProjections,
     Homer,
     KickerPredictions,
+    NBATotalsProjections,
     NHLGoaliePredictions,
     NHLPlayerShotsPredictions,
+    NHLTeamTotalsProjections,
     PointsProjections,
     PRAProjections,
+    ProjectedHits,
+    ProjectedHomers,
     QBPredictions,
     ReboundsProjections,
     StealsProjections,
@@ -75,7 +79,7 @@ def _query_recent(
 @router.get("/health")
 def health() -> dict[str, Any]:
     """Public — confirms the predictions module is wired up."""
-    return {"status": "ok", "module": "predictions", "tables_exposed": 11}
+    return {"status": "ok", "module": "predictions", "tables_exposed": 15}
 
 
 @router.get("/mlb")
@@ -85,15 +89,21 @@ def mlb_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent MLB props: strikeout projections, HR predictions, game-level slate."""
+    """Recent MLB props: strikeouts, game slate, batter boards, HR picks."""
     return {
         "strikeout_projections": _query_recent(
             db, StrikeoutProjections, "date", target_date, limit
         ),
-        "home_run_predictions": _query_recent(db, Homer, None, None, limit),
         "game_projections": _query_recent(
             db, GameProjections, "date", target_date, limit
         ),
+        "projected_hits": _query_recent(
+            db, ProjectedHits, "date", target_date, limit
+        ),
+        "projected_homers": _query_recent(
+            db, ProjectedHomers, "date", target_date, limit
+        ),
+        "home_run_predictions": _query_recent(db, Homer, None, None, limit),
     }
 
 
@@ -104,8 +114,11 @@ def nba_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent NBA props: points, assists, rebounds, threes, steals, blocks, PRA."""
+    """Recent NBA props: game totals O/U plus points, assists, rebounds, etc."""
     return {
+        "totals": _query_recent(
+            db, NBATotalsProjections, "game_date", target_date, limit
+        ),
         "points": _query_recent(db, PointsProjections, "date", target_date, limit),
         "assists": _query_recent(db, AssistsProjections, "date", target_date, limit),
         "rebounds": _query_recent(db, ReboundsProjections, "date", target_date, limit),
@@ -143,12 +156,15 @@ def nhl_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent NHL props: goalie saves + player shots."""
+    """Recent NHL props: goalie saves, player SOG, game totals O/U."""
     return {
         "goalie_predictions": _query_recent(
             db, NHLGoaliePredictions, "game_date", target_date, limit
         ),
         "player_shots": _query_recent(
             db, NHLPlayerShotsPredictions, "game_date", target_date, limit
+        ),
+        "team_totals": _query_recent(
+            db, NHLTeamTotalsProjections, "game_date", target_date, limit
         ),
     }

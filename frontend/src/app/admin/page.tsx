@@ -23,6 +23,7 @@ import {
   Trophy
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
+import AdminCeleryPipelines from '@/components/yetai/AdminCeleryPipelines';
 
 
 export default function AdminPage() {
@@ -836,6 +837,8 @@ export default function AdminPage() {
             </div>
           </button>
         </div>
+
+        <AdminCeleryPipelines />
         
         {/* Message Alert */}
         {message && (

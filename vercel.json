@@ -1,0 +1,11 @@
+{
+  "experimentalServices": {
+    "web": {
+      "routePrefix": "/_/web"
+    },
+    "deslop-refactor": {
+      "entrypoint": ".claude/worktrees/deslop-refactor",
+      "routePrefix": "/_/deslop-refactor"
+    }
+  }
+}

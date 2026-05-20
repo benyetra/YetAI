@@ -1,5 +1,6 @@
 'use client';
 
+import NbaTotalsProjectionsTable from '@/components/yetai/NbaTotalsProjectionsTable';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -33,7 +34,13 @@ export default function NBAPredictionsPage() {
       sport="nba"
       leagueLabel="NBA"
       emoji="🏀"
-      subtitle="Points, assists, rebounds, threes, steals, blocks, and PRA projections."
+      subtitle="Game totals O/U plus points, assists, rebounds, threes, steals, blocks, and PRA."
+      topSection={({ data, loading }) => (
+        <NbaTotalsProjectionsTable
+          rows={(data?.totals as Array<Record<string, unknown>>) ?? []}
+          loading={loading}
+        />
+      )}
       groups={PROP_GROUPS}
     />
   );

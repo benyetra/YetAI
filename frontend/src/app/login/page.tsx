@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { handleUnauthorizedResponse, persistAuthToken } from '@/lib/auth-session';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
@@ -71,9 +72,10 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id_token: response.credential }),
       });
+      if (handleUnauthorizedResponse(result, { hadAuthToken: false })) return;
       const data = await result.json();
       if (data.status === 'success') {
-        localStorage.setItem('auth_token', data.access_token);
+        persistAuthToken(data.access_token);
         if (data.user) {
           localStorage.setItem('user_data', JSON.stringify(data.user));
         }

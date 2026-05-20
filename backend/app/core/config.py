@@ -32,7 +32,13 @@ class Settings(BaseSettings):
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = Field(
+        default=720,  # 12 hours
+        validation_alias=AliasChoices(
+            "ACCESS_TOKEN_EXPIRE_MINUTES",
+            "JWT_ACCESS_TOKEN_EXPIRES",
+        ),
+    )
 
     # Redis
     REDIS_URL: str = "redis://localhost:6379"

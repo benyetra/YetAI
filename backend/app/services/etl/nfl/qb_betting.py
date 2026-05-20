@@ -1,0 +1,323 @@
+#!/usr/bin/env python3
+"""
+QB Predictions with Betting Integration - Heroku Version
+Combines dynamic QB predictions with O/U lines and betting recommendations
+"""
+
+import os
+import warnings
+from datetime import datetime, date, timedelta
+from typing import Dict, List, Optional
+
+import requests
+
+from app.models.predictions_models import QBPredictions
+from app.services.etl.nfl._db import db_session
+
+warnings.filterwarnings("ignore")
+
+# Odds API configuration
+ODDS_API_KEY = os.getenv('ODDS_API_KEY')
+BASE_URL = 'https://api.the-odds-api.com/v4/sports/'
+SPORT = 'americanfootball_nfl'
+
+def get_current_nfl_week(season=None) -> int:
+    """Determine current NFL week based on today's date"""
+    today = date.today()
+
+    if season is None:
+        if today.month >= 9:
+            season = today.year
+        else:
+            season = today.year - 1
+
+    # Find the actual first Thursday after Labor Day
+    # Labor Day is the first Monday in September
+    import calendar
+    labor_day = date(season, 9, 1)
+    while labor_day.weekday() != 0:  # Monday is 0
+        labor_day = date(labor_day.year, labor_day.month, labor_day.day + 1)
+
+    # NFL season starts the first Thursday after Labor Day
+    nfl_start = labor_day + timedelta(days=3)  # Thursday after Monday
+
+    if today < nfl_start:
+        return 1
+
+    days_since_start = (today - nfl_start).days
+    current_week = (days_since_start // 7) + 1
+
+    return min(current_week, 18)  # NFL has 18 weeks max
+
+def get_nfl_games_and_lines():
+    """Get NFL games and O/U lines from odds API"""
+    try:
+        # Get NFL games
+        url = f"{BASE_URL}{SPORT}/events"
+        params = {'apiKey': ODDS_API_KEY, 'dateFormat': 'iso'}
+        response = requests.get(url, params=params)
+
+        if response.status_code != 200:
+            print(f"❌ Failed to fetch NFL games: {response.status_code}")
+            return {}
+
+        games = response.json()
+        all_qb_lines = {}
+
+        print(f"📅 Processing {len(games)} NFL games...")
+
+        for game in games:
+            event_id = game['id']
+
+            # Get O/U lines for this game
+            odds_url = f"{BASE_URL}{SPORT}/events/{event_id}/odds"
+            odds_params = {
+                'apiKey': ODDS_API_KEY,
+                'regions': 'us',
+                'markets': 'player_pass_yds',
+                'oddsFormat': 'american',
+                'bookmakers': 'fanduel,draftkings,betmgm'
+            }
+
+            odds_response = requests.get(odds_url, params=odds_params)
+            if odds_response.status_code == 200:
+                odds_data = odds_response.json()
+
+                for bookmaker in odds_data.get('bookmakers', []):
+                    bookmaker_name = bookmaker['title']
+
+                    for market in bookmaker.get('markets', []):
+                        if market['key'] == 'player_pass_yds':
+                            for outcome in market['outcomes']:
+                                player_name = outcome['description']
+                                bet_type = outcome['name']
+                                line = outcome.get('point', 0)
+                                odds = outcome.get('price', 0)
+
+                                if player_name not in all_qb_lines:
+                                    all_qb_lines[player_name] = {}
+                                if bookmaker_name not in all_qb_lines[player_name]:
+                                    all_qb_lines[player_name][bookmaker_name] = {}
+
+                                all_qb_lines[player_name][bookmaker_name][bet_type.lower()] = {
+                                    'line': line, 'odds': odds
+                                }
+
+        return all_qb_lines
+    except Exception as e:
+        print(f"❌ Error fetching lines: {e}")
+        return {}
+
+def get_best_line(player_lines: Dict) -> Dict:
+    """Get the best available line and odds for a player"""
+    best_over = {'line': 0, 'odds': -110, 'book': 'N/A'}
+    best_under = {'line': 999, 'odds': -110, 'book': 'N/A'}
+
+    for bookmaker, lines in player_lines.items():
+        if 'over' in lines:
+            over_line = lines['over']
+            if over_line['line'] > best_over['line'] or (over_line['line'] == best_over['line'] and over_line['odds'] > best_over['odds']):
+                best_over = {'line': over_line['line'], 'odds': over_line['odds'], 'book': bookmaker}
+
+        if 'under' in lines:
+            under_line = lines['under']
+            if under_line['line'] < best_under['line'] or (under_line['line'] == best_under['line'] and under_line['odds'] > best_under['odds']):
+                best_under = {'line': under_line['line'], 'odds': under_line['odds'], 'book': bookmaker}
+
+    return {'over': best_over, 'under': best_under}
+
+def generate_betting_recommendation(prediction: float, ou_line: float, confidence: float) -> Dict:
+    """Generate betting recommendation based on prediction vs O/U line"""
+    edge = prediction - ou_line
+    edge_percentage = (edge / ou_line) * 100 if ou_line > 0 else 0
+
+    min_edge = 5.0
+    min_confidence = 0.65
+
+    if confidence < min_confidence:
+        return {
+            'recommendation': 'PASS',
+            'reason': f'Low confidence ({confidence:.1%})',
+            'edge_percentage': edge_percentage,
+            'bet_size': None
+        }
+
+    if abs(edge_percentage) < min_edge:
+        return {
+            'recommendation': 'PASS',
+            'reason': f'Insufficient edge ({edge_percentage:.1f}%)',
+            'edge_percentage': edge_percentage,
+            'bet_size': None
+        }
+
+    strong_edge = 10.0
+    strong_confidence = 0.75
+
+    if edge_percentage >= min_edge:
+        bet_type = 'OVER'
+        if edge_percentage >= strong_edge and confidence >= strong_confidence:
+            bet_size = 'LARGE'
+            reason = f'Strong edge ({edge_percentage:.1f}%) + High confidence ({confidence:.1%})'
+        else:
+            bet_size = 'MEDIUM'
+            reason = f'Good edge ({edge_percentage:.1f}%)'
+    elif edge_percentage <= -min_edge:
+        bet_type = 'UNDER'
+        if abs(edge_percentage) >= strong_edge and confidence >= strong_confidence:
+            bet_size = 'LARGE'
+            reason = f'Strong edge ({abs(edge_percentage):.1f}%) + High confidence ({confidence:.1%})'
+        else:
+            bet_size = 'MEDIUM'
+            reason = f'Good edge ({abs(edge_percentage):.1f}%)'
+    else:
+        return {
+            'recommendation': 'PASS',
+            'reason': 'No significant edge',
+            'edge_percentage': edge_percentage,
+            'bet_size': None
+        }
+
+    return {
+        'recommendation': bet_type,
+        'reason': reason,
+        'edge_percentage': edge_percentage,
+        'bet_size': bet_size
+    }
+
+def normalize_player_name(name: str) -> str:
+    """Normalize player names for matching"""
+    name = name.replace(' Jr.', '').replace(' Sr.', '').replace(' III', '').replace(' II', '')
+    name_mapping = {
+        'CJ Stroud': 'C.J. Stroud',
+        'DJ Moore': 'D.J. Moore',
+        'AJ Brown': 'A.J. Brown'
+    }
+    return name_mapping.get(name, name)
+
+def _run_qb_betting_core():
+    """Main function to update QB predictions with betting data"""
+    print("🏈 QB Predictions with Betting Integration - Heroku")
+    print("=" * 60)
+
+    week = get_current_nfl_week()
+    season = 2025
+
+    # Get current QB predictions
+    qb_predictions = db_session.query(QBPredictions).filter_by(season=season, week=week).limit(32).all()
+    print(f"📊 Found {len(qb_predictions)} QB predictions")
+
+    # If no predictions exist, generate them first
+    if len(qb_predictions) == 0:
+        print("🔄 No QB predictions found. Generating predictions first...")
+        # Import and run the dynamic QB script logic
+        from qb_dynamic_heroku import main as generate_dynamic_predictions
+        generate_dynamic_predictions()
+
+        # Re-query for predictions after generation
+        qb_predictions = db_session.query(QBPredictions).filter_by(season=season, week=week).limit(32).all()
+        print(f"📊 After generation: Found {len(qb_predictions)} QB predictions")
+
+    # Get O/U lines
+    print("📈 Fetching O/U lines from odds API...")
+    all_lines = get_nfl_games_and_lines()
+    print(f"✅ Found lines for {len(all_lines)} players")
+
+    # Debug: show which players have lines
+    if all_lines:
+        print("📋 Players with lines from API:")
+        for player_name in list(all_lines.keys())[:10]:  # Show first 10
+            print(f"   - {player_name}")
+        if len(all_lines) > 10:
+            print(f"   ... and {len(all_lines) - 10} more")
+
+    updated_count = 0
+    matched_count = 0
+
+    for qb in qb_predictions:
+        qb_name = qb.qb_player_name
+        normalized_name = normalize_player_name(qb_name)
+
+        # Try to find matching lines
+        lines = None
+        for line_player_name in all_lines.keys():
+            if (normalized_name.lower() in line_player_name.lower() or
+                line_player_name.lower() in normalized_name.lower()):
+                lines = all_lines[line_player_name]
+                break
+
+        if lines:
+            matched_count += 1
+            best_lines = get_best_line(lines)
+            ou_line = best_lines['over']['line']
+
+            if ou_line > 0:
+                # Generate recommendation
+                recommendation = generate_betting_recommendation(
+                    qb.predicted_passing_yards,
+                    ou_line,
+                    qb.model_confidence or 0.5
+                )
+
+                # Update QB prediction with betting data
+                qb.ou_line = ou_line
+                qb.over_odds = best_lines['over']['odds']
+                qb.under_odds = best_lines['under']['odds']
+                qb.best_over_book = best_lines['over']['book']
+                qb.best_under_book = best_lines['under']['book']
+                qb.betting_recommendation = recommendation['recommendation']
+                qb.bet_size = recommendation['bet_size']
+                qb.edge_percentage = recommendation['edge_percentage']
+                qb.recommendation_reason = recommendation['reason']
+
+                db_session.commit()
+                updated_count += 1
+
+                print(f"  ✅ {qb_name}: {ou_line} O/U → {recommendation['recommendation']} ({recommendation['bet_size'] or 'N/A'})")
+
+    print(f"\n📊 BETTING INTEGRATION SUMMARY:")
+    print(f"   🎯 QBs with predictions: {len(qb_predictions)}")
+    print(f"   📈 QBs with lines available: {matched_count}")
+    print(f"   ✅ QBs updated with betting data: {updated_count}")
+    match_rate = (matched_count/len(qb_predictions)*100) if len(qb_predictions) > 0 else 0
+    print(f"   📊 Match rate: {match_rate:.1f}%")
+
+    # Show recommendations
+    strong_bets = db_session.query(QBPredictions).filter(
+        QBPredictions.season == season,
+        QBPredictions.week == week,
+        QBPredictions.bet_size == 'LARGE'
+    ).all()
+
+    medium_bets = db_session.query(QBPredictions).filter(
+        QBPredictions.season == season,
+        QBPredictions.week == week,
+        QBPredictions.bet_size == 'MEDIUM'
+    ).all()
+
+    print(f"\n🎯 BETTING RECOMMENDATIONS:")
+    print(f"   🔥 Strong Bets: {len(strong_bets)}")
+    print(f"   📈 Medium Bets: {len(medium_bets)}")
+
+    if strong_bets:
+        print(f"\n🔥 STRONG BETS:")
+        for bet in strong_bets:
+            print(f"   {bet.qb_player_name}: {bet.betting_recommendation} {bet.ou_line} ({bet.edge_percentage:+.1f}%)")
+
+    print(f"\n✅ Betting integration complete!")
+
+if __name__ == "__main__":
+    from app.services.etl.nfl._db import init_session, close_session
+    init_session()
+    try:
+        _run_qb_betting_core()
+    finally:
+        close_session()
+
+def run() -> dict:
+    from app.services.etl.nfl._db import close_session, init_session
+    init_session()
+    try:
+        _run_qb_betting_core()
+        return {"status": "ok", "task": "nfl_qb_betting"}
+    finally:
+        close_session()

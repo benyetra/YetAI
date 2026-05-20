@@ -16,6 +16,18 @@ const STRIKEOUT_COLUMNS: ColumnDef[] = [
   { key: 'fanduel_over_under', label: 'FD O/U', format: (v) => formatString(v) },
 ];
 
+const HITS_COLUMNS: ColumnDef[] = [
+  { key: 'batter_name', label: 'Batter', format: (v) => formatString(v) },
+  { key: 'projected_hits', label: 'Proj H', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
+  { key: 'actual_hits', label: 'Actual', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
+];
+
+const HOMERS_COLUMNS: ColumnDef[] = [
+  { key: 'batter_name', label: 'Batter', format: (v) => formatString(v) },
+  { key: 'projected_homers', label: 'Proj HR', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
+  { key: 'actual_homers', label: 'Actual', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
+];
+
 const HR_COLUMNS: ColumnDef[] = [
   { key: 'player_name', label: 'Hitter', format: (v) => formatString(v) },
   { key: 'team', label: 'Team', format: (v) => formatString(v) },
@@ -30,7 +42,7 @@ export default function MLBPredictionsPage() {
       sport="mlb"
       leagueLabel="MLB"
       emoji="⚾"
-      subtitle="Game slate projections, pitcher strikeouts, and home run picks."
+      subtitle="Game slate, strikeouts, projected hits/HR boards, and ML home run picks."
       topSection={({ data, loading }) => (
         <>
           <h2 className="type-section-title" style={{ margin: '0 0 8px' }}>
@@ -44,7 +56,9 @@ export default function MLBPredictionsPage() {
       )}
       groups={[
         { title: 'Pitcher Strikeout Projections', responseKey: 'strikeout_projections', columns: STRIKEOUT_COLUMNS },
-        { title: 'Home Run Predictions', responseKey: 'home_run_predictions', columns: HR_COLUMNS },
+        { title: 'Projected Hits', responseKey: 'projected_hits', columns: HITS_COLUMNS },
+        { title: 'Projected Home Runs', responseKey: 'projected_homers', columns: HOMERS_COLUMNS },
+        { title: 'Home Run Predictions (ML)', responseKey: 'home_run_predictions', columns: HR_COLUMNS },
       ]}
     />
   );

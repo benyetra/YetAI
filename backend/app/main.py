@@ -2387,7 +2387,66 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nba.store_actuals": 600.0,
     # find_top_performers: reads today's projections, upserts into pred_top_performers.
     "app.tasks.etl_pipeline.nba.find_top_performers": 180.0,
+    "app.tasks.etl_pipeline.nba.totals_projector": 300.0,
+    "app.tasks.etl_pipeline.mlb.strikeouts": 600.0,
+    "app.tasks.etl_pipeline.mlb.hits": 600.0,
+    "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.game_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.batter_projections": 300.0,
+    "app.tasks.etl_pipeline.mlb.weather": 180.0,
+    "app.tasks.etl_pipeline.mlb.blowouts": 180.0,
+    "app.tasks.etl_pipeline.mlb.hr_predictions": 900.0,
+    "app.tasks.etl_pipeline.mlb.ev": 600.0,
+    "app.tasks.etl_pipeline.nhl.collect_ingest": 1200.0,
+    "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
+    "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
+    "app.tasks.etl_pipeline.nhl.collect_goalie_actuals": 300.0,
+    "app.tasks.etl_pipeline.nfl.collect_qb_actuals": 600.0,
+    "app.tasks.etl_pipeline.nfl.collect_kicker_actuals": 300.0,
+    "app.tasks.etl_pipeline.nfl.qb_dynamic": 600.0,
+    "app.tasks.etl_pipeline.nfl.qb_betting": 300.0,
+    "app.tasks.etl_pipeline.nfl.qb_weekly": 900.0,
+    "app.tasks.etl_pipeline.nfl.kickers": 600.0,
 }
+
+
+PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
+    {
+        "task_name": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "label": "MLB daily projections",
+        "sport": "mlb",
+        "description": "Strikeouts, hits, game/batter boards, weather, blowouts; optional HR ML when S3 env set.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_mlb_store_actuals",
+        "label": "MLB store actuals",
+        "sport": "mlb",
+        "description": "Post-game actuals for game, strikeout, and batter projection tables.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nba_update_pipeline",
+        "label": "NBA daily pipeline",
+        "sport": "nba",
+        "description": "Full NBA ETL: roster, stats, injury, all prop models, game totals.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
+        "label": "NFL weekly pipeline",
+        "sport": "nfl",
+        "description": "QB actuals + kicker actuals, then dynamic QB yards with Odds API lines and kicker projections.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
+        "label": "NHL daily pipeline",
+        "sport": "nhl",
+        "description": "Ingest games/stats, then goalie saves, player SOG, and team totals (YetiBets automation).",
+    },
+]
+
+
+class CeleryEnqueueRequest(BaseModel):
+    task_name: str
+
 
 ADMIN_ENQUEUE_TASKS: frozenset[str] = frozenset(
     {
@@ -2400,14 +2459,24 @@ ADMIN_ENQUEUE_TASKS: frozenset[str] = frozenset(
 )
 
 
+@app.get("/api/admin/celery/pipeline-catalog")
+async def admin_celery_pipeline_catalog(admin_user: dict = Depends(require_admin)):
+    """Orchestrator tasks allowed for fire-and-forget enqueue (admin UI)."""
+    return {
+        "enqueue_tasks": PIPELINE_ENQUEUE_CATALOG,
+        "fireable_count": len(ADMIN_FIREABLE_TASKS),
+    }
+
+
 @app.post("/api/admin/celery/enqueue-task")
 async def admin_celery_enqueue_task(
-    task_name: str,
+    body: CeleryEnqueueRequest,
     admin_user: dict = Depends(require_admin),
 ):
-    """Enqueue a Celery task and return immediately with task_id."""
+    """Enqueue a Celery orchestrator; returns immediately with task_id."""
     from app.celery_app import celery_app
 
+    task_name = body.task_name
     if task_name not in ADMIN_ENQUEUE_TASKS:
         raise HTTPException(
             status_code=400,

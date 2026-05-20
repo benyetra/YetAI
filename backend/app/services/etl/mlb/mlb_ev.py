@@ -263,9 +263,9 @@ def evaluate_pitcher(pid):
     except Exception:
         return {'xfip': 4.50}
 
-# ─── MAIN EV CALCULATION COMMAND ───────────────────────────────────────────────
-@app.cli.command()
-def run_ev():
+# ─── MAIN EV CALCULATION ───────────────────────────────────────────────────────
+def run_ev() -> int:
+    """Compute +EV moneyline value bets for today's slate. Returns rows stored."""
     today = date.today()
     # delete any stale rows for today
     db_session.query(ValueBet) \
@@ -336,11 +336,33 @@ def run_ev():
             stored.append(vb)
 
     db_session.commit()
-    click.echo(f"[DONE] stored {len(stored)} value bets for {today}.")
+    logging.info("Stored %s value bets for %s", len(stored), today)
+    return len(stored)
 
-if __name__ == '__main__':
-    with app.app_context():
-        from app.models.predictions_models import Base
-        from database.database import engine
-        Base.metadata.create_all(bind=engine)
-        run_ev()
+
+def run() -> dict:
+    """Celery entry: refresh pred_value_bets for today."""
+    from app.services.etl.mlb._db import close_session, init_session
+
+    init_session()
+    try:
+        count = run_ev()
+        return {
+            "status": "ok",
+            "task": "mlb_ev",
+            "date": str(date.today()),
+            "value_bets_stored": count,
+        }
+    finally:
+        close_session()
+
+
+if __name__ == "__main__":
+    from app.services.etl.mlb._db import init_session, close_session
+
+    init_session()
+    try:
+        n = run_ev()
+        print(f"[DONE] stored {n} value bets for {date.today()}.")
+    finally:
+        close_session()

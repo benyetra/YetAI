@@ -161,6 +161,123 @@ Success looks like a Celery banner with `transport: redis://...`, not `No module
 
 Ensure `REDIS_URL` on the worker references the Railway Redis plugin (not `localhost:6379`).
 
+## ETL pipeline runbook (ops)
+
+Use this when validating MLB/NBA/NHL/NFL migrations or recovering after an outage. Prefer the **API** or **Admin UI** (Admin → ETL pipelines) over SSH for enqueue.
+
+Full cross-sport checklist: `backend/docs/ETL_MIGRATION_STATUS.md` (post-deploy verification matrix).
+
+### 1. Redis / worker health
+
+```bash
+# From your laptop (admin JWT)
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://api.yetai.app/api/admin/celery/health | jq .
+
+# Ping should return status "ok". If timeout/error, fix Redis first:
+railway logs --service celery-worker | tail -80
+```
+
+Worker logs must show `transport: redis://...` (not `localhost:6379`). Beat/worker `SchedulingError: Timeout connecting to server` means Redis is down or unreachable.
+
+### 2. Enqueue a full pipeline (recommended)
+
+**Do not** run `celery call app.tasks.etl_pipeline.run_mlb_update_pipeline` over SSH — it blocks for the entire run and often hangs when Redis is slow.
+
+**Admin UI:** `/admin` → **ETL pipelines (Celery)** → **Enqueue pipeline**.
+
+**API (fire-and-forget):**
+
+```bash
+curl -s -X POST "https://api.yetai.app/api/admin/celery/enqueue-task" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"task_name":"app.tasks.etl_pipeline.run_mlb_update_pipeline"}' | jq .
+```
+
+Allowed `task_name` values:
+
+| Task | Purpose |
+|------|---------|
+| `app.tasks.etl_pipeline.run_mlb_update_pipeline` | Daily MLB projections |
+| `app.tasks.etl_pipeline.run_mlb_store_actuals` | MLB post-game actuals |
+| `app.tasks.etl_pipeline.run_nba_update_pipeline` | Full NBA daily ETL |
+| `app.tasks.etl_pipeline.run_nhl_update_pipeline` | NHL ingest + goalie/SOG/totals automation |
+| `app.tasks.etl_pipeline.run_nfl_update_pipeline` | NFL weekly: actuals → QB yards + lines → kickers |
+
+**On the worker** (after deploy includes `scripts/enqueue_mlb_pipeline.py`):
+
+```bash
+railway ssh --service celery-worker -- bash -lc \
+  'cd /app/backend && PYTHONPATH=/app/backend python3 scripts/enqueue_mlb_pipeline.py'
+```
+
+### 3. Run a single ETL step (debug)
+
+For one step without the full orchestrator, use **fire-and-wait** (admin allow-list, timeouts in `ADMIN_FIREABLE_TASKS`):
+
+```bash
+curl -s -X POST "https://api.yetai.app/api/admin/celery/run-task?task_name=app.tasks.etl_pipeline.mlb.strikeouts" \
+  -H "Authorization: Bearer $ADMIN_TOKEN" | jq .
+```
+
+Examples: `mlb.strikeouts`, `mlb.hits`, `nba.totals_projector`, `mlb.ev`, `nhl.daily_predictions`, `nfl.qb_weekly`, `nfl.kickers`.
+
+### 4. Validate prediction tables
+
+SSH to worker (or any service with `DATABASE_URL` + deps):
+
+```bash
+railway ssh --service celery-worker -- bash -lc \
+  'cd /app/backend && PYTHONPATH=/app/backend python3 scripts/validate_mlb_pipeline.py'
+
+railway ssh --service celery-worker -- bash -lc \
+  'cd /app/backend && PYTHONPATH=/app/backend python3 scripts/validate_nba_pipeline.py'
+
+railway ssh --service celery-worker -- bash -lc \
+  'cd /app/backend && PYTHONPATH=/app/backend python3 scripts/validate_nhl_pipeline.py'
+
+railway ssh --service celery-worker -- bash -lc \
+  'cd /app/backend && PYTHONPATH=/app/backend python3 scripts/validate_nfl_pipeline.py'
+```
+
+Local (with venv + `DATABASE_URL`):
+
+```bash
+cd backend
+PYTHONPATH=. python3 scripts/validate_mlb_pipeline.py
+PYTHONPATH=. python3 scripts/validate_nba_pipeline.py
+```
+
+Import smoke (no DB):
+
+```bash
+PYTHONPATH=. python3 scripts/smoke_import_mlb_etl.py
+```
+
+### 5. Read pipeline results
+
+Orchestrators return Celery results with:
+
+- `status`: `ok` or `partial_failure` (any sub-task error in a phase)
+- `failed_tasks` / `critical_failed_tasks`: Celery task names that errored
+- `phases[].results[]`: each entry has `critical: true|false` and `result` or `error`
+
+Tail worker logs while a pipeline runs:
+
+```bash
+railway logs --service celery-worker --deployment
+```
+
+Look for `partial_failure`, `failed_tasks`, and `ModuleNotFoundError` after deploys.
+
+### 6. Deploy checklist after code changes
+
+1. Push to `main` → wait for API **and** `celery-worker` deploy (deploys must be unpaused).
+2. Confirm `GET /api/admin/celery/pipeline-catalog` returns 200 (new UI depends on this).
+3. `GET /api/admin/celery/health` → ping OK.
+4. Enqueue MLB or NBA pipeline → watch logs → run validate scripts.
+
 ## Troubleshooting
 
 ### Deployment Fails to Start

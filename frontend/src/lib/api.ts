@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { apiConfig } from './api-config';
+import { handleUnauthorizedResponse } from './auth-session';
 
 const API_BASE_URL = apiConfig.baseURL;
 
@@ -24,6 +25,13 @@ export const apiClient = {
       method: 'GET',
       headers
     });
+
+    if (handleUnauthorizedResponse(response, { hadAuthToken: Boolean(token) })) {
+      return {
+        status: 'error',
+        detail: 'Session expired. Please sign in again.',
+      };
+    }
 
     // Parse JSON response regardless of status
     const jsonResponse = await response.json();
@@ -55,6 +63,13 @@ export const apiClient = {
       body: JSON.stringify(data)
     });
 
+    if (handleUnauthorizedResponse(response, { hadAuthToken: Boolean(token) })) {
+      return {
+        status: 'error',
+        detail: 'Session expired. Please sign in again.',
+      };
+    }
+
     // Parse JSON response regardless of status
     const jsonResponse = await response.json();
 
@@ -85,6 +100,10 @@ export const apiClient = {
       body: JSON.stringify(data)
     });
 
+    if (handleUnauthorizedResponse(response, { hadAuthToken: Boolean(token) })) {
+      throw new Error('Session expired. Please sign in again.');
+    }
+
     if (!response.ok) {
       throw new Error(`API Error: ${response.statusText}`);
     }
@@ -102,6 +121,10 @@ export const apiClient = {
       method: 'DELETE',
       headers
     });
+
+    if (handleUnauthorizedResponse(response, { hadAuthToken: Boolean(token) })) {
+      throw new Error('Session expired. Please sign in again.');
+    }
 
     if (!response.ok) {
       throw new Error(`API Error: ${response.statusText}`);
