@@ -188,6 +188,30 @@ railway logs --service celery-worker | tail -80
 
 Worker logs must show `transport: redis://...` (not `localhost:6379`). Beat/worker `SchedulingError: Timeout connecting to server` means Redis is down or unreachable.
 
+### Redis timeout (`Cannot connect to redis://...@redis.railway.internal:6379`)
+
+The worker image is fine if you see the Celery task list and `mlb.ev` registered; the broker is not reachable.
+
+| Check | Action |
+|-------|--------|
+| Redis service running | Railway → **Redis** service → **Deployments** → latest must be **Active** (not crashed / restarting). |
+| Variable on **celery-worker** | **Variables** → `REDIS_URL` = `${{Redis.REDIS_URL}}` (reference from Redis plugin). Same on **API** if cache/Celery health is used. |
+| Same environment | Worker and Redis must both be **production** (not worker in prod, Redis in preview). |
+| Plugin linked | Redis service → **Connect** → attach **celery-worker** (and API) so references resolve. |
+| Prefer private URL | If public URL times out but private works, set `REDIS_PRIVATE_URL` from plugin or use `${{Redis.REDIS_PRIVATE_URL}}` (config accepts `REDIS_PRIVATE_URL` as alias). |
+| After Redis recreate | Plugin URLs change — update references and **redeploy celery-worker** (and API). |
+
+**Verify from API** (admin JWT):
+
+```bash
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://api.yetai.app/api/admin/celery/health | jq .
+```
+
+- `ping.status: ok` → Redis + worker path works; if worker logs still retry, redeploy worker only.
+- Timeout / error → fix Redis on Railway first, then redeploy worker.
+
+`railway-celery.sh` runs a Redis ping before Celery starts; failed deploy logs will say `Redis ping FAILED` with the host.
+
 ### 2. Enqueue a full pipeline (recommended)
 
 **Do not** run `celery call app.tasks.etl_pipeline.run_mlb_update_pipeline` over SSH — it blocks for the entire run and often hangs when Redis is slow.

@@ -18,4 +18,42 @@ fi
 cd "$APP_ROOT"
 export PYTHONPATH="$APP_ROOT"
 echo "railway-celery: APP_ROOT=$APP_ROOT PYTHONPATH=$PYTHONPATH" >&2
+
+# Fail fast with a clear message if Redis is unreachable (common Railway misconfig).
+python3 - <<'PY' || exit 1
+import os
+import sys
+
+url = (
+    os.getenv("REDIS_URL")
+    or os.getenv("REDIS_PRIVATE_URL")
+    or os.getenv("CELERY_BROKER_URL")
+)
+if not url or "localhost" in url:
+    print(
+        "railway-celery: REDIS_URL missing or still localhost. "
+        "On celery-worker, set REDIS_URL=${{Redis.REDIS_URL}} (or REDIS_PRIVATE_URL) "
+        "from the Railway Redis plugin in the same project/environment.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+host_hint = url.split("@")[-1].split("/")[0] if "@" in url else url
+print(f"railway-celery: pinging Redis at {host_hint} ...", file=sys.stderr)
+try:
+    import redis
+
+    client = redis.from_url(url, socket_connect_timeout=8, socket_timeout=8)
+    client.ping()
+    print("railway-celery: Redis ping OK", file=sys.stderr)
+except Exception as exc:
+    print(
+        f"railway-celery: Redis ping FAILED ({exc}). "
+        "Check Redis service is running, linked to celery-worker, and same environment. "
+        "Redeploy Redis then redeploy celery-worker.",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+PY
+
 exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=1 "$@"

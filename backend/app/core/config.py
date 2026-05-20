@@ -40,8 +40,16 @@ class Settings(BaseSettings):
         ),
     )
 
-    # Redis
-    REDIS_URL: str = "redis://localhost:6379"
+    # Redis / Celery broker (Railway: use plugin reference on API + celery-worker)
+    REDIS_URL: str = Field(
+        default="redis://localhost:6379",
+        validation_alias=AliasChoices(
+            "REDIS_URL",
+            "REDIS_PRIVATE_URL",
+            "REDIS_PUBLIC_URL",
+            "CELERY_BROKER_URL",
+        ),
+    )
 
     # External Services
     STRIPE_SECRET_KEY: Optional[str] = None
