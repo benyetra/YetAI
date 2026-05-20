@@ -540,6 +540,7 @@ def fetch_pitcher_data():
                         }
                     )
                 except Exception as e:
+                    db_session.rollback()
                     print(f"Error building projections for {pitcher_name}: {e}")
 
     pitchers.sort(key=lambda x: x["combined_score"], reverse=True)
@@ -635,6 +636,7 @@ def fetch_and_update_app_data():
         stored = db_session.query(Pitcher).count()
         return stored, built
     except Exception as e:
+        db_session.rollback()
         print(f"Error fetching and storing data: {e}")
         raise
 

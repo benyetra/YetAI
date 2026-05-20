@@ -51,7 +51,12 @@ class _SessionProxy:
         close_session()
 
     def execute(self, statement, *args, **kwargs):
-        return init_session().execute(statement, *args, **kwargs)
+        session = init_session()
+        try:
+            return session.execute(statement, *args, **kwargs)
+        except Exception:
+            session.rollback()
+            raise
 
 
 db_session = _SessionProxy()

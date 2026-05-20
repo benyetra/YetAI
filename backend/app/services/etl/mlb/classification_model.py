@@ -132,8 +132,8 @@ def load_training_data() -> pd.DataFrame:
             p.projected_at_bats        AS proj_ab,
             p.fanduel_line             AS threshold,
             a.actual_strikeouts
-        FROM strikeout_projections p
-        JOIN strikeout_actuals    a
+        FROM pred_strikeout_projections p
+        JOIN pred_strikeout_actuals    a
           ON p.date = a.date
          AND p.pitcher_id = a.pitcher_id
     """
@@ -142,7 +142,7 @@ def load_training_data() -> pd.DataFrame:
 
     # Try to fetch park_id from actuals; OK if missing
     try:
-        park_sql = "SELECT date, pitcher_id, park_id FROM strikeout_actuals"
+        park_sql = "SELECT date, pitcher_id, park_id FROM pred_strikeout_actuals"
         result_park = db_session.execute(text(park_sql))
         df_park = pd.DataFrame(result_park.fetchall(), columns=result_park.keys())
         df = df.merge(df_park, on=["date", "pitcher_id"], how="left")

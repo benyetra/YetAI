@@ -19,8 +19,8 @@ def get_global_offsets():
       p.date, p.pitcher_id,
       p.projected_strikeouts, a.actual_strikeouts,
       p.projected_innings_pitched, a.actual_innings_pitched
-    FROM strikeout_projections p
-    JOIN strikeout_actuals a
+    FROM pred_strikeout_projections p
+    JOIN pred_strikeout_actuals a
       ON p.date=a.date AND p.pitcher_id=a.pitcher_id
     WHERE p.date >= '{V2_START}'
     """
@@ -38,8 +38,8 @@ def get_pitcher_offsets(pitcher_id: str, n_last: int = 4):
       p.date,
       p.projected_strikeouts, a.actual_strikeouts,
       p.projected_innings_pitched, a.actual_innings_pitched
-    FROM strikeout_projections p
-    JOIN strikeout_actuals a
+    FROM pred_strikeout_projections p
+    JOIN pred_strikeout_actuals a
       ON p.date=a.date AND p.pitcher_id=a.pitcher_id
     WHERE p.pitcher_id = :pid AND p.date >= '{V2_START}'
     ORDER BY p.date DESC
