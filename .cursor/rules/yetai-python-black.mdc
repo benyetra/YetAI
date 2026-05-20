@@ -1,0 +1,34 @@
+---
+description: Run Black on YetAI Python changes before commit; matches backend CI
+globs: backend/**/*.py
+alwaysApply: true
+---
+
+# YetAI Python formatting (Black)
+
+Backend CI runs `black --check .` from `backend/` (see `.github/workflows/backend-ci-cd.yml`). A formatting drift fails the pipeline.
+
+## Before every commit that touches Python under `backend/`
+
+1. From the repo root:
+   ```bash
+   cd backend && python3 -m black .
+   ```
+2. Or only changed paths:
+   ```bash
+   cd backend && python3 -m black path/to/changed.py
+   ```
+3. Confirm CI would pass:
+   ```bash
+   cd backend && python3 -m black --check .
+   ```
+
+## When editing MLB/NFL/NBA/NHL ETL or `app/`
+
+- Run Black on every file you modified in the same change set.
+- Do not commit if `black --check` reports "would reformat".
+- Stage the Black-formatted files together with your logic changes.
+
+## Version
+
+Use the project’s Black (CI installs `black` without a pin; local `pip install black` is fine). Prefer `python3 -m black` so the active interpreter’s package is used.
