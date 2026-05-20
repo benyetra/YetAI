@@ -161,6 +161,28 @@ class CeleryVerifyEtlRequest(BaseModel):
     wait_seconds: int = 0
 
 
+@router.get("/broker-check")
+async def admin_celery_broker_check(admin_user: dict = Depends(require_admin)):
+    """
+    Direct Redis PING from the API container (no Celery worker).
+    Use this before /health: if broker-check fails, Redis is down for everyone.
+    """
+    from app.core.redis_broker import mask_redis_target, pick_redis_url, ping_redis_sync
+
+    url = pick_redis_url()
+    result = await asyncio.to_thread(ping_redis_sync, url, timeout_s=8.0)
+    return {
+        "redis_url_target": mask_redis_target(url),
+        "uses_railway_internal": "railway.internal" in url,
+        "ping": result,
+        "hint": (
+            "If ping is ok but /health times out, the worker cannot reach Redis "
+            "(redeploy celery-worker). If Railway Redis → Database tab cannot connect, "
+            "redeploy the Redis service itself."
+        ),
+    }
+
+
 @router.get("/health")
 async def admin_celery_health(
     admin_user: dict = Depends(require_admin),
@@ -180,6 +202,11 @@ async def admin_celery_health(
                 "status": "timeout",
                 "task_id": async_result.id,
                 "timeout_s": timeout,
+                "hint": (
+                    "Task was queued (API reached Redis) but no worker consumed it in time. "
+                    "Check celery-worker logs for 'Cannot connect to redis'. "
+                    "If GET /broker-check also fails, redeploy the Redis service."
+                ),
             }
         except Exception as exc:
             return {"status": "error", "task_id": async_result.id, "error": str(exc)}

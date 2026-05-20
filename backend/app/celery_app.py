@@ -14,12 +14,14 @@ WebSocket + Twilio only.
 from celery import Celery
 from celery.schedules import crontab
 
-from app.core.config import settings
+from app.core.redis_broker import pick_redis_url
+
+_broker_url = pick_redis_url()
 
 celery_app = Celery(
     "yetai",
-    broker=settings.REDIS_URL,
-    backend=settings.REDIS_URL,
+    broker=_broker_url,
+    backend=_broker_url,
     include=[
         "app.tasks.live_pollers",
         "app.tasks.etl_pipeline",
@@ -38,6 +40,9 @@ celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
     broker_connection_retry_on_startup=True,
+    broker_connection_timeout=15,
+    redis_socket_connect_timeout=15,
+    redis_socket_timeout=15,
 )
 
 celery_app.conf.beat_schedule = {

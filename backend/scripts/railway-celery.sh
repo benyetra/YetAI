@@ -24,9 +24,26 @@ python3 - <<'PY' || exit 1
 import os
 import sys
 
+sys.path.insert(0, os.environ.get("PYTHONPATH", "/app"))
+try:
+    from app.core.redis_broker import pick_redis_url, ping_redis_sync
+
+    url = pick_redis_url()
+    ping = ping_redis_sync(url, timeout_s=8.0)
+    if ping.get("status") != "ok":
+        print(f"railway-celery: Redis ping FAILED: {ping}", file=sys.stderr)
+        sys.exit(1)
+    print(f"railway-celery: Redis ping OK ({ping.get('target')})", file=sys.stderr)
+    raise SystemExit  # skip fallback block below
+except SystemExit:
+    raise
+except Exception:
+    pass
+
 url = (
     os.getenv("REDIS_URL")
     or os.getenv("REDIS_PRIVATE_URL")
+    or os.getenv("REDIS_PUBLIC_URL")
     or os.getenv("CELERY_BROKER_URL")
 )
 if not url or "localhost" in url:

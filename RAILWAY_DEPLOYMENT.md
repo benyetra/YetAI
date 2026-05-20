@@ -212,6 +212,36 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" https://api.yetai.app/api/admin/
 
 `railway-celery.sh` runs a Redis ping before Celery starts; failed deploy logs will say `Redis ping FAILED` with the host.
 
+### `/health` times out but variables look correct
+
+Run **two** checks (admin JWT):
+
+```bash
+# 1) API container → Redis directly (no worker)
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://api.yetai.app/api/admin/celery/broker-check | jq .
+
+# 2) API → enqueue → worker must consume
+curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
+  https://api.yetai.app/api/admin/celery/health | jq .
+```
+
+| broker-check | /health | Meaning |
+|--------------|---------|---------|
+| `ping.status: ok` | `timeout` + `task_id` | Redis is up; **worker** cannot reach broker → redeploy **celery-worker**; try public URL on worker only. |
+| `ping.status: error` | timeout/error | **Redis is broken** for the whole project → redeploy **Redis** service (Railway → Redis → Database tab stuck on “Attempting to connect” is this case). |
+| `ok` | `ok` | End-to-end healthy. |
+
+**Public URL workaround** (when `redis.railway.internal` hangs but public works):
+
+1. Redis service → **Variables** → copy `REDIS_PUBLIC_URL` (or public TCP URL from Connect).
+2. On **celery-worker** and **API**, set `REDIS_URL` = that public URL (or add `REDIS_PUBLIC_URL` reference; code prefers non-localhost env URLs).
+3. Redeploy worker, then API.
+
+**Redis only shows volume mount in deploy logs** (no “Ready to accept connections”) — treat as failed start: **Redeploy** Redis, then worker. If it persists, open a Railway support ticket (volume/redis process not starting).
+
+**“Online · Queued”** on API/worker during a platform incident — wait for deploys to finish or trigger **Redeploy** after the incident clears.
+
 ### 2. Enqueue a full pipeline (recommended)
 
 **Do not** run `celery call app.tasks.etl_pipeline.run_mlb_update_pipeline` over SSH — it blocks for the entire run and often hangs when Redis is slow.
