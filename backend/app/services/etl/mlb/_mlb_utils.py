@@ -12,7 +12,9 @@ import pandas as pd
 import requests
 import statsapi
 
-from app.services.etl.mlb.data.special_characters_mapping import special_characters_mapping
+from app.services.etl.mlb.data.special_characters_mapping import (
+    special_characters_mapping,
+)
 from app.services.etl.mlb.data.stadium_zipcode import stadium_to_zip
 
 logger = logging.getLogger(__name__)
@@ -31,7 +33,9 @@ def read_csv_anywhere(path: str, **kwargs) -> pd.DataFrame:
 
 def replace_special_characters(name: str) -> str:
     normalized_name = unicodedata.normalize("NFC", name)
-    return "".join(special_characters_mapping.get(char, char) for char in normalized_name)
+    return "".join(
+        special_characters_mapping.get(char, char) for char in normalized_name
+    )
 
 
 def extract_numeric_value(fanduel_point_str: str) -> float | None:
