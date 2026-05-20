@@ -16,10 +16,9 @@ aiohttp==3.12.14
 requests==2.32.4
 
 # NBA ETL — static NBA.com player ID lookups (Development-1nt). Mirror of the
-# entry in backend/requirements.txt; the celery-worker Docker build uses this
-# root file (build context is repo root for that service), the API service uses
-# backend/. Keep them in sync until the two files are consolidated.
-nba_api==1.4.1
+# entry in backend/requirements.txt; keep in sync until consolidated.
+# 1.11.4+ allows numpy 2.x on Python 3.11 (required for HR ML joblib models).
+nba_api==1.11.4
 # MLB ETL (statsapi import name) — mirror backend/requirements.txt
 MLB-StatsAPI==1.9.0
 joblib>=1.3.0

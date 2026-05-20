@@ -27,6 +27,7 @@ COPY requirements.txt .
 # Install Python dependencies (single layer; --no-cache-dir avoids doubling disk use).
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir nfl-data-py==0.3.3 --no-deps \
     && pip install --no-cache-dir boto3==1.35.0 botocore \
     && pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 \
     && python -c "import boto3, google.auth, statsapi"
