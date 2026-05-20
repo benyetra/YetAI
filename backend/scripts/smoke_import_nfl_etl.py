@@ -21,6 +21,8 @@ MODULES = [
     "app.services.etl.nfl.kickers",
     "app.services.etl.nfl.kicker_prediction",
     "app.services.etl.nfl.statistical_kicker_prediction",
+    "app.services.etl.nfl.ml_feature_mapping",
+    "app.services.etl.nfl.ml_kicker_ensemble",
 ]
 
 

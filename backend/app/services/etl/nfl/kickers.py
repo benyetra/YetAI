@@ -469,6 +469,24 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
             enhanced_kicker_data, enhanced_team_data, weather_data, game_context
         )
 
+        try:
+            from app.services.etl.nfl.ml_kicker_ensemble import blend_field_goal_projection
+
+            projected_field_goals, ml_meta = blend_field_goal_projection(
+                projected_field_goals,
+                enhanced_kicker_data,
+                enhanced_team_data,
+                weather_data,
+                game_context,
+            )
+            if ml_meta.get("ml_used"):
+                print(
+                    f"🤖 ML blend for {kicker['name']}: {ml_meta.get('statistical_fgs')} → "
+                    f"{projected_field_goals} (p={ml_meta.get('ml_success_probability')})"
+                )
+        except Exception as ml_exc:
+            print(f"⚠️ ML kicker blend skipped for {kicker['name']}: {ml_exc}")
+
         print(f"✅ Enhanced prediction for {kicker['name']}: {projected_field_goals}")
 
     except ImportError:

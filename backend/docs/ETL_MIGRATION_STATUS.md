@@ -136,10 +136,14 @@ Beat schedule (`app/celery_app.py`): NBA 3:30, MLB actuals 4:30, NFL 4:30, NHL 5
 
 ---
 
+## Deferred parity (2026-05-20)
+
+See `DEFERRED_PARITY.md` — wired: **MLB EV**, **HR ML** (env-gated), **NFL kicker ML ensemble**, **NHL odds edges**.
+
 ## Next (optional, post-verification)
 
 - [ ] NFL Beat timing (e.g. Tue AM post-MNF) if 4:30 daily is wrong in-season
-- [ ] Port deferred parity: MLB EV, HR ML, NFL ensemble, NHL starter confirm
+- [ ] NHL `confirm_starters.py`, NFL QB yards ML (`advanced_qb_predictor`)
 - [ ] `scripts/enqueue_nfl_pipeline.py` helper
 
 ---

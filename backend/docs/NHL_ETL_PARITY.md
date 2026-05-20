@@ -51,10 +51,14 @@ PYTHONPATH=. python3 scripts/validate_nhl_pipeline.py
 PYTHONPATH=. python3 scripts/smoke_import_nhl_etl.py
 ```
 
-## Not ported (defer)
+## Odds edges (ported)
+
+- `betting_edges.py` — saves / SOG / totals recommendations vs DraftKings lines
+- `daily_predictions.py` — fetches player SOG lines via Odds API; no longer leaves `shots_line` / `betting_recommendation` null
+
+## Still deferred
 
 - `confirm_starters.py` — pre-game starter confirmation
-- `generate_daily_predictions.py` `main()` — goalie-only odds path (overlaps automation)
 - `backtest_predictions.py`, `collect_available_data.py` backfill CLI
 - `poll_nhl_live` — still noop in `live_pollers.py`
 

@@ -52,6 +52,10 @@ def run_projections_phase(target_date: date | None = None) -> dict:
 
     results["blowouts"] = run_blowouts()
 
+    from app.services.etl.mlb.mlb_ev import run as run_mlb_ev
+
+    results["value_bets"] = run_mlb_ev()
+
     return {
         "status": "ok",
         "date": today.isoformat(),

@@ -60,11 +60,17 @@ PYTHONPATH=. python3 scripts/validate_nfl_pipeline.py   # needs DATABASE_URL
 
 During NFL season, expect rows in `pred_qb_predictions` / `pred_kicker_predictions` for the current week after a successful pipeline run.
 
-## Not ported (defer)
+## Kicker ML ensemble (ported)
 
-- `ml_pipeline.py` / ensemble `.pkl` models under YetiBets `models/nfl/`
-- `advanced_qb_predictor.py`, `enhanced_qb_integration.py`, warehouse FG tables
-- Backtest / retrain CLIs, Discord notifications
+- Models: `backend/models/nfl/*.pkl`
+- `ml_kicker_ensemble.py` blends ML FG probability with statistical score in `kickers.py`
+- Env: `NFL_KICKER_ML_BLEND_WEIGHT` (default `0.35`)
+
+## Still deferred
+
+- `advanced_qb_predictor.py` / QB **yards** ML ensemble (current path: nflverse + Odds API)
+- `enhanced_qb_integration.py`, warehouse FG tables
+- Backtest / retrain CLIs
 - Beat timing tune for NFL (currently `nfl-update-pipeline-daily` 4:30 ET in `celery_app.py`)
 
 ## Season / week

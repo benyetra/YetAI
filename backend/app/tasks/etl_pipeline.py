@@ -403,7 +403,7 @@ def _mlb_projection_phases():
         ("sync", []),  # games cache runs on its own 3h beat; optional inline below
         ("props", [mlb_strikeouts, mlb_hits]),
         ("persist", persist),
-        ("enrichment", [mlb_weather, mlb_blowouts]),
+        ("enrichment", [mlb_weather, mlb_blowouts, mlb_ev]),
     ]
 
 

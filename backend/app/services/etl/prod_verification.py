@@ -13,9 +13,11 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     AssistsProjections,
     BlowoutChances,
+    DailyHRPredictions,
     GameProjections,
     Homer,
     KickerPredictions,
+    ValueBet,
     NBATotalsProjections,
     NHLGoaliePredictions,
     NHLPlayerShotsPredictions,
@@ -54,6 +56,12 @@ def verify_mlb() -> dict[str, Any]:
         hits_today = db.query(ProjectedHits).filter(ProjectedHits.date == today).count()
         blowouts = db.query(BlowoutChances).count()
         homers = db.query(Homer).count()
+        value_bets_today = db.query(ValueBet).filter(ValueBet.date == today).count()
+        hr_ml_today = (
+            db.query(DailyHRPredictions)
+            .filter(DailyHRPredictions.date == today)
+            .count()
+        )
     finally:
         db.close()
 
@@ -79,6 +87,8 @@ def verify_mlb() -> dict[str, Any]:
             "projected_hits_today": hits_today,
             "blowout_chances": blowouts,
             "homers": homers,
+            "value_bets_today": value_bets_today,
+            "daily_hr_ml_today": hr_ml_today,
         },
         "warnings": warnings,
     }

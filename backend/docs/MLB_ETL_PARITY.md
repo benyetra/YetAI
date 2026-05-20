@@ -47,9 +47,13 @@ YetiBets GHA ran `daily_projection_update` **before** `strikeouts`, which archiv
 | `MLB_HR_MODEL_S3` | HR model path (default `s3://yetibets/mlb/hr_model.pkl`) |
 | `TOMORROW_IO_API_KEY` or `WEATHER_API_KEY` | `weather.py` |
 
-## Not wired to Beat (manual / future)
+## Enrichment (daily pipeline)
 
-- `mlb_ev.py` → `pred_value_bets`
+- `mlb_ev.py` → `pred_value_bets` — task `mlb.ev`, runs in `run_mlb_update_pipeline` enrichment
+- `dingerParlay/predict_today.py` — task `mlb.hr_predictions` when `MLB_DAILY_FEATURES_S3` + `MLB_LINEUP_CSV_S3` set
+
+## Still manual / future
+
 - `classification_model.py --retrain`
 - `dingerParlay` training / feature build scripts
 - `backtest/` CLI
