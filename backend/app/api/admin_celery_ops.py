@@ -107,7 +107,16 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "label": "MLB strikeouts",
         "sport": "mlb",
         "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.strikeouts"],
-        "description": "Populate pred_pitcher + strikeout boards.",
+        "description": "Rebuild pred_pitcher for today's slate (run before store K).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.store_strikeout_projections",
+        "label": "MLB archive K projections",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.store_strikeout_projections"
+        ],
+        "description": "Copy pred_pitcher → pred_strikeout_projections for today.",
     },
     {
         "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",
@@ -127,8 +136,10 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
     },
 ]
 
+# Orchestrators + curated sub-tasks (same names as POST /run-task allow-list).
 ADMIN_ENQUEUE_TASKS: frozenset[str] = frozenset(
-    entry["task_name"] for entry in PIPELINE_ENQUEUE_CATALOG
+    {entry["task_name"] for entry in PIPELINE_ENQUEUE_CATALOG}
+    | set(ADMIN_FIREABLE_TASKS.keys())
 )
 
 
@@ -222,9 +233,10 @@ async def admin_celery_health(
 
 @router.get("/pipeline-catalog")
 async def admin_celery_pipeline_catalog(admin_user: dict = Depends(require_admin)):
-    """Orchestrator tasks for fire-and-forget enqueue."""
+    """Orchestrators and sub-tasks allowed for POST /enqueue-task."""
     return {
         "enqueue_tasks": PIPELINE_ENQUEUE_CATALOG,
+        "enqueue_subtasks": FIREABLE_CATALOG,
         "fireable_count": len(ADMIN_FIREABLE_TASKS),
     }
 
@@ -240,7 +252,7 @@ async def admin_celery_enqueue_task(
     body: CeleryEnqueueRequest,
     admin_user: dict = Depends(require_admin),
 ):
-    """Enqueue a Celery orchestrator; returns immediately with task_id."""
+    """Enqueue an orchestrator or allow-listed sub-task; returns immediately with task_id."""
     from app.celery_app import celery_app
 
     if body.task_name not in ADMIN_ENQUEUE_TASKS:
