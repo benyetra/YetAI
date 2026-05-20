@@ -87,7 +87,7 @@ railway logout   # important: otherwise login session overrides env tokens
 RAILWAY_API_TOKEN='...' railway link \
   --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
   --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-  --service 421f0104-94c9-478a-8f11-d19955df0d37
+  --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
 
 RAILWAY_TOKEN='...' railway up --detach   # no --environment flag
 ```
@@ -109,6 +109,16 @@ Health check configuration:
 - **Timeout**: 300 seconds
 - **Start Period**: 40 seconds (Docker healthcheck)
 - **Interval**: 30 seconds
+
+## Service IDs (`yetai-backend` / production)
+
+| Service | Name | ID |
+|---------|------|-----|
+| API (`api.yetai.app`) | `YetAI` | `9fe8f0dc-96ac-408f-9960-950768e6eb49` |
+| Celery + Beat | `celery-worker` | `9b9982f4-82b7-4e0f-88a0-3212221fecf4` |
+| Postgres | `Postgres` | `421f0104-94c9-478a-8f11-d19955df0d37` (do not use for `railway up`) |
+
+Copy IDs: Railway project → Cmd+K → copy service/environment ID.
 
 ## Celery worker (`celery-worker` service)
 

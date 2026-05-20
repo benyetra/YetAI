@@ -53,7 +53,7 @@ railway logout
 RAILWAY_API_TOKEN='your-account-token' railway link \
   --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
   --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-  --service 421f0104-94c9-478a-8f11-d19955df0d37
+  --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
 
 RAILWAY_TOKEN='your-project-token' railway up --detach
 ```
