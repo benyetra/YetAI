@@ -35,6 +35,9 @@ class _SessionProxy:
     def commit(self) -> None:
         init_session().commit()
 
+    def flush(self) -> None:
+        init_session().flush()
+
     def rollback(self) -> None:
         init_session().rollback()
 
