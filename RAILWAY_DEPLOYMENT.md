@@ -77,17 +77,21 @@ Set these in Railway dashboard:
 6. GitHub Actions validates deployment
 
 ### Manual Deployment (Emergency)
+
+**GitHub Actions:** use a **project token** in secret `RAILWAY_TOKEN`. Account tokens will fail with `Unauthorized` on `railway up`.
+
 ```bash
-# Install Railway CLI
 npm install -g @railway/cli
 
-# Login to Railway
+# Project token (Railway → Project → Settings → Tokens)
+export RAILWAY_TOKEN='...'
+railway up --detach \
+  --service 421f0104-94c9-478a-8f11-d19955df0d37 \
+  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402
+
+# Interactive laptop deploy (account login + link still works locally)
 railway login
-
-# Link to project
 railway link
-
-# Deploy manually
 railway up
 ```
 

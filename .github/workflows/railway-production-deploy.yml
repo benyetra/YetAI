@@ -14,15 +14,16 @@ jobs:
       - name: Install Railway CLI
         run: npm install -g @railway/cli
 
+      # Project token only (Railway → Project → Settings → Tokens).
+      # Do NOT use Account Settings tokens here — those are RAILWAY_API_TOKEN and
+      # fail on `railway up` with "Unauthorized".
       - name: Deploy backend (api.yetai.app)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
-          railway link \
-            --project 66dd783a-c0a9-4a9f-bad0-7ba07d3a0810 \
-            --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402 \
-            --service 421f0104-94c9-478a-8f11-d19955df0d37
-          railway up --detach
+          railway up --detach \
+            --service 421f0104-94c9-478a-8f11-d19955df0d37 \
+            --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402
 
       - name: Wait for health check
         run: |

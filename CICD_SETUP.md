@@ -19,8 +19,9 @@ Set these in your GitHub repository under Settings → Secrets and variables →
 
 | Secret Name | Description | Where to Get It |
 |-------------|-------------|-----------------|
-| `RAILWAY_TOKEN` | Railway API token for production deployments | Railway → Account Settings → Tokens |
-| `RAILWAY_STAGING_TOKEN` | Railway API token for staging deployments | Railway → Account Settings → Tokens |
+| `RAILWAY_TOKEN` | **Project** deploy token (`railway up`) | Railway → **your project** → Settings → Tokens → Create project token |
+| `RAILWAY_API_TOKEN` | Optional account token (`railway link`, `whoami`) | Railway → Account Settings → Tokens — **not** used by deploy workflow |
+| `RAILWAY_STAGING_TOKEN` | Project token for staging (if used) | Same as `RAILWAY_TOKEN`, from staging project |
 | `OPENAI_API_KEY` | OpenAI API key for testing | OpenAI → API Keys |
 
 ### Frontend Secrets
@@ -35,18 +36,26 @@ Set these in your GitHub repository under Settings → Secrets and variables →
 
 ## 🚀 Setup Instructions
 
-### Step 1: Get Railway Tokens
+### Step 1: Get Railway project token (for GitHub Actions deploy)
 
-1. Go to [Railway Dashboard](https://railway.app/dashboard)
-2. Click on your profile → Account Settings
-3. Navigate to "Tokens" section
-4. Create a new token with appropriate permissions
-5. Copy the token and add it to GitHub secrets
+Railway has **two** token types. The deploy workflow uses only a **project token**.
+
+| Env var | Token source | Used for |
+|---------|--------------|----------|
+| `RAILWAY_TOKEN` | Project → Settings → Tokens | `railway up`, redeploy, logs |
+| `RAILWAY_API_TOKEN` | Account Settings → Tokens | `railway link`, `whoami`, admin |
+
+1. Open the **YetAI production project** in [Railway Dashboard](https://railway.app/dashboard) (not Account Settings).
+2. **Settings → Tokens → Create project token** (name e.g. `github-actions-api`).
+3. Copy the token once and set GitHub repo secret **`RAILWAY_TOKEN`** (no quotes, no trailing newline).
+4. Do **not** paste an Account Settings token into `RAILWAY_TOKEN` — that causes `Unauthorized` on deploy.
 
 ```bash
-# Test your Railway token
-railway login --token YOUR_TOKEN_HERE
-railway status
+# Test project token (from repo root, where railway.json lives)
+export RAILWAY_TOKEN='your-project-token'
+railway up --detach \
+  --service 421f0104-94c9-478a-8f11-d19955df0d37 \
+  --environment fdd4f10f-b5ad-4a45-a40c-9d64ab71e402
 ```
 
 ### Step 2: Get Vercel Tokens
