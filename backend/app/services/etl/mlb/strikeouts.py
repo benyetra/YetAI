@@ -180,6 +180,11 @@ def fetch_pitcher_data():
     EDGE_GATE = 0.02  # require ≥2% EV to call a side; otherwise neutral 'n'
     schedule = get_todays_games()
     pitchers = []
+    build_stats = {
+        "probables_seen": 0,
+        "skipped_ab_projection": 0,
+        "build_errors": 0,
+    }
 
     for game in schedule:
         game_id = game["game_id"]
@@ -187,6 +192,7 @@ def fetch_pitcher_data():
         for team in ["home", "away"]:
             probable_pitcher_key = f"{team}_probable_pitcher"
             if probable_pitcher_key in game:
+                build_stats["probables_seen"] += 1
                 pitcher_name = game[probable_pitcher_key]
                 team_name_key = f"{team}_name"
                 opponent_team = "away" if team == "home" else "home"
@@ -371,6 +377,7 @@ def fetch_pitcher_data():
                         mean_absolute_at_bats_error,
                     )
                     if projected_at_bats_base is None:
+                        build_stats["skipped_ab_projection"] += 1
                         print(f"Not enough data to project AB for {pitcher_name}")
                         continue
 
@@ -399,6 +406,7 @@ def fetch_pitcher_data():
                         pitcher_id, recent_data, adj_ip, mean_absolute_at_bats_error
                     )
                     if projected_at_bats is None:
+                        build_stats["skipped_ab_projection"] += 1
                         print(f"Not enough data to project AB (adj) for {pitcher_name}")
                         continue
 
@@ -540,11 +548,12 @@ def fetch_pitcher_data():
                         }
                     )
                 except Exception as e:
+                    build_stats["build_errors"] += 1
                     db_session.rollback()
                     print(f"Error building projections for {pitcher_name}: {e}")
 
     pitchers.sort(key=lambda x: x["combined_score"], reverse=True)
-    return pitchers
+    return pitchers, build_stats
 
 
 def get_book_line(event_id, pitcher_name):
@@ -596,7 +605,7 @@ def get_book_line(event_id, pitcher_name):
 
 def fetch_and_update_app_data():
     try:
-        pitchers = fetch_pitcher_data()
+        pitchers, build_stats = fetch_pitcher_data()
         built = len(pitchers)
 
         db_session.query(Pitcher).delete()
@@ -659,12 +668,14 @@ def run() -> dict:
                 "pred_pitcher_rows": 0,
                 "pitchers_built": built,
                 "schedule": strikeout_schedule_diagnostics(),
+                "build_stats": build_stats,
             }
         return {
             "status": "ok",
             "task": "strikeouts",
             "pred_pitcher_rows": count,
             "pitchers_built": built,
+            "build_stats": build_stats,
         }
     finally:
         close_session()

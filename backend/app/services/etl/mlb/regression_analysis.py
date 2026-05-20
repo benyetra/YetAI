@@ -276,8 +276,24 @@ def perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats)
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
         if df.empty:
-            logger.warning("No data found for pitcher %s", pitcher_id)
-            return None
+            logger.warning(
+                "No historical stats for pitcher %s; using matchup-only K", pitcher_id
+            )
+            return round(max(0.0, matchup_k_factor), 2)
+
+        if len(df) < 5:
+            k_per_inning = df["strikeouts"].sum() / max(
+                float(df["innings_pitched"].sum()), 0.1
+            )
+            return round(
+                max(
+                    0.0,
+                    k_per_inning * innings_pitched
+                    + matchup_k_factor
+                    - (mean_absolute_error * 0.3),
+                ),
+                2,
+            )
 
         X = df[
             [
@@ -290,10 +306,6 @@ def perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats)
             ]
         ]
         y = df["strikeouts"]
-
-        if len(df) < 5:
-            logger.warning("Not enough data to train model for pitcher %s", pitcher_id)
-            return None
 
         model = make_pipeline(
             StandardScaler(),
