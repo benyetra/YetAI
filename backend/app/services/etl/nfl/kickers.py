@@ -470,7 +470,9 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         )
 
         try:
-            from app.services.etl.nfl.ml_kicker_ensemble import blend_field_goal_projection
+            from app.services.etl.nfl.ml_kicker_ensemble import (
+                blend_field_goal_projection,
+            )
 
             projected_field_goals, ml_meta = blend_field_goal_projection(
                 projected_field_goals,
