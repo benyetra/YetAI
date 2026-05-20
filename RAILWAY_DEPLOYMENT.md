@@ -231,7 +231,24 @@ curl -s -X POST "https://api.yetai.app/api/admin/celery/run-task?task_name=app.t
 
 Examples: `mlb.strikeouts`, `mlb.hits`, `nba.totals_projector`, `mlb.ev`, `nhl.daily_predictions`, `nfl.qb_weekly`, `nfl.kickers`.
 
-### 4. Validate prediction tables
+### 4. Verify all sports (recommended)
+
+**Admin UI:** `/admin` → ETL pipelines → **Verify data** or **Enqueue all + verify**.
+
+**API:**
+
+```bash
+curl -s -X POST "https://api.yetai.app/api/admin/celery/verify-etl" \
+  -H "Authorization: Bearer $YETAI_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"enqueue_all": false}' | jq .
+```
+
+**CLI:** `backend/scripts/prod_verify_etl.py` (set `YETAI_ADMIN_JWT` from browser `auth_token`).
+
+Returns per-sport `passed` / `status` and row counts matching `/api/v1/predictions/*`.
+
+### 5. Validate prediction tables (SSH)
 
 SSH to worker (or any service with `DATABASE_URL` + deps):
 
@@ -263,7 +280,7 @@ Import smoke (no DB):
 PYTHONPATH=. python3 scripts/smoke_import_mlb_etl.py
 ```
 
-### 5. Read pipeline results
+### 6. Read pipeline results
 
 Orchestrators return Celery results with:
 
@@ -279,7 +296,7 @@ railway logs --service celery-worker --deployment
 
 Look for `partial_failure`, `failed_tasks`, and `ModuleNotFoundError` after deploys.
 
-### 6. Deploy checklist after code changes
+### 7. Deploy checklist after code changes
 
 1. Push to `main` → wait for API **and** `celery-worker` deploy (deploys must be unpaused).
 2. Confirm `GET /api/admin/celery/pipeline-catalog` returns 200 (new UI depends on this).

@@ -65,7 +65,7 @@ During NFL season, expect rows in `pred_qb_predictions` / `pred_kicker_predictio
 - `ml_pipeline.py` / ensemble `.pkl` models under YetiBets `models/nfl/`
 - `advanced_qb_predictor.py`, `enhanced_qb_integration.py`, warehouse FG tables
 - Backtest / retrain CLIs, Discord notifications
-- Celery Beat schedule for NFL (orchestrator is enqueue-only until schedule is defined)
+- Beat timing tune for NFL (currently `nfl-update-pipeline-daily` 4:30 ET in `celery_app.py`)
 
 ## Season / week
 

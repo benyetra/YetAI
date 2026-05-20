@@ -24,6 +24,8 @@ export default function AdminCeleryPipelines() {
   const [pingStatus, setPingStatus] = useState<string | null>(null);
   const [checkingPing, setCheckingPing] = useState(false);
   const [lastEnqueue, setLastEnqueue] = useState<EnqueueResult | null>(null);
+  const [verifyReport, setVerifyReport] = useState<Record<string, unknown> | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const authHeaders = useCallback((): HeadersInit => {
@@ -76,6 +78,28 @@ export default function AdminCeleryPipelines() {
       setError(e instanceof Error ? e.message : 'Celery health check failed');
     } finally {
       setCheckingPing(false);
+    }
+  };
+
+  const verifyProduction = async (enqueueAll: boolean) => {
+    setVerifying(true);
+    setError(null);
+    setVerifyReport(null);
+    try {
+      const res = await fetch(getApiUrl('/api/admin/celery/verify-etl'), {
+        method: 'POST',
+        headers: authHeaders(),
+        body: JSON.stringify({ enqueue_all: enqueueAll, wait_seconds: 0 }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.detail || res.statusText);
+      }
+      setVerifyReport(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Verification failed');
+    } finally {
+      setVerifying(false);
     }
   };
 
@@ -134,6 +158,24 @@ export default function AdminCeleryPipelines() {
           <button type="button" onClick={loadCatalog} disabled={loadingCatalog} className="chip">
             Reload
           </button>
+          <button
+            type="button"
+            onClick={() => verifyProduction(false)}
+            disabled={verifying}
+            className="chip"
+          >
+            {verifying ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+            Verify data
+          </button>
+          <button
+            type="button"
+            onClick={() => verifyProduction(true)}
+            disabled={verifying}
+            className="btn btn-primary"
+            style={{ fontSize: 13 }}
+          >
+            Enqueue all + verify
+          </button>
         </div>
       </div>
 
@@ -143,6 +185,17 @@ export default function AdminCeleryPipelines() {
         </p>
       )}
       {error && <p className="text-sm mb-3 alert alert-error">{error}</p>}
+      {verifyReport && (
+        <div className="mb-4 p-3 rounded-lg border border-[var(--border)] text-xs mono overflow-auto max-h-64">
+          <p className="text-sm font-medium mb-2" style={{ fontFamily: 'inherit' }}>
+            Verification — overall:{' '}
+            {(verifyReport.verification as { overall?: string })?.overall ?? 'unknown'}
+          </p>
+          <pre className="whitespace-pre-wrap break-all">
+            {JSON.stringify(verifyReport.verification, null, 2)}
+          </pre>
+        </div>
+      )}
       {lastEnqueue && (
         <div className="mb-4 p-3 rounded-lg border border-[var(--border)] bg-[color-mix(in_oklab,var(--accent)_8%,transparent)]">
           <p className="text-sm font-medium">Last enqueue</p>
