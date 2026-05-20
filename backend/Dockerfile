@@ -10,34 +10,26 @@ FROM python:3.11-slim
 WORKDIR /app
 ENV PYTHONPATH=/app
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    libpq-dev \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
+# Minimal apt footprint (Railway builders can run out of /var/cache/apt/archives space).
+# gcc + libpq-dev for psycopg2; curl for HEALTHCHECK. No g++ (wheels are prebuilt).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        libc6-dev \
+        libpq-dev \
+        curl \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/* /tmp/*
 
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Cache buster: 2026-05-19-mlb-statsapi
-# Install Python dependencies
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir boto3==1.35.0 botocore && \
-    pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 && \
-    echo "=== Verifying boto3 installation ===" && \
-    pip show boto3 && \
-    python -c "import boto3; print(f'boto3 version: {boto3.__version__}')" && \
-    echo "=== boto3 successfully installed ===" && \
-    echo "=== Verifying google-auth installation ===" && \
-    pip show google-auth && \
-    python -c "import google.auth; print('google-auth successfully imported')" && \
-    echo "=== google-auth successfully installed ===" && \
-    echo "=== Verifying MLB-StatsAPI (import statsapi) ===" && \
-    pip show MLB-StatsAPI && \
-    python -c "import statsapi; print('statsapi successfully imported')"
+# Install Python dependencies (single layer; --no-cache-dir avoids doubling disk use).
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir boto3==1.35.0 botocore \
+    && pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 \
+    && python -c "import boto3, google.auth, statsapi"
 
 # Copy application code
 COPY . .
