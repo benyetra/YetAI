@@ -17,11 +17,17 @@ jobs:
       # Project token only (Project → Settings → Tokens → production environment).
       # Do NOT set RAILWAY_API_TOKEN in the same step — Railway rejects both at once.
       # No `railway link` needed: pass the API service id on `up`.
-      - name: Deploy backend (api.yetai.app)
+      - name: Deploy API (api.yetai.app)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           railway up --detach --service 9fe8f0dc-96ac-408f-9960-950768e6eb49
+
+      - name: Deploy celery-worker (ETL + beat)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --detach --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4
 
       - name: Wait for health check
         run: |
