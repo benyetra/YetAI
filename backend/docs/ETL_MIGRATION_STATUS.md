@@ -68,7 +68,7 @@ railway ssh --service celery-worker -- bash -lc \
 | Sport | Orchestrator | Beat (ET) | Prod verified | Notes |
 |-------|--------------|-----------|---------------|-------|
 | MLB | `run_mlb_update_pipeline`, `run_mlb_store_actuals` | 10:00, 4:30 | ☐ | K + pitchers required |
-| NBA | `run_nba_update_pipeline` | 3:30 | ☐ | points ≥ 20, pra ≥ 10 |
+| NBA | `run_nba_update_pipeline` | 3:30 | ☐ | verify: points ≥ 8, pra ≥ 5 (playoff slates OK) |
 | NHL | `run_nhl_update_pipeline` | 5:00 | ☐ | goalie + SOG + totals today |
 | NFL | `run_nfl_update_pipeline` | 4:30 | ☐ | Off-season May–Aug: orchestrator only |
 

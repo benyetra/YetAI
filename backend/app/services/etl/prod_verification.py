@@ -111,10 +111,16 @@ def verify_nba() -> dict[str, Any]:
     finally:
         db.close()
 
-    passed = points >= 20 and pra >= 10
+    # Full-season gates (~20/10) are too strict for playoff nights (often 1 game).
+    passed = points >= 8 and pra >= 5
     if totals_today == 0:
         warnings.append(
             "no totals projections today (off-day or totals_projector failed)"
+        )
+    elif points >= 20 and pra < 10:
+        warnings.append(
+            f"pra below legacy threshold (pra={pra}, points={points}); "
+            "passed with playoff-sized minimums (8/5)"
         )
 
     return {
@@ -159,7 +165,9 @@ def verify_nhl() -> dict[str, Any]:
     if not passed:
         warnings.append(
             f"today empty (goalie={goalie}, shots={shots}, totals={totals}); "
-            f"yesterday ref={yesterday}"
+            f"yesterday ref={yesterday}. "
+            "Enqueue run_nhl_update_pipeline (ODDS_API_KEY alone is not enough). "
+            "NHL schedule uses ET; re-run after deploy if worker was on UTC 'tomorrow'."
         )
 
     return {

@@ -7,6 +7,8 @@ import requests
 from datetime import datetime, timedelta
 import time
 
+from app.services.etl.nba._espn import now_eastern
+
 
 class NHLAPIClient:
     def __init__(self):
@@ -19,7 +21,7 @@ class NHLAPIClient:
         date format: YYYY-MM-DD (defaults to today)
         """
         if date is None:
-            date = datetime.now().strftime("%Y-%m-%d")
+            date = now_eastern().date().strftime("%Y-%m-%d")
 
         url = f"{self.base_url}/schedule/{date}"
         response = requests.get(url)

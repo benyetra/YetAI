@@ -31,6 +31,7 @@ from app.services.etl.nhl.generate_daily_predictions import (
 )
 from datetime import datetime, date, timedelta
 from sqlalchemy import and_
+from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._db import db_session
 import logging
 import time
@@ -74,7 +75,7 @@ def generate_goalie_predictions(games, odds_events):
 
     predictions_generated = 0
 
-    today = date.today()
+    today = now_eastern().date()
 
     # Clear old predictions for today
     db_session.query(NHLGoaliePredictions).filter_by(game_date=today).delete()
@@ -221,7 +222,7 @@ def generate_player_predictions(games, odds_events):
     )
 
     predictions_generated = 0
-    today = date.today()
+    today = now_eastern().date()
 
     odds_lookup = {}
     for event in odds_events:
@@ -351,7 +352,7 @@ def generate_team_totals_predictions(games, odds_events):
         odds_lookup[key] = event
 
     predictions_generated = 0
-    today = date.today()
+    today = now_eastern().date()
 
     # Delete old predictions for today (in case re-running)
     db_session.query(NHLTeamTotalsPredictions).filter_by(game_date=today).delete()
@@ -464,7 +465,7 @@ def collect_actuals_from_completed_games():
     logging.info("=" * 80)
 
     try:
-        yesterday = date.today() - timedelta(days=1)
+        yesterday = now_eastern().date() - timedelta(days=1)
 
         # Get yesterday's schedule
         url = f"https://api-web.nhle.com/v1/schedule/{yesterday.strftime('%Y-%m-%d')}"
@@ -634,59 +635,63 @@ def save_goalie_actual(goalie, game_id, game_date, team_name, opponent_name):
         return 0
 
 
-def _run_daily_core():
-    """Main automation function - runs daily"""
+def _run_daily_core() -> dict:
+    """Main automation function - runs daily (ET slate date)."""
+    slate_date = now_eastern().date()
     logging.info("\n" + "=" * 80)
     logging.info("NHL AUTOMATED DAILY PREDICTIONS")
-    logging.info(f"Running at: {datetime.now()}")
+    logging.info(f"Running at: {datetime.now()} (slate_date_et={slate_date})")
     logging.info("=" * 80 + "\n")
 
-    # Initialize NHL API client
     client = NHLAPIClient()
-
-    # Get today's schedule
-    logging.info("Fetching today's NHL schedule...")
-    schedule = client.get_schedule()
+    logging.info("Fetching today's NHL schedule (ET)...")
+    schedule = client.get_schedule(slate_date.strftime("%Y-%m-%d"))
 
     if not schedule or "gameWeek" not in schedule:
-        logging.warning("⚠️  No NHL games scheduled for today")
-        return
+        logging.warning("⚠️  No NHL games scheduled for today (ET)")
+        return {
+            "status": "skipped",
+            "reason": "no_schedule",
+            "slate_date_et": str(slate_date),
+        }
 
-    # Extract games
     games = []
     for game_day in schedule["gameWeek"]:
         games.extend(game_day.get("games", []))
 
     if not games:
         logging.warning("⚠️  No games found in schedule")
-        return
+        return {
+            "status": "skipped",
+            "reason": "empty_game_week",
+            "slate_date_et": str(slate_date),
+        }
 
-    logging.info(f"📅 Found {len(games)} games scheduled for today\n")
+    logging.info(f"📅 Found {len(games)} games scheduled for {slate_date}\n")
 
-    # Fetch betting odds events
     logging.info("Fetching betting odds from The Odds API...")
     odds_events = get_nhl_events_from_odds_api()
     logging.info(f"📊 Found {len(odds_events)} events in odds feed\n")
 
-    # Run all steps
     stats_updated = update_nhl_stats()
-
-    if stats_updated:
-        goalie_count = generate_goalie_predictions(games, odds_events)
-        time.sleep(2)  # Rate limit
-
-        player_count = generate_player_predictions(games, odds_events)
-        time.sleep(2)  # Rate limit
-
-        team_count = generate_team_totals_predictions(games, odds_events)
-        time.sleep(2)  # Rate limit
-
-        actuals_count = collect_actuals_from_completed_games()
-    else:
+    if not stats_updated:
         logging.error("❌ Stats update failed, skipping predictions")
-        return
+        return {
+            "status": "error",
+            "reason": "stats_update_failed",
+            "slate_date_et": str(slate_date),
+            "games_scheduled": len(games),
+            "odds_events": len(odds_events),
+        }
 
-    # Summary
+    goalie_count = generate_goalie_predictions(games, odds_events)
+    time.sleep(2)
+    player_count = generate_player_predictions(games, odds_events)
+    time.sleep(2)
+    team_count = generate_team_totals_predictions(games, odds_events)
+    time.sleep(2)
+    actuals_count = collect_actuals_from_completed_games()
+
     logging.info("\n" + "=" * 80)
     logging.info("AUTOMATION COMPLETE")
     logging.info("=" * 80)
@@ -695,6 +700,17 @@ def _run_daily_core():
     logging.info(f"✅ Team totals predictions: {team_count}")
     logging.info(f"✅ Actuals collected: {actuals_count}")
     logging.info("=" * 80 + "\n")
+
+    return {
+        "status": "ok",
+        "slate_date_et": str(slate_date),
+        "games_scheduled": len(games),
+        "odds_events": len(odds_events),
+        "goalie_predictions": goalie_count,
+        "player_predictions": player_count,
+        "team_totals_predictions": team_count,
+        "actuals_collected": actuals_count,
+    }
 
 
 if __name__ == "__main__":
@@ -712,7 +728,7 @@ def run() -> dict:
 
     init_session()
     try:
-        _run_daily_core()
-        return {"status": "ok", "task": "nhl_daily_predictions"}
+        result = _run_daily_core()
+        return {"task": "nhl_daily_predictions", **result}
     finally:
         close_session()
