@@ -135,9 +135,26 @@ def get_last_5_games_k_per_9(player_id):
 
 
 def get_todays_games():
-    today = datetime.today().date().strftime("%Y-%m-%d")
-    schedule = statsapi.schedule(date=today)
-    return schedule
+    from app.services.etl.nba._espn import now_eastern
+
+    today = now_eastern().date().strftime("%Y-%m-%d")
+    return statsapi.schedule(date=today)
+
+
+def strikeout_schedule_diagnostics() -> dict:
+    """Why pred_pitcher might be empty (no probable starter in statsapi schedule)."""
+    from app.services.etl.nba._espn import now_eastern
+
+    schedule = get_todays_games() or []
+    games_with_probable = 0
+    for game in schedule:
+        if game.get("home_probable_pitcher") or game.get("away_probable_pitcher"):
+            games_with_probable += 1
+    return {
+        "date_et": str(now_eastern().date()),
+        "schedule_games": len(schedule),
+        "games_with_probable_pitcher": games_with_probable,
+    }
 
 
 def get_event_id_for_game(team1, team2):
@@ -578,10 +595,11 @@ def get_book_line(event_id, pitcher_name):
 
 def fetch_and_update_app_data():
     try:
+        pitchers = fetch_pitcher_data()
+        built = len(pitchers)
+
         db_session.query(Pitcher).delete()
         db_session.commit()
-
-        pitchers = fetch_pitcher_data()
 
         for pitcher_stats_data in pitchers:
             pitcher_id = pitcher_stats_data.get("pitcher_id")
@@ -614,7 +632,8 @@ def fetch_and_update_app_data():
             )
 
         print("Data updated successfully.")
-        return db_session.query(Pitcher).count()
+        stored = db_session.query(Pitcher).count()
+        return stored, built
     except Exception as e:
         print(f"Error fetching and storing data: {e}")
         raise
@@ -626,14 +645,24 @@ def run() -> dict:
 
     init_session()
     try:
-        count = fetch_and_update_app_data()
+        count, built = fetch_and_update_app_data()
         if not count:
             return {
                 "status": "error",
                 "task": "strikeouts",
-                "error": "no pitchers stored (check ODDS_API_KEY, lineups, worker logs)",
+                "error": (
+                    "no pitchers stored — statsapi schedule may lack probable starters "
+                    "or per-pitcher build failed (see worker logs)"
+                ),
                 "pred_pitcher_rows": 0,
+                "pitchers_built": built,
+                "schedule": strikeout_schedule_diagnostics(),
             }
-        return {"status": "ok", "task": "strikeouts", "pred_pitcher_rows": count}
+        return {
+            "status": "ok",
+            "task": "strikeouts",
+            "pred_pitcher_rows": count,
+            "pitchers_built": built,
+        }
     finally:
         close_session()
