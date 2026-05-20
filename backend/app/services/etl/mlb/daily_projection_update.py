@@ -10,12 +10,9 @@ from app.services.etl.mlb.pitcher_game_logs import (
 )
 from app.services.etl.mlb.regression_analysis import perform_regression_analysis
 from app.models.predictions_models import (
-    db,
     StrikeoutActuals,
     StrikeoutProjections,
     Pitcher,
-    GameProjections,
-    GameActuals,
 )
 
 from app.services.etl.mlb._db import db_session
@@ -23,32 +20,6 @@ import logging
 import argparse
 import traceback
 
-
-# Database configuration
-
-
-# Widen fanduel_over_under columns from varchar(5) to varchar(7)
-from sqlalchemy import text as sa_text
-from database.database import engine as _engine
-
-with _engine.connect() as _conn:
-    for _tbl in [
-        "strikeout_projections",
-        "points_projections",
-        "steals_projections",
-        "pra_projections",
-    ]:
-        try:
-            _conn.execute(
-                sa_text(
-                    f"ALTER TABLE {_tbl} ALTER COLUMN fanduel_over_under TYPE varchar(7)"
-                )
-            )
-            _conn.commit()
-            print(f"Widened {_tbl}.fanduel_over_under to varchar(7)")
-        except Exception as e:
-            _conn.rollback()
-            print(f"ALTER TABLE {_tbl} skipped: {e}")
 
 # Set up logging
 logging.basicConfig(level=logging.INFO)
@@ -239,8 +210,6 @@ def run_store_strikeout_projections(target_date=None) -> dict:
     try:
         d = target_date or date_cls.today()
         store_projections(d)
-        from app.models.predictions_models import Pitcher, StrikeoutProjections
-
         pitchers = db_session.query(Pitcher).count()
         k_today = (
             db_session.query(StrikeoutProjections)
