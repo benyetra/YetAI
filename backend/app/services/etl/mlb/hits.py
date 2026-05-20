@@ -524,7 +524,9 @@ def fetch_hitters_data():
     return unique_hitters, home_runs
 
 
-def filter_hitters(hitters, min_combined_score=3):
+def filter_hitters(hitters, min_combined_score=None):
+    if min_combined_score is None:
+        min_combined_score = 2
     filtered_hitters = [
         hitter
         for hitter in hitters
@@ -532,7 +534,8 @@ def filter_hitters(hitters, min_combined_score=3):
         and hitter["combined_score"] >= min_combined_score
     ]
     print(
-        f"Filtered {len(hitters)} to {len(filtered_hitters)} hitters with a combined score of {min_combined_score} or more."
+        f"Filtered {len(hitters)} to {len(filtered_hitters)} hitters "
+        f"with combined score >= {min_combined_score}."
     )
     return filtered_hitters
 
@@ -701,6 +704,11 @@ def _run_hits_core():
     filtered_homers = filter_homers(homers)
     store_hitters_data(filtered_hitters)
     store_homers_data(filtered_homers)
+    return {
+        "candidates": len(unique_hitters),
+        "hitters_stored": len(filtered_hitters),
+        "homers_stored": len(filtered_homers),
+    }
 
 
 def run() -> dict:
@@ -709,7 +717,7 @@ def run() -> dict:
 
     init_session()
     try:
-        _run_hits_core()
-        return {"status": "ok", "task": "hits"}
+        stats = _run_hits_core()
+        return {"status": "ok", "task": "hits", **stats}
     finally:
         close_session()

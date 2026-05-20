@@ -1,43 +1,53 @@
 import sys
 import os
 from datetime import datetime
+import logging
 import requests
 from app.models.predictions_models import BlowoutChances
 
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb.hits import fetch_hitters_data
 from app.services.etl.mlb.strikeouts import fetch_pitcher_data
+from app.services.etl.mlb._enrichment_helpers import flatten_batters
 from app.services.etl.mlb._mlb_utils import get_todays_games
+
+logger = logging.getLogger(__name__)
+
+
+def _current_mlb_season() -> int:
+    return datetime.today().year
 
 
 def get_team_performance_metrics(team_id):
-    try:
-        url = f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats?season=2025&group=hitting&stats=season"
-        response = requests.get(url)
-        data = response.json()
+    for season in (_current_mlb_season(), _current_mlb_season() - 1):
+        try:
+            url = (
+                f"https://statsapi.mlb.com/api/v1/teams/{team_id}/stats"
+                f"?season={season}&group=hitting&stats=season"
+            )
+            response = requests.get(url, timeout=30)
+            response.raise_for_status()
+            data = response.json()
 
-        if "stats" in data and data["stats"]:
-            splits = data["stats"][0]["splits"]
-            if splits:
-                team_stats = splits[0]["stat"]
-                games_played = team_stats.get(
-                    "gamesPlayed", 1
-                )  # Default to 1 to avoid division by zero
-                runs = team_stats.get("runs", 0)
-                runs_allowed = team_stats.get(
-                    "runsAgainst", 0
-                )  # Assuming this field exists similarly
-                team_avg_runs = runs / games_played
-                team_avg_runs_allowed = runs_allowed / games_played
-                return team_avg_runs, team_avg_runs_allowed
-    except Exception as e:
-        print(f"Error fetching team performance metrics for team ID {team_id}: {e}")
+            if "stats" in data and data["stats"]:
+                splits = data["stats"][0]["splits"]
+                if splits:
+                    team_stats = splits[0]["stat"]
+                    games_played = team_stats.get("gamesPlayed", 0) or 0
+                    if games_played <= 0:
+                        continue
+                    runs = team_stats.get("runs", 0)
+                    runs_allowed = team_stats.get("runsAgainst", 0)
+                    return runs / games_played, runs_allowed / games_played
+        except Exception as e:
+            logger.warning(
+                "team performance metrics failed team_id=%s season=%s: %s",
+                team_id,
+                season,
+                e,
+            )
 
     return 0, 0
-
-
-def flatten_batters(batters):
-    return [batter for sublist in batters for batter in sublist]
 
 
 def evaluate_blowout_chances(pitchers, batters):
@@ -142,9 +152,12 @@ def store_blowout_chances(blowout_chances):
             )
             db_session.add(blowout_entry)
         db_session.commit()
-        print("Blowout chances stored successfully.")
+        logger.info("stored %s blowout chances", len(blowout_chances))
+        return len(blowout_chances)
     except Exception as e:
-        print(f"Error storing blowout chances: {e}")
+        db_session.rollback()
+        logger.exception("Error storing blowout chances: %s", e)
+        raise
 
 
 def main():
@@ -153,7 +166,13 @@ def main():
     unique_hitters, _homers = fetch_hitters_data()
     pitchers, _build_stats = fetch_pitcher_data()
     blowout_chances = evaluate_blowout_chances(pitchers, unique_hitters)
-    store_blowout_chances(blowout_chances)
+    stored = store_blowout_chances(blowout_chances)
+    return {
+        "games_evaluated": len(blowout_chances),
+        "blowout_chances_stored": stored,
+        "hitters_loaded": len(unique_hitters),
+        "pitchers_loaded": len(pitchers),
+    }
 
 
 if __name__ == "__main__":
@@ -165,7 +184,7 @@ def run() -> dict:
 
     init_session()
     try:
-        main()
-        return {"status": "ok", "task": "blowouts"}
+        result = main()
+        return {"status": "ok", "task": "blowouts", **result}
     finally:
         close_session()

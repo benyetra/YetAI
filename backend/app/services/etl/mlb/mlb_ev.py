@@ -34,6 +34,7 @@ def read_csv_anywhere(path, **kwargs):
 
 # your project imports
 from app.services.etl.mlb._db import db_session
+from app.services.etl.mlb._enrichment_helpers import game_odds_key
 
 from app.models.predictions_models import ValueBet
 
@@ -49,10 +50,24 @@ K_LOGISTIC = float(os.getenv("EV_K", 5.0))
 
 # Path to your normalized park factors CSV (columns: park_id,hr_factor)
 PARK_FACTORS_CSV = "s3://yetibets/mlb/park_factors.csv"
-park_factors_df = read_csv_anywhere(PARK_FACTORS_CSV)
-PARK_FACTOR_MAP = {
-    row["park_id"]: row["hr_factor"] for _, row in park_factors_df.iterrows()
-}
+PARK_FACTOR_MAP: dict = {}
+
+
+def _load_park_factor_map() -> dict:
+    global PARK_FACTOR_MAP
+    if PARK_FACTOR_MAP:
+        return PARK_FACTOR_MAP
+    try:
+        park_factors_df = read_csv_anywhere(PARK_FACTORS_CSV)
+        PARK_FACTOR_MAP = {
+            str(row["park_id"]): float(row["hr_factor"])
+            for _, row in park_factors_df.iterrows()
+        }
+    except Exception as e:
+        logging.warning("Could not load park_factors.csv: %s", e)
+        PARK_FACTOR_MAP = {}
+    return PARK_FACTOR_MAP
+
 
 # ─── LOGGING ───────────────────────────────────────────────────────────────────
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -167,21 +182,25 @@ def get_odds(schedule):
         url = (
             f"{BASE_URL}{SPORT}/events/{eid}/odds"
             f"?regions=us&oddsFormat=american&apiKey={ODDS_API_KEY}"
-            "&bookmakers=fanatics"
+            "&markets=h2h"
         )
-        r = requests.get(url)
+        r = requests.get(url, timeout=30)
         if r.status_code != 200:
             logging.warning(f"odds failed for {key}: {r.status_code}")
             continue
         data = r.json()
+        preferred = ("fanduel", "draftkings", "fanatics")
         for bm in data.get("bookmakers", []):
-            if bm.get("key") != "fanatics":
+            if bm.get("key") not in preferred:
                 continue
             for m in bm.get("markets", []):
                 if m.get("key") != "h2h":
                     continue
                 odds_map[key] = {o["name"]: o["price"] for o in m["outcomes"]}
-                logging.info(f"{key} → {odds_map[key]}")
+                logging.info("%s → %s (%s)", key, odds_map[key], bm.get("key"))
+                break
+            if key in odds_map:
+                break
     return odds_map
 
 
@@ -313,6 +332,11 @@ def evaluate_pitcher(pid):
 # ─── MAIN EV CALCULATION ───────────────────────────────────────────────────────
 def run_ev() -> int:
     """Compute +EV moneyline value bets for today's slate. Returns rows stored."""
+    if not ODDS_API_KEY:
+        logging.warning("ODDS_API_KEY not set; skipping MLB EV")
+        return 0
+
+    park_map = _load_park_factor_map()
     today = date.today()
     # delete any stale rows for today
     db_session.query(ValueBet).filter(ValueBet.date == today).delete(
@@ -329,7 +353,7 @@ def run_ev() -> int:
     seen = set()  # <— track which pairs we’ve added
 
     for g in schedule:
-        key = f"{g['away_name']} @ {g['home_name']} (#{g['game_id']})"
+        key = game_odds_key(g)
         if key not in odds_map:
             continue
 
@@ -338,7 +362,8 @@ def run_ev() -> int:
         a_ops = weighted_lineup_ops(get_lineup_ids(g["away_id"]))
         h_xfip = evaluate_pitcher(g["home_pitcher_id"])["xfip"]
         a_xfip = evaluate_pitcher(g["away_pitcher_id"])["xfip"]
-        pf = PARK_FACTOR_MAP.get(g.get("park_id"), 0.0)
+        park_id = g.get("park_id")
+        pf = park_map.get(str(park_id), 0.0) if park_id is not None else 0.0
 
         logging.debug(
             f"{key}: h_ops={h_ops:.3f}, a_ops={a_ops:.3f}, "

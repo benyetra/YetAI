@@ -49,7 +49,9 @@ YetiBets GHA ran `daily_projection_update` **before** `strikeouts`, which archiv
 
 ## Enrichment (daily pipeline)
 
-- `mlb_ev.py` → `pred_value_bets` — task `mlb.ev`, runs in `run_mlb_update_pipeline` enrichment
+- `blowouts.py` → `pred_blowout_chances` — `flatten_batters` accepts flat hitter dicts; season year is dynamic (current + prior fallback)
+- `mlb_ev.py` → `pred_value_bets` — odds key matches `away @ home` (no `game_id` suffix); Fanduel/DK/Fanatics h2h; lazy S3 park factors; requires `ODDS_API_KEY`
+- `hits.py` + `daily_batter_projection.py` — hitter filter min score 2; `pred_projected_hits` scoped to today's `game_time` on boards
 - `dingerParlay/predict_today.py` — task `mlb.hr_predictions` when `MLB_DAILY_FEATURES_S3` + `MLB_LINEUP_CSV_S3` set
 
 ## Still manual / future

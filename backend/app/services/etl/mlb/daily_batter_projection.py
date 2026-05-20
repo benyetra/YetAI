@@ -1,6 +1,7 @@
 import sys
 import os
 from datetime import date, timedelta
+from sqlalchemy import func
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb.hits import (
     fetch_days_hitters,
@@ -26,9 +27,15 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def store_projections(date):
-    hitters = db_session.query(Hitter).all()
-    homers = db_session.query(Homer).all()
+def store_projections(target_date):
+    hitters = (
+        db_session.query(Hitter)
+        .filter(func.date(Hitter.game_time) == target_date)
+        .all()
+    )
+    homers = (
+        db_session.query(Homer).filter(func.date(Homer.game_time) == target_date).all()
+    )
 
     for hitter in hitters:
         batter_id = hitter.player_id
@@ -38,7 +45,7 @@ def store_projections(date):
         # Store hit projections
         existing_hit_projection = (
             db_session.query(ProjectedHits)
-            .filter_by(date=date)
+            .filter_by(date=target_date)
             .filter_by(batter_id=batter_id)
             .first()
         )
@@ -46,7 +53,7 @@ def store_projections(date):
             existing_hit_projection.projected_hits = projected_hits
         else:
             new_hit_projection = ProjectedHits(
-                date=date,
+                date=target_date,
                 batter_id=batter_id,
                 batter_name=batter_name,
                 projected_hits=projected_hits,
@@ -61,7 +68,7 @@ def store_projections(date):
         # Store homer projections
         existing_homer_projection = (
             db_session.query(ProjectedHomers)
-            .filter_by(date=date)
+            .filter_by(date=target_date)
             .filter_by(batter_id=batter_id)
             .first()
         )
@@ -69,7 +76,7 @@ def store_projections(date):
             existing_homer_projection.projected_homers = projected_homers
         else:
             new_homer_projection = ProjectedHomers(
-                date=date,
+                date=target_date,
                 batter_id=batter_id,
                 batter_name=batter_name,
                 projected_homers=projected_homers,
@@ -168,9 +175,8 @@ if __name__ == "__main__":
     )
     args = parser.parse_args()
 
-    # Use the correct date format: 'YYYY-MM-DD' for processing, 'MM/DD/YYYY' for API requests
-    today = date.today().strftime("%Y-%m-%d")
-    yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+    today = date.today()
+    yesterday = date.today() - timedelta(days=1)
 
     if args.store_actuals:
         store_actuals(yesterday)
@@ -186,7 +192,14 @@ def run_projections(target_date=None) -> dict:
     try:
         d = target_date or date_cls.today()
         store_projections(d)
-        return {"status": "ok", "date": d.isoformat()}
+        projected_hits = db_session.query(ProjectedHits).filter_by(date=d).count()
+        projected_homers = db_session.query(ProjectedHomers).filter_by(date=d).count()
+        return {
+            "status": "ok",
+            "date": d.isoformat(),
+            "projected_hits_stored": projected_hits,
+            "projected_homers_stored": projected_homers,
+        }
     finally:
         close_session()
 
