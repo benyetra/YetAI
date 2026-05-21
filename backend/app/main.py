@@ -6027,6 +6027,13 @@ async def get_player_props(
             detail=f"Sport {sport} not supported for player props. Supported: {', '.join(supported_sports)}",
         )
 
+    from app.services.cache_service import cache_service
+
+    cache_key = f"player_props:{sport}:{event_id}:{markets or 'auto'}"
+    cached = await cache_service.get(cache_key)
+    if cached:
+        return {"status": "success", "data": cached, "cached": True}
+
     try:
         from app.services.odds_api_service import OddsAPIService
         from app.services.player_props_service import PlayerPropsService
@@ -6045,6 +6052,10 @@ async def get_player_props(
 
             if "error" in props_data:
                 raise HTTPException(status_code=404, detail=props_data["error"])
+
+            # Player props move slowly pre-game; 5-min cache keeps the UI
+            # responsive without re-billing Odds API on every page render.
+            await cache_service.set(cache_key, props_data, expire_seconds=300)
 
             return {
                 "status": "success",
@@ -6625,16 +6636,26 @@ async def options_live_markets():
 
 @app.get("/api/live-bets/markets")
 async def get_live_betting_markets(sport: Optional[str] = None):
-    """Get available live betting markets with real sports data (public endpoint)"""
-    try:
-        print(f"Live betting markets endpoint called with sport: {sport}")
-        markets = await live_betting_service.get_live_betting_markets(sport)
-        print(f"Service returned {len(markets)} markets")
+    """Get available live betting markets with real sports data (public endpoint).
 
-        return {"status": "success", "count": len(markets), "markets": markets}
+    Cached for 60 seconds — this endpoint hits the Odds API for 4 sports
+    on every uncached call. Without a cache, any polling client can rip
+    through the daily credit budget very fast.
+    """
+    from app.services.cache_service import cache_service
+
+    cache_key = f"live_markets:{sport or 'all'}"
+    cached = await cache_service.get(cache_key)
+    if cached:
+        return cached
+
+    try:
+        markets = await live_betting_service.get_live_betting_markets(sport)
+        response = {"status": "success", "count": len(markets), "markets": markets}
+        await cache_service.set(cache_key, response, expire_seconds=60)
+        return response
 
     except Exception as e:
-        print(f"Exception in live betting endpoint: {e}")
         logger.error(f"Error getting live markets: {e}")
         raise HTTPException(status_code=500, detail="Failed to get live markets")
 

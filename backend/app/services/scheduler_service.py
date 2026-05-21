@@ -54,14 +54,14 @@ class SchedulerService:
         self._setup_default_tasks()
 
     def _setup_default_tasks(self):
-        """Set up default scheduled tasks with rate-limit friendly intervals"""
-        # Update popular sports odds every 2 hours (conservative to stay under rate limits)
-        self.add_task(
-            "update_popular_odds",
-            self._update_popular_sports_odds,
-            interval_seconds=7200,  # 2 hours
-        )
+        """Set up default scheduled tasks with rate-limit friendly intervals.
 
+        NOTE: ``update_popular_odds`` and ``sync_upcoming_games`` are NOT
+        registered here — the Celery beat task ``sync-games-cache-every-3h``
+        (see ``app/celery_app.py``) already pulls the same 4-sport odds set
+        on a similar cadence. Running both produced duplicate Odds API
+        calls and split the cache between two processes.
+        """
         # Update sports list every 6 hours (sports don't change often)
         self.add_task(
             "update_sports_list",
@@ -69,11 +69,13 @@ class SchedulerService:
             interval_seconds=21600,  # 6 hours
         )
 
-        # Update live games every 30 minutes (much more conservative)
+        # Live games update once an hour. The previous 30-min cadence over
+        # 9 sports was the biggest single Odds API drain; ``get_live_games``
+        # now filters to in-season sports too.
         self.add_task(
             "update_live_games",
             self._update_live_games,
-            interval_seconds=1800,  # 30 minutes
+            interval_seconds=3600,  # 1 hour
         )
 
         # Update scores every 4 hours (scores don't change that often for completed games)
@@ -84,13 +86,6 @@ class SchedulerService:
         # Clean up old cache entries every 30 minutes
         self.add_task(
             "cache_cleanup", self._cleanup_cache, interval_seconds=1800  # 30 minutes
-        )
-
-        # Sync upcoming games to database every 6 hours
-        self.add_task(
-            "sync_upcoming_games",
-            self._sync_upcoming_games,
-            interval_seconds=21600,  # 6 hours
         )
 
         # Verify player props from previous day every morning at 6 AM UTC

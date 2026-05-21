@@ -89,6 +89,40 @@ PLAYER_PROP_MARKETS = {
 }
 
 
+# Discovery-failure fallback: a small high-value subset per sport so we
+# don't burn 15+ Odds API credits per request when the per-event /markets
+# discovery endpoint returns nothing. The full PLAYER_PROP_MARKETS lists
+# are still used when a caller explicitly asks for them.
+FALLBACK_PLAYER_PROP_MARKETS = {
+    "americanfootball_nfl": [
+        "player_pass_yds",
+        "player_pass_tds",
+        "player_rush_yds",
+        "player_receptions",
+        "player_anytime_td",
+    ],
+    "basketball_nba": [
+        "player_points",
+        "player_rebounds",
+        "player_assists",
+        "player_threes",
+        "player_points_rebounds_assists",
+    ],
+    "icehockey_nhl": [
+        "player_points",
+        "player_shots_on_goal",
+        "player_goalie_saves",
+        "player_anytime_goal_scorer",
+    ],
+    "baseball_mlb": [
+        "batter_home_runs",
+        "batter_hits",
+        "batter_total_bases",
+        "pitcher_strikeouts",
+    ],
+}
+
+
 class PlayerPropsService:
     """Service for fetching and parsing player prop betting markets"""
 
@@ -184,13 +218,14 @@ class PlayerPropsService:
                 # Discovery can come back empty when the event-level markets
                 # endpoint isn't available on this Odds API plan, or when
                 # FanDuel hasn't posted props yet for the event. Fall back to
-                # the per-sport list so we still try to fetch real props
-                # instead of bailing out with an empty response.
-                fallback = PLAYER_PROP_MARKETS.get(sport, [])
+                # a SHORT list of high-value markets — each market in the
+                # fetch costs Odds API credits, so we cap the blast radius
+                # instead of asking for all 15-18 supported markets.
+                fallback = FALLBACK_PLAYER_PROP_MARKETS.get(sport, [])
                 if fallback:
                     logger.info(
                         "Markets discovery empty for %s — falling back to "
-                        "the static per-sport list (%d markets).",
+                        "%d high-value markets.",
                         event_id,
                         len(fallback),
                     )

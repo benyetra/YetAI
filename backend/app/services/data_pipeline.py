@@ -84,14 +84,28 @@ class SportsDataPipeline:
             return []
 
     async def get_nfl_odds(self) -> List[Dict]:
-        """FIXED: Get NFL betting odds with proper bookmaker parsing"""
+        """FIXED: Get NFL betting odds with proper bookmaker parsing.
+
+        Cached in Redis for 5 minutes — this method is called from
+        ai_chat_service on every user message, which would otherwise hit
+        Odds API on every chat. 5-min TTL is fine for pre-game lines.
+        """
         if not settings.ODDS_API_KEY:
             logger.warning("No Odds API key configured")
             return []
 
+        from app.services.cache_service import cache_service
+
+        cache_key = "data_pipeline:nfl_odds"
+        cached = await cache_service.get(cache_key)
+        if cached is not None:
+            return cached
+
         url = f"{self.odds_base_url}/sports/americanfootball_nfl/odds"
+        # Odds API expects ``apiKey`` (camelCase). This was previously
+        # ``api_key`` which silently 401'd, hiding the real failure.
         params = {
-            "api_key": settings.ODDS_API_KEY,
+            "apiKey": settings.ODDS_API_KEY,
             "regions": "us",
             "markets": "h2h,spreads,totals",
             "oddsFormat": "american",
@@ -167,6 +181,9 @@ class SportsDataPipeline:
 
                         logger.info(
                             f"Successfully fetched odds for {len(processed_odds)} games with real bookmaker data"
+                        )
+                        await cache_service.set(
+                            cache_key, processed_odds, expire_seconds=300
                         )
                         return processed_odds
 

@@ -29,7 +29,10 @@ class ScheduleConfig:
     """Configuration for scheduled verification"""
 
     enabled: bool = True
-    interval_minutes: int = 15  # Run every 15 minutes
+    # Bumped from 15 to 30 — Odds API scores were being pulled 96 times/day
+    # for 4 sports when most games only resolve once. 30-min cadence still
+    # settles within a reasonable window post-game.
+    interval_minutes: int = 30  # Run every 30 minutes
     retry_interval_minutes: int = 5  # Retry failed runs after 5 minutes
     max_retries: int = 3
     quiet_hours_start: int = 2  # 2 AM
