@@ -14,6 +14,7 @@ from datetime import date as date_type
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -72,7 +73,10 @@ def _query_recent(
 ) -> list[dict[str, Any]]:
     q = db.query(model)
     if date_col_name and target_date is not None:
-        q = q.filter(getattr(model, date_col_name) == target_date)
+        col = getattr(model, date_col_name)
+        # Cast to date so DateTime columns (e.g. game_time, NFL game_date)
+        # match by calendar day instead of an exact timestamp.
+        q = q.filter(func.date(col) == target_date)
     if hasattr(model, "id"):
         q = q.order_by(model.id.desc())
     fetch_limit = limit * 5 if dedupe_keys else limit
@@ -112,7 +116,9 @@ def mlb_predictions(
         "projected_homers": _query_recent(
             db, ProjectedHomers, "date", target_date, limit
         ),
-        "home_run_predictions": _query_recent(db, Homer, None, None, limit),
+        "home_run_predictions": _query_recent(
+            db, Homer, "game_time", target_date, limit
+        ),
     }
 
 
