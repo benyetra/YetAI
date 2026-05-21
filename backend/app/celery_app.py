@@ -71,9 +71,17 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "schedule": crontab(hour=3, minute=30),
     },
+    # First run at 10 AM ET — MLB probable starters are usually complete by
+    # then. Safety net at 2 PM ET catches anything that wasn't posted earlier
+    # (the pipeline preserves existing rows when the schedule API is empty,
+    # so the later run effectively retries).
     "mlb-projections-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
-        "schedule": crontab(hour=10, minute=0),
+        "schedule": crontab(hour=14, minute=0),
+    },
+    "mlb-projections-safety-net": {
+        "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "schedule": crontab(hour=18, minute=0),
     },
     "mlb-actuals-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",

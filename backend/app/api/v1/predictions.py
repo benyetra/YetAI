@@ -124,10 +124,24 @@ def mlb_predictions(
 ) -> dict[str, Any]:
     """Recent MLB props: strikeouts, game slate, batter boards, HR picks."""
     tz = _safe_tz(tz)
+    strikeouts = _query_recent(
+        db, StrikeoutProjections, "date", target_date, limit, tz=tz
+    )
+    # Drop rows with blank pitcher_name (incomplete ETL writes) and dedupe by
+    # pitcher_id so the same pitcher doesn't appear twice in the table.
+    seen_pitchers: set[str] = set()
+    cleaned_strikeouts = []
+    for row in strikeouts:
+        name = (row.get("pitcher_name") or "").strip()
+        if not name:
+            continue
+        pid = row.get("pitcher_id")
+        if pid in seen_pitchers:
+            continue
+        seen_pitchers.add(pid)
+        cleaned_strikeouts.append(row)
     return {
-        "strikeout_projections": _query_recent(
-            db, StrikeoutProjections, "date", target_date, limit, tz=tz
-        ),
+        "strikeout_projections": cleaned_strikeouts,
         "game_projections": _query_recent(
             db, GameProjections, "date", target_date, limit, tz=tz
         ),

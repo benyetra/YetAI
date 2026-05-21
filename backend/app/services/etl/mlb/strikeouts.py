@@ -631,11 +631,29 @@ def fetch_and_update_app_data():
         pitchers, build_stats = fetch_pitcher_data()
         built = len(pitchers)
 
+        if not pitchers:
+            # Schedule API hasn't published today's probable starters yet.
+            # Don't wipe the existing slate — leave the previous run's data
+            # in place so users keep seeing *something* until the safety-net
+            # cron retries later in the day.
+            logger.warning(
+                "fetch_pitcher_data returned 0 pitchers; preserving existing "
+                "pred_pitcher rows instead of wiping the table."
+            )
+            stored = db_session.query(Pitcher).count()
+            return stored, built, build_stats
+
         db_session.query(Pitcher).delete()
         db_session.commit()
 
+        seen_pitcher_ids = set()
         for pitcher_stats_data in pitchers:
             pitcher_id = pitcher_stats_data.get("pitcher_id")
+            # Same pitcher can appear in both halves of a doubleheader / from
+            # multiple schedule entries — keep the first occurrence only.
+            if pitcher_id in seen_pitcher_ids:
+                continue
+            seen_pitcher_ids.add(pitcher_id)
             pitcher = Pitcher(
                 pitcher_id=pitcher_id,
                 name=pitcher_stats_data["name"],
