@@ -242,24 +242,39 @@ export default function BetModal({
     }
   };
 
+  const sectionLabel = 'type-label block mb-2';
+  const optionBase =
+    'rounded-lg border p-3 text-left transition-colors border-[var(--border)] hover:border-[var(--border-strong)]';
+  const optionSelected =
+    'border-[var(--accent)] bg-[var(--accent-soft)] ring-1 ring-[var(--accent)]';
+
   if (!isOpen || !game) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 bg-black/70 flex items-center justify-center p-4 z-50">
+      <div
+        className="rounded-xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl border border-[var(--border-strong)]"
+        style={{ background: 'var(--surface)' }}
+      >
         {/* Header */}
-        <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+        <div
+          className="sticky top-0 z-10 flex items-center justify-between p-5 border-b border-[var(--border)]"
+          style={{ background: 'var(--surface)' }}
+        >
           <div>
-            <h2 className="text-2xl font-bold text-gray-900">Place Your Bet</h2>
-            <p className="text-sm text-gray-500 mt-1">
+            <h2 className="text-xl font-semibold tracking-tight" style={{ color: 'var(--text)' }}>
+              Place Your Bet
+            </h2>
+            <p className="text-sm mt-0.5" style={{ color: 'var(--text-2)' }}>
               {game.away_team} @ {game.home_team}
             </p>
           </div>
           <button
             onClick={onClose}
-            className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+            className="p-2 rounded-lg transition-colors hover:bg-[var(--surface-2)]"
+            aria-label="Close"
           >
-            <X className="w-5 h-5 text-gray-500" />
+            <X className="w-5 h-5" style={{ color: 'var(--text-3)' }} />
           </button>
         </div>
 
@@ -329,30 +344,22 @@ export default function BetModal({
         )}
 
         {/* Bet Type Selector */}
-        <div className="p-6 border-b border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Bet Type</label>
-          <div className="grid grid-cols-3 gap-3">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <span className={sectionLabel}>Bet Type</span>
+          <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setBetType('moneyline')}
-              className={`p-3 rounded-lg border-2 transition-all ${
-                betType === 'moneyline'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
+              className={`${optionBase} ${betType === 'moneyline' ? optionSelected : ''}`}
             >
-              <p className="font-medium">Moneyline</p>
-              <p className="text-xs mt-1 opacity-75">Pick the winner</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Moneyline</p>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-3)' }}>Pick the winner</p>
             </button>
             <button
               onClick={() => setBetType('spread')}
-              className={`p-3 rounded-lg border-2 transition-all ${
-                betType === 'spread'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
+              className={`${optionBase} ${betType === 'spread' ? optionSelected : ''}`}
             >
-              <p className="font-medium">Spread</p>
-              <p className="text-xs mt-1 opacity-75">
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Spread</p>
+              <p className="text-xs mt-0.5 mono" style={{ color: 'var(--text-2)' }}>
                 {(() => {
                   const homeSpreadValue = game.home_spread ?? game.spread;
                   return `${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue}`;
@@ -361,68 +368,58 @@ export default function BetModal({
             </button>
             <button
               onClick={() => setBetType('total')}
-              className={`p-3 rounded-lg border-2 transition-all ${
-                betType === 'total'
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-200 hover:border-gray-300'
-              }`}
+              className={`${optionBase} ${betType === 'total' ? optionSelected : ''}`}
             >
-              <p className="font-medium">Total</p>
-              <p className="text-xs mt-1 opacity-75">O/U {game.total}</p>
+              <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Total</p>
+              <p className="text-xs mt-0.5 mono" style={{ color: 'var(--text-2)' }}>O/U {game.total}</p>
             </button>
           </div>
         </div>
 
         {/* Selection */}
-        <div className="p-6 border-b border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Your Selection</label>
-          
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <span className={sectionLabel}>Your Selection</span>
+
           {betType === 'moneyline' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setSelection(game.away_team)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection === game.away_team
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection === game.away_team ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">{game.away_team}</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                  {game.away_team}
+                </p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {formatOdds(game.away_odds)}
                 </p>
               </button>
               <button
                 onClick={() => setSelection(game.home_team)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection === game.home_team
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection === game.home_team ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">{game.home_team}</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                  {game.home_team}
+                </p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {formatOdds(game.home_odds)}
                 </p>
               </button>
             </div>
           )}
-          
+
           {betType === 'spread' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => {
                   const awaySpreadValue = game.away_spread ?? -game.spread;
                   setSelection(`${game.away_team} ${awaySpreadValue > 0 ? '+' : ''}${awaySpreadValue}`);
                 }}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection.includes(game.away_team)
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection.includes(game.away_team) ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">{game.away_team}</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                  {game.away_team}
+                </p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {(() => {
                     const awaySpreadValue = game.away_spread ?? -game.spread;
                     return `${awaySpreadValue > 0 ? '+' : ''}${awaySpreadValue} (-110)`;
@@ -434,14 +431,12 @@ export default function BetModal({
                   const homeSpreadValue = game.home_spread ?? game.spread;
                   setSelection(`${game.home_team} ${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue}`);
                 }}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection.includes(game.home_team)
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection.includes(game.home_team) ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">{game.home_team}</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold leading-snug" style={{ color: 'var(--text)' }}>
+                  {game.home_team}
+                </p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {(() => {
                     const homeSpreadValue = game.home_spread ?? game.spread;
                     return `${homeSpreadValue > 0 ? '+' : ''}${homeSpreadValue} (-110)`;
@@ -450,32 +445,24 @@ export default function BetModal({
               </button>
             </div>
           )}
-          
+
           {betType === 'total' && (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => setSelection(`Over ${game.total}`)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection.includes('Over')
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection.includes('Over') ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">Over</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Over</p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {game.total} (-110)
                 </p>
               </button>
               <button
                 onClick={() => setSelection(`Under ${game.total}`)}
-                className={`p-4 rounded-lg border-2 transition-all ${
-                  selection.includes('Under')
-                    ? 'border-blue-500 bg-blue-50'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
+                className={`${optionBase} ${selection.includes('Under') ? optionSelected : ''}`}
               >
-                <p className="font-medium text-gray-900">Under</p>
-                <p className="text-lg font-bold text-blue-600 mt-1">
+                <p className="text-sm font-semibold" style={{ color: 'var(--text)' }}>Under</p>
+                <p className="type-numeric text-base mt-1" style={{ color: 'var(--accent)' }}>
                   {game.total} (-110)
                 </p>
               </button>
@@ -484,58 +471,68 @@ export default function BetModal({
         </div>
 
         {/* Bet Amount */}
-        <div className="p-6 border-b border-gray-200">
-          <label className="block text-sm font-medium text-gray-700 mb-3">Bet Amount</label>
-          
-          {/* Quick amounts */}
-          <div className="flex space-x-2 mb-4">
+        <div className="px-5 py-4 border-b border-[var(--border)]">
+          <span className={sectionLabel}>Bet Amount</span>
+
+          <div className="flex flex-wrap gap-2 mb-3">
             {quickAmounts.map((quickAmount) => (
               <button
                 key={quickAmount}
                 onClick={() => setAmount(quickAmount.toString())}
-                className={`px-4 py-2 rounded-lg border transition-all ${
+                className={`mono px-3 py-2 rounded-lg border text-sm transition-all ${
                   amount === quickAmount.toString()
-                    ? 'border-blue-500 bg-blue-50 text-blue-700'
-                    : 'border-gray-200 hover:border-gray-300'
+                    ? optionSelected
+                    : 'border-[var(--border)] hover:border-[var(--border-strong)]'
                 }`}
+                style={{ color: 'var(--text)' }}
               >
                 ${quickAmount}
               </button>
             ))}
           </div>
-          
-          {/* Custom amount input */}
+
           <div className="relative">
-            <DollarSign className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+            <DollarSign
+              className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2"
+              style={{ color: 'var(--text-3)' }}
+            />
             <input
               type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => handleAmountChange(e.target.value)}
               placeholder="Enter amount"
-              className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+              className="w-full pl-10 pr-4 py-3 rounded-lg text-lg mono"
             />
           </div>
-          
-          {/* Potential winnings */}
+
           {amount && parseFloat(amount) > 0 && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Bet Amount:</span>
-                  <span className="font-medium">${parseFloat(amount).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span className="text-gray-600">Potential Win:</span>
-                  <span className="font-medium text-green-600">
-                    +${potentialWin.toFixed(2)}
-                  </span>
-                </div>
-                <div className="pt-2 border-t border-gray-200 flex justify-between">
-                  <span className="font-medium text-gray-900">Total Return:</span>
-                  <span className="font-bold text-lg text-gray-900">
-                    ${totalReturn.toFixed(2)}
-                  </span>
-                </div>
+            <div
+              className="mt-3 p-3 rounded-lg border space-y-2"
+              style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex justify-between text-sm">
+                <span style={{ color: 'var(--text-2)' }}>Bet Amount</span>
+                <span className="mono font-medium" style={{ color: 'var(--text)' }}>
+                  ${parseFloat(amount).toFixed(2)}
+                </span>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span style={{ color: 'var(--text-2)' }}>Potential Win</span>
+                <span className="mono font-medium" style={{ color: 'var(--win)' }}>
+                  +${potentialWin.toFixed(2)}
+                </span>
+              </div>
+              <div
+                className="pt-2 flex justify-between items-baseline border-t"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <span className="text-sm font-semibold" style={{ color: 'var(--text)' }}>
+                  Total Return
+                </span>
+                <span className="type-numeric-lg" style={{ color: 'var(--text)' }}>
+                  ${totalReturn.toFixed(2)}
+                </span>
               </div>
             </div>
           )}
@@ -553,41 +550,65 @@ export default function BetModal({
 
         {/* Confirmation Dialog */}
         {showConfirmation && (
-          <div className="p-6 bg-yellow-50 border-b border-yellow-200">
-            <h3 className="font-bold text-gray-900 mb-3 flex items-center">
-              <AlertCircle className="w-5 h-5 text-yellow-600 mr-2" />
+          <div
+            className="px-5 py-4 border-b"
+            style={{
+              background: 'var(--surface-2)',
+              borderColor: 'var(--border)',
+              borderLeft: '3px solid var(--gold)',
+            }}
+          >
+            <h3 className="text-base font-semibold mb-3 flex items-center gap-2" style={{ color: 'var(--text)' }}>
+              <AlertCircle className="w-5 h-5 shrink-0" style={{ color: 'var(--gold)' }} />
               Confirm Your Bet
             </h3>
-            <div className="space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">Selection:</span>
-                <span className="font-medium">{selection}</span>
+            <div
+              className="rounded-lg border p-3 space-y-2.5 text-sm"
+              style={{ background: 'var(--surface)', borderColor: 'var(--border)' }}
+            >
+              <div className="flex justify-between gap-4">
+                <span style={{ color: 'var(--text-3)' }}>Selection</span>
+                <span className="font-medium text-right" style={{ color: 'var(--text)' }}>
+                  {selection}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Odds:</span>
-                <span className="font-medium">{getOdds()}</span>
+              <div className="flex justify-between gap-4">
+                <span style={{ color: 'var(--text-3)' }}>Odds</span>
+                <span className="mono font-medium" style={{ color: 'var(--text)' }}>
+                  {formatOdds(getOdds())}
+                </span>
               </div>
-              <div className="flex justify-between">
-                <span className="text-gray-600">Amount:</span>
-                <span className="font-medium">${parseFloat(amount).toFixed(2)}</span>
+              <div className="flex justify-between gap-4">
+                <span style={{ color: 'var(--text-3)' }}>Amount</span>
+                <span className="mono font-medium" style={{ color: 'var(--text)' }}>
+                  ${parseFloat(amount).toFixed(2)}
+                </span>
               </div>
-              <div className="flex justify-between pt-2 border-t border-yellow-200">
-                <span className="font-medium">Potential Return:</span>
-                <span className="font-bold text-green-600">${totalReturn.toFixed(2)}</span>
+              <div
+                className="flex justify-between gap-4 pt-2 border-t"
+                style={{ borderColor: 'var(--border)' }}
+              >
+                <span className="font-semibold" style={{ color: 'var(--text)' }}>
+                  Potential Return
+                </span>
+                <span className="mono font-bold text-base" style={{ color: 'var(--win)' }}>
+                  ${totalReturn.toFixed(2)}
+                </span>
               </div>
             </div>
-            <div className="flex space-x-3 mt-4">
+            <div className="flex gap-2 mt-4">
               <button
                 onClick={confirmBet}
                 disabled={isProcessing}
-                className="flex-1 bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+                className="flex-1 py-3 rounded-lg font-semibold text-white disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                style={{ background: 'var(--win)' }}
               >
                 {isProcessing ? 'Processing...' : 'Confirm Bet'}
               </button>
               <button
                 onClick={() => setShowConfirmation(false)}
                 disabled={isProcessing}
-                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg hover:bg-gray-300 disabled:opacity-50 font-medium transition-colors"
+                className="btn-secondary flex-1 py-3 rounded-lg font-medium disabled:opacity-50"
               >
                 Cancel
               </button>
@@ -597,35 +618,35 @@ export default function BetModal({
 
         {/* Action Buttons */}
         {!showConfirmation && !betPlaced && (
-          <div className="p-6 bg-gray-50 space-y-3">
-            {/* YetAI Internal Bet */}
+          <div className="px-5 py-4 space-y-3" style={{ background: 'var(--bg-elev)' }}>
             <button
               onClick={handlePlaceBet}
               disabled={!selection || !amount || parseFloat(amount) <= 0}
-              className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors"
+              className="btn-primary w-full justify-center py-3 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Place Bet on YetAI
+              Review &amp; Place Bet
             </button>
 
-            {/* Divider */}
-            <div className="relative">
+            <div className="relative py-1">
               <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-gray-300"></div>
+                <div className="w-full border-t" style={{ borderColor: 'var(--border)' }} />
               </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-gray-50 text-gray-500">or</span>
+              <div className="relative flex justify-center text-xs">
+                <span className="px-2" style={{ background: 'var(--bg-elev)', color: 'var(--text-3)' }}>
+                  or
+                </span>
               </div>
             </div>
 
-            {/* FanDuel External Bet */}
             <button
               onClick={handlePlaceOnFanDuel}
               disabled={!selection || loadingFanDuel}
-              className="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium transition-colors flex items-center justify-center space-x-2"
+              className="w-full py-3 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-white"
+              style={{ background: 'var(--win)' }}
             >
               {loadingFanDuel ? (
                 <>
-                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   <span>Opening FanDuel...</span>
                 </>
               ) : (
@@ -636,8 +657,7 @@ export default function BetModal({
               )}
             </button>
 
-            {/* Responsible Gambling Notice */}
-            <p className="text-xs text-gray-500 text-center mt-4">
+            <p className="text-xs text-center pt-1" style={{ color: 'var(--text-4)' }}>
               Please bet responsibly. If you need help, call 1-800-GAMBLER.
             </p>
           </div>

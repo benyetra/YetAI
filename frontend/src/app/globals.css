@@ -103,6 +103,17 @@ h6 {
   background-color: var(--accent-soft) !important;
 }
 
+/* Warning panels — avoid light yellow + light text on dark theme */
+.bg-yellow-50,
+.bg-yellow-100 {
+  background-color: color-mix(in oklab, var(--gold) 14%, var(--surface-2)) !important;
+  color: var(--text) !important;
+}
+
+.border-yellow-200 {
+  border-color: color-mix(in oklab, var(--gold) 35%, transparent) !important;
+}
+
 .hover\:bg-gray-50:hover,
 .hover\:bg-gray-100:hover {
   background-color: rgba(255, 255, 255, 0.03) !important;
