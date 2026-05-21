@@ -66,13 +66,25 @@ PLAYER_PROP_MARKETS = {
         "player_first_goal",  # First goal scorer
     ],
     "baseball_mlb": [
-        # Only include markets that are confirmed to work with The Odds API
-        "player_hits",  # Hits
-        "player_total_bases",  # Total bases
-        "player_strikeouts",  # Batter strikeouts
-        "player_pitcher_strikeouts",  # Pitcher strikeouts
-        "player_hits_allowed",  # Hits allowed (pitcher)
-        "player_walks",  # Walks (batter)
+        # MLB props on The Odds API are batter_* / pitcher_*, not player_*.
+        # Reference: https://the-odds-api.com/sports-odds-data/baseball-odds.html
+        "batter_home_runs",  # Anytime home run
+        "batter_hits",  # Hits
+        "batter_total_bases",  # Total bases
+        "batter_rbis",  # RBIs
+        "batter_runs_scored",  # Runs scored
+        "batter_strikeouts",  # Batter strikeouts
+        "batter_walks",  # Walks (batter)
+        "batter_singles",  # Singles
+        "batter_doubles",  # Doubles
+        "batter_triples",  # Triples
+        "batter_stolen_bases",  # Stolen bases
+        "pitcher_strikeouts",  # Pitcher strikeouts
+        "pitcher_hits_allowed",  # Hits allowed
+        "pitcher_walks",  # Walks allowed
+        "pitcher_earned_runs",  # Earned runs allowed
+        "pitcher_outs",  # Outs recorded
+        "pitcher_record_a_win",  # Pitcher to record a win
     ],
 }
 
@@ -169,13 +181,30 @@ class PlayerPropsService:
             )
 
             if not markets_to_fetch:
-                logger.warning(f"No player prop markets available for event {event_id}")
-                return {
-                    "event_id": event_id,
-                    "sport_key": sport,
-                    "markets": {},
-                    "error": "No player prop markets available for this event",
-                }
+                # Discovery can come back empty when the event-level markets
+                # endpoint isn't available on this Odds API plan, or when
+                # FanDuel hasn't posted props yet for the event. Fall back to
+                # the per-sport list so we still try to fetch real props
+                # instead of bailing out with an empty response.
+                fallback = PLAYER_PROP_MARKETS.get(sport, [])
+                if fallback:
+                    logger.info(
+                        "Markets discovery empty for %s — falling back to "
+                        "the static per-sport list (%d markets).",
+                        event_id,
+                        len(fallback),
+                    )
+                    markets_to_fetch = fallback
+                else:
+                    logger.warning(
+                        f"No player prop markets available for event {event_id}"
+                    )
+                    return {
+                        "event_id": event_id,
+                        "sport_key": sport,
+                        "markets": {},
+                        "error": "No player prop markets available for this event",
+                    }
         else:
             markets_to_fetch = markets
 
