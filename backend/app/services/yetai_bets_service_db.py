@@ -264,15 +264,36 @@ class YetAIBetsServiceDB:
             logger.error(f"Error getting active bets: {e}")
             return []
 
-    async def get_all_bets(self, include_settled: bool = True) -> List[Dict]:
-        """Get all YetAI Bets for admin view from database"""
+    async def get_all_bets(
+        self, include_settled: bool = True, include_stale_pending: bool = False
+    ) -> List[Dict]:
+        """Get all YetAI Bets for admin view from database.
+
+        By default, pending bets whose game started more than 24 hours ago are
+        hidden — they are considered stale and need verification/manual review.
+        Set include_stale_pending=True for admin views that need everything.
+        """
         try:
             db = SessionLocal()
             try:
+                from datetime import datetime, timedelta
+
                 query = db.query(YetAIBet)
 
                 if not include_settled:
                     query = query.filter(YetAIBet.status == "pending")
+
+                if not include_stale_pending:
+                    stale_cutoff = datetime.utcnow() - timedelta(hours=24)
+                    # Exclude pending bets where the game started >24h ago.
+                    # Settled bets and pending bets without a commence_time are kept.
+                    query = query.filter(
+                        ~(
+                            (YetAIBet.status == "pending")
+                            & (YetAIBet.commence_time != None)
+                            & (YetAIBet.commence_time < stale_cutoff)
+                        )
+                    )
 
                 # Sort by created_at (newest first)
                 all_bets = query.order_by(desc(YetAIBet.created_at)).all()
@@ -706,13 +727,41 @@ class YetAIBetsServiceDB:
                             f"Settled YetAI bet {bet.id[:8]} via DB: {bet.title} - {result_status}"
                         )
 
+            # Second pass: auto-expire bets whose games started >24h ago and
+            # still couldn't be settled (missing game_id, missing Game row, or
+            # game never marked FINAL). They get marked pending_manual_review
+            # so they leave the user-facing active list.
+            from datetime import timedelta
+
+            stale_cutoff = datetime.utcnow() - timedelta(hours=24)
+            total_expired = 0
+            for bet in pending_bets:
+                if bet.status != "pending":
+                    continue
+                if bet.commence_time and bet.commence_time < stale_cutoff:
+                    bet.status = "pending_manual_review"
+                    bet.settled_at = datetime.utcnow()
+                    if not bet.result:
+                        bet.result = (
+                            "Auto-expired: game started >24h ago without "
+                            "a final score on file"
+                        )
+                    total_expired += 1
+                    logger.info(
+                        f"Auto-expired stale YetAI bet {bet.id[:8]}: {bet.title}"
+                    )
+
             db.commit()
-            logger.info(f"✅ YetAI verification complete: {total_settled} bets settled")
+            logger.info(
+                f"✅ YetAI verification complete: {total_settled} settled, "
+                f"{total_expired} auto-expired"
+            )
 
             return {
                 "success": True,
                 "verified": len(pending_bets),
                 "settled": total_settled,
+                "expired": total_expired,
             }
 
         except Exception as e:
