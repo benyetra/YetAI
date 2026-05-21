@@ -12,7 +12,6 @@ export interface YetaiBetsScreenProps {
   roiLabel?: string;
   modelConfidence?: string;
   onAddToSlip?: (pick: DesignPick) => void;
-  showMascot?: boolean;
 }
 
 export default function YetaiBetsScreen({
@@ -21,7 +20,6 @@ export default function YetaiBetsScreen({
   roiLabel,
   modelConfidence,
   onAddToSlip,
-  showMascot = true,
 }: YetaiBetsScreenProps) {
   const [filter, setFilter] = useState('All');
   const featured = picks[0];
@@ -84,7 +82,7 @@ export default function YetaiBetsScreen({
       </div>
 
       {featured ? (
-        <HeroAIPick pick={featured} showMascot={showMascot} onAdd={onAddToSlip ? () => onAddToSlip(featured) : undefined} />
+        <HeroAIPick pick={featured} onAdd={onAddToSlip ? () => onAddToSlip(featured) : undefined} />
       ) : (
         <div className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
           <Sparkles size={24} style={{ margin: '0 auto 8px', opacity: 0.5 }} />

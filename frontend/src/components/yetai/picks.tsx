@@ -2,7 +2,7 @@
 
 import React from 'react';
 import { Crown, Eye, Plus, Sparkles } from 'lucide-react';
-import { ConfidenceBar, LeagueChip, TeamGlyph, YetiHero } from './primitives';
+import { ConfidenceBar, LeagueChip, TeamGlyph } from './primitives';
 import { fmtOdds, teamAbbr } from '@/lib/yetai-format';
 import type { DesignPick } from './types';
 
@@ -67,11 +67,9 @@ export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void
 
 export function HeroAIPick({
   pick,
-  showMascot = true,
   onAdd,
 }: {
   pick: DesignPick;
-  showMascot?: boolean;
   onAdd?: () => void;
 }) {
   const [away, home] = splitMatchup(pick.matchup);
@@ -138,7 +136,6 @@ export function HeroAIPick({
           )}
         </div>
       </div>
-      {showMascot && <YetiHero size={200} className="hero-yeti" />}
     </div>
   );
 }

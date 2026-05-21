@@ -165,15 +165,3 @@ export function Sparkline({
   );
 }
 
-export function YetiHero({ size = 200, className }: { size?: number; className?: string }) {
-  return (
-    <img
-      src="/logo.png"
-      alt=""
-      width={size}
-      height={size}
-      className={className}
-      style={{ opacity: 0.15, objectFit: 'contain' }}
-    />
-  );
-}

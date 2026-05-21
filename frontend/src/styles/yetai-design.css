@@ -356,14 +356,6 @@ input { font: inherit; }
   background: linear-gradient(135deg, transparent 60%, var(--accent-soft));
   pointer-events: none; opacity: 0.4;
 }
-.hero-yeti {
-  position: absolute; right: 20px; bottom: -10px;
-  width: 180px; height: 180px;
-  opacity: 0.95;
-  pointer-events: none;
-}
-.hero-yeti.hidden { display: none; }
-
 /* AI Pick card */
 .pick {
   display: flex; flex-direction: column;
