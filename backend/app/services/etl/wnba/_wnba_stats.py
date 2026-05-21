@@ -52,7 +52,7 @@ def fetch_team_dashboard(
     """League-wide team dashboard. measure_type ∈ {Base, Advanced, Defense, ...}."""
     def call():
         return leaguedashteamstats.LeagueDashTeamStats(
-            league_id=LEAGUE_ID,
+            league_id_nullable=LEAGUE_ID,
             season=season,
             season_type_all_star="Regular Season",
             measure_type_detailed_defense=measure_type,
@@ -121,7 +121,7 @@ def fetch_league_player_stats(
     """League-wide per-player season stats."""
     def call():
         return leaguedashplayerstats.LeagueDashPlayerStats(
-            league_id=LEAGUE_ID,
+            league_id_nullable=LEAGUE_ID,
             season=season,
             season_type_all_star="Regular Season",
             measure_type_detailed_defense=measure_type,

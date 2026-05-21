@@ -15,7 +15,8 @@ def test_get_team_dashboard_passes_league_id_10():
 
     cls.assert_called_once()
     kwargs = cls.call_args.kwargs
-    assert kwargs.get("league_id") == "10"
+    # nba_api uses `league_id_nullable` for LeagueDashTeamStats — pinned to "10" for WNBA
+    assert kwargs.get("league_id_nullable") == "10"
     assert kwargs.get("season") == "2026"
     assert rows[0]["TEAM_NAME"] == "New York Liberty"
 
