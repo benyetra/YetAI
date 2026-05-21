@@ -71,6 +71,38 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "schedule": crontab(hour=3, minute=30),
     },
+    # === WNBA ETL pipeline (Phase 1) — added 2026-05-21 ===
+    # All entries are season-gated within the task body (May 1 – October 31).
+    "wnba-update-pipeline-daily": {
+        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "schedule": crontab(hour=3, minute=0),
+    },
+    "wnba-update-game-lines-every-30m": {
+        "task": "app.tasks.etl_pipeline.wnba.update_game_lines",
+        "schedule": crontab(minute="*/30"),
+        "options": {"expires": 1500},
+    },
+    "wnba-update-injuries-every-2h": {
+        "task": "app.tasks.etl_pipeline.wnba.update_injury_status",
+        "schedule": crontab(minute=0, hour="*/2"),
+        "options": {"expires": 6600},
+    },
+    "wnba-projectors-pregame-hourly": {
+        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "schedule": crontab(minute=0, hour="9-22"),
+    },
+    "wnba-store-actuals-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.store_actuals",
+        "schedule": crontab(hour=4, minute=0),
+    },
+    "wnba-totals-accuracy-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.totals_accuracy",
+        "schedule": crontab(hour=5, minute=0),
+    },
+    "wnba-spreads-accuracy-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.spreads_accuracy",
+        "schedule": crontab(hour=5, minute=10),
+    },
     # First run at 10 AM ET — MLB probable starters are usually complete by
     # then. Safety net at 2 PM ET catches anything that wasn't posted earlier
     # (the pipeline preserves existing rows when the schedule API is empty,

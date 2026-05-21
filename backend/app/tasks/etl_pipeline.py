@@ -663,3 +663,132 @@ def run_nhl_update_pipeline(self) -> dict:
     """
     logger.info("NHL update pipeline starting (task_id=%s)", self.request.id)
     return _run_phases("nhl", NHL_PHASES)
+
+
+# =============================================================================
+# WNBA sub-tasks (Phase 1 — added 2026-05-21)
+# Spec: docs/superpowers/specs/2026-05-21-wnba-support-design.md
+# Plan: docs/superpowers/plans/2026-05-21-wnba-phase-1.md
+# =============================================================================
+
+from datetime import date as _date  # noqa: E402
+
+from app.services.etl.wnba import (  # noqa: E402
+    spread_projector as _wnba_spread_projector,
+    spreads_accuracy_tracker as _wnba_spreads_accuracy,
+    store_actuals as _wnba_store_actuals,
+    totals_accuracy_tracker as _wnba_totals_accuracy,
+    totals_projector as _wnba_totals_projector,
+    update_game_lines as _wnba_update_game_lines,
+    update_injury_status as _wnba_update_injury,
+    update_team_defense_stats as _wnba_update_def,
+    update_team_offense_stats as _wnba_update_off,
+    update_team_roster as _wnba_update_roster,
+)
+
+
+def _wnba_in_season() -> bool:
+    """WNBA runs May 1 – October 31 (Eastern). Outside this window all WNBA
+    jobs no-op. Recomputed each call so workers do not need a restart at the
+    season boundary.
+    """
+    today = _date.today()
+    return _date(today.year, 5, 1) <= today <= _date(today.year, 10, 31)
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_team_roster")
+def wnba_update_team_roster():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_roster.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_team_offense_stats")
+def wnba_update_team_offense_stats():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_off.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_team_defense_stats")
+def wnba_update_team_defense_stats():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_def.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_injury_status")
+def wnba_update_injury_status():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_injury.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_game_lines")
+def wnba_update_game_lines():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_game_lines.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.totals_projector")
+def wnba_totals_projector():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_totals_projector.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.spread_projector")
+def wnba_spread_projector():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_spread_projector.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.store_actuals")
+def wnba_store_actuals():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_store_actuals.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.totals_accuracy")
+def wnba_totals_accuracy():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_totals_accuracy.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.spreads_accuracy")
+def wnba_spreads_accuracy():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_spreads_accuracy.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.run_wnba_update_pipeline", bind=True)
+def run_wnba_update_pipeline(self) -> dict:
+    """Daily WNBA orchestrator. Mirrors run_nba_update_pipeline."""
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+
+    logger.info("WNBA update pipeline starting (task_id=%s)", self.request.id)
+    results: dict[str, dict] = {}
+    for label, mod in [
+        ("update_team_roster", _wnba_update_roster),
+        ("update_team_offense_stats", _wnba_update_off),
+        ("update_team_defense_stats", _wnba_update_def),
+        ("update_injury_status", _wnba_update_injury),
+        ("update_game_lines", _wnba_update_game_lines),
+        ("totals_projector", _wnba_totals_projector),
+        ("spread_projector", _wnba_spread_projector),
+        ("store_actuals", _wnba_store_actuals),
+        ("totals_accuracy", _wnba_totals_accuracy),
+        ("spreads_accuracy", _wnba_spreads_accuracy),
+    ]:
+        try:
+            results[label] = mod.run()
+        except Exception as exc:
+            logger.exception("WNBA pipeline step %s failed", label)
+            results[label] = {"status": "error", "error": str(exc)}
+    return {"status": "ok", "results": results}
