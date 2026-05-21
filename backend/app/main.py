@@ -758,6 +758,8 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         finally:
             db.close()
 
+        daily_pnl = await analytics_service.get_daily_pnl(user_id, days=14)
+
         # Calculate weekly and monthly changes
         monthly_summary = stats.get("monthly_summary", {})
         weekly_bet_change = trends.get("recent_period", {}).get("total_bets", 0)
@@ -779,6 +781,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             "accuracy_change": accuracy_change,
             "profit_change": profit_change,
             "trend_direction": trends.get("trend_direction", "stable"),
+            "daily_pnl": daily_pnl,
         }
 
         # Return in the format expected by frontend
@@ -834,6 +837,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "accuracy_change": 0,
                 "profit_change": 0,
                 "trend_direction": "stable",
+                "daily_pnl": [],
             },
             "metrics": {
                 "total_predictions": 0,

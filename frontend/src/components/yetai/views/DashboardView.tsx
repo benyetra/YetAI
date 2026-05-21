@@ -49,8 +49,6 @@ export default function DashboardView() {
           setStreak(ps.win_streak ?? 0);
           if (Array.isArray(ps.daily_pnl)) {
             setDailyPnl(ps.daily_pnl);
-          } else if (typeof ps.profit_change === 'number') {
-            setDailyPnl(Array.from({ length: 14 }, (_, i) => (i % 3 === 0 ? ps.profit_change / 5 : -ps.profit_change / 8)));
           }
         }
 

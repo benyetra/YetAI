@@ -700,6 +700,47 @@ class BettingAnalyticsService:
             logger.error(f"Error getting performance trend: {e}")
             return {}
 
+    async def get_daily_pnl(self, user_id: int, days: int = 14) -> List[float]:
+        """Return daily realized P&L for the last `days` days (oldest first)."""
+        db = SessionLocal()
+        try:
+            now = datetime.now()
+            start = (now - timedelta(days=days - 1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+
+            bets = (
+                db.query(SimpleUnifiedBet)
+                .filter(
+                    and_(
+                        SimpleUnifiedBet.user_id == user_id,
+                        SimpleUnifiedBet.placed_at >= start,
+                        SimpleUnifiedBet.parent_bet_id.is_(None),
+                        SimpleUnifiedBet.status.in_(["won", "lost"]),
+                    )
+                )
+                .all()
+            )
+
+            buckets = [0.0] * days
+            for b in bets:
+                placed = b.settled_at or b.placed_at
+                if not placed:
+                    continue
+                idx = (placed.date() - start.date()).days
+                if 0 <= idx < days:
+                    if b.status == "won":
+                        buckets[idx] += float((b.potential_win or 0) - (b.amount or 0))
+                    elif b.status == "lost":
+                        buckets[idx] -= float(b.amount or 0)
+
+            return [round(v, 2) for v in buckets]
+        except Exception as e:
+            logger.error(f"Error computing daily PnL: {e}")
+            return []
+        finally:
+            db.close()
+
     async def _generate_insights(
         self,
         user_bets: List,
