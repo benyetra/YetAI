@@ -2717,3 +2717,368 @@ class PropAlertLog(Base):
     __table_args__ = (
         UniqueConstraint("pick_id", "play_id", "alert_type", name="unique_prop_alert"),
     )
+
+
+# =============================================================================
+# WNBA PREDICTION MODELS
+# Parallel to the NBA classes above. Spec: docs/superpowers/specs/2026-05-21-wnba-support-design.md
+# =============================================================================
+
+
+class WNBATeamRoster(Base):
+    __tablename__ = "pred_wnba_team_roster"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, nullable=False)
+    player_id = Column(Integer, nullable=False)
+    player_name = Column(String(100), nullable=False)
+    last_updated = Column(DateTime, nullable=False)
+    position = Column(String, nullable=True)
+
+
+class WNBATeamOffenseStats(Base):
+    __tablename__ = "pred_wnba_team_offense_stats"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, unique=True, nullable=False)
+    team_name = Column(String(100), nullable=False)
+    games_played = Column(Integer, nullable=True)
+    turnovers_per_game = Column(Float, nullable=True)
+    pace = Column(Float, nullable=True)
+    points_per_game = Column(Float, nullable=True)
+    assists_per_game = Column(Float, nullable=True)
+    offensive_rebounds_per_game = Column(Float, nullable=True)
+    field_goals_made_per_game = Column(Float, nullable=True)
+    field_goal_percentage = Column(Float, nullable=True)
+    three_point_percentage = Column(Float, nullable=True)
+
+
+class WNBATeamDefenseStats(Base):
+    __tablename__ = "pred_wnba_team_defense_stats"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, unique=True, nullable=False)
+    team_name = Column(String(100), nullable=True)
+    points_allowed_per_game = Column(Float, nullable=True)
+    assists_allowed_per_game = Column(Float, nullable=True)
+    rebounds_allowed_per_game = Column(Float, nullable=True)
+    offensive_rebounds_allowed_per_game = Column(Float, nullable=True)
+    defensive_rebounds = Column(Float, nullable=True)
+    field_goal_pct_allowed = Column(Float, nullable=True)
+    three_pt_pct_allowed = Column(Float, nullable=True)
+    three_pt_made_allowed_per_game = Column(Float, nullable=True)
+    three_pt_attempted_allowed_per_game = Column(Float, nullable=True)
+    free_throws_allowed_per_game = Column(Float, nullable=True)
+    turnovers = Column(Float, nullable=True)
+    steals = Column(Float, nullable=True)
+    blocks = Column(Float, nullable=True)
+    personal_fouls = Column(Float, nullable=True)
+    pace = Column(Float, nullable=True)
+    defensive_rating = Column(Float, nullable=True)
+    last_updated = Column(DateTime, nullable=True)
+
+
+class WNBARecentGames(Base):
+    __tablename__ = "pred_wnba_recent_games"
+    id = Column(Integer, primary_key=True)
+    player_id = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False)
+    opponent_team_id = Column(Integer, nullable=False)
+    points = Column(Float)
+    fg_attempts = Column(Float)
+    fg_percentage = Column(Float)
+    three_pt_attempts = Column(Float)
+    three_pt_percentage = Column(Float)
+    three_pt_made = Column(Float)
+    ft_attempts = Column(Float)
+    ft_percentage = Column(Float)
+    minutes = Column(Float)
+    field_goals_made = Column(Float)
+    free_throws_made = Column(Float)
+    offensive_rebounds = Column(Float)
+    defensive_rebounds = Column(Float)
+    rebounds = Column(Float)
+    assists = Column(Float)
+    turnovers = Column(Float)
+    steals = Column(Float)
+    blocks = Column(Float)
+    personal_fouls = Column(Float)
+    home_game = Column(Boolean, nullable=True)
+    true_shooting_percentage = Column(Float, nullable=True)
+    usage_percentage = Column(Float, nullable=True)
+    assist_percentage = Column(Float, nullable=True)
+    effective_field_goal_percentage = Column(Float, nullable=True)
+    pace = Column(Float, nullable=True)
+    possessions = Column(Float, nullable=True)
+    plus_minus = Column(Float, nullable=True)
+    defensive_rating = Column(Float, nullable=True)
+    offensive_rating = Column(Float, nullable=True)
+    net_rating = Column(Float, nullable=True)
+    __table_args__ = (
+        UniqueConstraint("player_id", "game_date", name="unique_wnba_recent_games_player_game_date"),
+    )
+
+
+class WNBAPlayerInjuryStatus(Base):
+    __tablename__ = "pred_wnba_player_injury_status"
+    id = Column(Integer, primary_key=True)
+    player_id = Column(Integer, nullable=False, index=True)
+    player_name = Column(String(100), nullable=False)
+    status = Column(String(20), nullable=False, default="healthy")
+    injury_type = Column(String(100), nullable=True)
+    games_missed = Column(Integer, default=0)
+    last_game_date = Column(Date, nullable=True)
+    expected_return_date = Column(Date, nullable=True)
+    date_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    date_injured = Column(Date, nullable=True)
+    __table_args__ = (UniqueConstraint("player_id", name="unique_wnba_player_injury"),)
+
+
+class WNBAGameLines(Base):
+    __tablename__ = "pred_wnba_game_lines"
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    odds_api_event_id = Column(String(100), nullable=True)
+    game_time = Column(DateTime, nullable=True)
+    spread_home = Column(Float, nullable=True)
+    spread_away = Column(Float, nullable=True)
+    spread_home_odds = Column(Integer, nullable=True)
+    spread_away_odds = Column(Integer, nullable=True)
+    total = Column(Float, nullable=True)
+    over_odds = Column(Integer, nullable=True)
+    under_odds = Column(Integer, nullable=True)
+    moneyline_home = Column(Integer, nullable=True)
+    moneyline_away = Column(Integer, nullable=True)
+    bookmaker = Column(String(50), nullable=True, default="consensus")
+    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_game_line"),
+    )
+
+
+class WNBATotalsProjections(Base):
+    __tablename__ = "pred_wnba_totals_projections"
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    projected_total = Column(Float, nullable=False)
+    home_projected_score = Column(Float, nullable=True)
+    away_projected_score = Column(Float, nullable=True)
+    base_projection = Column(Float, nullable=True)
+    expected_pace = Column(Float, nullable=True)
+    home_offensive_rating = Column(Float, nullable=True)
+    away_offensive_rating = Column(Float, nullable=True)
+    home_defensive_rating = Column(Float, nullable=True)
+    away_defensive_rating = Column(Float, nullable=True)
+    injury_adjustment = Column(Float, nullable=True, default=0.0)
+    rest_adjustment = Column(Float, nullable=True, default=0.0)
+    venue_adjustment = Column(Float, nullable=True, default=0.0)
+    form_adjustment = Column(Float, nullable=True, default=0.0)
+    total_adjustment = Column(Float, nullable=True, default=0.0)
+    market_total = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    injury_report = Column(JSON, nullable=True)
+    factors = Column(JSON, nullable=True)
+    home_starters = Column(JSON, nullable=True)
+    away_starters = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_projection"),
+    )
+
+
+class WNBATotalsActuals(Base):
+    __tablename__ = "pred_wnba_totals_actuals"
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    home_score = Column(Integer, nullable=False)
+    away_score = Column(Integer, nullable=False)
+    actual_total = Column(Integer, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_actual"),
+    )
+
+
+class WNBATeamPaceEfficiency(Base):
+    __tablename__ = "pred_wnba_team_pace_efficiency"
+    id = Column(Integer, primary_key=True)
+    team_id = Column(Integer, nullable=False)
+    team_name = Column(String(100), nullable=False)
+    date = Column(Date, nullable=False, index=True)
+    pace = Column(Float, nullable=True)
+    pace_rank = Column(Integer, nullable=True)
+    pace_l5 = Column(Float, nullable=True)
+    pace_l10 = Column(Float, nullable=True)
+    home_pace = Column(Float, nullable=True)
+    away_pace = Column(Float, nullable=True)
+    offensive_rating = Column(Float, nullable=True)
+    offensive_rating_rank = Column(Integer, nullable=True)
+    offensive_rating_l5 = Column(Float, nullable=True)
+    offensive_rating_l10 = Column(Float, nullable=True)
+    points_per_game = Column(Float, nullable=True)
+    defensive_rating = Column(Float, nullable=True)
+    defensive_rating_rank = Column(Integer, nullable=True)
+    defensive_rating_l5 = Column(Float, nullable=True)
+    defensive_rating_l10 = Column(Float, nullable=True)
+    points_allowed_per_game = Column(Float, nullable=True)
+    net_rating = Column(Float, nullable=True)
+    true_shooting_pct = Column(Float, nullable=True)
+    effective_fg_pct = Column(Float, nullable=True)
+    three_pt_rate = Column(Float, nullable=True)
+    three_pt_pct = Column(Float, nullable=True)
+    free_throw_rate = Column(Float, nullable=True)
+    avg_game_total = Column(Float, nullable=True)
+    avg_home_total = Column(Float, nullable=True)
+    avg_away_total = Column(Float, nullable=True)
+    over_under_record = Column(String(20), nullable=True)
+    games_played = Column(Integer, nullable=True)
+    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("team_id", "date", name="unique_wnba_team_pace_efficiency"),
+    )
+
+
+class WNBATotalsAccuracy(Base):
+    __tablename__ = "pred_wnba_totals_accuracy"
+    id = Column(Integer, primary_key=True)
+    date_range_start = Column(Date, nullable=False)
+    date_range_end = Column(Date, nullable=False)
+    total_games = Column(Integer, nullable=False)
+    mean_absolute_error = Column(Float, nullable=True)
+    root_mean_square_error = Column(Float, nullable=True)
+    directional_accuracy = Column(Float, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WNBASpreadProjections(Base):
+    __tablename__ = "pred_wnba_spread_projections"
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    projected_margin = Column(Float, nullable=False)
+    home_win_prob = Column(Float, nullable=False)
+    home_elo = Column(Float, nullable=True)
+    away_elo = Column(Float, nullable=True)
+    home_court_advantage = Column(Float, nullable=True)
+    pace_adjustment = Column(Float, nullable=True)
+    market_spread_home = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    factors = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_projection"),
+    )
+
+
+class WNBASpreadActuals(Base):
+    __tablename__ = "pred_wnba_spread_actuals"
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    home_score = Column(Integer, nullable=False)
+    away_score = Column(Integer, nullable=False)
+    actual_margin = Column(Integer, nullable=False)
+    home_won = Column(Boolean, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_actual"),
+    )
+
+
+class WNBASpreadAccuracy(Base):
+    __tablename__ = "pred_wnba_spread_accuracy"
+    id = Column(Integer, primary_key=True)
+    date_range_start = Column(Date, nullable=False)
+    date_range_end = Column(Date, nullable=False)
+    total_games = Column(Integer, nullable=False)
+    spread_mae = Column(Float, nullable=True)
+    ats_hit_rate = Column(Float, nullable=True)
+    win_prob_brier_score = Column(Float, nullable=True)
+    calibration_buckets = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class WNBATodayActivePlayers(Base):
+    __tablename__ = "pred_wnba_today_active_players"
+    id = Column(Integer, primary_key=True)
+    player_id = Column(Integer, nullable=False)
+    player_name = Column(String(100), nullable=False)
+    team_id = Column(Integer, nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_id = Column(Integer, nullable=True)
+    opponent_team_name = Column(String(100), nullable=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_game = Column(Boolean, nullable=True)
+    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint("player_id", "game_date", name="unique_wnba_today_active"),
+    )
+
+
+# Phase 2 prop projection / actual tables.
+# Defined here so Phase 2 (Plan B) does not need new SQLAlchemy classes — only ETL code.
+
+def _make_prop_projection(prop: str):
+    table_name = f"pred_wnba_{prop}_projections"
+    class_name = f"WNBA{prop.capitalize()}Projections"
+    attrs = {
+        "__tablename__": table_name,
+        "id": Column(Integer, primary_key=True),
+        "date": Column(Date, nullable=False, index=True),
+        "player_id": Column(Integer, nullable=False),
+        "player_name": Column(String, nullable=True),
+        "opponent_team_name": Column(String, nullable=True),
+        f"projected_{prop}": Column(Float, nullable=False),
+        "market_line": Column(Float, nullable=True),
+        "edge": Column(Float, nullable=True),
+        "recommendation": Column(String(20), nullable=True),
+        "confidence_score": Column(Float, nullable=True),
+        "created_at": Column(DateTime, nullable=False, default=datetime.utcnow),
+        "__table_args__": (
+            UniqueConstraint("player_id", "date", name=f"unique_wnba_{prop}_projection"),
+        ),
+    }
+    return type(class_name, (Base,), attrs)
+
+
+def _make_prop_actuals(prop: str):
+    table_name = f"pred_wnba_{prop}_actuals"
+    class_name = f"WNBA{prop.capitalize()}Actuals"
+    attrs = {
+        "__tablename__": table_name,
+        "id": Column(Integer, primary_key=True),
+        "date": Column(Date, nullable=False, index=True),
+        "player_id": Column(Integer, nullable=False),
+        "player_name": Column(String, nullable=True),
+        f"actual_{prop}": Column(Float, nullable=False),
+        "created_at": Column(DateTime, nullable=False, default=datetime.utcnow),
+        "__table_args__": (
+            UniqueConstraint("player_id", "date", name=f"unique_wnba_{prop}_actual"),
+        ),
+    }
+    return type(class_name, (Base,), attrs)
+
+
+WNBAPointsProjections = _make_prop_projection("points")
+WNBAPointsActuals = _make_prop_actuals("points")
+WNBAAssistsProjections = _make_prop_projection("assists")
+WNBAAssistsActuals = _make_prop_actuals("assists")
+WNBAReboundsProjections = _make_prop_projection("rebounds")
+WNBAReboundsActuals = _make_prop_actuals("rebounds")
