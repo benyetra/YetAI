@@ -67,13 +67,24 @@ def _query_recent(
     date_col_name: str | None,
     target_date: date_type | None,
     limit: int,
+    *,
+    dedupe_keys: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     q = db.query(model)
     if date_col_name and target_date is not None:
         q = q.filter(getattr(model, date_col_name) == target_date)
     if hasattr(model, "id"):
         q = q.order_by(model.id.desc())
-    return [_row_to_dict(r) for r in q.limit(limit).all()]
+    fetch_limit = limit * 5 if dedupe_keys else limit
+    rows = [_row_to_dict(r) for r in q.limit(fetch_limit).all()]
+    if not dedupe_keys:
+        return rows[:limit]
+    latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in dedupe_keys)
+        if key not in latest:
+            latest[key] = row
+    return list(latest.values())[:limit]
 
 
 @router.get("/health")
@@ -157,12 +168,27 @@ def nhl_predictions(
     """Recent NHL props: goalie saves, player SOG, game totals O/U."""
     return {
         "goalie_predictions": _query_recent(
-            db, NHLGoaliePredictions, "game_date", target_date, limit
+            db,
+            NHLGoaliePredictions,
+            "game_date",
+            target_date,
+            limit,
+            dedupe_keys=("goalie_id", "game_date"),
         ),
         "player_shots": _query_recent(
-            db, NHLPlayerShotsPredictions, "game_date", target_date, limit
+            db,
+            NHLPlayerShotsPredictions,
+            "game_date",
+            target_date,
+            limit,
+            dedupe_keys=("player_id", "game_date"),
         ),
         "team_totals": _query_recent(
-            db, NHLTeamTotalsPredictions, "game_date", target_date, limit
+            db,
+            NHLTeamTotalsPredictions,
+            "game_date",
+            target_date,
+            limit,
+            dedupe_keys=("home_team_id", "away_team_id", "game_date"),
         ),
     }

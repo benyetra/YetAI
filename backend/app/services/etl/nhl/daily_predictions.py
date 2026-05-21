@@ -14,9 +14,11 @@ from app.models.predictions_models import (
     NHLGoaliePredictions,
     NHLGoalieActuals,
     NHLPlayer,
+    NHLPlayerShotsPredictions,
     NHLTeam,
     NHLGoalie,
     NHLGameStats,
+    NHLTeamTotalsPredictions,
 )
 from app.services.etl.nhl.nhl_api_client import NHLAPIClient
 from app.services.etl.nhl.goalie_saves_model import predict_goalie_saves
@@ -33,6 +35,7 @@ from datetime import datetime, date, timedelta
 from sqlalchemy import and_
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._db import db_session
+from app.services.etl.nhl._slate import game_datetime_et, slate_game_dates_et
 import logging
 import time
 import requests
@@ -41,6 +44,26 @@ import requests
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
 )
+
+
+def clear_nhl_predictions_for_dates(dates: set[date]) -> dict[str, int]:
+    """Remove prior rows for this slate so re-runs replace rather than append."""
+    if not dates:
+        return {"goalie": 0, "player_shots": 0, "team_totals": 0}
+    cleared: dict[str, int] = {}
+    for model, key in (
+        (NHLGoaliePredictions, "goalie"),
+        (NHLPlayerShotsPredictions, "player_shots"),
+        (NHLTeamTotalsPredictions, "team_totals"),
+    ):
+        cleared[key] = (
+            db_session.query(model)
+            .filter(model.game_date.in_(dates))
+            .delete(synchronize_session=False)
+        )
+    db_session.commit()
+    logging.info("Cleared NHL predictions for dates %s: %s", sorted(dates), cleared)
+    return cleared
 
 
 def update_nhl_stats():
@@ -75,12 +98,6 @@ def generate_goalie_predictions(games, odds_events):
 
     predictions_generated = 0
 
-    today = now_eastern().date()
-
-    # Clear old predictions for today
-    db_session.query(NHLGoaliePredictions).filter_by(game_date=today).delete()
-    db_session.commit()
-
     for game in games:
         # Use placeName to match database
         home_team = game["homeTeam"]["placeName"]["default"]
@@ -90,17 +107,7 @@ def generate_goalie_predictions(games, odds_events):
         home_abbrev = game["homeTeam"]["abbrev"]
         away_abbrev = game["awayTeam"]["abbrev"]
 
-        # Parse game time
-        game_time = None
-        game_date = today  # Default to today if no time available
-        if "startTimeUTC" in game:
-            from datetime import datetime
-
-            game_time = datetime.fromisoformat(
-                game["startTimeUTC"].replace("Z", "+00:00")
-            )
-            # Extract the actual game date from the UTC time
-            game_date = game_time.date()
+        game_date, game_time = game_datetime_et(game)
 
         # Get starting goalies from database (#1 goalie = most games played)
         home_goalie = (
@@ -153,7 +160,7 @@ def generate_goalie_predictions(games, odds_events):
                     goalie_id=goalie_id,
                     goalie_name=goalie_name,
                     opponent_team_name=opponent,
-                    game_date=today,
+                    game_date=game_date,
                     is_home=is_home,
                     goalie_team_name=team_name,
                 )
@@ -214,7 +221,6 @@ def generate_player_predictions(games, odds_events):
     logging.info("STEP 3: Generating player shots predictions")
     logging.info("=" * 80)
 
-    from app.models.predictions_models import NHLPlayerShotsPredictions
     from app.services.etl.nhl.betting_edges import recommendation_for_shots
     from app.services.etl.nhl.generate_daily_predictions import (
         get_odds_api_team_name,
@@ -222,16 +228,11 @@ def generate_player_predictions(games, odds_events):
     )
 
     predictions_generated = 0
-    today = now_eastern().date()
 
     odds_lookup = {}
     for event in odds_events:
         key = f"{event['away_team']} @ {event['home_team']}"
         odds_lookup[key] = event
-
-    # Delete old predictions for today (in case re-running)
-    db_session.query(NHLPlayerShotsPredictions).filter_by(game_date=today).delete()
-    db_session.commit()
 
     for game in games:
         # Get team IDs to look up players
@@ -242,17 +243,7 @@ def generate_player_predictions(games, odds_events):
         home_team_name = game["homeTeam"]["placeName"]["default"]
         away_team_name = game["awayTeam"]["placeName"]["default"]
 
-        # Parse game time
-        game_time_et = None
-        game_date = today  # Default to today if no time available
-        if "startTimeUTC" in game:
-            from datetime import datetime
-
-            game_time_et = datetime.fromisoformat(
-                game["startTimeUTC"].replace("Z", "+00:00")
-            )
-            # Extract the actual game date from the UTC time
-            game_date = game_time_et.date()
+        game_date, game_time_et = game_datetime_et(game)
 
         logging.info(f"📊 Processing game: {away_team_name} @ {home_team_name}")
 
@@ -338,7 +329,6 @@ def generate_team_totals_predictions(games, odds_events):
     logging.info("STEP 4: Generating team totals predictions")
     logging.info("=" * 80)
 
-    from app.models.predictions_models import NHLTeamTotalsPredictions
     from app.services.etl.nhl.betting_edges import recommendation_for_total_goals
     from app.services.etl.nhl.generate_daily_predictions import (
         get_team_totals_odds_for_event,
@@ -352,11 +342,6 @@ def generate_team_totals_predictions(games, odds_events):
         odds_lookup[key] = event
 
     predictions_generated = 0
-    today = now_eastern().date()
-
-    # Delete old predictions for today (in case re-running)
-    db_session.query(NHLTeamTotalsPredictions).filter_by(game_date=today).delete()
-    db_session.commit()
 
     for game in games:
         # Use placeName (city) not commonName (team nickname) to match database
@@ -367,17 +352,7 @@ def generate_team_totals_predictions(games, odds_events):
         home_abbrev = game["homeTeam"]["abbrev"]
         away_abbrev = game["awayTeam"]["abbrev"]
 
-        # Parse game time
-        game_time_et = None
-        game_date = today  # Default to today if no time available
-        if "startTimeUTC" in game:
-            from datetime import datetime
-
-            game_time_et = datetime.fromisoformat(
-                game["startTimeUTC"].replace("Z", "+00:00")
-            )
-            # Extract the actual game date from the UTC time
-            game_date = game_time_et.date()
+        game_date, game_time_et = game_datetime_et(game)
 
         try:
             pred = predict_team_total_goals(
@@ -669,6 +644,9 @@ def _run_daily_core() -> dict:
 
     logging.info(f"📅 Found {len(games)} games scheduled for {slate_date}\n")
 
+    slate_dates = slate_game_dates_et(games, slate_date)
+    cleared = clear_nhl_predictions_for_dates(slate_dates)
+
     logging.info("Fetching betting odds from The Odds API...")
     odds_events = get_nhl_events_from_odds_api()
     logging.info(f"📊 Found {len(odds_events)} events in odds feed\n")
@@ -704,6 +682,8 @@ def _run_daily_core() -> dict:
     return {
         "status": "ok",
         "slate_date_et": str(slate_date),
+        "slate_dates_cleared": sorted(str(d) for d in slate_dates),
+        "rows_cleared": cleared,
         "games_scheduled": len(games),
         "odds_events": len(odds_events),
         "goalie_predictions": goalie_count,
