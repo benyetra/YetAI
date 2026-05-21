@@ -5,6 +5,7 @@ seeded RNG for reproducibility, and multiple sampling modes.
 
 REQ-BT-001 through REQ-BT-005.
 """
+
 import logging
 import random
 from dataclasses import dataclass, field
@@ -18,26 +19,27 @@ from app.services.etl.mlb.backtest.cache import cached_api_call
 logger = logging.getLogger(__name__)
 
 # Games to exclude from backtesting
-EXCLUDED_GAME_TYPES = {'S', 'E', 'A'}  # Spring Training, Exhibition, All-Star
+EXCLUDED_GAME_TYPES = {"S", "E", "A"}  # Spring Training, Exhibition, All-Star
 
 
 @dataclass
 class BacktestGame:
     """Represents a single game selected for backtesting (REQ-BT-004)."""
+
     game_id: int
     game_date: str  # YYYY-MM-DD
     home_name: str
     away_name: str
     home_id: int
     away_id: int
-    home_pitcher_name: str = ''
+    home_pitcher_name: str = ""
     home_pitcher_id: Optional[int] = None
-    away_pitcher_name: str = ''
+    away_pitcher_name: str = ""
     away_pitcher_id: Optional[int] = None
-    venue_name: str = ''
+    venue_name: str = ""
     home_score: int = 0
     away_score: int = 0
-    game_type: str = 'R'  # R=Regular, P=Postseason
+    game_type: str = "R"  # R=Regular, P=Postseason
 
 
 class BacktestSampler:
@@ -48,9 +50,19 @@ class BacktestSampler:
     REQ-BT-003: Seeded random sampling for reproducibility.
     """
 
-    def __init__(self, start_date, end_date, n_games=100, seed=42,
-                 team=None, month=None, venue=None, day_of_week=None,
-                 include_postseason=False, cache_only=False):
+    def __init__(
+        self,
+        start_date,
+        end_date,
+        n_games=100,
+        seed=42,
+        team=None,
+        month=None,
+        venue=None,
+        day_of_week=None,
+        include_postseason=False,
+        cache_only=False,
+    ):
         self.start_date = start_date
         self.end_date = end_date
         self.n_games = n_games
@@ -71,20 +83,25 @@ class BacktestSampler:
         current = self.start_date
         while current <= self.end_date:
             chunk_end = min(
-                date(current.year, current.month + 1, 1) - timedelta(days=1)
-                if current.month < 12 else date(current.year, 12, 31),
-                self.end_date
+                (
+                    date(current.year, current.month + 1, 1) - timedelta(days=1)
+                    if current.month < 12
+                    else date(current.year, 12, 31)
+                ),
+                self.end_date,
             )
 
-            start_str = current.strftime('%Y-%m-%d')
-            end_str = chunk_end.strftime('%Y-%m-%d')
+            start_str = current.strftime("%Y-%m-%d")
+            end_str = chunk_end.strftime("%Y-%m-%d")
 
             def _fetch(s=start_str, e=end_str):
                 return mlbstatsapi.schedule(start_date=s, end_date=e)
 
             games = cached_api_call(
-                'schedule', {'start': start_str, 'end': end_str},
-                _fetch, cache_only=self.cache_only
+                "schedule",
+                {"start": start_str, "end": end_str},
+                _fetch,
+                cache_only=self.cache_only,
             )
 
             if games:
@@ -105,28 +122,30 @@ class BacktestSampler:
 
         for g in games:
             # Must be Final
-            if g.get('status') not in ('Final', 'Game Over', 'Completed Early'):
+            if g.get("status") not in ("Final", "Game Over", "Completed Early"):
                 continue
 
             # Exclude spring training, exhibitions, all-star
-            game_type = g.get('game_type', 'R')
+            game_type = g.get("game_type", "R")
             if game_type in EXCLUDED_GAME_TYPES:
                 continue
 
             # Exclude postseason unless flag set
-            if game_type in ('D', 'L', 'W', 'F') and not self.include_postseason:
+            if game_type in ("D", "L", "W", "F") and not self.include_postseason:
                 continue
 
             # Team filter
             if self.team:
                 team_lower = self.team.lower()
-                if (team_lower not in g.get('home_name', '').lower() and
-                        team_lower not in g.get('away_name', '').lower()):
+                if (
+                    team_lower not in g.get("home_name", "").lower()
+                    and team_lower not in g.get("away_name", "").lower()
+                ):
                     continue
 
             # Month filter
             if self.month:
-                game_date = g.get('game_date', '')[:10]
+                game_date = g.get("game_date", "")[:10]
                 if game_date:
                     gm = int(game_date[5:7])
                     if gm != self.month:
@@ -134,17 +153,18 @@ class BacktestSampler:
 
             # Day of week filter
             if self.day_of_week is not None:
-                game_date = g.get('game_date', '')[:10]
+                game_date = g.get("game_date", "")[:10]
                 if game_date:
                     from datetime import datetime
-                    gd = datetime.strptime(game_date, '%Y-%m-%d')
+
+                    gd = datetime.strptime(game_date, "%Y-%m-%d")
                     if gd.weekday() != self.day_of_week:
                         continue
 
             # Venue filter
             if self.venue:
                 venue_lower = self.venue.lower()
-                venue_name = g.get('venue_name', '') or ''
+                venue_name = g.get("venue_name", "") or ""
                 if venue_lower not in venue_name.lower():
                     continue
 
@@ -156,20 +176,20 @@ class BacktestSampler:
     def _game_to_backtest_game(self, g) -> BacktestGame:
         """Convert a schedule dict to a BacktestGame dataclass (REQ-BT-004)."""
         return BacktestGame(
-            game_id=g['game_id'],
-            game_date=g.get('game_date', '')[:10],
-            home_name=g.get('home_name', ''),
-            away_name=g.get('away_name', ''),
-            home_id=g.get('home_id', 0),
-            away_id=g.get('away_id', 0),
-            home_pitcher_name=g.get('home_probable_pitcher', ''),
-            home_pitcher_id=g.get('home_probable_pitcher_id'),
-            away_pitcher_name=g.get('away_probable_pitcher', ''),
-            away_pitcher_id=g.get('away_probable_pitcher_id'),
-            venue_name=g.get('venue_name', ''),
-            home_score=int(g.get('home_score', 0) or 0),
-            away_score=int(g.get('away_score', 0) or 0),
-            game_type=g.get('game_type', 'R'),
+            game_id=g["game_id"],
+            game_date=g.get("game_date", "")[:10],
+            home_name=g.get("home_name", ""),
+            away_name=g.get("away_name", ""),
+            home_id=g.get("home_id", 0),
+            away_id=g.get("away_id", 0),
+            home_pitcher_name=g.get("home_probable_pitcher", ""),
+            home_pitcher_id=g.get("home_probable_pitcher_id"),
+            away_pitcher_name=g.get("away_probable_pitcher", ""),
+            away_pitcher_id=g.get("away_probable_pitcher_id"),
+            venue_name=g.get("venue_name", ""),
+            home_score=int(g.get("home_score", 0) or 0),
+            away_score=int(g.get("away_score", 0) or 0),
+            game_type=g.get("game_type", "R"),
         )
 
     def sample_games(self) -> List[BacktestGame]:
@@ -211,7 +231,7 @@ class BacktestSampler:
         # Group by date
         by_date = {}
         for g in filtered:
-            gd = g.get('game_date', '')[:10]
+            gd = g.get("game_date", "")[:10]
             if gd:
                 by_date.setdefault(gd, []).append(g)
 

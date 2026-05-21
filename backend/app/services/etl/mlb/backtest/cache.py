@@ -6,6 +6,7 @@ and burning API quota. Keyed by (endpoint, params_hash).
 REQ-BT-063: Cache all API responses to local SQLite database.
 REQ-BT-064: Support --clear-cache and --cache-only modes.
 """
+
 import hashlib
 import json
 import logging
@@ -15,9 +16,12 @@ import time
 
 logger = logging.getLogger(__name__)
 
+
 def _backend_scripts_dir() -> str:
     # .../backend/app/services/etl/mlb/backtest/cache.py -> backend/scripts
-    return os.path.join(os.path.dirname(__file__), "..", "..", "..", "..", "..", "scripts")
+    return os.path.join(
+        os.path.dirname(__file__), "..", "..", "..", "..", "..", "scripts"
+    )
 
 
 CACHE_DB_PATH = os.path.join(_backend_scripts_dir(), "mlb_backtest_cache.db")
@@ -31,7 +35,8 @@ def _get_connection():
     """Get SQLite connection, creating the database and table if needed."""
     db_path = os.path.abspath(CACHE_DB_PATH)
     conn = sqlite3.connect(db_path)
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS api_cache (
             cache_key TEXT PRIMARY KEY,
             endpoint TEXT NOT NULL,
@@ -39,7 +44,8 @@ def _get_connection():
             response_json TEXT NOT NULL,
             created_at REAL NOT NULL
         )
-    """)
+    """
+    )
     conn.commit()
     return conn
 
@@ -81,8 +87,13 @@ def set_cached(endpoint, params, response):
             """INSERT OR REPLACE INTO api_cache
                (cache_key, endpoint, params_json, response_json, created_at)
                VALUES (?, ?, ?, ?, ?)""",
-            (key, endpoint, json.dumps(params, sort_keys=True, default=str),
-             json.dumps(response, default=str), time.time())
+            (
+                key,
+                endpoint,
+                json.dumps(params, sort_keys=True, default=str),
+                json.dumps(response, default=str),
+                time.time(),
+            ),
         )
         conn.commit()
         conn.close()
@@ -107,9 +118,9 @@ def get_cache_stats():
         cur = conn.execute("SELECT COUNT(*), COUNT(DISTINCT endpoint) FROM api_cache")
         row = cur.fetchone()
         conn.close()
-        return {'total_entries': row[0], 'unique_endpoints': row[1]}
+        return {"total_entries": row[0], "unique_endpoints": row[1]}
     except Exception:
-        return {'total_entries': 0, 'unique_endpoints': 0}
+        return {"total_entries": 0, "unique_endpoints": 0}
 
 
 def rate_limit():

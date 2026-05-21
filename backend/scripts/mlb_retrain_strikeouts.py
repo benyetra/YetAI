@@ -46,9 +46,10 @@ def main() -> int:
         train_and_persist,
     )
 
-    counts = db_session.execute(
-        text(
-            """
+    counts = (
+        db_session.execute(
+            text(
+                """
             SELECT
               (SELECT COUNT(*) FROM pred_strikeout_projections) AS projections,
               (SELECT COUNT(*) FROM pred_strikeout_actuals) AS actuals,
@@ -56,8 +57,11 @@ def main() -> int:
                  JOIN pred_strikeout_actuals a
                    ON p.date = a.date AND p.pitcher_id = a.pitcher_id) AS joined
             """
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     logger.info(
         "Strikeout tables — projections=%s actuals=%s joined=%s",
         counts["projections"],

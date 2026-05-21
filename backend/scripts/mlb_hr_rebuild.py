@@ -150,9 +150,13 @@ def stage_build_training(season: int, *, use_existing: bool = False) -> dict:
     pitcher = os.getenv("MLB_HR_PITCHER_STATS_S3") or _artifact(
         EXISTING_S3_DEFAULTS["pitcher_stats"] if use_existing else "pitcher_stats.csv"
     )
-    park = os.getenv("MLB_HR_PARK_FACTORS_S3") or _artifact(EXISTING_S3_DEFAULTS["park_factors"])
+    park = os.getenv("MLB_HR_PARK_FACTORS_S3") or _artifact(
+        EXISTING_S3_DEFAULTS["park_factors"]
+    )
     weather = os.getenv("MLB_HR_WEATHER_S3") or _artifact(
-        EXISTING_S3_DEFAULTS["weather"] if use_existing else "weather_normalized_full.csv"
+        EXISTING_S3_DEFAULTS["weather"]
+        if use_existing
+        else "weather_normalized_full.csv"
     )
     out = _artifact(f"training_data_{season}.csv")
     for label, path in (
@@ -183,7 +187,9 @@ def stage_build_training(season: int, *, use_existing: bool = False) -> dict:
     return {"training_data": out}
 
 
-def stage_train(season: int, holdout_date: str, training_path: str | None = None) -> dict:
+def stage_train(
+    season: int, holdout_date: str, training_path: str | None = None
+) -> dict:
     training = training_path or _artifact(f"training_data_{season}.csv")
     _require_s3(
         training,

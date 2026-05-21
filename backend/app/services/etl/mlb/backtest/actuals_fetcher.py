@@ -5,6 +5,7 @@ against predictions.
 
 REQ-BT-031 through REQ-BT-034.
 """
+
 import logging
 
 import statsapi as mlbstatsapi
@@ -36,11 +37,11 @@ class BacktestActualsFetcher:
             dict with actual outcomes
         """
         result = {
-            'home_score': game.home_score,
-            'away_score': game.away_score,
-            'actual_total': game.home_score + game.away_score,
-            'actual_winner': 'home' if game.home_score > game.away_score else 'away',
-            'run_margin': abs(game.home_score - game.away_score),
+            "home_score": game.home_score,
+            "away_score": game.away_score,
+            "actual_total": game.home_score + game.away_score,
+            "actual_winner": "home" if game.home_score > game.away_score else "away",
+            "run_margin": abs(game.home_score - game.away_score),
         }
 
         # Fetch detailed boxscore for K/hit/HR data
@@ -54,21 +55,21 @@ class BacktestActualsFetcher:
 
     def _fetch_boxscore(self, game_id):
         """Fetch boxscore data with caching."""
+
         def _fetch():
             return mlbstatsapi.boxscore_data(game_id)
 
         return cached_api_call(
-            'boxscore', {'game_id': game_id},
-            _fetch, cache_only=self.cache_only
+            "boxscore", {"game_id": game_id}, _fetch, cache_only=self.cache_only
         )
 
     def _extract_pitcher_actuals(self, boxscore, game):
         """Extract starting pitcher K and IP from boxscore (REQ-BT-032)."""
         result = {}
 
-        for side in ('home', 'away'):
+        for side in ("home", "away"):
             try:
-                pitchers_key = f'{side}Pitchers'
+                pitchers_key = f"{side}Pitchers"
                 pitchers = boxscore.get(pitchers_key, [])
 
                 if not pitchers:
@@ -80,10 +81,12 @@ class BacktestActualsFetcher:
                 for entry in pitchers:
                     if isinstance(entry, dict):
                         stats = entry
-                    elif isinstance(entry, int) or (isinstance(entry, str) and entry.isdigit()):
+                    elif isinstance(entry, int) or (
+                        isinstance(entry, str) and entry.isdigit()
+                    ):
                         pid = int(entry) if isinstance(entry, str) else entry
                         # Look up in player stats
-                        player_key = f'ID{pid}'
+                        player_key = f"ID{pid}"
                         stats = boxscore.get(player_key, {})
                     else:
                         continue
@@ -92,8 +95,8 @@ class BacktestActualsFetcher:
                         continue
 
                     # Get pitcher stats from the boxscore
-                    ip_str = stats.get('ip', '0') or '0'
-                    k = stats.get('k', 0) or stats.get('so', 0) or 0
+                    ip_str = stats.get("ip", "0") or "0"
+                    k = stats.get("k", 0) or stats.get("so", 0) or 0
 
                     try:
                         ip = float(ip_str)
@@ -101,8 +104,8 @@ class BacktestActualsFetcher:
                         ip = 0.0
 
                     if ip > 0 and not starter_found:
-                        result[f'{side}_actual_k'] = int(k)
-                        result[f'{side}_actual_ip'] = ip
+                        result[f"{side}_actual_k"] = int(k)
+                        result[f"{side}_actual_ip"] = ip
                         starter_found = True
                         break
             except Exception as e:
@@ -114,31 +117,33 @@ class BacktestActualsFetcher:
         """Extract batter hits from boxscore (REQ-BT-033)."""
         result = {}
 
-        for side in ('home', 'away'):
+        for side in ("home", "away"):
             total_hits = 0
             total_ab = 0
             try:
-                batters_key = f'{side}Batters'
+                batters_key = f"{side}Batters"
                 batters = boxscore.get(batters_key, [])
 
                 for entry in batters:
                     if isinstance(entry, dict):
-                        h = int(entry.get('h', 0) or 0)
-                        ab = int(entry.get('ab', 0) or 0)
+                        h = int(entry.get("h", 0) or 0)
+                        ab = int(entry.get("ab", 0) or 0)
                         total_hits += h
                         total_ab += ab
-                    elif isinstance(entry, int) or (isinstance(entry, str) and entry.isdigit()):
+                    elif isinstance(entry, int) or (
+                        isinstance(entry, str) and entry.isdigit()
+                    ):
                         pid = int(entry) if isinstance(entry, str) else entry
-                        player_key = f'ID{pid}'
+                        player_key = f"ID{pid}"
                         stats = boxscore.get(player_key, {})
                         if isinstance(stats, dict):
-                            total_hits += int(stats.get('h', 0) or 0)
-                            total_ab += int(stats.get('ab', 0) or 0)
+                            total_hits += int(stats.get("h", 0) or 0)
+                            total_ab += int(stats.get("ab", 0) or 0)
             except Exception:
                 pass
 
-            result[f'{side}_actual_hits'] = total_hits
-            result[f'{side}_actual_ab'] = total_ab
+            result[f"{side}_actual_hits"] = total_hits
+            result[f"{side}_actual_ab"] = total_ab
 
         return result
 
@@ -146,41 +151,49 @@ class BacktestActualsFetcher:
         """Extract home runs from boxscore (REQ-BT-034)."""
         result = {}
 
-        for side in ('home', 'away'):
+        for side in ("home", "away"):
             total_hr = 0
             hr_batters = []
             try:
-                batters_key = f'{side}Batters'
+                batters_key = f"{side}Batters"
                 batters = boxscore.get(batters_key, [])
 
                 for entry in batters:
                     if isinstance(entry, dict):
-                        hr = int(entry.get('hr', 0) or 0)
+                        hr = int(entry.get("hr", 0) or 0)
                         total_hr += hr
                         if hr > 0:
-                            hr_batters.append({
-                                'name': entry.get('name', ''),
-                                'hr': hr,
-                            })
-                    elif isinstance(entry, int) or (isinstance(entry, str) and entry.isdigit()):
+                            hr_batters.append(
+                                {
+                                    "name": entry.get("name", ""),
+                                    "hr": hr,
+                                }
+                            )
+                    elif isinstance(entry, int) or (
+                        isinstance(entry, str) and entry.isdigit()
+                    ):
                         pid = int(entry) if isinstance(entry, str) else entry
-                        player_key = f'ID{pid}'
+                        player_key = f"ID{pid}"
                         stats = boxscore.get(player_key, {})
                         if isinstance(stats, dict):
-                            hr = int(stats.get('hr', 0) or 0)
+                            hr = int(stats.get("hr", 0) or 0)
                             total_hr += hr
                             if hr > 0:
-                                hr_batters.append({
-                                    'id': pid,
-                                    'name': stats.get('name', ''),
-                                    'hr': hr,
-                                })
+                                hr_batters.append(
+                                    {
+                                        "id": pid,
+                                        "name": stats.get("name", ""),
+                                        "hr": hr,
+                                    }
+                                )
             except Exception:
                 pass
 
-            result[f'{side}_actual_hr'] = total_hr
-            result[f'{side}_hr_batters'] = hr_batters
+            result[f"{side}_actual_hr"] = total_hr
+            result[f"{side}_hr_batters"] = hr_batters
 
-        result['total_actual_hr'] = result.get('home_actual_hr', 0) + result.get('away_actual_hr', 0)
+        result["total_actual_hr"] = result.get("home_actual_hr", 0) + result.get(
+            "away_actual_hr", 0
+        )
 
         return result
