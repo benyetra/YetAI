@@ -1,3 +1,4 @@
+from datetime import date
 from unittest.mock import MagicMock
 
 from app.services.etl.wnba import totals_accuracy_tracker as tat
@@ -16,27 +17,32 @@ def _actual(total):
     return a
 
 
+def _make_db(rows):
+    """Build a session mock whose entire .query(...).join(...).filter(...).filter(...).all() chain returns `rows`."""
+    db = MagicMock(name="Session")
+    chain = MagicMock()
+    chain.join.return_value.filter.return_value.filter.return_value.all.return_value = rows
+    db.query.return_value = chain
+    return db
+
+
 def test_compute_window_returns_mae_and_rmse():
-    db = MagicMock()
-    db.query.return_value.join.return_value.filter.return_value.filter.return_value.all.return_value = [
-        (_proj(160.0, market=158.0), _actual(155)),  # err=5, our pick OVER (160>158), actual UNDER (155<158) → wrong
-        (_proj(170.0, market=165.0), _actual(172)),  # err=-2, OVER, actual OVER → right
-        (_proj(150.0, market=152.0), _actual(148)),  # err=2, UNDER, UNDER → right
+    rows = [
+        (_proj(160.0, market=158.0), _actual(155)),  # err=5; OVER pick, UNDER actual → wrong
+        (_proj(170.0, market=165.0), _actual(172)),  # err=-2; OVER, OVER → right
+        (_proj(150.0, market=152.0), _actual(148)),  # err=2; UNDER, UNDER → right
     ]
-    stats = tat._compute_window(db, start=None, end=None)
+    db = _make_db(rows)
+    stats = tat._compute_window(db, start=date(2026, 5, 1), end=date(2026, 5, 21))
     assert stats["total"] == 3
     assert stats["mae"] == 3.0  # (5+2+2)/3
-    # 2/3 directionally correct
-    assert stats["directional"] is not None
-    assert 0.6 <= stats["directional"] <= 0.7
+    assert 0.6 <= stats["directional"] <= 0.7  # 2/3 ≈ 0.667
 
 
 def test_compute_window_handles_empty():
-    db = MagicMock()
-    db.query.return_value.join.return_value.filter.return_value.filter.return_value.all.return_value = []
-    stats = tat._compute_window(db, start=None, end=None)
-    assert stats["total"] == 0
-    assert stats["mae"] is None
+    db = _make_db([])
+    stats = tat._compute_window(db, start=date(2026, 5, 1), end=date(2026, 5, 21))
+    assert stats == {"mae": None, "rmse": None, "directional": None, "total": 0}
 
 
 def test_run_writes_one_row_per_nonempty_window(monkeypatch):
