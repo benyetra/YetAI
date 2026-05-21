@@ -28,6 +28,24 @@ logger = logging.getLogger(__name__)
 
 def store_projections(date):
     pitchers = db_session.query(Pitcher).all()
+    if not pitchers:
+        logger.warning(
+            "store_projections: pred_pitcher is empty for %s — leaving "
+            "existing strikeout projections in place.",
+            date,
+        )
+        return
+
+    # Drop rows for this date that aren't in the current pitcher slate so
+    # the projections table stays in sync with today's probable starters
+    # instead of accumulating stale entries from earlier (partial) runs.
+    current_ids = {p.pitcher_id for p in pitchers}
+    if current_ids:
+        db_session.query(StrikeoutProjections).filter(
+            StrikeoutProjections.date == date,
+            ~StrikeoutProjections.pitcher_id.in_(current_ids),
+        ).delete(synchronize_session=False)
+        db_session.commit()
 
     for pitcher in pitchers:
         pitcher_id = pitcher.pitcher_id
