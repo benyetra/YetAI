@@ -9,6 +9,12 @@ export interface SlipItem {
   rawGame?: unknown;
 }
 
+export interface BetSlipPlaceContext {
+  slip: SlipItem[];
+  mode: 'single' | 'parlay';
+  stake: number;
+}
+
 export interface DesignPick {
   id: string;
   league: string;

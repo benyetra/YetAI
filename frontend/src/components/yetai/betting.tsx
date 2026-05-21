@@ -5,7 +5,7 @@ import { Layers, X } from 'lucide-react';
 import { LeagueChip, TeamGlyph } from './primitives';
 import { calcPayout, fmtMoney, fmtOdds } from '@/lib/yetai-format';
 import { spreadLabel } from '@/lib/yetai-odds';
-import type { DesignGame, SlipItem } from './types';
+import type { BetSlipPlaceContext, DesignGame, SlipItem } from './types';
 
 function SlipRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
@@ -127,7 +127,7 @@ export function BetSlipPanel({
 }: {
   slip: SlipItem[];
   setSlip: React.Dispatch<React.SetStateAction<SlipItem[]>>;
-  onPlace?: () => void;
+  onPlace?: (ctx: BetSlipPlaceContext) => void;
   placing?: boolean;
 }) {
   const [mode, setMode] = useState<'single' | 'parlay'>('single');
@@ -292,7 +292,13 @@ export function BetSlipPanel({
               <SlipRow label="To win" value={fmtMoney(toWin)} highlight />
             </div>
 
-            <button type="button" className="btn btn-primary btn-block" style={{ padding: '12px' }} onClick={onPlace} disabled={placing}>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              style={{ padding: '12px' }}
+              onClick={() => onPlace?.({ slip, mode, stake })}
+              disabled={placing}
+            >
               {placing ? 'Placing…' : `Place ${mode === 'parlay' ? 'parlay' : `${slip.length} bet${slip.length > 1 ? 's' : ''}`}`}
             </button>
           </div>

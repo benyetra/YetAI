@@ -2,14 +2,14 @@
 
 import React, { useMemo, useState } from 'react';
 import { AccountMini, BetSlipPanel, GameOddsRow } from '../betting';
-import type { DesignGame, SlipItem } from '../types';
+import type { BetSlipPlaceContext, DesignGame, SlipItem } from '../types';
 
 export interface PlaceBetScreenProps {
   games: DesignGame[];
   slip: SlipItem[];
   setSlip: React.Dispatch<React.SetStateAction<SlipItem[]>>;
   onAddToSlip: (item: SlipItem) => void;
-  onPlaceSlip?: () => void;
+  onPlaceSlip?: (ctx: BetSlipPlaceContext) => void;
   placing?: boolean;
   bankroll?: number;
   loading?: boolean;
