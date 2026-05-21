@@ -2107,45 +2107,13 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
             }
         except Exception as e:
             logger.error(f"Error fetching YetAI bets: {e}")
-            # Fall through to mock data
 
-    # Return mock data when service unavailable
     user_tier = current_user.get("subscription_tier", "free")
-    mock_bets = [
-        {
-            "id": "mock_yetai_1",
-            "title": "Chiefs ML Lock",
-            "description": "AI algorithm predicts 78% confidence on Chiefs moneyline",
-            "bet_type": "moneyline",
-            "selection": "Kansas City Chiefs",
-            "odds": -150,
-            "confidence": 0.78,
-            "tier_requirement": "free" if user_tier == "free" else "pro",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-    ]
-
-    # Pro users get more bets
-    if user_tier == "pro":
-        mock_bets.append(
-            {
-                "id": "mock_yetai_2",
-                "title": "Lakers Spread Value",
-                "description": "Advanced analytics show Lakers covering the spread at 85% confidence",
-                "bet_type": "spread",
-                "selection": "Los Angeles Lakers -3.5",
-                "odds": -110,
-                "confidence": 0.85,
-                "tier_requirement": "pro",
-                "created_at": datetime.now(timezone.utc).isoformat(),
-            }
-        )
-
     return {
         "status": "success",
-        "bets": mock_bets,
+        "bets": [],
         "user_tier": user_tier,
-        "message": f"Mock YetAI bets for {user_tier} tier user - service unavailable",
+        "message": "YetAI bets service unavailable",
     }
 
 
