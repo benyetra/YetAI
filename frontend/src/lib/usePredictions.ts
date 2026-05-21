@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { getApiUrl } from './api-config';
 
-export type PredictionSport = 'mlb' | 'nba' | 'nfl' | 'nhl';
+export type PredictionSport = 'mlb' | 'nba' | 'nfl' | 'nhl' | 'wnba';
 type Sport = PredictionSport;
 
 type PredictionsState = {

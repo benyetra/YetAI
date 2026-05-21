@@ -6,6 +6,7 @@ import { teamColor } from '@/lib/yetai-format';
 
 const LEAGUE_COLORS: Record<string, string> = {
   NBA: '#C8102E',
+  WNBA: '#F26C24',
   MLB: '#002D72',
   NFL: '#013369',
   NHL: '#000000',
