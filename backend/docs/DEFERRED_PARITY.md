@@ -8,8 +8,7 @@ Items previously listed as "not ported" that are now wired into YetAI Celery pip
 |------|--------|
 | Module | `app/services/etl/mlb/mlb_ev.py` → `pred_value_bets` |
 | Celery | `app.tasks.etl_pipeline.mlb.ev` |
-| Admin | `POST /api/admin/celery/run-task?task_name=app.tasks.etl_pipeline.mlb.ev` (fireable catalog) |
-| Pipeline | `run_mlb_update_pipeline` enrichment phase (after weather + blowouts) |
+| Admin | Fireable catalog + daily pipeline |
 | Env | `ODDS_API_KEY`, optional `EV_HOME_FIELD_EDGE`, `EV_K`, S3 park factors CSV |
 
 ## MLB HR ML (`dingerParlay`)
@@ -18,33 +17,38 @@ Items previously listed as "not ported" that are now wired into YetAI Celery pip
 |------|--------|
 | Module | `dingerParlay/predict_today.py` → `pred_daily_hr_predictions` |
 | Celery | `mlb.hr_predictions` (when env set) |
-| Pipeline | `persist` phase if **both** `MLB_DAILY_FEATURES_S3` and `MLB_LINEUP_CSV_S3` are set |
+| Offline rebuild | `mlb.hr_rebuild_stage` + `scripts/mlb_hr_rebuild.py` |
 | Env | `MLB_HR_MODEL_S3` (default `s3://yetibets/mlb/hr_model.pkl`) |
+
+## MLB ML ops (offline / admin)
+
+| Item | Detail |
+|------|--------|
+| Backtest | `app/services/etl/mlb/backtest/` + `scripts/mlb_backtest.py`, `mlb_backtest_list_runs.py` |
+| Strikeout retrain | `strikeout_training.py` + `mlb.retrain_strikeout_classifier` |
+| Admin status | `GET /api/admin/celery/ml-ops-status` |
+| CLI prod counts | `scripts/prod_mlb_strikeout_counts.py` |
 
 ## NFL kicker ML ensemble
 
 | Item | Detail |
 |------|--------|
-| Models | `backend/models/nfl/*.pkl` (copied from YetiBets) |
-| Modules | `ml_feature_mapping.py`, `ml_kicker_ensemble.py` |
-| Integration | Blends into `kickers.py` after statistical prediction |
-| Env | `NFL_MODELS_S3_PREFIX` (e.g. `s3://yetibets/nfl/`), `NFL_KICKER_ML_BLEND_WEIGHT` (default `0.35`) |
+| Models | `backend/models/nfl/*.pkl` |
+| Integration | Blends into `kickers.py` |
+| Env | `NFL_MODELS_S3_PREFIX`, `NFL_KICKER_ML_BLEND_WEIGHT` |
 
-QB **passing-yard** ML (`advanced_qb_predictor.py`) remains deferred — current path uses nflverse + Odds API in `qb_dynamic` / `qb_betting`.
+QB **passing-yard** ML (`advanced_qb_predictor.py`) remains deferred.
 
 ## NHL odds edges
 
 | Item | Detail |
 |------|--------|
 | Module | `nhl/betting_edges.py` |
-| Wired in | `daily_predictions.py` for goalie saves, player SOG, team totals |
-| Odds API | Reuses `get_player_shots_odds_for_event`, existing goalie/totals helpers |
-
-Thresholds align with YetiBets `generate_daily_predictions.py` (goalie) and tuned SOG/totals bands.
+| Wired in | `daily_predictions.py` |
 
 ## Still deferred
 
-- MLB `classification_model` retrain CLI, `backtest/` CLIs
 - NHL `confirm_starters.py`, live poller, backfill CLIs
-- NFL QB warehouse / `advanced_qb_predictor` ensemble for **yards** (not kickers)
-- Discord notifications (intentionally removed per YetAI product direction)
+- NFL QB warehouse / `advanced_qb_predictor` for **yards**
+- Discord notifications (intentionally removed)
+- Automated Beat schedule for quarterly backtest (admin enqueue only; see `MLB_ML_OPS.md`)

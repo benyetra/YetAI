@@ -324,6 +324,43 @@ def mlb_store_batter_actuals():
     return run_store_batter_actuals()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier")
+def mlb_retrain_strikeout_classifier(dry_run: bool = False):
+    from app.services.etl.mlb.strikeout_training import run_retrain_strikeouts
+
+    try:
+        return run_retrain_strikeouts(dry_run=dry_run)
+    except RuntimeError as exc:
+        return {"status": "blocked", "error": str(exc), "dry_run": dry_run}
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.hr_rebuild_stage")
+def mlb_hr_rebuild_stage(
+    stage: str,
+    season: int = 2024,
+    holdout_date: str = "2024-07-01",
+    use_existing_s3: bool = False,
+):
+    from app.services.etl.mlb.hr_rebuild_runner import run_hr_rebuild_stage
+
+    return run_hr_rebuild_stage(
+        stage,
+        season=season,
+        holdout_date=holdout_date,
+        use_existing_s3=use_existing_s3,
+    )
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.backtest_quick")
+def mlb_backtest_quick():
+    """Admin/offline quick backtest (20 games). Long runs: use CLI on a worker shell."""
+    from app.services.etl.mlb.backtest.cli import parse_args, run_backtest
+
+    args = parse_args(["--quick"])
+    backtest_id = run_backtest(args)
+    return {"status": "ok", "backtest_id": backtest_id, "preset": "quick"}
+
+
 # ============================================================================
 # Pipeline orchestrators — one per sport.
 # Run the sub-tasks in dependency order. Failures of a non-critical task

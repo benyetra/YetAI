@@ -63,9 +63,10 @@ See [MLB_ML_OPS.md](./MLB_ML_OPS.md):
 
 | Tool | Script |
 |------|--------|
-| Backtest CLI | `scripts/mlb_backtest.py` |
-| Strikeout retrain | `scripts/mlb_retrain_strikeouts.py` |
-| HR training rebuild | `scripts/mlb_hr_rebuild.py` |
+| Backtest CLI | `scripts/mlb_backtest.py`, `mlb_backtest_list_runs.py` |
+| Strikeout retrain | `scripts/mlb_retrain_strikeouts.py`, Celery `mlb.retrain_strikeout_classifier` |
+| HR training rebuild | `scripts/mlb_hr_rebuild.py`, `POST /api/admin/celery/ml-ops/hr-rebuild` |
+| Prod ML ops status | `GET /api/admin/celery/ml-ops-status`, `scripts/prod_mlb_strikeout_counts.py` |
 
 ## Validation
 

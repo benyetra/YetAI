@@ -11,11 +11,11 @@ Living document for the YetiBets → YetAI ETL migration. Update after each prod
 
 | Field | Value |
 |-------|--------|
-| Date | 2026-05-20 |
-| Branch / tip | `main` — add `verify-etl` admin API + `prod_verify_etl.py` (deploy API to use) |
+| Date | 2026-05-21 |
+| Branch / tip | `main` — MLB ML ops admin API + Celery retrain/HR rebuild |
 | Railway | API + celery-worker deployed; GitHub `RAILWAY_TOKEN` configured |
 | Infra | `/health` healthy; DB connected |
-| **Prod ETL verified** | **Run verification below** — then fill the sport table |
+| **Prod ETL verified** | NHL verified; MLB daily + actuals exercised via admin Celery |
 
 ---
 
@@ -67,9 +67,9 @@ railway ssh --service celery-worker -- bash -lc \
 
 | Sport | Orchestrator | Beat (ET) | Prod verified | Notes |
 |-------|--------------|-----------|---------------|-------|
-| MLB | `run_mlb_update_pipeline`, `run_mlb_store_actuals` | 10:00, 4:30 | ☐ | K + pitchers required |
-| NBA | `run_nba_update_pipeline` | 3:30 | ☐ | verify: points ≥ 8, pra ≥ 5 (playoff slates OK) |
-| NHL | `run_nhl_update_pipeline` | 5:00 | ☐ | goalie + SOG + totals today |
+| MLB | `run_mlb_update_pipeline`, `run_mlb_store_actuals` | 10:00, 4:30 | ✅ | 2026-05-20/21 admin: K archive + actuals ok; verify-etl |
+| NBA | `run_nba_update_pipeline` | 3:30 | ✅ | 2026-05-20 verify: points ≥ 8, pra ≥ 5 |
+| NHL | `run_nhl_update_pipeline` | 5:00 | ✅ | 2026-05-20 verify-etl `verified` |
 | NFL | `run_nfl_update_pipeline` | 4:30 | ☐ | Off-season May–Aug: orchestrator only |
 
 After verification, change ☐ → ✅ and add date in **Session log**.
@@ -115,10 +115,14 @@ After verification, change ☐ → ✅ and add date in **Session log**.
 | Tool | Purpose |
 |------|---------|
 | `POST /api/admin/celery/verify-etl` | **All-sport DB verification** (+ optional enqueue) |
+| `GET /api/admin/celery/ml-ops-status` | Strikeout counts, S3 model heads, backtest index |
+| `POST /api/admin/celery/ml-ops/retrain-strikeouts` | Enqueue prod K classifier retrain |
+| `POST /api/admin/celery/ml-ops/hr-rebuild` | Enqueue one HR rebuild stage |
 | `GET /api/admin/celery/task-status/{id}` | Poll orchestrator result |
 | `POST /api/admin/celery/enqueue-task` | Fire one orchestrator |
 | `/admin` → ETL panel | Enqueue, verify, worker ping |
 | `scripts/prod_verify_etl.py` | CLI wrapper for verify-etl |
+| `scripts/prod_mlb_strikeout_counts.py` | Prod strikeout projections/actuals/joined via API |
 | `RAILWAY_DEPLOYMENT.md` | Redis, enqueue, SSH validators |
 
 Beat schedule (`app/celery_app.py`): NBA 3:30, MLB actuals 4:30, NFL 4:30, NHL 5:00, MLB projections 10:00 ET.
@@ -150,12 +154,24 @@ See `DEFERRED_PARITY.md` — wired: **MLB EV**, **HR ML** (env-gated), **NFL kic
 
 ## Session log
 
+### 2026-05-21 — MLB ML ops phase 2
+
+- `GET /api/admin/celery/ml-ops-status`, retrain/HR rebuild enqueue routes.
+- Celery: `mlb.retrain_strikeout_classifier`, `mlb.hr_rebuild_stage`, `mlb.backtest_quick`.
+- `scripts/prod_mlb_strikeout_counts.py`, `mlb_backtest_list_runs.py`.
+- Strikeout retrain guardrail: `MLB_STRIKEOUT_MIN_JOINED_ROWS` (default 50).
+
+### 2026-05-20 — Production verification
+
+- NHL `verify-etl` → **verified** (7 games, predictions after dedupe fix).
+- MLB admin Celery: strikeouts + `store_strikeout_projections` (30 rows); `run_mlb_store_actuals` all phases ok after `hits.py` date fix.
+- NBA verify thresholds relaxed for playoff slates.
+
 ### 2026-05-20 — Verification tooling
 
 - Added `app/services/etl/prod_verification.py`, `app/api/admin_celery_ops.py` (`verify-etl`, `task-status`).
 - Added `scripts/prod_verify_etl.py`, Admin UI **Verify data** / **Enqueue all + verify**.
 - NFL validator skips prediction rows off-season (May 2026).
-- **Pending:** deploy API, run verify-etl, mark sport table ✅.
 
 ### 2026-05-20 — Production redeploy
 

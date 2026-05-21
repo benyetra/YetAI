@@ -26,17 +26,61 @@ Import smoke (includes backtest package):
 PYTHONPATH=. python scripts/smoke_import_mlb_etl.py --backtest
 ```
 
-## Strikeout classifier retrain
-
-Module: `app/services/etl/mlb/classification_model.py`  
-Wrapper: `scripts/mlb_retrain_strikeouts.py`
+## Admin API (prod DB — no local DATABASE_URL swap)
 
 ```bash
-PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py
-PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py --dry-run
+export YETAI_ADMIN_JWT='...'
+
+# Strikeout projections / actuals / joined + model S3 heads + backtest index
+curl -s "$API/api/admin/celery/ml-ops-status" \
+  -H "Authorization: Bearer $YETAI_ADMIN_JWT" | jq .
+
+# Same via CLI
+PYTHONPATH=. python3 scripts/prod_mlb_strikeout_counts.py
+
+# Enqueue retrain on worker (prod DB)
+curl -s -X POST "$API/api/admin/celery/ml-ops/retrain-strikeouts" \
+  -H "Authorization: Bearer $YETAI_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"dry_run": true}' | jq .
+
+# Enqueue HR rebuild stage
+curl -s -X POST "$API/api/admin/celery/ml-ops/hr-rebuild" \
+  -H "Authorization: Bearer $YETAI_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"stage":"build-training","season":2024,"use_existing_s3":true}' | jq .
+
+# Quarterly-style backtest (manual — not on Beat by default)
+curl -s -X POST "$API/api/admin/celery/enqueue-task" \
+  -H "Authorization: Bearer $YETAI_ADMIN_JWT" \
+  -H "Content-Type: application/json" \
+  -d '{"task_name":"app.tasks.etl_pipeline.mlb.backtest_quick"}' | jq .
 ```
 
-Writes `scripts/mlb_strikeout_retrain_metrics.json`. Model: local `strikeout_model.pkl`, S3 `s3://yetibets/mlb/strikeout_model.pkl` (when AWS creds are set).
+Retrain is blocked until `joined >= MLB_STRIKEOUT_MIN_JOINED_ROWS` (default **50**).
+
+## Backtest run index
+
+```bash
+PYTHONPATH=. python scripts/mlb_backtest_list_runs.py
+PYTHONPATH=. python scripts/mlb_backtest_list_runs.py --compare-prefix d4bc728e
+PYTHONPATH=. python scripts/mlb_backtest.py --compare d4bc728e
+```
+
+Runs live under `scripts/mlb_backtest_results/runs/` on the machine that executed the backtest (worker disk for Celery `backtest_quick`).
+
+## Strikeout classifier retrain
+
+Module: `app/services/etl/mlb/strikeout_training.py`  
+CLI: `scripts/mlb_retrain_strikeouts.py`  
+Celery: `app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier`
+
+```bash
+PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py --dry-run
+PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py
+```
+
+Writes `scripts/mlb_strikeout_retrain_metrics.json` on the worker after a successful run. Model: `s3://yetibets/mlb/strikeout_model.pkl`.
 
 ## dingerParlay HR rebuild
 
@@ -87,6 +131,8 @@ python scripts/mlb_hr_rebuild.py --stage train --season 2024 --holdout-date 2024
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | S3 model/artifact upload |
 | `MLB_HR_S3_PREFIX` | HR artifact prefix |
 | `MLB_HR_MODEL_S3` | HR model output path for `train` stage |
+| `MLB_STRIKEOUT_MIN_JOINED_ROWS` | Minimum joined rows before retrain (default 50) |
+| `MLB_STRIKEOUT_MODEL_S3` | Override strikeout model URI for status API |
 
 ## Related
 

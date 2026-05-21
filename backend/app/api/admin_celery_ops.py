@@ -42,6 +42,9 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.mlb.blowouts": 180.0,
     "app.tasks.etl_pipeline.mlb.hr_predictions": 900.0,
     "app.tasks.etl_pipeline.mlb.ev": 600.0,
+    "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier": 3600.0,
+    "app.tasks.etl_pipeline.mlb.hr_rebuild_stage": 7200.0,
+    "app.tasks.etl_pipeline.mlb.backtest_quick": 1800.0,
     "app.tasks.etl_pipeline.nhl.collect_ingest": 1200.0,
     "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
     "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
@@ -129,6 +132,22 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "description": "Post-game K actuals → pred_strikeout_actuals (yesterday).",
     },
     {
+        "task_name": "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier",
+        "label": "MLB retrain K classifier",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier"
+        ],
+        "description": "Retrain strikeout model on prod DB (requires joined rows ≥ MLB_STRIKEOUT_MIN_JOINED_ROWS).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.backtest_quick",
+        "label": "MLB backtest (--quick)",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.backtest_quick"],
+        "description": "20-game backtest; JSON under scripts/mlb_backtest_results/runs/ on worker.",
+    },
+    {
         "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",
         "label": "NHL daily predictions",
         "sport": "nhl",
@@ -180,6 +199,17 @@ class CeleryEnqueueRequest(BaseModel):
 class CeleryVerifyEtlRequest(BaseModel):
     enqueue_all: bool = False
     wait_seconds: int = 0
+
+
+class MlbRetrainEnqueueRequest(BaseModel):
+    dry_run: bool = False
+
+
+class MlbHrRebuildEnqueueRequest(BaseModel):
+    stage: str
+    season: int = 2024
+    holdout_date: str = "2024-07-01"
+    use_existing_s3: bool = False
 
 
 @router.get("/broker-check")
@@ -313,6 +343,66 @@ async def admin_celery_run_task(
             return {"status": "error", "task_id": async_result.id, "error": str(exc)}
 
     return await asyncio.to_thread(_send_and_wait)
+
+
+@router.get("/ml-ops-status")
+async def admin_mlb_ml_ops_status(admin_user: dict = Depends(require_admin)):
+    """Strikeout training counts, S3 model heads, backtest run index (prod DB)."""
+    from app.services.etl.mlb.ml_ops_status import collect_ml_ops_status
+
+    return await asyncio.to_thread(collect_ml_ops_status)
+
+
+@router.post("/ml-ops/retrain-strikeouts")
+async def admin_enqueue_mlb_retrain(
+    body: MlbRetrainEnqueueRequest,
+    admin_user: dict = Depends(require_admin),
+):
+    """Enqueue strikeout classifier retrain on celery-worker (prod DATABASE_URL)."""
+    from app.celery_app import celery_app
+
+    async_result = celery_app.send_task(
+        "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier",
+        kwargs={"dry_run": body.dry_run},
+    )
+    return {
+        "status": "enqueued",
+        "task_id": async_result.id,
+        "task_name": "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier",
+        "dry_run": body.dry_run,
+    }
+
+
+@router.post("/ml-ops/hr-rebuild")
+async def admin_enqueue_mlb_hr_rebuild(
+    body: MlbHrRebuildEnqueueRequest,
+    admin_user: dict = Depends(require_admin),
+):
+    """Enqueue one dingerParlay HR rebuild stage (download-pa … train)."""
+    from app.celery_app import celery_app
+    from app.services.etl.mlb.hr_rebuild_runner import STAGES
+
+    if body.stage not in STAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"stage must be one of: {', '.join(STAGES)}",
+        )
+    async_result = celery_app.send_task(
+        "app.tasks.etl_pipeline.mlb.hr_rebuild_stage",
+        kwargs={
+            "stage": body.stage,
+            "season": body.season,
+            "holdout_date": body.holdout_date,
+            "use_existing_s3": body.use_existing_s3,
+        },
+    )
+    return {
+        "status": "enqueued",
+        "task_id": async_result.id,
+        "task_name": "app.tasks.etl_pipeline.mlb.hr_rebuild_stage",
+        "stage": body.stage,
+        "season": body.season,
+    }
 
 
 @router.get("/task-status/{task_id}")

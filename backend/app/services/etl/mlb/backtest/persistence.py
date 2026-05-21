@@ -45,6 +45,38 @@ def save_run(
     return path
 
 
+def list_runs(*, limit: int = 20) -> list[dict[str, Any]]:
+    """Newest backtest JSON runs (summary fields only)."""
+    if not os.path.isdir(RUNS_DIR):
+        return []
+    files = sorted(
+        (f for f in os.listdir(RUNS_DIR) if f.endswith(".json")),
+        key=lambda name: os.path.getmtime(os.path.join(RUNS_DIR, name)),
+        reverse=True,
+    )[:limit]
+    out: list[dict[str, Any]] = []
+    for name in files:
+        path = os.path.join(RUNS_DIR, name)
+        try:
+            with open(path, encoding="utf-8") as f:
+                payload = json.load(f)
+        except (json.JSONDecodeError, OSError):
+            continue
+        game_m = (payload.get("metrics") or {}).get("game_metrics") or {}
+        out.append(
+            {
+                "id": payload.get("id"),
+                "file": name,
+                "run_date": payload.get("run_date"),
+                "model_version": payload.get("model_version"),
+                "n_games": payload.get("n_games"),
+                "brier_score": game_m.get("brier_score"),
+                "ml_accuracy": game_m.get("ml_accuracy"),
+            }
+        )
+    return out
+
+
 def load_run(compare_id: str) -> dict[str, Any] | None:
     if not os.path.isdir(RUNS_DIR):
         return None
