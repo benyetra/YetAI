@@ -370,10 +370,12 @@ app.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
 
 from app.api.v1.predictions import router as predictions_router
 from app.api.v1.tools import router as tools_router
+from app.api.v1.tools import admin_router as tools_admin_router
 from app.api.admin_celery_ops import router as admin_celery_ops_router
 
 app.include_router(predictions_router)
 app.include_router(tools_router)
+app.include_router(tools_admin_router)
 app.include_router(admin_celery_ops_router)
 
 

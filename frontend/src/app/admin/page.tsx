@@ -24,6 +24,7 @@ import {
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 import AdminCeleryPipelines from '@/components/yetai/AdminCeleryPipelines';
+import AdminOwensBets from '@/components/yetai/AdminOwensBets';
 
 
 export default function AdminPage() {
@@ -72,7 +73,7 @@ export default function AdminPage() {
   const [parlayConfidence, setParlayConfidence] = useState(80);
 
   // Featured Games states
-  const [activeTab, setActiveTab] = useState<'bets' | 'featured'>('bets');
+  const [activeTab, setActiveTab] = useState<'bets' | 'featured' | 'owens'>('bets');
   const [featuredGames, setFeaturedGames] = useState<any[]>([]);
   const [newFeaturedGame, setNewFeaturedGame] = useState({
     game_id: '',
@@ -857,6 +858,10 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
           <button type="button" onClick={() => setActiveTab('featured')} className={`chip ${activeTab === 'featured' ? 'active' : ''}`}>
             <Crown className="w-4 h-4" />
             Featured Games
+          </button>
+          <button type="button" onClick={() => setActiveTab('owens')} className={`chip ${activeTab === 'owens' ? 'active' : ''}`}>
+            <Plus className="w-4 h-4" />
+            Owen&apos;s Bets
           </button>
         </div>
 
@@ -1659,6 +1664,8 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
             )}
           </div>
         )}
+
+        {activeTab === 'owens' && <AdminOwensBets />}
       </div>
     </Layout>
   );
