@@ -12,9 +12,10 @@ in dev; the guard will start enforcing real tiers once auth is fixed.
 
 from datetime import date as date_type
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func
+from sqlalchemy import DateTime, func
 from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
@@ -62,6 +63,15 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     return {c.name: getattr(row, c.name) for c in row.__table__.columns}
 
 
+def _safe_tz(tz: str) -> str:
+    """Validate the IANA timezone string. Falls back to UTC if invalid."""
+    try:
+        ZoneInfo(tz)
+        return tz
+    except (ZoneInfoNotFoundError, ValueError):
+        return "UTC"
+
+
 def _query_recent(
     db: Session,
     model: Any,
@@ -69,14 +79,21 @@ def _query_recent(
     target_date: date_type | None,
     limit: int,
     *,
+    tz: str = "UTC",
     dedupe_keys: tuple[str, ...] | None = None,
 ) -> list[dict[str, Any]]:
     q = db.query(model)
     if date_col_name and target_date is not None:
         col = getattr(model, date_col_name)
-        # Cast to date so DateTime columns (e.g. game_time, NFL game_date)
-        # match by calendar day instead of an exact timestamp.
-        q = q.filter(func.date(col) == target_date)
+        if isinstance(col.type, DateTime):
+            # Naive DateTime columns are stored as UTC. Convert to the user's
+            # timezone, then extract the calendar date so the picker matches
+            # what the user sees locally.
+            local_col = func.timezone(tz, func.timezone("UTC", col))
+            q = q.filter(func.date(local_col) == target_date)
+        else:
+            # Date columns: compare directly.
+            q = q.filter(col == target_date)
     if hasattr(model, "id"):
         q = q.order_by(model.id.desc())
     fetch_limit = limit * 5 if dedupe_keys else limit
@@ -100,24 +117,28 @@ def health() -> dict[str, Any]:
 @router.get("/mlb")
 def mlb_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
+    tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Recent MLB props: strikeouts, game slate, batter boards, HR picks."""
+    tz = _safe_tz(tz)
     return {
         "strikeout_projections": _query_recent(
-            db, StrikeoutProjections, "date", target_date, limit
+            db, StrikeoutProjections, "date", target_date, limit, tz=tz
         ),
         "game_projections": _query_recent(
-            db, GameProjections, "date", target_date, limit
+            db, GameProjections, "date", target_date, limit, tz=tz
         ),
-        "projected_hits": _query_recent(db, ProjectedHits, "date", target_date, limit),
+        "projected_hits": _query_recent(
+            db, ProjectedHits, "date", target_date, limit, tz=tz
+        ),
         "projected_homers": _query_recent(
-            db, ProjectedHomers, "date", target_date, limit
+            db, ProjectedHomers, "date", target_date, limit, tz=tz
         ),
         "home_run_predictions": _query_recent(
-            db, Homer, "game_time", target_date, limit
+            db, Homer, "game_time", target_date, limit, tz=tz
         ),
     }
 
@@ -125,41 +146,57 @@ def mlb_predictions(
 @router.get("/nba")
 def nba_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
+    tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Recent NBA props: game totals O/U plus points, assists, rebounds, etc."""
+    tz = _safe_tz(tz)
     return {
         "totals": _query_recent(
-            db, NBATotalsProjections, "game_date", target_date, limit
+            db, NBATotalsProjections, "game_date", target_date, limit, tz=tz
         ),
-        "points": _query_recent(db, PointsProjections, "date", target_date, limit),
-        "assists": _query_recent(db, AssistsProjections, "date", target_date, limit),
-        "rebounds": _query_recent(db, ReboundsProjections, "date", target_date, limit),
+        "points": _query_recent(
+            db, PointsProjections, "date", target_date, limit, tz=tz
+        ),
+        "assists": _query_recent(
+            db, AssistsProjections, "date", target_date, limit, tz=tz
+        ),
+        "rebounds": _query_recent(
+            db, ReboundsProjections, "date", target_date, limit, tz=tz
+        ),
         "three_point": _query_recent(
-            db, ThreePointProjections, "date", target_date, limit
+            db, ThreePointProjections, "date", target_date, limit, tz=tz
         ),
-        "steals": _query_recent(db, StealsProjections, "date", target_date, limit),
-        "blocks": _query_recent(db, BlocksProjections, "date", target_date, limit),
-        "pra": _query_recent(db, PRAProjections, "date", target_date, limit),
+        "steals": _query_recent(
+            db, StealsProjections, "date", target_date, limit, tz=tz
+        ),
+        "blocks": _query_recent(
+            db, BlocksProjections, "date", target_date, limit, tz=tz
+        ),
+        "pra": _query_recent(
+            db, PRAProjections, "date", target_date, limit, tz=tz
+        ),
     }
 
 
 @router.get("/nfl")
 def nfl_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
+    tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Recent NFL props: QB passing/rushing + kicker FG predictions."""
+    tz = _safe_tz(tz)
     return {
         "qb_predictions": _query_recent(
-            db, QBPredictions, "game_date", target_date, limit
+            db, QBPredictions, "game_date", target_date, limit, tz=tz
         ),
         "kicker_predictions": _query_recent(
-            db, KickerPredictions, "game_date", target_date, limit
+            db, KickerPredictions, "game_date", target_date, limit, tz=tz
         ),
     }
 
@@ -167,11 +204,13 @@ def nfl_predictions(
 @router.get("/nhl")
 def nhl_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
+    tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Recent NHL props: goalie saves, player SOG, game totals O/U."""
+    tz = _safe_tz(tz)
     return {
         "goalie_predictions": _query_recent(
             db,
@@ -179,6 +218,7 @@ def nhl_predictions(
             "game_date",
             target_date,
             limit,
+            tz=tz,
             dedupe_keys=("goalie_id", "game_date"),
         ),
         "player_shots": _query_recent(
@@ -187,6 +227,7 @@ def nhl_predictions(
             "game_date",
             target_date,
             limit,
+            tz=tz,
             dedupe_keys=("player_id", "game_date"),
         ),
         "team_totals": _query_recent(
@@ -195,6 +236,7 @@ def nhl_predictions(
             "game_date",
             target_date,
             limit,
+            tz=tz,
             dedupe_keys=("home_team_id", "away_team_id", "game_date"),
         ),
     }

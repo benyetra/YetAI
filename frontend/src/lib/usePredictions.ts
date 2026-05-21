@@ -40,6 +40,12 @@ export function usePredictions(
 
     const url = new URL(getApiUrl(`/api/v1/predictions/${sport}`));
     if (date) url.searchParams.set('date', date);
+    try {
+      const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (tz) url.searchParams.set('tz', tz);
+    } catch {
+      /* browsers without Intl resolvedOptions — let the API default to UTC */
+    }
 
     const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
 

@@ -45,7 +45,13 @@ export default function SportPredictionsPage({
 }) {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [date, setDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [date, setDate] = useState<string>(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  });
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
 
   const storageKey = `yetai-predictions-expanded:${sport}`;
