@@ -292,10 +292,14 @@ class YetAIBetsServiceDB:
                         ~(
                             (YetAIBet.status == "pending")
                             & (
-                                ((YetAIBet.commence_time != None)
-                                 & (YetAIBet.commence_time < stale_cutoff))
-                                | ((YetAIBet.commence_time == None)
-                                   & (YetAIBet.created_at < stale_cutoff))
+                                (
+                                    (YetAIBet.commence_time != None)
+                                    & (YetAIBet.commence_time < stale_cutoff)
+                                )
+                                | (
+                                    (YetAIBet.commence_time == None)
+                                    & (YetAIBet.created_at < stale_cutoff)
+                                )
                             )
                         )
                     )
@@ -651,8 +655,7 @@ class YetAIBetsServiceDB:
                 if bet.status != "pending":
                     continue
                 is_stale_with_time = (
-                    bet.commence_time is not None
-                    and bet.commence_time < stale_cutoff
+                    bet.commence_time is not None and bet.commence_time < stale_cutoff
                 )
                 is_stale_no_time = (
                     bet.commence_time is None

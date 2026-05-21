@@ -175,9 +175,7 @@ def nba_predictions(
         "blocks": _query_recent(
             db, BlocksProjections, "date", target_date, limit, tz=tz
         ),
-        "pra": _query_recent(
-            db, PRAProjections, "date", target_date, limit, tz=tz
-        ),
+        "pra": _query_recent(db, PRAProjections, "date", target_date, limit, tz=tz),
     }
 
 
