@@ -25,8 +25,7 @@ class YetAIBetsServiceDB:
     """Database-powered admin-created best bets for the YetAI Bets page"""
 
     def __init__(self):
-        # Initialize with sample bets if none exist
-        self._create_sample_bets_if_needed()
+        pass
 
     async def create_bet(
         self, bet_request: CreateYetAIBetRequest, admin_user_id: int
@@ -285,13 +284,19 @@ class YetAIBetsServiceDB:
 
                 if not include_stale_pending:
                     stale_cutoff = datetime.utcnow() - timedelta(hours=24)
-                    # Exclude pending bets where the game started >24h ago.
-                    # Settled bets and pending bets without a commence_time are kept.
+                    # Exclude pending bets where either:
+                    #  - commence_time is set and >24h ago, OR
+                    #  - commence_time is null and created_at is >24h ago
+                    #    (covers legacy/seeded rows that never had a game time)
                     query = query.filter(
                         ~(
                             (YetAIBet.status == "pending")
-                            & (YetAIBet.commence_time != None)
-                            & (YetAIBet.commence_time < stale_cutoff)
+                            & (
+                                ((YetAIBet.commence_time != None)
+                                 & (YetAIBet.commence_time < stale_cutoff))
+                                | ((YetAIBet.commence_time == None)
+                                   & (YetAIBet.created_at < stale_cutoff))
+                            )
                         )
                     )
 
@@ -474,99 +479,6 @@ class YetAIBetsServiceDB:
 
         return bet_dict
 
-    def _create_sample_bets_if_needed(self):
-        """Create some sample YetAI Bets for demonstration if none exist"""
-        try:
-            db = SessionLocal()
-            try:
-                # Check if any bets already exist
-                existing_bets = db.query(YetAIBet).first()
-                if existing_bets:
-                    return  # Already have bets, don't create samples
-
-                sample_bets = [
-                    {
-                        "sport": "NFL",
-                        "game": "Chiefs vs Bills",
-                        "bet_type": "Spread",
-                        "pick": "Chiefs -3.5",
-                        "odds": "-110",
-                        "confidence": 92,
-                        "reasoning": "Chiefs have excellent road record vs top defenses. Buffalo missing key defensive players. Weather favors KC running game.",
-                        "game_time": "8:20 PM EST",
-                        "is_premium": False,
-                    },
-                    {
-                        "sport": "NBA",
-                        "game": "Lakers vs Warriors",
-                        "bet_type": "Total",
-                        "pick": "Over 228.5",
-                        "odds": "-105",
-                        "confidence": 87,
-                        "reasoning": "Both teams ranking in top 5 for pace. Lakers missing defensive anchor, Warriors at home average 118 PPG.",
-                        "game_time": "10:30 PM EST",
-                        "is_premium": True,
-                    },
-                    {
-                        "sport": "MLB",
-                        "game": "Dodgers vs Padres",
-                        "bet_type": "Moneyline",
-                        "pick": "Dodgers ML",
-                        "odds": "-135",
-                        "confidence": 89,
-                        "reasoning": "Pitcher matchup heavily favors LAD. Padres bullpen fatigued from extra innings yesterday. Wind blowing out favors Dodgers power.",
-                        "game_time": "9:40 PM EST",
-                        "is_premium": True,
-                    },
-                    {
-                        "sport": "NHL",
-                        "game": "Rangers vs Bruins",
-                        "bet_type": "Spread",
-                        "pick": "Rangers +1.5",
-                        "odds": "-180",
-                        "confidence": 84,
-                        "reasoning": "Rangers excellent in back-to-back games. Bruins on 4-game road trip, fatigue factor. Shesterkin expected to start.",
-                        "game_time": "7:00 PM EST",
-                        "is_premium": True,
-                    },
-                ]
-
-                for bet_data in sample_bets:
-                    bet_id = str(uuid.uuid4())
-
-                    bet = YetAIBet(
-                        id=bet_id,
-                        sport=bet_data["sport"],
-                        title=bet_data["game"],
-                        description=bet_data["reasoning"],
-                        bet_type=bet_data["bet_type"].lower(),
-                        selection=bet_data["pick"],
-                        odds=float(
-                            bet_data["odds"].replace("-", "")
-                            if bet_data["odds"].startswith("-")
-                            else bet_data["odds"]
-                        ),
-                        confidence=float(bet_data["confidence"]),
-                        tier_requirement=(
-                            SubscriptionTier.PRO
-                            if bet_data["is_premium"]
-                            else SubscriptionTier.FREE
-                        ),
-                        status="pending",
-                        created_at=datetime.utcnow(),
-                    )
-
-                    db.add(bet)
-
-                db.commit()
-                logger.info("Sample YetAI Bets created successfully in database")
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Error creating sample bets: {e}")
-
     def _evaluate_yetai_bet_outcome(
         self, bet: YetAIBet, home_score: int, away_score: int
     ) -> tuple[str, str]:
@@ -738,12 +650,21 @@ class YetAIBetsServiceDB:
             for bet in pending_bets:
                 if bet.status != "pending":
                     continue
-                if bet.commence_time and bet.commence_time < stale_cutoff:
+                is_stale_with_time = (
+                    bet.commence_time is not None
+                    and bet.commence_time < stale_cutoff
+                )
+                is_stale_no_time = (
+                    bet.commence_time is None
+                    and bet.created_at is not None
+                    and bet.created_at < stale_cutoff
+                )
+                if is_stale_with_time or is_stale_no_time:
                     bet.status = "pending_manual_review"
                     bet.settled_at = datetime.utcnow()
                     if not bet.result:
                         bet.result = (
-                            "Auto-expired: game started >24h ago without "
+                            "Auto-expired: pending >24h without "
                             "a final score on file"
                         )
                     total_expired += 1
