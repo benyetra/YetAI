@@ -267,7 +267,20 @@ def collect_player_game_stats(boxscore):
             if position_group not in team_data:
                 continue
 
-            for player_id, player_stats in team_data[position_group].items():
+            group = team_data[position_group]
+            # NHL boxscore API: forwards/defense are lists; older payloads used id-keyed dicts.
+            if isinstance(group, dict):
+                player_entries = group.items()
+            else:
+                player_entries = (
+                    (p.get("playerId"), p) for p in group if isinstance(p, dict)
+                )
+
+            for player_id, player_stats in player_entries:
+                if not player_id:
+                    player_id = player_stats.get("playerId")
+                if not player_id:
+                    continue
                 # Store player game stats
                 # This will be used for: player shots predictions, player goals predictions
                 player_game_stat = {
