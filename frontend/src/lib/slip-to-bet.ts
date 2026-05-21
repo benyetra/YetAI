@@ -93,12 +93,30 @@ export function slipItemsToLegs(slip: SlipItem[]): { legs: SlipBetLeg[]; missing
   return { legs, missing };
 }
 
-export function parlayAmericanOdds(slip: SlipItem[]): number {
-  const decimal = slip.reduce((acc, b) => {
+/** Combined decimal payout multiplier (e.g. two -110 legs → ~3.644). */
+export function parlayDecimalMultiplier(slip: SlipItem[]): number {
+  if (slip.length === 0) return 1;
+  return slip.reduce((acc, b) => {
     const o = b.odds;
-    const d = o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o);
-    return acc * d;
+    const legDecimal = o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o);
+    return acc * legDecimal;
   }, 1);
+}
+
+/** Profit-only American odds for the combined parlay (matches bet slip "+264" display). */
+export function parlayAmericanOdds(slip: SlipItem[]): number {
+  const decimal = parlayDecimalMultiplier(slip);
   if (decimal >= 2) return Math.round((decimal - 1) * 100);
   return Math.round(-100 / (decimal - 1));
+}
+
+/** Winnings (profit only, not including stake) for a parlay at the given stake. */
+export function parlayToWin(stake: number, slip: SlipItem[]): number {
+  if (stake <= 0 || slip.length < 2) return 0;
+  return stake * (parlayDecimalMultiplier(slip) - 1);
+}
+
+/** Total return (stake + profit) for a parlay. */
+export function parlayTotalReturn(stake: number, slip: SlipItem[]): number {
+  return stake + parlayToWin(stake, slip);
 }

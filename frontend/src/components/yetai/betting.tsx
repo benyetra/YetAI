@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Layers, X } from 'lucide-react';
 import { LeagueChip, TeamGlyph } from './primitives';
 import { calcPayout, fmtMoney, fmtOdds } from '@/lib/yetai-format';
+import { parlayAmericanOdds, parlayToWin } from '@/lib/slip-to-bet';
 import { spreadLabel } from '@/lib/yetai-odds';
 import type { BetSlipPlaceContext, DesignGame, SlipItem } from './types';
 
@@ -133,18 +134,20 @@ export function BetSlipPanel({
   const [mode, setMode] = useState<'single' | 'parlay'>('single');
   const [stake, setStake] = useState(50);
 
-  const parlayMultiplier = useMemo(
-    () =>
-      slip.reduce((acc, b) => {
-        const o = b.odds;
-        return acc * (o > 0 ? 1 + o / 100 : 1 + 100 / Math.abs(o));
-      }, 1),
+  // Default to parlay when multiple legs are on the slip (user can switch back to singles).
+  React.useEffect(() => {
+    if (slip.length >= 2) setMode('parlay');
+    else setMode('single');
+  }, [slip.length]);
+
+  const combinedParlayOdds = useMemo(
+    () => (slip.length >= 2 ? parlayAmericanOdds(slip) : 0),
     [slip]
   );
 
   const toWin =
-    mode === 'parlay'
-      ? stake * (parlayMultiplier - 1)
+    mode === 'parlay' && slip.length >= 2
+      ? parlayToWin(stake, slip)
       : slip.reduce((s, b) => s + (calcPayout(b.odds, stake) - stake), 0);
 
   const totalStake = mode === 'single' ? stake * slip.length : stake;
@@ -192,9 +195,9 @@ export function BetSlipPanel({
             }}
           >
             Parlay
-            {slip.length >= 2 && (
+            {slip.length >= 2 && combinedParlayOdds !== 0 && (
               <span className="mono" style={{ fontSize: 10.5, marginLeft: 4, color: 'var(--accent)' }}>
-                +{((parlayMultiplier - 1) * 100).toFixed(0)}
+                {fmtOdds(combinedParlayOdds)}
               </span>
             )}
           </button>
