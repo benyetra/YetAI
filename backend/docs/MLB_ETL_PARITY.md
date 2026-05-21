@@ -57,17 +57,22 @@ YetiBets GHA ran `daily_projection_update` **before** `strikeouts`, which archiv
 - `hits.py` + `daily_batter_projection.py` — hitter filter min score 2; `pred_projected_hits` scoped to today's `game_time` on boards
 - `hr_ml_build.py` + `dingerParlay/predict_today.py` — `mlb.hr_predictions` after weather when `MLB_HR_AUTO_BUILD=1` or CSV env set
 
-## Still manual / future
+## ML ops (offline)
 
-- `classification_model.py --retrain`
-- `dingerParlay` training / feature build scripts
-- `backtest/` CLI
+See [MLB_ML_OPS.md](./MLB_ML_OPS.md):
+
+| Tool | Script |
+|------|--------|
+| Backtest CLI | `scripts/mlb_backtest.py` |
+| Strikeout retrain | `scripts/mlb_retrain_strikeouts.py` |
+| HR training rebuild | `scripts/mlb_hr_rebuild.py` |
 
 ## Validation
 
 ```bash
 cd backend && PYTHONPATH=. python scripts/smoke_import_mlb_etl.py
+cd backend && PYTHONPATH=. python scripts/smoke_import_mlb_etl.py --backtest
 cd backend && PYTHONPATH=. python scripts/validate_mlb_pipeline.py
 ```
 
-`smoke_import_mlb_etl.py` defaults to pipeline-critical modules (Celery daily path). Use `--all` for the full tree (excludes `backtest.py` / `verify_backtest_prd.py`).
+`smoke_import_mlb_etl.py` defaults to pipeline-critical modules (Celery daily path). Use `--all` for the full tree (excludes `backtest.py` / `verify_backtest_prd.py`). Use `--backtest` for the backtest package only.

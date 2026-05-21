@@ -84,7 +84,7 @@ After verification, change ☐ → ✅ and add date in **Session log**.
 |------|--------|
 | Celery | `run_mlb_update_pipeline`, `run_mlb_store_actuals` |
 | Modules | ~40+ under `app/services/etl/mlb/` (`MLB_ETL_PARITY.md`) |
-| Not on Beat | `mlb_ev`, HR ML (S3), backtest CLIs |
+| Not on Beat | `mlb_ev`, HR ML (S3); offline ML ops: `scripts/mlb_backtest.py`, `mlb_retrain_strikeouts.py`, `mlb_hr_rebuild.py` (`MLB_ML_OPS.md`) |
 
 ### NBA
 

@@ -59,6 +59,19 @@ SKIP_ALL_MODE = {
     f"{PACKAGE_PREFIX}.verify_backtest_prd",
 }
 
+BACKTEST_MODULES = [
+    "app.services.etl.mlb.backtest",
+    "app.services.etl.mlb.backtest.cli",
+    "app.services.etl.mlb.backtest.cache",
+    "app.services.etl.mlb.backtest.sampler",
+    "app.services.etl.mlb.backtest.actuals_fetcher",
+    "app.services.etl.mlb.backtest.data_builder",
+    "app.services.etl.mlb.backtest.model_runner",
+    "app.services.etl.mlb.backtest.scorer",
+    "app.services.etl.mlb.backtest.report",
+    "app.services.etl.mlb.backtest.persistence",
+]
+
 
 def discover_all_modules() -> list[str]:
     names: list[str] = []
@@ -81,10 +94,22 @@ def main() -> int:
         help="Import every module (not just pipeline-critical)",
     )
     parser.add_argument("--verbose", "-v", action="store_true")
+    parser.add_argument(
+        "--backtest",
+        action="store_true",
+        help="Import backtest package modules only",
+    )
     args = parser.parse_args()
 
-    modules = discover_all_modules() if args.all else list(PIPELINE_MODULES)
-    mode = "all (excl. skip list)" if args.all else "pipeline-critical"
+    if args.backtest:
+        modules = list(BACKTEST_MODULES)
+        mode = "backtest package"
+    elif args.all:
+        modules = discover_all_modules()
+        mode = "all (excl. skip list)"
+    else:
+        modules = list(PIPELINE_MODULES)
+        mode = "pipeline-critical"
     print(f"MLB ETL import smoke test — {mode} ({len(modules)} modules)")
     print(f"  root: {MLB_ROOT}")
     print()
@@ -107,9 +132,7 @@ def main() -> int:
         for name, err in failed:
             print(f"  - {name}: {err}")
         print()
-        print(
-            "Tip: activate backend/.venv and install requirements.txt (pandas, statsapi, etc.)"
-        )
+        print("Tip: activate backend/.venv and install requirements.txt (pandas, statsapi, etc.)")
         return 1
 
     print(f"PASS: all {len(modules)} targeted MLB ETL modules imported")

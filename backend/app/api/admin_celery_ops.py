@@ -35,6 +35,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.mlb.strikeouts": 600.0,
     "app.tasks.etl_pipeline.mlb.hits": 600.0,
     "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 600.0,
+    "app.tasks.etl_pipeline.mlb.store_strikeout_actuals": 600.0,
     "app.tasks.etl_pipeline.mlb.game_projections": 300.0,
     "app.tasks.etl_pipeline.mlb.batter_projections": 300.0,
     "app.tasks.etl_pipeline.mlb.weather": 180.0,
@@ -117,6 +118,15 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
             "app.tasks.etl_pipeline.mlb.store_strikeout_projections"
         ],
         "description": "Copy pred_pitcher → pred_strikeout_projections for today.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.store_strikeout_actuals",
+        "label": "MLB archive K actuals",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.store_strikeout_actuals"
+        ],
+        "description": "Post-game K actuals → pred_strikeout_actuals (yesterday).",
     },
     {
         "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",

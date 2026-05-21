@@ -78,3 +78,9 @@ coverage/
 # nyc test coverage
 .nyc_output.env
 .vercel
+
+# MLB ML ops local artifacts
+backend/scripts/mlb_backtest_cache.db
+backend/scripts/mlb_backtest_results/
+backend/scripts/mlb_strikeout_retrain_metrics.json
+backend/scripts/mlb_hr_rebuild_manifest.json
