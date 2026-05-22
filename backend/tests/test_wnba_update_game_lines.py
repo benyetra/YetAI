@@ -77,18 +77,19 @@ def test_consensus_averages_across_books(fake_odds_payload, monkeypatch):
     captured = {}
     mock_db = MagicMock(name="Session")
 
-    def merge(obj):
-        captured.update({c.name: getattr(obj, c.name) for c in obj.__table__.columns})
+    def capture_upsert(_db, _model, rows, **kwargs):
+        captured.update(rows[0])
+        return len(rows)
 
-    mock_db.merge.side_effect = merge
     monkeypatch.setattr(
         "app.services.etl.wnba.update_game_lines.SessionLocal", lambda: mock_db
     )
     monkeypatch.setenv("ODDS_API_KEY", "test")
 
-    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og:
+    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og, patch(
+        "app.services.etl.wnba.update_game_lines.upsert_many", side_effect=capture_upsert
+    ):
         og.return_value = fake_odds_payload
-
         result = ugl.run()
 
     # Consensus spread = avg(-2.5, -3.0) = -2.75
@@ -108,9 +109,11 @@ def test_no_data_returns_no_data(monkeypatch):
     )
     monkeypatch.setenv("ODDS_API_KEY", "test")
 
-    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og:
+    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og, patch(
+        "app.services.etl.wnba.update_game_lines.upsert_many"
+    ) as um:
         og.return_value = None
         result = ugl.run()
 
     assert result == {"status": "no_data", "games": 0}
-    mock_db.merge.assert_not_called()
+    um.assert_not_called()

@@ -1,5 +1,5 @@
-from datetime import date, timedelta
-from unittest.mock import MagicMock
+from datetime import date
+from unittest.mock import MagicMock, patch
 
 from app.services.etl.wnba import calculate_prediction_accuracy as cpa
 
@@ -17,7 +17,6 @@ def test_run_writes_actuals_for_each_prop_from_recent_games(monkeypatch):
         lambda: mock_db,
     )
 
-    # One player game from yesterday: P1 with points=20, ast=5, reb=8
     recent_row = MagicMock(
         player_id=100,
         game_date=yesterday,
@@ -27,7 +26,9 @@ def test_run_writes_actuals_for_each_prop_from_recent_games(monkeypatch):
     )
     mock_db.query.return_value.filter.return_value.all.return_value = [recent_row]
 
-    result = cpa.run()
+    with patch("app.services.etl.wnba.calculate_prediction_accuracy.upsert_many") as um:
+        result = cpa.run()
+
     assert result["status"] == "ok"
-    # 3 props × 1 player game = 3 merges
-    assert mock_db.merge.call_count == 3
+    assert um.call_count == 3
+    assert len(um.call_args_list[0][0][2]) == 1

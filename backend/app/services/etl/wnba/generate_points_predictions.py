@@ -11,6 +11,7 @@ from app.models.predictions_models import (
     WNBAPointsProjections,
     WNBATodayActivePlayers,
 )
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.etl.wnba._ml_predict import predict
@@ -25,7 +26,7 @@ EDGE_THRESHOLD = 1.0  # |edge| >= 1 point -> recommendation
 def run() -> dict:
     today = now_eastern().date()
     db = SessionLocal()
-    written = 0
+    upsert_rows: list[dict] = []
     skipped_injured = 0
     skipped_thin = 0
     try:
@@ -60,25 +61,31 @@ def run() -> dict:
                 logger.warning("predict failed for player %s: %s", p.player_id, exc)
                 continue
 
-            obj = WNBAPointsProjections(
-                date=today,
-                player_id=p.player_id,
-                player_name=p.player_name,
-                opponent_team_name=p.opponent_team_name,
-                projected_points=projected,
-                market_line=None,
-                edge=None,
-                recommendation="NO_PLAY",
-                confidence_score=None,
-                created_at=datetime.utcnow(),
+            upsert_rows.append(
+                {
+                    "date": today,
+                    "player_id": p.player_id,
+                    "player_name": p.player_name,
+                    "opponent_team_name": p.opponent_team_name,
+                    "projected_points": projected,
+                    "market_line": None,
+                    "edge": None,
+                    "recommendation": "NO_PLAY",
+                    "confidence_score": None,
+                    "created_at": datetime.utcnow(),
+                }
             )
-            db.merge(obj)
-            written += 1
+        upsert_many(
+            db,
+            WNBAPointsProjections,
+            upsert_rows,
+            conflict_keys=["player_id", "date"],
+        )
         db.commit()
         return {
             "status": "ok",
             "date": today.isoformat(),
-            "projections_written": written,
+            "projections_written": len(upsert_rows),
             "skipped_injured": skipped_injured,
             "skipped_thin_history": skipped_thin,
         }

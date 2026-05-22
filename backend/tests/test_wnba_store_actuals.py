@@ -10,7 +10,9 @@ def test_run_writes_totals_and_spread_actuals(monkeypatch):
         "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
     )
 
-    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg:
+    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg, patch(
+        "app.services.etl.wnba.store_actuals.upsert_many"
+    ) as um:
         fg.return_value = [
             {
                 "completed": True,
@@ -24,12 +26,11 @@ def test_run_writes_totals_and_spread_actuals(monkeypatch):
 
     assert result["totals_written"] == 1
     assert result["spreads_written"] == 1
-    # 2 merge calls: one totals + one spread actual
-    assert mock_db.merge.call_count == 2
+    assert um.call_count == 2
 
-    spread_obj = mock_db.merge.call_args_list[1].args[0]
-    assert spread_obj.actual_margin == 7
-    assert spread_obj.home_won is True
+    spread_rows = um.call_args_list[1][0][2]
+    assert spread_rows[0]["actual_margin"] == 7
+    assert spread_rows[0]["home_won"] is True
 
 
 def test_run_skips_incomplete_games(monkeypatch):
@@ -38,7 +39,9 @@ def test_run_skips_incomplete_games(monkeypatch):
         "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
     )
 
-    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg:
+    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg, patch(
+        "app.services.etl.wnba.store_actuals.upsert_many"
+    ) as um:
         fg.return_value = [
             {
                 "completed": False,
@@ -52,4 +55,4 @@ def test_run_skips_incomplete_games(monkeypatch):
 
     assert result["totals_written"] == 0
     assert result["spreads_written"] == 0
-    mock_db.merge.assert_not_called()
+    um.assert_not_called()

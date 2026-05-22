@@ -41,3 +41,21 @@ def upsert_many(
         )
     session.execute(stmt)
     return len(rows)
+
+
+def replace_matching(
+    session: Session,
+    model: type,
+    rows: Sequence[dict[str, Any]],
+    *,
+    match_keys: Sequence[str],
+) -> int:
+    """Delete rows matching keys, then insert fresh rows (for tables without a unique index)."""
+    if not rows:
+        return 0
+    table = model.__table__
+    for row in rows:
+        filters = {key: row[key] for key in match_keys}
+        session.query(model).filter_by(**filters).delete()
+    session.execute(insert(table).values(list(rows)))
+    return len(rows)

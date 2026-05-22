@@ -77,6 +77,10 @@ def test_backfill_one_season_writes_one_row_per_player_game(monkeypatch):
             "app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season"
         ) as gf,
         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf,
+        patch(
+            "app.services.etl.wnba.backfill_wnba_history.upsert_many",
+            side_effect=lambda _db, _model, rows, **kwargs: len(rows),
+        ),
     ):
         gf.return_value = games_payload
         bf.return_value = boxscore_payload
@@ -84,7 +88,6 @@ def test_backfill_one_season_writes_one_row_per_player_game(monkeypatch):
 
     assert result["status"] == "ok"
     assert result["rows_written"] == 2
-    assert mock_db.merge.call_count == 2
 
 
 def test_backfill_skips_games_with_no_boxscore(monkeypatch):
@@ -107,15 +110,14 @@ def test_backfill_skips_games_with_no_boxscore(monkeypatch):
             }
         ]
         bf.return_value = []
-        result = bw.run(seasons=["2025"])
+        with patch("app.services.etl.wnba.backfill_wnba_history.upsert_many") as um:
+            result = bw.run(seasons=["2025"])
     assert result["rows_written"] == 0
-    mock_db.merge.assert_not_called()
+    um.assert_not_called()
 
 
 def test_backfill_idempotent_on_rerun(monkeypatch):
-    """Re-running with the same data should call merge again (no dedupe in app code) — the DB's
-    unique constraint on (player_id, game_date) handles upsert. Verify rows_written matches both runs.
-    """
+    """Re-running upserts the same player-game rows without inflating row counts."""
     mock_db = MagicMock(name="Session")
     monkeypatch.setattr(
         "app.services.etl.wnba.backfill_wnba_history.SessionLocal", lambda: mock_db
@@ -166,6 +168,10 @@ def test_backfill_idempotent_on_rerun(monkeypatch):
             "app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season"
         ) as gf,
         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf,
+        patch(
+            "app.services.etl.wnba.backfill_wnba_history.upsert_many",
+            side_effect=lambda _db, _model, rows, **kwargs: len(rows),
+        ) as um,
     ):
         gf.return_value = games_payload
         bf.return_value = boxscore_payload
@@ -173,5 +179,4 @@ def test_backfill_idempotent_on_rerun(monkeypatch):
         r2 = bw.run(seasons=["2025"])
     assert r1["rows_written"] == 1
     assert r2["rows_written"] == 1
-    # Two runs → two merge calls total
-    assert mock_db.merge.call_count == 2
+    assert um.call_count == 2

@@ -4,7 +4,7 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 
 **Spec:** [`docs/superpowers/specs/2026-05-21-wnba-support-design.md`](../../docs/superpowers/specs/2026-05-21-wnba-support-design.md)
 **Plan A (Phase 1):** [`docs/superpowers/plans/2026-05-21-wnba-phase-1.md`](../../docs/superpowers/plans/2026-05-21-wnba-phase-1.md)
-**Plan B (Phase 2):** to be written after Plan A ships (tracked as beads issue `YetAI-ejh`)
+**Plan B (Phase 2):** [`docs/superpowers/plans/2026-05-21-wnba-phase-2.md`](../../docs/superpowers/plans/2026-05-21-wnba-phase-2.md) — shipped; beads `YetAI-ejh` closed
 
 ## Phase 1 deliverables — game lines
 
@@ -55,12 +55,28 @@ to `s3://yetibets/wnba/ml_models/xgb_{points,assists,rebounds}.pkl`:
 
 Training logs in [`backend/docs/wnba_training_logs/`](./wnba_training_logs/).
 
+## Production go-live checklist (2026-05-22)
+
+| Check | Status |
+|---|---|
+| Prod DB `alembic_version` = `f8a2c91e04bd` | ✅ migrated via GitHub Actions |
+| `GET https://api.yetai.app/health` — DB + scheduler + `ODDS_API_KEY` | ✅ verified |
+| `GET https://yetai.app/predictions/wnba` | ✅ 200 (page shell) |
+| `/api/v1/predictions/wnba` | Requires paid auth — verify logged-in in app |
+| Celery Beat — 7 WNBA entries in `celery_app.py` | ✅ code present; confirm worker+beat deployed on Railway |
+| S3 models `s3://yetibets/wnba/ml_models/*.pkl` | Required for prop generators (worker IAM) |
+
+Local verifier:
+
+```bash
+cd backend && python scripts/verify_wnba_prod_go_live.py
+```
+
 ## Phase 2 live smoke (2026-05-22)
 
-End-to-end orchestrator run with all Phase 1 + Phase 2 steps. After deduping
-`pred_wnba_team_roster` (pre-existing multi-run duplicates — the table lacks a
-`UNIQUE(team_id, player_id)` constraint and `update_team_roster.py` re-INSERTs
-on every run rather than upserting), the prop pipeline returned:
+End-to-end orchestrator run with all Phase 1 + Phase 2 steps. Roster dedupe +
+`UNIQUE(team_id, player_id)` migration `f8a2c91e04bd` applied on prod. The prop
+pipeline returned:
 
 ```
 today_active_players  : {games: 3, players: 104}
@@ -89,15 +105,16 @@ Top-10 projected scorers for 2026-05-22:
 Top assists samples: Veronica Burton 7.8, Rhyne Howard 6.3, Paige Bueckers 5.2.
 Top rebounds samples: Jessica Shepard 9.7, Aliyah Boston 9.4, Naz Hillmon 9.0.
 
-**Known issue (pre-existing, not Phase 2 scope):**
-`update_team_roster.py`, `update_team_offense_stats.py`, `update_team_defense_stats.py`,
-`update_injury_status.py`, and `today_active_players.py` all use
-`db.merge(Obj(...))` without supplying the autoincrement PK `id`, so each call
-re-INSERTs duplicate rows that violate the natural unique key. Tables
-accumulate duplicate rows on every run (roster is unconstrained; the others
-have a unique constraint and now hard-fail after the first day). Fix: add
-proper `INSERT ... ON CONFLICT DO UPDATE` upserts or add a unique index +
-delete-existing-then-insert pattern. Tracked separately.
+## Upsert hygiene (2026-05-22)
+
+All WNBA ETL writers use `app/services/etl/wnba/_db_upsert.py`:
+
+- `upsert_many()` — `INSERT ... ON CONFLICT DO UPDATE` for tables with a unique
+  constraint on natural keys (roster, game lines, projections, recent games, etc.)
+- `replace_matching()` — delete-then-insert for accuracy summary tables keyed by
+  `(date_range_start, date_range_end)` (no unique index on those windows)
+
+`totals_projector.py` already used query-then-update for `pred_wnba_totals_projections`.
 
 ## Beyond-NBA-parity items
 

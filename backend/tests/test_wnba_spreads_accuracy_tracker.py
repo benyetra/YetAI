@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.services.etl.wnba import spreads_accuracy_tracker as sat
 
@@ -101,6 +101,8 @@ def test_run_writes_three_rows(monkeypatch):
             "total": 12,
         },
     )
-    result = sat.run()
+    with patch("app.services.etl.wnba.spreads_accuracy_tracker.replace_matching") as rm:
+        result = sat.run()
     assert result == {"status": "ok", "windows_written": 3}
-    assert db.merge.call_count == 3
+    assert rm.call_count == 1
+    assert len(rm.call_args[0][2]) == 3

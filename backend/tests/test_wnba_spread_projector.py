@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -64,14 +64,13 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
         },
     )
 
-    result = sp.run()
+    with patch("app.services.etl.wnba.spread_projector.upsert_many") as um:
+        result = sp.run()
+
     assert result["status"] == "ok"
     assert result["games"] == 1
-    merged = mock_db.merge.call_args.args[0]
-    # Away team has higher Elo (1580 > 1550), so projected margin should be negative-ish
-    # but HCA tilts it toward home; net effect: small magnitude
-    assert merged.home_elo == 1550.0
-    assert merged.away_elo == 1580.0
-    assert merged.market_spread_home == -2.5
-    # |edge| is some small number; recommendation depends on which side of threshold
-    assert merged.recommendation in {"HOME", "AWAY", "NO_PLAY"}
+    row = um.call_args[0][2][0]
+    assert row["home_elo"] == 1550.0
+    assert row["away_elo"] == 1580.0
+    assert row["market_spread_home"] == -2.5
+    assert row["recommendation"] in {"HOME", "AWAY", "NO_PLAY"}

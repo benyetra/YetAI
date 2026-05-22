@@ -1,5 +1,5 @@
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from app.services.etl.wnba import totals_accuracy_tracker as tat
 
@@ -64,6 +64,8 @@ def test_run_writes_one_row_per_nonempty_window(monkeypatch):
             "total": 10,
         },
     )
-    result = tat.run()
+    with patch("app.services.etl.wnba.totals_accuracy_tracker.replace_matching") as rm:
+        result = tat.run()
     assert result == {"status": "ok", "windows_written": 3}
-    assert db.merge.call_count == 3
+    assert rm.call_count == 1
+    assert len(rm.call_args[0][2]) == 3

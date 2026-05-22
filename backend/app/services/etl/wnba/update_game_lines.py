@@ -16,6 +16,7 @@ import requests
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBAGameLines
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import EASTERN
 from app.services.etl.wnba._team_id_map import name_to_wnba_id, normalize_team_name
 
@@ -73,7 +74,7 @@ def run() -> dict:
         return {"status": "no_data", "games": 0}
 
     db = SessionLocal()
-    games_written = 0
+    upsert_rows: list[dict] = []
     try:
         for event in payload:
             home_raw = event.get("home_team") or ""
@@ -128,30 +129,36 @@ def run() -> dict:
                         elif o["name"] == away_raw and o.get("price") is not None:
                             ml_away_vals.append(o["price"])
 
-            obj = WNBAGameLines(
-                game_date=game_date,
-                home_team_id=name_to_wnba_id(home_name),
-                away_team_id=name_to_wnba_id(away_name),
-                home_team_name=home_name,
-                away_team_name=away_name,
-                odds_api_event_id=event.get("id"),
-                game_time=commence,
-                spread_home=_consensus(spread_home_vals),
-                spread_away=_consensus(spread_away_vals),
-                spread_home_odds=_consensus_int(spread_home_odds_vals),
-                spread_away_odds=_consensus_int(spread_away_odds_vals),
-                total=_consensus(total_vals),
-                over_odds=_consensus_int(over_odds_vals),
-                under_odds=_consensus_int(under_odds_vals),
-                moneyline_home=_consensus_int(ml_home_vals),
-                moneyline_away=_consensus_int(ml_away_vals),
-                bookmaker="consensus",
-                last_updated=datetime.utcnow(),
+            upsert_rows.append(
+                {
+                    "game_date": game_date,
+                    "home_team_id": name_to_wnba_id(home_name),
+                    "away_team_id": name_to_wnba_id(away_name),
+                    "home_team_name": home_name,
+                    "away_team_name": away_name,
+                    "odds_api_event_id": event.get("id"),
+                    "game_time": commence,
+                    "spread_home": _consensus(spread_home_vals),
+                    "spread_away": _consensus(spread_away_vals),
+                    "spread_home_odds": _consensus_int(spread_home_odds_vals),
+                    "spread_away_odds": _consensus_int(spread_away_odds_vals),
+                    "total": _consensus(total_vals),
+                    "over_odds": _consensus_int(over_odds_vals),
+                    "under_odds": _consensus_int(under_odds_vals),
+                    "moneyline_home": _consensus_int(ml_home_vals),
+                    "moneyline_away": _consensus_int(ml_away_vals),
+                    "bookmaker": "consensus",
+                    "last_updated": datetime.utcnow(),
+                }
             )
-            db.merge(obj)
-            games_written += 1
+        upsert_many(
+            db,
+            WNBAGameLines,
+            upsert_rows,
+            conflict_keys=["game_date", "home_team_name", "away_team_name"],
+        )
         db.commit()
-        return {"status": "ok", "games": games_written}
+        return {"status": "ok", "games": len(upsert_rows)}
     finally:
         db.close()
 

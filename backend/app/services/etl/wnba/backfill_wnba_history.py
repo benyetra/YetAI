@@ -7,7 +7,7 @@ Not registered as a Celery task — run manually:
 
     cd backend && ./.venv/bin/python -m app.services.etl.wnba.backfill_wnba_history
 
-or via an admin endpoint. Re-runs are idempotent (merge on
+or via an admin endpoint. Re-runs are idempotent (upsert on
 (player_id, game_date)).
 """
 
@@ -24,6 +24,7 @@ from nba_api.stats.endpoints import (  # type: ignore
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._wnba_stats import BACKOFF_SECONDS, LEAGUE_ID, _retry
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,21 @@ def run(seasons: list[str] | None = None) -> dict:
     total_rows_written = 0
     total_games_processed = 0
     total_games_skipped = 0
+    pending_rows: list[dict] = []
+
+    def _flush_pending() -> None:
+        nonlocal total_rows_written
+        if not pending_rows:
+            return
+        upsert_many(
+            db,
+            WNBARecentGames,
+            pending_rows,
+            conflict_keys=["player_id", "game_date"],
+        )
+        total_rows_written += len(pending_rows)
+        pending_rows.clear()
+
     try:
         for season in seasons:
             logger.info("backfill: fetching games for season %s", season)
@@ -144,37 +160,38 @@ def run(seasons: list[str] | None = None) -> dict:
                     if opp_id is None:
                         continue
 
-                    obj = WNBARecentGames(
-                        player_id=int(player_id),
-                        game_date=game_date,
-                        opponent_team_id=opp_id,
-                        points=row.get("PTS"),
-                        fg_attempts=row.get("FGA"),
-                        fg_percentage=row.get("FG_PCT"),
-                        three_pt_attempts=row.get("FG3A"),
-                        three_pt_percentage=row.get("FG3_PCT"),
-                        three_pt_made=row.get("FG3M"),
-                        ft_attempts=row.get("FTA"),
-                        ft_percentage=row.get("FT_PCT"),
-                        minutes=_minutes_to_float(row.get("MIN")),
-                        field_goals_made=row.get("FGM"),
-                        free_throws_made=row.get("FTM"),
-                        offensive_rebounds=row.get("OREB"),
-                        defensive_rebounds=row.get("DREB"),
-                        rebounds=row.get("REB"),
-                        assists=row.get("AST"),
-                        turnovers=row.get("TOV"),
-                        steals=row.get("STL"),
-                        blocks=row.get("BLK"),
-                        personal_fouls=row.get("PF"),
-                        home_game=(home_team_id == team_id) if home_team_id else None,
-                        plus_minus=row.get("PLUS_MINUS"),
+                    pending_rows.append(
+                        {
+                            "player_id": int(player_id),
+                            "game_date": game_date,
+                            "opponent_team_id": opp_id,
+                            "points": row.get("PTS"),
+                            "fg_attempts": row.get("FGA"),
+                            "fg_percentage": row.get("FG_PCT"),
+                            "three_pt_attempts": row.get("FG3A"),
+                            "three_pt_percentage": row.get("FG3_PCT"),
+                            "three_pt_made": row.get("FG3M"),
+                            "ft_attempts": row.get("FTA"),
+                            "ft_percentage": row.get("FT_PCT"),
+                            "minutes": _minutes_to_float(row.get("MIN")),
+                            "field_goals_made": row.get("FGM"),
+                            "free_throws_made": row.get("FTM"),
+                            "offensive_rebounds": row.get("OREB"),
+                            "defensive_rebounds": row.get("DREB"),
+                            "rebounds": row.get("REB"),
+                            "assists": row.get("AST"),
+                            "turnovers": row.get("TOV"),
+                            "steals": row.get("STL"),
+                            "blocks": row.get("BLK"),
+                            "personal_fouls": row.get("PF"),
+                            "home_game": (home_team_id == team_id) if home_team_id else None,
+                            "plus_minus": row.get("PLUS_MINUS"),
+                        }
                     )
-                    db.merge(obj)
-                    total_rows_written += 1
 
                 total_games_processed += 1
                 if total_games_processed % 50 == 0:
+                    _flush_pending()
                     db.commit()
                     logger.info(
                         "backfill: %d games, %d rows written (season %s)",
@@ -183,6 +200,7 @@ def run(seasons: list[str] | None = None) -> dict:
                         season,
                     )
 
+        _flush_pending()
         db.commit()
         return {
             "status": "ok",

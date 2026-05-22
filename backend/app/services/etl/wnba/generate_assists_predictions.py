@@ -11,6 +11,7 @@ from app.models.predictions_models import (
     WNBAPlayerInjuryStatus,
     WNBATodayActivePlayers,
 )
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.etl.wnba._ml_predict import predict
@@ -24,7 +25,7 @@ STAT = "assists"
 def run() -> dict:
     today = now_eastern().date()
     db = SessionLocal()
-    written = 0
+    upsert_rows: list[dict] = []
     skipped_injured = 0
     skipped_thin = 0
     try:
@@ -57,26 +58,31 @@ def run() -> dict:
             except Exception as exc:
                 logger.warning("predict failed for player %s: %s", p.player_id, exc)
                 continue
-            db.merge(
-                WNBAAssistsProjections(
-                    date=today,
-                    player_id=p.player_id,
-                    player_name=p.player_name,
-                    opponent_team_name=p.opponent_team_name,
-                    projected_assists=projected,
-                    market_line=None,
-                    edge=None,
-                    recommendation="NO_PLAY",
-                    confidence_score=None,
-                    created_at=datetime.utcnow(),
-                )
+            upsert_rows.append(
+                {
+                    "date": today,
+                    "player_id": p.player_id,
+                    "player_name": p.player_name,
+                    "opponent_team_name": p.opponent_team_name,
+                    "projected_assists": projected,
+                    "market_line": None,
+                    "edge": None,
+                    "recommendation": "NO_PLAY",
+                    "confidence_score": None,
+                    "created_at": datetime.utcnow(),
+                }
             )
-            written += 1
+        upsert_many(
+            db,
+            WNBAAssistsProjections,
+            upsert_rows,
+            conflict_keys=["player_id", "date"],
+        )
         db.commit()
         return {
             "status": "ok",
             "date": today.isoformat(),
-            "projections_written": written,
+            "projections_written": len(upsert_rows),
             "skipped_injured": skipped_injured,
             "skipped_thin_history": skipped_thin,
         }

@@ -45,6 +45,7 @@ def test_inference_writes_projection_when_features_available(
     with (
         patch(f"app.services.etl.wnba.{module_name}.build_features") as bf,
         patch(f"app.services.etl.wnba.{module_name}.predict") as pred,
+        patch(f"app.services.etl.wnba.{module_name}.upsert_many") as um,
     ):
         bf.return_value = {"points_l5": 15.0}
         pred.return_value = 17.3
@@ -52,6 +53,6 @@ def test_inference_writes_projection_when_features_available(
 
     assert result["status"] == "ok"
     assert result["projections_written"] >= 1
-    merged = mock_db.merge.call_args.args[0]
-    assert merged.player_id == 100
-    assert getattr(merged, projected_col) == pytest.approx(17.3)
+    rows = um.call_args[0][2]
+    assert rows[0]["player_id"] == 100
+    assert rows[0][projected_col] == pytest.approx(17.3)

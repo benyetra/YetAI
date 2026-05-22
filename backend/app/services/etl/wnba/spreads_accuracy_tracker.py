@@ -22,6 +22,7 @@ from app.models.predictions_models import (
     WNBASpreadActuals,
     WNBASpreadProjections,
 )
+from app.services.etl.wnba._db_upsert import replace_matching
 from app.services.etl.wnba._espn import now_eastern
 
 logger = logging.getLogger(__name__)
@@ -130,27 +131,32 @@ def run() -> dict:
         ("season", _season_start(today), today),
     ]
     db = SessionLocal()
-    written = 0
+    accuracy_rows: list[dict] = []
     try:
         for _label, start, end in windows:
             stats = _compute_window(db, start, end)
             if stats["total"] == 0:
                 continue
-            db.merge(
-                WNBASpreadAccuracy(
-                    date_range_start=start,
-                    date_range_end=end,
-                    total_games=stats["total"],
-                    spread_mae=stats["mae"],
-                    ats_hit_rate=stats["ats"],
-                    win_prob_brier_score=stats["brier"],
-                    calibration_buckets=stats["buckets"],
-                    created_at=datetime.utcnow(),
-                )
+            accuracy_rows.append(
+                {
+                    "date_range_start": start,
+                    "date_range_end": end,
+                    "total_games": stats["total"],
+                    "spread_mae": stats["mae"],
+                    "ats_hit_rate": stats["ats"],
+                    "win_prob_brier_score": stats["brier"],
+                    "calibration_buckets": stats["buckets"],
+                    "created_at": datetime.utcnow(),
+                }
             )
-            written += 1
+        replace_matching(
+            db,
+            WNBASpreadAccuracy,
+            accuracy_rows,
+            match_keys=["date_range_start", "date_range_end"],
+        )
         db.commit()
-        return {"status": "ok", "windows_written": written}
+        return {"status": "ok", "windows_written": len(accuracy_rows)}
     finally:
         db.close()
 

@@ -26,6 +26,7 @@ from app.models.predictions_models import (
     WNBATeamDefenseStats,
     WNBATeamOffenseStats,
 )
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 
 logger = logging.getLogger(__name__)
@@ -115,7 +116,7 @@ def run() -> dict:
     end = today + timedelta(days=1)
 
     db = SessionLocal()
-    written = 0
+    upsert_rows: list[dict] = []
     try:
         elos = _load_elos(db)
 
@@ -160,31 +161,37 @@ def run() -> dict:
                 elif edge <= -EDGE_THRESHOLD:
                     recommendation = "AWAY"
 
-            obj = WNBASpreadProjections(
-                game_date=g.game_date,
-                home_team_id=g.home_team_id,
-                away_team_id=g.away_team_id,
-                home_team_name=g.home_team_name,
-                away_team_name=g.away_team_name,
-                projected_margin=projected_margin,
-                home_win_prob=home_win_prob,
-                home_elo=home_elo,
-                away_elo=away_elo,
-                home_court_advantage=HOME_COURT_ADVANTAGE,
-                pace_adjustment=pace_adj,
-                market_spread_home=g.spread_home,
-                edge=edge,
-                recommendation=recommendation,
-                confidence_score=(
-                    min(1.0, abs(edge) / 6.0) if edge is not None else None
-                ),
-                factors={"elo_diff": home_elo - away_elo, "pace_adj": pace_adj},
-                created_at=datetime.utcnow(),
+            upsert_rows.append(
+                {
+                    "game_date": g.game_date,
+                    "home_team_id": g.home_team_id,
+                    "away_team_id": g.away_team_id,
+                    "home_team_name": g.home_team_name,
+                    "away_team_name": g.away_team_name,
+                    "projected_margin": projected_margin,
+                    "home_win_prob": home_win_prob,
+                    "home_elo": home_elo,
+                    "away_elo": away_elo,
+                    "home_court_advantage": HOME_COURT_ADVANTAGE,
+                    "pace_adjustment": pace_adj,
+                    "market_spread_home": g.spread_home,
+                    "edge": edge,
+                    "recommendation": recommendation,
+                    "confidence_score": (
+                        min(1.0, abs(edge) / 6.0) if edge is not None else None
+                    ),
+                    "factors": {"elo_diff": home_elo - away_elo, "pace_adj": pace_adj},
+                    "created_at": datetime.utcnow(),
+                }
             )
-            db.merge(obj)
-            written += 1
+        upsert_many(
+            db,
+            WNBASpreadProjections,
+            upsert_rows,
+            conflict_keys=["game_date", "home_team_name", "away_team_name"],
+        )
         db.commit()
-        return {"status": "ok", "games": written}
+        return {"status": "ok", "games": len(upsert_rows)}
     finally:
         db.close()
 

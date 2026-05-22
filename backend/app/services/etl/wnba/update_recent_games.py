@@ -1,7 +1,7 @@
 """Nightly upsert of recent WNBA box scores into pred_wnba_recent_games.
 
 Pulls the last 2 days (Eastern) of games and re-runs the same per-game box
-score path as backfill_wnba_history. Idempotent via SQLAlchemy merge.
+score path as backfill_wnba_history. Idempotent via upsert on (player_id, game_date).
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from nba_api.stats.endpoints import leaguegamefinder  # type: ignore
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._wnba_stats import _retry
 from app.services.etl.wnba.backfill_wnba_history import (
@@ -41,7 +42,7 @@ def _process_day(db, target_date: date) -> int:
     for g in games:
         by_game.setdefault(g["GAME_ID"], []).append(g)
 
-    rows_written = 0
+    upsert_rows: list[dict] = []
     for game_id, teams in by_game.items():
         if len(teams) != 2:
             # Fallback: derive opponent map from boxscore rows
@@ -96,35 +97,42 @@ def _process_day(db, target_date: date) -> int:
             opp_id = team_id_to_opp.get(team_id)
             if opp_id is None:
                 continue
-            obj = WNBARecentGames(
-                player_id=int(player_id),
-                game_date=target_date,
-                opponent_team_id=opp_id,
-                points=row.get("PTS"),
-                fg_attempts=row.get("FGA"),
-                fg_percentage=row.get("FG_PCT"),
-                three_pt_attempts=row.get("FG3A"),
-                three_pt_percentage=row.get("FG3_PCT"),
-                three_pt_made=row.get("FG3M"),
-                ft_attempts=row.get("FTA"),
-                ft_percentage=row.get("FT_PCT"),
-                minutes=_minutes_to_float(row.get("MIN")),
-                field_goals_made=row.get("FGM"),
-                free_throws_made=row.get("FTM"),
-                offensive_rebounds=row.get("OREB"),
-                defensive_rebounds=row.get("DREB"),
-                rebounds=row.get("REB"),
-                assists=row.get("AST"),
-                turnovers=row.get("TOV"),
-                steals=row.get("STL"),
-                blocks=row.get("BLK"),
-                personal_fouls=row.get("PF"),
-                home_game=(home_team_id == team_id) if home_team_id else None,
-                plus_minus=row.get("PLUS_MINUS"),
+            upsert_rows.append(
+                {
+                    "player_id": int(player_id),
+                    "game_date": target_date,
+                    "opponent_team_id": opp_id,
+                    "points": row.get("PTS"),
+                    "fg_attempts": row.get("FGA"),
+                    "fg_percentage": row.get("FG_PCT"),
+                    "three_pt_attempts": row.get("FG3A"),
+                    "three_pt_percentage": row.get("FG3_PCT"),
+                    "three_pt_made": row.get("FG3M"),
+                    "ft_attempts": row.get("FTA"),
+                    "ft_percentage": row.get("FT_PCT"),
+                    "minutes": _minutes_to_float(row.get("MIN")),
+                    "field_goals_made": row.get("FGM"),
+                    "free_throws_made": row.get("FTM"),
+                    "offensive_rebounds": row.get("OREB"),
+                    "defensive_rebounds": row.get("DREB"),
+                    "rebounds": row.get("REB"),
+                    "assists": row.get("AST"),
+                    "turnovers": row.get("TOV"),
+                    "steals": row.get("STL"),
+                    "blocks": row.get("BLK"),
+                    "personal_fouls": row.get("PF"),
+                    "home_game": (home_team_id == team_id) if home_team_id else None,
+                    "plus_minus": row.get("PLUS_MINUS"),
+                }
             )
-            db.merge(obj)
-            rows_written += 1
-    return rows_written
+    if upsert_rows:
+        upsert_many(
+            db,
+            WNBARecentGames,
+            upsert_rows,
+            conflict_keys=["player_id", "game_date"],
+        )
+    return len(upsert_rows)
 
 
 def run() -> dict:
