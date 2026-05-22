@@ -21,4 +21,4 @@ def test_candidate_provider_is_protocol():
     class FakeProvider:
         async def get_candidates(self, date_range):
             return []
-    assert hasattr(FakeProvider(), "get_candidates")
+    assert isinstance(FakeProvider(), CandidateProvider)
