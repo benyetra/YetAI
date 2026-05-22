@@ -75,7 +75,9 @@ def run() -> dict:
         return {
             "status": "ok",
             "date": yesterday.isoformat(),
-            "actuals_written": len(points_rows) + len(assists_rows) + len(rebounds_rows),
+            "actuals_written": len(points_rows)
+            + len(assists_rows)
+            + len(rebounds_rows),
         }
     finally:
         db.close()

@@ -29,7 +29,9 @@ ORDER = ["74627d53e110", "0107ad42b713", "e4d591511da1", "f8a2c91e04bd"]
 def _current_revision(engine) -> str | None:
     with engine.connect() as conn:
         try:
-            return conn.execute(text("SELECT version_num FROM alembic_version")).scalar()
+            return conn.execute(
+                text("SELECT version_num FROM alembic_version")
+            ).scalar()
         except Exception:
             return None
 

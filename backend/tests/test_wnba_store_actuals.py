@@ -10,9 +10,10 @@ def test_run_writes_totals_and_spread_actuals(monkeypatch):
         "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
     )
 
-    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg, patch(
-        "app.services.etl.wnba.store_actuals.upsert_many"
-    ) as um:
+    with (
+        patch("app.services.etl.wnba.store_actuals.fetch_games") as fg,
+        patch("app.services.etl.wnba.store_actuals.upsert_many") as um,
+    ):
         fg.return_value = [
             {
                 "completed": True,
@@ -39,9 +40,10 @@ def test_run_skips_incomplete_games(monkeypatch):
         "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
     )
 
-    with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg, patch(
-        "app.services.etl.wnba.store_actuals.upsert_many"
-    ) as um:
+    with (
+        patch("app.services.etl.wnba.store_actuals.fetch_games") as fg,
+        patch("app.services.etl.wnba.store_actuals.upsert_many") as um,
+    ):
         fg.return_value = [
             {
                 "completed": False,

@@ -86,8 +86,12 @@ def test_consensus_averages_across_books(fake_odds_payload, monkeypatch):
     )
     monkeypatch.setenv("ODDS_API_KEY", "test")
 
-    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og, patch(
-        "app.services.etl.wnba.update_game_lines.upsert_many", side_effect=capture_upsert
+    with (
+        patch("app.services.etl.wnba.update_game_lines._odds_get") as og,
+        patch(
+            "app.services.etl.wnba.update_game_lines.upsert_many",
+            side_effect=capture_upsert,
+        ),
     ):
         og.return_value = fake_odds_payload
         result = ugl.run()
@@ -109,9 +113,10 @@ def test_no_data_returns_no_data(monkeypatch):
     )
     monkeypatch.setenv("ODDS_API_KEY", "test")
 
-    with patch("app.services.etl.wnba.update_game_lines._odds_get") as og, patch(
-        "app.services.etl.wnba.update_game_lines.upsert_many"
-    ) as um:
+    with (
+        patch("app.services.etl.wnba.update_game_lines._odds_get") as og,
+        patch("app.services.etl.wnba.update_game_lines.upsert_many") as um,
+    ):
         og.return_value = None
         result = ugl.run()
 

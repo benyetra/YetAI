@@ -184,7 +184,9 @@ def run(seasons: list[str] | None = None) -> dict:
                             "steals": row.get("STL"),
                             "blocks": row.get("BLK"),
                             "personal_fouls": row.get("PF"),
-                            "home_game": (home_team_id == team_id) if home_team_id else None,
+                            "home_game": (
+                                (home_team_id == team_id) if home_team_id else None
+                            ),
                             "plus_minus": row.get("PLUS_MINUS"),
                         }
                     )
