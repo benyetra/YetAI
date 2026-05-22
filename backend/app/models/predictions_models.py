@@ -2733,6 +2733,13 @@ class WNBATeamRoster(Base):
     player_name = Column(String(100), nullable=False)
     last_updated = Column(DateTime, nullable=False)
     position = Column(String, nullable=True)
+    __table_args__ = (
+        UniqueConstraint(
+            "team_id",
+            "player_id",
+            name="unique_wnba_team_roster_team_player",
+        ),
+    )
 
 
 class WNBATeamOffenseStats(Base):

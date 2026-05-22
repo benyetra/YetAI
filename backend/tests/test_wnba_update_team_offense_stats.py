@@ -15,12 +15,13 @@ def test_run_joins_base_with_advanced(monkeypatch):
 
     with patch("app.services.etl.wnba.update_team_offense_stats._wnba_stats.fetch_team_dashboard") as fd:
         fd.side_effect = [base, advanced]
-        result = uos.run(season="2026")
+        with patch("app.services.etl.wnba.update_team_offense_stats.upsert_many") as um:
+            result = uos.run(season="2026")
 
     assert result == {"status": "ok", "season": "2026", "teams": 1}
-    assert mock_db.merge.call_count == 1
-    merged = mock_db.merge.call_args.args[0]
-    assert merged.team_id == 1
-    assert merged.team_name == "T1"
-    assert merged.pace == 81.5
-    assert merged.points_per_game == 84.0
+    um.assert_called_once()
+    rows = um.call_args[0][2]
+    assert rows[0]["team_id"] == 1
+    assert rows[0]["team_name"] == "T1"
+    assert rows[0]["pace"] == 81.5
+    assert rows[0]["points_per_game"] == 84.0

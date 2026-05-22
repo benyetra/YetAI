@@ -16,12 +16,15 @@ def test_run_upserts_each_player(monkeypatch):
             "app.services.etl.wnba.update_team_roster.WNBA_ID_TO_NAME",
             {1611661319: "Las Vegas Aces"},
         ):
-            result = urr.run(season="2026")
+            with patch("app.services.etl.wnba.update_team_roster.upsert_many") as um:
+                result = urr.run(season="2026")
 
     assert result["status"] == "ok"
     assert result["teams_processed"] == 1
     assert result["players_seen"] == 2
-    assert mock_db.merge.call_count == 2
+    um.assert_called_once()
+    rows = um.call_args[0][2]
+    assert len(rows) == 2
     assert mock_db.commit.called
 
 

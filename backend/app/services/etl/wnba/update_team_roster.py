@@ -12,6 +12,7 @@ from datetime import datetime
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBATeamRoster
 from app.services.etl.wnba import _wnba_stats
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
 
@@ -30,6 +31,7 @@ def run(season: str | None = None) -> dict:
     errors = 0
 
     db = SessionLocal()
+    upsert_rows: list[dict] = []
     try:
         for wnba_team_id, team_name in WNBA_ID_TO_NAME.items():
             try:
@@ -45,15 +47,22 @@ def run(season: str | None = None) -> dict:
                 player_name = row.get("PLAYER")
                 if not player_id or not player_name:
                     continue
-                obj = WNBATeamRoster(
-                    team_id=int(wnba_team_id),
-                    player_id=int(player_id),
-                    player_name=player_name,
-                    last_updated=datetime.utcnow(),
-                    position=row.get("POSITION"),
+                upsert_rows.append(
+                    {
+                        "team_id": int(wnba_team_id),
+                        "player_id": int(player_id),
+                        "player_name": player_name,
+                        "last_updated": datetime.utcnow(),
+                        "position": row.get("POSITION"),
+                    }
                 )
-                db.merge(obj)
                 players_seen += 1
+        upsert_many(
+            db,
+            WNBATeamRoster,
+            upsert_rows,
+            conflict_keys=["team_id", "player_id"],
+        )
         db.commit()
         return {
             "status": "ok",

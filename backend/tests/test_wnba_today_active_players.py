@@ -39,13 +39,15 @@ def test_run_writes_one_row_per_active_player(monkeypatch):
 
     with patch("app.services.etl.wnba.today_active_players.fetch_games") as fg:
         fg.return_value = games_payload
-        result = tap.run()
+        with patch("app.services.etl.wnba.today_active_players.upsert_many") as um:
+            result = tap.run()
 
     assert result["status"] == "ok"
     assert result["games"] == 1
     assert result["players"] == 3
     assert result["kept_stale"] is False
-    assert mock_db.merge.call_count == 3
+    um.assert_called_once()
+    assert len(um.call_args[0][2]) == 3
     mock_db.commit.assert_called_once()
     mock_db.close.assert_called_once()
 
@@ -62,4 +64,4 @@ def test_no_games_keeps_stale_data(monkeypatch):
 
     assert result["games"] == 0
     assert result.get("kept_stale") is True
-    mock_db.merge.assert_not_called()
+    mock_db.execute.assert_not_called()

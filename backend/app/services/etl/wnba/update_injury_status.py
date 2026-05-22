@@ -13,6 +13,7 @@ from sqlalchemy import func
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBAPlayerInjuryStatus, WNBATeamRoster
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import fetch_injuries
 
 logger = logging.getLogger(__name__)
@@ -37,6 +38,7 @@ def run() -> dict:
     db = SessionLocal()
     matched = 0
     unmatched = 0
+    upsert_rows: list[dict] = []
     try:
         for row in rows:
             name = (row.get("player_name") or "").strip()
@@ -53,15 +55,22 @@ def run() -> dict:
                 unmatched += 1
                 continue
 
-            obj = WNBAPlayerInjuryStatus(
-                player_id=roster_row.player_id,
-                player_name=name,
-                status=_normalize_status(row.get("status") or "Out"),
-                injury_type=row.get("injury_type"),
-                date_updated=datetime.utcnow(),
+            upsert_rows.append(
+                {
+                    "player_id": roster_row.player_id,
+                    "player_name": name,
+                    "status": _normalize_status(row.get("status") or "Out"),
+                    "injury_type": row.get("injury_type"),
+                    "date_updated": datetime.utcnow(),
+                }
             )
-            db.merge(obj)
             matched += 1
+        upsert_many(
+            db,
+            WNBAPlayerInjuryStatus,
+            upsert_rows,
+            conflict_keys=["player_id"],
+        )
         db.commit()
         return {
             "status": "ok",

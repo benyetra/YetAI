@@ -31,7 +31,7 @@ export default function WNBAPredictionsPage() {
       sport="wnba"
       leagueLabel="WNBA"
       emoji="🏀"
-      subtitle="Game totals O/U and spread/win-probability projections. Player props (points, assists, rebounds) shipping in Phase 2."
+      subtitle="Game totals O/U, spread/win-probability, and player props (points, assists, rebounds)."
       topSection={({ data, loading }) => (
         <>
           <WnbaSpreadProjectionsTable

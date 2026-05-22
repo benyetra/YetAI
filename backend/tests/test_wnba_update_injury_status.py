@@ -21,14 +21,15 @@ def test_run_matches_roster_and_normalizes_status(monkeypatch):
             {"player_name": "A'ja Wilson", "team_name": "Las Vegas Aces",
              "status": "Day-To-Day", "injury_type": "ankle"},
         ]
-        result = uis.run()
+        with patch("app.services.etl.wnba.update_injury_status.upsert_many") as um:
+            result = uis.run()
 
     assert result["matched"] == 1
     assert result["unmatched"] == 0
-    merged = mock_db.merge.call_args.args[0]
-    assert merged.player_id == 123
-    assert merged.status == "questionable"  # Day-To-Day → questionable
-    assert merged.injury_type == "ankle"
+    row = um.call_args[0][2][0]
+    assert row["player_id"] == 123
+    assert row["status"] == "questionable"  # Day-To-Day → questionable
+    assert row["injury_type"] == "ankle"
 
 
 def test_run_skips_unmatched_player(monkeypatch):
@@ -44,7 +45,7 @@ def test_run_skips_unmatched_player(monkeypatch):
 
     assert result["matched"] == 0
     assert result["unmatched"] == 1
-    mock_db.merge.assert_not_called()
+    mock_db.execute.assert_not_called()
 
 
 def test_unknown_status_defaults_to_out(monkeypatch):
@@ -53,6 +54,7 @@ def test_unknown_status_defaults_to_out(monkeypatch):
 
     with patch("app.services.etl.wnba.update_injury_status.fetch_injuries") as fi:
         fi.return_value = [{"player_name": "P", "team_name": "X", "status": "Mystery", "injury_type": None}]
-        uis.run()
+        with patch("app.services.etl.wnba.update_injury_status.upsert_many") as um:
+            uis.run()
 
-    assert mock_db.merge.call_args.args[0].status == "out"
+    assert um.call_args[0][2][0]["status"] == "out"

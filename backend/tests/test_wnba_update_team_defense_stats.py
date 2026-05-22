@@ -18,13 +18,14 @@ def test_run_joins_three_dashboards(monkeypatch):
 
     with patch("app.services.etl.wnba.update_team_defense_stats._wnba_stats.fetch_team_dashboard") as fd:
         fd.side_effect = [base, defense, advanced]
-        result = uds.run(season="2026")
+        with patch("app.services.etl.wnba.update_team_defense_stats.upsert_many") as um:
+            result = uds.run(season="2026")
 
     assert result == {"status": "ok", "season": "2026", "teams": 1}
-    merged = mock_db.merge.call_args.args[0]
-    assert merged.team_id == 1
-    assert merged.points_allowed_per_game == 80.0
-    assert merged.defensive_rebounds == 24.0
-    assert merged.steals == 6.0
-    assert merged.defensive_rating == 99.5
-    assert merged.pace == 80.0
+    row = um.call_args[0][2][0]
+    assert row["team_id"] == 1
+    assert row["points_allowed_per_game"] == 80.0
+    assert row["defensive_rebounds"] == 24.0
+    assert row["steals"] == 6.0
+    assert row["defensive_rating"] == 99.5
+    assert row["pace"] == 80.0

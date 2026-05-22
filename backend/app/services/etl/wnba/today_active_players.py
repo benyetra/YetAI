@@ -12,6 +12,7 @@ from datetime import datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBATeamRoster, WNBATodayActivePlayers
+from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import build_matchups, fetch_games, now_eastern
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,7 @@ def run() -> dict:
 
     db = SessionLocal()
     players_written = 0
+    upsert_rows: list[dict] = []
     try:
         roster_rows = (
             db.query(WNBATeamRoster)
@@ -62,19 +64,26 @@ def run() -> dict:
             meta = team_meta.get(r.team_id)
             if not meta:
                 continue
-            obj = WNBATodayActivePlayers(
-                player_id=r.player_id,
-                player_name=r.player_name,
-                team_id=r.team_id,
-                team_name=meta["team_name"],
-                opponent_team_id=meta["opponent_team_id"],
-                opponent_team_name=meta["opponent_team_name"],
-                game_date=today,
-                home_game=meta["home_game"],
-                last_updated=datetime.utcnow(),
+            upsert_rows.append(
+                {
+                    "player_id": r.player_id,
+                    "player_name": r.player_name,
+                    "team_id": r.team_id,
+                    "team_name": meta["team_name"],
+                    "opponent_team_id": meta["opponent_team_id"],
+                    "opponent_team_name": meta["opponent_team_name"],
+                    "game_date": today,
+                    "home_game": meta["home_game"],
+                    "last_updated": datetime.utcnow(),
+                }
             )
-            db.merge(obj)
             players_written += 1
+        upsert_many(
+            db,
+            WNBATodayActivePlayers,
+            upsert_rows,
+            conflict_keys=["player_id", "game_date"],
+        )
         db.commit()
         return {
             "status": "ok",
