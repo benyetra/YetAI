@@ -47,7 +47,9 @@ def test_store_actuals_updates_projected_hits_and_homers_columns():
 
     with (
         patch.object(mod, "db_session", mock_db),
-        patch.object(mod, "get_game_log_date", return_value=[{"game_date": "2026-05-21"}]),
+        patch.object(
+            mod, "get_game_log_date", return_value=[{"game_date": "2026-05-21"}]
+        ),
         patch.object(
             mod,
             "calculate_metrics_actuals_v_projections",

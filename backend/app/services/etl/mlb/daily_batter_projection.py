@@ -152,14 +152,10 @@ def _upsert_homer_actual(
 def store_actuals(date):
     """Grade yesterday's batter boards: MLB API game logs → projection + actuals tables."""
     target_date = _normalize_target_date(date)
-    hit_projections = (
-        db_session.query(ProjectedHits).filter_by(date=target_date).all()
-    )
+    hit_projections = db_session.query(ProjectedHits).filter_by(date=target_date).all()
     homer_by_batter = {
         int(row.batter_id): row
-        for row in db_session.query(ProjectedHomers)
-        .filter_by(date=target_date)
-        .all()
+        for row in db_session.query(ProjectedHomers).filter_by(date=target_date).all()
     }
 
     updated_hits = 0
@@ -171,9 +167,7 @@ def store_actuals(date):
         batter_id = str(batter_id_int)
         batter_name = hit_projection.batter_name
         game_logs = get_game_log_date(batter_id, target_date)
-        hits, homers = calculate_metrics_actuals_v_projections(
-            game_logs, target_date
-        )
+        hits, homers = calculate_metrics_actuals_v_projections(game_logs, target_date)
 
         if hits is None or homers is None:
             skipped_no_log += 1
