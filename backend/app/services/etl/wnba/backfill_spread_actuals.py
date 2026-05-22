@@ -9,12 +9,14 @@ per completed game (home/away scores and margin). Idempotent via upsert.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+import time
+from datetime import date, datetime, timedelta
 
 from app.core.database import SessionLocal
-from app.models.predictions_models import WNBASpreadActuals
+from app.models.predictions_models import WNBASpreadActuals, WNBATotalsActuals
 from app.services.etl.wnba._db_upsert import upsert_many
-from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
+from app.services.etl.wnba._espn import fetch_games
+from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME, normalize_team_name
 from app.services.etl.wnba._wnba_stats import _retry
 from app.services.etl.wnba.backfill_wnba_history import DEFAULT_SEASONS, _fetch_games_for_season
 
@@ -45,7 +47,108 @@ def _home_team_id(teams: list[dict]) -> int | None:
     return None
 
 
-def run(
+def run_from_totals(
+    *,
+    season_start: date | None = None,
+    season_end: date | None = None,
+) -> dict:
+    """Copy completed scores from pred_wnba_totals_actuals (no external API)."""
+    db = SessionLocal()
+    rows: list[dict] = []
+    try:
+        q = db.query(WNBATotalsActuals)
+        if season_start:
+            q = q.filter(WNBATotalsActuals.game_date >= season_start)
+        if season_end:
+            q = q.filter(WNBATotalsActuals.game_date <= season_end)
+        for actual in q.all():
+            rows.append(
+                {
+                    "game_date": actual.game_date,
+                    "home_team_name": actual.home_team_name,
+                    "away_team_name": actual.away_team_name,
+                    "home_score": actual.home_score,
+                    "away_score": actual.away_score,
+                    "actual_margin": actual.home_score - actual.away_score,
+                    "home_won": actual.home_score > actual.away_score,
+                    "created_at": datetime.utcnow(),
+                }
+            )
+        if rows:
+            upsert_many(
+                db,
+                WNBASpreadActuals,
+                rows,
+                conflict_keys=["game_date", "home_team_name", "away_team_name"],
+            )
+        db.commit()
+        return {"status": "ok", "source": "totals", "rows_written": len(rows)}
+    finally:
+        db.close()
+
+
+def run_espn(
+    *,
+    season_start: date,
+    season_end: date,
+    sleep_seconds: float = 0.15,
+) -> dict:
+    """Backfill from ESPN scoreboard per day (works from CI; slower than nba_api)."""
+    db = SessionLocal()
+    rows: list[dict] = []
+    games_seen = 0
+    games_skipped = 0
+    try:
+        day = season_start
+        while day <= season_end:
+            for g in fetch_games(day):
+                if not g.get("completed"):
+                    games_skipped += 1
+                    continue
+                home_score = g.get("home_score")
+                away_score = g.get("away_score")
+                if home_score is None or away_score is None:
+                    games_skipped += 1
+                    continue
+                home_name = normalize_team_name(g["home_team_name"])
+                away_name = normalize_team_name(g["away_team_name"])
+                games_seen += 1
+                rows.append(
+                    {
+                        "game_date": day,
+                        "home_team_name": home_name,
+                        "away_team_name": away_name,
+                        "home_score": int(home_score),
+                        "away_score": int(away_score),
+                        "actual_margin": int(home_score) - int(away_score),
+                        "home_won": int(home_score) > int(away_score),
+                        "created_at": datetime.utcnow(),
+                    }
+                )
+            day += timedelta(days=1)
+            if sleep_seconds:
+                time.sleep(sleep_seconds)
+
+        if rows:
+            upsert_many(
+                db,
+                WNBASpreadActuals,
+                rows,
+                conflict_keys=["game_date", "home_team_name", "away_team_name"],
+            )
+        db.commit()
+        return {
+            "status": "ok",
+            "source": "espn",
+            "games_seen": games_seen,
+            "games_skipped": games_skipped,
+            "rows_written": len(rows),
+        }
+    finally:
+        db.close()
+
+
+def run_nba_api(
     seasons: list[str] | None = None,
     *,
     season_start: date | None = None,
@@ -136,6 +239,7 @@ def run(
         db.commit()
         return {
             "status": "ok",
+            "source": "nba_api",
             "seasons": seasons,
             "games_seen": games_seen,
             "games_skipped": games_skipped,
@@ -145,10 +249,35 @@ def run(
         db.close()
 
 
+def run(
+    *,
+    source: str = "nba_api",
+    season_start: date | None = None,
+    season_end: date | None = None,
+    seasons: list[str] | None = None,
+) -> dict:
+    if source == "totals":
+        return run_from_totals(season_start=season_start, season_end=season_end)
+    if source == "espn":
+        if not season_start or not season_end:
+            raise ValueError("espn source requires --start and --end")
+        return run_espn(season_start=season_start, season_end=season_end)
+    if source == "nba_api":
+        return run_nba_api(
+            seasons, season_start=season_start, season_end=season_end
+        )
+    raise ValueError(f"unknown source: {source}")
+
+
 if __name__ == "__main__":
     import argparse
 
     parser = argparse.ArgumentParser(description="Backfill WNBA spread actuals")
+    parser.add_argument(
+        "--source",
+        choices=("totals", "espn", "nba_api"),
+        default="nba_api",
+    )
     parser.add_argument(
         "--start",
         help="Optional YYYY-MM-DD lower bound on game_date",
@@ -160,4 +289,4 @@ if __name__ == "__main__":
     args = parser.parse_args()
     start = date.fromisoformat(args.start) if args.start else None
     end = date.fromisoformat(args.end) if args.end else None
-    print(run(season_start=start, season_end=end))
+    print(run(source=args.source, season_start=start, season_end=end))

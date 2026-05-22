@@ -68,23 +68,18 @@ jobs:
           print(f"pred_wnba_spread_actuals in window: {n}")
           PY
 
-      - name: Backfill spread actuals from nba_api
-        timeout-minutes: 20
+      - name: Backfill spread actuals (totals table + ESPN)
+        timeout-minutes: 30
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
         run: |
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
-          for attempt in 1 2 3; do
-            if python3 -m app.services.etl.wnba.backfill_spread_actuals \
-              --start "${{ inputs.start }}" --end "${{ inputs.end }}"; then
-              exit 0
-            fi
-            echo "backfill attempt ${attempt} failed; retrying in 30s..."
-            sleep 30
-          done
-          exit 1
+          python3 -m app.services.etl.wnba.backfill_spread_actuals \
+            --source totals --start "${{ inputs.start }}" --end "${{ inputs.end }}"
+          python3 -m app.services.etl.wnba.backfill_spread_actuals \
+            --source espn --start "${{ inputs.start }}" --end "${{ inputs.end }}"
 
       - name: Train and upload spread model
         env:
