@@ -3026,6 +3026,7 @@ class WNBATodayActivePlayers(Base):
     opponent_team_name = Column(String(100), nullable=True)
     game_date = Column(Date, nullable=False, index=True)
     home_game = Column(Boolean, nullable=True)
+    expected_minutes = Column(Float, nullable=True)
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
         UniqueConstraint("player_id", "game_date", name="unique_wnba_today_active"),
