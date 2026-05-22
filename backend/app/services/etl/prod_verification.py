@@ -19,6 +19,12 @@ from app.models.predictions_models import (
     KickerPredictions,
     ValueBet,
     NBATotalsProjections,
+    WNBAGameLines,
+    WNBAAssistsProjections,
+    WNBAPointsProjections,
+    WNBAReboundsProjections,
+    WNBASpreadProjections,
+    WNBATotalsProjections,
     NHLGoaliePredictions,
     NHLPlayerShotsPredictions,
     NHLTeamTotalsPredictions,
@@ -235,8 +241,85 @@ def verify_nfl(*, in_season: bool | None = None) -> dict[str, Any]:
     }
 
 
+def _wnba_in_season(today: date) -> bool:
+    return date(today.year, 5, 1) <= today <= date(today.year, 10, 31)
+
+
+def verify_wnba() -> dict[str, Any]:
+    today = now_eastern().date()
+    in_season = _wnba_in_season(today)
+    warnings: list[str] = []
+    db = SessionLocal()
+    try:
+        game_lines = (
+            db.query(WNBAGameLines).filter(WNBAGameLines.game_date == today).count()
+        )
+        totals = (
+            db.query(WNBATotalsProjections)
+            .filter(WNBATotalsProjections.game_date == today)
+            .count()
+        )
+        spreads = (
+            db.query(WNBASpreadProjections)
+            .filter(WNBASpreadProjections.game_date == today)
+            .count()
+        )
+        points = (
+            db.query(WNBAPointsProjections)
+            .filter(WNBAPointsProjections.date == today)
+            .count()
+        )
+        assists = (
+            db.query(WNBAAssistsProjections)
+            .filter(WNBAAssistsProjections.date == today)
+            .count()
+        )
+        rebounds = (
+            db.query(WNBAReboundsProjections)
+            .filter(WNBAReboundsProjections.date == today)
+            .count()
+        )
+    finally:
+        db.close()
+
+    if not in_season:
+        passed = True
+        warnings.append(
+            "off-season (May–Oct ET): tables may be empty; enqueue "
+            "run_wnba_update_pipeline to refresh when season starts"
+        )
+    else:
+        passed = game_lines > 0 and totals > 0 and spreads > 0 and points >= 8
+        if game_lines <= 0:
+            warnings.append(
+                "no game lines today — enqueue WNBA pipeline or run update_game_lines "
+                "(requires ODDS_API_KEY)"
+            )
+        if points < 8:
+            warnings.append(
+                "few player prop rows today — run full pipeline after game lines + roster"
+            )
+
+    return {
+        "sport": "wnba",
+        "date_et": str(today),
+        "in_season": in_season,
+        "passed": passed,
+        "status": _sport_verdict(passed, warnings),
+        "counts": {
+            "game_lines_today": game_lines,
+            "totals_today": totals,
+            "spreads_today": spreads,
+            "points_today": points,
+            "assists_today": assists,
+            "rebounds_today": rebounds,
+        },
+        "warnings": warnings,
+    }
+
+
 def verify_all_sports() -> dict[str, Any]:
-    sports = [verify_mlb(), verify_nba(), verify_nhl(), verify_nfl()]
+    sports = [verify_mlb(), verify_nba(), verify_wnba(), verify_nhl(), verify_nfl()]
     all_passed = all(s["passed"] for s in sports)
     any_failed = any(s["status"] == "failed" for s in sports)
     return {
@@ -253,6 +336,7 @@ def prediction_api_counts() -> dict[str, Any]:
     today = now_eastern().date()
     mlb = verify_mlb()
     nba = verify_nba()
+    wnba = verify_wnba()
     nhl = verify_nhl()
     nfl = verify_nfl()
     return {
@@ -264,6 +348,11 @@ def prediction_api_counts() -> dict[str, Any]:
         "nba": {
             "totals": nba["counts"]["totals_today"],
             "points": nba["counts"]["points_today"],
+        },
+        "wnba": {
+            "totals": wnba["counts"]["totals_today"],
+            "spreads": wnba["counts"]["spreads_today"],
+            "points": wnba["counts"]["points_today"],
         },
         "nhl": {
             "goalie_predictions": nhl["counts"]["goalie_predictions_today"],

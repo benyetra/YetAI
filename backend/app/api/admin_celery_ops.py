@@ -55,6 +55,10 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nfl.qb_betting": 300.0,
     "app.tasks.etl_pipeline.nfl.qb_weekly": 900.0,
     "app.tasks.etl_pipeline.nfl.kickers": 600.0,
+    "app.tasks.etl_pipeline.wnba.update_game_lines": 120.0,
+    "app.tasks.etl_pipeline.wnba.today_active_players": 120.0,
+    "app.tasks.etl_pipeline.wnba.totals_projector": 300.0,
+    "app.tasks.etl_pipeline.wnba.spread_projector": 300.0,
 }
 
 PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
@@ -75,6 +79,15 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         "label": "NBA daily pipeline",
         "sport": "nba",
         "description": "Full NBA ETL: roster, stats, injury, all prop models, game totals.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "label": "WNBA daily pipeline",
+        "sport": "wnba",
+        "description": (
+            "Full WNBA ETL: roster, stats, injury, game lines, totals/spread "
+            "projectors, points/assists/rebounds props (May–Oct ET)."
+        ),
     },
     {
         "task_name": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
@@ -162,6 +175,24 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "sport": "nfl",
         "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.nfl.kickers"],
         "description": "Kicker projections; ML blend when NFL_MODELS_S3_PREFIX or local models.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.wnba.update_game_lines",
+        "label": "WNBA game lines",
+        "sport": "wnba",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.wnba.update_game_lines"
+        ],
+        "description": "Consensus O/U and spreads from Odds API (basketball_wnba).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.wnba.totals_projector",
+        "label": "WNBA totals projector",
+        "sport": "wnba",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.wnba.totals_projector"
+        ],
+        "description": "Game totals O/U projections (needs game lines + team stats).",
     },
 ]
 
@@ -439,7 +470,7 @@ async def admin_celery_verify_etl(
     body: CeleryVerifyEtlRequest | None = None,
     admin_user: dict = Depends(require_admin),
 ):
-    """DB checks for all four sport pipelines; optional enqueue of orchestrators."""
+    """DB checks for all sport pipelines; optional enqueue of orchestrators."""
     from app.celery_app import celery_app
     from app.services.etl.prod_verification import (
         prediction_api_counts,
@@ -471,6 +502,7 @@ async def admin_celery_verify_etl(
         "ui_routes": [
             "/predictions/mlb",
             "/predictions/nba",
+            "/predictions/wnba",
             "/predictions/nhl",
             "/predictions/nfl",
         ],
