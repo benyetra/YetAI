@@ -43,6 +43,11 @@ target_metadata = Base.metadata
 # ... etc.
 
 
+def _database_url() -> str:
+    """Prefer Railway/CI DATABASE_URL over alembic.ini localhost default."""
+    return os.environ.get("DATABASE_URL") or settings.DATABASE_URL
+
+
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
 
@@ -55,9 +60,7 @@ def run_migrations_offline() -> None:
     script output.
 
     """
-    url = config.get_main_option("sqlalchemy.url")
-    if url is None:
-        url = settings.DATABASE_URL
+    url = _database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -76,8 +79,10 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    configuration = config.get_section(config.config_ini_section, {}) or {}
+    configuration["sqlalchemy.url"] = _database_url()
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section, {}),
+        configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

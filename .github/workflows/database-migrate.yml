@@ -71,9 +71,10 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
         run: |
           set -euo pipefail
+          SERVICE_ID="9fe8f0dc-96ac-408f-9960-950768e6eb49"
           echo "=== Before ==="
-          railway run -- alembic current
+          railway run --service "$SERVICE_ID" -- alembic current
           echo "=== Upgrade ==="
-          railway run -- alembic upgrade head
+          railway run --service "$SERVICE_ID" -- alembic upgrade head
           echo "=== After ==="
-          railway run -- alembic current
+          railway run --service "$SERVICE_ID" -- alembic current
