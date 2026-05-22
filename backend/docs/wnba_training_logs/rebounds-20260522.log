@@ -1,0 +1,19 @@
+Building training dataset for rebounds...
+  train rows: 15682
+  features: ['rebounds_l3', 'minutes_l3', 'rebounds_l5', 'minutes_l5', 'rebounds_l10', 'minutes_l10', 'season_rebounds_avg', 'season_minutes_avg', 'season_usage_pct', 'season_ts_pct', 'opp_rebounds_allowed_per_game', 'opp_defensive_rating', 'opp_pace', 'rest_days', 'is_back_to_back', 'pace_factor']
+Training rebounds model...
+  train MAE: 1.465
+  test MAE: 1.839
+Building 2025 validation dataset...
+  val rows: 3577
+Validating against 2025 season...
+{
+  "stat": "rebounds",
+  "passes_gate": true,
+  "gate_threshold": 2.0,
+  "mae": 1.829,
+  "rmse": 2.417,
+  "n_validation_rows": 3577
+}
+PASS: Uploading to S3...
+{'model_key': 'wnba/ml_models/xgb_rebounds.pkl', 'metadata_key': 'wnba/ml_models/xgb_rebounds_metadata.json'}

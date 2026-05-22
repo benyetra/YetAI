@@ -1,0 +1,27 @@
+Building training dataset for assists...
+  train rows: 15682
+  features: ['assists_l3', 'minutes_l3', 'assists_l5', 'minutes_l5', 'assists_l10', 'minutes_l10', 'season_assists_avg', 'season_minutes_avg', 'season_usage_pct', 'season_ts_pct', 'opp_assists_allowed_per_game', 'opp_defensive_rating', 'opp_pace', 'rest_days', 'is_back_to_back', 'pace_factor']
+Training assists model...
+  train MAE: 1.005
+  test MAE: 1.244
+Building 2025 validation dataset...
+  val rows: 3577
+Validating against 2025 season...
+{
+  "stat": "assists",
+  "passes_gate": true,
+  "gate_threshold": 1.5,
+  "mae": 1.266,
+  "rmse": 1.704,
+  "residual_mean": -0.038,
+  "n_validation_rows": 3577,
+  "calibration": [
+    {"bucket": "(-0.1, 2.09]",  "count": 2036, "residual_mean": -0.061, "residual_std": 1.25},
+    {"bucket": "(2.09, 4.27]",  "count": 1141, "residual_mean": -0.052, "residual_std": 1.94},
+    {"bucket": "(4.27, 6.45]",  "count": 313,  "residual_mean":  0.050, "residual_std": 2.61},
+    {"bucket": "(6.45, 8.63]",  "count": 77,   "residual_mean":  0.505, "residual_std": 2.84},
+    {"bucket": "(8.63, 10.81]", "count": 10,   "residual_mean": -0.676, "residual_std": 3.88}
+  ]
+}
+PASS: Uploading to S3...
+{'model_key': 'wnba/ml_models/xgb_assists.pkl', 'metadata_key': 'wnba/ml_models/xgb_assists_metadata.json'}
