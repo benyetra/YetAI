@@ -1,7 +1,10 @@
 from datetime import date as date_type, datetime, timedelta
+import logging
 import sys
 import os
 import statsapi
+
+logger = logging.getLogger(__name__)
 import requests
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb._mlb_utils import *
@@ -80,7 +83,7 @@ def calculate_metrics_actuals_v_projections(game_logs, game_date):
             hits = log.get("hits", 0)
             home_runs = log.get("homeRuns", 0)
             return hits, home_runs
-    print(f"No data found for matching date: {game_date}")
+    logger.warning("No data found for matching date: %s", game_date)
     return None, None
 
 
