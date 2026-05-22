@@ -18,7 +18,10 @@ from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import fetch_games
 from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME, normalize_team_name
 from app.services.etl.wnba._wnba_stats import _retry
-from app.services.etl.wnba.backfill_wnba_history import DEFAULT_SEASONS, _fetch_games_for_season
+from app.services.etl.wnba.backfill_wnba_history import (
+    DEFAULT_SEASONS,
+    _fetch_games_for_season,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -196,8 +199,12 @@ def run_nba_api(
                     games_skipped += 1
                     continue
 
-                home_row = next((t for t in teams if int(t["TEAM_ID"]) == home_id), None)
-                away_row = next((t for t in teams if int(t["TEAM_ID"]) != home_id), None)
+                home_row = next(
+                    (t for t in teams if int(t["TEAM_ID"]) == home_id), None
+                )
+                away_row = next(
+                    (t for t in teams if int(t["TEAM_ID"]) != home_id), None
+                )
                 if not home_row or not away_row:
                     games_skipped += 1
                     continue
@@ -263,9 +270,7 @@ def run(
             raise ValueError("espn source requires --start and --end")
         return run_espn(season_start=season_start, season_end=season_end)
     if source == "nba_api":
-        return run_nba_api(
-            seasons, season_start=season_start, season_end=season_end
-        )
+        return run_nba_api(seasons, season_start=season_start, season_end=season_end)
     raise ValueError(f"unknown source: {source}")
 
 
