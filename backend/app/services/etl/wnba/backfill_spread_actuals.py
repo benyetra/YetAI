@@ -15,12 +15,26 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import WNBASpreadActuals
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
-from app.services.etl.wnba.backfill_wnba_history import (
-    DEFAULT_SEASONS,
-    _fetch_games_for_season,
-)
+from app.services.etl.wnba._wnba_stats import _retry
+from app.services.etl.wnba.backfill_wnba_history import DEFAULT_SEASONS, _fetch_games_for_season
 
 logger = logging.getLogger(__name__)
+
+_VALID_SEASONS = frozenset({"2021", "2022", "2023", "2024", "2025", "2026"})
+
+
+def _seasons_for_window(
+    season_start: date | None,
+    season_end: date | None,
+    seasons: list[str] | None,
+) -> list[str]:
+    if seasons:
+        return seasons
+    if season_start is None and season_end is None:
+        return DEFAULT_SEASONS
+    lo_year = (season_start or date(2021, 1, 1)).year
+    hi_year = (season_end or date.today()).year
+    return [str(y) for y in range(lo_year, hi_year + 1) if str(y) in _VALID_SEASONS]
 
 
 def _home_team_id(teams: list[dict]) -> int | None:
@@ -37,7 +51,7 @@ def run(
     season_start: date | None = None,
     season_end: date | None = None,
 ) -> dict:
-    seasons = seasons or DEFAULT_SEASONS
+    seasons = _seasons_for_window(season_start, season_end, seasons)
     db = SessionLocal()
     rows: list[dict] = []
     games_seen = 0
@@ -46,7 +60,10 @@ def run(
     try:
         for season in seasons:
             logger.info("backfill_spread_actuals: season %s", season)
-            games = _fetch_games_for_season(season)
+            games = _retry(
+                lambda s=season: _fetch_games_for_season(s),
+                f"leaguegamefinder({season})",
+            )
             by_game: dict[str, list[dict]] = {}
             for g in games:
                 by_game.setdefault(g["GAME_ID"], []).append(g)
@@ -76,12 +93,8 @@ def run(
                     games_skipped += 1
                     continue
 
-                home_row = next(
-                    (t for t in teams if int(t["TEAM_ID"]) == home_id), None
-                )
-                away_row = next(
-                    (t for t in teams if int(t["TEAM_ID"]) != home_id), None
-                )
+                home_row = next((t for t in teams if int(t["TEAM_ID"]) == home_id), None)
+                away_row = next((t for t in teams if int(t["TEAM_ID"]) != home_id), None)
                 if not home_row or not away_row:
                     games_skipped += 1
                     continue
