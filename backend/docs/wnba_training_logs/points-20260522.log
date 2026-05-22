@@ -1,0 +1,53 @@
+Building training dataset for points...
+  train rows: 15682
+  features: ['points_l3', 'minutes_l3', 'points_l5', 'minutes_l5', 'points_l10', 'minutes_l10', 'season_points_avg', 'season_minutes_avg', 'season_usage_pct', 'season_ts_pct', 'opp_points_allowed_per_game', 'opp_defensive_rating', 'opp_pace', 'rest_days', 'is_back_to_back', 'pace_factor']
+Training points model...
+  train MAE: 3.400
+  test MAE: 4.085
+Building 2025 validation dataset...
+  val rows: 3577
+Validating against 2025 season...
+{
+  "stat": "points",
+  "passes_gate": true,
+  "gate_threshold": 4.5,
+  "mae": 4.260599018276355,
+  "rmse": 5.510776764435273,
+  "residual_mean": 0.0023109721910830215,
+  "residual_std": 5.510776279876295,
+  "calibration": [
+    {
+      "bucket": "(1.01, 6.683]",
+      "count": 1441,
+      "residual_mean": -0.22974962058123577,
+      "residual_std": 4.366285103500339
+    },
+    {
+      "bucket": "(6.683, 12.328]",
+      "count": 1240,
+      "residual_mean": -0.11446849030833091,
+      "residual_std": 5.721970332188264
+    },
+    {
+      "bucket": "(12.328, 17.973]",
+      "count": 704,
+      "residual_mean": 0.26540721681984986,
+      "residual_std": 6.4113424368731025
+    },
+    {
+      "bucket": "(17.973, 23.617]",
+      "count": 167,
+      "residual_mean": 1.1900963811817284,
+      "residual_std": 7.233768845150086
+    },
+    {
+      "bucket": "(23.617, 29.262]",
+      "count": 25,
+      "residual_mean": 3.8273480987548827,
+      "residual_std": 9.750724831207306
+    }
+  ],
+  "n_validation_rows": 3577
+}
+PASS: Uploading to S3...
+{'model_key': 'wnba/ml_models/xgb_points.pkl', 'metadata_key': 'wnba/ml_models/xgb_points_metadata.json'}
