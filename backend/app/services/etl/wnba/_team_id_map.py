@@ -8,11 +8,9 @@ Both ID sets were live-verified on 2026-05-21:
 - ESPN: http://site.api.espn.com/apis/site/v2/sports/basketball/wnba/teams
 - WNBA: nba_api leaguedashteamstats with league_id_nullable="10", season="2025"
 
-Toronto Tempo and Portland Fire are 2026 expansion teams that did not yet
-appear in the 2025 stats.wnba.com dashboard at verification time. Their ESPN
-IDs are known and recorded; the WNBA stats IDs will resolve themselves on the
-first 2026 nightly run that hits an Advanced/Base dashboard call (logged at
-WARN if a roster fetch for those teams fails until then).
+Toronto Tempo and Portland Fire are 2026 expansion teams. Their ESPN IDs were
+live-verified 2026-05-21; stats.wnba.com WNBA IDs were verified 2026-05-22 via
+nba_api LeagueDashTeamStats (league_id_nullable="10", season="2026").
 """
 
 from __future__ import annotations
@@ -33,11 +31,8 @@ WNBA_ID_TO_NAME: dict[int, str] = {
     1611661317: "Phoenix Mercury",
     1611661328: "Seattle Storm",
     1611661322: "Washington Mystics",
-    # 2026 expansion — WNBA IDs unknown until they hit the dashboard.
-    # These are placeholder integers so name → WNBA_ID lookups don't return None.
-    # Update on first nightly run after stats.wnba.com publishes 2026 standings.
-    99000001: "Toronto Tempo",     # TODO_VERIFY
-    99000002: "Portland Fire",     # TODO_VERIFY
+    1611661332: "Toronto Tempo",
+    1611661327: "Portland Fire",
 }
 
 NAME_TO_WNBA_ID: dict[str, int] = {
@@ -57,9 +52,9 @@ ESPN_TO_WNBA_TEAM_ID: dict[str, int] = {
     "8":  1611661324,      # Minnesota Lynx
     "9":  1611661313,      # New York Liberty
     "11": 1611661317,      # Phoenix Mercury
-    "132052": 99000002,    # Portland Fire (2026 expansion) — placeholder
+    "132052": 1611661327,  # Portland Fire (2026 expansion)
     "14": 1611661328,      # Seattle Storm
-    "131935": 99000001,    # Toronto Tempo (2026 expansion) — placeholder
+    "131935": 1611661332,  # Toronto Tempo (2026 expansion)
     "16": 1611661322,      # Washington Mystics
 }
 

@@ -14,7 +14,16 @@ def test_odds_api_name_alias_resolves():
 
 def test_expansion_teams_present():
     assert "Toronto Tempo" in m.WNBA_ID_TO_NAME.values()
+    assert "Portland Fire" in m.WNBA_ID_TO_NAME.values()
     assert "Golden State Valkyries" in m.WNBA_ID_TO_NAME.values()
+
+
+def test_2026_expansion_teams_use_stats_wnba_ids():
+    """Live-verified 2026-05-22 via nba_api LeagueDashTeamStats (season 2026)."""
+    assert m.NAME_TO_WNBA_ID["toronto tempo"] == 1611661332
+    assert m.NAME_TO_WNBA_ID["portland fire"] == 1611661327
+    assert m.ESPN_TO_WNBA_TEAM_ID["131935"] == 1611661332
+    assert m.ESPN_TO_WNBA_TEAM_ID["132052"] == 1611661327
 
 
 def test_espn_ids_all_resolve_to_known_wnba_ids():

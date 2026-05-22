@@ -143,7 +143,7 @@ maintenance cost grows.
 
 T19 smoke against staging (2026-05-21):
 
-- `update_team_roster`: **15 teams, 179 players** (incl. 13 active + 2 expansion placeholders for Toronto Tempo / Portland Fire)
+- `update_team_roster`: **15 teams, 179 players** (13 legacy + Golden State Valkyries + Toronto Tempo / Portland Fire; expansion stats IDs verified 2026-05-22 as `1611661332` / `1611661327`)
 - `update_team_offense_stats` / `_defense_stats`: 15 teams each, joined Base + Defense + Advanced dashboards
 - `update_injury_status`: **36 of 38 ESPN injury rows matched** to roster; 2 unmatched are players not yet on any team's stats.wnba.com roster (acceptable, logged at INFO)
 - `store_actuals`: 3 of 3 completed games from 2026-05-20 ingested into both totals_actuals and spread_actuals
