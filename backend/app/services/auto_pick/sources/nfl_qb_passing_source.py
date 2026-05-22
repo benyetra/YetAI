@@ -12,7 +12,7 @@ Returns dicts shaped for PlayerPropCandidateProvider:
   Optional: sample_size, generated_at, model_confidence, injury_flag
 """
 import logging
-from datetime import date, datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
@@ -27,16 +27,17 @@ class NFLQBPassingSource:
         self.db = db
 
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
-        start: date = date_range.start
-        end: date = date_range.end
+        # date_range.start/end are datetime instances. Normalize to day bounds
+        # using timedelta to avoid month/year rollover bugs (e.g. day=31 + 1).
+        start_dt = datetime(date_range.start.year, date_range.start.month, date_range.start.day)
+        end_dt = datetime(date_range.end.year, date_range.end.month, date_range.end.day) + timedelta(days=1)
 
         try:
             rows = (
                 self.db.query(QBPredictions)
                 .filter(
-                    # game_date is a DateTime column — cast-safe comparison with date bounds
-                    QBPredictions.game_date >= datetime(start.year, start.month, start.day),
-                    QBPredictions.game_date < datetime(end.year, end.month, end.day + 1),
+                    QBPredictions.game_date >= start_dt,
+                    QBPredictions.game_date < end_dt,
                 )
                 .all()
             )
