@@ -14,7 +14,6 @@ or via an admin endpoint. Re-runs are idempotent (merge on
 from __future__ import annotations
 
 import logging
-import time
 from datetime import datetime
 from typing import Any
 
@@ -25,8 +24,7 @@ from nba_api.stats.endpoints import (  # type: ignore
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
-from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
-from app.services.etl.wnba._wnba_stats import BACKOFF_SECONDS, LEAGUE_ID
+from app.services.etl.wnba._wnba_stats import BACKOFF_SECONDS, LEAGUE_ID, _retry
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +59,6 @@ def _fetch_boxscore(game_id: str) -> list[dict[str, Any]]:
     """Return one row per player for one game (traditional box score)."""
     obj = boxscoretraditionalv2.BoxScoreTraditionalV2(game_id=game_id)
     return obj.get_normalized_dict()["PlayerStats"]
-
-
-def _opponent_team_id(matchup: str, my_team_id: int, team_lookup: dict[int, str]) -> int | None:
-    """MATCHUP looks like 'NYL vs. LVA' or 'NYL @ LVA'. Return the other team's stats id.
-
-    We don't have a tricode → wnba_id mapping handy; instead derive opponent by
-    elimination from the unique (game_id, team_id) pair the games list provides.
-    The caller is expected to pass the opponent id directly — this is a fallback.
-    """
-    # In practice we'll resolve opponent via the games list (each game has 2 rows).
-    return None
 
 
 def run(seasons: list[str] | None = None) -> dict:
@@ -112,10 +99,9 @@ def run(seasons: list[str] | None = None) -> dict:
                         break
 
                 try:
-                    boxscore_rows = _fetch_boxscore(game_id)
+                    boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
                 except Exception as exc:
-                    logger.warning("boxscore fetch failed for %s: %s", game_id, exc)
-                    time.sleep(BACKOFF_SECONDS)
+                    logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
                     total_games_skipped += 1
                     continue
 

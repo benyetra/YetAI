@@ -49,3 +49,28 @@ def test_backfill_skips_games_with_no_boxscore(monkeypatch):
         result = bw.run(seasons=["2025"])
     assert result["rows_written"] == 0
     mock_db.merge.assert_not_called()
+
+
+def test_backfill_idempotent_on_rerun(monkeypatch):
+    """Re-running with the same data should call merge again (no dedupe in app code) — the DB's
+    unique constraint on (player_id, game_date) handles upsert. Verify rows_written matches both runs."""
+    mock_db = MagicMock(name="Session")
+    monkeypatch.setattr("app.services.etl.wnba.backfill_wnba_history.SessionLocal", lambda: mock_db)
+    games_payload = [{"GAME_ID": "1", "GAME_DATE": "2025-05-16", "TEAM_ID": 1611661315, "MATCHUP": "NYL vs. LVA"},
+                      {"GAME_ID": "1", "GAME_DATE": "2025-05-16", "TEAM_ID": 1611661319, "MATCHUP": "LVA @ NYL"}]
+    boxscore_payload = [
+        {"PLAYER_ID": 100, "PLAYER_NAME": "P1", "TEAM_ID": 1611661315, "MIN": "30:00",
+         "PTS": 20, "AST": 5, "REB": 7, "STL": 1, "BLK": 1, "FG3M": 2, "FG3A": 5,
+         "FGM": 7, "FGA": 15, "FG_PCT": 0.467, "FG3_PCT": 0.4, "FT_PCT": 0.8,
+         "FTM": 4, "FTA": 5, "OREB": 2, "DREB": 5, "TOV": 2, "PF": 3, "PLUS_MINUS": 5},
+    ]
+    with patch("app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season") as gf, \
+         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf:
+        gf.return_value = games_payload
+        bf.return_value = boxscore_payload
+        r1 = bw.run(seasons=["2025"])
+        r2 = bw.run(seasons=["2025"])
+    assert r1["rows_written"] == 1
+    assert r2["rows_written"] == 1
+    # Two runs → two merge calls total
+    assert mock_db.merge.call_count == 2
