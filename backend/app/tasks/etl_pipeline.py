@@ -766,6 +766,66 @@ def wnba_spreads_accuracy():
     return _wnba_spreads_accuracy.run()
 
 
+from app.services.etl.wnba import (  # noqa: E402
+    calculate_prediction_accuracy as _wnba_prop_accuracy,
+    generate_assists_predictions as _wnba_gen_assists,
+    generate_points_predictions as _wnba_gen_points,
+    generate_rebounds_predictions as _wnba_gen_rebounds,
+    today_active_players as _wnba_today_active,
+    update_expected_minutes as _wnba_expected_minutes,
+    update_recent_games as _wnba_update_recent,
+)
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_recent_games")
+def wnba_update_recent_games():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_update_recent.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.today_active_players")
+def wnba_today_active_players():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_today_active.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.update_expected_minutes")
+def wnba_update_expected_minutes():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_expected_minutes.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.generate_points")
+def wnba_generate_points():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_gen_points.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.generate_assists")
+def wnba_generate_assists():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_gen_assists.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.generate_rebounds")
+def wnba_generate_rebounds():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_gen_rebounds.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.prop_accuracy")
+def wnba_prop_accuracy():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_prop_accuracy.run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.run_wnba_update_pipeline", bind=True)
 def run_wnba_update_pipeline(self) -> dict:
     """Daily WNBA orchestrator. Mirrors run_nba_update_pipeline."""
@@ -780,11 +840,18 @@ def run_wnba_update_pipeline(self) -> dict:
         ("update_team_defense_stats", _wnba_update_def),
         ("update_injury_status", _wnba_update_injury),
         ("update_game_lines", _wnba_update_game_lines),
+        ("update_recent_games", _wnba_update_recent),
+        ("today_active_players", _wnba_today_active),
+        ("update_expected_minutes", _wnba_expected_minutes),
         ("totals_projector", _wnba_totals_projector),
         ("spread_projector", _wnba_spread_projector),
+        ("generate_points", _wnba_gen_points),
+        ("generate_assists", _wnba_gen_assists),
+        ("generate_rebounds", _wnba_gen_rebounds),
         ("store_actuals", _wnba_store_actuals),
         ("totals_accuracy", _wnba_totals_accuracy),
         ("spreads_accuracy", _wnba_spreads_accuracy),
+        ("prop_accuracy", _wnba_prop_accuracy),
     ]:
         try:
             results[label] = mod.run()

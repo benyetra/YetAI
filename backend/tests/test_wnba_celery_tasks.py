@@ -21,6 +21,13 @@ def test_wnba_celery_tasks_registered():
         "app.tasks.etl_pipeline.wnba.totals_accuracy",
         "app.tasks.etl_pipeline.wnba.spreads_accuracy",
         "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "app.tasks.etl_pipeline.wnba.update_recent_games",
+        "app.tasks.etl_pipeline.wnba.today_active_players",
+        "app.tasks.etl_pipeline.wnba.update_expected_minutes",
+        "app.tasks.etl_pipeline.wnba.generate_points",
+        "app.tasks.etl_pipeline.wnba.generate_assists",
+        "app.tasks.etl_pipeline.wnba.generate_rebounds",
+        "app.tasks.etl_pipeline.wnba.prop_accuracy",
     ]
     for name in expected:
         assert name in celery_app.tasks, f"missing task {name}"
