@@ -102,7 +102,9 @@ def _load_historical_hit_rates(
     hit_rates: dict[tuple[str, str], float] = {}
     for row in rows:
         if row.total and row.total > 0:
-            raw_market = str(row.bet_type.value if hasattr(row.bet_type, "value") else row.bet_type)
+            raw_market = str(
+                row.bet_type.value if hasattr(row.bet_type, "value") else row.bet_type
+            )
             raw_sport = str(row.sport or "unknown")
             key = (_normalize_market_type(raw_market), _normalize_sport(raw_sport))
             hit_rates[key] = (row.wins or 0) / row.total

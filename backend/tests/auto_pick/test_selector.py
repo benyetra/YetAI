@@ -4,11 +4,27 @@ from app.services.auto_pick.confidence_score import ConfidenceScore
 from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
 
 
-def _sc(event_id, total, market_type=MarketType.PLAYER_PROP, odds=-110, league="MLB", selection="s"):
-    c = BetCandidate(market_type=market_type, league=league, event_id=event_id,
-                     selection=selection, market_line=0, market_odds=odds,
-                     our_projection=0, projection_metadata={})
-    return ScoredCandidate(candidate=c, score=ConfidenceScore(total=total, breakdown={}, reasoning=""))
+def _sc(
+    event_id,
+    total,
+    market_type=MarketType.PLAYER_PROP,
+    odds=-110,
+    league="MLB",
+    selection="s",
+):
+    c = BetCandidate(
+        market_type=market_type,
+        league=league,
+        event_id=event_id,
+        selection=selection,
+        market_line=0,
+        market_odds=odds,
+        our_projection=0,
+        projection_metadata={},
+    )
+    return ScoredCandidate(
+        candidate=c, score=ConfidenceScore(total=total, breakdown={}, reasoning="")
+    )
 
 
 def test_drops_below_threshold():
@@ -19,9 +35,15 @@ def test_drops_below_threshold():
 
 def test_picks_top_n_by_score():
     sel = BetSelector(SelectorConfig(threshold=65.0, max_picks=4))
-    picks = sel.select([
-        _sc("e1", 70), _sc("e2", 90), _sc("e3", 80), _sc("e4", 66), _sc("e5", 95),
-    ])
+    picks = sel.select(
+        [
+            _sc("e1", 70),
+            _sc("e2", 90),
+            _sc("e3", 80),
+            _sc("e4", 66),
+            _sc("e5", 95),
+        ]
+    )
     assert [p.candidate.event_id for p in picks] == ["e5", "e2", "e3", "e1"]
 
 
@@ -33,7 +55,9 @@ def test_correlation_guard_skips_same_event():
 
 def test_hard_odds_cutoff_drops_extremes():
     sel = BetSelector(SelectorConfig(threshold=65.0, odds_min=-300, odds_max=400))
-    picks = sel.select([_sc("e1", 90, odds=-350), _sc("e2", 85, odds=450), _sc("e3", 80, odds=-150)])
+    picks = sel.select(
+        [_sc("e1", 90, odds=-350), _sc("e2", 85, odds=450), _sc("e3", 80, odds=-150)]
+    )
     assert [p.candidate.event_id for p in picks] == ["e3"]
 
 

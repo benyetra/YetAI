@@ -13,6 +13,7 @@ Returns dicts shaped for TotalsCandidateProvider:
   Optional: line_odds, confidence_score, edge, recommendation,
             injury_report, factors, generated_at
 """
+
 import logging
 from datetime import date
 
@@ -67,26 +68,28 @@ class NHLTotalsSource:
                 side = "over"
                 line_odds = r.over_odds if r.over_odds is not None else -110
 
-            event_id = (
-                f"nhl-{r.game_date}-{r.home_team_name}-{r.away_team_name}"
-            )
+            event_id = f"nhl-{r.game_date}-{r.home_team_name}-{r.away_team_name}"
 
-            out.append({
-                "event_id": event_id,
-                "league": "NHL",
-                "game_date": r.game_date,
-                "home_team_name": r.home_team_name,
-                "away_team_name": r.away_team_name,
-                "projected_total": float(r.predicted_total_goals),
-                "market_total": float(r.draftkings_ou_line),
-                "side": side,
-                "line_odds": line_odds,
-                "confidence_score": r.confidence / 100.0 if r.confidence is not None else None,
-                "edge": r.edge,
-                "recommendation": r.betting_recommendation,
-                "injury_report": None,
-                "factors": None,
-                "generated_at": r.prediction_date,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "NHL",
+                    "game_date": r.game_date,
+                    "home_team_name": r.home_team_name,
+                    "away_team_name": r.away_team_name,
+                    "projected_total": float(r.predicted_total_goals),
+                    "market_total": float(r.draftkings_ou_line),
+                    "side": side,
+                    "line_odds": line_odds,
+                    "confidence_score": (
+                        r.confidence / 100.0 if r.confidence is not None else None
+                    ),
+                    "edge": r.edge,
+                    "recommendation": r.betting_recommendation,
+                    "injury_report": None,
+                    "factors": None,
+                    "generated_at": r.prediction_date,
+                }
+            )
 
         return out

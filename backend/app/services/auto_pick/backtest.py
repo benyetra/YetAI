@@ -9,6 +9,7 @@ intentionally stubbed: they depend on historical projection data being
 persisted alongside settled YetAIBet rows. Backfill or wire up when that data
 is available (see follow-up note in docs/superpowers/specs/...-design.md).
 """
+
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
@@ -31,15 +32,19 @@ class BacktestSummary:
 def run_backtest(start: date, end: date, db: Session) -> dict:
     cfg = load_scoring_config(db)
     scorer = ConfidenceScorer()
-    selector = BetSelector(SelectorConfig(
-        threshold=cfg.score_threshold,
-        odds_min=cfg.odds_min,
-        odds_max=cfg.odds_max,
-        max_picks=cfg.max_picks,
-    ))
+    selector = BetSelector(
+        SelectorConfig(
+            threshold=cfg.score_threshold,
+            odds_min=cfg.odds_min,
+            odds_max=cfg.odds_max,
+            max_picks=cfg.max_picks,
+        )
+    )
 
     by_tier = {"free": [0, 0], "pro": [0, 0], "elite": [0, 0]}
-    calibration: dict[int, list[int]] = {b: [0, 0] for b in (65, 70, 75, 80, 85, 90, 95)}
+    calibration: dict[int, list[int]] = {
+        b: [0, 0] for b in (65, 70, 75, 80, 85, 90, 95)
+    }
 
     cur = start
     while cur <= end:
@@ -47,8 +52,7 @@ def run_backtest(start: date, end: date, db: Session) -> dict:
         ctx = build_scoring_context(db, cfg, now)
         candidates = _load_historical_candidates_for(db, cur)
         scored = [
-            ScoredCandidate(candidate=c, score=scorer.score(c, ctx))
-            for c in candidates
+            ScoredCandidate(candidate=c, score=scorer.score(c, ctx)) for c in candidates
         ]
         picks = selector.select(scored)
         for p in picks:
@@ -64,7 +68,11 @@ def run_backtest(start: date, end: date, db: Session) -> dict:
 
     return {
         "by_tier": {
-            k: {"wins": v[0], "total": v[1], "hit_rate": (v[0] / v[1]) if v[1] else None}
+            k: {
+                "wins": v[0],
+                "total": v[1],
+                "hit_rate": (v[0] / v[1]) if v[1] else None,
+            }
             for k, v in by_tier.items()
         },
         "overall_hit_rate": _ratio(
@@ -72,8 +80,7 @@ def run_backtest(start: date, end: date, db: Session) -> dict:
             [by_tier[t][1] for t in by_tier],
         ),
         "calibration": {
-            str(b): {"wins": v[0], "total": v[1]}
-            for b, v in calibration.items()
+            str(b): {"wins": v[0], "total": v[1]} for b, v in calibration.items()
         },
     }
 

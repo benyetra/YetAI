@@ -26,6 +26,7 @@ from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_bet(
     bet_id: str,
     status: str,
@@ -77,12 +78,16 @@ def _make_db(rows: list) -> MagicMock:
 # Status visibility tests
 # ---------------------------------------------------------------------------
 
-@pytest.mark.parametrize("bad_status", [
-    "pending_approval",
-    "rejected",
-    "expired",
-    "pending_manual_review",
-])
+
+@pytest.mark.parametrize(
+    "bad_status",
+    [
+        "pending_approval",
+        "rejected",
+        "expired",
+        "pending_manual_review",
+    ],
+)
 def test_non_active_statuses_excluded(bad_status):
     """Bets with non-subscriber-visible statuses must not appear."""
     bet = _make_bet("b1", bad_status, SubscriptionTier.FREE)
@@ -90,9 +95,9 @@ def test_non_active_statuses_excluded(bad_status):
     # include it — we validate by checking that the status filter never
     # includes these values.
     service = YetAIBetsServiceDB()
-    assert bad_status not in service.SUBSCRIBER_VISIBLE_STATUSES, (
-        f"Status '{bad_status}' must not be in SUBSCRIBER_VISIBLE_STATUSES"
-    )
+    assert (
+        bad_status not in service.SUBSCRIBER_VISIBLE_STATUSES
+    ), f"Status '{bad_status}' must not be in SUBSCRIBER_VISIBLE_STATUSES"
 
 
 def test_active_status_is_visible():
@@ -111,25 +116,26 @@ def test_settled_statuses_are_visible():
     """Won/lost/pushed bets (historical) ARE visible to subscribers."""
     service = YetAIBetsServiceDB()
     for status in ("won", "lost", "pushed"):
-        assert status in service.SUBSCRIBER_VISIBLE_STATUSES, (
-            f"Status '{status}' should be visible to subscribers"
-        )
+        assert (
+            status in service.SUBSCRIBER_VISIBLE_STATUSES
+        ), f"Status '{status}' should be visible to subscribers"
 
 
 # ---------------------------------------------------------------------------
 # Tier filtering tests via get_yetai_bets_for_user
 # ---------------------------------------------------------------------------
 
+
 def _rows_for_tier_tests():
     """Six bets: one active per tier + three non-visible statuses."""
     return [
-        _make_bet("free-active",    "active",           SubscriptionTier.FREE),
-        _make_bet("pro-active",     "active",           SubscriptionTier.PRO),
-        _make_bet("elite-active",   "active",           SubscriptionTier.ELITE),
-        _make_bet("free-pending",   "pending",          SubscriptionTier.FREE),
-        _make_bet("free-rejected",  "rejected",         SubscriptionTier.FREE),
-        _make_bet("pro-approval",   "pending_approval", SubscriptionTier.PRO),
-        _make_bet("elite-expired",  "expired",          SubscriptionTier.ELITE),
+        _make_bet("free-active", "active", SubscriptionTier.FREE),
+        _make_bet("pro-active", "active", SubscriptionTier.PRO),
+        _make_bet("elite-active", "active", SubscriptionTier.ELITE),
+        _make_bet("free-pending", "pending", SubscriptionTier.FREE),
+        _make_bet("free-rejected", "rejected", SubscriptionTier.FREE),
+        _make_bet("pro-approval", "pending_approval", SubscriptionTier.PRO),
+        _make_bet("elite-expired", "expired", SubscriptionTier.ELITE),
     ]
 
 
@@ -167,7 +173,7 @@ def test_pro_tier_sees_free_and_pro(monkeypatch):
     service = YetAIBetsServiceDB()
 
     free_bet = _make_bet("free-active", "active", SubscriptionTier.FREE)
-    pro_bet  = _make_bet("pro-active",  "active", SubscriptionTier.PRO)
+    pro_bet = _make_bet("pro-active", "active", SubscriptionTier.PRO)
     db = _make_db([free_bet, pro_bet])
 
     results = service.get_yetai_bets_for_user("pro", db)
@@ -181,8 +187,8 @@ def test_elite_tier_sees_all_tiers(monkeypatch):
     """ELITE user should see FREE + PRO + ELITE active bets."""
     service = YetAIBetsServiceDB()
 
-    free_bet  = _make_bet("free-active",  "active", SubscriptionTier.FREE)
-    pro_bet   = _make_bet("pro-active",   "active", SubscriptionTier.PRO)
+    free_bet = _make_bet("free-active", "active", SubscriptionTier.FREE)
+    pro_bet = _make_bet("pro-active", "active", SubscriptionTier.PRO)
     elite_bet = _make_bet("elite-active", "active", SubscriptionTier.ELITE)
     db = _make_db([free_bet, pro_bet, elite_bet])
 
@@ -215,6 +221,7 @@ def test_expired_never_visible(monkeypatch):
 # ---------------------------------------------------------------------------
 # TIER_RANK correctness
 # ---------------------------------------------------------------------------
+
 
 def test_tier_rank_ordering():
     """FREE < PRO < ELITE must hold in TIER_RANK."""
@@ -260,11 +267,12 @@ def test_allowed_tiers_for_elite():
 # Unknown tier falls back to FREE
 # ---------------------------------------------------------------------------
 
+
 def test_unknown_tier_falls_back_to_free():
     """An unrecognised tier string must be treated as FREE (most restrictive)."""
     service = YetAIBetsServiceDB()
-    free_bet  = _make_bet("free-active", "active", SubscriptionTier.FREE)
-    pro_bet   = _make_bet("pro-active",  "active", SubscriptionTier.PRO)
+    free_bet = _make_bet("free-active", "active", SubscriptionTier.FREE)
+    pro_bet = _make_bet("pro-active", "active", SubscriptionTier.PRO)
     db = _make_db([free_bet])  # DB returns only FREE rows (correct filter)
 
     results = service.get_yetai_bets_for_user("garbage_tier", db)

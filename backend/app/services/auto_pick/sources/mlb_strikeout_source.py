@@ -11,6 +11,7 @@ Returns dicts shaped for PlayerPropCandidateProvider:
   Required: event_id, league, player, stat, line, odds, projection, side
   Optional: sample_size, generated_at, model_confidence, injury_flag
 """
+
 import logging
 from datetime import date
 
@@ -66,19 +67,21 @@ class MLBStrikeoutSource:
             player_name = r.pitcher_name or f"pitcher_{r.pitcher_id}"
             event_id = f"mlb-prop-{r.date}-{r.pitcher_id}-strikeouts"
 
-            out.append({
-                "event_id": event_id,
-                "league": "MLB",
-                "player": player_name,
-                "stat": "strikeouts",
-                "line": float(line_val),
-                "odds": -110,
-                "projection": float(r.projected_strikeouts),
-                "side": side,
-                "sample_size": None,
-                "generated_at": r.date,
-                "model_confidence": None,
-                "injury_flag": False,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "MLB",
+                    "player": player_name,
+                    "stat": "strikeouts",
+                    "line": float(line_val),
+                    "odds": -110,
+                    "projection": float(r.projected_strikeouts),
+                    "side": side,
+                    "sample_size": None,
+                    "generated_at": r.date,
+                    "model_confidence": None,
+                    "injury_flag": False,
+                }
+            )
 
         return out

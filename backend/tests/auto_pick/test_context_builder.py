@@ -19,7 +19,9 @@ def _cfg():
 def _mock_db_no_data():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = []
-    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = []
+    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = (
+        []
+    )
     db.query.return_value.all.return_value = []
     return db
 
@@ -59,7 +61,9 @@ def test_hit_rates_aggregated_from_settled_rows():
     ]
 
     # Chain: db.query(...).filter(...).group_by(...).all()
-    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = fake_rows
+    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = (
+        fake_rows
+    )
 
     ctx = build_scoring_context(db, _cfg(), datetime(2026, 5, 22))
 

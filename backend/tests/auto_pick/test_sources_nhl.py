@@ -1,6 +1,7 @@
 """
 Tests for NHLGoalieSavesSource and NHLTotalsSource.
 """
+
 import pytest
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
@@ -21,6 +22,7 @@ def _date_range():
 # ---------------------------------------------------------------------------
 # NHLGoalieSavesSource helpers
 # ---------------------------------------------------------------------------
+
 
 def _fake_goalie_row(
     goalie_id=42,
@@ -51,6 +53,7 @@ def _fake_goalie_row(
 # ---------------------------------------------------------------------------
 # 1. Returns properly shaped candidates
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_nhl_goalie_saves_source_returns_candidates():
@@ -105,6 +108,7 @@ async def test_nhl_goalie_saves_source_skips_no_line():
 # 2. Returns [] when no rows
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_nhl_goalie_saves_source_empty_when_no_rows():
     db = MagicMock()
@@ -120,6 +124,7 @@ async def test_nhl_goalie_saves_source_empty_when_no_rows():
 # 3. Returns [] on DB error
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_nhl_goalie_saves_source_returns_empty_on_db_error():
     db = MagicMock()
@@ -134,6 +139,7 @@ async def test_nhl_goalie_saves_source_returns_empty_on_db_error():
 # ===========================================================================
 # NHLTotalsSource
 # ===========================================================================
+
 
 def _fake_totals_row(
     game_date=None,
@@ -166,6 +172,7 @@ def _fake_totals_row(
 # ---------------------------------------------------------------------------
 # 1. Returns properly shaped candidates
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_nhl_totals_source_returns_candidates():
@@ -219,6 +226,7 @@ async def test_nhl_totals_source_skips_no_dk_line():
 # 2. Returns [] when no rows
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_nhl_totals_source_empty_when_no_rows():
     db = MagicMock()
@@ -233,6 +241,7 @@ async def test_nhl_totals_source_empty_when_no_rows():
 # ---------------------------------------------------------------------------
 # 3. Returns [] on DB error
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_nhl_totals_source_returns_empty_on_db_error():

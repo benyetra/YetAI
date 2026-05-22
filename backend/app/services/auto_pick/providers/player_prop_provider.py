@@ -11,6 +11,7 @@ Audit findings:
   that joins pred_*_projections with live odds from odds_api_service.
 - If source raises or returns nothing, provider returns [].
 """
+
 import logging
 
 from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
@@ -33,23 +34,25 @@ class PlayerPropCandidateProvider:
         for r in rows:
             try:
                 selection = f"{r['player']} {r['side'].upper()} {r['line']} {r['stat']}"
-                out.append(BetCandidate(
-                    market_type=MarketType.PLAYER_PROP,
-                    league=r["league"],
-                    event_id=r["event_id"],
-                    selection=selection,
-                    market_line=float(r["line"]),
-                    market_odds=int(r["odds"]),
-                    our_projection=float(r["projection"]),
-                    projection_metadata={
-                        "sample_size": r.get("sample_size"),
-                        "generated_at": r.get("generated_at"),
-                        "model_confidence": r.get("model_confidence"),
-                        "injury_flag": r.get("injury_flag", False),
-                        "stat": r["stat"],
-                        "side": r["side"],
-                    },
-                ))
+                out.append(
+                    BetCandidate(
+                        market_type=MarketType.PLAYER_PROP,
+                        league=r["league"],
+                        event_id=r["event_id"],
+                        selection=selection,
+                        market_line=float(r["line"]),
+                        market_odds=int(r["odds"]),
+                        our_projection=float(r["projection"]),
+                        projection_metadata={
+                            "sample_size": r.get("sample_size"),
+                            "generated_at": r.get("generated_at"),
+                            "model_confidence": r.get("model_confidence"),
+                            "injury_flag": r.get("injury_flag", False),
+                            "stat": r["stat"],
+                            "side": r["side"],
+                        },
+                    )
+                )
             except Exception as e:
                 log.warning("Skipping malformed player-prop row: %s", e)
         return out

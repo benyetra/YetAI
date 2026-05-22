@@ -111,9 +111,7 @@ class AutoPickOrchestrator:
             candidates_considered=len(all_candidates),
             candidates_selected=len(picks),
             dropped_reasons={
-                sc.candidate.event_id: sc.drop_reason
-                for sc in scored
-                if sc.drop_reason
+                sc.candidate.event_id: sc.drop_reason for sc in scored if sc.drop_reason
             },
             error=None,
         )
@@ -124,9 +122,7 @@ class AutoPickOrchestrator:
             self.db.add(self._build_bet(p, run.id))
 
         self.db.commit()
-        log.info(
-            "auto_pick run %s: %s picks, status=%s", run.id, len(picks), status
-        )
+        log.info("auto_pick run %s: %s picks, status=%s", run.id, len(picks), status)
         return OrchestratorResult(id=run.id, status=status, pick_count=len(picks))
 
     # ------------------------------------------------------------------

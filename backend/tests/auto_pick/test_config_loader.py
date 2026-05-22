@@ -1,14 +1,24 @@
 from unittest.mock import MagicMock
 
-from app.services.auto_pick.config_loader import LoadedScoringConfig, load_scoring_config
+from app.services.auto_pick.config_loader import (
+    LoadedScoringConfig,
+    load_scoring_config,
+)
 from app.services.auto_pick.scoring_context import ScoringWeights
 
 
 def _row(**overrides):
     defaults = dict(
-        weight_edge=0.40, weight_historical=0.20, weight_freshness=0.15,
-        weight_line_movement=0.10, weight_odds_sanity=0.10, weight_model_conf=0.05,
-        score_threshold=65.0, odds_min=-300, odds_max=400, max_picks_per_day=4,
+        weight_edge=0.40,
+        weight_historical=0.20,
+        weight_freshness=0.15,
+        weight_line_movement=0.10,
+        weight_odds_sanity=0.10,
+        weight_model_conf=0.05,
+        score_threshold=65.0,
+        odds_min=-300,
+        odds_max=400,
+        max_picks_per_day=4,
     )
     defaults.update(overrides)
     row = MagicMock()
@@ -45,6 +55,18 @@ def test_load_full_weights_passthrough():
     row = _row()
     cfg = load_scoring_config(_db_returning(row))
     w = cfg.weights
-    assert (w.edge, w.historical, w.freshness, w.line_movement, w.odds_sanity, w.model_conf) == (
-        0.40, 0.20, 0.15, 0.10, 0.10, 0.05,
+    assert (
+        w.edge,
+        w.historical,
+        w.freshness,
+        w.line_movement,
+        w.odds_sanity,
+        w.model_conf,
+    ) == (
+        0.40,
+        0.20,
+        0.15,
+        0.10,
+        0.10,
+        0.05,
     )

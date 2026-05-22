@@ -23,7 +23,9 @@ def edge_sub_score(candidate: BetCandidate) -> float:
 
 
 def historical_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
-    rate = context.historical_hit_rates.get((candidate.market_type.value, candidate.league))
+    rate = context.historical_hit_rates.get(
+        (candidate.market_type.value, candidate.league)
+    )
     if rate is None:
         return 50.0
     if rate <= 0.40:

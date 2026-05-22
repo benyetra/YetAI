@@ -271,7 +271,9 @@ class YetAIBet(Base):
     score_breakdown = Column(JSONB, nullable=True)
     reasoning = Column(Text, nullable=True)
     source = Column(Enum(BetSource), default=BetSource.MANUAL, nullable=False)
-    auto_pick_run_id = Column(ForeignKey("auto_pick_runs.id"), nullable=True, index=True)
+    auto_pick_run_id = Column(
+        ForeignKey("auto_pick_runs.id"), nullable=True, index=True
+    )
 
     # Game details
     home_team = Column(String(255))

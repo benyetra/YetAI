@@ -27,6 +27,7 @@ Returns dicts shaped for PlayerPropCandidateProvider:
   Required: event_id, league, player, stat, line, odds, projection, side
   Optional: sample_size, generated_at, model_confidence, injury_flag
 """
+
 import logging
 from datetime import date
 
@@ -46,8 +47,20 @@ log = logging.getLogger(__name__)
 # Mapping: (model_class, stat_label, projection_attr, line_attr, ou_attr)
 # line_attr / ou_attr may be None when the table lacks those columns.
 _NBA_STAT_SPECS = [
-    (PointsProjections,   "points",   "projected_points",   "fanduel_line", "fanduel_over_under"),
-    (StealsProjections,   "steals",   "projected_steals",   "fanduel_line", "fanduel_over_under"),
+    (
+        PointsProjections,
+        "points",
+        "projected_points",
+        "fanduel_line",
+        "fanduel_over_under",
+    ),
+    (
+        StealsProjections,
+        "steals",
+        "projected_steals",
+        "fanduel_line",
+        "fanduel_over_under",
+    ),
     # AssistsProjections and ReboundsProjections have no fanduel_line column.
     # BlocksProjections has no fanduel_line column either.
     # Leave them commented to document; re-enable after adding the column.
@@ -98,19 +111,21 @@ class PlayerPropSource:
                 player_name = getattr(r, "player_name", None) or f"player_{r.player_id}"
                 event_id = f"nba-prop-{r.date}-{r.player_id}-{stat_label}"
 
-                out.append({
-                    "event_id": event_id,
-                    "league": "NBA",
-                    "player": player_name,
-                    "stat": stat_label,
-                    "line": float(line_val),
-                    "odds": -110,  # No live odds column — use standard juice
-                    "projection": float(proj_val),
-                    "side": side,
-                    "sample_size": None,
-                    "generated_at": r.date,
-                    "model_confidence": None,
-                    "injury_flag": False,
-                })
+                out.append(
+                    {
+                        "event_id": event_id,
+                        "league": "NBA",
+                        "player": player_name,
+                        "stat": stat_label,
+                        "line": float(line_val),
+                        "odds": -110,  # No live odds column — use standard juice
+                        "projection": float(proj_val),
+                        "side": side,
+                        "sample_size": None,
+                        "generated_at": r.date,
+                        "model_confidence": None,
+                        "injury_flag": False,
+                    }
+                )
 
         return out

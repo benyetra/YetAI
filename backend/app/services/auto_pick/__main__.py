@@ -1,6 +1,7 @@
 """
 CLI entry point: python -m app.services.auto_pick backtest --start ... --end ...
 """
+
 import argparse
 import json
 from datetime import date

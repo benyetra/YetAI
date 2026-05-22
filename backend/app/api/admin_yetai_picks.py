@@ -23,6 +23,7 @@ REJECTED_STATUS = "rejected"
 # Admin auth (mirrors admin_celery_ops.require_admin)
 # ---------------------------------------------------------------------------
 
+
 async def require_admin(current_user: dict = Depends(get_current_user)):
     """Require admin privileges."""
     if is_service_available("auth_service"):
@@ -42,6 +43,7 @@ async def require_admin(current_user: dict = Depends(get_current_user)):
 # Request / response helpers
 # ---------------------------------------------------------------------------
 
+
 class EditPickRequest(BaseModel):
     tier_requirement: Optional[SubscriptionTier] = None
     reasoning: Optional[str] = None
@@ -59,7 +61,9 @@ def _serialize(bet: YetAIBet) -> dict:
         "sport": bet.sport,
         "odds": bet.odds,
         "status": bet.status,
-        "tier_requirement": bet.tier_requirement.value if bet.tier_requirement else None,
+        "tier_requirement": (
+            bet.tier_requirement.value if bet.tier_requirement else None
+        ),
         "confidence_score": bet.confidence_score,
         "score_breakdown": bet.score_breakdown,
         "reasoning": bet.reasoning,
@@ -71,6 +75,7 @@ def _serialize(bet: YetAIBet) -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @router.get("/pending")
 async def list_pending(

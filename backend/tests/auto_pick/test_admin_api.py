@@ -29,6 +29,7 @@ from app.api.admin_yetai_picks import (
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _bet(
     id: str = "b1",
     status: str = "pending_approval",
@@ -75,6 +76,7 @@ def _db_with_first(bet) -> MagicMock:
 # _serialize
 # ---------------------------------------------------------------------------
 
+
 def test_serialize_shape():
     bet = _bet()
     result = _serialize(bet)
@@ -96,6 +98,7 @@ def test_serialize_none_created_at():
 # ---------------------------------------------------------------------------
 # list_pending
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_list_pending_returns_all_pending():
@@ -120,6 +123,7 @@ async def test_list_pending_empty():
 # ---------------------------------------------------------------------------
 # approve
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_approve_flips_status_to_active():
@@ -155,6 +159,7 @@ async def test_approve_wrong_status_raises_400():
 # reject
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_reject_flips_status_to_rejected():
     bet = _bet("b1", status=PENDING_STATUS)
@@ -188,6 +193,7 @@ async def test_reject_wrong_status_raises_400():
 # ---------------------------------------------------------------------------
 # edit
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_edit_updates_provided_fields():
@@ -230,6 +236,7 @@ async def test_edit_not_found_raises_404():
 # approve_all
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_approve_all_flips_all_pending():
     b1 = _bet("b1", status=PENDING_STATUS)
@@ -256,13 +263,12 @@ async def test_approve_all_empty_returns_empty_list():
 # require_admin (smoke test — non-admin path)
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_require_admin_non_admin_raises_403():
     from app.api.admin_yetai_picks import require_admin
 
-    with patch(
-        "app.api.admin_yetai_picks.is_service_available", return_value=False
-    ):
+    with patch("app.api.admin_yetai_picks.is_service_available", return_value=False):
         non_admin_user = {"id": 99, "user_id": 99}
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(current_user=non_admin_user)
@@ -273,9 +279,7 @@ async def test_require_admin_non_admin_raises_403():
 async def test_require_admin_hardcoded_admin_passes():
     from app.api.admin_yetai_picks import require_admin
 
-    with patch(
-        "app.api.admin_yetai_picks.is_service_available", return_value=False
-    ):
+    with patch("app.api.admin_yetai_picks.is_service_available", return_value=False):
         admin_user = {"id": 8, "user_id": 8}
         result = await require_admin(current_user=admin_user)
         assert result == admin_user

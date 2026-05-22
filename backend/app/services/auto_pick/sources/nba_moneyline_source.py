@@ -12,6 +12,7 @@ Returns dicts shaped for MoneylineCandidateProvider:
             moneyline_home, moneyline_away, league, side
   Optional: confidence_score, generated_at
 """
+
 import logging
 from datetime import date
 
@@ -86,18 +87,20 @@ class NBAMoneylineSource:
                 else f"nba-{r.game_date}-{r.home_team_name}-{r.away_team_name}"
             )
 
-            out.append({
-                "event_id": event_id,
-                "league": "NBA",
-                "game_date": r.game_date,
-                "home_team_name": r.home_team_name,
-                "away_team_name": r.away_team_name,
-                "home_win_prob": r.home_win_prob,
-                "moneyline_home": gl.moneyline_home,
-                "moneyline_away": gl.moneyline_away,
-                "side": side,
-                "confidence_score": r.confidence_score,
-                "generated_at": r.created_at,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "NBA",
+                    "game_date": r.game_date,
+                    "home_team_name": r.home_team_name,
+                    "away_team_name": r.away_team_name,
+                    "home_win_prob": r.home_win_prob,
+                    "moneyline_home": gl.moneyline_home,
+                    "moneyline_away": gl.moneyline_away,
+                    "side": side,
+                    "confidence_score": r.confidence_score,
+                    "generated_at": r.created_at,
+                }
+            )
 
         return out

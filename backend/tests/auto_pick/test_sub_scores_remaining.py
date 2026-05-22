@@ -1,14 +1,23 @@
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext, ScoringWeights
 from app.services.auto_pick.sub_scores import (
-    line_movement_sub_score, odds_sanity_sub_score, model_confidence_sub_score,
+    line_movement_sub_score,
+    odds_sanity_sub_score,
+    model_confidence_sub_score,
 )
 
 
 def _cand(odds=-110, event_id="e", md=None):
-    return BetCandidate(market_type=MarketType.PLAYER_PROP, league="MLB",
-                        event_id=event_id, selection="OVER", market_line=5.5,
-                        market_odds=odds, our_projection=9.0, projection_metadata=md or {})
+    return BetCandidate(
+        market_type=MarketType.PLAYER_PROP,
+        league="MLB",
+        event_id=event_id,
+        selection="OVER",
+        market_line=5.5,
+        market_odds=odds,
+        our_projection=9.0,
+        projection_metadata=md or {},
+    )
 
 
 def test_line_movement_neutral_when_no_data():
@@ -17,14 +26,20 @@ def test_line_movement_neutral_when_no_data():
 
 
 def test_line_movement_bonus_when_market_moves_toward_us():
-    ctx = ScoringContext(weights=ScoringWeights(), score_threshold=65.0,
-                         line_movement={"e": {"opened_line": 5.5, "current_line": 6.0, "side": "over"}})
+    ctx = ScoringContext(
+        weights=ScoringWeights(),
+        score_threshold=65.0,
+        line_movement={"e": {"opened_line": 5.5, "current_line": 6.0, "side": "over"}},
+    )
     assert line_movement_sub_score(_cand(event_id="e"), ctx) > 50
 
 
 def test_line_movement_penalty_when_market_moves_against_us():
-    ctx = ScoringContext(weights=ScoringWeights(), score_threshold=65.0,
-                         line_movement={"e": {"opened_line": 5.5, "current_line": 5.0, "side": "over"}})
+    ctx = ScoringContext(
+        weights=ScoringWeights(),
+        score_threshold=65.0,
+        line_movement={"e": {"opened_line": 5.5, "current_line": 5.0, "side": "over"}},
+    )
     assert line_movement_sub_score(_cand(event_id="e"), ctx) < 50
 
 

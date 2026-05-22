@@ -3,10 +3,14 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock
 
 from app.services.auto_pick.candidate import DateRange, MarketType
-from app.services.auto_pick.providers.player_prop_provider import PlayerPropCandidateProvider
+from app.services.auto_pick.providers.player_prop_provider import (
+    PlayerPropCandidateProvider,
+)
 from app.services.auto_pick.providers.spread_provider import SpreadCandidateProvider
 from app.services.auto_pick.providers.totals_provider import TotalsCandidateProvider
-from app.services.auto_pick.providers.moneyline_provider import MoneylineCandidateProvider
+from app.services.auto_pick.providers.moneyline_provider import (
+    MoneylineCandidateProvider,
+)
 
 
 def _date_range():
@@ -18,19 +22,27 @@ def _date_range():
 # PlayerPropCandidateProvider
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_player_prop_provider_returns_candidates():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(return_value=[
-        {
-            "league": "MLB", "event_id": "mlb-e1",
-            "player": "Strider", "stat": "Ks",
-            "line": 5.5, "side": "over",
-            "odds": -115, "projection": 9.0,
-            "sample_size": 7, "generated_at": "2026-05-22T08:00:00",
-            "model_confidence": 0.78,
-        },
-    ])
+    fake_source.get_todays_projections = AsyncMock(
+        return_value=[
+            {
+                "league": "MLB",
+                "event_id": "mlb-e1",
+                "player": "Strider",
+                "stat": "Ks",
+                "line": 5.5,
+                "side": "over",
+                "odds": -115,
+                "projection": 9.0,
+                "sample_size": 7,
+                "generated_at": "2026-05-22T08:00:00",
+                "model_confidence": 0.78,
+            },
+        ]
+    )
     p = PlayerPropCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert len(result) == 1
@@ -52,7 +64,9 @@ async def test_player_prop_provider_returns_empty_when_no_projections():
 @pytest.mark.asyncio
 async def test_player_prop_provider_swallows_source_errors():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(side_effect=RuntimeError("upstream down"))
+    fake_source.get_todays_projections = AsyncMock(
+        side_effect=RuntimeError("upstream down")
+    )
     p = PlayerPropCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert result == []
@@ -62,20 +76,30 @@ async def test_player_prop_provider_swallows_source_errors():
 # SpreadCandidateProvider
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_spread_provider_returns_candidates():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(return_value=[
-        {
-            "league": "NBA", "event_id": "nba-g1",
-            "home_team_name": "Celtics", "away_team_name": "Lakers",
-            "projected_margin": 6.2, "market_spread_home": -5.5,
-            "spread_odds": -110, "side": "home",
-            "edge": 0.7, "recommendation": "HOME",
-            "confidence_score": 0.65, "home_win_prob": 0.72,
-            "factors": {"method": "elo_pace"}, "generated_at": "2026-05-22T09:00:00",
-        },
-    ])
+    fake_source.get_todays_projections = AsyncMock(
+        return_value=[
+            {
+                "league": "NBA",
+                "event_id": "nba-g1",
+                "home_team_name": "Celtics",
+                "away_team_name": "Lakers",
+                "projected_margin": 6.2,
+                "market_spread_home": -5.5,
+                "spread_odds": -110,
+                "side": "home",
+                "edge": 0.7,
+                "recommendation": "HOME",
+                "confidence_score": 0.65,
+                "home_win_prob": 0.72,
+                "factors": {"method": "elo_pace"},
+                "generated_at": "2026-05-22T09:00:00",
+            },
+        ]
+    )
     p = SpreadCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert len(result) == 1
@@ -97,7 +121,9 @@ async def test_spread_provider_returns_empty_when_no_projections():
 @pytest.mark.asyncio
 async def test_spread_provider_swallows_source_errors():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(side_effect=ConnectionError("db down"))
+    fake_source.get_todays_projections = AsyncMock(
+        side_effect=ConnectionError("db down")
+    )
     p = SpreadCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert result == []
@@ -107,20 +133,30 @@ async def test_spread_provider_swallows_source_errors():
 # TotalsCandidateProvider
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_totals_provider_returns_candidates():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(return_value=[
-        {
-            "league": "NBA", "event_id": "nba-g2",
-            "home_team_name": "Warriors", "away_team_name": "Suns",
-            "projected_total": 228.4, "market_total": 224.5,
-            "side": "over", "line_odds": -110,
-            "edge": 3.9, "recommendation": "OVER",
-            "confidence_score": 0.71, "factors": {}, "injury_report": None,
-            "generated_at": "2026-05-22T09:00:00",
-        },
-    ])
+    fake_source.get_todays_projections = AsyncMock(
+        return_value=[
+            {
+                "league": "NBA",
+                "event_id": "nba-g2",
+                "home_team_name": "Warriors",
+                "away_team_name": "Suns",
+                "projected_total": 228.4,
+                "market_total": 224.5,
+                "side": "over",
+                "line_odds": -110,
+                "edge": 3.9,
+                "recommendation": "OVER",
+                "confidence_score": 0.71,
+                "factors": {},
+                "injury_report": None,
+                "generated_at": "2026-05-22T09:00:00",
+            },
+        ]
+    )
     p = TotalsCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert len(result) == 1
@@ -152,18 +188,26 @@ async def test_totals_provider_swallows_source_errors():
 # MoneylineCandidateProvider
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_moneyline_provider_returns_candidates():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(return_value=[
-        {
-            "league": "NBA", "event_id": "nba-g3",
-            "home_team_name": "Nuggets", "away_team_name": "Heat",
-            "home_win_prob": 0.68, "moneyline_home": -210,
-            "moneyline_away": 175, "side": "home",
-            "confidence_score": 0.68, "generated_at": "2026-05-22T09:00:00",
-        },
-    ])
+    fake_source.get_todays_projections = AsyncMock(
+        return_value=[
+            {
+                "league": "NBA",
+                "event_id": "nba-g3",
+                "home_team_name": "Nuggets",
+                "away_team_name": "Heat",
+                "home_win_prob": 0.68,
+                "moneyline_home": -210,
+                "moneyline_away": 175,
+                "side": "home",
+                "confidence_score": 0.68,
+                "generated_at": "2026-05-22T09:00:00",
+            },
+        ]
+    )
     p = MoneylineCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert len(result) == 1
@@ -187,7 +231,9 @@ async def test_moneyline_provider_returns_empty_when_no_projections():
 @pytest.mark.asyncio
 async def test_moneyline_provider_swallows_source_errors():
     fake_source = AsyncMock()
-    fake_source.get_todays_projections = AsyncMock(side_effect=TimeoutError("service timeout"))
+    fake_source.get_todays_projections = AsyncMock(
+        side_effect=TimeoutError("service timeout")
+    )
     p = MoneylineCandidateProvider(source=fake_source)
     result = await p.get_candidates(_date_range())
     assert result == []

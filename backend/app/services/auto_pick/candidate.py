@@ -31,5 +31,4 @@ class DateRange:
 
 @runtime_checkable
 class CandidateProvider(Protocol):
-    async def get_candidates(self, date_range: DateRange) -> list[BetCandidate]:
-        ...
+    async def get_candidates(self, date_range: DateRange) -> list[BetCandidate]: ...

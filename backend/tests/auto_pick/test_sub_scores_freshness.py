@@ -13,13 +13,24 @@ def _ctx():
 
 
 def _cand(metadata):
-    return BetCandidate(market_type=MarketType.PLAYER_PROP, league="MLB",
-                        event_id="e", selection="s", market_line=0, market_odds=-110,
-                        our_projection=0, projection_metadata=metadata)
+    return BetCandidate(
+        market_type=MarketType.PLAYER_PROP,
+        league="MLB",
+        event_id="e",
+        selection="s",
+        market_line=0,
+        market_odds=-110,
+        our_projection=0,
+        projection_metadata=metadata,
+    )
 
 
 def test_freshness_full_when_recent_large_sample_no_flags():
-    md = {"sample_size": 30, "generated_at": (NOW - timedelta(hours=1)).isoformat(), "injury_flag": False}
+    md = {
+        "sample_size": 30,
+        "generated_at": (NOW - timedelta(hours=1)).isoformat(),
+        "injury_flag": False,
+    }
     assert freshness_sub_score(_cand(md), _ctx()) >= 90
 
 

@@ -14,6 +14,7 @@ Audit findings:
 - our_projection is the implied win probability (0.0–1.0) for the chosen side.
 - If source raises or returns nothing, provider returns [].
 """
+
 import logging
 
 from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
@@ -45,21 +46,23 @@ class MoneylineCandidateProvider:
                     odds = int(r["moneyline_away"])
                     win_prob = 1.0 - float(r["home_win_prob"])
                 selection = f"{team} ML"
-                out.append(BetCandidate(
-                    market_type=MarketType.MONEYLINE,
-                    league=r["league"],
-                    event_id=r["event_id"],
-                    selection=selection,
-                    market_line=0.0,
-                    market_odds=odds,
-                    our_projection=win_prob,
-                    projection_metadata={
-                        "confidence_score": r.get("confidence_score"),
-                        "home_win_prob": r.get("home_win_prob"),
-                        "generated_at": r.get("generated_at"),
-                        "side": side,
-                    },
-                ))
+                out.append(
+                    BetCandidate(
+                        market_type=MarketType.MONEYLINE,
+                        league=r["league"],
+                        event_id=r["event_id"],
+                        selection=selection,
+                        market_line=0.0,
+                        market_odds=odds,
+                        our_projection=win_prob,
+                        projection_metadata={
+                            "confidence_score": r.get("confidence_score"),
+                            "home_win_prob": r.get("home_win_prob"),
+                            "generated_at": r.get("generated_at"),
+                            "side": side,
+                        },
+                    )
+                )
             except Exception as e:
                 log.warning("Skipping malformed moneyline row: %s", e)
         return out

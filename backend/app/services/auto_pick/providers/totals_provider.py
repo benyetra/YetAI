@@ -14,6 +14,7 @@ Audit findings:
 - WNBA equivalent: pred_wnba_totals_projections (WNBATotalsProjections model).
 - If source raises or returns nothing, provider returns [].
 """
+
 import logging
 
 from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
@@ -38,24 +39,26 @@ class TotalsCandidateProvider:
                 side = r.get("side", "over")
                 market_total = float(r["market_total"])
                 selection = f"{r['away_team_name']} vs {r['home_team_name']} {side.upper()} {market_total}"
-                out.append(BetCandidate(
-                    market_type=MarketType.TOTAL,
-                    league=r["league"],
-                    event_id=r["event_id"],
-                    selection=selection,
-                    market_line=market_total,
-                    market_odds=int(r.get("line_odds", -110)),
-                    our_projection=float(r["projected_total"]),
-                    projection_metadata={
-                        "edge": r.get("edge"),
-                        "recommendation": r.get("recommendation"),
-                        "confidence_score": r.get("confidence_score"),
-                        "factors": r.get("factors"),
-                        "injury_report": r.get("injury_report"),
-                        "generated_at": r.get("generated_at"),
-                        "side": side,
-                    },
-                ))
+                out.append(
+                    BetCandidate(
+                        market_type=MarketType.TOTAL,
+                        league=r["league"],
+                        event_id=r["event_id"],
+                        selection=selection,
+                        market_line=market_total,
+                        market_odds=int(r.get("line_odds", -110)),
+                        our_projection=float(r["projected_total"]),
+                        projection_metadata={
+                            "edge": r.get("edge"),
+                            "recommendation": r.get("recommendation"),
+                            "confidence_score": r.get("confidence_score"),
+                            "factors": r.get("factors"),
+                            "injury_report": r.get("injury_report"),
+                            "generated_at": r.get("generated_at"),
+                            "side": side,
+                        },
+                    )
+                )
             except Exception as e:
                 log.warning("Skipping malformed totals row: %s", e)
         return out

@@ -15,6 +15,7 @@ from app.services.auto_pick.orchestrator import AutoPickOrchestrator
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _strider() -> BetCandidate:
     """A high-edge candidate that should clear the default threshold."""
     return BetCandidate(
@@ -58,7 +59,9 @@ def _make_db() -> MagicMock:
     db.query.return_value.order_by.return_value.first.return_value = None
     # Chains used by build_scoring_context (filter/all, group_by/all, etc.)
     db.query.return_value.filter.return_value.all.return_value = []
-    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = []
+    db.query.return_value.filter.return_value.group_by.return_value.all.return_value = (
+        []
+    )
     db.query.return_value.all.return_value = []
 
     # Simulate flush assigning id=1 to the first object added that has id=None
@@ -76,6 +79,7 @@ def _make_db() -> MagicMock:
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_orchestrator_persists_picks_as_pending(monkeypatch):
@@ -103,7 +107,9 @@ async def test_orchestrator_partial_when_one_provider_fails():
     bad = AsyncMock()
     bad.get_candidates = AsyncMock(side_effect=RuntimeError("boom"))
 
-    orch = AutoPickOrchestrator(db=db, providers=[good, bad], now=datetime(2026, 5, 22, 9))
+    orch = AutoPickOrchestrator(
+        db=db, providers=[good, bad], now=datetime(2026, 5, 22, 9)
+    )
     result = await orch.run()
 
     assert result.status == AutoPickRunStatus.PARTIAL
@@ -134,7 +140,9 @@ async def test_orchestrator_failed_when_all_providers_fail():
     bad2 = AsyncMock()
     bad2.get_candidates = AsyncMock(side_effect=RuntimeError("b"))
 
-    orch = AutoPickOrchestrator(db=db, providers=[bad1, bad2], now=datetime(2026, 5, 22, 9))
+    orch = AutoPickOrchestrator(
+        db=db, providers=[bad1, bad2], now=datetime(2026, 5, 22, 9)
+    )
     result = await orch.run()
 
     assert result.status == AutoPickRunStatus.FAILED

@@ -1,6 +1,7 @@
 """
 Tests for NFLQBPassingSource.
 """
+
 import pytest
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock
@@ -45,6 +46,7 @@ def _fake_qb_row(
 # ---------------------------------------------------------------------------
 # 1. Returns properly shaped candidates
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_nfl_qb_passing_source_returns_candidates():
@@ -99,6 +101,7 @@ async def test_nfl_qb_passing_source_skips_no_ou_line():
 # 2. Returns [] when no rows
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_nfl_qb_passing_source_empty_when_no_rows():
     db = MagicMock()
@@ -113,6 +116,7 @@ async def test_nfl_qb_passing_source_empty_when_no_rows():
 # ---------------------------------------------------------------------------
 # 3. Returns [] on DB error
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_nfl_qb_passing_source_returns_empty_on_db_error():

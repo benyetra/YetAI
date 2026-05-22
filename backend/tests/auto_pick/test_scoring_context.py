@@ -4,8 +4,14 @@ from app.services.auto_pick.confidence_score import ConfidenceScore
 
 def test_scoring_weights_defaults_sum_to_one():
     w = ScoringWeights()
-    total = (w.edge + w.historical + w.freshness +
-             w.line_movement + w.odds_sanity + w.model_conf)
+    total = (
+        w.edge
+        + w.historical
+        + w.freshness
+        + w.line_movement
+        + w.odds_sanity
+        + w.model_conf
+    )
     assert abs(total - 1.0) < 1e-6
 
 

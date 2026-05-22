@@ -10,6 +10,7 @@ Returns dicts shaped for TotalsCandidateProvider:
   Optional: line_odds, confidence_score, edge, recommendation,
             injury_report, factors, generated_at
 """
+
 import logging
 from datetime import date
 
@@ -57,7 +58,9 @@ class NBATotalsSource:
                 for gl in game_lines_rows
             }
         except Exception:
-            log.warning("NBATotalsSource: game_lines join failed, continuing without odds")
+            log.warning(
+                "NBATotalsSource: game_lines join failed, continuing without odds"
+            )
             game_lines = {}
 
         out: list[dict] = []
@@ -94,22 +97,24 @@ class NBATotalsSource:
                 elif side == "under" and gl.under_odds is not None:
                     line_odds = gl.under_odds
 
-            out.append({
-                "event_id": event_id,
-                "league": "NBA",
-                "game_date": r.game_date,
-                "home_team_name": r.home_team_name,
-                "away_team_name": r.away_team_name,
-                "projected_total": r.projected_total,
-                "market_total": r.market_total,
-                "side": side,
-                "line_odds": line_odds,
-                "confidence_score": r.confidence_score,
-                "edge": r.edge,
-                "recommendation": r.recommendation,
-                "injury_report": r.injury_report,
-                "factors": r.factors,
-                "generated_at": r.created_at,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "NBA",
+                    "game_date": r.game_date,
+                    "home_team_name": r.home_team_name,
+                    "away_team_name": r.away_team_name,
+                    "projected_total": r.projected_total,
+                    "market_total": r.market_total,
+                    "side": side,
+                    "line_odds": line_odds,
+                    "confidence_score": r.confidence_score,
+                    "edge": r.edge,
+                    "recommendation": r.recommendation,
+                    "injury_report": r.injury_report,
+                    "factors": r.factors,
+                    "generated_at": r.created_at,
+                }
+            )
 
         return out

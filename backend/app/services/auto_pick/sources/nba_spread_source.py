@@ -10,6 +10,7 @@ Returns dicts shaped for SpreadCandidateProvider:
   Optional: spread_odds, confidence_score, edge, recommendation,
             home_win_prob, factors, generated_at
 """
+
 import logging
 from datetime import date
 
@@ -60,7 +61,9 @@ class NBASpreadSource:
                 for gl in game_lines_rows
             }
         except Exception:
-            log.warning("NBASpreadSource: game_lines join failed, continuing without odds")
+            log.warning(
+                "NBASpreadSource: game_lines join failed, continuing without odds"
+            )
             game_lines = {}
 
         out: list[dict] = []
@@ -83,24 +86,28 @@ class NBASpreadSource:
 
             spread_odds = None
             if gl:
-                spread_odds = gl.spread_home_odds if side == "home" else gl.spread_away_odds
+                spread_odds = (
+                    gl.spread_home_odds if side == "home" else gl.spread_away_odds
+                )
 
-            out.append({
-                "event_id": event_id,
-                "league": "NBA",
-                "game_date": r.game_date,
-                "home_team_name": r.home_team_name,
-                "away_team_name": r.away_team_name,
-                "projected_margin": r.projected_margin,
-                "market_spread_home": r.market_spread_home,
-                "spread_odds": spread_odds if spread_odds is not None else -110,
-                "side": side,
-                "confidence_score": r.confidence_score,
-                "edge": r.edge,
-                "recommendation": r.recommendation,
-                "home_win_prob": r.home_win_prob,
-                "factors": r.factors,
-                "generated_at": r.created_at,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "NBA",
+                    "game_date": r.game_date,
+                    "home_team_name": r.home_team_name,
+                    "away_team_name": r.away_team_name,
+                    "projected_margin": r.projected_margin,
+                    "market_spread_home": r.market_spread_home,
+                    "spread_odds": spread_odds if spread_odds is not None else -110,
+                    "side": side,
+                    "confidence_score": r.confidence_score,
+                    "edge": r.edge,
+                    "recommendation": r.recommendation,
+                    "home_win_prob": r.home_win_prob,
+                    "factors": r.factors,
+                    "generated_at": r.created_at,
+                }
+            )
 
         return out

@@ -5,6 +5,7 @@ Revises: c3b8a1f92d04
 Create Date: 2026-05-22 14:33:07.357517
 
 """
+
 from datetime import datetime as _dt
 from typing import Sequence, Union
 
@@ -40,13 +41,13 @@ def _has_index(table: str, index_name: str) -> bool:
 
 
 def _enum_type_exists(conn, typname: str) -> bool:
-    return conn.execute(
-        text(
-            "SELECT 1 FROM pg_type WHERE typname = :n AND typtype = 'e'"
-        ),
-        {"n": typname},
-    ).fetchone() is not None
-
+    return (
+        conn.execute(
+            text("SELECT 1 FROM pg_type WHERE typname = :n AND typtype = 'e'"),
+            {"n": typname},
+        ).fetchone()
+        is not None
+    )
 
 
 def upgrade() -> None:
@@ -60,9 +61,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
 
     if not _enum_type_exists(conn, "betsource"):
-        conn.execute(
-            text("CREATE TYPE betsource AS ENUM ('manual', 'auto')")
-        )
+        conn.execute(text("CREATE TYPE betsource AS ENUM ('manual', 'auto')"))
 
     if not _enum_type_exists(conn, "autopickrunstatus"):
         conn.execute(
@@ -77,9 +76,7 @@ def upgrade() -> None:
     # IF NOT EXISTS provides idempotency so no Python-side guard is needed.
     with conn.execution_options(isolation_level="AUTOCOMMIT"):
         for val in ("pending_approval", "rejected", "expired"):
-            conn.execute(
-                text(f"ALTER TYPE betstatus ADD VALUE IF NOT EXISTS '{val}'")
-            )
+            conn.execute(text(f"ALTER TYPE betstatus ADD VALUE IF NOT EXISTS '{val}'"))
 
     # ------------------------------------------------------------------
     # 2. Create auto_pick_runs table via raw SQL to avoid SQLAlchemy
@@ -102,9 +99,7 @@ def upgrade() -> None:
             )
         )
         conn.execute(
-            text(
-                "CREATE INDEX idx_auto_pick_runs_run_at ON auto_pick_runs (run_at)"
-            )
+            text("CREATE INDEX idx_auto_pick_runs_run_at ON auto_pick_runs (run_at)")
         )
 
     # ------------------------------------------------------------------
@@ -114,9 +109,7 @@ def upgrade() -> None:
         op.create_table(
             "scoring_config",
             sa.Column("id", sa.Integer(), primary_key=True),
-            sa.Column(
-                "weight_edge", sa.Float(), nullable=False, server_default="0.40"
-            ),
+            sa.Column("weight_edge", sa.Float(), nullable=False, server_default="0.40"),
             sa.Column(
                 "weight_historical", sa.Float(), nullable=False, server_default="0.20"
             ),
@@ -141,12 +134,8 @@ def upgrade() -> None:
             sa.Column(
                 "score_threshold", sa.Float(), nullable=False, server_default="65.0"
             ),
-            sa.Column(
-                "odds_min", sa.Integer(), nullable=False, server_default="-300"
-            ),
-            sa.Column(
-                "odds_max", sa.Integer(), nullable=False, server_default="400"
-            ),
+            sa.Column("odds_min", sa.Integer(), nullable=False, server_default="-300"),
+            sa.Column("odds_max", sa.Integer(), nullable=False, server_default="400"),
             sa.Column(
                 "max_picks_per_day", sa.Integer(), nullable=False, server_default="4"
             ),
@@ -202,9 +191,7 @@ def upgrade() -> None:
     # ------------------------------------------------------------------
     # 5. Seed a single default row in scoring_config
     # ------------------------------------------------------------------
-    row_count = conn.execute(
-        text("SELECT COUNT(*) FROM scoring_config")
-    ).scalar()
+    row_count = conn.execute(text("SELECT COUNT(*) FROM scoring_config")).scalar()
     if row_count == 0:
         conn.execute(
             text(

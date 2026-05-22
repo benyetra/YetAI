@@ -11,6 +11,7 @@ Returns dicts shaped for PlayerPropCandidateProvider:
   Required: event_id, league, player, stat, line, odds, projection, side
   Optional: sample_size, generated_at, model_confidence, injury_flag
 """
+
 import logging
 from datetime import date
 
@@ -70,19 +71,25 @@ class NHLGoalieSavesSource:
 
             event_id = f"nhl-prop-{r.game_date}-{r.goalie_id}-saves"
 
-            out.append({
-                "event_id": event_id,
-                "league": "NHL",
-                "player": r.goalie_name,
-                "stat": "saves",
-                "line": float(r.saves_line),
-                "odds": odds,
-                "projection": float(r.predicted_saves),
-                "side": side,
-                "sample_size": None,
-                "generated_at": r.game_date,
-                "model_confidence": r.confidence / 100.0 if r.confidence is not None else None,
-                "injury_flag": bool(r.was_scratch) if r.was_scratch is not None else False,
-            })
+            out.append(
+                {
+                    "event_id": event_id,
+                    "league": "NHL",
+                    "player": r.goalie_name,
+                    "stat": "saves",
+                    "line": float(r.saves_line),
+                    "odds": odds,
+                    "projection": float(r.predicted_saves),
+                    "side": side,
+                    "sample_size": None,
+                    "generated_at": r.game_date,
+                    "model_confidence": (
+                        r.confidence / 100.0 if r.confidence is not None else None
+                    ),
+                    "injury_flag": (
+                        bool(r.was_scratch) if r.was_scratch is not None else False
+                    ),
+                }
+            )
 
         return out

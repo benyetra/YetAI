@@ -4,6 +4,7 @@ Daily Celery task that runs the auto-pick orchestrator.
 Scheduled by celery beat (see celery_app.py): 9:00 AM ET = 13:00 UTC.
 On completion, sends an admin notification with the number of pending picks.
 """
+
 import asyncio
 import logging
 from datetime import datetime
@@ -11,8 +12,12 @@ from datetime import datetime
 from app.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.services.auto_pick.orchestrator import AutoPickOrchestrator
-from app.services.auto_pick.providers.moneyline_provider import MoneylineCandidateProvider
-from app.services.auto_pick.providers.player_prop_provider import PlayerPropCandidateProvider
+from app.services.auto_pick.providers.moneyline_provider import (
+    MoneylineCandidateProvider,
+)
+from app.services.auto_pick.providers.player_prop_provider import (
+    PlayerPropCandidateProvider,
+)
 from app.services.auto_pick.providers.spread_provider import SpreadCandidateProvider
 from app.services.auto_pick.providers.totals_provider import TotalsCandidateProvider
 from app.services.auto_pick.sources.mlb_strikeout_source import MLBStrikeoutSource

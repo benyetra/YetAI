@@ -12,7 +12,9 @@ from app.services.auto_pick.sub_scores import (
 
 
 class ConfidenceScorer:
-    def score(self, candidate: BetCandidate, context: ScoringContext) -> ConfidenceScore:
+    def score(
+        self, candidate: BetCandidate, context: ScoringContext
+    ) -> ConfidenceScore:
         breakdown = {
             "edge": edge_sub_score(candidate),
             "historical": historical_sub_score(candidate, context),
@@ -31,7 +33,9 @@ class ConfidenceScorer:
             + breakdown["model_conf"] * w.model_conf
         )
         reasoning = self._build_reasoning(candidate, breakdown, context)
-        return ConfidenceScore(total=round(total, 2), breakdown=breakdown, reasoning=reasoning)
+        return ConfidenceScore(
+            total=round(total, 2), breakdown=breakdown, reasoning=reasoning
+        )
 
     def _build_reasoning(self, c: BetCandidate, b: dict, ctx: ScoringContext) -> str:
         delta = c.our_projection - c.market_line
@@ -42,7 +46,11 @@ class ConfidenceScorer:
         ]
         hist = ctx.historical_hit_rates.get((c.market_type.value, c.league))
         if hist is not None:
-            parts.append(f"{c.market_type.value} {c.league} L90d hit rate {hist*100:.0f}%.")
+            parts.append(
+                f"{c.market_type.value} {c.league} L90d hit rate {hist*100:.0f}%."
+            )
         if b["line_movement"] != 50.0:
-            parts.append(f"Line movement: {'with us' if b['line_movement'] > 50 else 'against us'}.")
+            parts.append(
+                f"Line movement: {'with us' if b['line_movement'] > 50 else 'against us'}."
+            )
         return " ".join(parts)

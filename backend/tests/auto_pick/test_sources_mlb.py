@@ -6,6 +6,7 @@ Each test:
   2. Returns [] when DB has no matching rows.
   3. Returns [] when DB query raises.
 """
+
 import pytest
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -43,6 +44,7 @@ def _fake_row(
 # ---------------------------------------------------------------------------
 # 1. Returns properly shaped candidates
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_mlb_strikeout_source_returns_candidates():
@@ -96,6 +98,7 @@ async def test_mlb_strikeout_source_skips_no_line():
 # 2. Returns [] when no rows
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_mlb_strikeout_source_empty_when_no_rows():
     db = MagicMock()
@@ -110,6 +113,7 @@ async def test_mlb_strikeout_source_empty_when_no_rows():
 # ---------------------------------------------------------------------------
 # 3. Returns [] on DB error
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_mlb_strikeout_source_returns_empty_on_db_error():
