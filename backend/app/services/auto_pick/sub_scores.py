@@ -1,4 +1,5 @@
 from app.services.auto_pick.candidate import BetCandidate, MarketType
+from app.services.auto_pick.scoring_context import ScoringContext
 
 EDGE_NORMALIZERS = {
     MarketType.MONEYLINE: 0.20,
@@ -17,3 +18,16 @@ def edge_sub_score(candidate: BetCandidate) -> float:
     if raw < -100.0:
         return -100.0
     return raw
+
+
+def historical_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
+    rate = context.historical_hit_rates.get((candidate.market_type.value, candidate.league))
+    if rate is None:
+        return 50.0
+    if rate <= 0.40:
+        return 0.0
+    if rate >= 0.65:
+        return 100.0
+    if rate < 0.524:
+        return (rate - 0.40) / (0.524 - 0.40) * 50.0
+    return 50.0 + (rate - 0.524) / (0.65 - 0.524) * 50.0
