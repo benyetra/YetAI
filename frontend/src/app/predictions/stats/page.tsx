@@ -11,6 +11,7 @@ import { BarChart3, ChevronRight } from 'lucide-react';
 const SPORTS = [
   { href: '/predictions/mlb', emoji: '⚾', label: 'MLB', desc: 'Strikeouts, home runs, and game-level slate projections.' },
   { href: '/predictions/nba', emoji: '🏀', label: 'NBA', desc: 'Points, assists, rebounds, threes, steals, blocks, and PRA.' },
+  { href: '/predictions/wnba', emoji: '🏀', label: 'WNBA', desc: 'Game totals O/U, spread/win-probability, and player props (points, assists, rebounds).' },
   { href: '/predictions/nfl', emoji: '🏈', label: 'NFL', desc: 'QB passing and kicker field goal projections.' },
   { href: '/predictions/nhl', emoji: '🏒', label: 'NHL', desc: 'Goalie saves and player shots on goal.' },
 ];

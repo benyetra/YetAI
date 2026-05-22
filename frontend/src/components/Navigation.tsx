@@ -75,6 +75,7 @@ const ROUTE_LABELS: Record<string, string> = {
   '/tools/owens-betting-corner': "Owen's Corner",
   '/predictions/mlb': 'MLB Stats',
   '/predictions/nba': 'NBA Stats',
+  '/predictions/wnba': 'WNBA Stats',
   '/predictions/nfl': 'NFL Stats',
   '/predictions/nhl': 'NHL Stats',
 };
