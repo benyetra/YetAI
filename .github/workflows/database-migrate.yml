@@ -1,0 +1,79 @@
+name: Database Migrations
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Railway target (production or staging)
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+
+jobs:
+  migrate:
+    name: Alembic upgrade (${{ inputs.target }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run migrations (production)
+        if: inputs.target == 'production'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -euo pipefail
+          SERVICE_ID="9fe8f0dc-96ac-408f-9960-950768e6eb49"
+          echo "=== Before ==="
+          railway run --service "$SERVICE_ID" -- alembic current
+          echo "=== Upgrade ==="
+          railway run --service "$SERVICE_ID" -- alembic upgrade head
+          echo "=== After ==="
+          railway run --service "$SERVICE_ID" -- alembic current
+          echo "=== WNBA tables ==="
+          railway run --service "$SERVICE_ID" -- python -c "
+          from sqlalchemy import create_engine, text
+          import os
+          e = create_engine(os.environ['DATABASE_URL'])
+          with e.connect() as c:
+              rows = c.execute(text(
+                  \"SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'pred_wnba_%' ORDER BY 1\"
+              )).fetchall()
+              print('pred_wnba_* count:', len(rows))
+              for (t,) in rows[:5]:
+                  print(' ', t)
+              if len(rows) > 5:
+                  print(' ...')
+          "
+
+      - name: Run migrations (staging)
+        if: inputs.target == 'staging'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
+        run: |
+          set -euo pipefail
+          echo "=== Before ==="
+          railway run -- alembic current
+          echo "=== Upgrade ==="
+          railway run -- alembic upgrade head
+          echo "=== After ==="
+          railway run -- alembic current
