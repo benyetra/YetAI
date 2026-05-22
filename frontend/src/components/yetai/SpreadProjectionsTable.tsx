@@ -48,7 +48,7 @@ const SPREAD_COLUMNS: ColumnDef[] = [
   },
 ];
 
-export default function WnbaSpreadProjectionsTable({
+export default function SpreadProjectionsTable({
   rows,
   loading,
 }: {

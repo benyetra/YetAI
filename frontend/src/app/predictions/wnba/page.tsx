@@ -2,7 +2,7 @@
 
 import NbaTotalsProjectionsTable from '@/components/yetai/NbaTotalsProjectionsTable';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
-import WnbaSpreadProjectionsTable from '@/components/yetai/WnbaSpreadProjectionsTable';
+import SpreadProjectionsTable from '@/components/yetai/SpreadProjectionsTable';
 import {
   formatNumber,
   formatString,
@@ -34,7 +34,7 @@ export default function WNBAPredictionsPage() {
       subtitle="Game totals O/U, spread/win-probability, and player props (points, assists, rebounds)."
       topSection={({ data, loading }) => (
         <>
-          <WnbaSpreadProjectionsTable
+          <SpreadProjectionsTable
             rows={(data?.spreads as Array<Record<string, unknown>>) ?? []}
             loading={loading}
           />
