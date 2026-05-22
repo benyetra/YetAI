@@ -54,12 +54,15 @@ jobs:
           )
           data = json.loads(proc.stdout)
           if isinstance(data, dict):
-              url = data.get("DATABASE_URL") or data.get("DATABASE_PUBLIC_URL")
+              url = data.get("DATABASE_PUBLIC_URL") or data.get("DATABASE_URL")
           else:
               mapping = {item["name"]: item["value"] for item in data}
-              url = mapping.get("DATABASE_URL") or mapping.get("DATABASE_PUBLIC_URL")
+              url = mapping.get("DATABASE_PUBLIC_URL") or mapping.get("DATABASE_URL")
           if not url:
-              print("DATABASE_URL not found in Railway variables", file=sys.stderr)
+              print("DATABASE_PUBLIC_URL/DATABASE_URL not found in Railway variables", file=sys.stderr)
+              sys.exit(1)
+          if "railway.internal" in url:
+              print("Only internal DATABASE_URL found; set DATABASE_PUBLIC_URL on the Postgres service", file=sys.stderr)
               sys.exit(1)
           print(url, end="")
           PY
@@ -100,12 +103,15 @@ jobs:
           )
           data = json.loads(proc.stdout)
           if isinstance(data, dict):
-              url = data.get("DATABASE_URL") or data.get("DATABASE_PUBLIC_URL")
+              url = data.get("DATABASE_PUBLIC_URL") or data.get("DATABASE_URL")
           else:
               mapping = {item["name"]: item["value"] for item in data}
-              url = mapping.get("DATABASE_URL") or mapping.get("DATABASE_PUBLIC_URL")
+              url = mapping.get("DATABASE_PUBLIC_URL") or mapping.get("DATABASE_URL")
           if not url:
-              print("DATABASE_URL not found in Railway variables", file=sys.stderr)
+              print("DATABASE_PUBLIC_URL/DATABASE_URL not found in Railway variables", file=sys.stderr)
+              sys.exit(1)
+          if "railway.internal" in url:
+              print("Only internal DATABASE_URL found; set DATABASE_PUBLIC_URL on the Postgres service", file=sys.stderr)
               sys.exit(1)
           print(url, end="")
           PY
