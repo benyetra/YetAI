@@ -40,6 +40,7 @@ jobs:
         if: inputs.target == 'production'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          # Optional override; default discovers Postgres service by name.
           POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
         run: |
           set -euo pipefail
@@ -47,6 +48,7 @@ jobs:
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
           echo "=== Before ==="
           alembic current
+          python3 scripts/reconcile_wnba_alembic.py
           echo "=== Upgrade ==="
           alembic upgrade head
           echo "=== After ==="
@@ -68,13 +70,14 @@ jobs:
         if: inputs.target == 'staging'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
-          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          # Staging project: auto-discover Postgres service (no hardcoded id).
         run: |
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
           echo "=== Before ==="
           alembic current
+          python3 scripts/reconcile_wnba_alembic.py
           echo "=== Upgrade ==="
           alembic upgrade head
           echo "=== After ==="

@@ -58,12 +58,25 @@ def resolve(service_id: str) -> str:
     )
 
 
+def _postgres_service_id() -> str:
+    if service_id := os.environ.get("POSTGRES_SERVICE_ID"):
+        return service_id
+    proc = subprocess.run(
+        ["railway", "service", "list", "--json"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    services = json.loads(proc.stdout)
+    for svc in services:
+        name = str(svc.get("name", "")).lower()
+        if "postgres" in name:
+            return str(svc["id"])
+    raise SystemExit("Postgres service not found in railway service list")
+
+
 def main() -> None:
-    service_id = os.environ.get("POSTGRES_SERVICE_ID") or os.environ.get("SERVICE_ID")
-    if not service_id:
-        print("POSTGRES_SERVICE_ID is required", file=sys.stderr)
-        raise SystemExit(1)
-    print(resolve(service_id), end="")
+    print(resolve(_postgres_service_id()), end="")
 
 
 if __name__ == "__main__":
