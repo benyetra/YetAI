@@ -28,6 +28,7 @@ celery_app = Celery(
         "app.tasks.games_sync",
         "app.tasks.health",
         "app.tasks.auto_pick",
+        "app.tasks.expire_pending_picks",
     ],
 )
 
@@ -128,6 +129,10 @@ celery_app.conf.beat_schedule = {
     "auto_pick_yetai_bets_daily": {
         "task": "auto_pick.yetai_bets",
         "schedule": crontab(hour=13, minute=0),  # 9:00 AM ET
+    },
+    "expire_pending_yetai_picks": {
+        "task": "auto_pick.expire_pending",
+        "schedule": crontab(minute="*/5"),
     },
     "nfl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
