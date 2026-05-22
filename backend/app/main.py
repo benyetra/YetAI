@@ -2092,16 +2092,26 @@ async def options_yetai_bets():
 
 @app.get("/api/yetai-bets")
 async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
-    """Get all YetAI bets (both active and historical) for user based on subscription tier"""
+    """Get YetAI bets for user based on subscription tier.
+
+    Tier-gated: subscribers only see bets at their tier or lower.
+    Non-active statuses (pending_approval, rejected, expired, etc.) are
+    never returned regardless of tier.
+    """
+    from app.core.database import get_db as _get_db
+
+    user_tier = current_user.get("subscription_tier", "free")
+
     if is_service_available("yetai_bets_service"):
         try:
             yetai_service = get_service("yetai_bets_service")
 
-            # Get user's subscription tier from the authenticated user
-            user_tier = current_user.get("subscription_tier", "free")
-
-            # Fetch ALL bets (both active and settled) based on user tier
-            bets = await yetai_service.get_all_bets(include_settled=True)
+            # Use a short-lived DB session for the synchronous query
+            db = next(_get_db())
+            try:
+                bets = yetai_service.get_yetai_bets_for_user(user_tier, db)
+            finally:
+                db.close()
 
             return {
                 "status": "success",
@@ -2112,7 +2122,6 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
         except Exception as e:
             logger.error(f"Error fetching YetAI bets: {e}")
 
-    user_tier = current_user.get("subscription_tier", "free")
     return {
         "status": "success",
         "bets": [],
