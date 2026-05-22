@@ -24,23 +24,80 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | `totals_accuracy_tracker.py` | `wnba/totals_accuracy_tracker.py` | ✅ done |
 | *(none — beyond NBA parity)* | `wnba/spreads_accuracy_tracker.py` | ✅ done |
 
-## Phase 2 deliverables — player props (deferred to Plan B)
+## Phase 2 deliverables — player props (live)
 
 | NBA file | WNBA equivalent | Status |
 |---|---|---|
-| `update_recent_games.py` | `wnba/update_recent_games.py` | ⏳ deferred |
-| `update_expected_minutes.py` | `wnba/update_expected_minutes.py` | ⏳ deferred |
-| `today_active_players.py` | `wnba/today_active_players.py` | ⏳ deferred |
-| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ⏳ deferred |
-| `_ml_predict.py` | `wnba/_ml_predict.py` | ⏳ deferred |
-| `generate_points_predictions.py` | `wnba/generate_points_predictions.py` | ⏳ deferred |
-| `generate_assists_predictions.py` | `wnba/generate_assists_predictions.py` | ⏳ deferred |
-| `generate_rebounds_predictions.py` | `wnba/generate_rebounds_predictions.py` | ⏳ deferred |
-| `calculate_prediction_accuracy.py` | `wnba/calculate_prediction_accuracy.py` | ⏳ deferred |
-| *(none — one-shot script)* | `wnba/backfill_wnba_history.py` | ⏳ deferred |
+| `update_recent_games.py` | `wnba/update_recent_games.py` | ✅ done |
+| `update_expected_minutes.py` | `wnba/update_expected_minutes.py` | ✅ done |
+| `today_active_players.py` | `wnba/today_active_players.py` | ✅ done |
+| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ✅ done |
+| `_ml_predict.py` | `wnba/_ml_predict.py` | ✅ done |
+| `generate_points_predictions.py` | `wnba/generate_points_predictions.py` | ✅ done |
+| `generate_assists_predictions.py` | `wnba/generate_assists_predictions.py` | ✅ done |
+| `generate_rebounds_predictions.py` | `wnba/generate_rebounds_predictions.py` | ✅ done |
+| `calculate_prediction_accuracy.py` | `wnba/calculate_prediction_accuracy.py` | ✅ done |
+| *(none — one-shot script)* | `wnba/backfill_wnba_history.py` | ✅ done |
 
 Phase 2 schema tables (7) were created up-front in the Plan A migration so Plan B
 needs no schema changes.
+
+## Phase 2 model MAE gates
+
+All three XGBoost models passed their training-time MAE gates and were uploaded
+to `s3://yetibets/wnba/ml_models/xgb_{points,assists,rebounds}.pkl`:
+
+| Model | Test-set MAE | Gate | Status |
+|---|---|---|---|
+| Points | **4.261** | 4.5 | ✅ pass |
+| Assists | **1.266** | 1.5 | ✅ pass |
+| Rebounds | **1.829** | 2.0 | ✅ pass |
+
+Training logs in [`backend/docs/wnba_training_logs/`](./wnba_training_logs/).
+
+## Phase 2 live smoke (2026-05-22)
+
+End-to-end orchestrator run with all Phase 1 + Phase 2 steps. After deduping
+`pred_wnba_team_roster` (pre-existing multi-run duplicates — the table lacks a
+`UNIQUE(team_id, player_id)` constraint and `update_team_roster.py` re-INSERTs
+on every run rather than upserting), the prop pipeline returned:
+
+```
+today_active_players  : {games: 3, players: 104}
+update_expected_minutes: {players_updated: 65, players_skipped_thin_data: 39}
+generate_points       : {projections_written: 78, skipped_injured: 9, skipped_thin_history: 17}
+generate_assists      : {projections_written: 78, skipped_injured: 9, skipped_thin_history: 17}
+generate_rebounds     : {projections_written: 78, skipped_injured: 9, skipped_thin_history: 17}
+prop_accuracy         : {actuals_written: 183}
+```
+
+Top-10 projected scorers for 2026-05-22:
+
+| Player | Opponent | Projected pts |
+|---|---|---|
+| Kelsey Mitchell | Golden State Valkyries | 24.9 |
+| Rhyne Howard | Dallas Wings | 21.5 |
+| Allisha Gray | Dallas Wings | 21.1 |
+| Paige Bueckers | Atlanta Dream | 18.1 |
+| Tina Charles | Seattle Storm | 16.4 |
+| Janelle Salaun | Indiana Fever | 15.8 |
+| Aliyah Boston | Golden State Valkyries | 15.3 |
+| Marina Mabrey | Seattle Storm | 15.1 |
+| Angel Reese | Dallas Wings | 14.3 |
+| Arike Ogunbowale | Atlanta Dream | 13.7 |
+
+Top assists samples: Veronica Burton 7.8, Rhyne Howard 6.3, Paige Bueckers 5.2.
+Top rebounds samples: Jessica Shepard 9.7, Aliyah Boston 9.4, Naz Hillmon 9.0.
+
+**Known issue (pre-existing, not Phase 2 scope):**
+`update_team_roster.py`, `update_team_offense_stats.py`, `update_team_defense_stats.py`,
+`update_injury_status.py`, and `today_active_players.py` all use
+`db.merge(Obj(...))` without supplying the autoincrement PK `id`, so each call
+re-INSERTs duplicate rows that violate the natural unique key. Tables
+accumulate duplicate rows on every run (roster is unconstrained; the others
+have a unique constraint and now hard-fail after the first day). Fix: add
+proper `INSERT ... ON CONFLICT DO UPDATE` upserts or add a unique index +
+delete-existing-then-insert pattern. Tracked separately.
 
 ## Beyond-NBA-parity items
 
