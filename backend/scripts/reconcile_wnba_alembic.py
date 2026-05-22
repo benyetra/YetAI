@@ -21,9 +21,20 @@ REVISIONS = (
         "pred_wnba_team_roster.unique_wnba_team_roster_team_player",
         "unique",
     ),
+    (
+        "c3b8a1f92d04",
+        "pred_nba_spread_projections",
+        "table",
+    ),
 )
 
-ORDER = ["74627d53e110", "0107ad42b713", "e4d591511da1", "f8a2c91e04bd"]
+ORDER = [
+    "74627d53e110",
+    "0107ad42b713",
+    "e4d591511da1",
+    "f8a2c91e04bd",
+    "c3b8a1f92d04",
+]
 
 
 def _current_revision(engine) -> str | None:
