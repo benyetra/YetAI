@@ -49,3 +49,5 @@ if __name__ == "__main__":
         upload=args.upload,
     )
     print(out)
+    if out.get("status") != "ok":
+        raise SystemExit(1)
