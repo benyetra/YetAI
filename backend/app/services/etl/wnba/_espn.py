@@ -104,3 +104,41 @@ def fetch_injuries() -> list[dict]:
                 "injury_type": (inj.get("details") or {}).get("type"),
             })
     return out
+
+
+def build_matchups(games: list[dict]) -> tuple[set[int], list[dict]]:
+    """Convert ESPN game rows into (team_ids_playing_today, matchup_records).
+
+    Each matchup record:
+        {
+            "home_team_id_wnba": int,
+            "away_team_id_wnba": int,
+            "home_team_name": str,
+            "away_team_name": str,
+        }
+
+    ESPN team IDs are converted to WNBA stats IDs via _team_id_map. Games where
+    either team can't be resolved are skipped.
+    """
+    from app.services.etl.wnba._team_id_map import (
+        ESPN_TO_WNBA_TEAM_ID,
+        normalize_team_name,
+    )
+    team_ids: set[int] = set()
+    matchups: list[dict] = []
+    for g in games:
+        home_espn = g.get("home_team_id_espn")
+        away_espn = g.get("away_team_id_espn")
+        home_wnba = ESPN_TO_WNBA_TEAM_ID.get(home_espn)
+        away_wnba = ESPN_TO_WNBA_TEAM_ID.get(away_espn)
+        if home_wnba is None or away_wnba is None:
+            continue
+        team_ids.add(home_wnba)
+        team_ids.add(away_wnba)
+        matchups.append({
+            "home_team_id_wnba": home_wnba,
+            "away_team_id_wnba": away_wnba,
+            "home_team_name": normalize_team_name(g["home_team_name"]),
+            "away_team_name": normalize_team_name(g["away_team_name"]),
+        })
+    return team_ids, matchups
