@@ -835,11 +835,12 @@ def run_wnba_update_pipeline(self) -> dict:
     logger.info("WNBA update pipeline starting (task_id=%s)", self.request.id)
     results: dict[str, dict] = {}
     for label, mod in [
-        ("update_team_roster", _wnba_update_roster),
+        # Fast externals first so totals/spreads can populate even if stats.wnba.com is slow.
+        ("update_game_lines", _wnba_update_game_lines),
+        ("update_injury_status", _wnba_update_injury),
         ("update_team_offense_stats", _wnba_update_off),
         ("update_team_defense_stats", _wnba_update_def),
-        ("update_injury_status", _wnba_update_injury),
-        ("update_game_lines", _wnba_update_game_lines),
+        ("update_team_roster", _wnba_update_roster),
         ("update_recent_games", _wnba_update_recent),
         ("today_active_players", _wnba_today_active),
         ("update_expected_minutes", _wnba_expected_minutes),

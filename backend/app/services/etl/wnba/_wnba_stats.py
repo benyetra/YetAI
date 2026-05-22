@@ -28,7 +28,8 @@ logger = logging.getLogger(__name__)
 
 LEAGUE_ID = "10"  # WNBA. NBA is "00".
 MAX_ATTEMPTS = 3
-BACKOFF_SECONDS = 60.0
+# Keep backoff modest — the daily orchestrator runs many endpoints sequentially.
+BACKOFF_SECONDS = 15.0
 
 
 def _retry(callable_, label: str):
