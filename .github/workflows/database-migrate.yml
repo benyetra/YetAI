@@ -40,33 +40,10 @@ jobs:
         if: inputs.target == 'production'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          SERVICE_ID: 9fe8f0dc-96ac-408f-9960-950768e6eb49
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
         run: |
           set -euo pipefail
-          export DATABASE_URL="$(python3 <<'PY'
-          import json, os, subprocess, sys
-          sid = os.environ["SERVICE_ID"]
-          proc = subprocess.run(
-              ["railway", "variable", "list", "--service", sid, "--json"],
-              capture_output=True,
-              text=True,
-              check=True,
-          )
-          data = json.loads(proc.stdout)
-          if isinstance(data, dict):
-              url = data.get("DATABASE_PUBLIC_URL") or data.get("DATABASE_URL")
-          else:
-              mapping = {item["name"]: item["value"] for item in data}
-              url = mapping.get("DATABASE_PUBLIC_URL") or mapping.get("DATABASE_URL")
-          if not url:
-              print("DATABASE_PUBLIC_URL/DATABASE_URL not found in Railway variables", file=sys.stderr)
-              sys.exit(1)
-          if "railway.internal" in url:
-              print("Only internal DATABASE_URL found; set DATABASE_PUBLIC_URL on the Postgres service", file=sys.stderr)
-              sys.exit(1)
-          print(url, end="")
-          PY
-          )"
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
           echo "=== Before ==="
           alembic current
@@ -79,9 +56,11 @@ jobs:
           from sqlalchemy import create_engine, text
           e = create_engine(os.environ["DATABASE_URL"])
           with e.connect() as c:
+              rev = c.execute(text("SELECT version_num FROM alembic_version")).scalar()
               n = c.execute(text(
                   "SELECT count(*) FROM pg_tables WHERE schemaname='public' AND tablename LIKE 'pred_wnba_%'"
               )).scalar()
+              print("alembic_version:", rev)
               print("pred_wnba_* tables:", n)
           PY
 
@@ -89,33 +68,10 @@ jobs:
         if: inputs.target == 'staging'
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_STAGING_TOKEN }}
-          SERVICE_ID: 9fe8f0dc-96ac-408f-9960-950768e6eb49
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
         run: |
           set -euo pipefail
-          export DATABASE_URL="$(python3 <<'PY'
-          import json, os, subprocess, sys
-          sid = os.environ["SERVICE_ID"]
-          proc = subprocess.run(
-              ["railway", "variable", "list", "--service", sid, "--json"],
-              capture_output=True,
-              text=True,
-              check=True,
-          )
-          data = json.loads(proc.stdout)
-          if isinstance(data, dict):
-              url = data.get("DATABASE_PUBLIC_URL") or data.get("DATABASE_URL")
-          else:
-              mapping = {item["name"]: item["value"] for item in data}
-              url = mapping.get("DATABASE_PUBLIC_URL") or mapping.get("DATABASE_URL")
-          if not url:
-              print("DATABASE_PUBLIC_URL/DATABASE_URL not found in Railway variables", file=sys.stderr)
-              sys.exit(1)
-          if "railway.internal" in url:
-              print("Only internal DATABASE_URL found; set DATABASE_PUBLIC_URL on the Postgres service", file=sys.stderr)
-              sys.exit(1)
-          print(url, end="")
-          PY
-          )"
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
           echo "=== Before ==="
           alembic current
