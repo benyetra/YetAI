@@ -2160,6 +2160,79 @@ class NBATotalsActuals(Base):
         return f"<NBATotalsActuals {self.away_team_name} @ {self.home_team_name}: actual={self.actual_total}>"
 
 
+class NBASpreadProjections(Base):
+    """Own spread / win-probability projections (backported from WNBA Elo+pace model)."""
+
+    __tablename__ = "pred_nba_spread_projections"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    projected_margin = Column(Float, nullable=False)
+    home_win_prob = Column(Float, nullable=False)
+    home_elo = Column(Float, nullable=True)
+    away_elo = Column(Float, nullable=True)
+    home_court_advantage = Column(Float, nullable=True)
+    pace_adjustment = Column(Float, nullable=True)
+    market_spread_home = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    factors = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nba_spread_projection",
+        ),
+        Index("idx_nba_spread_projections_date", "game_date"),
+        Index("idx_nba_spread_projections_edge", "edge"),
+    )
+
+
+class NBASpreadActuals(Base):
+    __tablename__ = "pred_nba_spread_actuals"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    home_score = Column(Integer, nullable=False)
+    away_score = Column(Integer, nullable=False)
+    actual_margin = Column(Integer, nullable=False)
+    home_won = Column(Boolean, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nba_spread_actual",
+        ),
+    )
+
+
+class NBASpreadAccuracy(Base):
+    __tablename__ = "pred_nba_spread_accuracy"
+
+    id = Column(Integer, primary_key=True)
+    date_range_start = Column(Date, nullable=False)
+    date_range_end = Column(Date, nullable=False)
+    total_games = Column(Integer, nullable=False)
+    spread_mae = Column(Float, nullable=True)
+    ats_hit_rate = Column(Float, nullable=True)
+    win_prob_brier_score = Column(Float, nullable=True)
+    calibration_buckets = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class NBATeamPaceEfficiency(Base):
     """
     Store enhanced team pace and efficiency metrics for totals prediction.

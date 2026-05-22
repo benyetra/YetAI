@@ -40,3 +40,8 @@ def upload(stat_col: str, model: xgb.XGBRegressor, metadata: dict[str, Any]) -> 
             meta_key,
         )
         return {"model_key": model_key, "metadata_key": meta_key}
+
+
+def upload_spread_model(model: xgb.XGBRegressor, metadata: dict[str, Any]) -> dict:
+    """Upload spread margin model as xgb_spread.pkl."""
+    return upload("spread", model, metadata)

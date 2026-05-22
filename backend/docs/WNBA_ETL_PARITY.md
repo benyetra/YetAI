@@ -19,7 +19,7 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | `update_injury_status.py` | `wnba/update_injury_status.py` (ESPN feed) | ✅ done |
 | `update_game_lines.py` | `wnba/update_game_lines.py` (consensus-only) | ✅ done |
 | `totals_projector.py` | `wnba/totals_projector.py` | ✅ done |
-| *(none — beyond NBA parity)* | `wnba/spread_projector.py` (Elo + pace) | ✅ done |
+| *(none — beyond NBA parity)* | `wnba/spread_projector.py` (ML when S3 `xgb_spread`, else Elo+pace) | ✅ done |
 | `store_actuals.py` | `wnba/store_actuals.py` (totals + spread) | ✅ done |
 | `totals_accuracy_tracker.py` | `wnba/totals_accuracy_tracker.py` | ✅ done |
 | *(none — beyond NBA parity)* | `wnba/spreads_accuracy_tracker.py` | ✅ done |
@@ -121,7 +121,10 @@ All WNBA ETL writers use `app/services/etl/wnba/_db_upsert.py`:
 Two pieces of the Phase 1 build do not exist in NBA. Backports tracked as beads
 issues:
 
-1. **`spread_projector.py` — own spread/win-probability model.** Elo rating per
+1. **`spread_projector.py` — spread/win-probability model.** Uses XGBoost margin
+   model (`s3://yetibets/wnba/ml_models/xgb_spread.pkl`) when uploaded; falls back
+   to Elo+pace. Train: `python -m app.services.etl.wnba.ml_training.train_spread_model
+   --start YYYY-MM-DD --end YYYY-MM-DD [--upload]`. Elo rating per
    team replayed from `pred_wnba_spread_actuals`, plus pace/efficiency overlay,
    plus WNBA HCA = 2.5. NBA currently has only `totals_projector`. Backport
    tracked as **YetAI-q9z**.

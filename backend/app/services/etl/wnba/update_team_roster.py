@@ -62,7 +62,9 @@ def _rows_from_per_team_rosters(season: str) -> tuple[list[dict], int, int]:
 
     for wnba_team_id, team_name in WNBA_ID_TO_NAME.items():
         try:
-            rows = _wnba_stats.fetch_team_roster(team_id=int(wnba_team_id), season=season)
+            rows = _wnba_stats.fetch_team_roster(
+                team_id=int(wnba_team_id), season=season
+            )
         except Exception as exc:
             logger.warning("roster fetch failed for %s: %s", team_name, exc)
             errors += 1

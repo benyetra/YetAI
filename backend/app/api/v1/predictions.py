@@ -26,6 +26,7 @@ from app.models.predictions_models import (
     GameProjections,
     Homer,
     KickerPredictions,
+    NBASpreadProjections,
     NBATotalsProjections,
     NHLGoaliePredictions,
     NHLPlayerShotsPredictions,
@@ -176,6 +177,9 @@ def nba_predictions(
         "totals": _query_recent(
             db, NBATotalsProjections, "game_date", target_date, limit, tz=tz
         ),
+        "spreads": _query_recent(
+            db, NBASpreadProjections, "game_date", target_date, limit, tz=tz
+        ),
         "points": _query_recent(
             db, PointsProjections, "date", target_date, limit, tz=tz
         ),
@@ -267,7 +271,7 @@ def wnba_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """WNBA predictions: own totals + spread/win-prob projections + Phase 2 player props (empty until Plan B)."""
+    """WNBA: totals, spread/win-prob, and player props."""
     tz = _safe_tz(tz)
     return {
         "totals": _query_recent(

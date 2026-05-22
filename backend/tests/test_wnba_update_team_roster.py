@@ -5,7 +5,9 @@ from app.services.etl.wnba import update_team_roster as urr
 
 def test_run_prefers_league_player_stats(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db
+    )
 
     with patch(
         "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_league_player_stats"
@@ -38,7 +40,9 @@ def test_run_prefers_league_player_stats(monkeypatch):
 
 def test_run_falls_back_to_per_team_when_league_empty(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db
+    )
 
     with patch(
         "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_league_player_stats"
@@ -54,7 +58,9 @@ def test_run_falls_back_to_per_team_when_league_empty(monkeypatch):
                 "app.services.etl.wnba.update_team_roster.WNBA_ID_TO_NAME",
                 {1611661319: "Las Vegas Aces"},
             ):
-                with patch("app.services.etl.wnba.update_team_roster.upsert_many") as um:
+                with patch(
+                    "app.services.etl.wnba.update_team_roster.upsert_many"
+                ) as um:
                     result = urr.run(season="2026")
 
     assert result["status"] == "ok"
@@ -67,7 +73,9 @@ def test_run_falls_back_to_per_team_when_league_empty(monkeypatch):
 
 def test_run_handles_per_team_fetch_failure_gracefully(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.update_team_roster.SessionLocal", lambda: mock_db
+    )
 
     with patch(
         "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_league_player_stats",

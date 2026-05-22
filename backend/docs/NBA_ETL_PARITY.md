@@ -23,6 +23,9 @@ Orchestrator: `app.tasks.etl_pipeline.NBA_PHASES` + Celery Beat `nba-update-pipe
 | `three_point_predictions_v2.py` | `generate_three_pt_made_predictions.py` | `nba.generate_three_pt_made_predictions` |
 | `pra_predictions.py` | `generate_pra_predictions.py` | `nba.generate_pra_predictions` |
 | `totals_projector.py` | `totals_projector.py` | `nba.totals_projector` |
+| *(WNBA backport)* | `spread_projector.py` | `nba.spread_projector` |
+| *(WNBA backport)* | `store_spread_actuals.py` | `nba.store_spread_actuals` |
+| *(WNBA backport)* | `spreads_accuracy_tracker.py` | `nba.spreads_accuracy` |
 | `totals_accuracy_tracker.py` | `totals_accuracy_tracker.py` | `nba.totals_accuracy_tracker` |
 | `calculate_prediction_accuracy.py` | `calculate_prediction_accuracy.py` | `nba.calculate_prediction_accuracy` |
 | `find_top_performers.py` | `find_top_performers.py` | `nba.find_top_performers` |

@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     Homer,
     KickerPredictions,
     ValueBet,
+    NBASpreadProjections,
     NBATotalsProjections,
     WNBAGameLines,
     WNBAAssistsProjections,
@@ -114,6 +115,11 @@ def verify_nba() -> dict[str, Any]:
             .filter(NBATotalsProjections.game_date == today)
             .count()
         )
+        spreads_today = (
+            db.query(NBASpreadProjections)
+            .filter(NBASpreadProjections.game_date == today)
+            .count()
+        )
     finally:
         db.close()
 
@@ -122,6 +128,10 @@ def verify_nba() -> dict[str, Any]:
     if totals_today == 0:
         warnings.append(
             "no totals projections today (off-day or totals_projector failed)"
+        )
+    if spreads_today == 0:
+        warnings.append(
+            "no spread projections today (off-day, missing game lines, or spread_projector failed)"
         )
     elif points >= 20 and pra < 10:
         warnings.append(
@@ -138,6 +148,7 @@ def verify_nba() -> dict[str, Any]:
             "points_today": points,
             "pra_today": pra,
             "totals_today": totals_today,
+            "spreads_today": spreads_today,
         },
         "warnings": warnings,
     }

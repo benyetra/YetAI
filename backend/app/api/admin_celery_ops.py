@@ -32,6 +32,9 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nba.store_actuals": 600.0,
     "app.tasks.etl_pipeline.nba.find_top_performers": 180.0,
     "app.tasks.etl_pipeline.nba.totals_projector": 300.0,
+    "app.tasks.etl_pipeline.nba.spread_projector": 300.0,
+    "app.tasks.etl_pipeline.nba.store_spread_actuals": 300.0,
+    "app.tasks.etl_pipeline.nba.spreads_accuracy": 300.0,
     "app.tasks.etl_pipeline.mlb.strikeouts": 600.0,
     "app.tasks.etl_pipeline.mlb.hits": 600.0,
     "app.tasks.etl_pipeline.mlb.store_strikeout_projections": 600.0,
@@ -78,7 +81,16 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         "task_name": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "label": "NBA daily pipeline",
         "sport": "nba",
-        "description": "Full NBA ETL: roster, stats, injury, all prop models, game totals.",
+        "description": "Full NBA ETL: roster, stats, injury, all prop models, game totals + spreads.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nba.spread_projector",
+        "label": "NBA spread projector",
+        "sport": "nba",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nba.spread_projector"
+        ],
+        "description": "Elo+pace spread / win-probability (needs game lines).",
     },
     {
         "task_name": "app.tasks.etl_pipeline.run_wnba_update_pipeline",

@@ -39,6 +39,7 @@ CRITICAL_PIPELINE_TASKS: frozenset[str] = frozenset(
         "app.tasks.etl_pipeline.nba.generate_blocks_predictions",
         "app.tasks.etl_pipeline.nba.generate_pra_predictions",
         "app.tasks.etl_pipeline.nba.totals_projector",
+        "app.tasks.etl_pipeline.nba.spread_projector",
         # MLB — prop boards + persist
         "app.tasks.etl_pipeline.mlb.strikeouts",
         "app.tasks.etl_pipeline.mlb.hits",
@@ -230,6 +231,27 @@ def nba_totals_accuracy_tracker():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nba.spread_projector")
+def nba_spread_projector():
+    from app.services.etl.nba.spread_projector import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.store_spread_actuals")
+def nba_store_spread_actuals():
+    from app.services.etl.nba.store_spread_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nba.spreads_accuracy")
+def nba_spreads_accuracy():
+    from app.services.etl.nba.spreads_accuracy_tracker import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nba.calculate_prediction_accuracy")
 def nba_calculate_prediction_accuracy():
     from app.services.etl.nba.calculate_prediction_accuracy import run
@@ -382,6 +404,7 @@ NBA_PHASES = [
         "store_actuals",
         [
             nba_store_actuals,
+            nba_store_spread_actuals,
             nba_store_no_steals_actuals,
         ],
     ),
@@ -389,6 +412,7 @@ NBA_PHASES = [
         "grading",
         [
             nba_totals_accuracy_tracker,
+            nba_spreads_accuracy,
             nba_calculate_prediction_accuracy,
         ],
     ),
@@ -420,6 +444,7 @@ NBA_PHASES = [
             nba_generate_free_throws_made_predictions,
             nba_generate_pra_predictions,
             nba_totals_projector,
+            nba_spread_projector,
             nba_find_top_performers,
         ],
     ),

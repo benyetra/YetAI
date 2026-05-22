@@ -71,6 +71,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "schedule": crontab(hour=3, minute=30),
     },
+    "nba-spreads-accuracy-morning": {
+        "task": "app.tasks.etl_pipeline.nba.spreads_accuracy",
+        "schedule": crontab(hour=5, minute=5),
+    },
     # === WNBA ETL pipeline (Phase 1) — added 2026-05-21 ===
     # All entries are season-gated within the task body (May 1 – October 31).
     "wnba-update-pipeline-daily": {
