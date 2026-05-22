@@ -60,3 +60,37 @@ def freshness_sub_score(candidate: BetCandidate, context: ScoringContext) -> flo
         score -= 75
 
     return max(0.0, min(100.0, score))
+
+
+def line_movement_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
+    mv = context.line_movement.get(candidate.event_id)
+    if not mv:
+        return 50.0
+    opened = mv.get("opened_line")
+    current = mv.get("current_line")
+    side = mv.get("side", "").lower()
+    if opened is None or current is None:
+        return 50.0
+    delta = current - opened
+    if side in ("over", "home", "favorite"):
+        signed = delta
+    else:
+        signed = -delta
+    bonus = max(-30.0, min(30.0, signed * 30.0))
+    return 50.0 + bonus
+
+
+def odds_sanity_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
+    o = candidate.market_odds
+    if -150 <= o <= 150:
+        return 100.0
+    if o < -150:
+        return max(0.0, 100.0 - (abs(o) - 150) * (100.0 / 150.0))
+    return max(0.0, 100.0 - (o - 150) * (100.0 / 250.0))
+
+
+def model_confidence_sub_score(candidate: BetCandidate) -> float:
+    mc = candidate.projection_metadata.get("model_confidence")
+    if mc is None:
+        return 50.0
+    return max(0.0, min(100.0, float(mc) * 100.0))
