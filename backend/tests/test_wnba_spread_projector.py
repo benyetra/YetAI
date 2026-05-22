@@ -53,10 +53,16 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
     mock_db.query.return_value.all.return_value = []
     mock_db.query.return_value.filter.return_value.all.return_value = [game]
 
-    monkeypatch.setattr("app.services.etl.wnba.spread_projector.SessionLocal", lambda: mock_db)
-    monkeypatch.setattr("app.services.etl.wnba.spread_projector._load_elos", lambda db: {
-        "New York Liberty": 1550.0, "Las Vegas Aces": 1580.0,
-    })
+    monkeypatch.setattr(
+        "app.services.etl.wnba.spread_projector.SessionLocal", lambda: mock_db
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.spread_projector._load_elos",
+        lambda db: {
+            "New York Liberty": 1550.0,
+            "Las Vegas Aces": 1580.0,
+        },
+    )
 
     result = sp.run()
     assert result["status"] == "ok"

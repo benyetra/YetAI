@@ -99,9 +99,13 @@ def run(seasons: list[str] | None = None) -> dict:
                         break
 
                 try:
-                    boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
+                    boxscore_rows = _retry(
+                        lambda: _fetch_boxscore(game_id), f"boxscore({game_id})"
+                    )
                 except Exception as exc:
-                    logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
+                    logger.warning(
+                        "boxscore fetch failed for %s after retries: %s", game_id, exc
+                    )
                     total_games_skipped += 1
                     continue
 
@@ -118,7 +122,13 @@ def run(seasons: list[str] | None = None) -> dict:
                         int(team_b["TEAM_ID"]): int(team_a["TEAM_ID"]),
                     }
                 else:
-                    distinct_team_ids = list({int(r["TEAM_ID"]) for r in boxscore_rows if r.get("TEAM_ID") is not None})
+                    distinct_team_ids = list(
+                        {
+                            int(r["TEAM_ID"])
+                            for r in boxscore_rows
+                            if r.get("TEAM_ID") is not None
+                        }
+                    )
                     if len(distinct_team_ids) != 2:
                         total_games_skipped += 1
                         continue
@@ -168,7 +178,9 @@ def run(seasons: list[str] | None = None) -> dict:
                     db.commit()
                     logger.info(
                         "backfill: %d games, %d rows written (season %s)",
-                        total_games_processed, total_rows_written, season,
+                        total_games_processed,
+                        total_rows_written,
+                        season,
                     )
 
         db.commit()
@@ -185,5 +197,6 @@ def run(seasons: list[str] | None = None) -> dict:
 
 if __name__ == "__main__":
     import json
+
     logging.basicConfig(level=logging.INFO)
     print(json.dumps(run(), indent=2, default=str))

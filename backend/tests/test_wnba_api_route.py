@@ -1,4 +1,5 @@
 """Smoke test for /api/v1/predictions/wnba endpoint."""
+
 from datetime import date
 
 from app.api.v1 import predictions as predictions_module
@@ -15,7 +16,9 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
     # Stub _query_recent so we don't need a DB
     captured_models = []
 
-    def fake_query_recent(db, model, date_col_name, target_date, limit, *, tz="UTC", dedupe_keys=None):
+    def fake_query_recent(
+        db, model, date_col_name, target_date, limit, *, tz="UTC", dedupe_keys=None
+    ):
         captured_models.append(model.__name__)
         return []
 

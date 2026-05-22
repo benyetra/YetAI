@@ -62,5 +62,10 @@ def train(
         "train_rmse": float(np.sqrt(mean_squared_error(y_train, y_pred_train))),
         "test_rmse": float(np.sqrt(mean_squared_error(y_test, y_pred_test))),
     }
-    logger.info("trained %s: train_mae=%.3f test_mae=%.3f", stat_col, metadata["train_mae"], metadata["test_mae"])
+    logger.info(
+        "trained %s: train_mae=%.3f test_mae=%.3f",
+        stat_col,
+        metadata["train_mae"],
+        metadata["test_mae"],
+    )
     return model, metadata

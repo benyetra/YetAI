@@ -69,14 +69,26 @@ def build_features(
 
     # Rolling windows
     for window in (3, 5, 10):
-        features[f"{stat_col}_l{window}"] = _avg_or_none([stat(g, stat_col) for g in recent[:window]]) or 0.0
-        features[f"minutes_l{window}"] = _avg_or_none([stat(g, "minutes") for g in recent[:window]]) or 0.0
+        features[f"{stat_col}_l{window}"] = (
+            _avg_or_none([stat(g, stat_col) for g in recent[:window]]) or 0.0
+        )
+        features[f"minutes_l{window}"] = (
+            _avg_or_none([stat(g, "minutes") for g in recent[:window]]) or 0.0
+        )
 
     # Season averages (use all 20 recent games as a season proxy)
-    features[f"season_{stat_col}_avg"] = _avg_or_none([stat(g, stat_col) for g in recent]) or 0.0
-    features["season_minutes_avg"] = _avg_or_none([stat(g, "minutes") for g in recent]) or 0.0
-    features["season_usage_pct"] = _avg_or_none([stat(g, "usage_percentage") for g in recent]) or 0.0
-    features["season_ts_pct"] = _avg_or_none([stat(g, "true_shooting_percentage") for g in recent]) or 0.0
+    features[f"season_{stat_col}_avg"] = (
+        _avg_or_none([stat(g, stat_col) for g in recent]) or 0.0
+    )
+    features["season_minutes_avg"] = (
+        _avg_or_none([stat(g, "minutes") for g in recent]) or 0.0
+    )
+    features["season_usage_pct"] = (
+        _avg_or_none([stat(g, "usage_percentage") for g in recent]) or 0.0
+    )
+    features["season_ts_pct"] = (
+        _avg_or_none([stat(g, "true_shooting_percentage") for g in recent]) or 0.0
+    )
 
     # Opponent defense
     opp_def = (
@@ -90,9 +102,15 @@ def build_features(
         .first()
     )
     opp_col = _OPP_STAT_ALLOWED_COL[stat_col]
-    features[f"opp_{opp_col}"] = (getattr(opp_def, opp_col, None) or 0.0) if opp_def else 0.0
-    features["opp_defensive_rating"] = (opp_def.defensive_rating or 0.0) if opp_def else 0.0
-    features["opp_pace"] = (opp_off.pace or LEAGUE_AVG_PACE) if opp_off else LEAGUE_AVG_PACE
+    features[f"opp_{opp_col}"] = (
+        (getattr(opp_def, opp_col, None) or 0.0) if opp_def else 0.0
+    )
+    features["opp_defensive_rating"] = (
+        (opp_def.defensive_rating or 0.0) if opp_def else 0.0
+    )
+    features["opp_pace"] = (
+        (opp_off.pace or LEAGUE_AVG_PACE) if opp_off else LEAGUE_AVG_PACE
+    )
 
     # Context: rest days, back-to-back flag
     last_game = recent[0]
@@ -101,6 +119,8 @@ def build_features(
     features["is_back_to_back"] = 1.0 if rest <= 1 else 0.0
 
     # Pace factor (game's projected pace ÷ league avg)
-    features["pace_factor"] = (opp_off.pace / LEAGUE_AVG_PACE) if (opp_off and opp_off.pace) else 1.0
+    features["pace_factor"] = (
+        (opp_off.pace / LEAGUE_AVG_PACE) if (opp_off and opp_off.pace) else 1.0
+    )
 
     return features

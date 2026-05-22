@@ -43,8 +43,11 @@ def run() -> dict:
                 skipped_injured += 1
                 continue
             feats = build_features(
-                db, stat_col=STAT, player_id=p.player_id,
-                game_date=today, opponent_team_id=p.opponent_team_id,
+                db,
+                stat_col=STAT,
+                player_id=p.player_id,
+                game_date=today,
+                opponent_team_id=p.opponent_team_id,
             )
             if feats is None:
                 skipped_thin += 1
@@ -54,18 +57,20 @@ def run() -> dict:
             except Exception as exc:
                 logger.warning("predict failed for player %s: %s", p.player_id, exc)
                 continue
-            db.merge(WNBAReboundsProjections(
-                date=today,
-                player_id=p.player_id,
-                player_name=p.player_name,
-                opponent_team_name=p.opponent_team_name,
-                projected_rebounds=projected,
-                market_line=None,
-                edge=None,
-                recommendation="NO_PLAY",
-                confidence_score=None,
-                created_at=datetime.utcnow(),
-            ))
+            db.merge(
+                WNBAReboundsProjections(
+                    date=today,
+                    player_id=p.player_id,
+                    player_name=p.player_name,
+                    opponent_team_name=p.opponent_team_name,
+                    projected_rebounds=projected,
+                    market_line=None,
+                    edge=None,
+                    recommendation="NO_PLAY",
+                    confidence_score=None,
+                    created_at=datetime.utcnow(),
+                )
+            )
             written += 1
         db.commit()
         return {

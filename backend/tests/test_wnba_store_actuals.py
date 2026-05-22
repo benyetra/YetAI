@@ -6,16 +6,20 @@ from app.services.etl.wnba import store_actuals as sa
 
 def test_run_writes_totals_and_spread_actuals(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
+    )
 
     with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg:
-        fg.return_value = [{
-            "completed": True,
-            "home_team_name": "New York Liberty",
-            "away_team_name": "Las Vegas Aces",
-            "home_score": 92,
-            "away_score": 85,
-        }]
+        fg.return_value = [
+            {
+                "completed": True,
+                "home_team_name": "New York Liberty",
+                "away_team_name": "Las Vegas Aces",
+                "home_score": 92,
+                "away_score": 85,
+            }
+        ]
         result = sa.run(target_date=date(2026, 5, 21))
 
     assert result["totals_written"] == 1
@@ -30,14 +34,20 @@ def test_run_writes_totals_and_spread_actuals(monkeypatch):
 
 def test_run_skips_incomplete_games(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.store_actuals.SessionLocal", lambda: mock_db
+    )
 
     with patch("app.services.etl.wnba.store_actuals.fetch_games") as fg:
-        fg.return_value = [{
-            "completed": False,
-            "home_team_name": "X", "away_team_name": "Y",
-            "home_score": None, "away_score": None,
-        }]
+        fg.return_value = [
+            {
+                "completed": False,
+                "home_team_name": "X",
+                "away_team_name": "Y",
+                "home_score": None,
+                "away_score": None,
+            }
+        ]
         result = sa.run(target_date=date(2026, 5, 21))
 
     assert result["totals_written"] == 0

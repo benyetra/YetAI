@@ -193,7 +193,9 @@ def get_projected_starters(team_name: str, num_starters: int = 5) -> List[Dict]:
     for player in roster:
         # Get injury status
         injury = (
-            db.query(WNBAPlayerInjuryStatus).filter_by(player_id=player.player_id).first()
+            db.query(WNBAPlayerInjuryStatus)
+            .filter_by(player_id=player.player_id)
+            .first()
         )
         status = injury.status.upper() if injury and injury.status else "ACTIVE"
 
@@ -265,7 +267,9 @@ def calculate_injury_impact(
             continue
 
         injury = (
-            db.query(WNBAPlayerInjuryStatus).filter_by(player_id=player.player_id).first()
+            db.query(WNBAPlayerInjuryStatus)
+            .filter_by(player_id=player.player_id)
+            .first()
         )
 
         if injury and injury.status in ("out", "doubtful", "questionable", "ir"):

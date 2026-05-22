@@ -1,4 +1,5 @@
 """Cross-source team ID mappings for WNBA."""
+
 from app.services.etl.wnba import _team_id_map as m
 
 
@@ -29,4 +30,6 @@ def test_2026_expansion_teams_use_stats_wnba_ids():
 def test_espn_ids_all_resolve_to_known_wnba_ids():
     known = set(m.WNBA_ID_TO_NAME.keys())
     for espn_id, wnba_id in m.ESPN_TO_WNBA_TEAM_ID.items():
-        assert wnba_id in known, f"ESPN id {espn_id} points at unknown WNBA id {wnba_id}"
+        assert (
+            wnba_id in known
+        ), f"ESPN id {espn_id} points at unknown WNBA id {wnba_id}"

@@ -1,4 +1,5 @@
 """Tests for ESPN WNBA scoreboard parser."""
+
 from datetime import date
 from unittest.mock import patch, MagicMock
 
@@ -14,13 +15,25 @@ def fake_scoreboard_payload():
             {
                 "id": "401736000",
                 "date": "2026-05-21T23:00Z",
-                "competitions": [{
-                    "competitors": [
-                        {"id": "20", "homeAway": "home", "team": {"displayName": "New York Liberty", "id": "20"}, "score": "92"},
-                        {"id": "9", "homeAway": "away", "team": {"displayName": "Las Vegas Aces", "id": "9"}, "score": "88"},
-                    ],
-                    "status": {"type": {"completed": True}},
-                }],
+                "competitions": [
+                    {
+                        "competitors": [
+                            {
+                                "id": "20",
+                                "homeAway": "home",
+                                "team": {"displayName": "New York Liberty", "id": "20"},
+                                "score": "92",
+                            },
+                            {
+                                "id": "9",
+                                "homeAway": "away",
+                                "team": {"displayName": "Las Vegas Aces", "id": "9"},
+                                "score": "88",
+                            },
+                        ],
+                        "status": {"type": {"completed": True}},
+                    }
+                ],
             }
         ]
     }

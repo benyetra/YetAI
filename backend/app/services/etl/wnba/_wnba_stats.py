@@ -50,6 +50,7 @@ def fetch_team_dashboard(
     season: str, measure_type: str = "Base", per_mode: str = "PerGame"
 ) -> list[dict[str, Any]]:
     """League-wide team dashboard. measure_type ∈ {Base, Advanced, Defense, ...}."""
+
     def call():
         return leaguedashteamstats.LeagueDashTeamStats(
             league_id_nullable=LEAGUE_ID,
@@ -65,6 +66,7 @@ def fetch_team_dashboard(
 
 def fetch_team_roster(team_id: int, season: str) -> list[dict[str, Any]]:
     """Player list for a single team."""
+
     def call():
         return commonteamroster.CommonTeamRoster(
             league_id_nullable=LEAGUE_ID,
@@ -78,6 +80,7 @@ def fetch_team_roster(team_id: int, season: str) -> list[dict[str, Any]]:
 
 def fetch_player_game_log(player_id: int, season: str) -> list[dict[str, Any]]:
     """Per-game stats for one player across a season."""
+
     def call():
         return playergamelog.PlayerGameLog(
             league_id_nullable=LEAGUE_ID,
@@ -92,6 +95,7 @@ def fetch_player_game_log(player_id: int, season: str) -> list[dict[str, Any]]:
 
 def fetch_player_career(player_id: int) -> dict[str, list[dict[str, Any]]]:
     """All career sections for one player."""
+
     def call():
         return playercareerstats.PlayerCareerStats(
             league_id_nullable=LEAGUE_ID,
@@ -104,6 +108,7 @@ def fetch_player_career(player_id: int) -> dict[str, list[dict[str, Any]]]:
 
 def fetch_scoreboard(game_date_yyyymmdd: str) -> dict[str, list[dict[str, Any]]]:
     """Daily scoreboard. Use ESPN scoreboard as the primary source — this is here for cross-checking."""
+
     def call():
         return scoreboardv2.ScoreboardV2(
             league_id=LEAGUE_ID,
@@ -119,6 +124,7 @@ def fetch_league_player_stats(
     season: str, measure_type: str = "Base"
 ) -> list[dict[str, Any]]:
     """League-wide per-player season stats."""
+
     def call():
         return leaguedashplayerstats.LeagueDashPlayerStats(
             league_id_nullable=LEAGUE_ID,

@@ -22,7 +22,9 @@ def run() -> dict:
     today = now_eastern().date()
     games = fetch_games(today)
     if not games:
-        logger.info("today_active_players: no WNBA games for %s — keeping existing rows", today)
+        logger.info(
+            "today_active_players: no WNBA games for %s — keeping existing rows", today
+        )
         return {
             "status": "ok",
             "date": today.isoformat(),
@@ -33,7 +35,13 @@ def run() -> dict:
 
     team_ids, matchups = build_matchups(games)
     if not team_ids:
-        return {"status": "ok", "date": today.isoformat(), "games": 0, "players": 0, "kept_stale": True}
+        return {
+            "status": "ok",
+            "date": today.isoformat(),
+            "games": 0,
+            "players": 0,
+            "kept_stale": True,
+        }
 
     # Build a per-team-id → opponent + team_name + home/away lookup.
     team_meta: dict[int, dict] = {}
@@ -56,9 +64,7 @@ def run() -> dict:
     upsert_rows: list[dict] = []
     try:
         roster_rows = (
-            db.query(WNBATeamRoster)
-            .filter(WNBATeamRoster.team_id.in_(team_ids))
-            .all()
+            db.query(WNBATeamRoster).filter(WNBATeamRoster.team_id.in_(team_ids)).all()
         )
         for r in roster_rows:
             meta = team_meta.get(r.team_id)

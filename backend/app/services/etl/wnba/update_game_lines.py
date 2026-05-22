@@ -83,7 +83,9 @@ def run() -> dict:
             if not home_name or not away_name:
                 continue
 
-            commence = datetime.fromisoformat(event["commence_time"].replace("Z", "+00:00"))
+            commence = datetime.fromisoformat(
+                event["commence_time"].replace("Z", "+00:00")
+            )
             game_date = commence.astimezone(EASTERN).date()
 
             spread_home_vals: list[float] = []

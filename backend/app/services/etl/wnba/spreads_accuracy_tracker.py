@@ -33,7 +33,9 @@ def _season_start(today: date) -> date:
     return date(today.year, WNBA_SEASON_START_MONTH, 1)
 
 
-def _ats_covered(recommendation: str, actual_margin: int, market_spread_home: float) -> bool | None:
+def _ats_covered(
+    recommendation: str, actual_margin: int, market_spread_home: float
+) -> bool | None:
     """Return True/False if pick covered; None for pushes or no-play."""
     if recommendation == "NO_PLAY" or market_spread_home is None:
         return None
@@ -56,7 +58,9 @@ def _compute_window(db, start: date, end: date) -> dict:
             WNBASpreadActuals,
             (WNBASpreadProjections.game_date == WNBASpreadActuals.game_date)
             & (WNBASpreadProjections.home_team_name == WNBASpreadActuals.home_team_name)
-            & (WNBASpreadProjections.away_team_name == WNBASpreadActuals.away_team_name),
+            & (
+                WNBASpreadProjections.away_team_name == WNBASpreadActuals.away_team_name
+            ),
         )
         .filter(WNBASpreadProjections.game_date >= start)
         .filter(WNBASpreadProjections.game_date <= end)
@@ -77,7 +81,9 @@ def _compute_window(db, start: date, end: date) -> dict:
     for proj, actual in rows:
         margin_errs.append(proj.projected_margin - actual.actual_margin)
 
-        covered = _ats_covered(proj.recommendation, actual.actual_margin, proj.market_spread_home)
+        covered = _ats_covered(
+            proj.recommendation, actual.actual_margin, proj.market_spread_home
+        )
         if covered is not None:
             ats_attempts += 1
             if covered:
@@ -99,11 +105,13 @@ def _compute_window(db, start: date, end: date) -> dict:
     # Pack buckets with actual win rate
     bucket_list = []
     for key, b in buckets.items():
-        bucket_list.append({
-            "bucket": key,
-            "count": b["count"],
-            "actual_win_rate": (b["wins"] / b["count"]) if b["count"] else None,
-        })
+        bucket_list.append(
+            {
+                "bucket": key,
+                "count": b["count"],
+                "actual_win_rate": (b["wins"] / b["count"]) if b["count"] else None,
+            }
+        )
 
     return {
         "mae": mae,
@@ -128,16 +136,18 @@ def run() -> dict:
             stats = _compute_window(db, start, end)
             if stats["total"] == 0:
                 continue
-            db.merge(WNBASpreadAccuracy(
-                date_range_start=start,
-                date_range_end=end,
-                total_games=stats["total"],
-                spread_mae=stats["mae"],
-                ats_hit_rate=stats["ats"],
-                win_prob_brier_score=stats["brier"],
-                calibration_buckets=stats["buckets"],
-                created_at=datetime.utcnow(),
-            ))
+            db.merge(
+                WNBASpreadAccuracy(
+                    date_range_start=start,
+                    date_range_end=end,
+                    total_games=stats["total"],
+                    spread_mae=stats["mae"],
+                    ats_hit_rate=stats["ats"],
+                    win_prob_brier_score=stats["brier"],
+                    calibration_buckets=stats["buckets"],
+                    created_at=datetime.utcnow(),
+                )
+            )
             written += 1
         db.commit()
         return {"status": "ok", "windows_written": written}

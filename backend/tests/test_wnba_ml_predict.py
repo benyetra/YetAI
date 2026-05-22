@@ -18,6 +18,7 @@ def clear_caches():
 
 def test_predict_fills_missing_features_with_zero(monkeypatch, tmp_path):
     import xgboost as xgb
+
     model = xgb.XGBRegressor(n_estimators=10, random_state=0)
     X = pd.DataFrame({"f1": np.arange(20), "f2": np.arange(20)})
     y = pd.Series(np.arange(20) * 2.0)

@@ -4,10 +4,14 @@ from app.services.etl.wnba import _wnba_stats as ws
 
 
 def test_get_team_dashboard_passes_league_id_10():
-    with patch("app.services.etl.wnba._wnba_stats.leaguedashteamstats.LeagueDashTeamStats") as cls:
+    with patch(
+        "app.services.etl.wnba._wnba_stats.leaguedashteamstats.LeagueDashTeamStats"
+    ) as cls:
         instance = MagicMock()
         instance.get_normalized_dict.return_value = {
-            "LeagueDashTeamStats": [{"TEAM_ID": 1611661315, "TEAM_NAME": "New York Liberty"}]
+            "LeagueDashTeamStats": [
+                {"TEAM_ID": 1611661315, "TEAM_NAME": "New York Liberty"}
+            ]
         }
         cls.return_value = instance
 
@@ -23,11 +27,17 @@ def test_get_team_dashboard_passes_league_id_10():
 
 def test_retry_on_exception_backs_off(monkeypatch):
     sleeps = []
-    monkeypatch.setattr("app.services.etl.wnba._wnba_stats.time.sleep", lambda s: sleeps.append(s))
+    monkeypatch.setattr(
+        "app.services.etl.wnba._wnba_stats.time.sleep", lambda s: sleeps.append(s)
+    )
 
-    with patch("app.services.etl.wnba._wnba_stats.leaguedashteamstats.LeagueDashTeamStats") as cls:
+    with patch(
+        "app.services.etl.wnba._wnba_stats.leaguedashteamstats.LeagueDashTeamStats"
+    ) as cls:
         ok = MagicMock()
-        ok.get_normalized_dict.return_value = {"LeagueDashTeamStats": [{"TEAM_ID": 1, "TEAM_NAME": "T"}]}
+        ok.get_normalized_dict.return_value = {
+            "LeagueDashTeamStats": [{"TEAM_ID": 1, "TEAM_NAME": "T"}]
+        }
         cls.side_effect = [
             Exception("HTTP 429"),
             Exception("HTTP 429"),

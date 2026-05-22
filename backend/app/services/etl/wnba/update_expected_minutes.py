@@ -25,9 +25,11 @@ def run() -> dict:
     updated = 0
     skipped_thin = 0
     try:
-        active = db.query(WNBATodayActivePlayers).filter(
-            WNBATodayActivePlayers.game_date == today
-        ).all()
+        active = (
+            db.query(WNBATodayActivePlayers)
+            .filter(WNBATodayActivePlayers.game_date == today)
+            .all()
+        )
         for row in active:
             recent = (
                 db.query(WNBARecentGames)

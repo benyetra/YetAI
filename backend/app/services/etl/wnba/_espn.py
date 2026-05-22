@@ -65,23 +65,29 @@ def fetch_games(game_date: date) -> list[dict]:
 
         completed = bool(comp.get("status", {}).get("type", {}).get("completed"))
         try:
-            home_score = int(home.get("score")) if home.get("score") not in (None, "") else None
-            away_score = int(away.get("score")) if away.get("score") not in (None, "") else None
+            home_score = (
+                int(home.get("score")) if home.get("score") not in (None, "") else None
+            )
+            away_score = (
+                int(away.get("score")) if away.get("score") not in (None, "") else None
+            )
         except (TypeError, ValueError):
             home_score = None
             away_score = None
 
-        out.append({
-            "espn_event_id": event.get("id"),
-            "game_time_utc": _parse_iso(event.get("date")),
-            "home_team_id_espn": home.get("id"),
-            "away_team_id_espn": away.get("id"),
-            "home_team_name": home["team"].get("displayName"),
-            "away_team_name": away["team"].get("displayName"),
-            "home_score": home_score,
-            "away_score": away_score,
-            "completed": completed,
-        })
+        out.append(
+            {
+                "espn_event_id": event.get("id"),
+                "game_time_utc": _parse_iso(event.get("date")),
+                "home_team_id_espn": home.get("id"),
+                "away_team_id_espn": away.get("id"),
+                "home_team_name": home["team"].get("displayName"),
+                "away_team_name": away["team"].get("displayName"),
+                "home_score": home_score,
+                "away_score": away_score,
+                "completed": completed,
+            }
+        )
     return out
 
 
@@ -97,12 +103,14 @@ def fetch_injuries() -> list[dict]:
         team_name = (team.get("displayName") or "").strip()
         for inj in team.get("injuries", []):
             athlete = inj.get("athlete") or {}
-            out.append({
-                "player_name": (athlete.get("displayName") or "").strip(),
-                "team_name": team_name,
-                "status": inj.get("status") or "Out",
-                "injury_type": (inj.get("details") or {}).get("type"),
-            })
+            out.append(
+                {
+                    "player_name": (athlete.get("displayName") or "").strip(),
+                    "team_name": team_name,
+                    "status": inj.get("status") or "Out",
+                    "injury_type": (inj.get("details") or {}).get("type"),
+                }
+            )
     return out
 
 
@@ -124,6 +132,7 @@ def build_matchups(games: list[dict]) -> tuple[set[int], list[dict]]:
         ESPN_TO_WNBA_TEAM_ID,
         normalize_team_name,
     )
+
     team_ids: set[int] = set()
     matchups: list[dict] = []
     for g in games:
@@ -135,10 +144,12 @@ def build_matchups(games: list[dict]) -> tuple[set[int], list[dict]]:
             continue
         team_ids.add(home_wnba)
         team_ids.add(away_wnba)
-        matchups.append({
-            "home_team_id_wnba": home_wnba,
-            "away_team_id_wnba": away_wnba,
-            "home_team_name": normalize_team_name(g["home_team_name"]),
-            "away_team_name": normalize_team_name(g["away_team_name"]),
-        })
+        matchups.append(
+            {
+                "home_team_id_wnba": home_wnba,
+                "away_team_id_wnba": away_wnba,
+                "home_team_name": normalize_team_name(g["home_team_name"]),
+                "away_team_name": normalize_team_name(g["away_team_name"]),
+            }
+        )
     return team_ids, matchups

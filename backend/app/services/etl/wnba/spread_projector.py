@@ -35,19 +35,22 @@ INITIAL_ELO = 1500.0
 ELO_K = 20.0
 SEASON_DECAY = 0.75
 HOME_COURT_ADVANTAGE = 2.5
-SPREAD_PER_ELO = 25.0           # 25 Elo points ≈ 1 expected margin point
-WIN_PROB_LOGISTIC_SCALE = 7.0   # logistic scale parameter for margin → win prob
+SPREAD_PER_ELO = 25.0  # 25 Elo points ≈ 1 expected margin point
+WIN_PROB_LOGISTIC_SCALE = 7.0  # logistic scale parameter for margin → win prob
 EDGE_THRESHOLD = 2.0
 
 
 # ---- Elo math ----
+
 
 def expected_score(rating_a: float, rating_b: float) -> float:
     """Probability that team A beats team B per Elo formula."""
     return 1.0 / (1.0 + 10 ** ((rating_b - rating_a) / 400.0))
 
 
-def update_elo(home_elo: float, away_elo: float, home_score: int, away_score: int) -> tuple[float, float]:
+def update_elo(
+    home_elo: float, away_elo: float, home_score: int, away_score: int
+) -> tuple[float, float]:
     """Return updated (home_elo, away_elo) after a completed game."""
     home_won = 1.0 if home_score > away_score else 0.0
     # Adjust for home court when computing expected score.
@@ -71,6 +74,7 @@ def margin_to_win_prob(margin: float) -> float:
 
 # ---- Pace / efficiency overlay ----
 
+
 def pace_overlay_adjustment(
     home_off: float | None,
     home_def: float | None,
@@ -92,9 +96,7 @@ def _load_elos(db) -> dict[str, float]:
     """Compute current Elo for every WNBA team by replaying completed games."""
     elos: dict[str, float] = {}
     actuals = (
-        db.query(WNBASpreadActuals)
-        .order_by(WNBASpreadActuals.game_date.asc())
-        .all()
+        db.query(WNBASpreadActuals).order_by(WNBASpreadActuals.game_date.asc()).all()
     )
     for game in actuals:
         h = elos.setdefault(game.home_team_name, INITIAL_ELO)
@@ -106,6 +108,7 @@ def _load_elos(db) -> dict[str, float]:
 
 
 # ---- Orchestration ----
+
 
 def run() -> dict:
     today = now_eastern().date()
@@ -172,7 +175,9 @@ def run() -> dict:
                 market_spread_home=g.spread_home,
                 edge=edge,
                 recommendation=recommendation,
-                confidence_score=min(1.0, abs(edge) / 6.0) if edge is not None else None,
+                confidence_score=(
+                    min(1.0, abs(edge) / 6.0) if edge is not None else None
+                ),
                 factors={"elo_diff": home_elo - away_elo, "pace_adj": pace_adj},
                 created_at=datetime.utcnow(),
             )

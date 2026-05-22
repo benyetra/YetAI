@@ -10,6 +10,7 @@ All tables created up front so Phase 2 needs no additional migration.
 
 Spec: docs/superpowers/specs/2026-05-21-wnba-support-design.md
 """
+
 from typing import Sequence, Union
 
 from alembic import op
@@ -17,8 +18,8 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '0107ad42b713'
-down_revision: Union[str, Sequence[str], None] = '74627d53e110'
+revision: str = "0107ad42b713"
+down_revision: Union[str, Sequence[str], None] = "74627d53e110"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -113,7 +114,9 @@ def upgrade():
         sa.Column("defensive_rating", sa.Float, nullable=True),
         sa.Column("offensive_rating", sa.Float, nullable=True),
         sa.Column("net_rating", sa.Float, nullable=True),
-        sa.UniqueConstraint("player_id", "game_date", name="unique_wnba_recent_games_player_game_date"),
+        sa.UniqueConstraint(
+            "player_id", "game_date", name="unique_wnba_recent_games_player_game_date"
+        ),
     )
 
     op.create_table(
@@ -151,9 +154,16 @@ def upgrade():
         sa.Column("under_odds", sa.Integer, nullable=True),
         sa.Column("moneyline_home", sa.Integer, nullable=True),
         sa.Column("moneyline_away", sa.Integer, nullable=True),
-        sa.Column("bookmaker", sa.String(50), nullable=True, server_default="consensus"),
+        sa.Column(
+            "bookmaker", sa.String(50), nullable=True, server_default="consensus"
+        ),
         sa.Column("last_updated", sa.DateTime, nullable=False),
-        sa.UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_game_line"),
+        sa.UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_game_line",
+        ),
     )
     op.create_index("idx_wnba_game_lines_date", "pred_wnba_game_lines", ["game_date"])
 
@@ -188,10 +198,21 @@ def upgrade():
         sa.Column("home_starters", sa.JSON, nullable=True),
         sa.Column("away_starters", sa.JSON, nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False),
-        sa.UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_projection"),
+        sa.UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_totals_projection",
+        ),
     )
-    op.create_index("idx_wnba_totals_projections_date", "pred_wnba_totals_projections", ["game_date"])
-    op.create_index("idx_wnba_totals_projections_edge", "pred_wnba_totals_projections", ["edge"])
+    op.create_index(
+        "idx_wnba_totals_projections_date",
+        "pred_wnba_totals_projections",
+        ["game_date"],
+    )
+    op.create_index(
+        "idx_wnba_totals_projections_edge", "pred_wnba_totals_projections", ["edge"]
+    )
 
     op.create_table(
         "pred_wnba_totals_actuals",
@@ -205,7 +226,12 @@ def upgrade():
         sa.Column("away_score", sa.Integer, nullable=False),
         sa.Column("actual_total", sa.Integer, nullable=False),
         sa.Column("created_at", sa.DateTime, nullable=False),
-        sa.UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_actual"),
+        sa.UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_totals_actual",
+        ),
     )
 
     op.create_table(
@@ -267,22 +293,39 @@ def upgrade():
         sa.Column("away_team_id", sa.Integer, nullable=True),
         sa.Column("home_team_name", sa.String(100), nullable=False),
         sa.Column("away_team_name", sa.String(100), nullable=False),
-        sa.Column("projected_margin", sa.Float, nullable=False),  # positive = home favored
+        sa.Column(
+            "projected_margin", sa.Float, nullable=False
+        ),  # positive = home favored
         sa.Column("home_win_prob", sa.Float, nullable=False),
         sa.Column("home_elo", sa.Float, nullable=True),
         sa.Column("away_elo", sa.Float, nullable=True),
         sa.Column("home_court_advantage", sa.Float, nullable=True),
         sa.Column("pace_adjustment", sa.Float, nullable=True),
         sa.Column("market_spread_home", sa.Float, nullable=True),
-        sa.Column("edge", sa.Float, nullable=True),  # projected_margin - (-market_spread_home)
-        sa.Column("recommendation", sa.String(20), nullable=True),  # HOME, AWAY, NO_PLAY
+        sa.Column(
+            "edge", sa.Float, nullable=True
+        ),  # projected_margin - (-market_spread_home)
+        sa.Column(
+            "recommendation", sa.String(20), nullable=True
+        ),  # HOME, AWAY, NO_PLAY
         sa.Column("confidence_score", sa.Float, nullable=True),
         sa.Column("factors", sa.JSON, nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False),
-        sa.UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_projection"),
+        sa.UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_spread_projection",
+        ),
     )
-    op.create_index("idx_wnba_spread_projections_date", "pred_wnba_spread_projections", ["game_date"])
-    op.create_index("idx_wnba_spread_projections_edge", "pred_wnba_spread_projections", ["edge"])
+    op.create_index(
+        "idx_wnba_spread_projections_date",
+        "pred_wnba_spread_projections",
+        ["game_date"],
+    )
+    op.create_index(
+        "idx_wnba_spread_projections_edge", "pred_wnba_spread_projections", ["edge"]
+    )
 
     op.create_table(
         "pred_wnba_spread_actuals",
@@ -292,10 +335,17 @@ def upgrade():
         sa.Column("away_team_name", sa.String(100), nullable=False),
         sa.Column("home_score", sa.Integer, nullable=False),
         sa.Column("away_score", sa.Integer, nullable=False),
-        sa.Column("actual_margin", sa.Integer, nullable=False),  # home_score - away_score
+        sa.Column(
+            "actual_margin", sa.Integer, nullable=False
+        ),  # home_score - away_score
         sa.Column("home_won", sa.Boolean, nullable=False),
         sa.Column("created_at", sa.DateTime, nullable=False),
-        sa.UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_actual"),
+        sa.UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_spread_actual",
+        ),
     )
 
     op.create_table(
@@ -305,7 +355,9 @@ def upgrade():
         sa.Column("date_range_end", sa.Date, nullable=False),
         sa.Column("total_games", sa.Integer, nullable=False),
         sa.Column("spread_mae", sa.Float, nullable=True),
-        sa.Column("ats_hit_rate", sa.Float, nullable=True),  # % picks that covered when |edge| > threshold
+        sa.Column(
+            "ats_hit_rate", sa.Float, nullable=True
+        ),  # % picks that covered when |edge| > threshold
         sa.Column("win_prob_brier_score", sa.Float, nullable=True),
         sa.Column("calibration_buckets", sa.JSON, nullable=True),
         sa.Column("created_at", sa.DateTime, nullable=False),
@@ -342,7 +394,9 @@ def upgrade():
             sa.Column("recommendation", sa.String(20), nullable=True),
             sa.Column("confidence_score", sa.Float, nullable=True),
             sa.Column("created_at", sa.DateTime, nullable=False),
-            sa.UniqueConstraint("player_id", "date", name=f"unique_wnba_{prop}_projection"),
+            sa.UniqueConstraint(
+                "player_id", "date", name=f"unique_wnba_{prop}_projection"
+            ),
         )
         op.create_table(
             f"pred_wnba_{prop}_actuals",
@@ -364,14 +418,22 @@ def downgrade():
     op.drop_table("pred_wnba_today_active_players")
     op.drop_table("pred_wnba_spread_accuracy")
     op.drop_table("pred_wnba_spread_actuals")
-    op.drop_index("idx_wnba_spread_projections_edge", table_name="pred_wnba_spread_projections")
-    op.drop_index("idx_wnba_spread_projections_date", table_name="pred_wnba_spread_projections")
+    op.drop_index(
+        "idx_wnba_spread_projections_edge", table_name="pred_wnba_spread_projections"
+    )
+    op.drop_index(
+        "idx_wnba_spread_projections_date", table_name="pred_wnba_spread_projections"
+    )
     op.drop_table("pred_wnba_spread_projections")
     op.drop_table("pred_wnba_totals_accuracy")
     op.drop_table("pred_wnba_team_pace_efficiency")
     op.drop_table("pred_wnba_totals_actuals")
-    op.drop_index("idx_wnba_totals_projections_edge", table_name="pred_wnba_totals_projections")
-    op.drop_index("idx_wnba_totals_projections_date", table_name="pred_wnba_totals_projections")
+    op.drop_index(
+        "idx_wnba_totals_projections_edge", table_name="pred_wnba_totals_projections"
+    )
+    op.drop_index(
+        "idx_wnba_totals_projections_date", table_name="pred_wnba_totals_projections"
+    )
     op.drop_table("pred_wnba_totals_projections")
     op.drop_index("idx_wnba_game_lines_date", table_name="pred_wnba_game_lines")
     op.drop_table("pred_wnba_game_lines")

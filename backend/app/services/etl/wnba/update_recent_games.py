@@ -46,12 +46,22 @@ def _process_day(db, target_date: date) -> int:
         if len(teams) != 2:
             # Fallback: derive opponent map from boxscore rows
             try:
-                boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
+                boxscore_rows = _retry(
+                    lambda: _fetch_boxscore(game_id), f"boxscore({game_id})"
+                )
             except Exception as exc:
-                logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
+                logger.warning(
+                    "boxscore fetch failed for %s after retries: %s", game_id, exc
+                )
                 continue
 
-            distinct_team_ids = list({int(r["TEAM_ID"]) for r in boxscore_rows if r.get("TEAM_ID") is not None})
+            distinct_team_ids = list(
+                {
+                    int(r["TEAM_ID"])
+                    for r in boxscore_rows
+                    if r.get("TEAM_ID") is not None
+                }
+            )
             if len(distinct_team_ids) != 2:
                 continue
             t1, t2 = distinct_team_ids
@@ -69,9 +79,13 @@ def _process_day(db, target_date: date) -> int:
                 home_team_id = int(t["TEAM_ID"])
 
         try:
-            boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
+            boxscore_rows = _retry(
+                lambda: _fetch_boxscore(game_id), f"boxscore({game_id})"
+            )
         except Exception as exc:
-            logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
+            logger.warning(
+                "boxscore fetch failed for %s after retries: %s", game_id, exc
+            )
             continue
 
         for row in boxscore_rows:

@@ -2819,7 +2819,9 @@ class WNBARecentGames(Base):
     offensive_rating = Column(Float, nullable=True)
     net_rating = Column(Float, nullable=True)
     __table_args__ = (
-        UniqueConstraint("player_id", "game_date", name="unique_wnba_recent_games_player_game_date"),
+        UniqueConstraint(
+            "player_id", "game_date", name="unique_wnba_recent_games_player_game_date"
+        ),
     )
 
 
@@ -2860,7 +2862,12 @@ class WNBAGameLines(Base):
     bookmaker = Column(String(50), nullable=True, default="consensus")
     last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
-        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_game_line"),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_game_line",
+        ),
     )
 
 
@@ -2896,7 +2903,12 @@ class WNBATotalsProjections(Base):
     away_starters = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
-        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_projection"),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_totals_projection",
+        ),
     )
 
 
@@ -2913,7 +2925,12 @@ class WNBATotalsActuals(Base):
     actual_total = Column(Integer, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
-        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_totals_actual"),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_totals_actual",
+        ),
     )
 
 
@@ -2989,7 +3006,12 @@ class WNBASpreadProjections(Base):
     factors = Column(JSON, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
-        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_projection"),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_spread_projection",
+        ),
     )
 
 
@@ -3005,7 +3027,12 @@ class WNBASpreadActuals(Base):
     home_won = Column(Boolean, nullable=False)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
     __table_args__ = (
-        UniqueConstraint("game_date", "home_team_name", "away_team_name", name="unique_wnba_spread_actual"),
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_wnba_spread_actual",
+        ),
     )
 
 
@@ -3043,6 +3070,7 @@ class WNBATodayActivePlayers(Base):
 # Phase 2 prop projection / actual tables.
 # Defined here so Phase 2 (Plan B) does not need new SQLAlchemy classes — only ETL code.
 
+
 def _make_prop_projection(prop: str):
     table_name = f"pred_wnba_{prop}_projections"
     class_name = f"WNBA{prop.capitalize()}Projections"
@@ -3060,7 +3088,9 @@ def _make_prop_projection(prop: str):
         "confidence_score": Column(Float, nullable=True),
         "created_at": Column(DateTime, nullable=False, default=datetime.utcnow),
         "__table_args__": (
-            UniqueConstraint("player_id", "date", name=f"unique_wnba_{prop}_projection"),
+            UniqueConstraint(
+                "player_id", "date", name=f"unique_wnba_{prop}_projection"
+            ),
         ),
     }
     return type(class_name, (Base,), attrs)

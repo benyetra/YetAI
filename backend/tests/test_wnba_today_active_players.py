@@ -18,17 +18,19 @@ def test_run_writes_one_row_per_active_player(monkeypatch):
         lambda: mock_db,
     )
 
-    games_payload = [{
-        "espn_event_id": "1",
-        "home_team_id_espn": "20",   # Atlanta -> 1611661330
-        "away_team_id_espn": "17",   # Las Vegas -> 1611661319
-        "home_team_name": "Atlanta Dream",
-        "away_team_name": "Las Vegas Aces",
-        "home_score": None,
-        "away_score": None,
-        "completed": False,
-        "game_time_utc": None,
-    }]
+    games_payload = [
+        {
+            "espn_event_id": "1",
+            "home_team_id_espn": "20",  # Atlanta -> 1611661330
+            "away_team_id_espn": "17",  # Las Vegas -> 1611661319
+            "home_team_name": "Atlanta Dream",
+            "away_team_name": "Las Vegas Aces",
+            "home_score": None,
+            "away_score": None,
+            "completed": False,
+            "game_time_utc": None,
+        }
+    ]
 
     roster_rows = [
         _mk_roster_row(100, "P1", 1611661330),

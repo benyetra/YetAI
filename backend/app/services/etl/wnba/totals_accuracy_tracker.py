@@ -38,7 +38,9 @@ def _compute_window(db, start: date, end: date) -> dict:
             WNBATotalsActuals,
             (WNBATotalsProjections.game_date == WNBATotalsActuals.game_date)
             & (WNBATotalsProjections.home_team_name == WNBATotalsActuals.home_team_name)
-            & (WNBATotalsProjections.away_team_name == WNBATotalsActuals.away_team_name),
+            & (
+                WNBATotalsProjections.away_team_name == WNBATotalsActuals.away_team_name
+            ),
         )
         .filter(WNBATotalsProjections.game_date >= start)
         .filter(WNBATotalsProjections.game_date <= end)
@@ -57,7 +59,10 @@ def _compute_window(db, start: date, end: date) -> dict:
             # Directional accuracy: did our pick (over/under vs market) hit?
             our_side_over = proj.projected_total > proj.market_total
             actual_over = actual.actual_total > proj.market_total
-            if proj.projected_total != proj.market_total and actual.actual_total != proj.market_total:
+            if (
+                proj.projected_total != proj.market_total
+                and actual.actual_total != proj.market_total
+            ):
                 counted_direction += 1
                 if our_side_over == actual_over:
                     correct_direction += 1
@@ -82,15 +87,17 @@ def run() -> dict:
             stats = _compute_window(db, start, end)
             if stats["total"] == 0:
                 continue
-            db.merge(WNBATotalsAccuracy(
-                date_range_start=start,
-                date_range_end=end,
-                total_games=stats["total"],
-                mean_absolute_error=stats["mae"],
-                root_mean_square_error=stats["rmse"],
-                directional_accuracy=stats["directional"],
-                created_at=datetime.utcnow(),
-            ))
+            db.merge(
+                WNBATotalsAccuracy(
+                    date_range_start=start,
+                    date_range_end=end,
+                    total_games=stats["total"],
+                    mean_absolute_error=stats["mae"],
+                    root_mean_square_error=stats["rmse"],
+                    directional_accuracy=stats["directional"],
+                    created_at=datetime.utcnow(),
+                )
+            )
             written += 1
         db.commit()
         return {"status": "ok", "windows_written": written}

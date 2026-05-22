@@ -41,21 +41,21 @@ NAME_TO_WNBA_ID: dict[str, int] = {
 
 # ESPN team id (string) → WNBA team id. Live-verified 2026-05-21.
 ESPN_TO_WNBA_TEAM_ID: dict[str, int] = {
-    "20": 1611661330,      # Atlanta Dream
-    "19": 1611661329,      # Chicago Sky
-    "18": 1611661323,      # Connecticut Sun
-    "3":  1611661321,      # Dallas Wings
+    "20": 1611661330,  # Atlanta Dream
+    "19": 1611661329,  # Chicago Sky
+    "18": 1611661323,  # Connecticut Sun
+    "3": 1611661321,  # Dallas Wings
     "129689": 1611661331,  # Golden State Valkyries (2025 expansion)
-    "5":  1611661325,      # Indiana Fever
-    "17": 1611661319,      # Las Vegas Aces
-    "6":  1611661320,      # Los Angeles Sparks
-    "8":  1611661324,      # Minnesota Lynx
-    "9":  1611661313,      # New York Liberty
-    "11": 1611661317,      # Phoenix Mercury
+    "5": 1611661325,  # Indiana Fever
+    "17": 1611661319,  # Las Vegas Aces
+    "6": 1611661320,  # Los Angeles Sparks
+    "8": 1611661324,  # Minnesota Lynx
+    "9": 1611661313,  # New York Liberty
+    "11": 1611661317,  # Phoenix Mercury
     "132052": 1611661327,  # Portland Fire (2026 expansion)
-    "14": 1611661328,      # Seattle Storm
+    "14": 1611661328,  # Seattle Storm
     "131935": 1611661332,  # Toronto Tempo (2026 expansion)
-    "16": 1611661322,      # Washington Mystics
+    "16": 1611661322,  # Washington Mystics
 }
 
 # Reverse lookup

@@ -1,4 +1,5 @@
 """Smoke test: every WNBA SQLAlchemy class is importable and points at the right table."""
+
 import pytest
 
 

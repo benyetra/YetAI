@@ -6,7 +6,10 @@ from app.models.predictions_models import WNBATeamRoster
 
 def test_upsert_many_noop_on_empty():
     session = MagicMock()
-    assert upsert_many(session, WNBATeamRoster, [], conflict_keys=["team_id", "player_id"]) == 0
+    assert (
+        upsert_many(session, WNBATeamRoster, [], conflict_keys=["team_id", "player_id"])
+        == 0
+    )
     session.execute.assert_not_called()
 
 

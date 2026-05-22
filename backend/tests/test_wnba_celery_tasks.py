@@ -1,4 +1,5 @@
 """Smoke tests for WNBA Celery task registration and season gating."""
+
 from datetime import date
 from unittest.mock import patch
 
@@ -9,6 +10,7 @@ def test_wnba_celery_tasks_registered():
     # Force registration of @celery_app.task decorators in the etl_pipeline module
     import app.tasks.etl_pipeline  # noqa: F401
     from app.celery_app import celery_app
+
     expected = [
         "app.tasks.etl_pipeline.wnba.update_team_roster",
         "app.tasks.etl_pipeline.wnba.update_team_offense_stats",
@@ -35,6 +37,7 @@ def test_wnba_celery_tasks_registered():
 
 def test_wnba_beat_entries_registered():
     from app.celery_app import celery_app
+
     entries = celery_app.conf.beat_schedule
     expected = [
         "wnba-update-pipeline-daily",
@@ -51,6 +54,7 @@ def test_wnba_beat_entries_registered():
 
 def test_in_season_gate_returns_true_during_may():
     from app.tasks.etl_pipeline import _wnba_in_season
+
     with patch("app.tasks.etl_pipeline._date") as d:
         d.today.return_value = date(2026, 5, 15)
         # Re-export `date` so date(year, m, d) constructor works
@@ -60,6 +64,7 @@ def test_in_season_gate_returns_true_during_may():
 
 def test_out_of_season_gate_returns_false_in_february():
     from app.tasks.etl_pipeline import _wnba_in_season
+
     with patch("app.tasks.etl_pipeline._date") as d:
         d.today.return_value = date(2026, 2, 15)
         d.side_effect = date

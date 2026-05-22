@@ -37,27 +37,31 @@ def run(target_date: date | None = None) -> dict:
             home_name = normalize_team_name(g["home_team_name"])
             away_name = normalize_team_name(g["away_team_name"])
 
-            db.merge(WNBATotalsActuals(
-                game_date=target_date,
-                home_team_name=home_name,
-                away_team_name=away_name,
-                home_score=home_score,
-                away_score=away_score,
-                actual_total=home_score + away_score,
-                created_at=datetime.utcnow(),
-            ))
+            db.merge(
+                WNBATotalsActuals(
+                    game_date=target_date,
+                    home_team_name=home_name,
+                    away_team_name=away_name,
+                    home_score=home_score,
+                    away_score=away_score,
+                    actual_total=home_score + away_score,
+                    created_at=datetime.utcnow(),
+                )
+            )
             totals_written += 1
 
-            db.merge(WNBASpreadActuals(
-                game_date=target_date,
-                home_team_name=home_name,
-                away_team_name=away_name,
-                home_score=home_score,
-                away_score=away_score,
-                actual_margin=home_score - away_score,
-                home_won=home_score > away_score,
-                created_at=datetime.utcnow(),
-            ))
+            db.merge(
+                WNBASpreadActuals(
+                    game_date=target_date,
+                    home_team_name=home_name,
+                    away_team_name=away_name,
+                    home_score=home_score,
+                    away_score=away_score,
+                    actual_margin=home_score - away_score,
+                    home_won=home_score > away_score,
+                    created_at=datetime.utcnow(),
+                )
+            )
             spreads_written += 1
 
         db.commit()

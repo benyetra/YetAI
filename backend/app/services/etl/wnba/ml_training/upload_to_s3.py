@@ -32,5 +32,11 @@ def upload(stat_col: str, model: xgb.XGBRegressor, metadata: dict[str, Any]) -> 
         meta_key = f"{S3_PREFIX}/xgb_{stat_col}_metadata.json"
         s3.upload_file(str(model_path), S3_BUCKET, model_key)
         s3.upload_file(str(meta_path), S3_BUCKET, meta_key)
-        logger.info("uploaded s3://%s/%s and s3://%s/%s", S3_BUCKET, model_key, S3_BUCKET, meta_key)
+        logger.info(
+            "uploaded s3://%s/%s and s3://%s/%s",
+            S3_BUCKET,
+            model_key,
+            S3_BUCKET,
+            meta_key,
+        )
         return {"model_key": model_key, "metadata_key": meta_key}

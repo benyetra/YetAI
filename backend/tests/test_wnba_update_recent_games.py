@@ -6,7 +6,9 @@ from app.services.etl.wnba import update_recent_games as urg
 
 def test_update_recent_games_pulls_yesterday_and_day_before(monkeypatch):
     mock_db = MagicMock(name="Session")
-    monkeypatch.setattr("app.services.etl.wnba.update_recent_games.SessionLocal", lambda: mock_db)
+    monkeypatch.setattr(
+        "app.services.etl.wnba.update_recent_games.SessionLocal", lambda: mock_db
+    )
 
     with patch("app.services.etl.wnba.update_recent_games._process_day") as pd_:
         pd_.return_value = 5  # rows
