@@ -14,6 +14,7 @@ from sqlalchemy import (
     JSON,
     Enum,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -29,6 +30,21 @@ class BetStatus(str, enum.Enum):
     CANCELLED = "cancelled"
     LIVE = "live"
     CASHED_OUT = "cashed_out"
+    PENDING_APPROVAL = "pending_approval"
+    REJECTED = "rejected"
+    EXPIRED = "expired"
+
+
+class BetSource(str, enum.Enum):
+    MANUAL = "manual"
+    AUTO = "auto"
+
+
+class AutoPickRunStatus(str, enum.Enum):
+    SUCCESS = "success"
+    PARTIAL = "partial"
+    FAILED = "failed"
+    NO_PICKS = "no_picks"
 
 
 class BetType(str, enum.Enum):
@@ -250,6 +266,15 @@ class YetAIBet(Base):
     historical_accuracy = Column(Float)
     parlay_legs = Column(JSON)  # For parlay bets, stores the leg details
 
+    # Auto-pick scoring fields
+    confidence_score = Column(Float, nullable=True)
+    score_breakdown = Column(JSONB, nullable=True)
+    reasoning = Column(Text, nullable=True)
+    source = Column(Enum(BetSource), default=BetSource.MANUAL, nullable=False)
+    auto_pick_run_id = Column(
+        ForeignKey("auto_pick_runs.id"), nullable=True, index=True
+    )
+
     # Game details
     home_team = Column(String(255))
     away_team = Column(String(255))
@@ -259,6 +284,36 @@ class YetAIBet(Base):
     # Relationships
     user = relationship("User", back_populates="yetai_bets")
     game = relationship("Game")
+
+
+class AutoPickRun(Base):
+    __tablename__ = "auto_pick_runs"
+
+    id = Column(Integer, primary_key=True)
+    run_at = Column(DateTime, nullable=False, index=True)
+    status = Column(Enum(AutoPickRunStatus), nullable=False)
+    candidates_considered = Column(Integer, default=0, nullable=False)
+    candidates_selected = Column(Integer, default=0, nullable=False)
+    dropped_reasons = Column(JSONB, nullable=True)
+    error = Column(Text, nullable=True)
+    picks = relationship("YetAIBet", backref="auto_pick_run")
+
+
+class ScoringConfig(Base):
+    __tablename__ = "scoring_config"
+
+    id = Column(Integer, primary_key=True)
+    weight_edge = Column(Float, nullable=False, default=0.40)
+    weight_historical = Column(Float, nullable=False, default=0.20)
+    weight_freshness = Column(Float, nullable=False, default=0.15)
+    weight_line_movement = Column(Float, nullable=False, default=0.10)
+    weight_odds_sanity = Column(Float, nullable=False, default=0.10)
+    weight_model_conf = Column(Float, nullable=False, default=0.05)
+    score_threshold = Column(Float, nullable=False, default=65.0)
+    odds_min = Column(Integer, nullable=False, default=-300)
+    odds_max = Column(Integer, nullable=False, default=400)
+    max_picks_per_day = Column(Integer, nullable=False, default=4)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 
 class LiveBet(Base):

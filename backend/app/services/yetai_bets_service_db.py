@@ -219,37 +219,80 @@ class YetAIBetsServiceDB:
             logger.error(f"Error creating YetAI Parlay: {e}")
             return {"success": False, "error": "Failed to create parlay"}
 
+    # Tier rank: higher rank = higher access level
+    TIER_RANK = {
+        SubscriptionTier.FREE: 0,
+        SubscriptionTier.PRO: 1,
+        SubscriptionTier.ELITE: 2,
+    }
+
+    # Statuses that are safe to display to subscribers
+    SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed"}
+
+    def get_yetai_bets_for_user(self, user_tier: str, db: Session) -> List[Dict]:
+        """Return bets visible to a subscriber at *user_tier*.
+
+        Visibility rules (hard-gated, never configurable by the caller):
+        - Only bets with status in SUBSCRIBER_VISIBLE_STATUSES are returned.
+          This permanently excludes: pending_approval, rejected, expired,
+          pending_manual_review, and any other non-approved status.
+        - Only bets whose tier_requirement <= user's tier are returned.
+          FREE sees FREE only; PRO sees FREE + PRO; ELITE sees all tiers.
+        """
+        # Normalise to enum; fall back to FREE for unknown values
+        try:
+            tier_enum = SubscriptionTier(user_tier.lower())
+        except (ValueError, AttributeError):
+            tier_enum = SubscriptionTier.FREE
+
+        user_rank = self.TIER_RANK[tier_enum]
+        allowed_tiers = [t for t, r in self.TIER_RANK.items() if r <= user_rank]
+
+        bets = (
+            db.query(YetAIBet)
+            .filter(YetAIBet.status.in_(self.SUBSCRIBER_VISIBLE_STATUSES))
+            .filter(YetAIBet.tier_requirement.in_(allowed_tiers))
+            .order_by(desc(YetAIBet.created_at))
+            .all()
+        )
+        return [self._yetai_bet_to_dict(bet) for bet in bets]
+
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
         """Get active YetAI Bets based on user tier from database
 
         Returns bets that are:
-        - Status "pending" (not yet settled)
+        - Status "pending" or "active" (not yet settled, not pending_approval/rejected/expired)
         - Have a commence_time in the future OR within last 4 hours (to show in-progress games)
+        - Tier-gated: FREE sees FREE only, PRO sees FREE+PRO, ELITE sees all
         """
         try:
             db = SessionLocal()
             try:
                 from datetime import datetime, timedelta
 
-                # Show bets that are pending and either:
+                # Show bets that are in an active subscriber-visible status and either:
                 # 1. Game hasn't started yet, OR
                 # 2. Game started within last 4 hours (still in progress)
                 cutoff_time = datetime.utcnow() - timedelta(hours=4)
 
+                # Normalise to enum; fall back to FREE for unknown values
+                try:
+                    tier_enum = SubscriptionTier(user_tier.lower())
+                except (ValueError, AttributeError):
+                    tier_enum = SubscriptionTier.FREE
+
+                user_rank = self.TIER_RANK[tier_enum]
+                allowed_tiers = [t for t, r in self.TIER_RANK.items() if r <= user_rank]
+
                 query = (
                     db.query(YetAIBet)
-                    .filter(YetAIBet.status == "pending")
+                    .filter(YetAIBet.status.in_({"active", "pending"}))
                     .filter(
                         (YetAIBet.commence_time >= cutoff_time)
                         | (YetAIBet.commence_time == None)
                     )
+                    .filter(YetAIBet.tier_requirement.in_(allowed_tiers))
                 )
-
-                # For free users, only show non-premium bets
-                if user_tier == "free":
-                    query = query.filter(
-                        YetAIBet.tier_requirement == SubscriptionTier.FREE
-                    )
 
                 # Sort by confidence (highest first)
                 active_bets = query.order_by(desc(YetAIBet.confidence)).all()

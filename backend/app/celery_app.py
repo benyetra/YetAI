@@ -27,6 +27,8 @@ celery_app = Celery(
         "app.tasks.etl_pipeline",
         "app.tasks.games_sync",
         "app.tasks.health",
+        "app.tasks.auto_pick",
+        "app.tasks.expire_pending_picks",
     ],
 )
 
@@ -123,6 +125,8 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",
         "schedule": crontab(hour=4, minute=30),
     },
+    # === Auto-pick orchestrator (Task 14) — gated by AUTO_YETAI_PICKS_ENABLED ===
+    # Beat entries below are added conditionally after this dict is built.
     "nfl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
         "schedule": crontab(hour=4, minute=30),
@@ -132,3 +136,16 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=5, minute=0),
     },
 }
+
+
+import os
+
+if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
+    celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
+        "task": "auto_pick.yetai_bets",
+        "schedule": crontab(hour=13, minute=0),  # 9:00 AM ET
+    }
+    celery_app.conf.beat_schedule["expire_pending_yetai_picks"] = {
+        "task": "auto_pick.expire_pending",
+        "schedule": crontab(minute="*/5"),
+    }
