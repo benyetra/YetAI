@@ -48,16 +48,6 @@ def _enum_type_exists(conn, typname: str) -> bool:
     ).fetchone() is not None
 
 
-def _enum_value_exists(conn, typname: str, value: str) -> bool:
-    return conn.execute(
-        text(
-            "SELECT 1 FROM pg_enum e "
-            "JOIN pg_type t ON e.enumtypid = t.oid "
-            "WHERE t.typname = :n AND e.enumlabel = :v"
-        ),
-        {"n": typname, "v": value},
-    ).fetchone() is not None
-
 
 def upgrade() -> None:
     """Upgrade schema."""
@@ -82,9 +72,11 @@ def upgrade() -> None:
             )
         )
 
-    # Extend betstatus with new values. ADD VALUE IF NOT EXISTS is Postgres 9.6+.
-    for val in ("pending_approval", "rejected", "expired"):
-        if not _enum_value_exists(conn, "betstatus", val):
+    # Extend betstatus with new values outside the transaction block.
+    # ALTER TYPE ... ADD VALUE cannot run inside a transaction on PG < 14, and
+    # IF NOT EXISTS provides idempotency so no Python-side guard is needed.
+    with conn.execution_options(isolation_level="AUTOCOMMIT"):
+        for val in ("pending_approval", "rejected", "expired"):
             conn.execute(
                 text(f"ALTER TYPE betstatus ADD VALUE IF NOT EXISTS '{val}'")
             )
@@ -195,8 +187,9 @@ def upgrade() -> None:
         conn.execute(
             text(
                 "ALTER TABLE yetai_bets "
-                "ADD COLUMN auto_pick_run_id INTEGER "
-                "REFERENCES auto_pick_runs(id)"
+                "ADD COLUMN auto_pick_run_id INTEGER, "
+                "ADD CONSTRAINT fk_yetai_bets_auto_pick_run_id "
+                "FOREIGN KEY (auto_pick_run_id) REFERENCES auto_pick_runs(id)"
             )
         )
         conn.execute(
@@ -234,6 +227,12 @@ def downgrade() -> None:
     if _has_index("yetai_bets", "idx_yetai_bets_auto_pick_run_id"):
         op.drop_index("idx_yetai_bets_auto_pick_run_id", table_name="yetai_bets")
     if _has_column("yetai_bets", "auto_pick_run_id"):
+        conn.execute(
+            text(
+                "ALTER TABLE yetai_bets "
+                "DROP CONSTRAINT IF EXISTS fk_yetai_bets_auto_pick_run_id"
+            )
+        )
         op.drop_column("yetai_bets", "auto_pick_run_id")
     if _has_column("yetai_bets", "source"):
         op.drop_column("yetai_bets", "source")
