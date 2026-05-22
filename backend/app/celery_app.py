@@ -27,6 +27,7 @@ celery_app = Celery(
         "app.tasks.etl_pipeline",
         "app.tasks.games_sync",
         "app.tasks.health",
+        "app.tasks.auto_pick",
     ],
 )
 
@@ -122,6 +123,11 @@ celery_app.conf.beat_schedule = {
     "mlb-actuals-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",
         "schedule": crontab(hour=4, minute=30),
+    },
+    # === Auto-pick orchestrator (Task 14) — 9:00 AM ET = 13:00 UTC ===
+    "auto_pick_yetai_bets_daily": {
+        "task": "auto_pick.yetai_bets",
+        "schedule": crontab(hour=13, minute=0),  # 9:00 AM ET
     },
     "nfl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
