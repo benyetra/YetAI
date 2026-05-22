@@ -39,6 +39,11 @@ from app.models.predictions_models import (
     StealsProjections,
     StrikeoutProjections,
     ThreePointProjections,
+    WNBAAssistsProjections,
+    WNBAPointsProjections,
+    WNBAReboundsProjections,
+    WNBASpreadProjections,
+    WNBATotalsProjections,
 )
 
 router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
@@ -250,5 +255,34 @@ def nhl_predictions(
             limit,
             tz=tz,
             dedupe_keys=("home_team_id", "away_team_id", "game_date"),
+        ),
+    }
+
+
+@router.get("/wnba")
+def wnba_predictions(
+    target_date: date_type | None = Query(default=None, alias="date"),
+    tz: str = Query(default="UTC"),
+    limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """WNBA predictions: own totals + spread/win-prob projections + Phase 2 player props (empty until Plan B)."""
+    tz = _safe_tz(tz)
+    return {
+        "totals": _query_recent(
+            db, WNBATotalsProjections, "game_date", target_date, limit, tz=tz
+        ),
+        "spreads": _query_recent(
+            db, WNBASpreadProjections, "game_date", target_date, limit, tz=tz
+        ),
+        "points": _query_recent(
+            db, WNBAPointsProjections, "date", target_date, limit, tz=tz
+        ),
+        "assists": _query_recent(
+            db, WNBAAssistsProjections, "date", target_date, limit, tz=tz
+        ),
+        "rebounds": _query_recent(
+            db, WNBAReboundsProjections, "date", target_date, limit, tz=tz
         ),
     }
