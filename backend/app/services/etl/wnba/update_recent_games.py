@@ -14,6 +14,7 @@ from nba_api.stats.endpoints import leaguegamefinder  # type: ignore
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
 from app.services.etl.wnba._espn import now_eastern
+from app.services.etl.wnba._wnba_stats import _retry
 from app.services.etl.wnba.backfill_wnba_history import (
     _fetch_boxscore,
     _minutes_to_float,
@@ -45,9 +46,9 @@ def _process_day(db, target_date: date) -> int:
         if len(teams) != 2:
             # Fallback: derive opponent map from boxscore rows
             try:
-                boxscore_rows = _fetch_boxscore(game_id)
+                boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
             except Exception as exc:
-                logger.warning("boxscore fetch failed for %s: %s", game_id, exc)
+                logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
                 continue
 
             distinct_team_ids = list({int(r["TEAM_ID"]) for r in boxscore_rows if r.get("TEAM_ID") is not None})
@@ -68,9 +69,9 @@ def _process_day(db, target_date: date) -> int:
                 home_team_id = int(t["TEAM_ID"])
 
         try:
-            boxscore_rows = _fetch_boxscore(game_id)
+            boxscore_rows = _retry(lambda: _fetch_boxscore(game_id), f"boxscore({game_id})")
         except Exception as exc:
-            logger.warning("boxscore fetch failed for %s: %s", game_id, exc)
+            logger.warning("boxscore fetch failed for %s after retries: %s", game_id, exc)
             continue
 
         for row in boxscore_rows:
