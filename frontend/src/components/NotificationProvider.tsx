@@ -1,18 +1,24 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './Auth';
-import { getWsUrl } from '@/lib/api-config';
+import { getWsUrl, apiRequest } from '@/lib/api-config';
 
 export interface Notification {
   id: string;
-  type: 'bet_won' | 'bet_lost' | 'odds_change' | 'system' | 'prediction' | 'achievement';
+  type: 'bet_won' | 'bet_lost' | 'odds_change' | 'system' | 'prediction' | 'achievement' | 'pipeline';
   title: string;
   message: string;
   timestamp: Date;
   read: boolean;
   data?: any;
   priority: 'low' | 'medium' | 'high';
+  // True if this row originated from the admin_notifications table on the
+  // backend. Drives REST mark-read instead of client-only state mutation.
+  isAdminPipeline?: boolean;
+  // Backend numeric id (for admin pipeline notifications). Stored separately
+  // so the public `id` stays a string the way the rest of the UI expects.
+  backendId?: number;
 }
 
 export interface WebSocketStatus {
@@ -47,6 +53,47 @@ interface NotificationProviderProps {
   children: React.ReactNode;
 }
 
+// Backend payload from GET /api/admin/notifications and the
+// 'admin_notification' WebSocket message type. Shape mirrors NotificationDTO
+// in app/services/admin_notification_service.py.
+interface AdminPipelinePayload {
+  id: number;
+  event_type: 'started' | 'finished' | 'failed';
+  task_name: string;
+  pipeline_label: string;
+  sport?: string | null;
+  status?: string | null;
+  duration_s?: number | null;
+  message: string;
+  error_message?: string | null;
+  extra?: Record<string, unknown>;
+  created_at: string;
+  is_read: boolean;
+}
+
+function adminPayloadToNotification(p: AdminPipelinePayload): Notification {
+  const priority: Notification['priority'] =
+    p.event_type === 'failed' ? 'high'
+    : p.event_type === 'started' ? 'low'
+    : 'medium';
+  const title =
+    p.event_type === 'started' ? `${p.pipeline_label} started`
+    : p.event_type === 'failed' ? `${p.pipeline_label} failed`
+    : `${p.pipeline_label} finished`;
+  return {
+    id: `admin-${p.id}`,
+    backendId: p.id,
+    isAdminPipeline: true,
+    type: 'pipeline',
+    title,
+    message: p.message,
+    timestamp: new Date(p.created_at),
+    read: p.is_read,
+    priority,
+    data: p,
+  };
+}
+
 export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
   const { user, isAuthenticated } = useAuth();
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -56,20 +103,51 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     reconnectAttempts: 0
   });
   const [ws, setWs] = useState<WebSocket | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const isAdmin = !!user?.is_admin;
 
-  // Initialize with some sample notifications
+  // Reset on auth change
   useEffect(() => {
-    if (isAuthenticated) {
-      // Don't add sample notifications to avoid showing fake data
+    if (!isAuthenticated) {
       setNotifications([]);
     }
   }, [isAuthenticated]);
+
+  // On mount as admin, hydrate from REST so notifications that fired while
+  // the user was offline still show up.
+  useEffect(() => {
+    if (!isAuthenticated || !isAdmin) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await apiRequest('/api/admin/notifications?limit=50');
+        if (!res.ok) return;
+        const body = await res.json();
+        const items: AdminPipelinePayload[] = body?.notifications ?? [];
+        if (cancelled) return;
+        setNotifications(prev => {
+          const existingBackendIds = new Set(
+            prev.filter(n => n.isAdminPipeline).map(n => n.backendId)
+          );
+          const incoming = items
+            .filter(p => !existingBackendIds.has(p.id))
+            .map(adminPayloadToNotification);
+          // Newest first; keep last 50 total to match prior behavior.
+          return [...incoming, ...prev]
+            .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime())
+            .slice(0, 50);
+        });
+      } catch (err) {
+        console.error('Failed to fetch admin notifications:', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isAuthenticated, isAdmin]);
 
   // WebSocket connection management
   const connectWebSocket = useCallback(() => {
     if (!isAuthenticated || !user) return;
 
-    // Get user ID - it might be 'id' or 'user_id' depending on the source
     const userId = user.id || user.user_id;
     if (!userId) {
       console.warn('No user ID found for WebSocket connection');
@@ -80,11 +158,11 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       setWsStatus(prev => ({ ...prev, reconnecting: true }));
 
       const wsUrl = getWsUrl(`/ws/${userId}`);
-      
       const websocket = new WebSocket(wsUrl);
-      
+
       websocket.onopen = () => {
         console.log('WebSocket connected');
+        reconnectAttemptsRef.current = 0;
         setWsStatus({
           connected: true,
           reconnecting: false,
@@ -98,21 +176,20 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
         try {
           const data = JSON.parse(event.data);
           console.log('WebSocket message received:', data);
-          
-          // Handle different message types
+
           switch (data.type) {
             case 'bet_update':
               addNotification({
                 type: data.won ? 'bet_won' : 'bet_lost',
                 title: data.won ? 'Bet Won!' : 'Bet Lost',
-                message: data.won 
-                  ? `Your bet won! +$${data.amount}` 
+                message: data.won
+                  ? `Your bet won! +$${data.amount}`
                   : `Your bet didn't win this time. -$${data.amount}`,
                 priority: 'high',
                 data: data
               });
               break;
-              
+
             case 'odds_change':
               addNotification({
                 type: 'odds_change',
@@ -122,7 +199,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                 data: data
               });
               break;
-              
+
             case 'prediction_ready':
               addNotification({
                 type: 'prediction',
@@ -132,7 +209,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                 data: data
               });
               break;
-              
+
             case 'system_message':
               addNotification({
                 type: 'system',
@@ -142,6 +219,26 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
                 data: data
               });
               break;
+
+            case 'admin_notification': {
+              // Live push from the Celery pipeline signal handler.
+              // Backend strips no fields; data has the same shape as REST.
+              const payload = data as AdminPipelinePayload & { type: string };
+              const notif = adminPayloadToNotification({ ...payload, is_read: false });
+              setNotifications(prev => {
+                if (prev.some(n => n.backendId === payload.id)) return prev;
+                return [notif, ...prev].slice(0, 50);
+              });
+              if (typeof window !== 'undefined' && 'Notification' in window
+                  && Notification.permission === 'granted' && notif.priority === 'high') {
+                new Notification(notif.title, {
+                  body: notif.message,
+                  icon: '/favicon.ico',
+                  tag: notif.id
+                });
+              }
+              break;
+            }
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -150,24 +247,22 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
       websocket.onclose = (event) => {
         console.log('WebSocket disconnected:', event.code, event.reason);
-        setWsStatus(prev => ({ 
-          ...prev, 
-          connected: false, 
-          reconnecting: false 
+        setWsStatus(prev => ({
+          ...prev,
+          connected: false,
+          reconnecting: false
         }));
         setWs(null);
 
-        // Attempt to reconnect after a delay (exponential backoff)
         if (isAuthenticated) {
-          setTimeout(() => {
-            setWsStatus(prev => ({ 
-              ...prev, 
-              reconnectAttempts: prev.reconnectAttempts + 1 
-            }));
-            if (wsStatus.reconnectAttempts < 5) {
+          const attempt = reconnectAttemptsRef.current;
+          if (attempt < 5) {
+            setTimeout(() => {
+              reconnectAttemptsRef.current = attempt + 1;
+              setWsStatus(prev => ({ ...prev, reconnectAttempts: attempt + 1 }));
               connectWebSocket();
-            }
-          }, Math.min(1000 * Math.pow(2, wsStatus.reconnectAttempts), 30000));
+            }, Math.min(1000 * Math.pow(2, attempt), 30000));
+          }
         }
       };
 
@@ -180,7 +275,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       console.error('Failed to connect WebSocket:', error);
       setWsStatus(prev => ({ ...prev, reconnecting: false }));
     }
-  }, [isAuthenticated, user?.id, user?.user_id, wsStatus.reconnectAttempts]);
+  }, [isAuthenticated, user?.id, user?.user_id]);
 
   // Connect WebSocket when authenticated
   useEffect(() => {
@@ -188,7 +283,6 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       connectWebSocket();
     }
 
-    // Cleanup on unmount or when user logs out
     return () => {
       if (ws) {
         ws.close();
@@ -206,10 +300,10 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       read: false
     };
 
-    setNotifications(prev => [newNotification, ...prev].slice(0, 50)); // Keep last 50
+    setNotifications(prev => [newNotification, ...prev].slice(0, 50));
 
-    // Show browser notification if permission granted
-    if (Notification.permission === 'granted' && notification.priority === 'high') {
+    if (typeof window !== 'undefined' && 'Notification' in window
+        && Notification.permission === 'granted' && notification.priority === 'high') {
       new Notification(notification.title, {
         body: notification.message,
         icon: '/favicon.ico',
@@ -219,18 +313,29 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   }, []);
 
   const markAsRead = useCallback((id: string) => {
-    setNotifications(prev => 
-      prev.map(notif => 
+    setNotifications(prev =>
+      prev.map(notif =>
         notif.id === id ? { ...notif, read: true } : notif
       )
     );
-  }, []);
+    // Persist to backend if this is an admin pipeline notification.
+    const target = notifications.find(n => n.id === id);
+    if (target?.isAdminPipeline && target.backendId !== undefined) {
+      apiRequest(`/api/admin/notifications/${target.backendId}/read`, { method: 'POST' })
+        .catch(err => console.error('Failed to mark admin notification read:', err));
+    }
+  }, [notifications]);
 
   const markAllAsRead = useCallback(() => {
-    setNotifications(prev => 
+    const hadAdminUnread = notifications.some(n => n.isAdminPipeline && !n.read);
+    setNotifications(prev =>
       prev.map(notif => ({ ...notif, read: true }))
     );
-  }, []);
+    if (isAdmin && hadAdminUnread) {
+      apiRequest('/api/admin/notifications/mark-all-read', { method: 'POST' })
+        .catch(err => console.error('Failed to mark all admin notifications read:', err));
+    }
+  }, [notifications, isAdmin]);
 
   const removeNotification = useCallback((id: string) => {
     setNotifications(prev => prev.filter(notif => notif.id !== id));
@@ -240,7 +345,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
     setNotifications([]);
   }, []);
 
-  // Request notification permission on mount
+  // Request browser notification permission on mount
   useEffect(() => {
     if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission();

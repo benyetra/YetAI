@@ -3,18 +3,19 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
-  Bell, 
-  X, 
-  Check, 
-  Trash2, 
-  Filter, 
-  DollarSign, 
-  TrendingUp, 
-  Brain, 
-  Trophy, 
+  Bell,
+  X,
+  Check,
+  Trash2,
+  Filter,
+  DollarSign,
+  TrendingUp,
+  Brain,
+  Trophy,
   AlertCircle,
   CheckCircle,
-  Clock
+  Clock,
+  Workflow
 } from 'lucide-react';
 import { useNotifications, Notification } from './NotificationProvider';
 
@@ -32,6 +33,8 @@ const NotificationIcon: React.FC<{ type: Notification['type'] }> = ({ type }) =>
       return <Brain {...iconProps} className="w-4 h-4 text-purple-600" />;
     case 'achievement':
       return <Trophy {...iconProps} className="w-4 h-4 text-yellow-600" />;
+    case 'pipeline':
+      return <Workflow {...iconProps} className="w-4 h-4 text-indigo-600" />;
     case 'system':
     default:
       return <AlertCircle {...iconProps} className="w-4 h-4 text-gray-600" />;

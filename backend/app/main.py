@@ -264,6 +264,22 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler initialization failed: {e}")
 
+    # Start the admin pipeline notification Redis subscriber. Bridges Celery
+    # worker pipeline lifecycle events → WebSocket fan-out to connected admins.
+    try:
+        from app.core.admin_notification_subscriber import (
+            AdminNotificationSubscriber,
+        )
+
+        _admin_notif_sub = AdminNotificationSubscriber(
+            send_fn=ws_manager.send_personal_message
+        )
+        await _admin_notif_sub.start()
+        _app.state.admin_notification_subscriber = _admin_notif_sub
+        logger.info("✅ Admin notification subscriber started")
+    except Exception as e:
+        logger.warning(f"⚠️  Admin notification subscriber failed to start: {e}")
+
     # Sync upcoming games to database on startup (non-blocking)
     if settings.ODDS_API_KEY:
 
@@ -318,6 +334,15 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler cleanup failed: {e}")
 
+    # Stop the admin notification subscriber
+    sub = getattr(_app.state, "admin_notification_subscriber", None)
+    if sub is not None:
+        try:
+            await sub.stop()
+            logger.info("✅ Admin notification subscriber stopped")
+        except Exception as e:
+            logger.warning(f"⚠️  Admin notification subscriber stop failed: {e}")
+
 
 # Create FastAPI app
 app = FastAPI(
@@ -350,12 +375,14 @@ from app.api.v1.predictions import router as predictions_router
 from app.api.v1.tools import router as tools_router
 from app.api.v1.tools import admin_router as tools_admin_router
 from app.api.admin_celery_ops import router as admin_celery_ops_router
+from app.api.admin_notifications import router as admin_notifications_router
 from app.api.admin_yetai_picks import router as admin_yetai_picks_router
 
 app.include_router(predictions_router)
 app.include_router(tools_router)
 app.include_router(tools_admin_router)
 app.include_router(admin_celery_ops_router)
+app.include_router(admin_notifications_router)
 app.include_router(admin_yetai_picks_router)
 
 
