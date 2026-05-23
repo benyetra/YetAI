@@ -1,10 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { BarChart3, TrendingUp, TrendingDown, Target, Info } from 'lucide-react';
+import { BarChart3 } from 'lucide-react';
+import AppLoading from '@/components/yetai/AppLoading';
+import BreakdownBars, { type BreakdownItem } from '@/components/yetai/BreakdownBars';
+import MyBetsPnLChart from '@/components/yetai/MyBetsPnLChart';
+import { EmptyState } from '@/components/yetai/primitives';
+import { StatTile } from '@/components/yetai/primitives';
 import { sportsAPI } from '@/lib/api';
 import { getApiUrl } from '@/lib/api-config';
+import { fmtMoney } from '@/lib/yetai-format';
 
 export interface PerformanceData {
   status: string;
@@ -37,26 +43,28 @@ export interface PerformanceData {
     win_rate: number;
     roi: number;
   }>;
-  performance_trend: {
-    recent_period: { win_rate: number; profit: number; total_bets: number };
-    previous_period: { win_rate: number; profit: number; total_bets: number };
-    win_rate_change: number;
-    profit_change: number;
-    trend_direction: string;
-  } | null;
-  insights: Array<{ type: string; icon: string; message: string }>;
+  daily_pnl: number[];
+  win_rate_delta?: number;
 }
 
 type UserBetPerformanceProps = {
   selectedPeriod: number;
 };
 
+function periodChartLabel(days: number): string {
+  if (days >= 365) return 'all time';
+  if (days >= 90) return 'last 3 months';
+  if (days >= 30) return 'last 30 days';
+  if (days >= 14) return 'last 14 days';
+  return `last ${days} days`;
+}
+
 export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanceProps) {
   const router = useRouter();
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [error, setError] = useState('');
-  const [actualPendingCount, setActualPendingCount] = useState<number>(0);
+  const [actualPendingCount, setActualPendingCount] = useState(0);
 
   useEffect(() => {
     fetchPerformanceData();
@@ -66,346 +74,214 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
   const fetchPendingBetsCount = async () => {
     try {
       const token = localStorage.getItem('auth_token');
-
-      // Fetch pending bets from bet history API
       const response = await fetch(getApiUrl('/api/bets/history'), {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           status: 'pending',
           limit: 100,
-          offset: 0
-        })
+          offset: 0,
+        }),
       });
 
       if (response.ok) {
         const data = await response.json();
         if (data.status === 'success' && typeof data.total === 'number') {
           setActualPendingCount(data.total);
-          console.log('📊 Actual pending bets from history API:', data.total);
         }
       }
-    } catch (error) {
-      console.error('Error fetching pending bets count:', error);
+    } catch (err) {
+      console.error('Error fetching pending bets count:', err);
     }
   };
-
 
   const fetchPerformanceData = async () => {
     try {
       setIsLoadingData(true);
       setError('');
-      
+
       const token = localStorage.getItem('auth_token');
       const response = await sportsAPI.getUserPerformance(selectedPeriod, token ?? undefined);
 
-      console.log('Performance API response:', response);
-      console.log('Overview data:', response?.overview);
-
       if (response.status === 'success') {
-        // Transform the API response to match expected format
-        const transformedData = {
+        const metrics = response.metrics || {};
+        const personal = response.personal_stats || {};
+        const trends = metrics.trends || {};
+
+        const transformedData: PerformanceData = {
           status: response.status,
-          period_days: response.metrics?.period_days || 30,
+          period_days: selectedPeriod,
           overview: {
-            total_bets: response.metrics?.total_predictions || 0,
-            total_wagered: response.metrics?.total_wagered || 0,
-            total_profit: response.metrics?.net_profit || 0,
-            win_rate: Math.round(response.metrics?.overall_accuracy || 0),
-            roi: response.metrics?.total_wagered > 0 ? Math.round((response.metrics?.net_profit / response.metrics?.total_wagered) * 100) : 0,
-            won_bets: Math.round((response.metrics?.resolved_predictions || 0) * (response.metrics?.success_rate || 0)),
-            lost_bets: (response.metrics?.resolved_predictions || 0) - Math.round((response.metrics?.resolved_predictions || 0) * (response.metrics?.success_rate || 0)),
-            pending_bets: response.metrics?.pending_predictions || 0
+            total_bets: metrics.total_predictions || 0,
+            total_wagered: metrics.total_wagered || 0,
+            total_profit: metrics.net_profit || 0,
+            win_rate: Math.round(metrics.overall_accuracy || 0),
+            roi:
+              metrics.total_wagered > 0
+                ? Math.round((metrics.net_profit / metrics.total_wagered) * 100)
+                : 0,
+            won_bets: Math.round(
+              (metrics.resolved_predictions || 0) * (metrics.success_rate || 0),
+            ),
+            lost_bets:
+              (metrics.resolved_predictions || 0) -
+              Math.round((metrics.resolved_predictions || 0) * (metrics.success_rate || 0)),
+            pending_bets: metrics.pending_predictions || 0,
           },
-          sport_breakdown: response.metrics?.by_sport ? Object.entries(response.metrics.by_sport).map(([sport, data]: [string, any]) => ({
-            sport: sport,
-            sport_name: sport.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            total_bets: data.count || 0,
-            total_wagered: data.total_wagered || 0,
-            profit_loss: data.net_profit || 0,
-            win_rate: Math.round(data.win_rate || 0),
-            roi: data.total_wagered > 0 ? Math.round((data.net_profit / data.total_wagered) * 100) : 0
-          })) : [],
-          bet_type_breakdown: response.metrics?.by_type ? Object.entries(response.metrics.by_type).map(([type, data]: [string, any]) => ({
-            bet_type: type,
-            bet_type_name: type.charAt(0).toUpperCase() + type.slice(1),
-            total_bets: data.count || 0,
-            total_wagered: data.total_wagered || 0,
-            profit_loss: data.net_profit || 0,
-            win_rate: Math.round(data.win_rate || 0),
-            roi: data.total_wagered > 0 ? Math.round((data.net_profit / data.total_wagered) * 100) : 0
-          })) : [],
-          performance_trend: response.metrics?.trends ? {
-            recent_period: {
-              win_rate: Math.round(response.metrics.trends.last_7_days_accuracy || 0),
-              profit: 0,
-              total_bets: 0
-            },
-            previous_period: {
-              win_rate: 0,
-              profit: 0,
-              total_bets: 0
-            },
-            win_rate_change: 0,
-            profit_change: 0,
-            trend_direction: response.metrics.trends.improvement_trend || 'stable'
-          } : null,
-          insights: []
+          sport_breakdown: metrics.by_sport
+            ? Object.entries(metrics.by_sport).map(([sport, data]: [string, any]) => ({
+                sport,
+                sport_name: sport.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+                total_bets: data.count || 0,
+                total_wagered: data.total_wagered || 0,
+                profit_loss: data.net_profit || 0,
+                win_rate: Math.round(data.win_rate || 0),
+                roi:
+                  data.total_wagered > 0
+                    ? Math.round((data.net_profit / data.total_wagered) * 100)
+                    : 0,
+              }))
+            : [],
+          bet_type_breakdown: metrics.by_type
+            ? Object.entries(metrics.by_type).map(([type, data]: [string, any]) => ({
+                bet_type: type,
+                bet_type_name: type.charAt(0).toUpperCase() + type.slice(1),
+                total_bets: data.count || 0,
+                total_wagered: data.total_wagered || 0,
+                profit_loss: data.net_profit || 0,
+                win_rate: Math.round(data.win_rate || 0),
+                roi:
+                  data.total_wagered > 0
+                    ? Math.round((data.net_profit / data.total_wagered) * 100)
+                    : 0,
+              }))
+            : [],
+          daily_pnl: Array.isArray(personal.daily_pnl) ? personal.daily_pnl : [],
+          win_rate_delta: trends.accuracy_change,
         };
 
-        console.log('Transformed data:', transformedData);
         setPerformanceData(transformedData);
       } else {
         setError('Failed to load performance data');
       }
-    } catch (error) {
-      console.error('Error fetching performance data:', error);
+    } catch (err) {
+      console.error('Error fetching performance data:', err);
       setError('Failed to load performance data');
     } finally {
       setIsLoadingData(false);
     }
   };
 
+  const sportItems: BreakdownItem[] = useMemo(() => {
+    if (!performanceData?.sport_breakdown?.length) return [];
+    return performanceData.sport_breakdown.slice(0, 6).map((s) => ({
+      key: s.sport,
+      label: s.sport_name,
+      sublabel: `${s.total_bets} bets · ${s.win_rate}%`,
+      profit: s.profit_loss,
+    }));
+  }, [performanceData]);
 
-  const getIconComponent = (iconName: string) => {
-    switch (iconName) {
-      case 'trending-up': return TrendingUp;
-      case 'trending-down': return TrendingDown;
-      case 'target': return Target;
-      case 'info': return Info;
-      default: return Info;
-    }
-  };
-
-
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      minimumFractionDigits: 2
-    }).format(amount);
-  };
-
+  const typeItems: BreakdownItem[] = useMemo(() => {
+    if (!performanceData?.bet_type_breakdown?.length) return [];
+    return performanceData.bet_type_breakdown.slice(0, 6).map((t) => ({
+      key: t.bet_type,
+      label: t.bet_type_name,
+      sublabel: `${t.total_bets} bet${t.total_bets !== 1 ? 's' : ''}`,
+      profit: t.profit_loss,
+    }));
+  }, [performanceData]);
 
   if (isLoadingData) {
-    return (
-      <div className="flex items-center justify-center py-16">
-        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600" />
-      </div>
-    );
+    return <AppLoading />;
   }
 
-  if (error || !performanceData) {
+  if (error || !performanceData?.overview) {
     return (
-      <div className="space-y-6">
+      <div className="card">
         {error ? (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
-            <p className="text-red-600 mb-4">{error}</p>
-            <button
-              type="button"
-              onClick={fetchPerformanceData}
-              className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
-            >
-              Try Again
-            </button>
-          </div>
+          <EmptyState
+            title="Could not load performance"
+            body={error}
+            action={
+              <button type="button" className="btn btn-primary" onClick={fetchPerformanceData}>
+                Try again
+              </button>
+            }
+          />
         ) : (
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-12 text-center">
-            <BarChart3 className="w-16 h-16 mx-auto mb-4 text-gray-300" />
-            <h3 className="text-xl font-semibold text-gray-600 mb-2">No Betting Data Yet</h3>
-            <p className="text-gray-500 mb-6">Start placing bets to see your performance analytics</p>
-            <button
-              type="button"
-              onClick={() => router.push('/bet')}
-              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-            >
-              Place a Bet
-            </button>
-          </div>
+          <EmptyState
+            icon={<BarChart3 size={16} />}
+            title="No betting data yet"
+            body="Start placing bets to see performance analytics here."
+            action={
+              <button type="button" className="btn btn-primary" onClick={() => router.push('/bet')}>
+                Place a bet
+              </button>
+            }
+          />
         )}
       </div>
     );
   }
 
-  const { overview, sport_breakdown, bet_type_breakdown, performance_trend, insights } = performanceData;
-
-  if (!overview) {
-    return (
-      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 text-center">
-        <p className="text-yellow-600 mb-4">Performance data is incomplete</p>
-        <button
-          type="button"
-          onClick={fetchPerformanceData}
-          className="px-4 py-2 bg-yellow-600 text-white rounded-lg hover:bg-yellow-700 transition-colors"
-        >
-          Reload Data
-        </button>
-      </div>
-    );
-  }
+  const { overview, daily_pnl, win_rate_delta } = performanceData;
+  const pending = actualPendingCount > 0 ? actualPendingCount : overview.pending_bets;
+  const chartDays = Math.min(selectedPeriod, 14);
+  const chartData = daily_pnl.length ? daily_pnl.slice(-chartDays) : [];
 
   return (
-    <div className="space-y-6">
-        {/* Overview Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <Target className="w-8 h-8 text-blue-600" />
-              <span className="text-2xl font-bold text-blue-600">{overview.win_rate || 0}%</span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Win Rate</h3>
-            <p className="text-sm text-gray-600">{overview.won_bets || 0}W - {overview.lost_bets || 0}L</p>
-          </div>
+    <>
+      <div className="stat-grid cols-4">
+        <StatTile
+          label={`Net profit · ${selectedPeriod}d`}
+          value={fmtMoney(overview.total_profit, { signed: true })}
+          delta="vs zero"
+          deltaKind={overview.total_profit >= 0 ? 'up' : 'down'}
+          sub={`${periodChartLabel(chartDays)}`}
+        />
+        <StatTile
+          label="Win rate"
+          value={`${overview.win_rate}%`}
+          delta={
+            win_rate_delta != null
+              ? `${win_rate_delta >= 0 ? '+' : ''}${win_rate_delta}pp`
+              : undefined
+          }
+          deltaKind={win_rate_delta != null && win_rate_delta < 0 ? 'down' : 'up'}
+          sub="vs prev period"
+        />
+        <StatTile
+          label="Bets"
+          value={overview.total_bets}
+          sub={`${overview.won_bets}W · ${overview.lost_bets}L · ${pending}P`}
+        />
+        <StatTile
+          label="Wagered"
+          value={fmtMoney(overview.total_wagered)}
+          sub={`${overview.roi}% ROI`}
+        />
+      </div>
 
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <BarChart3 className={`w-8 h-8 ${(overview.total_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`} />
-              <span className={`text-2xl font-bold ${(overview.total_profit || 0) >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                {formatCurrency(overview.total_profit || 0)}
-              </span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Net Profit</h3>
-            <p className="text-sm text-gray-600">{overview.roi || 0}% ROI</p>
-          </div>
+      <MyBetsPnLChart data={chartData} periodLabel={periodChartLabel(chartDays)} />
 
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <BarChart3 className="w-8 h-8 text-purple-600" />
-              <span className="text-2xl font-bold text-purple-600">{overview.total_bets || 0}</span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Total Bets</h3>
-            <p className="text-sm text-gray-600">{formatCurrency(overview.total_wagered || 0)} wagered</p>
+      <div className="my-bets-breakdown-grid">
+        <div className="card">
+          <div className="section-title" style={{ marginBottom: 12 }}>
+            By sport
           </div>
-
-          <div className="bg-white p-6 rounded-lg border border-gray-200">
-            <div className="flex items-center justify-between mb-4">
-              <TrendingUp className="w-8 h-8 text-orange-600" />
-              <span className="text-2xl font-bold text-orange-600">
-                {actualPendingCount > 0 ? actualPendingCount : (overview.pending_bets || 0)}
-              </span>
-            </div>
-            <h3 className="font-semibold text-gray-900">Pending</h3>
-            <p className="text-sm text-gray-600">Awaiting results</p>
-          </div>
+          <BreakdownBars items={sportItems} />
         </div>
-
-        {/* Performance Trend */}
-        {performance_trend && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6 mb-6">
-            <h2 className="text-xl font-semibold mb-4">Performance Trend</h2>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="text-center">
-                <p className="text-sm text-gray-600">Last 7 Days</p>
-                <p className="text-lg font-semibold">{performance_trend.recent_period.win_rate}% Win Rate</p>
-                <p className={`text-sm ${performance_trend.recent_period.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(performance_trend.recent_period.profit)}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-sm text-gray-600">Previous 7 Days</p>
-                <p className="text-lg font-semibold">{performance_trend.previous_period.win_rate}% Win Rate</p>
-                <p className={`text-sm ${performance_trend.previous_period.profit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                  {formatCurrency(performance_trend.previous_period.profit)}
-                </p>
-              </div>
-              <div className="text-center">
-                <p className="text-sm text-gray-600">Trend</p>
-                <p className={`text-lg font-semibold capitalize ${
-                  performance_trend.trend_direction === 'improving' ? 'text-green-600' : 
-                  performance_trend.trend_direction === 'declining' ? 'text-red-600' : 'text-yellow-600'
-                }`}>
-                  {performance_trend.trend_direction}
-                </p>
-                <p className="text-sm text-gray-600">
-                  {performance_trend.win_rate_change >= 0 ? '+' : ''}{performance_trend.win_rate_change}% change
-                </p>
-              </div>
-            </div>
+        <div className="card">
+          <div className="section-title" style={{ marginBottom: 12 }}>
+            By bet type
           </div>
-        )}
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Sport Breakdown */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold mb-4">Sport Breakdown</h2>
-            {sport_breakdown && sport_breakdown.length > 0 ? (
-              <div className="space-y-4">
-                {sport_breakdown.slice(0, 5).map((sport, index) => (
-                  <div key={sport.sport} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="font-medium">{sport.sport_name}</span>
-                    <div className="text-right">
-                      <div className={`text-sm font-semibold ${sport.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {sport.profit_loss >= 0 ? '+' : ''}{formatCurrency(sport.profit_loss)}
-                      </div>
-                      <div className="text-xs text-gray-500">{sport.win_rate}% win rate</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No sport data available yet</p>
-                <p className="text-sm">Place bets on different sports to see breakdown</p>
-              </div>
-            )}
-          </div>
-
-          {/* Bet Type Breakdown */}
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold mb-4">Bet Type Breakdown</h2>
-            {bet_type_breakdown && bet_type_breakdown.length > 0 ? (
-              <div className="space-y-4">
-                {bet_type_breakdown.slice(0, 5).map((betType, index) => (
-                  <div key={betType.bet_type} className="flex justify-between items-center p-3 bg-gray-50 rounded">
-                    <span className="font-medium">{betType.bet_type_name}</span>
-                    <div className="text-right">
-                      <div className={`text-sm font-semibold ${betType.profit_loss >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                        {betType.profit_loss >= 0 ? '+' : ''}{formatCurrency(betType.profit_loss)}
-                      </div>
-                      <div className="text-xs text-gray-500">{betType.win_rate}% win rate</div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-gray-500">
-                <p>No bet type data available yet</p>
-                <p className="text-sm">Try different bet types to see breakdown</p>
-              </div>
-            )}
-          </div>
+          <BreakdownBars items={typeItems} />
         </div>
-
-        {/* Performance Insights */}
-        {insights && insights.length > 0 && (
-          <div className="bg-white rounded-lg border border-gray-200 p-6">
-            <h2 className="text-xl font-semibold mb-4">Performance Insights</h2>
-            <div className="space-y-3">
-              {insights.map((insight, index) => {
-                const IconComponent = getIconComponent(insight.icon);
-                const bgColor = insight.type === 'positive' ? 'bg-green-50 border-green-200' : 
-                               insight.type === 'warning' ? 'bg-yellow-50 border-yellow-200' : 
-                               'bg-blue-50 border-blue-200';
-                const textColor = insight.type === 'positive' ? 'text-green-800' :
-                                 insight.type === 'warning' ? 'text-yellow-800' :
-                                 'text-blue-800';
-                const iconColor = insight.type === 'positive' ? 'text-green-600' :
-                                 insight.type === 'warning' ? 'text-yellow-600' :
-                                 'text-blue-600';
-
-                return (
-                  <div key={index} className={`flex items-center p-3 border rounded ${bgColor}`}>
-                    <IconComponent className={`w-5 h-5 mr-3 ${iconColor}`} />
-                    <span className={textColor}>{insight.message}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-    </div>
+      </div>
+    </>
   );
 }
