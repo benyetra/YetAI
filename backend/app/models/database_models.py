@@ -487,3 +487,68 @@ class SleeperPlayer(Base):
 
     created_at = Column(DateTime, default=datetime.utcnow)
     last_synced = Column(DateTime, default=datetime.utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Admin notifications for Celery pipeline lifecycle events
+# ---------------------------------------------------------------------------
+
+
+class AdminNotificationEvent(str, enum.Enum):
+    """Lifecycle stage of a Celery pipeline run."""
+
+    STARTED = "started"
+    FINISHED = "finished"
+    FAILED = "failed"
+
+
+class AdminNotification(Base):
+    """A single Celery pipeline lifecycle event visible to every admin.
+
+    Created by the celery_signals handler on task_prerun/postrun/failure for
+    tasks whose name is in PIPELINE_ORCHESTRATORS. One row per event.
+
+    Read state is per-admin via the join table AdminNotificationRead.
+    """
+
+    __tablename__ = "admin_notifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    event_type = Column(Enum(AdminNotificationEvent), nullable=False, index=True)
+    task_name = Column(String(255), nullable=False, index=True)
+    pipeline_label = Column(String(255), nullable=False)
+    sport = Column(String(20))
+    task_id = Column(String(64), index=True)  # Celery UUID
+    status = Column(String(32))  # 'ok' | 'failed' from orchestrator return dict
+    duration_s = Column(Float)
+    message = Column(Text, nullable=False)
+    error_message = Column(Text)
+    error_traceback = Column(Text)
+    extra = Column(JSON, default=dict)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+
+    reads = relationship(
+        "AdminNotificationRead",
+        back_populates="notification",
+        cascade="all, delete-orphan",
+    )
+
+
+class AdminNotificationRead(Base):
+    """Per-admin read receipt for an AdminNotification."""
+
+    __tablename__ = "admin_notification_reads"
+
+    notification_id = Column(
+        Integer,
+        ForeignKey("admin_notifications.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    user_id = Column(
+        Integer,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    read_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    notification = relationship("AdminNotification", back_populates="reads")

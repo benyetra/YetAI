@@ -140,6 +140,11 @@ celery_app.conf.beat_schedule = {
 
 import os
 
+# Register Celery signal handlers for admin pipeline notifications. Import
+# side effect: @task_prerun / @task_postrun / @task_failure decorators run.
+from app.core import celery_signals  # noqa: E402,F401
+
+
 if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
         "task": "auto_pick.yetai_bets",
