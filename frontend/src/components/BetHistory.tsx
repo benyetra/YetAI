@@ -30,6 +30,9 @@ import { useAuth } from './Auth';
 import { apiClient } from '@/lib/api';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import BetShareModal from './BetShareModal';
+import AppLoading from '@/components/yetai/AppLoading';
+import MyBetsBetRow from '@/components/yetai/MyBetsBetRow';
+import { EmptyState } from '@/components/yetai/primitives';
 import { formatLocalDateTime, formatLocalDate } from '@/lib/formatting';
 
 interface Bet {
@@ -430,18 +433,252 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
     </div>
   );
 
+  const formatSportLabel = (sport?: string) => {
+    if (!sport || sport === 'unknown') return undefined;
+    return sport.replace(/_/g, ' · ').toUpperCase();
+  };
+
+  const formatBetTypeLabel = (bet: Bet) => {
+    const t = bet.bet_type?.replace('live_', '') || 'bet';
+    return t.charAt(0).toUpperCase() + t.slice(1);
+  };
+
+  const betProfit = (bet: Bet): number | null => {
+    const st = bet.status.toLowerCase();
+    if (st === 'won') {
+      if (bet.result_amount != null) return bet.result_amount;
+      return bet.potential_win - bet.amount;
+    }
+    if (st === 'lost') {
+      return -(bet.result_amount ?? bet.amount);
+    }
+    return null;
+  };
+
   if (loading && bets.length === 0) {
-    return (
+    return embedded ? <AppLoading /> : (
       <div className="min-h-screen flex items-center justify-center">
         <div className="text-lg">Loading bet history...</div>
       </div>
     );
   }
 
+  if (embedded) {
+    const statusFilters = ['all', 'pending', 'won', 'lost'] as const;
+
+    return (
+      <>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 14,
+            gap: 12,
+            flexWrap: 'wrap',
+          }}
+        >
+          <div style={{ position: 'relative', flex: 1, maxWidth: 360, minWidth: 200 }}>
+            <Search
+              size={13}
+              style={{
+                position: 'absolute',
+                left: 11,
+                top: '50%',
+                transform: 'translateY(-50%)',
+                color: 'var(--text-3)',
+              }}
+            />
+            <input
+              className="input"
+              placeholder="Search bets..."
+              style={{ paddingLeft: 32, width: '100%' }}
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="tabs" role="group" aria-label="Filter by status">
+            {statusFilters.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className={filterStatus === s ? 'active' : ''}
+                onClick={() => setFilterStatus(s)}
+              >
+                {s[0].toUpperCase() + s.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, gap: 8, fontSize: 11 }}>
+          {isConnected ? (
+            <span className="dim" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Wifi size={12} style={{ color: 'var(--win)' }} />
+              Live updates
+            </span>
+          ) : (
+            <span className="dim" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <WifiOff size={12} style={{ color: 'var(--loss)' }} />
+              Offline
+            </span>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: '0 18px' }}>
+          {filteredBets.length === 0 ? (
+            <EmptyState
+              icon={<Trophy size={16} />}
+              title="No bets found"
+              body={
+                searchTerm || filterStatus !== 'all'
+                  ? 'Try adjusting your search or filters.'
+                  : 'Start placing bets to see your history here.'
+              }
+            />
+          ) : (
+            filteredBets.map((bet, index) => {
+              const isParlay = bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay';
+              const parlayId = isParlay ? bet.id.replace(/^live_/, '') : null;
+              return (
+                <MyBetsBetRow
+                  key={`${bet.id}-${index}`}
+                  pick={formatBetTitle(bet)}
+                  odds={
+                    isParlay && bet.total_odds != null ? bet.total_odds : bet.odds
+                  }
+                  status={bet.status}
+                  matchup={
+                    bet.home_team && bet.away_team
+                      ? `${bet.away_team} @ ${bet.home_team}`
+                      : undefined
+                  }
+                  sport={formatSportLabel(bet.sport)}
+                  betType={formatBetTypeLabel(bet)}
+                  date={formatLocalDate(bet.placed_at)}
+                  stake={bet.amount}
+                  potentialWin={bet.potential_win}
+                  profit={betProfit(bet)}
+                  legCount={bet.leg_count || bet.legs?.length}
+                  onClick={
+                    isParlay && parlayId
+                      ? () => handleParlayClick(parlayId)
+                      : undefined
+                  }
+                  onShare={(e) => {
+                    e.stopPropagation();
+                    openShareModal(bet);
+                  }}
+                />
+              );
+            })
+          )}
+        </div>
+
+        {filteredBets.length >= 50 && (
+          <div style={{ marginTop: 16, textAlign: 'center' }}>
+            <button type="button" className="btn btn-primary" disabled>
+              Load more (coming soon)
+            </button>
+          </div>
+        )}
+
+        {selectedParlay && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="sticky top-0 bg-white border-b border-gray-200 p-6 flex items-center justify-between">
+                <h2 className="text-2xl font-bold text-gray-900">Parlay Details</h2>
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={() =>
+                      openShareModal({
+                        ...selectedParlay,
+                        bet_type: 'parlay',
+                        selection: `Parlay (${selectedParlay.leg_count} legs)`,
+                        odds: selectedParlay.total_odds,
+                        legs: selectedParlay.legs,
+                      } as Bet)
+                    }
+                    className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                    title="Share this parlay"
+                  >
+                    <Share2 className="w-5 h-5" />
+                  </button>
+                  <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
+                    <X className="w-6 h-6" />
+                  </button>
+                </div>
+              </div>
+
+              {parlayModalLoading ? (
+                <div className="p-8 text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto" />
+                  <p className="mt-2 text-gray-600">Loading parlay details...</p>
+                </div>
+              ) : (
+                <div className="p-6">
+                  <div className="grid grid-cols-2 gap-4 mb-6">
+                    <div>
+                      <p className="text-sm text-gray-500">Status</p>
+                      <p className="font-semibold capitalize">{selectedParlay.status}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Total Odds</p>
+                      <p className="font-semibold">{formatOdds(selectedParlay.total_odds)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Bet Amount</p>
+                      <p className="font-semibold">${selectedParlay.amount.toFixed(2)}</p>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">Potential Win</p>
+                      <p className="font-semibold">${selectedParlay.potential_win.toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <h3 className="font-semibold mb-3">Parlay Legs</h3>
+                  <div className="space-y-3">
+                    {selectedParlay.legs.map((leg, index) => (
+                      <div key={leg.id || index} className="border rounded-lg p-4">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-medium">
+                              {leg.home_team && leg.away_team
+                                ? `${leg.away_team} @ ${leg.home_team}`
+                                : `Leg ${index + 1}`}
+                            </p>
+                            <p className="text-sm text-gray-600 capitalize">
+                              {leg.bet_type} - {leg.selection}
+                            </p>
+                          </div>
+                          <div className="text-right">
+                            <p className="font-semibold">{formatOdds(leg.odds)}</p>
+                            <span
+                              className={`text-xs px-2 py-1 rounded-full ${getStatusColor(leg.status)}`}
+                            >
+                              {leg.status}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {selectedBetForShare && (
+          <BetShareModal bet={selectedBetForShare} isOpen={shareModalOpen} onClose={closeShareModal} />
+        )}
+      </>
+    );
+  }
+
   return (
-    <div className={embedded ? "" : "min-h-screen bg-gray-50 py-8"}>
-      <div className={embedded ? "" : "max-w-7xl mx-auto px-4 sm:px-6 lg:px-8"}>
-        {!embedded && (
+    <div className="min-h-screen bg-gray-50 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {false && (
           <div className="mb-8">
             <div className="flex items-center space-x-3">
               <h1 className="text-3xl font-bold text-gray-900">Bet History</h1>

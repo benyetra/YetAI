@@ -79,12 +79,14 @@ export function StatTile({
   delta,
   deltaKind = 'up',
   icon,
+  sub,
 }: {
   label: React.ReactNode;
   value: React.ReactNode;
   delta?: React.ReactNode;
   deltaKind?: 'up' | 'down' | 'neutral';
   icon?: React.ReactNode;
+  sub?: React.ReactNode;
 }) {
   const deltaClass =
     deltaKind === 'up' ? 'delta-up' : deltaKind === 'down' ? 'delta-down' : 'delta-neutral';
@@ -95,12 +97,17 @@ export function StatTile({
         {label}
       </div>
       <div className="stat-value mono">{value}</div>
-      {delta != null && (
-        <span className={`stat-delta ${deltaClass}`}>
-          {deltaKind === 'up' && <ArrowUp size={11} />}
-          {deltaKind === 'down' && <ArrowDown size={11} />}
-          {delta}
-        </span>
+      {(delta != null || sub != null) && (
+        <div className="stat-foot">
+          {delta != null && (
+            <span className={`stat-delta ${deltaClass}`}>
+              {deltaKind === 'up' && <ArrowUp size={11} />}
+              {deltaKind === 'down' && <ArrowDown size={11} />}
+              {delta}
+            </span>
+          )}
+          {sub != null ? <span>{sub}</span> : null}
+        </div>
       )}
     </div>
   );
