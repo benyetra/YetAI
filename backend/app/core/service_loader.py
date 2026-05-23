@@ -117,11 +117,6 @@ def initialize_services():
         "fantasy_pipeline", "app.services.fantasy_pipeline.fantasy_pipeline"
     )
 
-    service_loader.load_service(
-        "real_fantasy_pipeline",
-        "app.services.real_fantasy_pipeline.real_fantasy_pipeline",
-    )
-
     # Betting services
     service_loader.load_service(
         "bet_service", "app.services.bet_service_db.bet_service_db"
