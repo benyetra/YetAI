@@ -198,6 +198,44 @@ def test_serialize_schedule_demotes_high_frequency_crontab_to_continuous():
     assert entry["human"] == "Every 30 minutes"
 
 
+def test_serialize_schedule_flags_overridden_entries():
+    """When overrides arg is passed, entries whose task_name has a row get
+    is_overridden=True and is_enabled mirrors the row's enabled flag."""
+
+    class _Ovr:
+        def __init__(self, enabled):
+            self.enabled = enabled
+
+    beat = {
+        "nba-daily": {
+            "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
+            "schedule": crontab(hour=3, minute=30),
+        },
+    }
+    overrides = {"app.tasks.etl_pipeline.run_nba_update_pipeline": _Ovr(enabled=True)}
+    out = svc.serialize_schedule(
+        beat,
+        now_et=datetime(2026, 5, 23, 0, 0, tzinfo=ET),
+        overrides=overrides,
+    )
+    entry = out["scheduled"][0]
+    assert entry["is_overridden"] is True
+    assert entry["is_enabled"] is True
+
+
+def test_serialize_schedule_no_overrides_arg_marks_all_not_overridden():
+    """Backward compatible: omit overrides → is_overridden=False on all."""
+    beat = {
+        "nba-daily": {
+            "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
+            "schedule": crontab(hour=3, minute=30),
+        },
+    }
+    out = svc.serialize_schedule(beat, now_et=datetime(2026, 5, 23, 0, 0, tzinfo=ET))
+    assert out["scheduled"][0]["is_overridden"] is False
+    assert out["scheduled"][0]["is_enabled"] is True
+
+
 def test_serialize_schedule_sorts_scheduled_by_first_fire_time():
     """Scheduled entries are returned sorted by their first today-fire time."""
     beat = {

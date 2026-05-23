@@ -47,6 +47,10 @@ celery_app.conf.update(
     redis_socket_timeout=15,
 )
 
+# Use the custom DB-backed scheduler so admin edits to the 7 catalog
+# orchestrators' schedules take effect within ~30s without restarting beat.
+celery_app.conf.beat_scheduler = "app.core.db_scheduler.DatabaseScheduler"
+
 celery_app.conf.beat_schedule = {
     # === Live pollers (9gk) — fire frequently during games ===
     "mlb-live-poll-every-20s": {

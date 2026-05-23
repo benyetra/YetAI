@@ -152,6 +152,7 @@ def serialize_schedule(
     beat_schedule: dict[str, dict[str, Any]],
     *,
     now_et: Optional[datetime] = None,
+    overrides: Optional[dict[str, Any]] = None,
 ) -> dict[str, list[dict[str, Any]]]:
     """Split a `beat_schedule` dict into scheduled (crontab) and continuous (float).
 
@@ -171,6 +172,7 @@ def serialize_schedule(
     """
     scheduled: list[dict[str, Any]] = []
     continuous: list[dict[str, Any]] = []
+    overrides = overrides or {}
 
     for key, entry in beat_schedule.items():
         task_name = entry.get("task", "")
@@ -178,6 +180,9 @@ def serialize_schedule(
         label = _PIPELINE_LABELS.get(task_name) or _humanize_key(key)
         sport = _PIPELINE_SPORTS.get(task_name) or _sport_from_key(key)
         sched = entry.get("schedule")
+        override = overrides.get(task_name)
+        is_overridden = override is not None
+        is_enabled = bool(getattr(override, "enabled", True)) if is_overridden else True
 
         if isinstance(sched, _crontab_cls):
             fires = fire_times_today_et(sched, now_et=now_et)
@@ -196,6 +201,8 @@ def serialize_schedule(
                         "crontab": serialize_crontab(sched),
                         "interval_seconds": (86400.0 / len(fires) if fires else 0.0),
                         "human": human_readable(sched),
+                        "is_overridden": is_overridden,
+                        "is_enabled": is_enabled,
                     }
                 )
             else:
@@ -210,6 +217,8 @@ def serialize_schedule(
                         "crontab": serialize_crontab(sched),
                         "human": human_readable(sched),
                         "next_fires_today_et": [f.isoformat() for f in fires],
+                        "is_overridden": is_overridden,
+                        "is_enabled": is_enabled,
                     }
                 )
         elif isinstance(sched, (int, float)):
@@ -224,6 +233,8 @@ def serialize_schedule(
                     "schedule_type": "interval",
                     "interval_seconds": secs,
                     "human": _humanize_interval(secs),
+                    "is_overridden": is_overridden,
+                    "is_enabled": is_enabled,
                 }
             )
 
