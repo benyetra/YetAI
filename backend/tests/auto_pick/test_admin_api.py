@@ -266,9 +266,9 @@ async def test_approve_all_empty_returns_empty_list():
 
 @pytest.mark.asyncio
 async def test_require_admin_non_admin_raises_403():
-    from app.api.admin_yetai_picks import require_admin
+    from app.core.auth import require_admin
 
-    with patch("app.api.admin_yetai_picks.is_service_available", return_value=False):
+    with patch("app.core.service_loader.is_service_available", return_value=False):
         non_admin_user = {"id": 99, "user_id": 99}
         with pytest.raises(HTTPException) as exc_info:
             await require_admin(current_user=non_admin_user)
@@ -277,9 +277,9 @@ async def test_require_admin_non_admin_raises_403():
 
 @pytest.mark.asyncio
 async def test_require_admin_hardcoded_admin_passes():
-    from app.api.admin_yetai_picks import require_admin
+    from app.core.auth import require_admin
 
-    with patch("app.api.admin_yetai_picks.is_service_available", return_value=False):
+    with patch("app.core.service_loader.is_service_available", return_value=False):
         admin_user = {"id": 8, "user_id": 8}
         result = await require_admin(current_user=admin_user)
         assert result == admin_user
