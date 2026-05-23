@@ -20,8 +20,9 @@ export default function OwensBettingCornerPage() {
   return (
     <Layout requiresAuth fullWidth>
       <PageHeader
-        title="Owen's Betting Corner"
-        subtitle="Pending picks and historical results with success rate and units won."
+        eyebrow="Hand-picked picks"
+        title="Owen's Corner"
+        subtitle="Pending picks and historical results · success rate and units won"
       />
       <OwensBettingCornerView />
     </Layout>
