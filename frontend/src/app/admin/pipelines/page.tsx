@@ -4,13 +4,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import Layout from '@/components/Layout';
-import { Calendar, Clock, Lock, RefreshCw, Workflow } from 'lucide-react';
+import { Calendar, Clock, Pencil, RefreshCw, Workflow } from 'lucide-react';
 import {
   fetchPipelineSchedule,
   type ContinuousEntry,
   type ScheduleResponse,
   type ScheduledEntry,
 } from '@/lib/api/pipelines';
+import { PipelineScheduleEditModal } from '@/components/admin/PipelineScheduleEditModal';
 
 // Sport → accent color. Falls back to neutral when sport is unknown.
 const SPORT_COLOR: Record<string, string> = {
@@ -40,13 +41,29 @@ function hourFromIso(iso: string): number {
   return new Date(iso).getHours();
 }
 
-function TimelineRow({ entry }: { entry: ScheduledEntry }) {
+function TimelineRow({
+  entry,
+  onEdit,
+}: {
+  entry: ScheduledEntry;
+  onEdit: (e: ScheduledEntry) => void;
+}) {
   return (
     <div className="flex items-center gap-3 py-3 border-b border-zinc-800/50 last:border-0">
       <div className="w-44 shrink-0 flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full ${sportColor(entry.sport)}`} />
         <div className="min-w-0">
-          <div className="text-sm text-zinc-200 truncate">{entry.label}</div>
+          <div className="text-sm text-zinc-200 truncate flex items-center gap-1.5">
+            {entry.label}
+            {entry.is_overridden && (
+              <span
+                className="text-[9px] px-1 py-0.5 rounded bg-purple-900/50 text-purple-300 border border-purple-800/50"
+                title="Schedule overridden from default"
+              >
+                MOD
+              </span>
+            )}
+          </div>
           <div className="text-[11px] text-zinc-500 truncate">{entry.human}</div>
         </div>
       </div>
@@ -78,14 +95,23 @@ function TimelineRow({ entry }: { entry: ScheduledEntry }) {
           );
         })}
       </div>
-      <button
-        disabled
-        title="Editing requires a DB-backed scheduler (coming in the next PR)"
-        className="flex items-center gap-1 px-2.5 py-1 text-xs text-zinc-500 border border-zinc-800 rounded cursor-not-allowed"
-      >
-        <Lock className="w-3 h-3" />
-        Edit
-      </button>
+      {entry.is_orchestrator ? (
+        <button
+          onClick={() => onEdit(entry)}
+          className="flex items-center gap-1 px-2.5 py-1 text-xs text-zinc-300 hover:text-white border border-zinc-700 hover:border-zinc-500 rounded transition-colors"
+          title="Edit this pipeline's schedule"
+        >
+          <Pencil className="w-3 h-3" />
+          Edit
+        </button>
+      ) : (
+        <div
+          className="w-[60px] text-[10px] text-zinc-600 text-center"
+          title="Only orchestrator pipelines are editable"
+        >
+          —
+        </div>
+      )}
     </div>
   );
 }
@@ -132,6 +158,7 @@ export default function PipelinesSchedulePage() {
   const [data, setData] = useState<ScheduleResponse | null>(null);
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<ScheduledEntry | null>(null);
 
   const isAdmin = !!user?.is_admin;
 
@@ -181,8 +208,9 @@ export default function PipelinesSchedulePage() {
             <h1 className="text-3xl font-semibold tracking-tight">Pipeline Schedule</h1>
             <p className="text-sm text-zinc-400 mt-1">
               Daily timeline of every Celery beat-scheduled task. Times are
-              shown in America/New_York. Editing the schedule from the UI
-              requires the DB-backed scheduler in the follow-up PR.
+              shown in America/New_York. Click <span className="text-zinc-300">Edit</span>{' '}
+              on an orchestrator row to change its schedule; changes apply
+              within ~30 seconds.
             </p>
           </div>
           <button
@@ -230,7 +258,9 @@ export default function PipelinesSchedulePage() {
                       Nothing scheduled today.
                     </div>
                   ) : (
-                    data.scheduled.map((s) => <TimelineRow key={s.key} entry={s} />)
+                    data.scheduled.map((s) => (
+                      <TimelineRow key={s.key} entry={s} onEdit={setEditing} />
+                    ))
                   )}
                 </div>
               </div>
@@ -251,6 +281,17 @@ export default function PipelinesSchedulePage() {
 
         {!data && fetching && (
           <div className="text-sm text-zinc-500">Loading schedule…</div>
+        )}
+
+        {editing && (
+          <PipelineScheduleEditModal
+            entry={editing}
+            onClose={() => setEditing(null)}
+            onSaved={() => {
+              setEditing(null);
+              reload();
+            }}
+          />
         )}
       </div>
     </Layout>

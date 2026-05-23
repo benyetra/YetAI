@@ -16,6 +16,8 @@ export interface ScheduledEntry {
   };
   human: string;
   next_fires_today_et: string[];
+  is_overridden?: boolean;
+  is_enabled?: boolean;
 }
 
 export interface ContinuousEntry {
@@ -27,6 +29,8 @@ export interface ContinuousEntry {
   schedule_type: 'interval' | 'crontab_frequent';
   interval_seconds: number;
   human: string;
+  is_overridden?: boolean;
+  is_enabled?: boolean;
 }
 
 export interface ScheduleResponse {
@@ -39,6 +43,50 @@ export async function fetchPipelineSchedule(): Promise<ScheduleResponse> {
   if (!res.ok) {
     const msg = await res.text().catch(() => '');
     throw new Error(`Failed to load pipeline schedule (${res.status}): ${msg}`);
+  }
+  return res.json();
+}
+
+export interface UpdateScheduleRequest {
+  hour: number;
+  minute: number;
+  enabled: boolean;
+}
+
+export interface UpdateScheduleResponse {
+  task_name: string;
+  hour: number;
+  minute: number;
+  enabled: boolean;
+}
+
+export async function updatePipelineSchedule(
+  taskName: string,
+  body: UpdateScheduleRequest,
+): Promise<UpdateScheduleResponse> {
+  const res = await apiRequest(
+    `/api/admin/pipelines/${encodeURIComponent(taskName)}/schedule`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+  );
+  if (!res.ok) {
+    throw new Error(`Update failed (${res.status}): ${await res.text().catch(() => '')}`);
+  }
+  return res.json();
+}
+
+export async function resetPipelineSchedule(
+  taskName: string,
+): Promise<{ reset: boolean }> {
+  const res = await apiRequest(
+    `/api/admin/pipelines/${encodeURIComponent(taskName)}/schedule/reset`,
+    { method: 'POST' },
+  );
+  if (!res.ok) {
+    throw new Error(`Reset failed (${res.status}): ${await res.text().catch(() => '')}`);
   }
   return res.json();
 }

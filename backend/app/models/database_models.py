@@ -552,3 +552,26 @@ class AdminNotificationRead(Base):
     read_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
     notification = relationship("AdminNotification", back_populates="reads")
+
+
+class PipelineSchedule(Base):
+    """Admin-editable override of a Celery beat schedule entry.
+
+    Keyed by Celery task_name (must be in PIPELINE_ENQUEUE_CATALOG). When a
+    row exists, the custom DatabaseScheduler uses these values instead of
+    the hardcoded beat_schedule entry. Deleting the row reverts to default.
+    """
+
+    __tablename__ = "pipeline_schedules"
+
+    task_name = Column(String(255), primary_key=True)
+    minute = Column(Integer, nullable=False)
+    hour = Column(Integer, nullable=False)
+    enabled = Column(Boolean, nullable=False, default=True)
+    updated_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+    )
+    updated_by_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
