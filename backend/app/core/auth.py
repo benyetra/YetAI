@@ -77,17 +77,13 @@ async def require_admin(current_user: Dict = Depends(get_current_user)) -> Dict:
                 current_user.get("id") or current_user.get("user_id")
             )
             if not user_data or not user_data.get("is_admin", False):
-                raise HTTPException(
-                    status_code=403, detail="Admin privileges required"
-                )
+                raise HTTPException(status_code=403, detail="Admin privileges required")
             return user_data
         except HTTPException:
             raise
         except Exception as e:
             logger.error(f"Error checking admin privileges: {e}")
-            raise HTTPException(
-                status_code=403, detail="Admin privileges required"
-            )
+            raise HTTPException(status_code=403, detail="Admin privileges required")
 
     if (current_user.get("id") or current_user.get("user_id")) == 8:
         return current_user
