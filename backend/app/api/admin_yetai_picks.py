@@ -8,8 +8,7 @@ from sqlalchemy.orm import Session
 from typing import Optional
 
 from app.core.database import get_db
-from app.core.auth import get_current_user
-from app.core.service_loader import get_service, is_service_available
+from app.core.auth import require_admin
 from app.models.database_models import YetAIBet, SubscriptionTier
 
 router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
@@ -17,26 +16,6 @@ router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
 PENDING_STATUS = "pending_approval"
 ACTIVE_STATUS = "active"
 REJECTED_STATUS = "rejected"
-
-
-# ---------------------------------------------------------------------------
-# Admin auth (mirrors admin_celery_ops.require_admin)
-# ---------------------------------------------------------------------------
-
-
-async def require_admin(current_user: dict = Depends(get_current_user)):
-    """Require admin privileges."""
-    if is_service_available("auth_service"):
-        auth_service = get_service("auth_service")
-        user_data = await auth_service.get_user_by_id(
-            current_user.get("id") or current_user.get("user_id")
-        )
-        if not user_data or not user_data.get("is_admin", False):
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-        return user_data
-    if (current_user.get("id") or current_user.get("user_id")) == 8:
-        return current_user
-    raise HTTPException(status_code=403, detail="Admin privileges required")
 
 
 # ---------------------------------------------------------------------------

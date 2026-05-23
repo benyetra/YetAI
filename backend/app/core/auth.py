@@ -58,3 +58,37 @@ async def get_current_user(
     except Exception as e:
         logger.error(f"Error validating token: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
+
+
+async def require_admin(current_user: Dict = Depends(get_current_user)) -> Dict:
+    """Require admin privileges.
+
+    Returns the resolved user record on success, raises 403 otherwise.
+
+    When the auth service is unavailable (local dev / startup races), user_id
+    8 is treated as admin so the dev seed admin remains usable.
+    """
+    from app.core.service_loader import get_service, is_service_available
+
+    if is_service_available("auth_service"):
+        auth_service = get_service("auth_service")
+        try:
+            user_data = await auth_service.get_user_by_id(
+                current_user.get("id") or current_user.get("user_id")
+            )
+            if not user_data or not user_data.get("is_admin", False):
+                raise HTTPException(
+                    status_code=403, detail="Admin privileges required"
+                )
+            return user_data
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error checking admin privileges: {e}")
+            raise HTTPException(
+                status_code=403, detail="Admin privileges required"
+            )
+
+    if (current_user.get("id") or current_user.get("user_id")) == 8:
+        return current_user
+    raise HTTPException(status_code=403, detail="Admin privileges required")
