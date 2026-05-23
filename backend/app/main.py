@@ -376,6 +376,7 @@ from app.api.v1.tools import router as tools_router
 from app.api.v1.tools import admin_router as tools_admin_router
 from app.api.admin_celery_ops import router as admin_celery_ops_router
 from app.api.admin_notifications import router as admin_notifications_router
+from app.api.admin_pipelines import router as admin_pipelines_router
 from app.api.admin_yetai_picks import router as admin_yetai_picks_router
 
 app.include_router(predictions_router)
@@ -383,6 +384,7 @@ app.include_router(tools_router)
 app.include_router(tools_admin_router)
 app.include_router(admin_celery_ops_router)
 app.include_router(admin_notifications_router)
+app.include_router(admin_pipelines_router)
 app.include_router(admin_yetai_picks_router)
 
 

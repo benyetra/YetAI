@@ -803,7 +803,7 @@ export default function AdminPage() {
 
       <div className="space-y-6">
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <button
             onClick={() => router.push('/admin/users')}
             className="card hover:border-blue-500 transition-colors group"
@@ -820,7 +820,7 @@ export default function AdminPage() {
               </div>
             </div>
           </button>
-          
+
           <button
             onClick={() => setShowVerificationPanel(true)}
             className="card hover:border-green-500 transition-colors group"
@@ -833,6 +833,23 @@ export default function AdminPage() {
                 </h3>
                 <p className="text-sm muted">
                   Monitor and control automatic bet verification
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push('/admin/pipelines')}
+            className="card hover:border-purple-500 transition-colors group"
+          >
+            <div className="flex items-center">
+              <Calendar className="w-8 h-8 text-purple-600 mr-4" />
+              <div className="text-left">
+                <h3 className="text-lg font-semibold group-hover:text-purple-600">
+                  Pipeline Schedule
+                </h3>
+                <p className="text-sm muted">
+                  Daily timeline of every Celery beat task
                 </p>
               </div>
             </div>
