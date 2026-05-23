@@ -131,6 +131,27 @@ export function SummaryRow({
   );
 }
 
+export function EmptyState({
+  icon,
+  title,
+  body,
+  action,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="empty">
+      {icon ? <div className="empty-glyph">{icon}</div> : null}
+      <div className="empty-title">{title}</div>
+      {body ? <div className="empty-body">{body}</div> : null}
+      {action ? <div style={{ marginTop: 14 }}>{action}</div> : null}
+    </div>
+  );
+}
+
 export function Sparkline({
   data,
   width = 80,
