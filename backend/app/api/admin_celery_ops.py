@@ -7,29 +7,13 @@ import asyncio
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from app.core.auth import get_current_user
-from app.core.service_loader import get_service, is_service_available
+from app.core.auth import require_admin
 from app.data.celery_tasks import (
     ADMIN_ENQUEUE_TASKS,
     ADMIN_FIREABLE_TASKS,
     FIREABLE_CATALOG,
     PIPELINE_ENQUEUE_CATALOG,
 )
-
-
-async def require_admin(current_user: dict = Depends(get_current_user)):
-    """Require admin privileges (same rules as main.require_admin)."""
-    if is_service_available("auth_service"):
-        auth_service = get_service("auth_service")
-        user_data = await auth_service.get_user_by_id(
-            current_user.get("id") or current_user.get("user_id")
-        )
-        if not user_data or not user_data.get("is_admin", False):
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-        return user_data
-    if (current_user.get("id") or current_user.get("user_id")) == 8:
-        return current_user
-    raise HTTPException(status_code=403, detail="Admin privileges required")
 
 
 router = APIRouter(prefix="/api/admin/celery", tags=["admin-celery"])

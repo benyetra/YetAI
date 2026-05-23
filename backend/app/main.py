@@ -174,29 +174,7 @@ class ShareBetRequest(BaseModel):
 # Canonical get_current_user lives in app/core/auth.py — it validates JWTs against
 # the real auth_service. The previous main.py copy was a dev-only mock that returned
 # subscription_tier='pro' for any decodable token; consolidated in Development-22l.
-from app.core.auth import get_current_user  # noqa: F401
-
-
-async def require_admin(current_user: dict = Depends(get_current_user)):
-    """Require admin privileges"""
-    # Check if user has admin privileges from the database
-    if is_service_available("auth_service"):
-        auth_service = get_service("auth_service")
-        try:
-            user_data = await auth_service.get_user_by_id(
-                current_user.get("id") or current_user.get("user_id")
-            )
-            if not user_data or not user_data.get("is_admin", False):
-                raise HTTPException(status_code=403, detail="Admin privileges required")
-            return user_data
-        except Exception as e:
-            logger.error(f"Error checking admin privileges: {e}")
-            raise HTTPException(status_code=403, detail="Admin privileges required")
-    else:
-        # Fallback: assume user 8 is admin for development
-        if (current_user.get("id") or current_user.get("user_id")) == 8:
-            return current_user
-        raise HTTPException(status_code=403, detail="Admin privileges required")
+from app.core.auth import get_current_user, require_admin  # noqa: F401
 
 
 def calculate_realistic_trade_value(player: Dict[str, Any]) -> float:
