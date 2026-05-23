@@ -102,17 +102,9 @@ def upgrade() -> None:
 def downgrade() -> None:
     """Downgrade schema."""
     op.drop_table("admin_notification_reads")
-    op.drop_index(
-        "ix_admin_notifications_created_at", table_name="admin_notifications"
-    )
-    op.drop_index(
-        "ix_admin_notifications_task_id", table_name="admin_notifications"
-    )
-    op.drop_index(
-        "ix_admin_notifications_task_name", table_name="admin_notifications"
-    )
-    op.drop_index(
-        "ix_admin_notifications_event_type", table_name="admin_notifications"
-    )
+    op.drop_index("ix_admin_notifications_created_at", table_name="admin_notifications")
+    op.drop_index("ix_admin_notifications_task_id", table_name="admin_notifications")
+    op.drop_index("ix_admin_notifications_task_name", table_name="admin_notifications")
+    op.drop_index("ix_admin_notifications_event_type", table_name="admin_notifications")
     op.drop_table("admin_notifications")
     sa.Enum(name="adminnotificationevent").drop(op.get_bind(), checkfirst=True)

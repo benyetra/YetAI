@@ -121,9 +121,10 @@ def test_prerun_handler_skips_non_pipeline_tasks():
 def test_prerun_handler_persists_for_orchestrators():
     """task_prerun for a known orchestrator must invoke record_started."""
     task = _FakeTask("app.tasks.etl_pipeline.run_nba_update_pipeline")
-    with patch.object(ans, "record_started", return_value=None) as rs, patch.object(
-        celery_signals, "_publish"
-    ) as pub:
+    with (
+        patch.object(ans, "record_started", return_value=None) as rs,
+        patch.object(celery_signals, "_publish") as pub,
+    ):
         celery_signals._on_pipeline_prerun(sender=task, task_id="abc", task=task)
     rs.assert_called_once_with(
         task_name="app.tasks.etl_pipeline.run_nba_update_pipeline", task_id="abc"
