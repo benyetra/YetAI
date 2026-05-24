@@ -558,6 +558,8 @@ def fetch_pitcher_data():
                             "fanduel_point": threshold,
                             "fanduel_price": price_to_show,
                             "fanduel_flag": flag,
+                            "prob_over": round(prob_over, 4),
+                            "pick_edge_pct": round(edge * 100, 1),
                             "edge": round(edge * 100, 1),
                             "k_bias": round(meta["k_bias"], 2),
                             "ip_bias": round(meta["ip_bias"], 2),
@@ -674,6 +676,8 @@ def fetch_and_update_app_data():
                 projected_innings=float(pitcher_stats_data["projected_innings"]),
                 projected_at_bats=float(pitcher_stats_data["projected_at_bats"]),
                 game_id=pitcher_stats_data["game_id"],
+                prob_over=float(pitcher_stats_data.get("prob_over", 0) or 0),
+                pick_edge_pct=float(pitcher_stats_data.get("pick_edge_pct", 0) or 0),
             )
 
             db_session.add(pitcher)

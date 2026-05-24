@@ -7,9 +7,9 @@ Each test:
   3. Returns [] when DB query raises.
 """
 
-import pytest
+import asyncio
 from datetime import date, datetime, timedelta
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 from app.services.auto_pick.candidate import DateRange
 from app.services.auto_pick.sources.mlb_strikeout_source import MLBStrikeoutSource
@@ -46,13 +46,12 @@ def _fake_row(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_mlb_strikeout_source_returns_candidates():
+def test_mlb_strikeout_source_returns_candidates():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [_fake_row()]
 
     source = MLBStrikeoutSource(db)
-    results = await source.get_todays_projections(_date_range())
+    results = asyncio.run(source.get_todays_projections(_date_range()))
 
     assert len(results) == 1
     r = results[0]
@@ -67,29 +66,72 @@ async def test_mlb_strikeout_source_returns_candidates():
     assert "strikeouts" in r["event_id"]
 
 
-@pytest.mark.asyncio
-async def test_mlb_strikeout_source_under_side():
+def test_mlb_strikeout_source_under_side():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [
         _fake_row(fanduel_over_under="UNDER")
     ]
 
     source = MLBStrikeoutSource(db)
-    results = await source.get_todays_projections(_date_range())
+    results = asyncio.run(source.get_todays_projections(_date_range()))
 
     assert results[0]["side"] == "under"
 
 
-@pytest.mark.asyncio
-async def test_mlb_strikeout_source_skips_no_line():
-    """Rows without fanduel_line are omitted."""
+def test_mlb_strikeout_source_skips_low_edge():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [
-        _fake_row(fanduel_line=None)
+        _fake_row(projected_strikeouts=5.6, fanduel_line=5.5, fanduel_over_under="over")
     ]
+    db.query.return_value.all.return_value = []
 
     source = MLBStrikeoutSource(db)
-    results = await source.get_todays_projections(_date_range())
+    results = asyncio.run(source.get_todays_projections(_date_range()))
+
+    assert results == []
+
+
+def test_mlb_strikeout_source_uses_projection_pick_when_ou_missing():
+    db = MagicMock()
+    strikeout_q = MagicMock()
+    strikeout_q.filter.return_value.all.return_value = [
+        _fake_row(projected_strikeouts=8.2, fanduel_line=5.5, fanduel_over_under=None)
+    ]
+    pitcher_q = MagicMock()
+    pitcher_q.all.return_value = []
+
+    def _query(model):
+        if getattr(model, "__name__", "") == "StrikeoutProjections":
+            return strikeout_q
+        return pitcher_q
+
+    db.query.side_effect = _query
+
+    source = MLBStrikeoutSource(db)
+    results = asyncio.run(source.get_todays_projections(_date_range()))
+
+    assert len(results) == 1
+    assert results[0]["side"] == "over"
+    assert results[0]["model_confidence"] is not None
+
+
+def test_mlb_strikeout_source_skips_no_line():
+    """Rows without fanduel_line are omitted."""
+    db = MagicMock()
+    strikeout_q = MagicMock()
+    strikeout_q.filter.return_value.all.return_value = [_fake_row(fanduel_line=None)]
+    pitcher_q = MagicMock()
+    pitcher_q.all.return_value = []
+
+    def _query(model):
+        if getattr(model, "__name__", "") == "StrikeoutProjections":
+            return strikeout_q
+        return pitcher_q
+
+    db.query.side_effect = _query
+
+    source = MLBStrikeoutSource(db)
+    results = asyncio.run(source.get_todays_projections(_date_range()))
 
     assert results == []
 
@@ -99,13 +141,12 @@ async def test_mlb_strikeout_source_skips_no_line():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_mlb_strikeout_source_empty_when_no_rows():
+def test_mlb_strikeout_source_empty_when_no_rows():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = []
 
     source = MLBStrikeoutSource(db)
-    results = await source.get_todays_projections(_date_range())
+    results = asyncio.run(source.get_todays_projections(_date_range()))
 
     assert results == []
 
@@ -115,12 +156,11 @@ async def test_mlb_strikeout_source_empty_when_no_rows():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_mlb_strikeout_source_returns_empty_on_db_error():
+def test_mlb_strikeout_source_returns_empty_on_db_error():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.side_effect = RuntimeError("db down")
 
     source = MLBStrikeoutSource(db)
-    results = await source.get_todays_projections(_date_range())
+    results = asyncio.run(source.get_todays_projections(_date_range()))
 
     assert results == []

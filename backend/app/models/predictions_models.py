@@ -67,6 +67,8 @@ class Pitcher(Base):
     projected_innings = Column(Float, nullable=False)
     projected_at_bats = Column(Float, nullable=False)
     game_id = Column(Integer, nullable=False)
+    prob_over = Column(Float, nullable=True)
+    pick_edge_pct = Column(Float, nullable=True)
 
 
 class Homer(Base):
@@ -369,6 +371,9 @@ class StrikeoutProjections(Base):
     projected_at_bats = Column(Float, nullable=False)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    ev_over_under = Column(String(7), nullable=True)
+    k_edge = Column(Float, nullable=True)
+    pick_confidence = Column(Float, nullable=True)
     park_id = Column(String, nullable=True)
 
 

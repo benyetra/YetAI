@@ -31,6 +31,7 @@ from app.models.predictions_models import (
     NHLGoaliePredictions,
     NHLPlayerShotsPredictions,
     NHLTeamTotalsPredictions,
+    Pitcher,
     PointsProjections,
     PRAProjections,
     ProjectedHits,
@@ -47,6 +48,7 @@ from app.models.predictions_models import (
     WNBASpreadProjections,
     WNBATotalsProjections,
 )
+from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
 
 router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
@@ -143,6 +145,9 @@ def mlb_predictions(
     # Drop rows with blank pitcher_name (incomplete ETL writes) and dedupe by
     # pitcher_id so the same pitcher doesn't appear twice in the table.
     seen_pitchers: set[str] = set()
+    pitcher_meta: dict[str, Pitcher] = {
+        p.pitcher_id: p for p in db.query(Pitcher).all()
+    }
     cleaned_strikeouts = []
     for row in strikeouts:
         name = (row.get("pitcher_name") or "").strip()
@@ -152,7 +157,14 @@ def mlb_predictions(
         if pid in seen_pitchers:
             continue
         seen_pitchers.add(pid)
-        cleaned_strikeouts.append(row)
+        meta = pitcher_meta.get(str(pid)) if pid is not None else None
+        enriched = enrich_strikeout_projection_row(
+            row,
+            fanduel_flag=getattr(meta, "fanduel_flag", None) if meta else None,
+            prob_over=getattr(meta, "prob_over", None) if meta else None,
+            pick_edge_pct=getattr(meta, "pick_edge_pct", None) if meta else None,
+        )
+        cleaned_strikeouts.append(enriched)
 
     # Merge actuals for the selected date. When target_date is None (today),
     # actuals likely don't exist yet — the lookup returns an empty dict and

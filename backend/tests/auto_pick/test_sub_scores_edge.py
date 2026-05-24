@@ -3,7 +3,10 @@ from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.sub_scores import edge_sub_score
 
 
-def _cand(market_type, line, projection, odds=-110):
+def _cand(market_type, line, projection, odds=-110, side=None):
+    meta = {}
+    if side:
+        meta["side"] = side
     return BetCandidate(
         market_type=market_type,
         league="MLB",
@@ -12,7 +15,7 @@ def _cand(market_type, line, projection, odds=-110):
         market_line=line,
         market_odds=odds,
         our_projection=projection,
-        projection_metadata={},
+        projection_metadata=meta,
     )
 
 
@@ -22,13 +25,20 @@ def test_edge_zero_when_projection_equals_line():
 
 
 def test_edge_negative_when_projection_worse_than_line():
-    s = edge_sub_score(_cand(MarketType.PLAYER_PROP, 5.5, 4.0))
+    s = edge_sub_score(_cand(MarketType.PLAYER_PROP, 5.5, 4.0, side="over"))
     assert s < 0
+
+
+def test_edge_under_side_positive_when_projection_below_line():
+    c = _cand(MarketType.PLAYER_PROP, 5.5, 4.0)
+    c.projection_metadata["side"] = "under"
+    s = edge_sub_score(c)
+    assert s > 0
 
 
 def test_edge_strider_example_high():
     # 9.0 K projection vs 5.5 line -> strong over
-    s = edge_sub_score(_cand(MarketType.PLAYER_PROP, 5.5, 9.0))
+    s = edge_sub_score(_cand(MarketType.PLAYER_PROP, 5.5, 9.0, side="over"))
     assert 70 <= s <= 100
 
 
