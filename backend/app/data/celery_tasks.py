@@ -65,6 +65,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.wnba.today_active_players": 120.0,
     "app.tasks.etl_pipeline.wnba.totals_projector": 300.0,
     "app.tasks.etl_pipeline.wnba.spread_projector": 300.0,
+    "auto_pick.yetai_bets": 600.0,
 }
 
 PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
@@ -120,6 +121,16 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
 
 # Subset exposed in admin UI for one-off debug runs (sync, blocks until timeout).
 FIREABLE_CATALOG: list[dict[str, str | float]] = [
+    {
+        "task_name": "auto_pick.yetai_bets",
+        "label": "YetAI auto-pick now",
+        "sport": "yetai",
+        "timeout_s": ADMIN_FIREABLE_TASKS["auto_pick.yetai_bets"],
+        "description": (
+            "Score today's candidates and write up to 4 picks as pending_approval. "
+            "Requires AUTO_YETAI_PICKS_ENABLED on worker; approve at /admin/yetai-picks."
+        ),
+    },
     {
         "task_name": "app.tasks.etl_pipeline.mlb.ev",
         "label": "MLB value bets (EV)",

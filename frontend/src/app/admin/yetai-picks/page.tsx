@@ -47,18 +47,14 @@ export default function PendingPicksPage() {
   const [fetching, setFetching] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const featureEnabled =
+  const subscriberUiEnabled =
     process.env.NEXT_PUBLIC_AUTO_YETAI_PICKS_ENABLED === 'true';
 
   useEffect(() => {
-    if (!featureEnabled) {
-      router.push('/dashboard');
-      return;
-    }
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
       router.push('/dashboard');
     }
-  }, [isAuthenticated, loading, user, router, featureEnabled]);
+  }, [isAuthenticated, loading, user, router]);
 
   const refresh = async () => {
     setFetching(true);
@@ -108,6 +104,14 @@ export default function PendingPicksPage() {
       />
 
       <div className="space-y-4">
+        {!subscriberUiEnabled && (
+          <div className="alert alert-warning text-sm">
+            Subscriber-facing rollout flag{' '}
+            <code>NEXT_PUBLIC_AUTO_YETAI_PICKS_ENABLED</code> is off. You can still approve
+            picks here; they appear on Predictions once status is active.
+          </div>
+        )}
+
         {/* Toolbar */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
