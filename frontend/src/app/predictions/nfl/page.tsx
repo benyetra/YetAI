@@ -1,5 +1,6 @@
 'use client';
 
+import AccuracySummary from '@/components/yetai/AccuracySummary';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -31,6 +32,7 @@ export default function NFLPredictionsPage() {
       leagueLabel="NFL"
       emoji="🏈"
       subtitle="Quarterback passing projections and kicker field goal predictions."
+      accuracySummary={({ date }) => <AccuracySummary sport="nfl" date={date} />}
       groups={[
         { title: 'Quarterback Predictions', responseKey: 'qb_predictions', columns: QB_COLUMNS },
         { title: 'Kicker Predictions', responseKey: 'kicker_predictions', columns: KICKER_COLUMNS },

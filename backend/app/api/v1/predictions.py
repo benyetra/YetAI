@@ -272,6 +272,30 @@ def nfl_predictions(
     }
 
 
+@router.get("/nba/accuracy")
+def nba_accuracy(
+    target_date: date_type = Query(..., alias="date"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-day NBA projection accuracy → unified bucket shape."""
+    from app.services.nba_accuracy_service import daily_accuracy
+
+    return daily_accuracy(db, target_date=target_date)
+
+
+@router.get("/nfl/accuracy")
+def nfl_accuracy(
+    target_date: date_type = Query(..., alias="date"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-day NFL projection accuracy → unified bucket shape."""
+    from app.services.nfl_accuracy_service import daily_accuracy
+
+    return daily_accuracy(db, target_date=target_date)
+
+
 @router.get("/nhl")
 def nhl_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
@@ -313,6 +337,18 @@ def nhl_predictions(
     }
 
 
+@router.get("/nhl/accuracy")
+def nhl_accuracy(
+    target_date: date_type = Query(..., alias="date"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-day NHL projection accuracy → unified bucket shape."""
+    from app.services.nhl_accuracy_service import daily_accuracy
+
+    return daily_accuracy(db, target_date=target_date)
+
+
 @router.get("/wnba")
 def wnba_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
@@ -340,3 +376,15 @@ def wnba_predictions(
             db, WNBAReboundsProjections, "date", target_date, limit, tz=tz
         ),
     }
+
+
+@router.get("/wnba/accuracy")
+def wnba_accuracy(
+    target_date: date_type = Query(..., alias="date"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-day WNBA projection accuracy → unified bucket shape."""
+    from app.services.wnba_accuracy_service import daily_accuracy
+
+    return daily_accuracy(db, target_date=target_date)
