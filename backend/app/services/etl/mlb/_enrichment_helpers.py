@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+import unicodedata
 from zoneinfo import ZoneInfo
 
 ET = ZoneInfo("America/New_York")
@@ -34,6 +35,26 @@ def commence_date_et(commence_time: str) -> date | None:
         return dt.astimezone(ET).date()
     except ValueError:
         return None
+
+
+def normalize_player_name(name: str) -> str:
+    """ASCII-fold for Odds API vs StatsAPI name matching."""
+    folded = unicodedata.normalize("NFKD", name or "")
+    return "".join(c for c in folded if not unicodedata.combining(c)).lower().strip()
+
+
+def pitcher_names_match(api_name: str, target: str) -> bool:
+    if not api_name or not target:
+        return False
+    a = normalize_player_name(api_name)
+    b = normalize_player_name(target)
+    if a == b:
+        return True
+    a_parts = a.split()
+    b_parts = b.split()
+    if a_parts and b_parts and a_parts[-1] == b_parts[-1]:
+        return True
+    return a in b or b in a
 
 
 def teams_match(statsapi_name: str, odds_api_name: str) -> bool:

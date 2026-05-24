@@ -158,6 +158,11 @@ def mlb_predictions(
             continue
         seen_pitchers.add(pid)
         meta = pitcher_meta.get(str(pid)) if pid is not None else None
+        if meta:
+            line = row.get("fanduel_line")
+            fd_point = getattr(meta, "fanduel_point", None)
+            if (line is None or line <= 0) and fd_point and fd_point > 0:
+                row = {**row, "fanduel_line": fd_point}
         enriched = enrich_strikeout_projection_row(
             row,
             fanduel_flag=getattr(meta, "fanduel_flag", None) if meta else None,

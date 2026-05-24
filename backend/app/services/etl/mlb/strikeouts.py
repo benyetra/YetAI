@@ -49,6 +49,12 @@ from app.services.etl.mlb.mlb_matchup_analysis import (
     matchup_adjusted_strikeouts,
     fetch_last_start_date,
 )
+from app.services.etl.mlb._enrichment_helpers import (
+    commence_date_et,
+    find_event_for_game,
+    pitcher_names_match,
+)
+from app.services.etl.nba._espn import now_eastern
 
 logger = logging.getLogger(__name__)
 
@@ -160,23 +166,44 @@ def strikeout_schedule_diagnostics() -> dict:
     }
 
 
-def get_event_id_for_game(team1, team2):
-    events_url = f"{BASE_URL}/events"
-    params = {"apiKey": ODDS_API_KEY}
-    response = requests.get(events_url, headers=HEADERS, params=params)
-    if response.status_code == 200:
-        events = response.json()
-        for event in events:
-            if (event["home_team"] == team1 and event["away_team"] == team2) or (
-                event["home_team"] == team2 and event["away_team"] == team1
-            ):
-                return event["id"]
-    else:
-        print(
-            f"Failed to fetch events: {response.status_code}, response body: {response.text}"
+def fetch_odds_events_today_et() -> list[dict]:
+    """Today's MLB events from the Odds API (same source as game projections)."""
+    if not ODDS_API_KEY:
+        logger.warning("ODDS_API_KEY not set; strikeout lines will be missing")
+        return []
+    today_et = now_eastern().date()
+    try:
+        resp = requests.get(
+            f"{BASE_URL}/odds/",
+            params={
+                "apiKey": ODDS_API_KEY,
+                "regions": "us",
+                "markets": "h2h",
+                "oddsFormat": "american",
+            },
+            headers=HEADERS,
+            timeout=30,
         )
+        resp.raise_for_status()
+        events = resp.json()
+    except Exception as exc:
+        logger.warning("Failed to fetch MLB odds events: %s", exc)
+        return []
+    return [
+        e for e in events if commence_date_et(e.get("commence_time", "")) == today_et
+    ]
 
-    return None
+
+def get_event_id_for_game(team1, team2):
+    """Resolve Odds API event id for a StatsAPI home/away pair (legacy helper)."""
+    events = fetch_odds_events_today_et()
+    game = {"home_name": team1, "away_name": team2}
+    event = find_event_for_game(game, events)
+    if event:
+        return event.get("id")
+    game = {"home_name": team2, "away_name": team1}
+    event = find_event_for_game(game, events)
+    return event.get("id") if event else None
 
 
 def _resolve_at_bats(projected, pitcher_id, innings, mae, build_stats):
@@ -194,12 +221,16 @@ def _resolve_at_bats(projected, pitcher_id, innings, mae, build_stats):
 def fetch_pitcher_data():
     EDGE_GATE = 0.02  # require ≥2% EV to call a side; otherwise neutral 'n'
     schedule = get_todays_games()
+    events_today = fetch_odds_events_today_et()
     pitchers = []
     build_stats = {
         "probables_seen": 0,
         "skipped_ab_projection": 0,
         "ab_fallback_used": 0,
         "build_errors": 0,
+        "odds_events_today": len(events_today),
+        "odds_events_matched": 0,
+        "odds_lines_found": 0,
     }
 
     for game in schedule:
@@ -442,14 +473,16 @@ def fetch_pitcher_data():
                     )
                     proj_k_final = 0.5 * adj_k + 0.5 * proj_k_reg
 
-                    # 7) Odds (event_id)
-                    event_id = get_event_id_for_game(
-                        game[f"{team}_name"],
-                        game["away_name"] if team == "home" else game["home_name"],
-                    )
+                    # 7) FanDuel K line (match full game row to Odds API event)
+                    event = find_event_for_game(game, events_today)
+                    event_id = event.get("id") if event else None
+                    if event_id:
+                        build_stats["odds_events_matched"] += 1
                     threshold, over_price, under_price = get_book_line(
                         event_id, pitcher_name
                     )
+                    if threshold and threshold > 0:
+                        build_stats["odds_lines_found"] += 1
 
                     # 8) Build features (incl. matchup factor & days rest & distance-to-line)
                     last_start = fetch_last_start_date(pitcher_id)
@@ -585,6 +618,8 @@ def get_book_line(event_id, pitcher_name):
     """
     Return (threshold, over_price, under_price).
     """
+    if not event_id or not ODDS_API_KEY:
+        return 0.0, None, None
     try:
         odds_url = f"{BASE_URL}/events/{event_id}/odds"
         params = {
@@ -607,7 +642,8 @@ def get_book_line(event_id, pitcher_name):
                 over_price = under_price = None
                 threshold = None
                 for outcome in market.get("outcomes", []):
-                    if outcome.get("description") != pitcher_name:
+                    desc = outcome.get("description") or outcome.get("name") or ""
+                    if not pitcher_names_match(desc, pitcher_name):
                         continue
                     if threshold is None and "point" in outcome:
                         threshold = float(outcome["point"])
