@@ -14,6 +14,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -23,8 +24,14 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _has_table(name: str) -> bool:
+    return inspect(op.get_bind()).has_table(name)
+
+
 def upgrade() -> None:
     """Upgrade schema."""
+    if _has_table("pipeline_schedules"):
+        return
     op.create_table(
         "pipeline_schedules",
         sa.Column("task_name", sa.String(length=255), primary_key=True),
