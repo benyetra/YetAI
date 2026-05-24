@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext, ScoringWeights
@@ -51,4 +51,9 @@ def test_freshness_hard_penalty_on_injury_flag():
 
 def test_freshness_none_sample_size_defaults_to_neutral():
     md = {"sample_size": None, "generated_at": NOW.isoformat()}
+    assert freshness_sub_score(_cand(md), _ctx()) >= 90
+
+
+def test_freshness_accepts_date_object_generated_at():
+    md = {"sample_size": 30, "generated_at": NOW.date()}
     assert freshness_sub_score(_cand(md), _ctx()) >= 90

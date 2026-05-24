@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext
@@ -58,13 +58,18 @@ def freshness_sub_score(candidate: BetCandidate, context: ScoringContext) -> flo
     gen_at = md.get("generated_at")
     if gen_at and context.now:
         try:
-            gen_dt = datetime.fromisoformat(gen_at)
+            if isinstance(gen_at, datetime):
+                gen_dt = gen_at
+            elif isinstance(gen_at, date):
+                gen_dt = datetime.combine(gen_at, datetime.min.time())
+            else:
+                gen_dt = datetime.fromisoformat(str(gen_at))
             age_h = (context.now - gen_dt).total_seconds() / 3600.0
             if age_h > 24:
                 score -= 55
             elif age_h > 12:
                 score -= 15
-        except ValueError:
+        except (TypeError, ValueError):
             pass
 
     if md.get("injury_flag"):
