@@ -29,8 +29,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 
 from app.core.database import SessionLocal
-from app.models.simple_unified_bet_model import SimpleUnifiedBet, TeamSide, OverUnder
-from app.models.database_models import BetStatus, BetType
+from app.models.simple_unified_bet_model import (
+    SimpleUnifiedBet,
+    TeamSide,
+    OverUnder,
+    BetStatus,
+    BetType,
+)
 from app.services.optimized_odds_api_service import get_optimized_odds_service
 from app.core.config import settings
 
@@ -101,7 +106,13 @@ class UnifiedBetVerificationService:
             total_verified = 0
             total_settled = 0
 
-            for sport, sport_bets in bets_by_sport.items():
+            # Settle game legs before parlay parents (parents read leg rows from DB).
+            sport_order = sorted(
+                bets_by_sport.keys(),
+                key=lambda s: (1 if s == "multiple sports" else 0, s),
+            )
+            for sport in sport_order:
+                sport_bets = bets_by_sport[sport]
                 if sport == "unknown":
                     logger.warning(
                         f"Skipping {len(sport_bets)} bets with unknown sport"
@@ -117,7 +128,7 @@ class UnifiedBetVerificationService:
                     for parlay_bet in sport_bets:
                         try:
                             status, result_amount, reasoning = self._evaluate_parlay(
-                                parlay_bet
+                                parlay_bet, db=db
                             )
                             if status != BetStatus.PENDING:
                                 parlay_results.append(
@@ -165,9 +176,17 @@ class UnifiedBetVerificationService:
                     logger.error(f"Error verifying {sport} bets: {e}")
                     continue
 
-            # Apply results to database
+            # Apply leg/straight bet results before evaluating parlay parents
             if all_results:
                 await self._apply_results(all_results, db)
+
+            # Reconcile parlay parents after legs are persisted in this session
+            parlay_results = self._reconcile_pending_parlay_parents(db)
+            if parlay_results:
+                await self._apply_results(parlay_results, db)
+                total_settled += sum(
+                    1 for r in parlay_results if r.status != BetStatus.PENDING
+                )
 
             db.commit()
 
@@ -441,7 +460,37 @@ class UnifiedBetVerificationService:
                 f"Lost: {direction} {line} (total: {total_score})",
             )
 
-    def _evaluate_parlay(self, bet: SimpleUnifiedBet) -> Tuple[BetStatus, float, str]:
+    def _reconcile_pending_parlay_parents(self, db: Session) -> List[UnifiedBetResult]:
+        """Settle parlay parent rows after their legs have been updated."""
+        pending_parlays = (
+            db.query(SimpleUnifiedBet)
+            .filter(
+                SimpleUnifiedBet.status == BetStatus.PENDING,
+                SimpleUnifiedBet.is_parlay.is_(True),
+            )
+            .all()
+        )
+
+        results: List[UnifiedBetResult] = []
+        for parlay in pending_parlays:
+            status, result_amount, reasoning = self._evaluate_parlay(parlay, db=db)
+            if status != BetStatus.PENDING:
+                results.append(
+                    UnifiedBetResult(
+                        bet_id=parlay.id,
+                        status=status,
+                        result_amount=result_amount,
+                        reasoning=reasoning,
+                    )
+                )
+                logger.info(
+                    f"Parlay reconcile {parlay.id[:8]}: {status.value} - {reasoning}"
+                )
+        return results
+
+    def _evaluate_parlay(
+        self, bet: SimpleUnifiedBet, db: Optional[Session] = None
+    ) -> Tuple[BetStatus, float, str]:
         """
         Evaluate parlay bet based on leg statuses
 
@@ -451,7 +500,9 @@ class UnifiedBetVerificationService:
         - If all legs are pushed, parlay pushes
         - If any legs are still pending, parlay remains pending
         """
-        db = SessionLocal()
+        owns_session = db is None
+        if owns_session:
+            db = SessionLocal()
         try:
             # Get all legs for this parlay
             legs = (
@@ -541,7 +592,8 @@ class UnifiedBetVerificationService:
             logger.error(f"Error evaluating parlay {bet.id}: {e}")
             return BetStatus.PENDING, 0.0, f"Error evaluating parlay: {str(e)}"
         finally:
-            db.close()
+            if owns_session:
+                db.close()
 
     async def _apply_results(self, results: List[UnifiedBetResult], db: Session):
         """Apply verification results to database"""
