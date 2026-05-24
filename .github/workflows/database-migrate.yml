@@ -10,6 +10,11 @@ on:
         options:
           - production
           - staging
+      refresh_mlb_strikeouts:
+        description: After migrate, rebuild pred_pitcher and archive K projections
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -65,6 +70,17 @@ jobs:
               print("alembic_version:", rev)
               print("pred_wnba_* tables:", n)
           PY
+
+      - name: Refresh MLB strikeouts (production)
+        if: inputs.target == 'production' && inputs.refresh_mlb_strikeouts
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
+          PYTHONPATH=. python3 scripts/prod_mlb_strikeout_refresh.py
 
       - name: Run migrations (staging)
         if: inputs.target == 'staging'

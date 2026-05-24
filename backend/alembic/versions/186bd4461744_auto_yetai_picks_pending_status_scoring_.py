@@ -10,6 +10,7 @@ from datetime import datetime as _dt
 from typing import Sequence, Union
 
 import sqlalchemy as sa
+from alembic import context as alembic_context
 from alembic import op
 from sqlalchemy import inspect, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -71,10 +72,8 @@ def upgrade() -> None:
             )
         )
 
-    # Extend betstatus with new values outside the transaction block.
-    # ALTER TYPE ... ADD VALUE cannot run inside a transaction on PG < 14, and
-    # IF NOT EXISTS provides idempotency so no Python-side guard is needed.
-    with conn.execution_options(isolation_level="AUTOCOMMIT"):
+    # Extend betstatus outside Alembic's transaction (ALTER TYPE ADD VALUE).
+    with alembic_context.get_context().autocommit_block():
         for val in ("pending_approval", "rejected", "expired"):
             conn.execute(text(f"ALTER TYPE betstatus ADD VALUE IF NOT EXISTS '{val}'"))
 
