@@ -271,7 +271,11 @@ class YetAIBet(Base):
     score_breakdown = Column(JSONB, nullable=True)
     reasoning = Column(Text, nullable=True)
     source = Column(
-        Enum(BetSource, name="yetai_bet_pick_source"),
+        Enum(
+            BetSource,
+            name="yetai_bet_pick_source",
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
         default=BetSource.MANUAL,
         nullable=False,
     )
