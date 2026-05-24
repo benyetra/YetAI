@@ -48,6 +48,9 @@ class TotalsCandidateProvider:
                         market_line=market_total,
                         market_odds=int(r.get("line_odds", -110)),
                         our_projection=float(r["projected_total"]),
+                        away_team=r.get("away_team_name"),
+                        home_team=r.get("home_team_name"),
+                        commence_time=r.get("game_time"),
                         projection_metadata={
                             "edge": r.get("edge"),
                             "recommendation": r.get("recommendation"),

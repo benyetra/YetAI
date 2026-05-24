@@ -55,6 +55,9 @@ class MoneylineCandidateProvider:
                         market_line=0.0,
                         market_odds=odds,
                         our_projection=win_prob,
+                        away_team=r.get("away_team_name"),
+                        home_team=r.get("home_team_name"),
+                        commence_time=r.get("game_time"),
                         projection_metadata={
                             "confidence_score": r.get("confidence_score"),
                             "home_win_prob": r.get("home_win_prob"),

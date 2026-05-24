@@ -54,6 +54,7 @@ jobs:
             m={i['name']:i['value'] for i in d}
           print(m.get('REDIS_URL') or m.get('REDIS_PRIVATE_URL') or '')
           ")"
+          PYTHONPATH=. python3 scripts/cleanup_yetai_bets_prod.py | tee cleanup.log
           ARGS="--run-id ${{ inputs.run_id }}"
           if [ "${{ inputs.enqueue_etl }}" = "true" ]; then
             ARGS="$ARGS --enqueue-etl"

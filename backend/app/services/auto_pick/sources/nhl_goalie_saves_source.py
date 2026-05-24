@@ -70,6 +70,15 @@ class NHLGoalieSavesSource:
                 odds = r.over_odds if r.over_odds is not None else -110
 
             event_id = f"nhl-prop-{r.game_date}-{r.goalie_id}-saves"
+            if r.is_home is True:
+                away_team_name = r.opponent_team_name
+                home_team_name = r.team_name
+            elif r.is_home is False:
+                away_team_name = r.team_name
+                home_team_name = r.opponent_team_name
+            else:
+                away_team_name = r.team_name
+                home_team_name = r.opponent_team_name
 
             out.append(
                 {
@@ -89,6 +98,11 @@ class NHLGoalieSavesSource:
                     "injury_flag": (
                         bool(r.was_scratch) if r.was_scratch is not None else False
                     ),
+                    "team": r.team_name,
+                    "opponent": r.opponent_team_name,
+                    "away_team_name": away_team_name,
+                    "home_team_name": home_team_name,
+                    "commence_time": r.game_time,
                 }
             )
 

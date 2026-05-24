@@ -1,0 +1,53 @@
+name: YetAI bets cleanup (production)
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: List changes only (no DB writes)
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  cleanup:
+    name: Reject demo bets and repair prop matchups
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run production cleanup
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL host: ${DATABASE_URL#*@}"
+          ARGS=""
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS="--dry-run"
+          fi
+          PYTHONPATH=. python3 scripts/cleanup_yetai_bets_prod.py $ARGS | tee cleanup.log
+
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        with:
+          name: yetai-bets-cleanup-log
+          path: backend/cleanup.log

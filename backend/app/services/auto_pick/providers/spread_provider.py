@@ -56,6 +56,9 @@ class SpreadCandidateProvider:
                         market_line=line,
                         market_odds=int(r.get("spread_odds", -110)),
                         our_projection=float(r["projected_margin"]),
+                        away_team=r.get("away_team_name"),
+                        home_team=r.get("home_team_name"),
+                        commence_time=r.get("game_time"),
                         projection_metadata={
                             "edge": r.get("edge"),
                             "recommendation": r.get("recommendation"),

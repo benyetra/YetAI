@@ -38,6 +38,22 @@ def _json_safe(value: Any) -> Any:
     return value
 
 
+def display_matchup_title(candidate: BetCandidate) -> str:
+    """Game line for subscriber UI (maps to API ``game`` / DesignPick ``matchup``)."""
+    away = candidate.away_team
+    home = candidate.home_team
+    if away and home:
+        if " vs " in away or " vs " in home:
+            return f"{away} vs {home}"
+        return f"{away} @ {home}"
+    md = candidate.projection_metadata
+    team = md.get("team")
+    opponent = md.get("opponent")
+    if team and opponent:
+        return f"{team} vs {opponent}"
+    return candidate.selection
+
+
 def date_range_for_utc_day(now: datetime) -> DateRange:
     """Inclusive UTC calendar-day bounds for projection source queries.
 
@@ -200,12 +216,14 @@ class AutoPickOrchestrator:
         s = p.score
         bet_type = _MARKET_TYPE_TO_BET_TYPE.get(c.market_type, BetType.PROP)
 
-        title = f"{c.selection} ({c.league})"
+        title = display_matchup_title(c)
+        reasoning_text = s.reasoning or ""
 
         return YetAIBet(
             id=str(uuid.uuid4()),
             # Required non-nullable fields
             title=title,
+            description=reasoning_text,
             bet_type=bet_type,
             selection=c.selection,
             odds=float(c.market_odds),
@@ -218,10 +236,13 @@ class AutoPickOrchestrator:
             # Auto-pick scoring fields
             confidence_score=s.total,
             score_breakdown=s.breakdown,
-            reasoning=s.reasoning,
+            reasoning=reasoning_text,
             auto_pick_run_id=run_id,
             # Game/market context
             sport=c.league,
+            home_team=c.home_team,
+            away_team=c.away_team,
+            commence_time=c.commence_time,
             prediction_factors=_json_safe(
                 {
                     "market_line": c.market_line,

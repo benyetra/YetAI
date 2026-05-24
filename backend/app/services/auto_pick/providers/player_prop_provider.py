@@ -34,6 +34,8 @@ class PlayerPropCandidateProvider:
         for r in rows:
             try:
                 selection = f"{r['player']} {r['side'].upper()} {r['line']} {r['stat']}"
+                away = r.get("away_team_name") or r.get("team")
+                home = r.get("home_team_name") or r.get("opponent")
                 out.append(
                     BetCandidate(
                         market_type=MarketType.PLAYER_PROP,
@@ -50,7 +52,13 @@ class PlayerPropCandidateProvider:
                             "injury_flag": r.get("injury_flag", False),
                             "stat": r["stat"],
                             "side": r["side"],
+                            "player": r.get("player"),
+                            "team": r.get("team"),
+                            "opponent": r.get("opponent"),
                         },
+                        away_team=away,
+                        home_team=home,
+                        commence_time=r.get("commence_time"),
                     )
                 )
             except Exception as e:

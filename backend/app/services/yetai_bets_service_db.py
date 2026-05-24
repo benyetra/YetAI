@@ -17,6 +17,8 @@ from app.models.bet_models import (
     BetStatus,
     YetAIBetType,
 )
+from app.services.yetai_bets_demo import is_demo_yetai_bet
+from app.services.yetai_bets_display import subscriber_game_label
 
 logger = logging.getLogger(__name__)
 
@@ -255,7 +257,8 @@ class YetAIBetsServiceDB:
             .order_by(desc(YetAIBet.created_at))
             .all()
         )
-        return [self._yetai_bet_to_dict(bet) for bet in bets]
+        visible = [bet for bet in bets if not is_demo_yetai_bet(bet)]
+        return [self._yetai_bet_to_dict(bet) for bet in visible]
 
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
         """Get active YetAI Bets based on user tier from database
@@ -296,8 +299,9 @@ class YetAIBetsServiceDB:
 
                 # Sort by confidence (highest first)
                 active_bets = query.order_by(desc(YetAIBet.confidence)).all()
+                visible = [bet for bet in active_bets if not is_demo_yetai_bet(bet)]
 
-                return [self._yetai_bet_to_dict(bet) for bet in active_bets]
+                return [self._yetai_bet_to_dict(bet) for bet in visible]
 
             finally:
                 db.close()
@@ -494,7 +498,7 @@ class YetAIBetsServiceDB:
         bet_dict = {
             "id": bet.id,
             "sport": bet.sport,
-            "game": bet.title,
+            "game": subscriber_game_label(bet),
             "game_id": bet.game_id,  # Odds API event ID for verification
             "home_team": bet.home_team,  # Required for bet placement
             "away_team": bet.away_team,  # Required for bet placement
@@ -505,7 +509,7 @@ class YetAIBetsServiceDB:
             "pick": clean_pick,
             "odds": f"+{int(bet.odds)}" if bet.odds > 0 else str(int(bet.odds)),
             "confidence": int(bet.confidence),
-            "reasoning": bet.description,
+            "reasoning": bet.reasoning or bet.description,
             "is_premium": bet.tier_requirement != SubscriptionTier.FREE,
             "game_time": game_time_formatted,  # Display format for UI
             "bet_category": (

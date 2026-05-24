@@ -95,6 +95,8 @@ class MLBStrikeoutSource:
             player_name = r.pitcher_name or f"pitcher_{r.pitcher_id}"
             event_id = f"mlb-prop-{r.date}-{r.pitcher_id}-strikeouts"
 
+            team = meta.team if meta else None
+            opponent = meta.opponent if meta else None
             out.append(
                 {
                     "event_id": event_id,
@@ -109,6 +111,11 @@ class MLBStrikeoutSource:
                     "generated_at": r.date,
                     "model_confidence": confidence / 100.0,
                     "injury_flag": False,
+                    "team": team,
+                    "opponent": opponent,
+                    "away_team_name": team,
+                    "home_team_name": opponent,
+                    "commence_time": meta.game_time if meta else None,
                 }
             )
 

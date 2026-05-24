@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, Protocol, runtime_checkable
+from typing import Any, Optional, Protocol, runtime_checkable
 
 
 class MarketType(str, Enum):
@@ -21,6 +21,9 @@ class BetCandidate:
     market_odds: int
     our_projection: float
     projection_metadata: dict[str, Any] = field(default_factory=dict)
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
+    commence_time: Optional[datetime] = None
 
 
 @dataclass

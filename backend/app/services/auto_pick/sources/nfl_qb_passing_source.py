@@ -93,6 +93,11 @@ class NFLQBPassingSource:
                     "generated_at": game_date_val,
                     "model_confidence": r.model_confidence,
                     "injury_flag": False,
+                    "team": r.team_name,
+                    "opponent": r.opponent_team_name,
+                    "away_team_name": r.team_name,
+                    "home_team_name": r.opponent_team_name,
+                    "commence_time": r.game_date,
                 }
             )
 

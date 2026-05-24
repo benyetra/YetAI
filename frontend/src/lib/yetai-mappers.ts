@@ -2,10 +2,43 @@ import { formatSportName } from '@/lib/formatting';
 import { parseOddsValue } from '@/lib/yetai-format';
 import type { ActivityBet, DesignPick } from '@/components/yetai/types';
 
+function matchupFromApiBet(bet: {
+  game?: string;
+  home_team?: string;
+  away_team?: string;
+}): string {
+  const away = bet.away_team?.trim();
+  const home = bet.home_team?.trim();
+  if (away && home) {
+    if (/\s+vs\.?\s+/i.test(bet.game || '')) {
+      return bet.game!;
+    }
+    return `${away} @ ${home}`;
+  }
+  const game = bet.game?.trim();
+  if (game && /\s+vs\.?\s+/i.test(game)) {
+    return game;
+  }
+  if (game && !looksLikePropSelectionTitle(game)) {
+    return game;
+  }
+  if (game && looksLikePropSelectionTitle(game)) {
+    return 'Matchup pending';
+  }
+  return 'TBD';
+}
+
+/** Auto-pick used to store the bet line in ``title``; don't treat that as a matchup. */
+function looksLikePropSelectionTitle(game: string): boolean {
+  return /\b(under|over)\b/i.test(game) && /\d/.test(game);
+}
+
 export function apiBetToDesignPick(bet: {
   id: string;
   sport?: string;
   game?: string;
+  home_team?: string;
+  away_team?: string;
   bet_type?: string;
   pick: string;
   odds: string | number;
@@ -19,7 +52,7 @@ export function apiBetToDesignPick(bet: {
   return {
     id: bet.id,
     league: bet.sport ? formatSportName(bet.sport) : league,
-    matchup: bet.game || 'TBD',
+    matchup: matchupFromApiBet(bet),
     pick: bet.pick,
     odds: bet.odds,
     confidence: bet.confidence > 1 ? bet.confidence / 100 : bet.confidence,

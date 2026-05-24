@@ -10,7 +10,7 @@ End-to-end auto-pick troubleshoot against production DATABASE_URL.
 Usage (CI or local):
   export DATABASE_URL=...
   export REDIS_URL=...   # optional, for --enqueue-etl
-  PYTHONPATH=. python3 scripts/troubleshoot_auto_pick_workflow.py --run-id 1
+  PYTHONPATH=. .venv/bin/python scripts/troubleshoot_auto_pick_workflow.py --run-id 1
 """
 
 from __future__ import annotations
