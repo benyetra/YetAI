@@ -664,6 +664,27 @@ def nhl_collect_goalie_actuals():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_team_shots_actuals")
+def nhl_collect_team_shots_actuals():
+    from app.services.etl.nhl.collect_team_shots_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_player_shots_actuals")
+def nhl_collect_player_shots_actuals():
+    from app.services.etl.nhl.collect_player_shots_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_team_totals_actuals")
+def nhl_collect_team_totals_actuals():
+    from app.services.etl.nhl.collect_team_totals_actuals import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nhl.daily_predictions")
 def nhl_daily_predictions():
     from app.services.etl.nhl.daily_predictions import run
@@ -675,6 +696,15 @@ def nhl_daily_predictions():
 # automated_daily_predictions (stats refresh + goalie/player/totals + actuals).
 NHL_PHASES = [
     ("ingest", [nhl_collect_ingest]),
+    (
+        "actuals",
+        [
+            nhl_collect_goalie_actuals,
+            nhl_collect_team_shots_actuals,
+            nhl_collect_player_shots_actuals,
+            nhl_collect_team_totals_actuals,
+        ],
+    ),
     ("automation", [nhl_daily_predictions]),
 ]
 

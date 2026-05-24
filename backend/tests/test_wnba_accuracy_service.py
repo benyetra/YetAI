@@ -1,4 +1,8 @@
-"""Smoke tests for wnba_accuracy_service.daily_accuracy."""
+"""Smoke tests for wnba_accuracy_service.daily_accuracy.
+
+Six buckets: game totals (O/U + MAE), spread (MAE), and three per-player
+O/U buckets (points, assists, rebounds).
+"""
 
 from __future__ import annotations
 
@@ -23,7 +27,7 @@ def _mock_db(rows_by_model):
     return db
 
 
-def test_returns_three_wnba_buckets():
+def test_returns_six_wnba_buckets_in_order():
     today = date(2026, 5, 23)
     tot_p = SimpleNamespace(
         game_date=today,
@@ -51,25 +55,60 @@ def test_returns_three_wnba_buckets():
         away_team_name="B",
         actual_margin=6,
     )
+    pts_p = SimpleNamespace(
+        player_id=100,
+        projected_points=18.0,
+        market_line=17.5,
+        recommendation="OVER",
+    )
+    pts_a = SimpleNamespace(player_id=100, actual_points=20.0)
+    ast_p = SimpleNamespace(
+        player_id=101,
+        projected_assists=5.0,
+        market_line=4.5,
+        recommendation="UNDER",
+    )
+    ast_a = SimpleNamespace(player_id=101, actual_assists=3.0)
+    reb_p = SimpleNamespace(
+        player_id=102,
+        projected_rebounds=8.0,
+        market_line=7.5,
+        recommendation="OVER",
+    )
+    reb_a = SimpleNamespace(player_id=102, actual_rebounds=9.0)
     db = _mock_db(
         {
             "WNBATotalsProjections": [tot_p],
             "WNBATotalsActuals": [tot_a],
             "WNBASpreadProjections": [sp_p],
             "WNBASpreadActuals": [sp_a],
+            "WNBAPointsProjections": [pts_p],
+            "WNBAPointsActuals": [pts_a],
+            "WNBAAssistsProjections": [ast_p],
+            "WNBAAssistsActuals": [ast_a],
+            "WNBAReboundsProjections": [reb_p],
+            "WNBAReboundsActuals": [reb_a],
         }
     )
     out = svc.daily_accuracy(db, target_date=today)
     keys = [b["key"] for b in out["buckets"]]
-    assert keys == ["totals_ou", "totals_mae", "spread_mae"]
+    assert keys == [
+        "totals_ou",
+        "totals_mae",
+        "spread_mae",
+        "player_points_ou",
+        "player_assists_ou",
+        "player_rebounds_ou",
+    ]
     assert out["available"] is True
-    # OVER 160.5, actual 168 → correct
-    ou = next(b for b in out["buckets"] if b["key"] == "totals_ou")
-    assert ou["primary"] == "1/1 · 100%"
+    # All three per-player picks won
+    for k in ("player_points_ou", "player_assists_ou", "player_rebounds_ou"):
+        bucket = next(b for b in out["buckets"] if b["key"] == k)
+        assert bucket["primary"] == "1/1 · 100%"
 
 
 def test_unavailable_when_no_rows():
     db = _mock_db({})
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 3
+    assert len(out["buckets"]) == 6
