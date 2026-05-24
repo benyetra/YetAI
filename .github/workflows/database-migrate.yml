@@ -75,11 +75,18 @@ jobs:
         if: inputs.target == 'production' && inputs.refresh_mlb_strikeouts
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
         run: |
           set -euo pipefail
-          # celery-worker has ODDS_API_KEY, AWS, and DATABASE_URL (GHA runner does not).
-          railway run --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4 -- \
-            bash -lc 'PYTHONPATH=. python3 scripts/prod_mlb_strikeout_refresh.py'
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          export ODDS_API_KEY="$(python3 scripts/resolve_railway_variable.py ODDS_API_KEY)"
+          echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
+          echo "ODDS_API_KEY present: $([ -n "${ODDS_API_KEY:-}" ] && echo yes || echo no)"
+          PYTHONPATH=. python3 scripts/prod_mlb_strikeout_refresh.py
 
       - name: Run migrations (staging)
         if: inputs.target == 'staging'
