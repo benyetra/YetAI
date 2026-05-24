@@ -2,6 +2,7 @@ from datetime import datetime
 
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext
+from app.services.mlb_strikeout_pick import signed_edge_for_side
 
 EDGE_NORMALIZERS = {
     MarketType.MONEYLINE: 0.20,
@@ -12,7 +13,13 @@ EDGE_NORMALIZERS = {
 
 
 def edge_sub_score(candidate: BetCandidate) -> float:
-    delta = candidate.our_projection - candidate.market_line
+    side = (candidate.projection_metadata.get("side") or "").lower()
+    if candidate.market_type == MarketType.PLAYER_PROP and side in ("over", "under"):
+        delta = signed_edge_for_side(
+            candidate.our_projection, candidate.market_line, side
+        )
+    else:
+        delta = candidate.our_projection - candidate.market_line
     norm = EDGE_NORMALIZERS[candidate.market_type]
     raw = (delta / norm) * 100.0
     if raw > 100.0:

@@ -1,15 +1,8 @@
 """
-MLB strikeout projection source shim.
+MLB strikeout projection source for auto-pick.
 
-Queries pred_strikeout_projections for pitcher strikeout props.
-The table stores a fanduel_line and fanduel_over_under per row, so we can
-form bet candidates directly — no separate game_lines join required.
-
-Rows without a fanduel_line are skipped (no market line → no candidate).
-
-Returns dicts shaped for PlayerPropCandidateProvider:
-  Required: event_id, league, player, stat, line, odds, projection, side
-  Optional: sample_size, generated_at, model_confidence, injury_flag
+Uses YetAI pick (projected K vs FanDuel line) with a minimum K-edge gate so
+auto picks align with what users see on the MLB stats table.
 """
 
 import logging
@@ -17,8 +10,13 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.models.predictions_models import StrikeoutProjections
+from app.models.predictions_models import Pitcher, StrikeoutProjections
 from app.services.auto_pick.candidate import DateRange
+from app.services.mlb_strikeout_pick import (
+    pick_confidence_pct,
+    projection_pick_side,
+    qualifies_for_auto_pick,
+)
 
 log = logging.getLogger(__name__)
 
@@ -40,6 +38,7 @@ class MLBStrikeoutSource:
                 )
                 .all()
             )
+            pitcher_meta = {p.pitcher_id: p for p in self.db.query(Pitcher).all()}
         except Exception:
             log.exception("MLBStrikeoutSource: DB query failed")
             return []
@@ -53,7 +52,7 @@ class MLBStrikeoutSource:
                 continue
 
             line_val = r.fanduel_line
-            if line_val is None:
+            if line_val is None or line_val <= 0:
                 log.debug(
                     "MLBStrikeoutSource: skipping %s (%s) — no fanduel_line",
                     r.pitcher_name,
@@ -61,8 +60,37 @@ class MLBStrikeoutSource:
                 )
                 continue
 
-            ou_raw = (r.fanduel_over_under or "").strip().upper()
-            side = "under" if ou_raw in ("UNDER", "U") else "over"
+            side = (
+                (r.fanduel_over_under or "").strip().lower()
+                if r.fanduel_over_under
+                else projection_pick_side(r.projected_strikeouts, line_val)
+            )
+            if side not in ("over", "under"):
+                side = projection_pick_side(r.projected_strikeouts, line_val)
+            if not qualifies_for_auto_pick(r.projected_strikeouts, line_val, side):
+                log.debug(
+                    "MLBStrikeoutSource: skipping %s — insufficient K edge",
+                    r.pitcher_name,
+                )
+                continue
+
+            meta = pitcher_meta.get(str(r.pitcher_id))
+            prob_over = getattr(meta, "prob_over", None) if meta else None
+            pick_edge_pct = getattr(meta, "pick_edge_pct", None) if meta else None
+            confidence = getattr(r, "pick_confidence", None) or pick_confidence_pct(
+                float(r.projected_strikeouts),
+                float(line_val),
+                prob_over=prob_over,
+                ev_edge_pct=pick_edge_pct,
+            )
+            odds = -110
+            if meta and getattr(meta, "fanduel_price", None):
+                try:
+                    price = int(meta.fanduel_price)
+                    if price != 0:
+                        odds = price
+                except (TypeError, ValueError):
+                    pass
 
             player_name = r.pitcher_name or f"pitcher_{r.pitcher_id}"
             event_id = f"mlb-prop-{r.date}-{r.pitcher_id}-strikeouts"
@@ -74,12 +102,12 @@ class MLBStrikeoutSource:
                     "player": player_name,
                     "stat": "strikeouts",
                     "line": float(line_val),
-                    "odds": -110,
+                    "odds": odds,
                     "projection": float(r.projected_strikeouts),
                     "side": side,
                     "sample_size": None,
                     "generated_at": r.date,
-                    "model_confidence": None,
+                    "model_confidence": confidence / 100.0,
                     "injury_flag": False,
                 }
             )

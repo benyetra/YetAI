@@ -16,12 +16,16 @@ from app.models.predictions_models import (
 )
 
 from app.services.etl.mlb._db import db_session
-import logging
+from app.services.mlb_strikeout_pick import (
+    ev_pick_from_flag,
+    k_edge,
+    pick_confidence_pct,
+    projection_pick_side,
+)
 import argparse
+import logging
 import traceback
 
-
-# Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,21 @@ def store_projections(date):
         at_bats = pitcher.projected_at_bats
         projected_strikeouts = pitcher.projected_strikeouts
         fanduel_line = pitcher.fanduel_point
-        fanduel_flag = pitcher.fanduel_flag  # 'o' for over, 'u' for under
+        fanduel_flag = pitcher.fanduel_flag  # 'o' | 'u' | 'n' from +EV stack
+        yetai_pick = projection_pick_side(projected_strikeouts, fanduel_line)
+        ev_pick = ev_pick_from_flag(fanduel_flag)
+        prob_over = getattr(pitcher, "prob_over", None)
+        pick_edge_pct = getattr(pitcher, "pick_edge_pct", None)
+        confidence = (
+            pick_confidence_pct(
+                projected_strikeouts,
+                fanduel_line,
+                prob_over=prob_over,
+                ev_edge_pct=pick_edge_pct,
+            )
+            if yetai_pick and fanduel_line and fanduel_line > 0
+            else None
+        )
 
         existing_projection = (
             db_session.query(StrikeoutProjections)
@@ -66,13 +84,15 @@ def store_projections(date):
             existing_projection.projected_innings_pitched = innings_pitched
             existing_projection.projected_at_bats = at_bats
             existing_projection.fanduel_line = fanduel_line
-            if fanduel_flag == "o":
-                existing_projection.fanduel_over_under = "over"
-            elif fanduel_flag == "u":
-                existing_projection.fanduel_over_under = "under"
-            else:
-                existing_projection.fanduel_over_under = "push"
-
+            existing_projection.fanduel_over_under = yetai_pick
+            _apply_strikeout_pick_extras(
+                existing_projection,
+                yetai_pick=yetai_pick,
+                ev_pick=ev_pick,
+                confidence=confidence,
+                projected_strikeouts=projected_strikeouts,
+                fanduel_line=fanduel_line,
+            )
         else:
             new_projection = StrikeoutProjections(
                 date=date,
@@ -82,10 +102,36 @@ def store_projections(date):
                 projected_innings_pitched=innings_pitched,
                 projected_at_bats=at_bats,
                 fanduel_line=fanduel_line,
-                fanduel_over_under="over" if fanduel_flag == "o" else "under",
+                fanduel_over_under=yetai_pick,
+            )
+            _apply_strikeout_pick_extras(
+                new_projection,
+                yetai_pick=yetai_pick,
+                ev_pick=ev_pick,
+                confidence=confidence,
+                projected_strikeouts=projected_strikeouts,
+                fanduel_line=fanduel_line,
             )
             db_session.add(new_projection)
     db_session.commit()
+
+
+def _apply_strikeout_pick_extras(
+    row: StrikeoutProjections,
+    *,
+    yetai_pick: str | None,
+    ev_pick: str | None,
+    confidence: float | None,
+    projected_strikeouts: float,
+    fanduel_line: float,
+) -> None:
+    """Optional columns when present on the ORM model (migration may add them)."""
+    if hasattr(row, "ev_over_under"):
+        row.ev_over_under = ev_pick
+    if hasattr(row, "pick_confidence"):
+        row.pick_confidence = confidence
+    if hasattr(row, "k_edge") and yetai_pick and fanduel_line and fanduel_line > 0:
+        row.k_edge = round(k_edge(projected_strikeouts, fanduel_line), 2)
 
 
 def store_actuals(date):

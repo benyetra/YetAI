@@ -12,12 +12,39 @@ import {
   type ColumnDef,
 } from '@/components/PredictionsTable';
 
+function formatSignedEdge(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  if (Number.isNaN(n)) return formatString(value);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${n.toFixed(1)}`;
+}
+
+function formatPickConfidence(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  if (Number.isNaN(n)) return formatString(value);
+  return `${Math.round(n)}%`;
+}
+
 const STRIKEOUT_BASE_COLUMNS: ColumnDef[] = [
   { key: 'pitcher_name', label: 'Pitcher', format: (v) => formatString(v) },
   { key: 'projected_strikeouts', label: 'Proj K', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'projected_innings_pitched', label: 'Proj IP', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'fanduel_line', label: 'FD Line', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'fanduel_over_under', label: 'FD O/U', format: (v) => formatString(v) },
+  { key: 'k_edge', label: 'K Edge', align: 'right', mono: true, format: (v) => formatSignedEdge(v) },
+  {
+    key: 'yetai_pick',
+    label: 'YetAI Pick',
+    format: (v, row) => formatString(v ?? row.fanduel_over_under),
+  },
+  {
+    key: 'pick_confidence',
+    label: 'Confidence',
+    align: 'right',
+    mono: true,
+    format: (v) => formatPickConfidence(v),
+  },
 ];
 
 const STRIKEOUT_ACTUAL_COLUMNS: ColumnDef[] = [
