@@ -168,6 +168,17 @@ def test_serialize_schedule_marks_orchestrators():
     assert items["nba-accuracy"]["is_orchestrator"] is False
 
 
+def test_serialize_schedule_uses_auto_pick_label_when_registered():
+    beat = {
+        "auto-pick-daily": {
+            "task": "auto_pick.yetai_bets",
+            "schedule": crontab(hour=13, minute=0),
+        },
+    }
+    out = svc.serialize_schedule(beat, now_et=datetime(2026, 5, 23, 0, 0, tzinfo=ET))
+    assert out["scheduled"][0]["label"] == "YetAI auto-pick (daily)"
+
+
 def test_serialize_schedule_uses_catalog_label_when_available():
     """Tasks in the catalog get the catalog's friendly label."""
     beat = {

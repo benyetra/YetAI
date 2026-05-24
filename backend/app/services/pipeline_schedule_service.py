@@ -29,6 +29,12 @@ ET = ZoneInfo("America/New_York")
 _PIPELINE_LABELS: dict[str, str] = {
     entry["task_name"]: entry["label"] for entry in PIPELINE_ENQUEUE_CATALOG
 }
+
+# YetAI auto-pick beat entries (gated by AUTO_YETAI_PICKS_ENABLED on API + worker).
+_AUTO_PICK_TASK_LABELS: dict[str, str] = {
+    "auto_pick.yetai_bets": "YetAI auto-pick (daily)",
+    "auto_pick.expire_pending": "YetAI expire pending picks",
+}
 _PIPELINE_SPORTS: dict[str, str] = {
     entry["task_name"]: entry.get("sport", "")
     for entry in PIPELINE_ENQUEUE_CATALOG
@@ -177,7 +183,11 @@ def serialize_schedule(
     for key, entry in beat_schedule.items():
         task_name = entry.get("task", "")
         is_orch = task_name in PIPELINE_TASK_NAMES
-        label = _PIPELINE_LABELS.get(task_name) or _humanize_key(key)
+        label = (
+            _PIPELINE_LABELS.get(task_name)
+            or _AUTO_PICK_TASK_LABELS.get(task_name)
+            or _humanize_key(key)
+        )
         sport = _PIPELINE_SPORTS.get(task_name) or _sport_from_key(key)
         sched = entry.get("schedule")
         override = overrides.get(task_name)

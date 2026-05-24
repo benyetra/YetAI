@@ -20,7 +20,8 @@ import {
   Crown,
   Trash2,
   Calendar,
-  Trophy
+  Trophy,
+  Brain,
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 import AdminCeleryPipelines from '@/components/yetai/AdminCeleryPipelines';
@@ -850,6 +851,23 @@ export default function AdminPage() {
                 </h3>
                 <p className="text-sm muted">
                   Daily timeline of every Celery beat task
+                </p>
+              </div>
+            </div>
+          </button>
+
+          <button
+            onClick={() => router.push('/admin/yetai-picks')}
+            className="card hover:border-violet-500 transition-colors group"
+          >
+            <div className="flex items-center">
+              <Brain className="w-8 h-8 text-violet-600 mr-4" />
+              <div className="text-left">
+                <h3 className="text-lg font-semibold group-hover:text-violet-600">
+                  Auto-pick approval
+                </h3>
+                <p className="text-sm muted">
+                  Review pending YetAI bets before they go live on Predictions
                 </p>
               </div>
             </div>

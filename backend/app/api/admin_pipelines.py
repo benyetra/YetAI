@@ -7,6 +7,8 @@ flags (is_overridden, is_enabled). PATCH upserts an override row; POST
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
@@ -41,7 +43,11 @@ async def get_schedule(
     """
     overrides = ovr.load_all(db)
     merged = apply_overrides(dict(celery_app.conf.beat_schedule), overrides)
-    return svc.serialize_schedule(merged, overrides=overrides)
+    body = svc.serialize_schedule(merged, overrides=overrides)
+    body["auto_yetai_picks_enabled"] = (
+        os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true"
+    )
+    return body
 
 
 # task_name uses `:path` so dotted task names like

@@ -36,6 +36,8 @@ export interface ContinuousEntry {
 export interface ScheduleResponse {
   scheduled: ScheduledEntry[];
   continuous: ContinuousEntry[];
+  /** True when this API process loaded AUTO_YETAI_PICKS_ENABLED at startup. */
+  auto_yetai_picks_enabled?: boolean;
 }
 
 export async function fetchPipelineSchedule(): Promise<ScheduleResponse> {

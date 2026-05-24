@@ -20,6 +20,7 @@ const SPORT_COLOR: Record<string, string> = {
   mlb: 'bg-blue-500',
   nfl: 'bg-emerald-500',
   nhl: 'bg-cyan-500',
+  yetai: 'bg-violet-500',
 };
 
 function sportColor(sport: string): string {
@@ -231,6 +232,14 @@ export default function PipelinesSchedulePage() {
 
         {data && (
           <>
+            {data.auto_yetai_picks_enabled === false && (
+              <div className="border border-amber-800/60 bg-amber-950/30 text-amber-200 text-sm rounded p-3">
+                YetAI auto-pick beat tasks are hidden because{' '}
+                <code className="text-amber-100">AUTO_YETAI_PICKS_ENABLED</code> is not set on
+                this API service. Set it on <strong>YetAI</strong> and <strong>celery-worker</strong>,
+                then redeploy both.
+              </div>
+            )}
             <div className="flex items-center gap-4 text-xs text-zinc-500">
               <span className="inline-flex items-center gap-1.5">
                 <Workflow className="w-3.5 h-3.5" />
