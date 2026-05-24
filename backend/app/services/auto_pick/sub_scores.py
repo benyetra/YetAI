@@ -47,7 +47,9 @@ def historical_sub_score(candidate: BetCandidate, context: ScoringContext) -> fl
 def freshness_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
     score = 100.0
     md = candidate.projection_metadata
-    sample = md.get("sample_size", 10)
+    sample = md.get("sample_size")
+    if sample is None:
+        sample = 10
     if sample < 5:
         score -= 45
     elif sample < 10:

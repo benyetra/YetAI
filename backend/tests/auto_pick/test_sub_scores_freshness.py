@@ -47,3 +47,8 @@ def test_freshness_penalty_for_stale_projection():
 def test_freshness_hard_penalty_on_injury_flag():
     md = {"sample_size": 30, "generated_at": NOW.isoformat(), "injury_flag": True}
     assert freshness_sub_score(_cand(md), _ctx()) < 30
+
+
+def test_freshness_none_sample_size_defaults_to_neutral():
+    md = {"sample_size": None, "generated_at": NOW.isoformat()}
+    assert freshness_sub_score(_cand(md), _ctx()) >= 90

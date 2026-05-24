@@ -36,12 +36,15 @@ class SpreadCandidateProvider:
         out: list[BetCandidate] = []
         for r in rows:
             try:
+                market_spread_home = r.get("market_spread_home")
+                if market_spread_home is None:
+                    continue
                 side = r.get("side", "home")
                 team = r["home_team_name"] if side == "home" else r["away_team_name"]
                 line = (
-                    float(r["market_spread_home"])
+                    float(market_spread_home)
                     if side == "home"
-                    else -float(r["market_spread_home"])
+                    else -float(market_spread_home)
                 )
                 selection = f"{team} {line:+.1f}"
                 out.append(
