@@ -1,6 +1,6 @@
 'use client';
 
-import MlbAccuracySummary from '@/components/yetai/MlbAccuracySummary';
+import AccuracySummary from '@/components/yetai/AccuracySummary';
 import MlbGameProjectionsGrid from '@/components/yetai/MlbGameProjectionsGrid';
 import SportPredictionsPage, {
   type GroupsContext,
@@ -111,7 +111,7 @@ export default function MLBPredictionsPage() {
           />
         </>
       )}
-      accuracySummary={({ date }) => <MlbAccuracySummary date={date} />}
+      accuracySummary={({ date }) => <AccuracySummary sport="mlb" date={date} />}
       groups={buildGroups}
     />
   );

@@ -1,0 +1,185 @@
+"""Per-day NBA projection accuracy → unified bucket shape.
+
+Buckets:
+- Points O/U (FanDuel-line call accuracy + MAE)
+- 3P Made O/U (FanDuel-line call accuracy + MAE)
+- Steals O/U (FanDuel-line call accuracy + MAE)
+- Assists MAE (no sportsbook line column)
+- Rebounds MAE (no sportsbook line column)
+"""
+
+from __future__ import annotations
+
+from datetime import date as date_type
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from app.models.predictions_models import (
+    ActualThreePointMade,
+    AssistsActuals,
+    AssistsProjections,
+    PointsActuals,
+    PointsProjections,
+    ReboundsActuals,
+    ReboundsProjections,
+    StealsActuals,
+    StealsProjections,
+    ThreePointProjections,
+)
+from app.services.accuracy_shared import (
+    AccuracyBucket,
+    assemble,
+    mae_bucket,
+    ou_call_bucket,
+)
+
+
+def _merge_actuals(
+    projections, actuals, *, pid_attr: str, actual_attr: str
+) -> list[dict[str, Any]]:
+    """Pair projection rows with their per-player actual via an in-memory map.
+
+    Returns row dicts with all projection columns plus the actual_* value
+    (None if no actual was recorded yet).
+    """
+    by_pid = {getattr(a, pid_attr): a for a in actuals}
+    out = []
+    for p in projections:
+        a = by_pid.get(getattr(p, pid_attr))
+        # Pull every projection column onto the row dict — generic helpers
+        # only read whatever field names the caller passes in.
+        row: dict[str, Any] = {c.name: getattr(p, c.name) for c in p.__table__.columns}
+        row["__actual"] = getattr(a, actual_attr) if a else None
+        out.append(row)
+    return out
+
+
+def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
+    """Build the NBA accuracy summary for `target_date`."""
+
+    # --- Points ----------------------------------------------------------
+    pts_proj = (
+        db.query(PointsProjections).filter(PointsProjections.date == target_date).all()
+    )
+    pts_actuals = (
+        db.query(PointsActuals).filter(PointsActuals.date == target_date).all()
+    )
+    pts_rows = _merge_actuals(
+        pts_proj, pts_actuals, pid_attr="player_id", actual_attr="actual_points"
+    )
+    for row in pts_rows:
+        row["actual_points"] = row.pop("__actual")
+
+    # --- 3P --------------------------------------------------------------
+    tpm_proj = (
+        db.query(ThreePointProjections)
+        .filter(ThreePointProjections.date == target_date)
+        .all()
+    )
+    tpm_actuals = (
+        db.query(ActualThreePointMade)
+        .filter(ActualThreePointMade.date == target_date)
+        .all()
+    )
+    tpm_rows = _merge_actuals(
+        tpm_proj, tpm_actuals, pid_attr="player_id", actual_attr="actual_three_pt_made"
+    )
+    for row in tpm_rows:
+        row["actual_three_pt_made"] = row.pop("__actual")
+
+    # --- Steals ----------------------------------------------------------
+    stl_proj = (
+        db.query(StealsProjections).filter(StealsProjections.date == target_date).all()
+    )
+    stl_actuals = (
+        db.query(StealsActuals).filter(StealsActuals.date == target_date).all()
+    )
+    stl_rows = _merge_actuals(
+        stl_proj, stl_actuals, pid_attr="player_id", actual_attr="actual_steals"
+    )
+    for row in stl_rows:
+        row["actual_steals"] = row.pop("__actual")
+
+    # --- Assists (no line, MAE only) ------------------------------------
+    ast_proj = (
+        db.query(AssistsProjections)
+        .filter(AssistsProjections.date == target_date)
+        .all()
+    )
+    ast_actuals = (
+        db.query(AssistsActuals).filter(AssistsActuals.date == target_date).all()
+    )
+    ast_rows = _merge_actuals(
+        ast_proj, ast_actuals, pid_attr="player_id", actual_attr="actual_assists"
+    )
+    for row in ast_rows:
+        row["actual_assists"] = row.pop("__actual")
+
+    # --- Rebounds (no line, MAE only) -----------------------------------
+    reb_proj = (
+        db.query(ReboundsProjections)
+        .filter(ReboundsProjections.date == target_date)
+        .all()
+    )
+    reb_actuals = (
+        db.query(ReboundsActuals).filter(ReboundsActuals.date == target_date).all()
+    )
+    reb_rows = _merge_actuals(
+        reb_proj, reb_actuals, pid_attr="player_id", actual_attr="actual_rebounds"
+    )
+    for row in reb_rows:
+        row["actual_rebounds"] = row.pop("__actual")
+
+    buckets: list[AccuracyBucket] = [
+        ou_call_bucket(
+            pts_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_points",
+            projected_field="projected_points",
+            label="Points O/U",
+            key="points_ou",
+        ),
+        ou_call_bucket(
+            tpm_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_three_pt_made",
+            projected_field="projected_three_pt_made",
+            label="3P Made O/U",
+            key="three_pt_ou",
+        ),
+        ou_call_bucket(
+            stl_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_steals",
+            projected_field="projected_steals",
+            label="Steals O/U",
+            key="steals_ou",
+        ),
+        mae_bucket(
+            ast_rows,
+            projected_field="projected_assists",
+            actual_field="actual_assists",
+            label="Assists",
+            key="assists_mae",
+            unit_label="ast",
+        ),
+        mae_bucket(
+            reb_rows,
+            projected_field="projected_rebounds",
+            actual_field="actual_rebounds",
+            label="Rebounds",
+            key="rebounds_mae",
+            unit_label="reb",
+        ),
+    ]
+
+    available = any([pts_rows, tpm_rows, stl_rows, ast_rows, reb_rows])
+    return assemble(
+        date_str=target_date.isoformat(),
+        buckets=buckets,
+        available=available,
+    )

@@ -1,5 +1,6 @@
 'use client';
 
+import AccuracySummary from '@/components/yetai/AccuracySummary';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -41,6 +42,7 @@ export default function NHLPredictionsPage() {
       leagueLabel="NHL"
       emoji="🏒"
       subtitle="Goalie saves, player shots on goal, and game totals over/under."
+      accuracySummary={({ date }) => <AccuracySummary sport="nhl" date={date} />}
       groups={[
         { title: 'Goalie Predictions', responseKey: 'goalie_predictions', columns: GOALIE_COLUMNS },
         { title: 'Player Shots Predictions', responseKey: 'player_shots', columns: SHOTS_COLUMNS },

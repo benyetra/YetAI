@@ -1,5 +1,6 @@
 'use client';
 
+import AccuracySummary from '@/components/yetai/AccuracySummary';
 import NbaTotalsProjectionsTable from '@/components/yetai/NbaTotalsProjectionsTable';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import SpreadProjectionsTable from '@/components/yetai/SpreadProjectionsTable';
@@ -44,6 +45,7 @@ export default function WNBAPredictionsPage() {
           />
         </>
       )}
+      accuracySummary={({ date }) => <AccuracySummary sport="wnba" date={date} />}
       groups={PROP_GROUPS}
     />
   );
