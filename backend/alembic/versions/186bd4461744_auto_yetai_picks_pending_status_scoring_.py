@@ -22,6 +22,9 @@ down_revision: Union[str, None] = "c3b8a1f92d04"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# Distinct from simple_unified_bets.source (PostgreSQL type name "betsource").
+YETAI_BET_PICK_SOURCE = "yetai_bet_pick_source"
+
 
 def _has_table(name: str) -> bool:
     return inspect(op.get_bind()).has_table(name)
@@ -61,8 +64,10 @@ def upgrade() -> None:
     #    automatic type-creation side effects in op.create_table.
     # ------------------------------------------------------------------
 
-    if not _enum_type_exists(conn, "betsource"):
-        conn.execute(text("CREATE TYPE betsource AS ENUM ('manual', 'auto')"))
+    if not _enum_type_exists(conn, YETAI_BET_PICK_SOURCE):
+        conn.execute(
+            text(f"CREATE TYPE {YETAI_BET_PICK_SOURCE} AS ENUM ('manual', 'auto')")
+        )
 
     if not _enum_type_exists(conn, "autopickrunstatus"):
         conn.execute(
@@ -166,8 +171,8 @@ def upgrade() -> None:
     if not _has_column("yetai_bets", "source"):
         conn.execute(
             text(
-                "ALTER TABLE yetai_bets "
-                "ADD COLUMN source betsource NOT NULL DEFAULT 'manual'"
+                f"ALTER TABLE yetai_bets "
+                f"ADD COLUMN source {YETAI_BET_PICK_SOURCE} NOT NULL DEFAULT 'manual'"
             )
         )
 
@@ -238,7 +243,7 @@ def downgrade() -> None:
         op.drop_table("auto_pick_runs")
 
     # Drop enum types created in upgrade
-    conn.execute(text("DROP TYPE IF EXISTS betsource"))
+    conn.execute(text(f"DROP TYPE IF EXISTS {YETAI_BET_PICK_SOURCE}"))
     conn.execute(text("DROP TYPE IF EXISTS autopickrunstatus"))
 
     # NOTE: The three values added to 'betstatus' (pending_approval, rejected, expired)

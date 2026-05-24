@@ -270,7 +270,11 @@ class YetAIBet(Base):
     confidence_score = Column(Float, nullable=True)
     score_breakdown = Column(JSONB, nullable=True)
     reasoning = Column(Text, nullable=True)
-    source = Column(Enum(BetSource), default=BetSource.MANUAL, nullable=False)
+    source = Column(
+        Enum(BetSource, name="yetai_bet_pick_source"),
+        default=BetSource.MANUAL,
+        nullable=False,
+    )
     auto_pick_run_id = Column(
         ForeignKey("auto_pick_runs.id"), nullable=True, index=True
     )
