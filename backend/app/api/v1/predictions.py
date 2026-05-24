@@ -38,6 +38,7 @@ from app.models.predictions_models import (
     QBPredictions,
     ReboundsProjections,
     StealsProjections,
+    StrikeoutActuals,
     StrikeoutProjections,
     ThreePointProjections,
     WNBAAssistsProjections,
@@ -128,7 +129,13 @@ def mlb_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent MLB props: strikeouts, game slate, batter boards, HR picks."""
+    """Recent MLB props: strikeouts, game slate, batter boards, HR picks.
+
+    Each strikeout projection row is enriched with actual_strikeouts and
+    actual_innings_pitched when the corresponding StrikeoutActuals row
+    exists for the same date — the frontend uses these to render
+    actual-vs-projection columns on past-date views.
+    """
     tz = _safe_tz(tz)
     strikeouts = _query_recent(
         db, StrikeoutProjections, "date", target_date, limit, tz=tz
@@ -146,6 +153,29 @@ def mlb_predictions(
             continue
         seen_pitchers.add(pid)
         cleaned_strikeouts.append(row)
+
+    # Merge actuals for the selected date. When target_date is None (today),
+    # actuals likely don't exist yet — the lookup returns an empty dict and
+    # rows pass through unchanged.
+    actuals_date = target_date
+    if actuals_date is None and cleaned_strikeouts:
+        first_date = cleaned_strikeouts[0].get("date")
+        if first_date is not None:
+            actuals_date = first_date
+    if actuals_date is not None:
+        actuals_by_pid = {
+            r.pitcher_id: r
+            for r in db.query(StrikeoutActuals)
+            .filter(StrikeoutActuals.date == actuals_date)
+            .all()
+        }
+        for row in cleaned_strikeouts:
+            actual = actuals_by_pid.get(row.get("pitcher_id"))
+            row["actual_strikeouts"] = actual.actual_strikeouts if actual else None
+            row["actual_innings_pitched"] = (
+                actual.actual_innings_pitched if actual else None
+            )
+
     return {
         "strikeout_projections": cleaned_strikeouts,
         "game_projections": _query_recent(
@@ -161,6 +191,26 @@ def mlb_predictions(
             db, Homer, "game_time", target_date, limit, tz=tz
         ),
     }
+
+
+@router.get("/mlb/accuracy")
+def mlb_accuracy(
+    target_date: date_type = Query(..., alias="date"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Per-day projection accuracy for the AccuracySummary cards.
+
+    Returns three buckets: pitcher_ks_ou (FanDuel-line call accuracy +
+    K MAE), projected_hits (success rate for batters projected to get
+    hits), and projected_homers (success rate for batters projected to
+    hit a HR). `available` is true when any data exists for the date.
+
+    `date` is required — meaningful summaries need a fully-played day.
+    """
+    from app.services.mlb_accuracy_service import daily_accuracy
+
+    return daily_accuracy(db, target_date=target_date)
 
 
 @router.get("/nba")
