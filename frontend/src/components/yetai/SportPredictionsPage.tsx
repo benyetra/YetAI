@@ -21,6 +21,21 @@ export type PropGroup = {
   columns: ColumnDef[];
 };
 
+export type GroupsContext = {
+  date: string;
+  isPastDate: boolean;
+};
+
+export type GroupsProp = PropGroup[] | ((ctx: GroupsContext) => PropGroup[]);
+
+function todayIso(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
 function expandedMap(groups: PropGroup[], value: boolean): Record<string, boolean> {
   return Object.fromEntries(groups.map((g) => [g.responseKey, value]));
 }
@@ -32,37 +47,39 @@ export default function SportPredictionsPage({
   subtitle,
   groups,
   topSection,
+  accuracySummary,
 }: {
   sport: PredictionSport;
   leagueLabel: string;
   emoji: string;
   subtitle: string;
-  groups: PropGroup[];
+  groups: GroupsProp;
   topSection?: (ctx: {
     data: Record<string, Array<Record<string, unknown>>> | null;
     loading: boolean;
   }) => ReactNode;
+  accuracySummary?: (ctx: GroupsContext) => ReactNode;
 }) {
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
-  const [date, setDate] = useState<string>(() => {
-    const now = new Date();
-    const y = now.getFullYear();
-    const m = String(now.getMonth() + 1).padStart(2, '0');
-    const d = String(now.getDate()).padStart(2, '0');
-    return `${y}-${m}-${d}`;
-  });
+  const [date, setDate] = useState<string>(todayIso);
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
+
+  const isPastDate = useMemo(() => date < todayIso(), [date]);
+  const resolvedGroups = useMemo<PropGroup[]>(
+    () => (typeof groups === 'function' ? groups({ date, isPastDate }) : groups),
+    [groups, date, isPastDate]
+  );
 
   const storageKey = `yetai-predictions-expanded:${sport}`;
   const [expandedByKey, setExpandedByKey] = useState<Record<string, boolean>>(() => {
-    const defaults = expandedMap(groups, true);
+    const defaults = expandedMap(resolvedGroups, true);
     if (typeof window === 'undefined') return defaults;
     try {
       const raw = window.localStorage.getItem(`yetai-predictions-expanded:${sport}`);
       if (!raw) return defaults;
       const parsed = JSON.parse(raw) as Record<string, boolean>;
-      for (const g of groups) {
+      for (const g of resolvedGroups) {
         if (typeof parsed[g.responseKey] === 'boolean') {
           defaults[g.responseKey] = parsed[g.responseKey];
         }
@@ -85,24 +102,24 @@ export default function SportPredictionsPage({
   useEffect(() => {
     setExpandedByKey((prev) => {
       const next = { ...prev };
-      for (const g of groups) {
+      for (const g of resolvedGroups) {
         if (!(g.responseKey in next)) next[g.responseKey] = true;
       }
       return next;
     });
-  }, [groups]);
+  }, [resolvedGroups]);
 
   const setAllExpanded = useCallback((value: boolean) => {
-    setExpandedByKey(expandedMap(groups, value));
-  }, [groups]);
+    setExpandedByKey(expandedMap(resolvedGroups, value));
+  }, [resolvedGroups]);
 
   const allExpanded = useMemo(
-    () => groups.every((g) => expandedByKey[g.responseKey] !== false),
-    [groups, expandedByKey]
+    () => resolvedGroups.every((g) => expandedByKey[g.responseKey] !== false),
+    [resolvedGroups, expandedByKey]
   );
   const allCollapsed = useMemo(
-    () => groups.every((g) => expandedByKey[g.responseKey] === false),
-    [groups, expandedByKey]
+    () => resolvedGroups.every((g) => expandedByKey[g.responseKey] === false),
+    [resolvedGroups, expandedByKey]
   );
 
   useEffect(() => {
@@ -123,7 +140,7 @@ export default function SportPredictionsPage({
     />
   );
 
-  const showPropToolbar = groups.length > 1;
+  const showPropToolbar = resolvedGroups.length > 1;
 
   return (
     <Layout requiresAuth fullWidth>
@@ -149,6 +166,10 @@ export default function SportPredictionsPage({
         <div className="predictions-stack">
           {topSection ? topSection({ data, loading }) : null}
 
+          {accuracySummary && isPastDate
+            ? accuracySummary({ date, isPastDate })
+            : null}
+
           {showPropToolbar && (
             <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table visibility">
               <div className="predictions-toolbar-actions">
@@ -170,7 +191,7 @@ export default function SportPredictionsPage({
                 </button>
               </div>
               <div className="predictions-toolbar-chips">
-                {groups.map((g) => {
+                {resolvedGroups.map((g) => {
                   const isOpen = expandedByKey[g.responseKey] !== false;
                   return (
                     <button
@@ -193,7 +214,7 @@ export default function SportPredictionsPage({
             </div>
           )}
 
-          {groups.map((g) => (
+          {resolvedGroups.map((g) => (
             <PredictionsTable
               key={g.responseKey}
               title={g.title}
