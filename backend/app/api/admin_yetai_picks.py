@@ -9,7 +9,8 @@ from typing import Optional
 
 from app.core.database import get_db
 from app.core.auth import require_admin
-from app.models.database_models import YetAIBet, SubscriptionTier
+from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
+from app.services.auto_pick.diagnostics import get_run_diagnostics
 
 router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
 
@@ -54,6 +55,31 @@ def _serialize(bet: YetAIBet) -> dict:
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
+
+@router.get("/runs/{run_id}/diagnostics")
+async def run_diagnostics(
+    run_id: int,
+    _: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Projection coverage + drop-reason summary for an auto_pick_runs row."""
+    body = get_run_diagnostics(db, run_id)
+    if not body.get("found"):
+        raise HTTPException(status_code=404, detail=f"Auto-pick run {run_id} not found")
+    return body
+
+
+@router.get("/runs/latest")
+async def latest_run_diagnostics(
+    _: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Diagnostics for the most recent auto_pick_runs row."""
+    run = db.query(AutoPickRun).order_by(AutoPickRun.id.desc()).first()
+    if not run:
+        raise HTTPException(status_code=404, detail="No auto-pick runs yet")
+    return get_run_diagnostics(db, run.id)
 
 
 @router.get("/pending")
