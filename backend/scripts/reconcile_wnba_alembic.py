@@ -81,6 +81,13 @@ def main() -> None:
     current = _current_revision(engine)
     print(f"alembic_version before reconcile: {current!r}")
 
+    if current is not None and current not in ORDER:
+        print(
+            f"alembic_version after reconcile: {current!r} "
+            "(ahead of WNBA reconcile chain; no stamp needed)"
+        )
+        return
+
     for revision, target, kind in REVISIONS:
         if not _schema_ready(insp, kind, target):
             print(f"skip stamp {revision}: schema not ready ({target})")
