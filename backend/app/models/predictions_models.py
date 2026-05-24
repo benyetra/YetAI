@@ -1723,6 +1723,66 @@ class NHLTeamTotalsPredictions(Base):
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
+class NHLTeamShotsActuals(Base):
+    """Per-team shots-on-goal actuals from the NHL boxscore endpoint."""
+
+    __tablename__ = "pred_nhl_team_shots_actuals"
+    id = Column(Integer, primary_key=True)
+    game_id = Column(Integer, nullable=False, index=True)
+    game_date = Column(Date, nullable=False, index=True)
+    team_id = Column(Integer, nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_id = Column(Integer, nullable=True)
+    opponent_team_name = Column(String(100), nullable=True)
+    actual_shots = Column(Integer, nullable=False)
+    # Mirror of the prediction so accuracy queries don't need a JOIN.
+    predicted_shots = Column(Float, nullable=True)
+    shots_line = Column(Float, nullable=True)
+    betting_recommendation = Column(String(20), nullable=True)
+    recommendation_correct = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NHLPlayerShotsActuals(Base):
+    """Per-skater shots-on-goal actuals from the NHL boxscore endpoint."""
+
+    __tablename__ = "pred_nhl_player_shots_actuals"
+    id = Column(Integer, primary_key=True)
+    game_id = Column(Integer, nullable=False, index=True)
+    game_date = Column(Date, nullable=False, index=True)
+    player_id = Column(Integer, nullable=False, index=True)
+    player_name = Column(String(100), nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_name = Column(String(100), nullable=True)
+    actual_shots = Column(Integer, nullable=False)
+    predicted_shots = Column(Float, nullable=True)
+    shots_line = Column(Float, nullable=True)
+    betting_recommendation = Column(String(20), nullable=True)
+    recommendation_correct = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
+class NHLTeamTotalsActuals(Base):
+    """Final score actuals per game for grading NHL team totals predictions."""
+
+    __tablename__ = "pred_nhl_team_totals_actuals"
+    id = Column(Integer, primary_key=True)
+    game_id = Column(Integer, nullable=False, unique=True, index=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=False)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_id = Column(Integer, nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    actual_home_goals = Column(Integer, nullable=False)
+    actual_away_goals = Column(Integer, nullable=False)
+    actual_total_goals = Column(Integer, nullable=False)
+    predicted_total_goals = Column(Float, nullable=True)
+    draftkings_ou_line = Column(Float, nullable=True)
+    betting_recommendation = Column(String(20), nullable=True)
+    recommendation_correct = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 # =============================================================================
 # NBA PREDICTION ENHANCEMENT MODELS
 # =============================================================================

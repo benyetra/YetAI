@@ -1,13 +1,17 @@
 """Per-day WNBA projection accuracy → unified bucket shape.
 
-WNBA only has game-level projections (no per-player props). We grade:
-- Game Totals O/U (uses `market_total` + `recommendation` side)
-- Game Totals MAE (projected_total vs actual_total)
-- Spread MAE (projected_margin vs actual_margin)
+Six buckets:
 
-The `recommendation` column on WNBATotalsProjections looks like
-"OVER" / "UNDER" / "PASS"; we lowercase the first token and feed it to
-the shared O/U helper which handles 'pass' by skipping the row.
+- Game Totals O/U (market_total + recommendation)
+- Game Totals MAE
+- Spread Margin MAE
+- Points O/U (per-player; uses market_line + recommendation)
+- Assists O/U (per-player)
+- Rebounds O/U (per-player)
+
+The per-player projections + actuals tables are populated by the
+existing `generate_*_predictions.py` and `calculate_prediction_accuracy.py`
+ETLs. This service just surfaces them in the accuracy summary.
 """
 
 from __future__ import annotations
@@ -18,6 +22,12 @@ from typing import Any, Optional
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import (
+    WNBAAssistsActuals,
+    WNBAAssistsProjections,
+    WNBAPointsActuals,
+    WNBAPointsProjections,
+    WNBAReboundsActuals,
+    WNBAReboundsProjections,
     WNBASpreadActuals,
     WNBASpreadProjections,
     WNBATotalsActuals,
@@ -42,9 +52,42 @@ def _game_key(row) -> tuple:
     return (row.game_date, row.home_team_name, row.away_team_name)
 
 
+def _player_prop_rows(
+    db: Session,
+    target_date: date_type,
+    projections_cls,
+    actuals_cls,
+    *,
+    proj_field: str,
+    actual_field: str,
+) -> list[dict[str, Any]]:
+    """Build per-player rows for a points/assists/rebounds prop.
+
+    Both projection and actuals tables have a `date` column (not `game_date`)
+    via the WNBA _make_prop_projection / _make_prop_actuals factory.
+    """
+    proj = db.query(projections_cls).filter(projections_cls.date == target_date).all()
+    actuals = db.query(actuals_cls).filter(actuals_cls.date == target_date).all()
+    by_pid = {a.player_id: a for a in actuals}
+
+    rows: list[dict[str, Any]] = []
+    for p in proj:
+        a = by_pid.get(p.player_id)
+        rows.append(
+            {
+                proj_field: getattr(p, proj_field),
+                "market_line": p.market_line,
+                "recommendation": _pick(p.recommendation),
+                actual_field: getattr(a, actual_field) if a else None,
+            }
+        )
+    return rows
+
+
 def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     """Build the WNBA accuracy summary for `target_date`."""
 
+    # --- Game totals ----------------------------------------------------
     totals_proj = (
         db.query(WNBATotalsProjections)
         .filter(WNBATotalsProjections.game_date == target_date)
@@ -56,7 +99,6 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         .all()
     )
     totals_by_key = {_game_key(a): a for a in totals_actuals}
-
     totals_rows: list[dict[str, Any]] = []
     for p in totals_proj:
         a = totals_by_key.get(_game_key(p))
@@ -69,6 +111,7 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             }
         )
 
+    # --- Spread ---------------------------------------------------------
     spread_proj = (
         db.query(WNBASpreadProjections)
         .filter(WNBASpreadProjections.game_date == target_date)
@@ -80,7 +123,6 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         .all()
     )
     spread_by_key = {_game_key(a): a for a in spread_actuals}
-
     spread_rows: list[dict[str, Any]] = []
     for p in spread_proj:
         a = spread_by_key.get(_game_key(p))
@@ -90,6 +132,32 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
                 "actual_margin": a.actual_margin if a else None,
             }
         )
+
+    # --- Per-player props ----------------------------------------------
+    points_rows = _player_prop_rows(
+        db,
+        target_date,
+        WNBAPointsProjections,
+        WNBAPointsActuals,
+        proj_field="projected_points",
+        actual_field="actual_points",
+    )
+    assists_rows = _player_prop_rows(
+        db,
+        target_date,
+        WNBAAssistsProjections,
+        WNBAAssistsActuals,
+        proj_field="projected_assists",
+        actual_field="actual_assists",
+    )
+    rebounds_rows = _player_prop_rows(
+        db,
+        target_date,
+        WNBAReboundsProjections,
+        WNBAReboundsActuals,
+        proj_field="projected_rebounds",
+        actual_field="actual_rebounds",
+    )
 
     buckets: list[AccuracyBucket] = [
         ou_call_bucket(
@@ -117,10 +185,40 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             key="spread_mae",
             unit_label="pts",
         ),
+        ou_call_bucket(
+            points_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_points",
+            projected_field="projected_points",
+            label="Player Points O/U",
+            key="player_points_ou",
+        ),
+        ou_call_bucket(
+            assists_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_assists",
+            projected_field="projected_assists",
+            label="Player Assists O/U",
+            key="player_assists_ou",
+        ),
+        ou_call_bucket(
+            rebounds_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_rebounds",
+            projected_field="projected_rebounds",
+            label="Player Rebounds O/U",
+            key="player_rebounds_ou",
+        ),
     ]
 
+    available = bool(
+        totals_rows or spread_rows or points_rows or assists_rows or rebounds_rows
+    )
     return assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
-        available=bool(totals_rows or spread_rows),
+        available=available,
     )
