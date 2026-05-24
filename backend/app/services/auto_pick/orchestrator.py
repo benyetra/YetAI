@@ -7,7 +7,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time
 from typing import Optional
 
 from sqlalchemy.orm import Session
@@ -26,6 +26,20 @@ from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
 
 log = logging.getLogger(__name__)
+
+
+def date_range_for_utc_day(now: datetime) -> DateRange:
+    """Inclusive UTC calendar-day bounds for projection source queries.
+
+    Using bare ``utcnow()`` as the lower bound breaks SQL ``date >= timestamp``
+    comparisons (date at midnight is less than an afternoon timestamp).
+    """
+    run_day = now.date()
+    return DateRange(
+        start=datetime.combine(run_day, time.min),
+        end=datetime.combine(run_day, time.max),
+    )
+
 
 # Map auto-pick MarketType -> YetAIBet BetType enum
 _MARKET_TYPE_TO_BET_TYPE: dict[MarketType, BetType] = {
@@ -80,7 +94,7 @@ class AutoPickOrchestrator:
             )
         )
 
-        date_range = DateRange(start=self.now, end=self.now + timedelta(days=1))
+        date_range = date_range_for_utc_day(self.now)
 
         results = await asyncio.gather(
             *[self._safe_get(p, date_range) for p in self.providers],
