@@ -7,8 +7,8 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, time
-from typing import Optional
+from datetime import date, datetime, time
+from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +26,16 @@ from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
 
 log = logging.getLogger(__name__)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(v) for v in value]
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    return value
 
 
 def date_range_for_utc_day(now: datetime) -> DateRange:
@@ -212,10 +222,12 @@ class AutoPickOrchestrator:
             auto_pick_run_id=run_id,
             # Game/market context
             sport=c.league,
-            prediction_factors={
-                "market_line": c.market_line,
-                "our_projection": c.our_projection,
-                "projection_metadata": c.projection_metadata,
-                "event_id": c.event_id,
-            },
+            prediction_factors=_json_safe(
+                {
+                    "market_line": c.market_line,
+                    "our_projection": c.our_projection,
+                    "projection_metadata": c.projection_metadata,
+                    "event_id": c.event_id,
+                }
+            ),
         )
