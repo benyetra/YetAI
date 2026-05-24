@@ -1,0 +1,67 @@
+name: Auto-pick troubleshoot
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: auto_pick_runs id to diagnose
+        required: false
+        default: "1"
+      enqueue_etl:
+        description: Enqueue NBA+MLB pipelines if projection counts are zero
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  troubleshoot:
+    name: Diagnose and rerun auto-pick
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run troubleshoot script
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL host: ${DATABASE_URL#*@}"
+          export REDIS_URL="$(railway variable list --service "$CELERY_SERVICE_ID" --json | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          if isinstance(d,dict):
+            m=d
+          else:
+            m={i['name']:i['value'] for i in d}
+          print(m.get('REDIS_URL') or m.get('REDIS_PRIVATE_URL') or '')
+          ")"
+          ARGS="--run-id ${{ inputs.run_id }}"
+          if [ "${{ inputs.enqueue_etl }}" = "true" ]; then
+            ARGS="$ARGS --enqueue-etl"
+          fi
+          PYTHONPATH=. python3 scripts/troubleshoot_auto_pick_workflow.py $ARGS | tee troubleshoot.log
+
+      - name: Upload log
+        uses: actions/upload-artifact@v4
+        with:
+          name: auto-pick-troubleshoot-log
+          path: backend/troubleshoot.log
