@@ -15,6 +15,10 @@ from typing import Any
 
 import joblib
 
+from app.services.etl.nfl.kicker_blend_tune import (
+    impute_kick_distance,
+    resolve_blend_weight,
+)
 from app.services.etl.nfl.ml_feature_mapping import get_feature_mapper
 
 logger = logging.getLogger(__name__)
@@ -146,7 +150,7 @@ def blend_field_goal_projection(
     Returns (projected_fgs, metadata).
     """
     if weight_ml is None:
-        weight_ml = float(os.getenv("NFL_KICKER_ML_BLEND_WEIGHT", "0.35"))
+        weight_ml = resolve_blend_weight()
 
     ensemble = get_ml_kicker_ensemble()
     meta: dict = {"ml_used": False, "model_source": ensemble.model_source}
@@ -154,7 +158,9 @@ def blend_field_goal_projection(
         return statistical_fgs, meta
 
     ctx = dict(game_context or {})
-    ctx.setdefault("kick_distance", 38.0)
+    ctx["kick_distance"] = impute_kick_distance(
+        kicker_data, team_data, game_context=ctx
+    )
     prob = ensemble.predict_success_probability(
         kicker_data, team_data, weather_data, ctx
     )
