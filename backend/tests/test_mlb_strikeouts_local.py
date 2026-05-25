@@ -3,9 +3,9 @@
 Tier 1: source contract tests — always run, no MLB/scikit-learn imports.
 Tier 2: behavior tests — skip if optional deps are missing.
 
-We do not import app.services.etl.mlb.strikeouts here: module init needs S3 park
-factors and a strikeout classifier pickle. run() wiring is covered by
-test_run_logic_simulation_no_name_error.
+We do not import app.services.etl.mlb.strikeouts here: module init reads S3 park
+factors (network). Classifier load is lazy — see test_mlb_strikeout_degrade.py.
+run() wiring is covered by test_run_logic_simulation_no_name_error.
 """
 
 from __future__ import annotations

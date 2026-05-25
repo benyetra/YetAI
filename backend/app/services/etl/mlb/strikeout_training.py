@@ -25,6 +25,31 @@ def min_joined_rows() -> int:
         return DEFAULT_MIN_JOINED
 
 
+def should_retrain_strikeout_classifier(
+    db_counts: dict[str, int] | None = None,
+) -> tuple[bool, str]:
+    """
+    Whether joined projection+actual rows meet the retrain guardrail.
+
+    Returns (ready, reason). Weekly ops: when ready is True, consider
+    ``run_retrain_strikeouts`` / Celery ``retrain_strikeout_classifier``.
+    """
+    counts = db_counts if db_counts is not None else get_strikeout_table_counts()
+    joined = int(counts.get("joined", 0))
+    minimum = min_joined_rows()
+    if joined < minimum:
+        return (
+            False,
+            f"joined={joined} < {minimum} (projections={counts.get('projections', 0)}, "
+            f"actuals={counts.get('actuals', 0)})",
+        )
+    return (
+        True,
+        f"joined={joined} >= {minimum}; retrain eligible — "
+        "scripts/mlb_retrain_strikeouts.py or admin ml-ops/retrain-strikeouts",
+    )
+
+
 def get_strikeout_table_counts() -> dict[str, int]:
     row = (
         db_session.execute(

@@ -211,25 +211,44 @@ class BacktestModelRunner:
 
         return results
 
-    def predict_hits(self, game, lineup_data, pitcher_stats):
-        """Run hit prediction backtesting (REQ-BT-028)."""
+    def predict_hits(self, game, lineup_data, pitcher_stats, features=None):
+        """Run hit prediction backtesting (REQ-BT-028).
+
+        Returns per-side heuristic projections (production ``hits.py`` logic),
+        aggregate board heuristic score, and shadow ML P(1+ hit) for A/B scoring.
+
+        Team-level assumption: ``actual_hits`` in backtest is total team hits from
+        the box score; board-style accuracy uses ``actual_hits >= 1``.
+        """
         if "hits" not in self.models_to_test:
             return {}
 
-        # Simplified hit prediction based on batting stats and pitcher quality
+        from app.services.etl.mlb.hits import (
+            lineup_heuristic_score_aggregate,
+            project_lineup_hits_heuristic,
+        )
+        from app.services.etl.mlb.hits_classifier import (
+            build_lineup_hit_features,
+            predict_p_one_plus_hit,
+        )
+
+        features = features or {}
         results = {}
         for side in ("home", "away"):
-            opp_side = "away" if side == "home" else "home"
-            p_stats = pitcher_stats.get(f"{opp_side}_pitcher_stats", {})
-            whip = p_stats.get("whip", 1.35)
+            proj_hits = project_lineup_hits_heuristic(
+                pitcher_stats, lineup_data, side, features=features
+            )
+            heuristic_score = lineup_heuristic_score_aggregate(
+                pitcher_stats, lineup_data, side, features=features
+            )
+            ml_features = build_lineup_hit_features(
+                side, lineup_data, pitcher_stats, features=features
+            )
+            ml_prob = predict_p_one_plus_hit(ml_features)
 
-            # Estimate hits allowed per 9 innings from WHIP
-            # WHIP = (BB + H) / IP, roughly 60% are hits
-            est_h9 = whip * 0.6 * 9.0
-
-            # Project hits for lineup (9 batters, ~4 PA each)
-            proj_hits = est_h9 * 5.5 / 9.0  # Adjusted for ~5.5 IP per starter
-            results[f"{side}_projected_hits"] = round(proj_hits, 1)
+            results[f"{side}_projected_hits"] = proj_hits
+            results[f"{side}_heuristic"] = heuristic_score
+            results[f"{side}_ml_prob"] = ml_prob
 
         return results
 

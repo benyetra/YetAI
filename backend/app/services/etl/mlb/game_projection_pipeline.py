@@ -25,6 +25,10 @@ from app.models.predictions_models import GameProjections, GameActuals
 
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb.odds_utils import american_to_break_even_prob
+from app.services.ml_model_version import (
+    attach_model_version,
+    resolve_mlb_game_projection_model_version,
+)
 
 
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
@@ -186,10 +190,18 @@ def compute_edge_and_value(prediction, odds_data):
     return result
 
 
-def store_game_projections(predictions, target_date=None):
+def store_game_projections(predictions, target_date=None, *, model_version=None):
     """Upsert game projections into the database."""
     if target_date is None:
         target_date = date.today()
+
+    if model_version is None:
+        from app.services.etl.mlb.game_model import load_model
+
+        model_version = resolve_mlb_game_projection_model_version(
+            win_model=load_model("win"),
+            allow_network=os.getenv("ML_MODEL_VERSION_ALLOW_S3", "1") == "1",
+        )
 
     stored = 0
     for pred in predictions:
@@ -204,6 +216,7 @@ def store_game_projections(predictions, target_date=None):
             for key, val in pred.items():
                 if key not in ("game_id",) and hasattr(existing, key):
                     setattr(existing, key, val)
+            attach_model_version(existing, model_version)
             existing.updated_at = datetime.utcnow()
         else:
             proj = GameProjections(
@@ -242,7 +255,7 @@ def store_game_projections(predictions, target_date=None):
                 value_rating=pred.get("value_rating"),
                 venue_name=pred.get("venue_name"),
                 game_time=pred.get("game_time"),
-                model_version="v1.0",
+                model_version=model_version,
                 created_at=datetime.utcnow(),
             )
             db_session.add(proj)

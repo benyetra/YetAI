@@ -20,6 +20,20 @@ PYTHONPATH=. python scripts/mlb_backtest.py --compare <run_id_prefix>
 
 `--quick` uses 20 games and skips heavy odds/weather fetches. Full runs need network access to MLB/stats APIs and may take several minutes.
 
+### CI regression baseline (offline)
+
+Committed fixture: `tests/fixtures/mlb_backtest_quick_baseline.json`. CI runs `tests/test_mlb_backtest_regression.py` only (synthetic metrics; no API calls). See [ML_PROMOTION.md](./ML_PROMOTION.md) § CI baselines.
+
+After an approved model change, refresh the fixture locally:
+
+```bash
+cd backend
+PYTHONPATH=. python scripts/update_mlb_backtest_baseline.py
+pytest tests/test_mlb_backtest_regression.py -q
+```
+
+Optional: `--dry-run` prints JSON without writing; `--seed 42` matches default backtest seed.
+
 Import smoke (includes backtest package):
 
 ```bash
@@ -58,6 +72,32 @@ curl -s -X POST "$API/api/admin/celery/enqueue-task" \
 ```
 
 Retrain is blocked until `joined >= MLB_STRIKEOUT_MIN_JOINED_ROWS` (default **50**).
+
+### Weekly retrain cadence
+
+1. Check joined row count (admin `ml-ops-status`, `scripts/prod_mlb_strikeout_counts.py`, or `get_strikeout_table_counts()`).
+2. When `joined >= MLB_STRIKEOUT_MIN_JOINED_ROWS`, `should_retrain_strikeout_classifier()` returns ready with a reason string — **consider** retrain (not automatic; review recent accuracy first).
+3. Dry-run then enqueue or run locally:
+
+```bash
+PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py --dry-run
+PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py
+```
+
+4. After deploy, confirm new `model_version` tags on `pred_strikeout_projections` and segment accuracy via `strikeout_by_model_version` on the MLB accuracy API.
+
+Strikeout ETL **does not** require a loaded classifier: missing pickle logs a warning and skips the ML O/U blend while regression + negbin/line paths still run. Restore the artifact with the retrain commands above.
+
+## Hits board (heuristic + shadow ML)
+
+Production filtering uses `combined_score_heuristic` in `app/services/etl/mlb/hits.py` (`min_combined_score=2` on the daily board).
+
+Backtest (`predict_hits` in `backtest/model_runner.py`) scores two paths:
+
+- **Heuristic** — same weights/gates as production, projected to team hit totals for MAE vs box-score `actual_hits`.
+- **Shadow ML** — `app/services/etl/mlb/hits_classifier.py` `predict_p_one_plus_hit()` (logistic-style, no S3). Compared on **1+ hit** board accuracy: pick `ml_prob >= 0.5` vs `actual_hits >= 1` at **team** level.
+
+Hits ML stays **shadow/heuristic-only** in production until backtest `hit_metrics.methods` shows lift over the heuristic MAE / board baseline. Unit tests: `tests/test_mlb_hits_backtest.py`.
 
 ## Backtest run index
 
@@ -134,7 +174,64 @@ python scripts/mlb_hr_rebuild.py --stage train --season 2024 --holdout-date 2024
 | `MLB_STRIKEOUT_MIN_JOINED_ROWS` | Minimum joined rows before retrain (default 50) |
 | `MLB_STRIKEOUT_MODEL_S3` | Override strikeout model URI for status API |
 
+## Meta-learner (Layer 3)
+
+Module: `app/services/etl/mlb/meta_learner.py` (logistic stacking on `STACK_FEATURES`)  
+Evaluation: `app/services/etl/mlb/meta_learner_eval.py`  
+Tests: `tests/test_meta_learner_eval.py`
+
+**Default recommendation: SKIP** wiring the meta-learner into `game_projection_pipeline.py` until offline holdout shows **Brier lift ≥ 0.005** (`META_BRIER_LIFT_MIN`) vs the calibrated game ensemble (`xgb_win_prob` / `home_win_prob`). The game model already ships a calibrated ensemble; Layer 3 must prove incremental value or stay off.
+
+| Gate | Threshold |
+|------|-----------|
+| Brier lift (game − meta) | ≥ `0.005` on temporal holdout |
+| `recommend_production_use()` | `True` only when lift meets gate |
+
+### Offline comparison (no DB)
+
+```bash
+cd backend
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --evaluate-offline
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --evaluate-offline --scenario meta_worse
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --evaluate-offline --scenario meta_equal
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --evaluate-offline --scenario meta_better
+```
+
+Programmatic (unit tests / notebooks):
+
+```python
+from app.services.etl.mlb.meta_learner_eval import (
+    compare_meta_learner_vs_game_ensemble,
+    evaluate_meta_vs_baseline,
+    recommend_production_use,
+)
+
+result = compare_meta_learner_vs_game_ensemble(
+    {"y_true": y, "p_game": p_game, "p_meta": p_meta}
+)
+use_meta = recommend_production_use(result)  # False until Brier lift >= 0.005
+```
+
+### DB holdout compare (when `DATABASE_URL` is set)
+
+Builds stacking rows from `pred_game_projections` + actuals, trains meta on the early window, scores the last `--holdout-frac` (default 20%) games:
+
+```bash
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --compare --lookback 60
+```
+
+Without `DATABASE_URL`, `--compare` logs a skip and exits 0; use `--evaluate-offline` locally.
+
+Train artifact (optional, not production-gated alone):
+
+```bash
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --train --lookback 30
+```
+
+Writes `app/services/etl/mlb/meta_learner.pkl` (+ S3 when configured). **Do not** call `apply_meta_learner` from the daily game pipeline until `recommend_production_use` is true on a real holdout run.
+
 ## Related
 
 - Game model / projections: `game_model.py`, `game_projection_pipeline.py`
+- Game holdout eval: `game_model_eval.py`
 - Production verify: `scripts/prod_verify_etl.py`

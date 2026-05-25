@@ -1,0 +1,65 @@
+# Fast offline ML unit tests — no network, no Postgres required.
+# Extend pytest args when adding sport-specific MAE/Brier baseline tests (see backend/docs/ML_PROMOTION.md).
+
+name: ML model quality (offline)
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/app/services/ml_model_version.py"
+      - "backend/app/services/etl/mlb/**"
+      - "backend/app/services/etl/wnba/ml_training/**"
+      - "backend/tests/test_mlb_deferred_features.py"
+      - "backend/tests/test_mlb_backtest_regression.py"
+      - "backend/tests/test_mlb_hits_backtest.py"
+      - "backend/tests/test_mlb_strikeout_degrade.py"
+      - "backend/tests/test_meta_learner_eval.py"
+      - "backend/tests/fixtures/mlb_backtest_quick_baseline.json"
+      - "backend/tests/test_wnba_ml_training.py"
+      - "backend/tests/test_ml_model_version.py"
+      - ".github/workflows/ml-model-quality.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ml-model-quality.yml"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  ml-unit-gates:
+    name: ML offline unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run offline ML unit tests
+        env:
+          ML_MODEL_VERSION_ALLOW_S3: "0"
+        run: |
+          pytest tests/test_mlb_deferred_features.py \
+            tests/test_mlb_backtest_regression.py \
+            tests/test_mlb_hits_backtest.py \
+            tests/test_mlb_strikeout_degrade.py \
+            tests/test_meta_learner_eval.py \
+            tests/test_wnba_ml_training.py \
+            tests/test_ml_model_version.py -q

@@ -12,6 +12,7 @@ from app.services.etl.mlb.backtest.persistence import list_runs
 from app.services.etl.mlb.strikeout_training import (
     get_strikeout_table_counts,
     min_joined_rows,
+    should_retrain_strikeout_classifier,
 )
 
 
@@ -68,6 +69,7 @@ def collect_ml_ops_status() -> dict[str, Any]:
 def _collect_ml_ops_status_inner(s3_bucket: str, s3_key: str) -> dict[str, Any]:
     counts = get_strikeout_table_counts()
     minimum = min_joined_rows()
+    ready, retrain_reason = should_retrain_strikeout_classifier(counts)
     strikeout_s3 = os.getenv("MLB_STRIKEOUT_MODEL_S3", f"s3://{s3_bucket}/{s3_key}")
     hr_s3 = os.getenv("MLB_HR_MODEL_S3", "s3://yetibets/mlb/hr_model.pkl")
 
@@ -79,7 +81,8 @@ def _collect_ml_ops_status_inner(s3_bucket: str, s3_key: str) -> dict[str, Any]:
         "strikeout_training": {
             **counts,
             "min_joined_required": minimum,
-            "ready_to_retrain": counts["joined"] >= minimum,
+            "ready_to_retrain": ready,
+            "retrain_reason": retrain_reason,
         },
         "models": {
             "strikeout_classifier": _s3_head(strikeout_s3),

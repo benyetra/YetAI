@@ -375,6 +375,7 @@ class StrikeoutProjections(Base):
     k_edge = Column(Float, nullable=True)
     pick_confidence = Column(Float, nullable=True)
     park_id = Column(String, nullable=True)
+    model_version = Column(String(20), nullable=True)
 
 
 class StrikeoutActuals(Base):

@@ -214,30 +214,138 @@ def apply_meta_learner(projections):
     return projections
 
 
+def run_holdout_compare(lookback_days=30, holdout_frac=0.2):
+    """Train meta on early window, evaluate vs game ensemble on temporal holdout."""
+    from app.services.etl.mlb.meta_learner_eval import (
+        compare_meta_learner_vs_game_ensemble,
+        recommend_production_use,
+    )
+
+    df = build_stacking_data(lookback_days)
+    if df is None or len(df) < 30:
+        logger.error("Not enough projection-actual pairs for --compare (need 30+)")
+        return None
+
+    n_holdout = max(10, int(len(df) * holdout_frac))
+    if len(df) <= n_holdout + 10:
+        logger.error(
+            "Not enough rows for train/holdout split (need > %s games)", n_holdout + 10
+        )
+        return None
+
+    train_df = df.iloc[:-n_holdout]
+    holdout_df = df.iloc[-n_holdout:]
+    model = train_meta_learner(train_df)
+
+    X_h = holdout_df[STACK_FEATURES].fillna(0).values
+    p_meta = model.predict_proba(X_h)[:, 1]
+    p_game = holdout_df["xgb_win_prob"].fillna(0.5).values
+    y_true = holdout_df["home_win"].values
+
+    result = compare_meta_learner_vs_game_ensemble(
+        {"y_true": y_true, "p_game": p_game, "p_meta": p_meta}
+    )
+    result["holdout_n"] = int(n_holdout)
+    result["train_n"] = int(len(train_df))
+    rec = recommend_production_use(result)
+    logger.info(
+        "Holdout compare (n=%s): game Brier=%.4f meta Brier=%.4f lift=%.4f "
+        "game ML acc=%.3f meta ML acc=%.3f recommend=%s",
+        result["n"],
+        result["brier_game"],
+        result["brier_meta"],
+        result["brier_lift_game_minus_meta"],
+        result["ml_accuracy_game"],
+        result["ml_accuracy_meta"],
+        rec,
+    )
+    return result
+
+
+def run_evaluate_offline(scenario="meta_better"):
+    """Synthetic fixture comparison without DATABASE_URL."""
+    from app.services.etl.mlb.meta_learner_eval import run_offline_fixture_comparison
+
+    result = run_offline_fixture_comparison(scenario)
+    logger.info(
+        "Offline fixture (%s): Brier game=%.4f meta=%.4f lift=%.4f recommend=%s",
+        scenario,
+        result["brier_game"],
+        result["brier_meta"],
+        result["brier_lift_game_minus_meta"],
+        result["recommend_production_use"],
+    )
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description="MLB Meta-Learner")
     parser.add_argument(
         "--train", action="store_true", help="Train meta-learner on recent data"
     )
+    parser.add_argument(
+        "--compare",
+        action="store_true",
+        help="Temporal holdout: meta vs game ensemble (requires DATABASE_URL)",
+    )
+    parser.add_argument(
+        "--evaluate-offline",
+        action="store_true",
+        help="Synthetic fixture comparison (no DB)",
+    )
+    parser.add_argument(
+        "--scenario",
+        default="meta_better",
+        choices=["meta_worse", "meta_equal", "meta_better"],
+        help="Fixture scenario for --evaluate-offline",
+    )
     parser.add_argument("--lookback", type=int, default=30, help="Days of data to use")
+    parser.add_argument(
+        "--holdout-frac",
+        type=float,
+        default=0.2,
+        help="Fraction of stacking rows for temporal holdout (--compare)",
+    )
     args = parser.parse_args()
+
+    if args.evaluate_offline:
+        run_evaluate_offline(args.scenario)
+        return
+
+    if args.compare:
+        if not os.environ.get("DATABASE_URL"):
+            logger.info(
+                "DATABASE_URL not set; skipping --compare (use --evaluate-offline)"
+            )
+            return
+        from app.services.etl.mlb._db import close_session, init_session
+
+        init_session()
+        try:
+            run_holdout_compare(args.lookback, args.holdout_frac)
+        finally:
+            close_session()
+        return
+
+    if not args.train:
+        parser.print_help()
+        return
+
+    if not os.environ.get("DATABASE_URL"):
+        logger.error("DATABASE_URL required for --train")
+        return
 
     from app.services.etl.mlb._db import close_session, init_session
 
     init_session()
     try:
-        if args.train:
-            df = build_stacking_data(args.lookback)
-            if df is None or len(df) < 30:
-                logger.error(
-                    "Not enough data for meta-learner training (need 30+ games)"
-                )
-                return
-            model = train_meta_learner(df)
-            save_meta_model(model)
-            logger.info("Meta-learner training complete")
-        else:
-            parser.print_help()
+        df = build_stacking_data(args.lookback)
+        if df is None or len(df) < 30:
+            logger.error("Not enough data for meta-learner training (need 30+ games)")
+            return
+        model = train_meta_learner(df)
+        save_meta_model(model)
+        logger.info("Meta-learner training complete")
     finally:
         close_session()
 

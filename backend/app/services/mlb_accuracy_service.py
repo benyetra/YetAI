@@ -8,6 +8,7 @@ Builds three buckets via the shared `accuracy_shared` helpers:
 
 from __future__ import annotations
 
+from collections import defaultdict
 from datetime import date as date_type
 from typing import Any
 
@@ -24,6 +25,31 @@ from app.services.accuracy_shared import (
     hit_rate_bucket,
     ou_call_bucket,
 )
+
+
+def _strikeout_accuracy_by_model_version(
+    k_rows: list[dict[str, Any]],
+) -> dict[str, dict[str, Any]] | None:
+    """Per-model_version O/U buckets when projections carry model_version."""
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for row in k_rows:
+        version = row.get("model_version")
+        if version:
+            grouped[str(version)].append(row)
+    if not grouped:
+        return None
+    return {
+        version: ou_call_bucket(
+            rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_strikeouts",
+            projected_field="projected_strikeouts",
+            label=f"Pitcher Ks O/U ({version})",
+            key="pitcher_ks_ou",
+        ).to_dict()
+        for version, rows in sorted(grouped.items())
+    }
 
 
 def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
@@ -49,6 +75,7 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
                 "fanduel_line": p.fanduel_line,
                 "fanduel_over_under": p.fanduel_over_under,
                 "actual_strikeouts": a.actual_strikeouts if a else None,
+                "model_version": getattr(p, "model_version", None),
             }
         )
 
@@ -93,8 +120,12 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         ),
     ]
 
-    return assemble(
+    out = assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=bool(k_rows or hits_rows or homer_rows),
     )
+    by_version = _strikeout_accuracy_by_model_version(k_rows)
+    if by_version:
+        out["strikeout_by_model_version"] = by_version
+    return out

@@ -6,10 +6,13 @@ against simple baselines. Writes a JSON report under ``scripts/mlb/backtest_resu
 
 Example::
 
-    cd YetiBets && source .venv/bin/activate
-    python scripts/mlb/game_model_eval.py --seasons 2023 2024 2025
-    python scripts/mlb/game_model_eval.py --seasons 2024 2025 --no-tune-weights
-    # JSON includes calibration_buckets_raw / calibration_buckets_calibrated
+    cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.mlb.game_model_eval \\
+        --seasons 2023 2024 2025
+    python -m app.services.etl.mlb.game_model --evaluate --compare-deferred-features \\
+        --seasons 2023 2024 2025
+    python -m app.services.etl.mlb.game_model --report-deferred-coverage --seasons 2024 2025
+    # JSON under app/services/etl/mlb/backtest_results/
+    # Deferred comparison: game_model_deferred_eval_<ts>.json (Brier, ML acc, calibration buckets)
 """
 
 from __future__ import annotations
@@ -60,6 +63,9 @@ def _summarize_folds(folds: list[dict]) -> tuple[dict, dict]:
     summ = {
         "mean_test_win_brier_model": float(
             np.mean([f["model"]["win_brier"] for f in folds])
+        ),
+        "mean_test_win_ml_accuracy_model": float(
+            np.mean([f["model"]["win_ml_accuracy"] for f in folds])
         ),
         "mean_test_win_brier_calibrated": float(
             np.mean([f["model_calibrated"]["win_brier"] for f in folds])
@@ -116,7 +122,9 @@ def _evaluate_holdout_fold(
     ensemble_predict_value_batch,
     ensemble_with_weights,
     FEATURE_COLS,
+    feature_cols=None,
 ) -> dict | None:
+    feature_cols = feature_cols or FEATURE_COLS
     train_df = train_df.sort_values("date").reset_index(drop=True)
     _, cal_df = split_calibration_holdout(train_df, cal_val_fraction, min_cal_rows)
 
@@ -136,10 +144,11 @@ def _evaluate_holdout_fold(
         train_fit_df,
         fast=fast_train,
         tune_weights=tune_weights,
+        feature_cols=feature_cols,
     )
 
-    X_te = test_df[FEATURE_COLS].fillna(0).values
-    X_cal = cal_df[FEATURE_COLS].fillna(0).values
+    X_te = test_df[feature_cols].fillna(0).values
+    X_cal = cal_df[feature_cols].fillna(0).values
     y_fit = train_fit_df["home_win"].values.astype(int)
     y_cal = cal_df["home_win"].values.astype(int)
     y_te = test_df["home_win"].values.astype(int)
@@ -177,6 +186,7 @@ def _evaluate_holdout_fold(
 
     fold_report = {
         "test_season": int(test_year),
+        "feature_columns": list(feature_cols),
         "calibration_train_mode": cal_train_mode,
         "n_train": int(len(train_fit_df)),
         "n_cal_fit": int(len(cal_df)),
@@ -235,6 +245,113 @@ def _evaluate_holdout_fold(
     return fold_report
 
 
+def _run_holdout_on_matrix(
+    df: pd.DataFrame,
+    seasons: list[int],
+    *,
+    feature_cols: list[str],
+    fast_train: bool,
+    tune_weights: bool,
+    min_train_rows: int,
+    min_test_rows: int,
+    cal_val_fraction: float,
+    min_cal_rows: int,
+    calibration_method: str,
+    cal_train_modes: list[str],
+    train_game_models,
+    ensemble_predict_proba_batch,
+    ensemble_predict_value_batch,
+    ensemble_with_weights,
+    FEATURE_COLS,
+) -> list[dict]:
+    sorted_seasons = sorted(set(seasons))
+    modes = cal_train_modes or [CAL_TRAIN_SPLIT]
+    folds = []
+    for test_year in sorted_seasons[1:]:
+        train_df = df[df["season_year"] < test_year]
+        test_df = df[df["season_year"] == test_year]
+        if len(train_df) < min_train_rows or len(test_df) < min_test_rows:
+            logger.warning(
+                f"Skip holdout {test_year}: train={len(train_df)} test={len(test_df)} "
+                f"(need >={min_train_rows} / >={min_test_rows})"
+            )
+            continue
+
+        for cal_mode in modes:
+            fold_report = _evaluate_holdout_fold(
+                train_df,
+                test_df,
+                test_year,
+                cal_train_mode=cal_mode,
+                fast_train=fast_train,
+                tune_weights=tune_weights,
+                cal_val_fraction=cal_val_fraction,
+                min_cal_rows=min_cal_rows,
+                min_train_rows=min_train_rows,
+                calibration_method=calibration_method,
+                train_game_models=train_game_models,
+                ensemble_predict_proba_batch=ensemble_predict_proba_batch,
+                ensemble_predict_value_batch=ensemble_predict_value_batch,
+                ensemble_with_weights=ensemble_with_weights,
+                FEATURE_COLS=FEATURE_COLS,
+                feature_cols=feature_cols,
+            )
+            if fold_report is None:
+                logger.warning(
+                    f"Skip holdout {test_year} mode={cal_mode}: insufficient rows"
+                )
+                continue
+
+            logger.info(
+                f"Holdout {test_year} [{cal_mode}] ({len(feature_cols)} feats): "
+                f'train n={fold_report["n_train"]}, test n={fold_report["n_test"]}'
+            )
+            folds.append(fold_report)
+            cal_method = fold_report["calibrator"]["method"]
+            logger.info(
+                f"  Win Brier raw={fold_report['model']['win_brier']:.4f} "
+                f"ML acc={fold_report['model']['win_ml_accuracy']:.3f} "
+                f"calibrated({cal_method})="
+                f"{fold_report['model_calibrated']['win_brier']:.4f}"
+            )
+    return folds
+
+
+def deferred_retrain_recommended(
+    baseline_summary: dict,
+    expanded_summary: dict,
+    *,
+    brier_lift_min: float,
+    ml_accuracy_lift_min: float,
+) -> dict:
+    """Document whether production retrain is warranted from holdout lift."""
+    brier_baseline = baseline_summary.get("mean_test_win_brier_model")
+    brier_expanded = expanded_summary.get("mean_test_win_brier_model")
+    acc_baseline = baseline_summary.get("mean_test_win_ml_accuracy_model")
+    acc_expanded = expanded_summary.get("mean_test_win_ml_accuracy_model")
+    brier_lift = None
+    acc_lift = None
+    if brier_baseline is not None and brier_expanded is not None:
+        brier_lift = float(brier_baseline - brier_expanded)
+    if acc_baseline is not None and acc_expanded is not None:
+        acc_lift = float(acc_expanded - acc_baseline)
+    meets_brier = brier_lift is not None and brier_lift >= brier_lift_min
+    meets_acc = acc_lift is not None and acc_lift >= ml_accuracy_lift_min
+    return {
+        "brier_lift_vs_baseline": brier_lift,
+        "ml_accuracy_lift_vs_baseline": acc_lift,
+        "brier_lift_threshold": brier_lift_min,
+        "ml_accuracy_lift_threshold": ml_accuracy_lift_min,
+        "meets_brier_threshold": meets_brier,
+        "meets_ml_accuracy_threshold": meets_acc,
+        "retrain_recommended": bool(meets_brier or meets_acc),
+        "note": (
+            "Retrain + S3 upload only when retrain_recommended is true and full "
+            "train can be run locally with data."
+        ),
+    }
+
+
 def run_seasonal_holdout(
     seasons: list[int],
     fast_train: bool = True,
@@ -245,6 +362,8 @@ def run_seasonal_holdout(
     min_cal_rows: int = 50,
     calibration_method: str = "auto",
     cal_train_modes: list[str] | None = None,
+    feature_cols: list[str] | None = None,
+    report_filename_prefix: str = "game_model_eval",
 ):
     """Season-by-season holdout using the training-feature matrix."""
     from app.services.etl.mlb.game_model import (
@@ -259,6 +378,8 @@ def run_seasonal_holdout(
         train_game_models,
     )
 
+    cols = feature_cols or list(FEATURE_COLS)
+
     with app.app_context():
         load_park_factors()
         logger.info(f"Building historical matrix for seasons {seasons} …")
@@ -272,7 +393,7 @@ def run_seasonal_holdout(
         df["season_year"] = pd.to_datetime(df["date"]).dt.year
         df = df.sort_values("date").reset_index(drop=True)
 
-        coverage = feature_coverage_report(df)
+        coverage = feature_coverage_report(df, include_deferred=True)
         logger.info(
             "Feature coverage (pct still at neutral default): "
             + ", ".join(
@@ -283,7 +404,26 @@ def run_seasonal_holdout(
         )
 
         sorted_seasons = sorted(set(seasons))
-        folds = []
+        modes = cal_train_modes or [CAL_TRAIN_SPLIT]
+        folds = _run_holdout_on_matrix(
+            df,
+            seasons,
+            feature_cols=cols,
+            fast_train=fast_train,
+            tune_weights=tune_weights,
+            min_train_rows=min_train_rows,
+            min_test_rows=min_test_rows,
+            cal_val_fraction=cal_val_fraction,
+            min_cal_rows=min_cal_rows,
+            calibration_method=calibration_method,
+            cal_train_modes=modes,
+            train_game_models=train_game_models,
+            ensemble_predict_proba_batch=ensemble_predict_proba_batch,
+            ensemble_predict_value_batch=ensemble_predict_value_batch,
+            ensemble_with_weights=ensemble_with_weights,
+            FEATURE_COLS=FEATURE_COLS,
+        )
+
         overall = {
             "generated_at_utc": datetime.now(timezone.utc).isoformat(),
             "seasons_requested": sorted_seasons,
@@ -294,62 +434,12 @@ def run_seasonal_holdout(
                 "val_fraction": cal_val_fraction,
                 "min_cal_rows": min_cal_rows,
                 "method": calibration_method,
-                "train_modes": cal_train_modes or [CAL_TRAIN_SPLIT],
+                "train_modes": modes,
             },
-            "feature_columns": list(FEATURE_COLS),
+            "feature_columns": cols,
             "feature_coverage": coverage,
             "folds": folds,
         }
-
-        modes = cal_train_modes or [CAL_TRAIN_SPLIT]
-
-        for test_year in sorted_seasons[1:]:
-            train_df = df[df["season_year"] < test_year]
-            test_df = df[df["season_year"] == test_year]
-            if len(train_df) < min_train_rows or len(test_df) < min_test_rows:
-                logger.warning(
-                    f"Skip holdout {test_year}: train={len(train_df)} test={len(test_df)} "
-                    f"(need >={min_train_rows} / >={min_test_rows})"
-                )
-                continue
-
-            for cal_mode in modes:
-                fold_report = _evaluate_holdout_fold(
-                    train_df,
-                    test_df,
-                    test_year,
-                    cal_train_mode=cal_mode,
-                    fast_train=fast_train,
-                    tune_weights=tune_weights,
-                    cal_val_fraction=cal_val_fraction,
-                    min_cal_rows=min_cal_rows,
-                    min_train_rows=min_train_rows,
-                    calibration_method=calibration_method,
-                    train_game_models=train_game_models,
-                    ensemble_predict_proba_batch=ensemble_predict_proba_batch,
-                    ensemble_predict_value_batch=ensemble_predict_value_batch,
-                    ensemble_with_weights=ensemble_with_weights,
-                    FEATURE_COLS=FEATURE_COLS,
-                )
-                if fold_report is None:
-                    logger.warning(
-                        f"Skip holdout {test_year} mode={cal_mode}: insufficient rows"
-                    )
-                    continue
-
-                logger.info(
-                    f'Holdout {test_year} [{cal_mode}]: train n={fold_report["n_train"]}, '
-                    f'cal fit n={fold_report["n_cal_fit"]}, test n={fold_report["n_test"]}'
-                )
-                folds.append(fold_report)
-
-                cal_method = fold_report["calibrator"]["method"]
-                logger.info(
-                    f"  Win Brier raw={fold_report['model']['win_brier']:.4f} "
-                    f"calibrated({cal_method})="
-                    f"{fold_report['model_calibrated']['win_brier']:.4f} "
-                    f"vs 0.5={fold_report['baselines']['win_brier_always_0.5']:.4f}"
-                )
 
         if folds:
             primary_mode = modes[0]
@@ -373,11 +463,195 @@ def run_seasonal_holdout(
 
         os.makedirs(OUTPUT_DIR, exist_ok=True)
         ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        path = os.path.join(OUTPUT_DIR, f"game_model_eval_{ts}.json")
+        path = os.path.join(OUTPUT_DIR, f"{report_filename_prefix}_{ts}.json")
         with open(path, "w", encoding="utf-8") as fh:
             json.dump(overall, fh, indent=2)
         overall["_report_path"] = path
         logger.info(f"Wrote evaluation report: {path}")
+        return overall
+
+
+def run_deferred_feature_comparison(
+    seasons: list[int],
+    fast_train: bool = True,
+    tune_weights: bool = True,
+    min_train_rows: int = 400,
+    min_test_rows: int = 100,
+    cal_val_fraction: float = 0.15,
+    min_cal_rows: int = 50,
+    calibration_method: str = "auto",
+    cal_train_modes: list[str] | None = None,
+):
+    """Walk-forward eval: baseline FEATURE_COLS vs data-driven promoted deferred cols."""
+    from app.services.etl.mlb.game_model import (
+        DEFERRED_EVAL_BRIER_LIFT_MIN,
+        DEFERRED_EVAL_ML_ACCURACY_LIFT_MIN,
+        FEATURE_COLS,
+        app,
+        build_historical_training_data,
+        deferred_feature_coverage_report,
+        ensemble_predict_proba_batch,
+        ensemble_predict_value_batch,
+        ensemble_with_weights,
+        feature_coverage_report,
+        load_park_factors,
+        promote_deferred_features,
+        train_game_models,
+    )
+
+    with app.app_context():
+        load_park_factors()
+        logger.info(f"Building historical matrix for seasons {seasons} …")
+        df = build_historical_training_data(seasons=list(seasons), quick=False)
+        if df.empty:
+            raise RuntimeError(
+                "No training rows produced; check seasons and API access."
+            )
+
+        df = df.copy()
+        df["season_year"] = pd.to_datetime(df["date"]).dt.year
+        df = df.sort_values("date").reset_index(drop=True)
+
+        promotion = promote_deferred_features(df)
+        baseline_cols = list(FEATURE_COLS)
+        expanded_cols = promotion["expanded_feature_cols"]
+        sorted_seasons = sorted(set(seasons))
+        modes = cal_train_modes or [CAL_TRAIN_SPLIT]
+
+        logger.info(
+            "Deferred promotion candidates: %s",
+            promotion["promoted"] or "(none — expanded == baseline)",
+        )
+
+        baseline_folds = _run_holdout_on_matrix(
+            df,
+            seasons,
+            feature_cols=baseline_cols,
+            fast_train=fast_train,
+            tune_weights=tune_weights,
+            min_train_rows=min_train_rows,
+            min_test_rows=min_test_rows,
+            cal_val_fraction=cal_val_fraction,
+            min_cal_rows=min_cal_rows,
+            calibration_method=calibration_method,
+            cal_train_modes=modes,
+            train_game_models=train_game_models,
+            ensemble_predict_proba_batch=ensemble_predict_proba_batch,
+            ensemble_predict_value_batch=ensemble_predict_value_batch,
+            ensemble_with_weights=ensemble_with_weights,
+            FEATURE_COLS=FEATURE_COLS,
+        )
+
+        expanded_folds = []
+        if expanded_cols != baseline_cols:
+            expanded_folds = _run_holdout_on_matrix(
+                df,
+                seasons,
+                feature_cols=expanded_cols,
+                fast_train=fast_train,
+                tune_weights=tune_weights,
+                min_train_rows=min_train_rows,
+                min_test_rows=min_test_rows,
+                cal_val_fraction=cal_val_fraction,
+                min_cal_rows=min_cal_rows,
+                calibration_method=calibration_method,
+                cal_train_modes=modes,
+                train_game_models=train_game_models,
+                ensemble_predict_proba_batch=ensemble_predict_proba_batch,
+                ensemble_predict_value_batch=ensemble_predict_value_batch,
+                ensemble_with_weights=ensemble_with_weights,
+                FEATURE_COLS=FEATURE_COLS,
+            )
+
+        primary_mode = modes[0]
+        baseline_primary = [
+            f for f in baseline_folds if f.get("calibration_train_mode") == primary_mode
+        ]
+        expanded_primary = [
+            f for f in expanded_folds if f.get("calibration_train_mode") == primary_mode
+        ]
+
+        baseline_summary, baseline_verdict = _summarize_folds(
+            baseline_primary or baseline_folds,
+        )
+        expanded_summary = {}
+        expanded_verdict = {}
+        comparison = {
+            "expanded_same_as_baseline": expanded_cols == baseline_cols,
+            "promoted_columns": promotion["promoted"],
+            "no_lift_reason": None,
+        }
+        retrain_decision = {
+            "retrain_recommended": False,
+            "note": "No deferred columns promoted; expanded feature set equals baseline.",
+        }
+
+        if expanded_cols != baseline_cols and expanded_primary:
+            expanded_summary, expanded_verdict = _summarize_folds(
+                expanded_primary or expanded_folds,
+            )
+            retrain_decision = deferred_retrain_recommended(
+                baseline_summary,
+                expanded_summary,
+                brier_lift_min=DEFERRED_EVAL_BRIER_LIFT_MIN,
+                ml_accuracy_lift_min=DEFERRED_EVAL_ML_ACCURACY_LIFT_MIN,
+            )
+            if baseline_summary and expanded_summary:
+                comparison["brier_delta_expanded_minus_baseline"] = (
+                    expanded_summary["mean_test_win_brier_model"]
+                    - baseline_summary["mean_test_win_brier_model"]
+                )
+                comparison["ml_accuracy_delta_expanded_minus_baseline"] = (
+                    expanded_summary["mean_test_win_ml_accuracy_model"]
+                    - baseline_summary["mean_test_win_ml_accuracy_model"]
+                )
+        elif expanded_cols == baseline_cols:
+            comparison["no_lift_reason"] = (
+                "No deferred column met promotion threshold on training matrix."
+            )
+
+        overall = {
+            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "report_type": "deferred_feature_comparison",
+            "seasons_requested": sorted_seasons,
+            "n_rows_total": int(len(df)),
+            "fast_train": fast_train,
+            "tune_weights": tune_weights,
+            "calibration": {
+                "val_fraction": cal_val_fraction,
+                "min_cal_rows": min_cal_rows,
+                "method": calibration_method,
+                "train_modes": modes,
+            },
+            "deferred_feature_coverage": deferred_feature_coverage_report(df),
+            "feature_coverage_all": feature_coverage_report(df, include_deferred=True),
+            "promotion": promotion,
+            "baseline": {
+                "feature_columns": baseline_cols,
+                "folds": baseline_folds,
+                "summary_across_folds": baseline_summary,
+                "verdict": baseline_verdict,
+            },
+            "expanded": {
+                "feature_columns": expanded_cols,
+                "folds": expanded_folds,
+                "summary_across_folds": expanded_summary,
+                "verdict": expanded_verdict,
+            },
+            "comparison": comparison,
+            "retrain_decision": retrain_decision,
+        }
+
+        os.makedirs(OUTPUT_DIR, exist_ok=True)
+        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        path = os.path.join(OUTPUT_DIR, f"game_model_deferred_eval_{ts}.json")
+        with open(path, "w", encoding="utf-8") as fh:
+            json.dump(overall, fh, indent=2)
+        overall["_report_path"] = path
+        logger.info(f"Wrote deferred comparison report: {path}")
+        logger.info(
+            "Retrain recommended: %s", retrain_decision.get("retrain_recommended")
+        )
         return overall
 
 
@@ -442,6 +716,16 @@ def parse_args(argv=None):
         action="store_true",
         help="Run split_train and full_train_tail_cal in one report for comparison",
     )
+    p.add_argument(
+        "--compare-deferred-features",
+        action="store_true",
+        help="Walk-forward baseline FEATURE_COLS vs promoted deferred columns",
+    )
+    p.add_argument(
+        "--report-deferred-coverage",
+        action="store_true",
+        help="Build training matrix and log deferred backfill coverage only",
+    )
     return p.parse_args(argv)
 
 
@@ -459,17 +743,46 @@ def main(argv=None):
     else:
         cal_modes = [CAL_TRAIN_SPLIT]
 
-    report = run_seasonal_holdout(
-        seasons,
-        fast_train=not args.full_train,
-        tune_weights=not args.no_tune_weights,
-        min_train_rows=args.min_train,
-        min_test_rows=args.min_test,
-        cal_val_fraction=args.cal_val_fraction,
-        min_cal_rows=args.min_cal_rows,
-        calibration_method=args.calibration_method,
-        cal_train_modes=cal_modes,
-    )
+    if args.report_deferred_coverage:
+        from app.services.etl.mlb.game_model import (
+            app,
+            build_historical_training_data,
+            load_park_factors,
+            promote_deferred_features,
+        )
+
+        with app.app_context():
+            load_park_factors()
+            df = build_historical_training_data(seasons=seasons, quick=False)
+            promo = promote_deferred_features(df)
+            print(json.dumps(promo["coverage"], indent=2))
+            print("\nPromoted:", promo["promoted"] or "(none)")
+        return
+
+    if args.compare_deferred_features:
+        report = run_deferred_feature_comparison(
+            seasons,
+            fast_train=not args.full_train,
+            tune_weights=not args.no_tune_weights,
+            min_train_rows=args.min_train,
+            min_test_rows=args.min_test,
+            cal_val_fraction=args.cal_val_fraction,
+            min_cal_rows=args.min_cal_rows,
+            calibration_method=args.calibration_method,
+            cal_train_modes=cal_modes,
+        )
+    else:
+        report = run_seasonal_holdout(
+            seasons,
+            fast_train=not args.full_train,
+            tune_weights=not args.no_tune_weights,
+            min_train_rows=args.min_train,
+            min_test_rows=args.min_test,
+            cal_val_fraction=args.cal_val_fraction,
+            min_cal_rows=args.min_cal_rows,
+            calibration_method=args.calibration_method,
+            cal_train_modes=cal_modes,
+        )
 
     def _print_summary(label: str, summ: dict, verdict: dict) -> None:
         if not summ:

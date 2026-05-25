@@ -14,12 +14,19 @@ from unittest.mock import MagicMock
 from app.services import mlb_accuracy_service as svc
 
 
-def _proj_strikeout(pid="p1", projected_strikeouts=6.0, fd_line=5.5, fd_ou="over"):
+def _proj_strikeout(
+    pid="p1",
+    projected_strikeouts=6.0,
+    fd_line=5.5,
+    fd_ou="over",
+    model_version=None,
+):
     return SimpleNamespace(
         pitcher_id=pid,
         projected_strikeouts=projected_strikeouts,
         fanduel_line=fd_line,
         fanduel_over_under=fd_ou,
+        model_version=model_version,
     )
 
 
@@ -101,3 +108,29 @@ def test_daily_accuracy_merges_strikeout_actuals_by_pitcher_id():
     k_bucket = next(b for b in out["buckets"] if b["key"] == "pitcher_ks_ou")
     # p1: pick over 5.5, actual 7 → correct. p2: no actual → dropped.
     assert k_bucket["primary"] == "1/1 · 100%"
+
+
+def test_daily_accuracy_groups_strikeouts_by_model_version():
+    db = _mock_db(
+        strikeouts=[
+            _proj_strikeout(pid="p1", model_version="gb-v1"),
+            _proj_strikeout(
+                pid="p2",
+                projected_strikeouts=4.0,
+                fd_ou="under",
+                model_version="heuristic-v1",
+            ),
+        ],
+        actuals=[
+            _actual_strikeout(pid="p1", actual_strikeouts=7.0),
+            _actual_strikeout(pid="p2", actual_strikeouts=3.0),
+        ],
+        hits=[],
+        homers=[],
+    )
+    out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
+    by_v = out.get("strikeout_by_model_version")
+    assert by_v is not None
+    assert set(by_v) == {"gb-v1", "heuristic-v1"}
+    assert by_v["gb-v1"]["primary"] == "1/1 · 100%"
+    assert by_v["heuristic-v1"]["primary"] == "1/1 · 100%"
