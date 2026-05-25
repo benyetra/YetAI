@@ -13,6 +13,10 @@ on:
       - "backend/app/services/etl/wnba/ml_training/**"
       - "backend/app/services/etl/nba/**"
       - "backend/app/services/etl/nhl/**"
+      - "backend/app/services/etl/nfl/**"
+      - "backend/tests/test_nfl_common.py"
+      - "backend/tests/test_nfl_backtest_regression.py"
+      - "backend/tests/fixtures/nfl_backtest_quick_baseline.json"
       - "backend/tests/test_mlb_deferred_features.py"
       - "backend/tests/test_nhl_backtest_regression.py"
       - "backend/tests/fixtures/nhl_backtest_quick_baseline.json"
@@ -87,4 +91,6 @@ jobs:
             tests/test_nba_spread_ml.py \
             tests/test_nba_spread_projector.py \
             tests/test_nba_totals_ml.py \
-            tests/test_nba_totals_projector.py -q
+            tests/test_nba_totals_projector.py \
+            tests/test_nfl_common.py \
+            tests/test_nfl_backtest_regression.py -q
