@@ -129,17 +129,18 @@ def test_resolve_skips_when_starter_unconfirmed(mock_db):
     assert ctx.starter_confirmed is False
 
 
+@patch("app.services.etl.nhl.confirm_starters.db_goalie_by_player_id")
 @patch("app.services.etl.nhl.confirm_starters.primary_db_goalie")
 @patch("app.services.etl.nhl.confirm_starters.get_starters_from_boxscore")
-def test_build_slate_skips_backup_slot(mock_starters, mock_primary):
+def test_build_slate_skips_backup_slot(mock_starters, mock_primary, mock_db_by_id):
+    home_primary = _primary_goalie(100, "Home Starter", "New York")
+    away_primary = _primary_goalie(400, "Away Primary", "Boston")
     mock_starters.return_value = (
         _api_starter(100, "Home Starter"),
         _api_starter(300, "Away Backup"),
     )
-    mock_primary.side_effect = [
-        _primary_goalie(100, "Home Starter", "New York"),
-        _primary_goalie(400, "Away Primary", "Boston"),
-    ]
+    mock_primary.side_effect = [home_primary, away_primary]
+    mock_db_by_id.return_value = home_primary
 
     client = MagicMock()
     summary = cs.build_slate_starter_context([_game()], client=client)
