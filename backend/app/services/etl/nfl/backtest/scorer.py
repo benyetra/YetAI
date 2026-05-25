@@ -46,6 +46,7 @@ class NFLBacktestScorer:
         week: int | None = None,
         qb_player_id: str | None = None,
         prediction_method: str | None = None,
+        ml_predicted_yards: float | None = None,
     ) -> None:
         actual_f = float(actual_yards)
         pred_f = float(predicted_yards)
@@ -61,6 +62,12 @@ class NFLBacktestScorer:
         if ou_line is not None:
             entry["ou_line"] = float(ou_line)
             entry["ou_correct"] = _ou_correct(pred_f, actual_f, float(ou_line))
+        if ml_predicted_yards is not None:
+            ml_f = float(ml_predicted_yards)
+            entry["ml_predicted_yards"] = ml_f
+            entry["ml_yards_error"] = abs(ml_f - actual_f)
+            if ou_line is not None:
+                entry["ml_ou_correct"] = _ou_correct(ml_f, actual_f, float(ou_line))
         self.qb_results.append(entry)
 
     def add_kicker_result(
@@ -107,6 +114,15 @@ class NFLBacktestScorer:
         if ou_rate is not None:
             out["qb_ou_hit_rate"] = ou_rate
             out["qb_ou_n"] = ou_n
+        ml_rows = [r for r in self.qb_results if "ml_yards_error" in r]
+        if ml_rows:
+            ml_mae = float(np.mean([r["ml_yards_error"] for r in ml_rows]))
+            out["qb_ml_mae"] = round(ml_mae, 2)
+            out["qb_ml_n"] = len(ml_rows)
+            ml_ou, ml_ou_n = self._ou_hit_rate(ml_rows, key="ml_ou_correct")
+            if ml_ou is not None:
+                out["qb_ml_ou_hit_rate"] = ml_ou
+                out["qb_ml_ou_n"] = ml_ou_n
         methods: dict[str, Any] = {}
         by_method: dict[str, list[dict[str, Any]]] = {}
         for row in self.qb_results:

@@ -14,6 +14,7 @@ import pandas as pd
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
 
 warnings.filterwarnings("ignore")
 
@@ -392,8 +393,13 @@ def _run_qb_dynamic_core():
             # Get opponent team
             opponent_abbr = get_team_opponent(team_abbr, season, week)
 
-            # Get prediction
-            prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            tier_prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            prediction = enrich_qb_prediction_for_write(
+                tier_prediction,
+                season=season,
+                week=week,
+                is_backup=is_backup,
+            )
 
             # Create/update prediction
             existing_prediction = (
@@ -414,9 +420,10 @@ def _run_qb_dynamic_core():
                     season=season,
                     week=week,
                     predicted_passing_yards=prediction["predicted_passing_yards"],
-                    model_confidence=prediction["confidence"],
+                    model_confidence=prediction["model_confidence"],
                     prediction_method=prediction["prediction_method"],
-                    features_used=1,
+                    model_version=prediction.get("model_version"),
+                    feature_importance=prediction.get("feature_importance"),
                     prediction_date=datetime.utcnow(),
                 )
                 db_session.add(new_prediction)
@@ -430,8 +437,12 @@ def _run_qb_dynamic_core():
                 existing_prediction.predicted_passing_yards = prediction[
                     "predicted_passing_yards"
                 ]
-                existing_prediction.model_confidence = prediction["confidence"]
+                existing_prediction.model_confidence = prediction["model_confidence"]
                 existing_prediction.prediction_method = prediction["prediction_method"]
+                existing_prediction.model_version = prediction.get("model_version")
+                existing_prediction.feature_importance = prediction.get(
+                    "feature_importance"
+                )
                 existing_prediction.opponent_team_name = (
                     opponent_abbr  # Update opponent name
                 )

@@ -93,4 +93,6 @@ jobs:
             tests/test_nba_totals_ml.py \
             tests/test_nba_totals_projector.py \
             tests/test_nfl_common.py \
-            tests/test_nfl_backtest_regression.py -q
+            tests/test_nfl_backtest_regression.py \
+            tests/test_nfl_qb_passing_yards_ml.py \
+            tests/test_nfl_kicker_blend_tune.py -q

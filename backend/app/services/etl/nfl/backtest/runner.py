@@ -9,6 +9,9 @@ from typing import Any, Callable, Mapping, Sequence
 from sqlalchemy.orm import Session
 
 from app.services.etl.nfl.backtest.scorer import NFLBacktestScorer
+from app.services.etl.nfl.qb_passing_yards_ml import (
+    shadow_ml_yards_from_feature_importance,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +162,7 @@ def _score_db_pairs(
     result_scorer = scorer or NFLBacktestScorer()
 
     for pred, actual in qb_pairs:
+        ml_yards = shadow_ml_yards_from_feature_importance(pred.feature_importance)
         result_scorer.add_qb_result(
             pred.predicted_passing_yards,
             actual.actual_passing_yards,
@@ -167,6 +171,7 @@ def _score_db_pairs(
             week=pred.week,
             qb_player_id=pred.qb_player_id,
             prediction_method=pred.prediction_method,
+            ml_predicted_yards=ml_yards,
         )
 
     for pred, actual in kicker_pairs:
