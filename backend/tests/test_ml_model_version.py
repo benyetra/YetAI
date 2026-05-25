@@ -93,3 +93,15 @@ def test_attach_model_version_sets_column():
 def test_attach_model_version_no_column():
     row = object()
     mv.attach_model_version(row, "heuristic-v1")  # should not raise
+
+
+def test_resolve_nba_prop_from_metadata():
+    meta = {"model_version": "nba-pts-2026", "holdout_mae": 4.8}
+    assert mv.resolve_nba_prop_model_version("points", metadata=meta) == "nba-pts-2026"
+
+
+def test_resolve_nba_prop_override():
+    with patch.dict(os.environ, {"NBA_PROP_MODEL_VERSION": "manual-v1"}):
+        assert (
+            mv.resolve_nba_prop_model_version("rebounds", metadata=None) == "manual-v1"
+        )

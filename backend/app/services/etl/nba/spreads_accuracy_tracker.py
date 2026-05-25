@@ -25,6 +25,25 @@ def _season_start(today: date) -> date:
     return date(year, NBA_SEASON_START_MONTH, 1)
 
 
+def _projection_method(proj) -> str:
+    factors = proj.factors or {}
+    return "ml" if factors.get("method") == "ml" else "elo_pace"
+
+
+def _method_brier_stats(by_method: dict[str, dict[str, float]]) -> dict[str, dict]:
+    out: dict[str, dict] = {}
+    for method, agg in by_method.items():
+        count = int(agg["count"])
+        if count == 0:
+            out[method] = {"brier": None, "count": 0}
+        else:
+            out[method] = {
+                "brier": agg["brier_sum"] / count,
+                "count": count,
+            }
+    return out
+
+
 def _compute_nba_window(db, start: date, end: date) -> dict:
     rows = (
         db.query(NBASpreadProjections, NBASpreadActuals)
@@ -39,12 +58,23 @@ def _compute_nba_window(db, start: date, end: date) -> dict:
         .all()
     )
     if not rows:
-        return {"mae": None, "ats": None, "brier": None, "buckets": None, "total": 0}
+        return {
+            "mae": None,
+            "ats": None,
+            "brier": None,
+            "buckets": None,
+            "by_method": None,
+            "total": 0,
+        }
 
     margin_errs = []
     ats_hits = 0
     ats_attempts = 0
     brier_sum = 0.0
+    by_method: dict[str, dict[str, float]] = {
+        "elo_pace": {"brier_sum": 0.0, "count": 0},
+        "ml": {"brier_sum": 0.0, "count": 0},
+    }
     buckets: dict[str, dict[str, int]] = {
         f"{i/10:.1f}-{(i+1)/10:.1f}": {"count": 0, "wins": 0} for i in range(10)
     }
@@ -61,6 +91,11 @@ def _compute_nba_window(db, start: date, end: date) -> dict:
         wp = proj.home_win_prob
         won = 1 if actual.home_won else 0
         brier_sum += (wp - won) ** 2
+
+        method = _projection_method(proj)
+        by_method[method]["brier_sum"] += (wp - won) ** 2
+        by_method[method]["count"] += 1
+
         bucket_idx = min(int(wp * 10), 9)
         bucket_key = f"{bucket_idx/10:.1f}-{(bucket_idx+1)/10:.1f}"
         buckets[bucket_key]["count"] += 1
@@ -83,6 +118,7 @@ def _compute_nba_window(db, start: date, end: date) -> dict:
         "ats": ats,
         "brier": brier,
         "buckets": bucket_list,
+        "by_method": _method_brier_stats(by_method),
         "total": len(rows),
     }
 
@@ -109,7 +145,10 @@ def run() -> dict:
                     "spread_mae": stats["mae"],
                     "ats_hit_rate": stats["ats"],
                     "win_prob_brier_score": stats["brier"],
-                    "calibration_buckets": stats["buckets"],
+                    "calibration_buckets": {
+                        "prob_buckets": stats["buckets"],
+                        "by_method": stats["by_method"],
+                    },
                     "created_at": datetime.utcnow(),
                 }
             )

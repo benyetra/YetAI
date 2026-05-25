@@ -1028,6 +1028,8 @@ class AssistsProjections(Base):
     player_name = Column(String(100), nullable=False)
     opponent_team_name = Column(String(100), nullable=False)
     projected_assists = Column(Float, nullable=False)
+    fanduel_line = Column(Float, nullable=True)
+    fanduel_over_under = Column(String(7), nullable=True)
 
 
 class AssistsActuals(Base):
@@ -1054,6 +1056,8 @@ class ReboundsProjections(Base):
     projected_rebounds = Column(Float, nullable=False)
     projected_offensive_rebounds = Column(Float, nullable=True)
     projected_defensive_rebounds = Column(Float, nullable=True)
+    fanduel_line = Column(Float, nullable=True)
+    fanduel_over_under = Column(String(7), nullable=True)
 
 
 class ReboundsActuals(Base):

@@ -4,8 +4,8 @@ Buckets:
 - Points O/U (FanDuel-line call accuracy + MAE)
 - 3P Made O/U (FanDuel-line call accuracy + MAE)
 - Steals O/U (FanDuel-line call accuracy + MAE)
-- Assists MAE (no sportsbook line column)
-- Rebounds MAE (no sportsbook line column)
+- Assists O/U (FanDuel-line call accuracy + MAE)
+- Rebounds O/U (FanDuel-line call accuracy + MAE)
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ from app.models.predictions_models import (
 from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
-    mae_bucket,
     ou_call_bucket,
 )
 
@@ -101,7 +100,7 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     for row in stl_rows:
         row["actual_steals"] = row.pop("__actual")
 
-    # --- Assists (no line, MAE only) ------------------------------------
+    # --- Assists ---------------------------------------------------------
     ast_proj = (
         db.query(AssistsProjections)
         .filter(AssistsProjections.date == target_date)
@@ -116,7 +115,7 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     for row in ast_rows:
         row["actual_assists"] = row.pop("__actual")
 
-    # --- Rebounds (no line, MAE only) -----------------------------------
+    # --- Rebounds --------------------------------------------------------
     reb_proj = (
         db.query(ReboundsProjections)
         .filter(ReboundsProjections.date == target_date)
@@ -159,21 +158,23 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             label="Steals O/U",
             key="steals_ou",
         ),
-        mae_bucket(
+        ou_call_bucket(
             ast_rows,
-            projected_field="projected_assists",
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
             actual_field="actual_assists",
-            label="Assists",
-            key="assists_mae",
-            unit_label="ast",
+            projected_field="projected_assists",
+            label="Assists O/U",
+            key="assists_ou",
         ),
-        mae_bucket(
+        ou_call_bucket(
             reb_rows,
-            projected_field="projected_rebounds",
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
             actual_field="actual_rebounds",
-            label="Rebounds",
-            key="rebounds_mae",
-            unit_label="reb",
+            projected_field="projected_rebounds",
+            label="Rebounds O/U",
+            key="rebounds_ou",
         ),
     ]
 

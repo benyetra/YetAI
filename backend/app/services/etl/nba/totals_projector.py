@@ -22,6 +22,7 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba.totals_ml import enrich_projection
 
 logger = logging.getLogger(__name__)
 
@@ -783,6 +784,7 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
             game_date=game_date,
             market_total=game["market_total"],
         )
+        enrich_projection(projection)
 
         # Save to database
         save_projection(projection)

@@ -1,4 +1,4 @@
-"""WNBA prop model training — re-exports shared train()."""
+"""NBA prop model training — re-exports shared train()."""
 
 from app.services.ml.train_model import DEFAULT_HYPERPARAMS, train
 

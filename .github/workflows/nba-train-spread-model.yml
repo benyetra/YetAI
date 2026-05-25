@@ -1,0 +1,87 @@
+name: NBA Train Spread Model
+
+on:
+  workflow_dispatch:
+    inputs:
+      start:
+        description: Training window start (YYYY-MM-DD)
+        required: true
+        default: "2024-10-01"
+      end:
+        description: Training window end (YYYY-MM-DD)
+        required: true
+        default: "2025-12-31"
+      upload:
+        description: Upload artifacts to S3 after training
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  train:
+    name: Train NBA spread ML (${{ inputs.start }} – ${{ inputs.end }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Count spread actuals
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          python3 <<'PY'
+          import os
+          from datetime import date
+          from sqlalchemy import create_engine, text
+
+          start = date.fromisoformat("${{ inputs.start }}")
+          end = date.fromisoformat("${{ inputs.end }}")
+          e = create_engine(os.environ["DATABASE_URL"])
+          with e.connect() as c:
+              n = c.execute(
+                  text(
+                      "SELECT count(*) FROM pred_nba_spread_actuals "
+                      "WHERE game_date >= :s AND game_date <= :e"
+                  ),
+                  {"s": start, "e": end},
+              ).scalar()
+          print(f"pred_nba_spread_actuals in window: {n}")
+          PY
+
+      - name: Train and upload spread model
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          ARGS=(--start "${{ inputs.start }}" --end "${{ inputs.end }}")
+          if [ "${{ inputs.upload }}" = "true" ]; then
+            ARGS+=(--upload)
+          fi
+          OUT="$(python3 -m app.services.etl.nba.ml_training.train_spread_model "${ARGS[@]}")"
+          echo "$OUT"
+          echo "$OUT" | grep -q "'status': 'ok'" || exit 1

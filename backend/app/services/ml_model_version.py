@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional
@@ -211,6 +212,41 @@ def resolve_mlb_game_projection_model_version(
     if date_suffix:
         return normalize_model_version(f"xgb-{date_suffix}")
     return normalize_model_version("xgb-v1")
+
+
+def resolve_nba_prop_model_version(
+    stat: str,
+    *,
+    metadata: Mapping[str, Any] | None = None,
+    allow_network: bool | None = None,
+) -> str:
+    """Version tag for NBA ``pred_*_projections`` writes (points/rebounds/assists)."""
+    override = os.getenv("NBA_PROP_MODEL_VERSION") or os.getenv(
+        f"NBA_{stat.upper()}_MODEL_VERSION"
+    )
+    if override:
+        return normalize_model_version(override)
+
+    if metadata is None:
+        if allow_network is False:
+            return normalize_model_version(f"xgb-{stat}-v1")
+        from app.services.etl.nba._ml_predict import get_metadata
+
+        metadata = get_metadata(stat)
+
+    if metadata:
+        return model_version_from_metadata(
+            metadata, prefix="xgb", fallback=f"xgb-{stat}-v1"
+        )
+
+    date_suffix = s3_object_version_date(
+        f"nba/ml_models/xgb_{stat}.pkl",
+        local_fallback=Path(tempfile.gettempdir()) / f"xgb_{stat}.pkl",
+        allow_network=allow_network,
+    )
+    if date_suffix:
+        return normalize_model_version(f"xgb-{date_suffix}")
+    return normalize_model_version(f"xgb-{stat}-v1")
 
 
 def attach_model_version(row: Any, version: str) -> None:

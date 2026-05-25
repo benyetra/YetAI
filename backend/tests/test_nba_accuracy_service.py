@@ -73,8 +73,8 @@ def test_daily_accuracy_returns_five_nba_buckets():
         "points_ou",
         "three_pt_ou",
         "steals_ou",
-        "assists_mae",
-        "rebounds_mae",
+        "assists_ou",
+        "rebounds_ou",
     ]
     assert out["available"] is True
     # 18 over 17.5, actual 20 → correct

@@ -19,6 +19,7 @@ from app.models.predictions_models import (
     TeamRoster,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba.totals_ml import shadow_from_factors
 
 logger = logging.getLogger(__name__)
 
@@ -272,6 +273,55 @@ def store_actual_result(projection: NBATotalsProjections, actual: Dict):
         db.rollback()
 
 
+def _mae_from_errors(errors: List[float]) -> Optional[float]:
+    if not errors:
+        return None
+    return sum(errors) / len(errors)
+
+
+def _paired_projection_errors(
+    actuals: List,
+) -> tuple[List[float], List[float], List[float]]:
+    """
+    Return (primary MAE errors, heuristic MAE errors, ml MAE errors).
+
+    Primary uses stored projection_error (projected_total vs actual).
+    Heuristic/ml use ml_shadow in matching NBATotalsProjections when present.
+    """
+    primary: List[float] = []
+    heuristic: List[float] = []
+    ml: List[float] = []
+
+    for actual in actuals:
+        if actual.projection_error is not None:
+            primary.append(abs(actual.projection_error))
+
+        proj = (
+            db.query(NBATotalsProjections)
+            .filter_by(
+                game_date=actual.game_date,
+                home_team_name=actual.home_team_name,
+                away_team_name=actual.away_team_name,
+            )
+            .first()
+        )
+        if proj is None:
+            continue
+
+        shadow = shadow_from_factors(proj.factors)
+        h_total = shadow.get("heuristic_total")
+        if h_total is None:
+            h_total = proj.projected_total
+        if h_total is not None:
+            heuristic.append(abs(float(actual.actual_total) - float(h_total)))
+
+        ml_total = shadow.get("ml_total")
+        if ml_total is not None:
+            ml.append(abs(float(actual.actual_total) - float(ml_total)))
+
+    return primary, heuristic, ml
+
+
 def calculate_accuracy_metrics(days: int = 30) -> Dict:
     """
     Calculate accuracy metrics over the specified period.
@@ -293,12 +343,12 @@ def calculate_accuracy_metrics(days: int = 30) -> Dict:
 
     # Calculate metrics
     total_games = len(actuals)
-    projection_errors = [
-        abs(a.projection_error) for a in actuals if a.projection_error is not None
-    ]
+    projection_errors, heuristic_errors, ml_errors = _paired_projection_errors(actuals)
 
-    # MAE
-    mae = sum(projection_errors) / len(projection_errors) if projection_errors else None
+    # MAE (primary + heuristic vs ml shadow)
+    mae = _mae_from_errors(projection_errors)
+    heuristic_mae = _mae_from_errors(heuristic_errors)
+    ml_mae = _mae_from_errors(ml_errors)
 
     # RMSE
     rmse = None
@@ -392,6 +442,11 @@ def calculate_accuracy_metrics(days: int = 30) -> Dict:
         "date_range_end": end_date,
         "total_games": total_games,
         "mean_absolute_error": round(mae, 2) if mae else None,
+        "heuristic_mean_absolute_error": (
+            round(heuristic_mae, 2) if heuristic_mae is not None else None
+        ),
+        "ml_mean_absolute_error": round(ml_mae, 2) if ml_mae is not None else None,
+        "ml_games_tracked": len(ml_errors),
         "root_mean_square_error": round(rmse, 2) if rmse else None,
         "directional_accuracy": (
             round(directional_accuracy, 3) if directional_accuracy else None
@@ -514,6 +569,18 @@ def print_accuracy_report(metrics: Dict):
 
     print("\nERROR METRICS:")
     print(f"  Mean Absolute Error: {metrics.get('mean_absolute_error', 'N/A')} points")
+    h_mae = metrics.get("heuristic_mean_absolute_error")
+    print(
+        f"  Heuristic MAE: {h_mae} points"
+        if h_mae is not None
+        else "  Heuristic MAE: N/A"
+    )
+    ml_mae = metrics.get("ml_mean_absolute_error")
+    ml_n = metrics.get("ml_games_tracked", 0)
+    if ml_mae is not None:
+        print(f"  ML MAE: {ml_mae} points ({ml_n} games with ml_shadow)")
+    else:
+        print("  ML MAE: N/A (no ml_shadow on projections)")
     print(
         f"  Root Mean Square Error: {metrics.get('root_mean_square_error', 'N/A')} points"
     )

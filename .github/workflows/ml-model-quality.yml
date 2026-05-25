@@ -7,9 +7,11 @@ on:
   push:
     branches: [main, develop]
     paths:
+      - "backend/app/services/ml/**"
       - "backend/app/services/ml_model_version.py"
       - "backend/app/services/etl/mlb/**"
       - "backend/app/services/etl/wnba/ml_training/**"
+      - "backend/app/services/etl/nba/**"
       - "backend/tests/test_mlb_deferred_features.py"
       - "backend/tests/test_mlb_backtest_regression.py"
       - "backend/tests/test_mlb_hits_backtest.py"
@@ -17,6 +19,8 @@ on:
       - "backend/tests/test_meta_learner_eval.py"
       - "backend/tests/fixtures/mlb_backtest_quick_baseline.json"
       - "backend/tests/test_wnba_ml_training.py"
+      - "backend/tests/test_nba_ml_training.py"
+      - "backend/tests/test_nba_ml_predict_metadata.py"
       - "backend/tests/test_ml_model_version.py"
       - ".github/workflows/ml-model-quality.yml"
   pull_request:
@@ -56,10 +60,20 @@ jobs:
         env:
           ML_MODEL_VERSION_ALLOW_S3: "0"
         run: |
-          pytest tests/test_mlb_deferred_features.py \
+          pytest tests/test_ml_training_shared.py \
+            tests/test_ml_model_version.py \
+            tests/test_wnba_ml_training.py \
+            tests/test_mlb_deferred_features.py \
             tests/test_mlb_backtest_regression.py \
             tests/test_mlb_hits_backtest.py \
             tests/test_mlb_strikeout_degrade.py \
             tests/test_meta_learner_eval.py \
-            tests/test_wnba_ml_training.py \
-            tests/test_ml_model_version.py -q
+            tests/test_nba_accuracy_service.py \
+            tests/test_nba_fanduel_lines.py \
+            tests/test_nba_ml_training.py \
+            tests/test_nba_ml_predict_metadata.py \
+            tests/test_nba_prop_calibration.py \
+            tests/test_nba_spread_ml.py \
+            tests/test_nba_spread_projector.py \
+            tests/test_nba_totals_ml.py \
+            tests/test_nba_totals_projector.py -q
