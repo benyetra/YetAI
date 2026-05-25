@@ -20,6 +20,13 @@ PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_strikeouts.py
 
 Optional: `--with-optional` (sklearn tests), `--live` (full `strikeouts.run()` against `DATABASE_URL`).
 
+## NFL backtest (no deploy)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/nfl_backtest.py --quick
+```
+
 ## OpenAPI / Swagger
 
 Regenerate committed specs after API route changes:
