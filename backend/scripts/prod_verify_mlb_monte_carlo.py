@@ -13,6 +13,7 @@ Usage:
   PYTHONPATH=. python3 scripts/prod_verify_mlb_monte_carlo.py --api http://127.0.0.1:8000
   PYTHONPATH=. python3 scripts/prod_verify_mlb_monte_carlo.py --db-only
   PYTHONPATH=. python3 scripts/prod_verify_mlb_monte_carlo.py --run-pipeline
+    # enqueues app.tasks.etl_pipeline.mlb.game_projections via admin API
 """
 
 from __future__ import annotations
@@ -233,9 +234,10 @@ def main() -> int:
 
     if args.run_pipeline:
         token = _login(args.api)
-        body = json.dumps({"task_name": "mlb.run_game_projections"}).encode()
+        task_name = "app.tasks.etl_pipeline.mlb.game_projections"
+        body = json.dumps({"task_name": task_name}).encode()
         req = urllib.request.Request(
-            f"{args.api.rstrip('/')}/api/admin/celery/enqueue",
+            f"{args.api.rstrip('/')}/api/admin/celery/enqueue-task",
             data=body,
             headers={
                 "Authorization": f"Bearer {token}",
@@ -243,8 +245,18 @@ def main() -> int:
             },
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            print("enqueued", json.loads(resp.read().decode()))
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                payload = json.loads(resp.read().decode())
+        except urllib.error.HTTPError as e:
+            body = e.read().decode()[:400]
+            raise SystemExit(
+                f"enqueue failed HTTP {e.code}: {body}\n"
+                f"Use POST /api/admin/celery/enqueue-task with task_name={task_name!r}"
+            ) from e
+        print("enqueued", payload)
+        tid = payload.get("task_id", "")
+        print(f"Poll task: GET /api/admin/celery/task-status/{tid}")
 
     if args.db_only:
         print("\n" + ("OK" if ok else "NEEDS ATTENTION"))
