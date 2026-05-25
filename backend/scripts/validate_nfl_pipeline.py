@@ -6,14 +6,35 @@ from __future__ import annotations
 import os
 import sys
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import create_engine, text
 
+from app.services.etl.nfl import nfl_common
 
 NFL_IN_SEASON_MONTHS = {9, 10, 11, 12, 1, 2}
 
 
+def validate_week_rollover_offline() -> bool:
+    """Labor-day week math without DB (Phase 4.1 acceptance)."""
+    season = 2025
+    with patch("app.services.etl.nfl.nfl_common.get_nfl_season", return_value=season):
+        w_before = nfl_common.get_current_nfl_week(today=date(2025, 9, 3))
+        w_week1 = nfl_common.get_current_nfl_week(today=date(2025, 9, 5))
+        w_week2 = nfl_common.get_current_nfl_week(today=date(2025, 9, 12))
+    if w_before != 1 or w_week1 != 1 or w_week2 != 2:
+        print(
+            f"  [fail] week rollover: before={w_before} week1={w_week1} week2={w_week2}"
+        )
+        return False
+    print("  [ok] nfl_common week rollover (offline)")
+    return True
+
+
 def main() -> int:
+    if not validate_week_rollover_offline():
+        return 1
+
     url = os.getenv("DATABASE_URL")
     if not url:
         print("DATABASE_URL not set — skip DB validation")

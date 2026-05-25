@@ -13,35 +13,9 @@ import pandas as pd
 
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 warnings.filterwarnings("ignore")
-
-
-def get_current_nfl_week(season=None) -> int:
-    """Determine current NFL week based on today's date"""
-    today = date.today()
-
-    if season is None:
-        if today.month >= 9:
-            season = today.year
-        else:
-            season = today.year - 1
-
-    # Find the actual first Thursday after Labor Day
-    labor_day = date(season, 9, 1)
-    while labor_day.weekday() != 0:
-        labor_day = date(season, 9, labor_day.day + 1)
-
-    first_thursday = labor_day + timedelta(days=3)
-    if first_thursday.day > 10:
-        first_thursday = first_thursday - timedelta(days=7)
-
-    if today < first_thursday:
-        return 1
-
-    days_since_start = (today - first_thursday).days
-    current_week = (days_since_start // 7) + 1
-    return min(max(current_week, 1), 18)
 
 
 def get_team_id_mapping():
@@ -391,15 +365,8 @@ def _run_qb_dynamic_core():
     print("🚀 Dynamic QB Predictions - Heroku")
     print("=" * 50)
 
-    # Get current season and week
-    week = get_current_nfl_week()
-    today = date.today()
-    if today.month >= 9:
-        season = today.year
-    else:
-        season = today.year - 1
-
-    # Note: Using current season (2025) - remove override if 2025 data is available
+    season = get_nfl_season()
+    week = get_current_nfl_week(season)
 
     print(f"📅 Season: {season}, Week: {week}")
 

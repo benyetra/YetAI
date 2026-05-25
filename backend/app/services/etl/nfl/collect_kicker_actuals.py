@@ -12,59 +12,11 @@ import nfl_data_py as nfl
 
 from app.services.etl.nfl._db import db_session
 from app.models.predictions_models import Kickers, KickerActuals, KickerPredictions
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 from sqlalchemy import and_
 
 
-def get_current_nfl_week(season=2025):
-    """
-    Calculate the current NFL week based on today's date.
-
-    Args:
-        season (int): NFL season year
-
-    Returns:
-        int: Current NFL week (1-18), or None if it's off-season
-    """
-    today = date.today()
-
-    # NFL 2025 season starts around September 5, 2025 (Week 1)
-    # This is typically the first Thursday after Labor Day
-    if season == 2025:
-        # Week 1 starts September 5, 2025 (Thursday Night Football)
-        season_start = date(2025, 9, 5)
-    elif season == 2024:
-        # Week 1 started September 5, 2024
-        season_start = date(2024, 9, 5)
-    else:
-        # For future seasons, estimate first Thursday after Labor Day
-        # Labor Day is first Monday in September
-        labor_day = date(season, 9, 1)
-        while labor_day.weekday() != 0:  # 0 is Monday
-            labor_day += timedelta(days=1)
-
-        # First Thursday after Labor Day
-        season_start = labor_day + timedelta(days=3)
-
-    # Calculate weeks since season start
-    if today < season_start:
-        print(f"🏈 Current date ({today}) is before season start ({season_start})")
-        return None
-
-    days_since_start = (today - season_start).days
-    current_week = (days_since_start // 7) + 1
-
-    # Regular season is weeks 1-18, playoffs are weeks 19-22
-    if current_week > 22:
-        print(f"🏈 Current date ({today}) is after season end")
-        return None
-
-    print(
-        f"🏈 Current NFL week: {current_week} (Season {season}, Today: {today}, Season start: {season_start}, Days diff: {days_since_start})"
-    )
-    return current_week
-
-
-def get_weekly_field_goal_data(week=None, season=2025):
+def get_weekly_field_goal_data(week=None, season=None):
     """
     Get field goal data for a specific week
 
@@ -75,6 +27,7 @@ def get_weekly_field_goal_data(week=None, season=2025):
     Returns:
         DataFrame: Field goal attempts and results
     """
+    season = get_nfl_season() if season is None else season
     try:
         print(f"Fetching NFL field goal data for week {week} of {season}...")
 
@@ -85,7 +38,7 @@ def get_weekly_field_goal_data(week=None, season=2025):
         else:
             # Get current week data
             pbp_data = nfl.import_pbp_data([season])
-            current_week = get_current_nfl_week()
+            current_week = get_current_nfl_week(season)
             pbp_data = pbp_data[pbp_data["week"] == current_week]
 
         # Filter for field goal attempts
@@ -144,22 +97,7 @@ def get_weekly_field_goal_data(week=None, season=2025):
         return pd.DataFrame()
 
 
-def get_current_nfl_week():
-    """Estimate current NFL week based on date"""
-    # NFL season typically starts first Thursday in September
-    # This is a simplified calculation
-    today = date.today()
-    season_start = date(2024, 9, 5)  # 2024-2025 season start
-
-    if today < season_start:
-        return 1
-
-    days_since_start = (today - season_start).days
-    week = min(days_since_start // 7 + 1, 18)
-    return week
-
-
-def match_predictions_with_actuals(week=None, season=2025):
+def match_predictions_with_actuals(week=None, season=None):
     """
     Match our predictions with actual results
 
@@ -167,6 +105,7 @@ def match_predictions_with_actuals(week=None, season=2025):
         week (int): NFL week number
         season (int): NFL season year
     """
+    season = get_nfl_season() if season is None else season
     # Get actual results from nflverse
     actuals_df = get_weekly_field_goal_data(week, season)
 
@@ -411,26 +350,12 @@ def update_kicker_actuals(week=None):
     Args:
         week (int): NFL week number, if None uses current week
     """
+    season = get_nfl_season()
     if week is None:
-        # Temporary fix: hardcode to week 3 for current date (Sept 21, 2025)
-        # TODO: Fix the get_current_nfl_week() function calculation issue
-        today = date.today()
-        if today.month == 9 and today.day >= 19 and today.day <= 25:
-            week = 3
-            print("🏈 Using Week 3 based on current date (Sept 21, 2025)")
-        else:
-            week = get_current_nfl_week()
-            if week is None:
-                print(
-                    "❌ Cannot determine current NFL week - either it's off-season or an error occurred"
-                )
-                print(
-                    "💡 Use --week parameter to specify a specific week: python collect_kicker_actuals.py --week 3"
-                )
-                return
+        week = get_current_nfl_week(season)
 
-    print(f"🏈 Updating kicker actuals for NFL Week {week}")
-    match_predictions_with_actuals(week, 2025)
+    print(f"🏈 Updating kicker actuals for NFL Week {week} (season {season})")
+    match_predictions_with_actuals(week, season)
 
 
 if __name__ == "__main__":
@@ -438,7 +363,12 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Collect NFL kicker actual results")
     parser.add_argument("--week", type=int, help="NFL week number (1-18)")
-    parser.add_argument("--season", type=int, default=2025, help="NFL season year")
+    parser.add_argument(
+        "--season",
+        type=int,
+        default=None,
+        help="NFL season year (default: NFL_SEASON env or nfl_common)",
+    )
 
     args = parser.parse_args()
 
