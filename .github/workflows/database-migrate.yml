@@ -55,7 +55,7 @@ jobs:
           alembic current
           python3 scripts/reconcile_wnba_alembic.py
           echo "=== Upgrade ==="
-          alembic upgrade head
+          alembic upgrade heads
           echo "=== After ==="
           alembic current
           python3 <<'PY'
@@ -101,6 +101,6 @@ jobs:
           alembic current
           python3 scripts/reconcile_wnba_alembic.py
           echo "=== Upgrade ==="
-          alembic upgrade head
+          alembic upgrade heads
           echo "=== After ==="
           alembic current
