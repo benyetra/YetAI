@@ -87,4 +87,4 @@ Admin spec does not repeat auth endpoints; use the public spec or live `/docs` f
 
 ## CI
 
-Backend CI runs `scripts/export_openapi.py` and fails if committed specs drift from the generated output (run the export script locally and commit the updated JSON files).
+Backend CI runs `scripts/export_openapi.py` and `tests/test_openapi_export.py` to ensure the export succeeds and committed specs still cover the same route catalog (path counts and `operationId` coverage).
