@@ -11,6 +11,15 @@ cd backend && python3 -m black --check .
 
 Before committing any change under `backend/`, run Black on touched files (or the whole tree) and include formatted files in the commit. See `.cursor/rules/yetai-python-black.mdc`.
 
+## MLB Monte Carlo smoke (no deploy)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_monte_carlo.py
+```
+
+Game pipeline runs MC by default (`MLB_MC_ENABLED=1`). See `backend/docs/MLB_MONTE_CARLO.md`.
+
 ## MLB strikeouts quick check (no deploy)
 
 ```bash

@@ -81,13 +81,145 @@
         ]
       }
     },
+    "/api/v1/predictions/mlb/p-over-total": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Mlb P Over Total",
+        "description": "P(total runs > line) for one game from Monte Carlo rates on the projection.",
+        "operationId": "mlb_p_over_total_api_v1_predictions_mlb_p_over_total_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "game_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "MLB game_pk",
+              "title": "Game Id"
+            },
+            "description": "MLB game_pk"
+          },
+          {
+            "name": "line",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "description": "Total runs line (e.g. 8.5)",
+              "title": "Line"
+            },
+            "description": "Total runs line (e.g. 8.5)"
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          },
+          {
+            "name": "n_sims",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50000,
+              "minimum": 500,
+              "default": 8000,
+              "title": "N Sims"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Mlb P Over Total Api V1 Predictions Mlb P Over Total Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
     "/api/v1/predictions/mlb": {
       "get": {
         "tags": [
           "predictions"
         ],
         "summary": "Mlb Predictions",
-        "description": "Recent MLB props: strikeouts, game slate, batter boards, HR picks.\n\nEach strikeout projection row is enriched with actual_strikeouts and\nactual_innings_pitched when the corresponding StrikeoutActuals row\nexists for the same date \u2014 the frontend uses these to render\nactual-vs-projection columns on past-date views.",
+        "description": "Recent MLB props: strikeouts, game slate, batter boards, HR picks.\n\nEach strikeout projection row is enriched with actual_strikeouts and\nactual_innings_pitched when the corresponding StrikeoutActuals row\nexists for the same date \u2014 the frontend uses these to render\nactual-vs-projection columns on past-date views.\n\nPass ``total_line`` (e.g. 8.5) to add ``p_over_total`` / ``p_under_total`` on\neach game projection (empirical Monte Carlo using stored sim rates).",
         "operationId": "mlb_predictions_api_v1_predictions_mlb_get",
         "security": [
           {
@@ -133,6 +265,24 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "total_line",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "When set, each game_projection includes p_over_total at this line",
+              "title": "Total Line"
+            },
+            "description": "When set, each game_projection includes p_over_total at this line"
           }
         ],
         "responses": {

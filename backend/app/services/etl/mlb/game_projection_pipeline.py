@@ -203,6 +203,13 @@ def store_game_projections(predictions, target_date=None, *, model_version=None)
             allow_network=os.getenv("ML_MODEL_VERSION_ALLOW_S3", "1") == "1",
         )
 
+    if any(p.get("sim_distribution") for p in predictions):
+        from app.services.ml_model_version import normalize_model_version
+
+        base = (model_version or "heuristic-v1")[:15]
+        tagged = f"{base}+mc"
+        model_version = normalize_model_version(tagged)
+
     stored = 0
     for pred in predictions:
         existing = (
@@ -255,6 +262,7 @@ def store_game_projections(predictions, target_date=None, *, model_version=None)
                 value_rating=pred.get("value_rating"),
                 venue_name=pred.get("venue_name"),
                 game_time=pred.get("game_time"),
+                sim_distribution=pred.get("sim_distribution"),
                 model_version=model_version,
                 created_at=datetime.utcnow(),
             )
@@ -433,6 +441,13 @@ def run_game_projection_pipeline(target_date=None):
 
     predictions = predict_games(games)
     logger.info(f"Generated predictions for {len(predictions)} games")
+
+    try:
+        from app.services.etl.mlb.monte_carlo import enrich_predictions_with_monte_carlo
+
+        enrich_predictions_with_monte_carlo(predictions, games)
+    except Exception as e:
+        logger.warning("Monte Carlo enrichment skipped: %s", e)
 
     # Step 3: Fetch market odds
     logger.info("Step 3: Fetching market odds...")

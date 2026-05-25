@@ -15,6 +15,7 @@ from typing import Sequence, Union
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy import inspect, text
+from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
 
 # revision identifiers, used by Alembic.
@@ -52,7 +53,7 @@ def upgrade() -> None:
             )
         )
 
-    event_enum = sa.Enum(
+    event_enum = PG_ENUM(
         "started",
         "finished",
         "failed",

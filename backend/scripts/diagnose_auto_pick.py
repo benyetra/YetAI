@@ -27,7 +27,9 @@ def _get_token(api: str) -> str:
     email = os.getenv("YETAI_ADMIN_EMAIL")
     password = os.getenv("YETAI_ADMIN_PASSWORD")
     if email and password:
-        payload = json.dumps({"email": email, "password": password}).encode()
+        payload = json.dumps(
+            {"email_or_username": email, "password": password}
+        ).encode()
         req = urllib.request.Request(
             f"{api}/api/auth/login",
             data=payload,

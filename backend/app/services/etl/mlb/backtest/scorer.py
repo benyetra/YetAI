@@ -87,6 +87,47 @@ class BacktestScorer:
         market_total = metadata.get("market_total")
         odds_data = metadata.get("odds_data", {})
 
+        mc_wp = prediction.get("mc_home_wp")
+        if mc_wp is not None:
+            result["mc_home_wp"] = mc_wp
+            result["mc_total"] = prediction.get("mc_total")
+            result["mc_brier_contribution"] = (float(mc_wp) - actual_win) ** 2
+            result["mc_ml_correct"] = (
+                "home" if float(mc_wp) > 0.5 else "away"
+            ) == actuals["actual_winner"]
+            if prediction.get("mc_total") is not None:
+                result["mc_total_error"] = (
+                    float(prediction["mc_total"]) - actuals["actual_total"]
+                )
+
+            market_line = market_total
+            if market_line is not None:
+                try:
+                    from app.services.etl.mlb.monte_carlo import (
+                        TeamRunRates,
+                        probability_over_total_at_line,
+                    )
+
+                    mc_sim = prediction.get("mc_sim") or {}
+                    if mc_sim.get("home_lambda") is not None:
+                        rates = TeamRunRates(
+                            float(mc_sim["home_lambda"]),
+                            float(mc_sim["away_lambda"]),
+                        )
+                        p_over = probability_over_total_at_line(
+                            float(market_line),
+                            rates=rates,
+                            dispersion=mc_sim.get("dispersion"),
+                            seed=hash(str(metadata.get("game_date", ""))) % (2**31),
+                        )
+                        result["mc_p_over_market"] = p_over
+                        pick_over = p_over > 0.5
+                        actual_over = actuals["actual_total"] > float(market_line)
+                        if actuals["actual_total"] != float(market_line):
+                            result["mc_ou_correct_market"] = pick_over == actual_over
+                except Exception:
+                    pass
+
         if market_prob is not None:
             actual_win = result["actual_win_binary"]
             self.market_comparisons.append(
@@ -267,7 +308,7 @@ class BacktestScorer:
         # Brier by bucket (REQ-BT-035)
         brier_by_bucket = self._compute_brier_by_bucket()
 
-        return {
+        out = {
             "n_games": n,
             "brier_score": round(brier, 5),
             "ml_accuracy": round(ml_accuracy, 4),
@@ -279,6 +320,45 @@ class BacktestScorer:
             "rl_correct": rl_correct,
             "calibration": calibration,
             "brier_by_bucket": brier_by_bucket,
+        }
+        mc = self._compute_monte_carlo_game_metrics()
+        if mc:
+            out["monte_carlo"] = mc
+        return out
+
+    def _compute_monte_carlo_game_metrics(self):
+        """Metrics for parallel MC layer (when backtest ran MC)."""
+        mc_rows = [r for r in self.game_results if r.get("mc_home_wp") is not None]
+        if not mc_rows:
+            return None
+
+        n = len(mc_rows)
+        mc_brier = np.mean([r["mc_brier_contribution"] for r in mc_rows])
+        mc_ml_correct = sum(1 for r in mc_rows if r.get("mc_ml_correct"))
+        mc_errors = [
+            abs(r["mc_total_error"])
+            for r in mc_rows
+            if r.get("mc_total_error") is not None
+        ]
+        ou_market = [
+            r["mc_ou_correct_market"]
+            for r in mc_rows
+            if r.get("mc_ou_correct_market") is not None
+        ]
+
+        baseline_brier = np.mean([r["brier_contribution"] for r in mc_rows])
+
+        return {
+            "n_games": n,
+            "brier_score": round(float(mc_brier), 5),
+            "brier_delta_vs_point_model": round(float(mc_brier - baseline_brier), 5),
+            "ml_accuracy": round(mc_ml_correct / n, 4),
+            "ml_correct": mc_ml_correct,
+            "total_mae": round(float(np.mean(mc_errors)), 2) if mc_errors else None,
+            "ou_accuracy_market": (
+                round(float(np.mean(ou_market)), 4) if ou_market else None
+            ),
+            "ou_market_total": len(ou_market),
         }
 
     def _compute_calibration(self):

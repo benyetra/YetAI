@@ -32,6 +32,8 @@ def _request(
     url: str,
     token: str,
     body: dict | None = None,
+    *,
+    timeout: int = 300,
 ) -> dict:
     data = None
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
@@ -39,7 +41,7 @@ def _request(
         data = json.dumps(body).encode()
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
     try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
         detail = e.read().decode()[:500]
@@ -47,19 +49,23 @@ def _request(
 
 
 def _login(api: str, email: str, password: str) -> str:
-    payload = json.dumps({"email": email, "password": password}).encode()
+    payload = json.dumps({"email_or_username": email, "password": password}).encode()
     req = urllib.request.Request(
         f"{api}/api/auth/login",
         data=payload,
         headers={"Content-Type": "application/json"},
         method="POST",
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read().decode())
+    try:
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read().decode())
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode()[:500]
+        raise SystemExit(f"HTTP {e.code} {api}/api/auth/login: {detail}") from e
     token = data.get("access_token") or data.get("token")
     if not token:
         raise SystemExit(f"login response missing token: {list(data.keys())}")
-    return token
+    return token.strip()
 
 
 def _poll_tasks(api: str, token: str, task_ids: list[str], timeout_s: int) -> bool:
@@ -93,7 +99,7 @@ def main() -> int:
     parser.add_argument("--poll-timeout", type=int, default=7200)
     args = parser.parse_args()
 
-    token = os.getenv("YETAI_ADMIN_JWT")
+    token = (os.getenv("YETAI_ADMIN_JWT") or "").strip() or None
     if not token:
         email = os.getenv("YETAI_ADMIN_EMAIL")
         password = os.getenv("YETAI_ADMIN_PASSWORD")
@@ -112,11 +118,13 @@ def main() -> int:
         return 0 if ok else 1
 
     print(f"POST {args.api}/api/admin/celery/verify-etl")
+    # Do not pass wait_seconds to the API: the server would block the HTTP
+    # response for that duration while this CLI polls task-status locally.
     report = _request(
         "POST",
         f"{args.api}/api/admin/celery/verify-etl",
         token,
-        {"enqueue_all": args.enqueue_all, "wait_seconds": min(args.wait, 3600)},
+        {"enqueue_all": args.enqueue_all, "wait_seconds": 0},
     )
     print(json.dumps(report, indent=2, default=str))
 

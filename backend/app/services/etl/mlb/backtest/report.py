@@ -76,6 +76,34 @@ def generate_summary_report(config, metrics, data_quality_summary):
     n = game.get("n_games", 0)
     lines.append(f" Moneyline Accuracy:       {ml_acc:.1%}         ({ml_correct}/{n})")
 
+    mc = game.get("monte_carlo") or {}
+    if mc:
+        lines.append("")
+        lines.append(" MONTE CARLO (parallel sim layer)")
+        lines.append(" " + "-" * (w - 2))
+        mc_brier = mc.get("brier_score")
+        if mc_brier is not None:
+            delta = mc.get("brier_delta_vs_point_model")
+            delta_str = (
+                f", Delta vs point model: {delta:+.4f}" if delta is not None else ""
+            )
+            lines.append(f" MC Brier Score:           {mc_brier:.4f}{delta_str}")
+        mc_ml = mc.get("ml_accuracy")
+        if mc_ml is not None:
+            lines.append(
+                f" MC Moneyline Accuracy:    {mc_ml:.1%}         "
+                f"({mc.get('ml_correct', 0)}/{mc.get('n_games', 0)})"
+            )
+        mc_mae = mc.get("total_mae")
+        if mc_mae is not None:
+            lines.append(f" MC Total Runs MAE:        {mc_mae:.2f}")
+        mc_ou = mc.get("ou_accuracy_market")
+        if mc_ou is not None:
+            lines.append(
+                f" MC O/U vs Market:         {mc_ou:.1%}         "
+                f"({mc.get('ou_market_total', 0)} games)"
+            )
+
     ou_acc = game.get("ou_accuracy")
     ou_total = game.get("ou_total", 0)
     if ou_acc is not None:

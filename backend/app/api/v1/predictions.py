@@ -123,11 +123,74 @@ def health() -> dict[str, Any]:
     return {"status": "ok", "module": "predictions", "tables_exposed": 15}
 
 
+def _attach_p_over_total(row: dict[str, Any], line: float) -> dict[str, Any]:
+    """Add empirical P(over) at ``line`` from MC rates stored on the row."""
+    from app.services.etl.mlb.monte_carlo import p_over_total_for_game_row
+
+    p_over = p_over_total_for_game_row(row, line)
+    return {
+        **row,
+        "total_line": line,
+        "p_over_total": p_over,
+        "p_under_total": round(1.0 - p_over, 4),
+    }
+
+
+@router.get("/mlb/p-over-total")
+def mlb_p_over_total(
+    game_id: int = Query(..., description="MLB game_pk"),
+    line: float = Query(..., description="Total runs line (e.g. 8.5)"),
+    target_date: date_type | None = Query(default=None, alias="date"),
+    n_sims: int = Query(default=8000, ge=500, le=50000),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """P(total runs > line) for one game from Monte Carlo rates on the projection."""
+    from datetime import date as date_cls
+
+    from app.services.etl.mlb.monte_carlo import p_over_total_for_game_row
+
+    lookup_date = target_date or date_cls.today()
+    row = (
+        db.query(GameProjections)
+        .filter(
+            GameProjections.game_id == game_id,
+            GameProjections.date == lookup_date,
+        )
+        .first()
+    )
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No game projection for game_id={game_id} on {lookup_date}",
+        )
+
+    payload = _row_to_dict(row)
+    p_over = p_over_total_for_game_row(payload, line, n_sims=n_sims)
+    return {
+        "game_id": game_id,
+        "date": lookup_date.isoformat(),
+        "home_team": payload.get("home_team"),
+        "away_team": payload.get("away_team"),
+        "total_line": line,
+        "p_over_total": p_over,
+        "p_under_total": round(1.0 - p_over, 4),
+        "n_sims": n_sims,
+        "projected_total": payload.get("projected_total"),
+        "home_win_prob": payload.get("home_win_prob"),
+        "sim_distribution": payload.get("sim_distribution"),
+    }
+
+
 @router.get("/mlb")
 def mlb_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
     tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    total_line: float | None = Query(
+        default=None,
+        description="When set, each game_projection includes p_over_total at this line",
+    ),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -137,6 +200,9 @@ def mlb_predictions(
     actual_innings_pitched when the corresponding StrikeoutActuals row
     exists for the same date — the frontend uses these to render
     actual-vs-projection columns on past-date views.
+
+    Pass ``total_line`` (e.g. 8.5) to add ``p_over_total`` / ``p_under_total`` on
+    each game projection (empirical Monte Carlo using stored sim rates).
     """
     tz = _safe_tz(tz)
     strikeouts = _query_recent(
@@ -193,11 +259,13 @@ def mlb_predictions(
                 actual.actual_innings_pitched if actual else None
             )
 
+    game_rows = _query_recent(db, GameProjections, "date", target_date, limit, tz=tz)
+    if total_line is not None:
+        game_rows = [_attach_p_over_total(r, total_line) for r in game_rows]
+
     return {
         "strikeout_projections": cleaned_strikeouts,
-        "game_projections": _query_recent(
-            db, GameProjections, "date", target_date, limit, tz=tz
-        ),
+        "game_projections": game_rows,
         "projected_hits": _query_recent(
             db, ProjectedHits, "date", target_date, limit, tz=tz
         ),

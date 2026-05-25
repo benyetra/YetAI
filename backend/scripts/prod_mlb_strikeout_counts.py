@@ -20,13 +20,15 @@ DEFAULT_API = "https://api.yetai.app"
 
 
 def _get_token(api: str) -> str:
-    token = os.getenv("YETAI_ADMIN_JWT") or os.getenv("ADMIN_TOKEN")
+    token = (os.getenv("YETAI_ADMIN_JWT") or os.getenv("ADMIN_TOKEN") or "").strip()
     if token:
         return token
     email = os.getenv("YETAI_ADMIN_EMAIL")
     password = os.getenv("YETAI_ADMIN_PASSWORD")
     if email and password:
-        payload = json.dumps({"email": email, "password": password}).encode()
+        payload = json.dumps(
+            {"email_or_username": email, "password": password}
+        ).encode()
         req = urllib.request.Request(
             f"{api}/api/auth/login",
             data=payload,

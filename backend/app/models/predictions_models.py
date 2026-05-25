@@ -2650,6 +2650,9 @@ class GameProjections(Base):
     venue_name = Column(String(100), nullable=True)
     game_time = Column(DateTime, nullable=True)
 
+    # Monte Carlo distribution summary (percentiles, lambdas, n_sims)
+    sim_distribution = Column(JSON, nullable=True)
+
     # Metadata
     model_version = Column(String(20), nullable=True, default="v1.0")
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)

@@ -173,6 +173,20 @@ class BacktestModelRunner:
         # Model confidence
         result["model_confidence"] = round(abs(wp - 0.5) * 2.0, 3)
 
+        try:
+            from app.services.etl.mlb.monte_carlo import run_monte_carlo_backtest
+
+            result.update(
+                run_monte_carlo_backtest(
+                    features,
+                    result["predicted_home_wp"],
+                    result["predicted_total"],
+                    game_id=getattr(game, "game_id", None),
+                )
+            )
+        except Exception as e:
+            logger.debug("Backtest Monte Carlo skipped: %s", e)
+
         return result
 
     def predict_strikeouts(self, game, pitcher_stats, features):
