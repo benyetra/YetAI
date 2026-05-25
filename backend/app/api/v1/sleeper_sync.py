@@ -8,14 +8,28 @@ from typing import Dict, Any, List
 import logging
 
 from app.core.database import get_db
-from app.main import get_current_user
+from app.core.auth import get_current_user
 from app.services.simplified_sleeper_service import SimplifiedSleeperService
 from app.models.database_models import User, SleeperLeague, SleeperRoster, SleeperPlayer
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/sleeper", tags=["sleeper_sync"])
+router = APIRouter(prefix="/sleeper", tags=["sleeper"])
+
+
+async def get_current_db_user(
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> User:
+    """Resolve ORM User from JWT claims."""
+    user_id = current_user.get("id") or current_user.get("user_id")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found"
+        )
+    return user
 
 
 class SleeperConnectRequest(BaseModel):
@@ -34,7 +48,7 @@ sleeper_service = SimplifiedSleeperService()
 @router.post("/connect", response_model=SleeperSyncResponse)
 async def connect_sleeper_account(
     request: SleeperConnectRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -64,7 +78,7 @@ async def connect_sleeper_account(
 
 @router.post("/sync/leagues", response_model=SleeperSyncResponse)
 async def sync_league_history(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)
 ):
     """
     Sync all league history from 2020-2025
@@ -97,7 +111,7 @@ async def sync_league_history(
 
 @router.post("/sync/rosters", response_model=SleeperSyncResponse)
 async def sync_all_rosters(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)
 ):
     """
     Sync all rosters for all user's leagues
@@ -121,7 +135,7 @@ async def sync_all_rosters(
 
 @router.post("/sync/players", response_model=SleeperSyncResponse)
 async def sync_nfl_players(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)
 ):
     """
     Sync all NFL player data
@@ -154,7 +168,7 @@ async def sync_nfl_players(
 @router.post("/sync/full", response_model=SleeperSyncResponse)
 async def full_sleeper_sync(
     request: SleeperConnectRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """
@@ -183,7 +197,7 @@ async def full_sleeper_sync(
 
 @router.get("/status", response_model=Dict[str, Any])
 async def get_sleeper_sync_status(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)
 ):
     """
     Get current Sleeper sync status for the user
@@ -229,7 +243,7 @@ async def get_sleeper_sync_status(
 
 @router.get("/leagues", response_model=List[Dict[str, Any]])
 async def get_user_leagues(
-    current_user: User = Depends(get_current_user), db: Session = Depends(get_db)
+    current_user: User = Depends(get_current_db_user), db: Session = Depends(get_db)
 ):
     """
     Get all synced leagues for the current user
@@ -268,7 +282,7 @@ async def get_user_leagues(
 @router.get("/leagues/{league_id}/rosters", response_model=List[Dict[str, Any]])
 async def get_league_rosters(
     league_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_db_user),
     db: Session = Depends(get_db),
 ):
     """

@@ -344,14 +344,25 @@ async def lifespan(_app: FastAPI):
             logger.warning(f"⚠️  Admin notification subscriber stop failed: {e}")
 
 
+from app.openapi_config import OPENAPI_TAGS, configure_openapi
+
 # Create FastAPI app
 app = FastAPI(
     title="YetAI Sports Betting MVP",
-    description=f"AI-Powered Sports Betting Platform - {settings.ENVIRONMENT.title()} Environment",
+    description=(
+        f"AI-powered sports betting and fantasy platform — "
+        f"{settings.ENVIRONMENT.title()} environment. "
+        "OpenAPI specs: docs/api/openapi-public.json (apps/agents), "
+        "docs/api/openapi-admin.json (operators)."
+    ),
     version="1.2.0",
     debug=settings.DEBUG,
     lifespan=lifespan,
+    openapi_tags=OPENAPI_TAGS,
+    redoc_url="/redoc",
 )
+
+configure_openapi(app)
 
 # Add CORS middleware with environment-aware origins
 app.add_middleware(
@@ -378,6 +389,8 @@ from app.api.admin_celery_ops import router as admin_celery_ops_router
 from app.api.admin_notifications import router as admin_notifications_router
 from app.api.admin_pipelines import router as admin_pipelines_router
 from app.api.admin_yetai_picks import router as admin_yetai_picks_router
+from app.api.fantasy_analytics import router as fantasy_analytics_router
+from app.api.v1.sleeper_sync import router as sleeper_sync_router
 
 app.include_router(predictions_router)
 app.include_router(tools_router)
@@ -386,6 +399,12 @@ app.include_router(admin_celery_ops_router)
 app.include_router(admin_notifications_router)
 app.include_router(admin_pipelines_router)
 app.include_router(admin_yetai_picks_router)
+app.include_router(
+    fantasy_analytics_router,
+    prefix="/api/v1/fantasy/analytics",
+    tags=["fantasy-analytics"],
+)
+app.include_router(sleeper_sync_router, prefix="/api")
 
 
 # Debug endpoint to check avatar files
