@@ -14,6 +14,7 @@ from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 
 # revision identifiers, used by Alembic.
@@ -23,136 +24,170 @@ branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
 
+def _insp():
+    return inspect(op.get_bind())
+
+
+def _has_table(name: str) -> bool:
+    return _insp().has_table(name)
+
+
+def _has_index(table: str, index_name: str) -> bool:
+    if not _has_table(table):
+        return False
+    return index_name in {idx["name"] for idx in _insp().get_indexes(table)}
+
+
 def upgrade() -> None:
     """Upgrade schema."""
 
-    op.create_table(
-        "pred_nhl_team_shots_actuals",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("game_id", sa.Integer(), nullable=False),
-        sa.Column("game_date", sa.Date(), nullable=False),
-        sa.Column("team_id", sa.Integer(), nullable=False),
-        sa.Column("team_name", sa.String(length=100), nullable=False),
-        sa.Column("opponent_team_id", sa.Integer()),
-        sa.Column("opponent_team_name", sa.String(length=100)),
-        sa.Column("actual_shots", sa.Integer(), nullable=False),
-        sa.Column("predicted_shots", sa.Float()),
-        sa.Column("shots_line", sa.Float()),
-        sa.Column("betting_recommendation", sa.String(length=20)),
-        sa.Column("recommendation_correct", sa.Boolean()),
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
-    op.create_index(
-        "ix_pred_nhl_team_shots_actuals_game_id",
-        "pred_nhl_team_shots_actuals",
-        ["game_id"],
-    )
-    op.create_index(
-        "ix_pred_nhl_team_shots_actuals_game_date",
-        "pred_nhl_team_shots_actuals",
-        ["game_date"],
-    )
+    if not _has_table("pred_nhl_team_shots_actuals"):
+        op.create_table(
+            "pred_nhl_team_shots_actuals",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("game_id", sa.Integer(), nullable=False),
+            sa.Column("game_date", sa.Date(), nullable=False),
+            sa.Column("team_id", sa.Integer(), nullable=False),
+            sa.Column("team_name", sa.String(length=100), nullable=False),
+            sa.Column("opponent_team_id", sa.Integer()),
+            sa.Column("opponent_team_name", sa.String(length=100)),
+            sa.Column("actual_shots", sa.Integer(), nullable=False),
+            sa.Column("predicted_shots", sa.Float()),
+            sa.Column("shots_line", sa.Float()),
+            sa.Column("betting_recommendation", sa.String(length=20)),
+            sa.Column("recommendation_correct", sa.Boolean()),
+            sa.Column(
+                "created_at",
+                sa.DateTime(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
+    if not _has_index(
+        "pred_nhl_team_shots_actuals", "ix_pred_nhl_team_shots_actuals_game_id"
+    ):
+        op.create_index(
+            "ix_pred_nhl_team_shots_actuals_game_id",
+            "pred_nhl_team_shots_actuals",
+            ["game_id"],
+        )
+    if not _has_index(
+        "pred_nhl_team_shots_actuals", "ix_pred_nhl_team_shots_actuals_game_date"
+    ):
+        op.create_index(
+            "ix_pred_nhl_team_shots_actuals_game_date",
+            "pred_nhl_team_shots_actuals",
+            ["game_date"],
+        )
 
-    op.create_table(
-        "pred_nhl_player_shots_actuals",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("game_id", sa.Integer(), nullable=False),
-        sa.Column("game_date", sa.Date(), nullable=False),
-        sa.Column("player_id", sa.Integer(), nullable=False),
-        sa.Column("player_name", sa.String(length=100), nullable=False),
-        sa.Column("team_name", sa.String(length=100), nullable=False),
-        sa.Column("opponent_team_name", sa.String(length=100)),
-        sa.Column("actual_shots", sa.Integer(), nullable=False),
-        sa.Column("predicted_shots", sa.Float()),
-        sa.Column("shots_line", sa.Float()),
-        sa.Column("betting_recommendation", sa.String(length=20)),
-        sa.Column("recommendation_correct", sa.Boolean()),
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
-    op.create_index(
-        "ix_pred_nhl_player_shots_actuals_game_id",
-        "pred_nhl_player_shots_actuals",
-        ["game_id"],
-    )
-    op.create_index(
-        "ix_pred_nhl_player_shots_actuals_game_date",
-        "pred_nhl_player_shots_actuals",
-        ["game_date"],
-    )
-    op.create_index(
-        "ix_pred_nhl_player_shots_actuals_player_id",
-        "pred_nhl_player_shots_actuals",
-        ["player_id"],
-    )
+    if not _has_table("pred_nhl_player_shots_actuals"):
+        op.create_table(
+            "pred_nhl_player_shots_actuals",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("game_id", sa.Integer(), nullable=False),
+            sa.Column("game_date", sa.Date(), nullable=False),
+            sa.Column("player_id", sa.Integer(), nullable=False),
+            sa.Column("player_name", sa.String(length=100), nullable=False),
+            sa.Column("team_name", sa.String(length=100), nullable=False),
+            sa.Column("opponent_team_name", sa.String(length=100)),
+            sa.Column("actual_shots", sa.Integer(), nullable=False),
+            sa.Column("predicted_shots", sa.Float()),
+            sa.Column("shots_line", sa.Float()),
+            sa.Column("betting_recommendation", sa.String(length=20)),
+            sa.Column("recommendation_correct", sa.Boolean()),
+            sa.Column(
+                "created_at",
+                sa.DateTime(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
+    if not _has_index(
+        "pred_nhl_player_shots_actuals", "ix_pred_nhl_player_shots_actuals_game_id"
+    ):
+        op.create_index(
+            "ix_pred_nhl_player_shots_actuals_game_id",
+            "pred_nhl_player_shots_actuals",
+            ["game_id"],
+        )
+    if not _has_index(
+        "pred_nhl_player_shots_actuals", "ix_pred_nhl_player_shots_actuals_game_date"
+    ):
+        op.create_index(
+            "ix_pred_nhl_player_shots_actuals_game_date",
+            "pred_nhl_player_shots_actuals",
+            ["game_date"],
+        )
+    if not _has_index(
+        "pred_nhl_player_shots_actuals", "ix_pred_nhl_player_shots_actuals_player_id"
+    ):
+        op.create_index(
+            "ix_pred_nhl_player_shots_actuals_player_id",
+            "pred_nhl_player_shots_actuals",
+            ["player_id"],
+        )
 
-    op.create_table(
-        "pred_nhl_team_totals_actuals",
-        sa.Column("id", sa.Integer(), primary_key=True),
-        sa.Column("game_id", sa.Integer(), nullable=False, unique=True),
-        sa.Column("game_date", sa.Date(), nullable=False),
-        sa.Column("home_team_id", sa.Integer(), nullable=False),
-        sa.Column("home_team_name", sa.String(length=100), nullable=False),
-        sa.Column("away_team_id", sa.Integer(), nullable=False),
-        sa.Column("away_team_name", sa.String(length=100), nullable=False),
-        sa.Column("actual_home_goals", sa.Integer(), nullable=False),
-        sa.Column("actual_away_goals", sa.Integer(), nullable=False),
-        sa.Column("actual_total_goals", sa.Integer(), nullable=False),
-        sa.Column("predicted_total_goals", sa.Float()),
-        sa.Column("draftkings_ou_line", sa.Float()),
-        sa.Column("betting_recommendation", sa.String(length=20)),
-        sa.Column("recommendation_correct", sa.Boolean()),
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.func.now(),
-        ),
-    )
-    op.create_index(
-        "ix_pred_nhl_team_totals_actuals_game_date",
-        "pred_nhl_team_totals_actuals",
-        ["game_date"],
-    )
+    if not _has_table("pred_nhl_team_totals_actuals"):
+        op.create_table(
+            "pred_nhl_team_totals_actuals",
+            sa.Column("id", sa.Integer(), primary_key=True),
+            sa.Column("game_id", sa.Integer(), nullable=False, unique=True),
+            sa.Column("game_date", sa.Date(), nullable=False),
+            sa.Column("home_team_id", sa.Integer(), nullable=False),
+            sa.Column("home_team_name", sa.String(length=100), nullable=False),
+            sa.Column("away_team_id", sa.Integer(), nullable=False),
+            sa.Column("away_team_name", sa.String(length=100), nullable=False),
+            sa.Column("actual_home_goals", sa.Integer(), nullable=False),
+            sa.Column("actual_away_goals", sa.Integer(), nullable=False),
+            sa.Column("actual_total_goals", sa.Integer(), nullable=False),
+            sa.Column("predicted_total_goals", sa.Float()),
+            sa.Column("draftkings_ou_line", sa.Float()),
+            sa.Column("betting_recommendation", sa.String(length=20)),
+            sa.Column("recommendation_correct", sa.Boolean()),
+            sa.Column(
+                "created_at",
+                sa.DateTime(),
+                nullable=False,
+                server_default=sa.func.now(),
+            ),
+        )
+    if not _has_index(
+        "pred_nhl_team_totals_actuals", "ix_pred_nhl_team_totals_actuals_game_date"
+    ):
+        op.create_index(
+            "ix_pred_nhl_team_totals_actuals_game_date",
+            "pred_nhl_team_totals_actuals",
+            ["game_date"],
+        )
 
 
 def downgrade() -> None:
     """Downgrade schema."""
-    op.drop_index(
-        "ix_pred_nhl_team_totals_actuals_game_date",
-        table_name="pred_nhl_team_totals_actuals",
-    )
-    op.drop_table("pred_nhl_team_totals_actuals")
+    if _has_index(
+        "pred_nhl_team_totals_actuals", "ix_pred_nhl_team_totals_actuals_game_date"
+    ):
+        op.drop_index(
+            "ix_pred_nhl_team_totals_actuals_game_date",
+            table_name="pred_nhl_team_totals_actuals",
+        )
+    if _has_table("pred_nhl_team_totals_actuals"):
+        op.drop_table("pred_nhl_team_totals_actuals")
 
-    op.drop_index(
-        "ix_pred_nhl_player_shots_actuals_player_id",
-        table_name="pred_nhl_player_shots_actuals",
-    )
-    op.drop_index(
-        "ix_pred_nhl_player_shots_actuals_game_date",
-        table_name="pred_nhl_player_shots_actuals",
-    )
-    op.drop_index(
-        "ix_pred_nhl_player_shots_actuals_game_id",
-        table_name="pred_nhl_player_shots_actuals",
-    )
-    op.drop_table("pred_nhl_player_shots_actuals")
+    for index_name, table_name in (
+        ("ix_pred_nhl_player_shots_actuals_player_id", "pred_nhl_player_shots_actuals"),
+        ("ix_pred_nhl_player_shots_actuals_game_date", "pred_nhl_player_shots_actuals"),
+        ("ix_pred_nhl_player_shots_actuals_game_id", "pred_nhl_player_shots_actuals"),
+    ):
+        if _has_index(table_name, index_name):
+            op.drop_index(index_name, table_name=table_name)
+    if _has_table("pred_nhl_player_shots_actuals"):
+        op.drop_table("pred_nhl_player_shots_actuals")
 
-    op.drop_index(
-        "ix_pred_nhl_team_shots_actuals_game_date",
-        table_name="pred_nhl_team_shots_actuals",
-    )
-    op.drop_index(
-        "ix_pred_nhl_team_shots_actuals_game_id",
-        table_name="pred_nhl_team_shots_actuals",
-    )
-    op.drop_table("pred_nhl_team_shots_actuals")
+    for index_name, table_name in (
+        ("ix_pred_nhl_team_shots_actuals_game_date", "pred_nhl_team_shots_actuals"),
+        ("ix_pred_nhl_team_shots_actuals_game_id", "pred_nhl_team_shots_actuals"),
+    ):
+        if _has_index(table_name, index_name):
+            op.drop_index(index_name, table_name=table_name)
+    if _has_table("pred_nhl_team_shots_actuals"):
+        op.drop_table("pred_nhl_team_shots_actuals")
