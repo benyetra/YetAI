@@ -26,14 +26,23 @@ DEMO_REASONING_MARKERS = (
 )
 
 
+def _bet_text(value: object) -> str:
+    """Coerce optional bet text fields; ignore non-str values (e.g. test mocks)."""
+    return value.strip() if isinstance(value, str) else ""
+
+
 def is_demo_yetai_bet(bet: "YetAIBet") -> bool:
-    title = (bet.title or "").strip()
+    title = _bet_text(bet.title)
     if title in DEMO_MATCHUP_TITLES:
         return True
     text = " ".join(
         filter(
             None,
-            [bet.description or "", bet.reasoning or "", bet.selection or ""],
+            [
+                _bet_text(bet.description),
+                _bet_text(bet.reasoning),
+                _bet_text(bet.selection),
+            ],
         )
     )
     if any(marker in text for marker in DEMO_REASONING_MARKERS):
