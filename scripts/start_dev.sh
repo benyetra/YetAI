@@ -1,5 +1,7 @@
 #!/bin/bash
-echo "🚀 Starting AI Sports Betting MVP Development Environment"
+set -euo pipefail
+
+echo "🚀 Starting YetAI development environment"
 
 # Check if services are running
 echo "Checking services..."
@@ -24,9 +26,22 @@ echo "✅ Services are running"
 
 # Start backend
 echo "Starting backend server..."
-cd ../backend
-source venv/bin/activate
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "${SCRIPT_DIR}/../backend"
 
+if [[ -f .venv/bin/activate ]]; then
+    # shellcheck source=/dev/null
+    source .venv/bin/activate
+elif [[ -f venv/bin/activate ]]; then
+    # shellcheck source=/dev/null
+    source venv/bin/activate
+else
+    echo "❌ No Python venv found. Create one:"
+    echo "   cd backend && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt"
+    exit 1
+fi
+
+export PYTHONPATH=.
 uvicorn app.main:app --reload --port 8000 &
 BACKEND_PID=$!
 
@@ -35,7 +50,7 @@ sleep 3
 
 # Start frontend
 echo "Starting frontend server..."
-cd ../frontend
+cd "${SCRIPT_DIR}/../frontend"
 npm run dev &
 FRONTEND_PID=$!
 
