@@ -20,6 +20,16 @@ PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_strikeouts.py
 
 Optional: `--with-optional` (sklearn tests), `--live` (full `strikeouts.run()` against `DATABASE_URL`).
 
+## OpenAPI / Swagger
+
+Regenerate committed specs after API route changes:
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python scripts/export_openapi.py
+```
+
+Outputs: `docs/api/openapi-public.json` (agents/apps), `docs/api/openapi-admin.json`, `docs/api/openapi.json`. Live UI: `/docs`, `/redoc`. See `docs/api/README.md`.
+
 ## Deployment
 
 Production deploy: GitHub Actions workflow **Railway Production Deploy** (`workflow_dispatch` or push to `main` after CI passes). Deploys API and celery-worker.

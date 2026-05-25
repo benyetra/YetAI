@@ -85,6 +85,14 @@ jobs:
       run: |
         pytest --cov=app --cov-report=xml --cov-report=html -v
 
+    - name: Verify OpenAPI specs are up to date
+      run: |
+        PYTHONPATH=. python scripts/export_openapi.py
+        git diff --exit-code ../docs/api/ || (
+          echo "::error::OpenAPI specs are stale. Run: cd backend && PYTHONPATH=. python scripts/export_openapi.py"
+          exit 1
+        )
+
     - name: Upload coverage reports
       uses: codecov/codecov-action@v3
       with:
