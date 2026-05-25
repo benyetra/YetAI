@@ -4,10 +4,7 @@ import requests
 
 from app.models.predictions_models import Kickers, KickerPredictions
 from app.services.etl.nfl.kicker_prediction import calculate_combined_score
-from app.services.etl.nfl.nfl_common import (
-    get_current_nfl_week,
-    get_nfl_season,
-)
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 
 # Dynamic season and week detection
@@ -23,7 +20,7 @@ def get_team_schedule(team_id):
     try:
         # Use the proper week calculation function
         current_week = get_current_nfl_week(season)
-        current_season = get_current_season()
+        current_season = get_nfl_season()
 
         # Get full season schedule and filter for current/upcoming games
         url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team_id}/schedule?season={current_season}&seasontype=2"

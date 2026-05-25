@@ -98,10 +98,14 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 # ————————————————
-# PARK FACTORS
+# PARK FACTORS (offline CI: empty map when S3/credentials unavailable)
 PARK_FACTORS_CSV = "s3://yetibets/mlb/park_factors.csv"
-_pf_df = read_csv_anywhere(PARK_FACTORS_CSV)
-PARK_FACTOR_MAP = {row["park_id"]: row["hr_factor"] for _, row in _pf_df.iterrows()}
+try:
+    _pf_df = read_csv_anywhere(PARK_FACTORS_CSV)
+    PARK_FACTOR_MAP = {row["park_id"]: row["hr_factor"] for _, row in _pf_df.iterrows()}
+except Exception as exc:
+    logger.warning("Could not load park_factors.csv: %s", exc)
+    PARK_FACTOR_MAP = {}
 
 
 def get_park_factor(park_id):
