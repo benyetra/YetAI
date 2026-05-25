@@ -1,0 +1,98 @@
+# Fast offline ML unit tests — no network, no Postgres required.
+# Extend pytest args when adding sport-specific MAE/Brier baseline tests (see backend/docs/ML_PROMOTION.md).
+
+name: ML model quality (offline)
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - "backend/app/services/ml/**"
+      - "backend/app/services/ml_model_version.py"
+      - "backend/app/services/etl/mlb/**"
+      - "backend/app/services/etl/wnba/ml_training/**"
+      - "backend/app/services/etl/nba/**"
+      - "backend/app/services/etl/nhl/**"
+      - "backend/app/services/etl/nfl/**"
+      - "backend/tests/test_nfl_common.py"
+      - "backend/tests/test_nfl_backtest_regression.py"
+      - "backend/tests/fixtures/nfl_backtest_quick_baseline.json"
+      - "backend/tests/test_mlb_deferred_features.py"
+      - "backend/tests/test_nhl_backtest_regression.py"
+      - "backend/tests/fixtures/nhl_backtest_quick_baseline.json"
+      - "backend/tests/test_mlb_backtest_regression.py"
+      - "backend/tests/test_mlb_hits_backtest.py"
+      - "backend/tests/test_mlb_strikeout_degrade.py"
+      - "backend/tests/test_meta_learner_eval.py"
+      - "backend/tests/fixtures/mlb_backtest_quick_baseline.json"
+      - "backend/tests/test_wnba_ml_training.py"
+      - "backend/tests/test_nba_ml_training.py"
+      - "backend/tests/test_nba_ml_predict_metadata.py"
+      - "backend/tests/test_ml_model_version.py"
+      - ".github/workflows/ml-model-quality.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/ml-model-quality.yml"
+
+env:
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  ml-unit-gates:
+    name: ML offline unit tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run offline ML unit tests
+        env:
+          ML_MODEL_VERSION_ALLOW_S3: "0"
+        run: |
+          pytest tests/test_ml_training_shared.py \
+            tests/test_ml_model_version.py \
+            tests/test_wnba_ml_training.py \
+            tests/test_mlb_deferred_features.py \
+            tests/test_mlb_backtest_regression.py \
+            tests/test_nhl_backtest_regression.py \
+            tests/test_nhl_confirm_starters.py \
+            tests/test_nhl_goalie_saves_ml.py \
+            tests/test_nhl_player_shots_ml.py \
+            tests/test_nhl_team_totals_ml.py \
+            tests/test_nhl_config.py \
+            tests/test_nhl_accuracy_service.py \
+            tests/test_nhl_boxscore_extractors.py \
+            tests/test_mlb_hits_backtest.py \
+            tests/test_mlb_strikeout_degrade.py \
+            tests/test_meta_learner_eval.py \
+            tests/test_nba_accuracy_service.py \
+            tests/test_nba_fanduel_lines.py \
+            tests/test_nba_ml_training.py \
+            tests/test_nba_ml_predict_metadata.py \
+            tests/test_nba_prop_calibration.py \
+            tests/test_nba_spread_ml.py \
+            tests/test_nba_spread_projector.py \
+            tests/test_nba_totals_ml.py \
+            tests/test_nba_totals_projector.py \
+            tests/test_nfl_common.py \
+            tests/test_nfl_backtest_regression.py \
+            tests/test_nfl_qb_passing_yards_ml.py \
+            tests/test_nfl_kicker_blend_tune.py -q

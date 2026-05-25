@@ -1,0 +1,15 @@
+{
+  "description": "NHL quick backtest (--quick, limited slates). Refresh via scripts/update_nhl_backtest_baseline.py after intentional model changes.",
+  "updated_at": "2026-05-25",
+  "preset": "quick",
+  "metrics": {
+    "n_goalie": 20,
+    "goalie_mae": 3.5,
+    "n_sog": 40,
+    "sog_mae": 1.2,
+    "n_totals": 10,
+    "totals_mae": 0.8,
+    "ou_hit_rate": 0.52,
+    "ou_n": 50
+  }
+}

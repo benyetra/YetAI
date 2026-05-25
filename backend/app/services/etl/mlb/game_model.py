@@ -196,6 +196,13 @@ FAST_XGB_TOTAL_PARAMS = {
     "gamma": 0.1,
 }
 
+# Promote deferred columns into FEATURE_COLS when this fraction of rows are non-neutral.
+DEFERRED_PROMOTION_MIN_NON_NEUTRAL_PCT = 0.80
+
+# Walk-forward eval: recommend production retrain when expanded features beat baseline by at least:
+DEFERRED_EVAL_BRIER_LIFT_MIN = 0.005
+DEFERRED_EVAL_ML_ACCURACY_LIFT_MIN = 0.01
+
 # Training-row values that indicate a feature was not backfilled (for coverage reports).
 FEATURE_NEUTRAL_VALUES = {
     "home_bullpen_fatigue": 0.5,
@@ -216,7 +223,9 @@ FEATURE_NEUTRAL_VALUES = {
     "away_pitcher_quality": 50.0,
 }
 
-_ENSEMBLE_META_KEYS = frozenset({"weights", "weights_default", "weight_tuning"})
+_ENSEMBLE_META_KEYS = frozenset(
+    {"weights", "weights_default", "weight_tuning", "feature_cols"}
+)
 
 
 def _iter_ensemble_models(ensemble):
@@ -227,11 +236,10 @@ def _iter_ensemble_models(ensemble):
         yield name, model
 
 
-def feature_coverage_report(df):
-    """Fraction of rows still at neutral training defaults per feature."""
-    n = max(len(df), 1)
+def _feature_coverage_rows(df, columns):
+    """Build per-column coverage rows for *columns* present in *df*."""
     rows = []
-    for col in FEATURE_COLS:
+    for col in columns:
         if col not in df.columns:
             continue
         neutral = FEATURE_NEUTRAL_VALUES.get(col)
@@ -239,12 +247,15 @@ def feature_coverage_report(df):
         if neutral is not None:
             at_default = (series == neutral) | series.isna()
             pct_default = float(at_default.mean())
+            pct_non_neutral = float(1.0 - pct_default)
         else:
             pct_default = None
+            pct_non_neutral = None
         rows.append(
             {
                 "feature": col,
                 "pct_at_neutral_default": pct_default,
+                "pct_non_neutral": pct_non_neutral,
                 "std": float(series.std()) if series.notna().any() else 0.0,
                 "mean": float(series.mean()) if series.notna().any() else None,
             }
@@ -255,7 +266,86 @@ def feature_coverage_report(df):
             -(r["pct_at_neutral_default"] or 0),
         ),
     )
-    return {"n_rows": int(len(df)), "features": rows}
+    return rows
+
+
+def feature_coverage_report(df, *, include_deferred=False):
+    """Fraction of rows still at neutral training defaults per feature."""
+    columns = list(FEATURE_COLS)
+    if include_deferred:
+        columns.extend(c for c in DEFERRED_FEATURE_COLS if c not in columns)
+    return {
+        "n_rows": int(len(df)),
+        "features": _feature_coverage_rows(df, columns),
+    }
+
+
+def deferred_feature_coverage_report(df):
+    """Coverage for DEFERRED_FEATURE_COLS (must have FEATURE_NEUTRAL_VALUES entries)."""
+    return {
+        "n_rows": int(len(df)),
+        "deferred_columns": list(DEFERRED_FEATURE_COLS),
+        "promotion_threshold_pct_non_neutral": DEFERRED_PROMOTION_MIN_NON_NEUTRAL_PCT,
+        "features": _feature_coverage_rows(df, DEFERRED_FEATURE_COLS),
+    }
+
+
+def columns_to_promote_from_deferred_coverage(
+    coverage_report,
+    threshold=DEFERRED_PROMOTION_MIN_NON_NEUTRAL_PCT,
+):
+    """Return deferred column names with pct_non_neutral >= *threshold*."""
+    promoted = []
+    for row in coverage_report.get("features", []):
+        pct_nn = row.get("pct_non_neutral")
+        if pct_nn is None:
+            pct_default = row.get("pct_at_neutral_default")
+            if pct_default is not None:
+                pct_nn = 1.0 - pct_default
+        if pct_nn is not None and pct_nn >= threshold:
+            promoted.append(row["feature"])
+    return promoted
+
+
+def expanded_feature_cols(extra_cols=()):
+    """Baseline FEATURE_COLS plus promoted deferred columns (stable order)."""
+    out = list(FEATURE_COLS)
+    for col in extra_cols:
+        if col not in out:
+            out.append(col)
+    return out
+
+
+def promote_deferred_features(
+    df,
+    threshold=DEFERRED_PROMOTION_MIN_NON_NEUTRAL_PCT,
+):
+    """Assess deferred backfill quality and which columns merit FEATURE_COLS promotion."""
+    coverage = deferred_feature_coverage_report(df)
+    promoted = columns_to_promote_from_deferred_coverage(coverage, threshold)
+    return {
+        "coverage": coverage,
+        "promoted": promoted,
+        "remaining_deferred": [c for c in DEFERRED_FEATURE_COLS if c not in promoted],
+        "expanded_feature_cols": expanded_feature_cols(promoted),
+        "threshold_pct_non_neutral": threshold,
+    }
+
+
+def ensemble_feature_cols(ensemble) -> list[str]:
+    """Feature column order saved with a trained ensemble (falls back to FEATURE_COLS)."""
+    if isinstance(ensemble, dict):
+        cols = ensemble.get("feature_cols")
+        if cols:
+            return list(cols)
+    return list(FEATURE_COLS)
+
+
+def attach_feature_cols_to_ensemble(ensemble, feature_cols):
+    """Persist training feature list on ensemble dict for inference parity."""
+    if isinstance(ensemble, dict) and feature_cols:
+        ensemble["feature_cols"] = list(feature_cols)
+    return ensemble
 
 
 def load_park_factors():
@@ -1179,7 +1269,13 @@ def _team_days_rest_as_of(conn, team_id, season, as_of_date):
     return max((current - last).days, 1)
 
 
-def tune_ensemble_weights(ensemble, val_df, target_col, classification=True):
+def tune_ensemble_weights(
+    ensemble,
+    val_df,
+    target_col,
+    classification=True,
+    feature_cols=None,
+):
     """Tune non-negative ensemble weights on a temporal validation slice.
 
     Minimizes Brier (win) or MAE (totals) subject to weights summing to 1.
@@ -1192,7 +1288,8 @@ def tune_ensemble_weights(ensemble, val_df, target_col, classification=True):
     if not members or val_df is None or len(val_df) < 50:
         return ensemble
 
-    X = val_df[FEATURE_COLS].fillna(0).values
+    cols = feature_cols or FEATURE_COLS
+    X = val_df[cols].fillna(0).values
     y = val_df[target_col].values.astype(float)
     cols = []
     names = []
@@ -1436,7 +1533,13 @@ def build_historical_training_data(
     return df
 
 
-def train_game_models(df, fast=False, tune_weights=False, val_fraction=0.15):
+def train_game_models(
+    df,
+    fast=False,
+    tune_weights=False,
+    val_fraction=0.15,
+    feature_cols=None,
+):
     """Train diverse ensemble of win probability and run total models.
 
     Technical Playbook §7: Current XGB+GBM+LGBM ensemble is too homogeneous.
@@ -1451,14 +1554,16 @@ def train_game_models(df, fast=False, tune_weights=False, val_fraction=0.15):
         tune_weights: If True, reweight ensemble members on the last ``val_fraction``
             of training rows (temporal) to minimize Brier / MAE.
         val_fraction: Tail fraction of ``df`` used only for weight tuning.
+        feature_cols: Column list for X; defaults to FEATURE_COLS.
     """
+    cols = feature_cols or FEATURE_COLS
     df = df.sort_values("date").reset_index(drop=True)
     val_df = None
     if tune_weights and len(df) >= 200:
         split_at = max(int(len(df) * (1.0 - val_fraction)), len(df) - 50)
         val_df = df.iloc[split_at:].copy()
 
-    X = df[FEATURE_COLS].fillna(0).values
+    X = df[cols].fillna(0).values
     y_win = df["home_win"].values
     y_total = df["total_runs"].values
 
@@ -1678,14 +1783,18 @@ def train_game_models(df, fast=False, tune_weights=False, val_fraction=0.15):
             val_df,
             "home_win",
             classification=True,
+            feature_cols=cols,
         )
         total_ensemble = tune_ensemble_weights(
             total_ensemble,
             val_df,
             "total_runs",
             classification=False,
+            feature_cols=cols,
         )
 
+    attach_feature_cols_to_ensemble(win_ensemble, cols)
+    attach_feature_cols_to_ensemble(total_ensemble, cols)
     return win_ensemble, total_ensemble
 
 
@@ -1697,6 +1806,7 @@ def fit_and_save_win_calibrator(
     method: str = "auto",
     calibration_fast: bool = True,
     tune_weights: bool = False,
+    feature_cols=None,
 ) -> None:
     """Fit isotonic/Platt on OOS tail preds (split_train protocol used in eval).
 
@@ -1735,12 +1845,14 @@ def fit_and_save_win_calibrator(
         train_core["date"].max(),
         len(cal_df),
     )
+    cal_cols = feature_cols or FEATURE_COLS
     cal_win_ensemble, _ = train_game_models(
         train_core,
         fast=calibration_fast,
         tune_weights=tune_weights,
+        feature_cols=cal_cols,
     )
-    X_cal = cal_df[FEATURE_COLS].fillna(0).values
+    X_cal = cal_df[cal_cols].fillna(0).values
     p_cal_oos = ensemble_predict_proba_batch(cal_win_ensemble, X_cal)
     y_cal = cal_df["home_win"].values.astype(int)
 
@@ -1928,7 +2040,8 @@ def predict_games(games):
             continue
 
         if use_ml:
-            X = np.array([[features[col] for col in FEATURE_COLS]])
+            infer_cols = ensemble_feature_cols(win_model)
+            X = np.array([[features[col] for col in infer_cols]])
             if use_ensemble:
                 home_win_prob = ensemble_predict_proba(win_model, X)
                 projected_total = ensemble_predict_value(total_model, X)
@@ -2090,6 +2203,16 @@ def main():
         action="store_true",
         help="With --evaluate: compare split_train vs full_train_tail_cal",
     )
+    parser.add_argument(
+        "--report-deferred-coverage",
+        action="store_true",
+        help="Build training matrix and log deferred-feature backfill coverage (no train)",
+    )
+    parser.add_argument(
+        "--compare-deferred-features",
+        action="store_true",
+        help="With --evaluate: walk-forward baseline FEATURE_COLS vs promoted deferred cols",
+    )
     args = parser.parse_args()
 
     from app.services.etl.mlb._db import close_session, init_session
@@ -2098,7 +2221,7 @@ def main():
     try:
         load_park_factors()
 
-        if args.train:
+        if args.train or getattr(args, "report_deferred_coverage", False):
             df = build_historical_training_data(
                 args.seasons,
                 quick=args.quick,
@@ -2115,12 +2238,38 @@ def main():
                     and r["pct_at_neutral_default"] > 0
                 },
             )
+            if getattr(args, "report_deferred_coverage", False):
+                promo = promote_deferred_features(df)
+                def_cov = promo["coverage"]
+                logger.info(
+                    "Deferred feature coverage (pct non-neutral): %s",
+                    {
+                        r["feature"]: r.get("pct_non_neutral")
+                        for r in def_cov["features"]
+                        if r.get("pct_non_neutral") is not None
+                    },
+                )
+                logger.info(
+                    "Deferred promotion (>= %.0f%% non-neutral): %s",
+                    DEFERRED_PROMOTION_MIN_NON_NEUTRAL_PCT * 100,
+                    promo["promoted"] or "(none)",
+                )
+                if not args.train:
+                    return
             if len(df) < 100:
                 logger.error("Not enough training data. Need at least 100 games.")
                 return
+            promo = promote_deferred_features(df)
+            train_cols = promo["expanded_feature_cols"]
+            if promo["promoted"]:
+                logger.info(
+                    "Training with promoted deferred features: %s",
+                    promo["promoted"],
+                )
             win_ensemble, total_ensemble = train_game_models(
                 df,
                 tune_weights=args.tune_weights,
+                feature_cols=train_cols,
             )
             save_model(win_ensemble, "win")
             save_model(total_ensemble, "total")
@@ -2128,6 +2277,7 @@ def main():
                 df,
                 tune_weights=args.tune_weights,
                 calibration_fast=True,
+                feature_cols=train_cols,
             )
             logger.info(
                 f"Training complete. Ensemble models saved "
@@ -2148,20 +2298,36 @@ def main():
                     "--evaluate needs at least two distinct years in --seasons"
                 )
                 return
-            gme.run_seasonal_holdout(
-                sorted(set(seasons)),
-                fast_train=not args.full_train,
-                tune_weights=not args.no_tune_weights,
-                cal_train_modes=(
-                    [gme.CAL_TRAIN_SPLIT, gme.CAL_TRAIN_FULL]
-                    if args.compare_cal_train_modes
-                    else (
-                        [gme.CAL_TRAIN_FULL]
-                        if args.cal_train_full
-                        else [gme.CAL_TRAIN_SPLIT]
-                    )
-                ),
-            )
+            if args.compare_deferred_features:
+                gme.run_deferred_feature_comparison(
+                    sorted(set(seasons)),
+                    fast_train=not args.full_train,
+                    tune_weights=not args.no_tune_weights,
+                    cal_train_modes=(
+                        [gme.CAL_TRAIN_SPLIT, gme.CAL_TRAIN_FULL]
+                        if args.compare_cal_train_modes
+                        else (
+                            [gme.CAL_TRAIN_FULL]
+                            if args.cal_train_full
+                            else [gme.CAL_TRAIN_SPLIT]
+                        )
+                    ),
+                )
+            else:
+                gme.run_seasonal_holdout(
+                    sorted(set(seasons)),
+                    fast_train=not args.full_train,
+                    tune_weights=not args.no_tune_weights,
+                    cal_train_modes=(
+                        [gme.CAL_TRAIN_SPLIT, gme.CAL_TRAIN_FULL]
+                        if args.compare_cal_train_modes
+                        else (
+                            [gme.CAL_TRAIN_FULL]
+                            if args.cal_train_full
+                            else [gme.CAL_TRAIN_SPLIT]
+                        )
+                    ),
+                )
 
         elif args.predict:
             games = get_todays_games()

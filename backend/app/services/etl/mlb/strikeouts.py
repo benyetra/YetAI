@@ -38,13 +38,13 @@ from app.services.etl.mlb.odds_utils import (
 )
 from app.services.etl.mlb.offsets import apply_shrunk_offsets
 
-# initialize the calibrated classifier once
-over_under_clf = load_classifier()
-if over_under_clf is None:
-    raise RuntimeError(
-        "Strikeout classifier failed to load. "
-        "Run: python scripts/mlb/classification_model.py --retrain"
-    )
+# Lazy-loaded on first use; None when pickle/S3 artifact is missing.
+over_under_clf = None
+
+_STRIKEOUT_RETRAIN_HINT = (
+    "Retrain: cd backend && PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py"
+)
+
 from app.services.etl.mlb.mlb_matchup_analysis import (
     matchup_adjusted_strikeouts,
     fetch_last_start_date,
@@ -58,6 +58,37 @@ from app.services.etl.nba._espn import now_eastern
 
 logger = logging.getLogger(__name__)
 
+
+def _get_over_under_classifier():
+    """Load strikeout O/U classifier once; return None when artifact is missing."""
+    global over_under_clf
+    if over_under_clf is not None:
+        return over_under_clf
+    over_under_clf = load_classifier()
+    if over_under_clf is None:
+        logger.warning(
+            "Strikeout classifier not loaded; ML O/U path disabled (regression + "
+            "negbin/line heuristics still run). %s",
+            _STRIKEOUT_RETRAIN_HINT,
+        )
+    return over_under_clf
+
+
+def classifier_prob_over(
+    clf,
+    X_feature_df,
+    *,
+    proj_k_final: float,
+    threshold: float | None,
+) -> float:
+    """P(over) from classifier, or line/regression heuristic when clf is missing."""
+    if clf is None:
+        if threshold and threshold > 0:
+            return 1.0 if proj_k_final > threshold else 0.0
+        return 0.5
+    return float(clf.predict_proba(X_feature_df)[0, 1])
+
+
 # Database configuration
 
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
@@ -67,10 +98,14 @@ HEADERS = {
     "Content-Type": "application/json",
 }
 # ————————————————
-# PARK FACTORS
+# PARK FACTORS (offline CI: empty map when S3/credentials unavailable)
 PARK_FACTORS_CSV = "s3://yetibets/mlb/park_factors.csv"
-_pf_df = read_csv_anywhere(PARK_FACTORS_CSV)
-PARK_FACTOR_MAP = {row["park_id"]: row["hr_factor"] for _, row in _pf_df.iterrows()}
+try:
+    _pf_df = read_csv_anywhere(PARK_FACTORS_CSV)
+    PARK_FACTOR_MAP = {row["park_id"]: row["hr_factor"] for _, row in _pf_df.iterrows()}
+except Exception as exc:
+    logger.warning("Could not load park_factors.csv: %s", exc)
+    PARK_FACTOR_MAP = {}
 
 
 def get_park_factor(park_id):
@@ -513,7 +548,13 @@ def fetch_pitcher_data():
                         ]
                     )
 
-                    prob_over_clf = over_under_clf.predict_proba(X_feature_df)[0, 1]
+                    clf = _get_over_under_classifier()
+                    prob_over_clf = classifier_prob_over(
+                        clf,
+                        X_feature_df,
+                        proj_k_final=proj_k_final,
+                        threshold=threshold,
+                    )
 
                     # Optional recency/mix/velo deltas as future features (not fed into model here):
                     # delta_mix, delta_velo = 0.0, 0.0

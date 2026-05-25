@@ -13,35 +13,10 @@ import pandas as pd
 
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
 
 warnings.filterwarnings("ignore")
-
-
-def get_current_nfl_week(season=None) -> int:
-    """Determine current NFL week based on today's date"""
-    today = date.today()
-
-    if season is None:
-        if today.month >= 9:
-            season = today.year
-        else:
-            season = today.year - 1
-
-    # Find the actual first Thursday after Labor Day
-    labor_day = date(season, 9, 1)
-    while labor_day.weekday() != 0:
-        labor_day = date(season, 9, labor_day.day + 1)
-
-    first_thursday = labor_day + timedelta(days=3)
-    if first_thursday.day > 10:
-        first_thursday = first_thursday - timedelta(days=7)
-
-    if today < first_thursday:
-        return 1
-
-    days_since_start = (today - first_thursday).days
-    current_week = (days_since_start // 7) + 1
-    return min(max(current_week, 1), 18)
 
 
 def get_team_id_mapping():
@@ -391,15 +366,8 @@ def _run_qb_dynamic_core():
     print("🚀 Dynamic QB Predictions - Heroku")
     print("=" * 50)
 
-    # Get current season and week
-    week = get_current_nfl_week()
-    today = date.today()
-    if today.month >= 9:
-        season = today.year
-    else:
-        season = today.year - 1
-
-    # Note: Using current season (2025) - remove override if 2025 data is available
+    season = get_nfl_season()
+    week = get_current_nfl_week(season)
 
     print(f"📅 Season: {season}, Week: {week}")
 
@@ -425,8 +393,13 @@ def _run_qb_dynamic_core():
             # Get opponent team
             opponent_abbr = get_team_opponent(team_abbr, season, week)
 
-            # Get prediction
-            prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            tier_prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            prediction = enrich_qb_prediction_for_write(
+                tier_prediction,
+                season=season,
+                week=week,
+                is_backup=is_backup,
+            )
 
             # Create/update prediction
             existing_prediction = (
@@ -447,9 +420,10 @@ def _run_qb_dynamic_core():
                     season=season,
                     week=week,
                     predicted_passing_yards=prediction["predicted_passing_yards"],
-                    model_confidence=prediction["confidence"],
+                    model_confidence=prediction["model_confidence"],
                     prediction_method=prediction["prediction_method"],
-                    features_used=1,
+                    model_version=prediction.get("model_version"),
+                    feature_importance=prediction.get("feature_importance"),
                     prediction_date=datetime.utcnow(),
                 )
                 db_session.add(new_prediction)
@@ -463,8 +437,12 @@ def _run_qb_dynamic_core():
                 existing_prediction.predicted_passing_yards = prediction[
                     "predicted_passing_yards"
                 ]
-                existing_prediction.model_confidence = prediction["confidence"]
+                existing_prediction.model_confidence = prediction["model_confidence"]
                 existing_prediction.prediction_method = prediction["prediction_method"]
+                existing_prediction.model_version = prediction.get("model_version")
+                existing_prediction.feature_importance = prediction.get(
+                    "feature_importance"
+                )
                 existing_prediction.opponent_team_name = (
                     opponent_abbr  # Update opponent name
                 )

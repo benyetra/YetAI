@@ -22,6 +22,10 @@ from app.services.mlb_strikeout_pick import (
     pick_confidence_pct,
     projection_pick_side,
 )
+from app.services.ml_model_version import (
+    attach_model_version,
+    resolve_mlb_strikeout_model_version,
+)
 import argparse
 import logging
 import traceback
@@ -50,6 +54,10 @@ def store_projections(date):
             ~StrikeoutProjections.pitcher_id.in_(current_ids),
         ).delete(synchronize_session=False)
         db_session.commit()
+
+    model_version = resolve_mlb_strikeout_model_version(
+        allow_network=os.getenv("ML_MODEL_VERSION_ALLOW_S3", "1") == "1"
+    )
 
     for pitcher in pitchers:
         pitcher_id = pitcher.pitcher_id
@@ -93,6 +101,7 @@ def store_projections(date):
                 projected_strikeouts=projected_strikeouts,
                 fanduel_line=fanduel_line,
             )
+            attach_model_version(existing_projection, model_version)
         else:
             new_projection = StrikeoutProjections(
                 date=date,
@@ -112,6 +121,7 @@ def store_projections(date):
                 projected_strikeouts=projected_strikeouts,
                 fanduel_line=fanduel_line,
             )
+            attach_model_version(new_projection, model_version)
             db_session.add(new_projection)
     db_session.commit()
 

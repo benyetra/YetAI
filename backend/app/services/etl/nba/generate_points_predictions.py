@@ -1,24 +1,7 @@
 """Generate per-player points projections via the XGBoost model.
 
-Port of YetiBets/scripts/nba/points_predictions_v2.py — but stripped down to
-the ML-only path. The original v2 script ran an ensemble of a rule-based
-weighted projection + XGBoost; here we trust the model directly since the
-metadata reports `test_mae ~5.0` and the ensemble blend added complexity
-without measurable gains in YetiBets's recent runs.
-
-Flow:
-  1. Query pred_today_active_players for today's date (Eastern).
-  2. For each active player:
-     - skip if marked out/ir/doubtful in pred_player_injury_status
-     - build the 44-feature vector via _feature_engineering.build_points_features
-     - skip if insufficient history (<5 games)
-     - run _ml_predict.predict_points(features) -> projection
-     - clamp negative predictions to 0 (XGBoost can dip below for low-volume bench)
-     - upsert into pred_points_projections
-  3. Return a JSON-able summary dict.
-
-fanduel_line/fanduel_over_under are intentionally left NULL — no FanDuel feed
-is wired up yet on the YetAI side (Development-flm tracks this).
+Port of YetiBets/scripts/nba/points_predictions_v2.py — ML-only path.
+FanDuel lines from The Odds API when ``ODDS_API_KEY`` is configured.
 """
 
 from __future__ import annotations
@@ -34,11 +17,21 @@ from app.models.predictions_models import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._feature_engineering import build_points_features
-from app.services.etl.nba._ml_predict import predict_points
+from app.services.etl.nba._fanduel_lines import (
+    PROP_MARKETS,
+    apply_fanduel_to_projection,
+)
+from app.services.etl.nba.prop_calibration import maybe_attach_p_over
+from app.services.etl.nba._ml_predict import get_metadata, predict_points
+from app.services.ml_model_version import (
+    attach_model_version,
+    model_version_from_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
 INJURY_SKIP_STATUSES = {"out", "ir", "doubtful"}
+FD_MARKET = PROP_MARKETS["points"]
 
 
 def _is_injured(db, player_id: int) -> tuple[bool, str | None]:
@@ -59,6 +52,10 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+    lines_attached = 0
+    rows_written = 0
+
+    model_version = model_version_from_metadata(get_metadata("points"), prefix="xgb")
 
     db = SessionLocal()
     try:
@@ -79,6 +76,8 @@ def run() -> dict:
                 "skipped_injured": 0,
                 "skipped_insufficient_data": 0,
                 "errors": 0,
+                "fanduel_lines_attached": 0,
+                "fanduel_line_coverage_pct": None,
             }
 
         for player in active:
@@ -105,9 +104,6 @@ def run() -> dict:
                     continue
 
                 prediction = predict_points(features)
-                # XGBoost can occasionally output slightly negative values for
-                # very-low-volume bench profiles. The actual stat can't be
-                # negative, so floor at 0.
                 projected = max(0.0, round(prediction, 2))
 
                 existing = (
@@ -122,22 +118,35 @@ def run() -> dict:
                     existing.projected_points = projected
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
-                    existing.fanduel_line = None
-                    existing.fanduel_over_under = None
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        PointsProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            player_name=player.player_name,
-                            opponent_team_name=player.opponent_team_name,
-                            projected_points=projected,
-                            fanduel_line=None,
-                            fanduel_over_under=None,
-                        )
+                    row = PointsProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        player_name=player.player_name,
+                        opponent_team_name=player.opponent_team_name,
+                        projected_points=projected,
                     )
+                    db.add(row)
                     created += 1
+                attach_model_version(row, model_version)
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market=FD_MARKET,
+                    projection=projected,
+                ):
+                    lines_attached += 1
+                maybe_attach_p_over(
+                    row,
+                    stat="points",
+                    projected=projected,
+                    line=getattr(row, "fanduel_line", None),
+                )
+                rows_written += 1
                 db.commit()
 
                 logger.info("%s -> %.2f pts", player.player_name, projected)
@@ -149,9 +158,19 @@ def run() -> dict:
                 errors += 1
                 continue
 
+        coverage = (
+            round(100.0 * lines_attached / rows_written, 1) if rows_written else None
+        )
+        logger.info(
+            "generate_points_predictions: fanduel_line coverage %s%% (%s/%s)",
+            coverage,
+            lines_attached,
+            rows_written,
+        )
         return {
             "status": "ok",
             "date": today.isoformat(),
+            "model_version": model_version,
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "players_considered": len(active),
             "created": created,
@@ -159,6 +178,8 @@ def run() -> dict:
             "skipped_injured": skipped_injured,
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "fanduel_line_coverage_pct": coverage,
         }
     finally:
         db.close()

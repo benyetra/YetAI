@@ -133,8 +133,16 @@ def _ensure_loaded(stat: str) -> None:
         )
 
 
+def _feature_order(metadata: dict) -> list[str]:
+    """Training artifacts use ``features``; legacy YetiBets JSON used ``feature_names``."""
+    names = metadata.get("feature_names") or metadata.get("features")
+    if not names:
+        raise KeyError("metadata missing feature_names/features")
+    return list(names)
+
+
 def get_feature_names(stat: Optional[str] = None) -> list[str]:
-    """Return the canonical 44-feature ordering the model was trained on.
+    """Return the canonical feature ordering the model was trained on.
 
     `stat=None` is a backward-compat shim that returns the points-model
     feature ordering (preserves the existing import in
@@ -142,14 +150,36 @@ def get_feature_names(stat: Optional[str] = None) -> list[str]:
     """
     target = stat or "points"
     _ensure_loaded(target)
-    return list(_metadatas[target]["feature_names"])
+    return _feature_order(_metadatas[target])
 
 
 def get_metadata(stat: Optional[str] = None) -> dict:
-    """Expose the full metadata dict (for test_mae, etc.)."""
+    """Expose the full metadata dict (for test_mae, model_version, etc.)."""
     target = stat or "points"
     _ensure_loaded(target)
-    return _metadatas[target]
+    return dict(_metadatas[target])
+
+
+def get_holdout_mae(stat: str) -> float | None:
+    """Holdout MAE from training metadata (``holdout_mae`` or ``test_mae``)."""
+    meta = get_metadata(stat)
+    for key in ("holdout_mae", "test_mae", "mae"):
+        value = meta.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                continue
+    return None
+
+
+def get_model_version(stat: str) -> str | None:
+    """Promotion tag from metadata JSON, if present."""
+    meta = get_metadata(stat)
+    version = meta.get("model_version")
+    if version is not None and str(version).strip():
+        return str(version).strip()
+    return None
 
 
 def predict(stat: str, features: dict) -> float:
@@ -163,7 +193,7 @@ def predict(stat: str, features: dict) -> float:
     model = _models[stat]
     metadata = _metadatas[stat]
 
-    feature_names = metadata["feature_names"]
+    feature_names = _feature_order(metadata)
     row = {name: features.get(name, 0) for name in feature_names}
     X = pd.DataFrame([row], columns=feature_names)
 

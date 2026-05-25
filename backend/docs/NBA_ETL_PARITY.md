@@ -38,10 +38,16 @@ Orchestrator: `app.tasks.etl_pipeline.NBA_PHASES` + Celery Beat `nba-update-pipe
 
 Track new ports as Celery sub-tasks under `NBA_PHASES`; do not re-add logic to YetiBets.
 
+## Prop calibration (BKB-2.6)
+
+Holdout residual buckets → `P(over line)`; optional at inference via
+`NBA_PROP_CALIBRATION_ENABLED=1`. Details: `docs/NBA_ML_OPS.md`.
+
 ## Validation
 
 ```bash
 cd backend && PYTHONPATH=. python -m pytest tests/test_nba_totals_projector.py -v
+cd backend && PYTHONPATH=. python -m pytest tests/test_nba_prop_calibration.py -v
 cd backend && PYTHONPATH=. python scripts/validate_nba_pipeline.py
 ```
 

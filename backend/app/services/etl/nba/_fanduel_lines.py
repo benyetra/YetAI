@@ -7,7 +7,7 @@ Port of YetiBets ``utilities/utilities_functions.get_event_id_for_game`` and
 from __future__ import annotations
 
 import logging
-from typing import Tuple
+from typing import Any, Tuple
 
 import requests
 
@@ -98,3 +98,55 @@ def get_fanduel_line(
     except Exception as exc:
         logger.debug("get_fanduel_line for %s: %s", player_name, exc)
     return 0.0, 0.0, "n"
+
+
+NBA_SPORT = "basketball_nba"
+
+# Odds API market keys for core player props (FanDuel bookmaker).
+PROP_MARKETS: dict[str, str] = {
+    "points": "player_points",
+    "rebounds": "player_rebounds",
+    "assists": "player_assists",
+    "three_pt_made": "player_threes",
+    "pra": "player_points_rebounds_assists",
+}
+
+
+def fetch_fanduel_prop_for_player(
+    team_name: str,
+    opponent_team_name: str,
+    player_name: str,
+    market: str,
+    projection: float,
+) -> tuple[float | None, str | None]:
+    """Resolve FanDuel line + pick side for one player prop, or (None, None)."""
+    event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
+    if not event_id:
+        return None, None
+    line, _price, flag = get_fanduel_line(
+        NBA_SPORT, event_id, player_name, market, projection
+    )
+    if line <= 0 or flag == "n":
+        return None, None
+    return line, flag
+
+
+def apply_fanduel_to_projection(
+    row: Any,
+    *,
+    team_name: str,
+    opponent_team_name: str,
+    player_name: str,
+    market: str,
+    projection: float,
+) -> bool:
+    """Set ``fanduel_line`` / ``fanduel_over_under`` on a projection ORM row.
+
+    Returns True when a line was stored.
+    """
+    line, flag = fetch_fanduel_prop_for_player(
+        team_name, opponent_team_name, player_name, market, projection
+    )
+    row.fanduel_line = line
+    row.fanduel_over_under = flag
+    return line is not None

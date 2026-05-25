@@ -1,0 +1,11 @@
+{
+  "description": "MLB quick backtest (--quick, 20 games, skip odds/weather). Refresh via scripts/update_mlb_backtest_baseline.py after intentional model changes.",
+  "updated_at": "2026-05-25",
+  "preset": "quick",
+  "metrics": {
+    "n_games": 20,
+    "mean_brier": 0.24,
+    "moneyline_accuracy": 0.55,
+    "hit_mae": 1.25
+  }
+}

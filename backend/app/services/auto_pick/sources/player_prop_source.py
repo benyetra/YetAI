@@ -19,9 +19,8 @@ COVERAGE NOTES:
   - `event_id` cannot be derived from these tables (no game FK). We synthesize a
     deterministic key from (date, player_id, stat). The orchestrator dedupes by
     event_id so collisions are safe.
-  - AssistsProjections and ReboundsProjections have no fanduel_line column —
-    those rows are skipped (returns [] for those stat types). Add a line column
-    migration to enable them.
+  - AssistsProjections and ReboundsProjections include optional FanDuel lines
+    when the Odds API returns them.
 
 Returns dicts shaped for PlayerPropCandidateProvider:
   Required: event_id, league, player, stat, line, odds, projection, side
@@ -61,12 +60,21 @@ _NBA_STAT_SPECS = [
         "fanduel_line",
         "fanduel_over_under",
     ),
-    # AssistsProjections and ReboundsProjections have no fanduel_line column.
-    # BlocksProjections has no fanduel_line column either.
-    # Leave them commented to document; re-enable after adding the column.
-    # (AssistsProjections,  "assists",  "projected_assists",  None, None),
-    # (ReboundsProjections, "rebounds", "projected_rebounds", None, None),
-    # (BlocksProjections,   "blocks",   "projected_blocks",   None, None),
+    (
+        AssistsProjections,
+        "assists",
+        "projected_assists",
+        "fanduel_line",
+        "fanduel_over_under",
+    ),
+    (
+        ReboundsProjections,
+        "rebounds",
+        "projected_rebounds",
+        "fanduel_line",
+        "fanduel_over_under",
+    ),
+    # BlocksProjections has no fanduel_line column.
 ]
 
 

@@ -16,12 +16,21 @@ from app.models.predictions_models import (
     NHLPlayer,
     NHLPlayerShotsPredictions,
     NHLTeam,
-    NHLGoalie,
     NHLGameStats,
     NHLTeamTotalsPredictions,
 )
 from app.services.etl.nhl.nhl_api_client import NHLAPIClient
+from app.services.etl.nhl.confirm_starters import (
+    build_slate_starter_context,
+    confirmation_timestamp,
+    starter_features_metadata,
+)
 from app.services.etl.nhl.goalie_saves_model import predict_goalie_saves
+from app.services.etl.nhl.goalie_saves_ml import enrich_goalie_prediction_for_write
+from app.services.etl.nhl.player_shots_ml import (
+    enrich_player_shots_prediction_for_write,
+)
+from app.services.etl.nhl.team_totals_ml import enrich_team_totals_prediction_for_write
 from app.services.etl.nhl.player_shots_model import predict_player_shots
 from app.services.etl.nhl.team_totals_model import predict_team_total_goals
 from app.services.etl.nhl.generate_daily_predictions import (
@@ -34,6 +43,7 @@ from app.services.etl.nhl.generate_daily_predictions import (
 from datetime import datetime, date, timedelta
 from sqlalchemy import and_
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nhl._config import get_nhl_season
 from app.services.etl.nhl._db import db_session
 from app.services.etl.nhl._slate import game_datetime_et, slate_game_dates_et
 import logging
@@ -77,7 +87,7 @@ def update_nhl_stats():
         from app.services.etl.nhl.collect_historical_data import update_daily_stats
 
         # Update all stats for current season
-        update_daily_stats(season=20252026)
+        update_daily_stats(season=get_nhl_season())
 
         logging.info("✅ NHL stats updated successfully")
         return True
@@ -97,121 +107,138 @@ def generate_goalie_predictions(games, odds_events):
     logging.info("=" * 80)
 
     predictions_generated = 0
+    skipped_starters = 0
 
-    for game in games:
-        # Use placeName to match database
-        home_team = game["homeTeam"]["placeName"]["default"]
-        away_team = game["awayTeam"]["placeName"]["default"]
-        home_team_id = game["homeTeam"]["id"]
-        away_team_id = game["awayTeam"]["id"]
-        home_abbrev = game["homeTeam"]["abbrev"]
-        away_abbrev = game["awayTeam"]["abbrev"]
-
-        game_date, game_time = game_datetime_et(game)
-
-        # Get starting goalies from database (#1 goalie = most games played)
-        home_goalie = (
-            db_session.query(NHLGoalie)
-            .filter(NHLGoalie.team_name == home_team, NHLGoalie.games_played > 0)
-            .order_by(NHLGoalie.games_played.desc())
-            .first()
+    starter_summary = build_slate_starter_context(games)
+    game_abbrevs = {
+        g["id"]: (
+            g["homeTeam"]["abbrev"],
+            g["awayTeam"]["abbrev"],
+            g["homeTeam"]["placeName"]["default"],
+            g["awayTeam"]["placeName"]["default"],
         )
+        for g in games
+        if g.get("id")
+    }
 
-        away_goalie = (
-            db_session.query(NHLGoalie)
-            .filter(NHLGoalie.team_name == away_team, NHLGoalie.games_played > 0)
-            .order_by(NHLGoalie.games_played.desc())
-            .first()
+    for slot in starter_summary.slots:
+        if not slot.should_predict:
+            skipped_starters += 1
+            logging.info(
+                "⏭️  Skipping %s (%s): %s",
+                slot.goalie_name or "unknown",
+                slot.team_name,
+                slot.prediction_skipped_reason,
+            )
+            continue
+
+        if not slot.goalie_id or not slot.goalie_name:
+            skipped_starters += 1
+            logging.warning("⚠️  No goalie resolved for %s", slot.team_name)
+            continue
+
+        home_abbrev, away_abbrev, home_team, away_team = game_abbrevs.get(
+            slot.game_id, ("", "", slot.team_name, slot.opponent_team_name)
         )
-
-        # Find matching event from odds API
         odds_home = get_odds_api_team_name(home_team, home_abbrev)
         odds_away = get_odds_api_team_name(away_team, away_abbrev)
-        event_key = f"{odds_away} @ {odds_home}"
 
+        event_key = f"{odds_away} @ {odds_home}"
         event_id = None
         for event in odds_events:
             if f"{event['away_team']} @ {event['home_team']}" == event_key:
                 event_id = event["id"]
                 break
 
-        # Fetch goalie betting lines
         goalie_lines = {}
         if event_id:
             goalie_lines = get_goalie_saves_odds_for_event(
                 event_id, odds_home, odds_away
             )
 
-        # Generate predictions for both goalies
-        for is_home, goalie, team_name, team_id, opponent, opponent_id in [
-            (True, home_goalie, home_team, home_team_id, away_team, away_team_id),
-            (False, away_goalie, away_team, away_team_id, home_team, home_team_id),
-        ]:
-            if not goalie:
-                logging.warning(f"⚠️  No goalie found for {team_name}")
-                continue
+        goalie_id = slot.goalie_id
+        goalie_name = slot.goalie_name
 
-            goalie_id = goalie.player_id
-            goalie_name = goalie.name
+        try:
+            prediction = predict_goalie_saves(
+                goalie_id=goalie_id,
+                goalie_name=goalie_name,
+                opponent_team_name=slot.opponent_team_name,
+                game_date=slot.game_date,
+                is_home=slot.is_home,
+                goalie_team_name=slot.team_name,
+            )
 
-            # Generate prediction
-            try:
-                prediction = predict_goalie_saves(
-                    goalie_id=goalie_id,
-                    goalie_name=goalie_name,
-                    opponent_team_name=opponent,
-                    game_date=game_date,
-                    is_home=is_home,
-                    goalie_team_name=team_name,
+            if "error" not in prediction:
+                line_data = goalie_lines.get(goalie_name, {})
+                from app.services.etl.nhl.betting_edges import (
+                    recommendation_for_saves,
                 )
 
-                if "error" not in prediction:
-                    # Get betting line for this goalie
-                    line_data = goalie_lines.get(goalie_name, {})
-                    from app.services.etl.nhl.betting_edges import (
-                        recommendation_for_saves,
-                    )
+                saves_line = line_data.get("line")
+                write = enrich_goalie_prediction_for_write(
+                    prediction,
+                    starter_features_metadata(slot),
+                    saves_line=saves_line,
+                )
+                edge_info = recommendation_for_saves(
+                    write["predicted_saves"], saves_line
+                )
 
-                    saves_line = line_data.get("line")
-                    edge_info = recommendation_for_saves(
-                        prediction["predicted_saves"], saves_line
-                    )
+                model_confidence = prediction.get("confidence")
+                combined_confidence = (
+                    min(float(model_confidence), slot.confidence)
+                    if model_confidence is not None
+                    else slot.confidence
+                )
 
-                    # Save to database
-                    db_pred = NHLGoaliePredictions(
-                        game_date=game_date,
-                        game_time=game_time,
-                        goalie_id=goalie_id,
-                        goalie_name=goalie_name,
-                        team_id=team_id,
-                        team_name=team_name,
-                        opponent_team_id=opponent_id,
-                        opponent_team_name=opponent,
-                        is_home=is_home,
-                        predicted_saves=prediction["predicted_saves"],
-                        predicted_shots_against=prediction["predicted_shots_against"],
-                        predicted_save_pct=prediction.get("predicted_save_pct", 0.0),
-                        goalie_season_save_pct=prediction.get("goalie_season_save_pct"),
-                        confidence=prediction["confidence"],
-                        saves_line=saves_line,
-                        over_odds=line_data.get("over_odds"),
-                        under_odds=line_data.get("under_odds"),
-                        edge_saves=edge_info.edge_value,
-                        edge_category=edge_info.edge_category,
-                        betting_recommendation=edge_info.recommendation,
-                    )
-                    db_session.add(db_pred)
-                    predictions_generated += 1
-                    logging.info(
-                        f"✅ {goalie_name}: {prediction['predicted_saves']:.1f} saves predicted"
-                    )
+                db_pred = NHLGoaliePredictions(
+                    game_date=slot.game_date,
+                    game_id=slot.game_id,
+                    game_time=slot.game_time,
+                    goalie_id=goalie_id,
+                    goalie_name=goalie_name,
+                    team_id=slot.team_id,
+                    team_name=slot.team_name,
+                    opponent_team_id=slot.opponent_team_id,
+                    opponent_team_name=slot.opponent_team_name,
+                    is_home=slot.is_home,
+                    starter_confirmed=slot.starter_confirmed,
+                    confirmation_time=confirmation_timestamp(),
+                    predicted_saves=write["predicted_saves"],
+                    predicted_shots_against=prediction["predicted_shots_against"],
+                    predicted_save_pct=prediction.get("predicted_save_pct", 0.0),
+                    goalie_season_save_pct=prediction.get("goalie_season_sv_pct"),
+                    goalie_recent_save_pct=prediction.get("goalie_recent_sv_pct"),
+                    opponent_shots_avg=prediction.get("opponent_shots_avg"),
+                    model_version=write["model_version"],
+                    confidence=combined_confidence,
+                    saves_line=saves_line,
+                    over_odds=line_data.get("over_odds"),
+                    under_odds=line_data.get("under_odds"),
+                    edge_saves=edge_info.edge_value,
+                    edge_category=edge_info.edge_category,
+                    betting_recommendation=edge_info.recommendation,
+                    features_used=write["features_used"],
+                )
+                db_session.add(db_pred)
+                predictions_generated += 1
+                logging.info(
+                    "✅ %s: %.1f saves predicted (starter confirmed)",
+                    goalie_name,
+                    prediction["predicted_saves"],
+                )
 
-            except Exception as e:
-                logging.error(f"❌ Error predicting for {goalie_name}: {e}")
-                continue
+        except Exception as e:
+            logging.error("❌ Error predicting for %s: %s", goalie_name, e)
+            continue
 
     db_session.commit()
-    logging.info(f"✅ Generated {predictions_generated} goalie predictions")
+    logging.info(
+        "✅ Generated %s goalie predictions (%s skipped — starter gate)",
+        predictions_generated,
+        skipped_starters,
+    )
     return predictions_generated
 
 
@@ -285,8 +312,30 @@ def generate_player_predictions(games, odds_events):
                     if "error" not in pred:
                         line_data = player_lines.get(pred["player_name"], {})
                         shots_line = line_data.get("line")
+                        extra_features = {
+                            "baseline_shots": pred.get("baseline_shots"),
+                            "ice_time_adjustment": pred.get("ice_time_adjustment"),
+                            "opponent_shots_adjustment": pred.get(
+                                "opponent_shots_adjustment"
+                            ),
+                            "blocks_adjustment": pred.get("blocks_adjustment"),
+                            "position_adjustment": pred.get("position_adjustment"),
+                            "home_ice_adjustment": pred.get("home_ice_adjustment"),
+                            "player_toi_per_game": pred.get("player_toi_per_game"),
+                            "opponent_shots_against_pg": pred.get(
+                                "opponent_shots_against_pg"
+                            ),
+                            "opponent_blocks_pg": pred.get("opponent_blocks_pg"),
+                            "player_position": pred.get("player_position"),
+                            "is_home": pred.get("is_home"),
+                        }
+                        write = enrich_player_shots_prediction_for_write(
+                            pred,
+                            shots_line=shots_line,
+                            extra_features=extra_features,
+                        )
                         edge_info = recommendation_for_shots(
-                            pred["predicted_shots"], shots_line
+                            write["predicted_shots"], shots_line
                         )
                         # Save to database
                         db_pred = NHLPlayerShotsPredictions(
@@ -296,10 +345,12 @@ def generate_player_predictions(games, odds_events):
                             player_name=pred["player_name"],
                             team_name=team_name,
                             opponent_team_name=opponent_name,
-                            predicted_shots=pred["predicted_shots"],
+                            predicted_shots=write["predicted_shots"],
                             shots_line=shots_line,
                             betting_recommendation=edge_info.recommendation,
                             confidence=pred.get("confidence", 0.0),
+                            model_version=write["model_version"],
+                            features_used=write["features_used"],
                         )
                         db_session.add(db_pred)
                         predictions_generated += 1
@@ -380,13 +431,29 @@ def generate_team_totals_predictions(games, odds_events):
                         over_odds = totals_odds.get("over_odds")
                         under_odds = totals_odds.get("under_odds")
 
+                write = enrich_team_totals_prediction_for_write(
+                    pred,
+                    draftkings_ou_line=draftkings_ou_line,
+                    extra_features={
+                        "home_offense_rating": pred.get("home_offense_rating"),
+                        "away_offense_rating": pred.get("away_offense_rating"),
+                        "home_defense_rating": pred.get("home_defense_rating"),
+                        "away_defense_rating": pred.get("away_defense_rating"),
+                        "combined_pace": pred.get("combined_pace"),
+                        "home_pp_pct": pred.get("home_pp_pct"),
+                        "away_pp_pct": pred.get("away_pp_pct"),
+                        "home_pk_pct": pred.get("home_pk_pct"),
+                        "away_pk_pct": pred.get("away_pk_pct"),
+                    },
+                )
+
                 # Calculate edge
                 edge = None
                 if draftkings_ou_line:
-                    edge = pred["predicted_total_goals"] - draftkings_ou_line
+                    edge = write["predicted_total_goals"] - draftkings_ou_line
 
                 totals_edge = recommendation_for_total_goals(
-                    pred["predicted_total_goals"], draftkings_ou_line, edge
+                    write["predicted_total_goals"], draftkings_ou_line, edge
                 )
 
                 # Save to database
@@ -399,7 +466,7 @@ def generate_team_totals_predictions(games, odds_events):
                     away_team_name=away_team,
                     predicted_home_goals=pred["predicted_home_goals"],
                     predicted_away_goals=pred["predicted_away_goals"],
-                    predicted_total_goals=pred["predicted_total_goals"],
+                    predicted_total_goals=write["predicted_total_goals"],
                     suggested_ou_line=pred["suggested_ou_line"],
                     draftkings_ou_line=draftkings_ou_line,
                     over_odds=over_odds,
@@ -407,6 +474,8 @@ def generate_team_totals_predictions(games, odds_events):
                     confidence=pred.get("confidence", 0.0),
                     edge=edge,
                     betting_recommendation=totals_edge.recommendation,
+                    model_version=write["model_version"],
+                    features_used=write["features_used"],
                 )
                 db_session.add(db_pred)
                 predictions_generated += 1

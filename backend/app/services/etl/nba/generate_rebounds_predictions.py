@@ -1,10 +1,6 @@
 """Generate per-player rebounds projections via the XGBoost model.
 
-Mirrors generate_points_predictions.py but targets the rebounds model
-(s3://yetibets/nba/ml_models/xgb_rebounds.pkl) and writes to
-pred_rebounds_projections.
-
-ReboundsProjections has no FanDuel columns — nothing to NULL on that side.
+FanDuel lines from The Odds API when ``ODDS_API_KEY`` is configured.
 """
 
 from __future__ import annotations
@@ -20,12 +16,22 @@ from app.models.predictions_models import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._feature_engineering import build_features
-from app.services.etl.nba._ml_predict import predict
+from app.services.etl.nba._fanduel_lines import (
+    PROP_MARKETS,
+    apply_fanduel_to_projection,
+)
+from app.services.etl.nba.prop_calibration import maybe_attach_p_over
+from app.services.etl.nba._ml_predict import get_metadata, predict
+from app.services.ml_model_version import (
+    attach_model_version,
+    model_version_from_metadata,
+)
 
 logger = logging.getLogger(__name__)
 
 STAT = "rebounds"
 INJURY_SKIP_STATUSES = {"out", "ir", "doubtful"}
+FD_MARKET = PROP_MARKETS[STAT]
 
 
 def _is_injured(db, player_id: int) -> tuple[bool, str | None]:
@@ -46,6 +52,10 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+    lines_attached = 0
+    rows_written = 0
+
+    model_version = model_version_from_metadata(get_metadata(STAT), prefix="xgb")
 
     db = SessionLocal()
     try:
@@ -68,6 +78,8 @@ def run() -> dict:
                 "skipped_injured": 0,
                 "skipped_insufficient_data": 0,
                 "errors": 0,
+                "fanduel_lines_attached": 0,
+                "fanduel_line_coverage_pct": None,
             }
 
         for player in active:
@@ -106,18 +118,35 @@ def run() -> dict:
                     existing.projected_rebounds = projected
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        ReboundsProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            player_name=player.player_name,
-                            opponent_team_name=player.opponent_team_name,
-                            projected_rebounds=projected,
-                        )
+                    row = ReboundsProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        player_name=player.player_name,
+                        opponent_team_name=player.opponent_team_name,
+                        projected_rebounds=projected,
                     )
+                    db.add(row)
                     created += 1
+                attach_model_version(row, model_version)
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market=FD_MARKET,
+                    projection=projected,
+                ):
+                    lines_attached += 1
+                maybe_attach_p_over(
+                    row,
+                    stat=STAT,
+                    projected=projected,
+                    line=getattr(row, "fanduel_line", None),
+                )
+                rows_written += 1
                 db.commit()
 
                 logger.info("%s -> %.2f reb", player.player_name, projected)
@@ -131,9 +160,20 @@ def run() -> dict:
                 errors += 1
                 continue
 
+        coverage = (
+            round(100.0 * lines_attached / rows_written, 1) if rows_written else None
+        )
+        logger.info(
+            "generate_%s_predictions: fanduel_line coverage %s%% (%s/%s)",
+            STAT,
+            coverage,
+            lines_attached,
+            rows_written,
+        )
         return {
             "status": "ok",
             "date": today.isoformat(),
+            "model_version": model_version,
             "generated_at": datetime.utcnow().isoformat() + "Z",
             "players_considered": len(active),
             "created": created,
@@ -141,6 +181,8 @@ def run() -> dict:
             "skipped_injured": skipped_injured,
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "fanduel_line_coverage_pct": coverage,
         }
     finally:
         db.close()

@@ -143,20 +143,42 @@ class BacktestScorer:
 
         self.k_results.append(entry)
 
-    def add_hit_result(self, side, projected_hits, actual_hits):
-        """Add a hit prediction result (REQ-BT-045)."""
+    def add_hit_result(
+        self,
+        side,
+        projected_hits,
+        actual_hits,
+        *,
+        heuristic=None,
+        ml_prob=None,
+    ):
+        """Add a hit prediction result (REQ-BT-045).
+
+        ``projected_hits`` uses production heuristic path from ``hits.py``.
+        ``ml_prob`` is shadow P(1+ hit); board accuracy uses ``actual_hits >= 1``
+        at team level (same granularity as box-score team hit totals).
+        """
         if projected_hits is None or actual_hits is None:
             return
 
-        self.hit_results.append(
-            {
-                "side": side,
-                "projected_hits": projected_hits,
-                "actual_hits": actual_hits,
-                "hit_error": abs(projected_hits - actual_hits),
-                "hit_correct": round(projected_hits) == actual_hits,
-            }
-        )
+        entry = {
+            "side": side,
+            "projected_hits": projected_hits,
+            "actual_hits": actual_hits,
+            "hit_error": abs(projected_hits - actual_hits),
+            "hit_correct": round(projected_hits) == actual_hits,
+        }
+        if heuristic is not None:
+            entry["heuristic"] = heuristic
+        if ml_prob is not None:
+            entry["ml_prob"] = ml_prob
+            entry["ml_board_pick"] = ml_prob >= 0.5
+            entry["ml_board_actual"] = actual_hits >= 1
+            entry["ml_board_correct"] = (
+                entry["ml_board_pick"] == entry["ml_board_actual"]
+            )
+
+        self.hit_results.append(entry)
 
     def add_hr_result(self, projected_hr_prob, actual_hr, game_date=None):
         """Add an HR prediction result (REQ-BT-046/047)."""
@@ -385,12 +407,38 @@ class BacktestScorer:
         hit_mae = np.mean([r["hit_error"] for r in self.hit_results])
         hit_correct = sum(1 for r in self.hit_results if r["hit_correct"])
 
-        return {
+        heuristic_mae = round(hit_mae, 2)
+
+        ml_rows = [r for r in self.hit_results if "ml_board_correct" in r]
+        ml_board_accuracy = None
+        ml_board_correct = 0
+        if ml_rows:
+            ml_board_correct = sum(1 for r in ml_rows if r["ml_board_correct"])
+            ml_board_accuracy = round(ml_board_correct / len(ml_rows), 4)
+
+        methods = {
+            "heuristic": {
+                "mae": heuristic_mae,
+                "n": n,
+            },
+            "ml_board": {
+                "accuracy": ml_board_accuracy,
+                "n": len(ml_rows),
+                "correct": ml_board_correct,
+            },
+        }
+
+        out = {
             "n_predictions": n,
             "hit_mae": round(hit_mae, 2),
             "hit_accuracy": round(hit_correct / n, 4),
             "hit_correct": hit_correct,
+            "methods": methods,
         }
+        out["heuristic_mae"] = heuristic_mae
+        if ml_board_accuracy is not None:
+            out["ml_board_accuracy"] = ml_board_accuracy
+        return out
 
     def compute_hr_metrics(self):
         """Compute HR prediction metrics (REQ-BT-046/047)."""

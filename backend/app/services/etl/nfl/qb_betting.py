@@ -13,6 +13,7 @@ import requests
 
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 warnings.filterwarnings("ignore")
 
@@ -20,36 +21,6 @@ warnings.filterwarnings("ignore")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 BASE_URL = "https://api.the-odds-api.com/v4/sports/"
 SPORT = "americanfootball_nfl"
-
-
-def get_current_nfl_week(season=None) -> int:
-    """Determine current NFL week based on today's date"""
-    today = date.today()
-
-    if season is None:
-        if today.month >= 9:
-            season = today.year
-        else:
-            season = today.year - 1
-
-    # Find the actual first Thursday after Labor Day
-    # Labor Day is the first Monday in September
-    import calendar
-
-    labor_day = date(season, 9, 1)
-    while labor_day.weekday() != 0:  # Monday is 0
-        labor_day = date(labor_day.year, labor_day.month, labor_day.day + 1)
-
-    # NFL season starts the first Thursday after Labor Day
-    nfl_start = labor_day + timedelta(days=3)  # Thursday after Monday
-
-    if today < nfl_start:
-        return 1
-
-    days_since_start = (today - nfl_start).days
-    current_week = (days_since_start // 7) + 1
-
-    return min(current_week, 18)  # NFL has 18 weeks max
 
 
 def get_nfl_games_and_lines():
@@ -227,8 +198,8 @@ def _run_qb_betting_core():
     print("🏈 QB Predictions with Betting Integration - Heroku")
     print("=" * 60)
 
-    week = get_current_nfl_week()
-    season = 2025
+    season = get_nfl_season()
+    week = get_current_nfl_week(season)
 
     # Get current QB predictions
     qb_predictions = (

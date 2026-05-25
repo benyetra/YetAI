@@ -12,6 +12,7 @@ Predicts shots on goal for individual players using:
 import sys
 import os
 
+from app.services.etl.nhl._config import get_league_avg_shots_against
 from app.services.etl.nhl._db import db_session
 from app.models.predictions_models import (
     NHLPlayer,
@@ -81,14 +82,18 @@ def predict_player_shots(player_id, opponent_team_name, game_date=None, is_home=
     # Teams that allow more shots = easier to get shots off
     opponent_shots_adj = 1.0
     if opponent.shots_against_per_game:
-        league_avg_shots_against = 30.0  # NHL average
-        if opponent.shots_against_per_game > 32:  # Allows lots of shots
+        league_avg_shots_against = get_league_avg_shots_against()
+        high_threshold = league_avg_shots_against + 2.0
+        mid_high_threshold = league_avg_shots_against + 1.0
+        low_threshold = league_avg_shots_against - 2.0
+        mid_low_threshold = league_avg_shots_against - 1.0
+        if opponent.shots_against_per_game > high_threshold:  # Allows lots of shots
             opponent_shots_adj = 1.10  # +10% easier to shoot
-        elif opponent.shots_against_per_game > 31:
+        elif opponent.shots_against_per_game > mid_high_threshold:
             opponent_shots_adj = 1.05  # +5%
-        elif opponent.shots_against_per_game < 28:  # Stingy defense
+        elif opponent.shots_against_per_game < low_threshold:  # Stingy defense
             opponent_shots_adj = 0.90  # -10% harder to shoot
-        elif opponent.shots_against_per_game < 29:
+        elif opponent.shots_against_per_game < mid_low_threshold:
             opponent_shots_adj = 0.95  # -5%
 
     predicted_shots *= opponent_shots_adj

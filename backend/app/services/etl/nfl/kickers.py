@@ -4,52 +4,12 @@ import requests
 
 from app.models.predictions_models import Kickers, KickerPredictions
 from app.services.etl.nfl.kicker_prediction import calculate_combined_score
-
-
-# Database configuration
-def get_current_nfl_week(season=None) -> int:
-    """Determine current NFL week based on today's date"""
-    from datetime import date, timedelta
-
-    today = date.today()
-
-    if season is None:
-        if today.month >= 9:
-            season = today.year
-        else:
-            season = today.year - 1
-
-    # Find the actual first Thursday after Labor Day
-    labor_day = date(season, 9, 1)
-    while labor_day.weekday() != 0:  # Monday is 0
-        labor_day = date(labor_day.year, labor_day.month, labor_day.day + 1)
-
-    # NFL season starts the first Thursday after Labor Day
-    nfl_start = labor_day + timedelta(days=3)  # Thursday after Monday
-
-    if today < nfl_start:
-        return 1
-
-    days_since_start = (today - nfl_start).days
-    current_week = (days_since_start // 7) + 1
-
-    return min(current_week, 18)  # NFL has 18 weeks max
-
-
-def get_current_season():
-    """Get current NFL season"""
-    from datetime import date
-
-    today = date.today()
-    if today.month >= 9:
-        return today.year
-    else:
-        return today.year - 1
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 
 # Dynamic season and week detection
-season = get_current_season()
-current_week = get_current_nfl_week()
+season = get_nfl_season()
+current_week = get_current_nfl_week(season)
 regular_season = 2
 pre_season = 1
 
@@ -59,8 +19,8 @@ def get_team_schedule(team_id):
     """Get team schedule using proper NFL week calculation"""
     try:
         # Use the proper week calculation function
-        current_week = get_current_nfl_week()
-        current_season = get_current_season()
+        current_week = get_current_nfl_week(season)
+        current_season = get_nfl_season()
 
         # Get full season schedule and filter for current/upcoming games
         url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team_id}/schedule?season={current_season}&seasontype=2"

@@ -320,7 +320,10 @@ def run_backtest(args):
         hit_predictions = {}
         if "hits" in models_to_test:
             hit_predictions = model_runner.predict_hits(
-                game, metadata.get("lineup_data", {}), metadata
+                game,
+                metadata.get("lineup_data", {}),
+                metadata,
+                features=features,
             )
 
         # HR predictions (REQ-BT-029)
@@ -368,7 +371,13 @@ def run_backtest(args):
             proj_hits = hit_predictions.get(f"{side}_projected_hits")
             actual_hits = actuals.get(f"{side}_actual_hits")
             if proj_hits is not None and actual_hits is not None:
-                scorer.add_hit_result(side, proj_hits, actual_hits)
+                scorer.add_hit_result(
+                    side,
+                    proj_hits,
+                    actual_hits,
+                    heuristic=hit_predictions.get(f"{side}_heuristic"),
+                    ml_prob=hit_predictions.get(f"{side}_ml_prob"),
+                )
 
         # HR scoring
         if hr_predictions:

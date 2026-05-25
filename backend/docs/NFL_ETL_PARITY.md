@@ -71,13 +71,22 @@ During NFL season, expect rows in `pred_qb_predictions` / `pred_kicker_predictio
 | `NFL_KICKER_ML_BLEND_WEIGHT` | Blend weight (default `0.35`) |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | Required when using S3 prefix |
 
+## Backtest CLI
+
+```bash
+cd backend
+PYTHONPATH=. python scripts/nfl_backtest.py --quick
+PYTHONPATH=. python scripts/nfl_backtest.py --quick --write-baseline
+```
+
+Offline CI: `tests/test_nfl_backtest_regression.py` vs `tests/fixtures/nfl_backtest_quick_baseline.json`.
+
 ## Still deferred
 
-- `advanced_qb_predictor.py` / QB **yards** ML ensemble (current path: nflverse + Odds API)
+- `advanced_qb_predictor.py` / QB **yards** ML ensemble (current path: tier table in `qb_dynamic.py`)
 - `enhanced_qb_integration.py`, warehouse FG tables
-- Backtest / retrain CLIs
 - Beat timing tune for NFL (currently `nfl-update-pipeline-daily` 4:30 ET in `celery_app.py`)
 
 ## Season / week
 
-Week detection lives in `kickers.get_current_nfl_week()` and `nfl_common.py`. Actuals collectors default season `2025` in CLI paths — align with active NFL season when rolling forward.
+Single source: `nfl_common.py` — `get_nfl_season()` (`NFL_SEASON` env), `get_current_nfl_week()`.

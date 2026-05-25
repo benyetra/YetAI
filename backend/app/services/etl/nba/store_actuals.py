@@ -10,8 +10,7 @@ Flow per stat:
   3. For each projection, find the matching RecentGames row for that player
      on that date — that's the source of the actual value.
   4. Compute `correct_prediction` from fanduel_line/fanduel_over_under when
-     available (preserving YetiBets logic). YetAI does not currently populate
-     FanDuel lines on most stats, so this will typically resolve to None.
+     available (points, rebounds, assists, three_pt, PRA).
   5. Upsert into the corresponding pred_*_actuals table.
 
 Returns a per-stat dict of counts so the caller can see at-a-glance which
@@ -62,7 +61,6 @@ logger = logging.getLogger(__name__)
 #   actual_attr:      attribute name on actuals row holding the actual value
 #   recent_attr:      attribute on RecentGames holding the actual stat value
 #   has_fanduel:      whether the projection carries fanduel_line/over_under
-#                     (only points + three_pt today; rest stay correct=None)
 STAT_CONFIG: dict[str, dict[str, Any]] = {
     "points": {
         "projection_model": PointsProjections,
@@ -78,7 +76,7 @@ STAT_CONFIG: dict[str, dict[str, Any]] = {
         "projected_attr": "projected_rebounds",
         "actual_attr": "actual_rebounds",
         "recent_attr": "rebounds",
-        "has_fanduel": False,
+        "has_fanduel": True,
         # Extra columns for rebounds: offensive/defensive splits.
         "extra_actual_attrs": {
             "actual_offensive_rebounds": "offensive_rebounds",
@@ -91,7 +89,7 @@ STAT_CONFIG: dict[str, dict[str, Any]] = {
         "projected_attr": "projected_assists",
         "actual_attr": "actual_assists",
         "recent_attr": "assists",
-        "has_fanduel": False,
+        "has_fanduel": True,
     },
     "steals": {
         "projection_model": StealsProjections,
@@ -158,6 +156,28 @@ def _compute_correct_prediction(
     return None
 
 
+def _ou_coverage_stats(
+    projections: list[Any], *, has_fanduel: bool, graded: int
+) -> dict[str, Any]:
+    """Summarize how many rows had a line vs were O/U graded."""
+    found = len(projections)
+    with_line = 0
+    if has_fanduel and found:
+        for proj in projections:
+            line = getattr(proj, "fanduel_line", None)
+            ou = getattr(proj, "fanduel_over_under", None)
+            if line is not None and ou:
+                with_line += 1
+    pct = round(100.0 * with_line / found, 1) if found and has_fanduel else None
+    graded_pct = round(100.0 * graded / found, 1) if found and has_fanduel else None
+    return {
+        "projections_with_line": with_line,
+        "ou_line_coverage_pct": pct,
+        "ou_graded": graded,
+        "ou_graded_coverage_pct": graded_pct,
+    }
+
+
 def _store_stat(
     db: Session, stat_key: str, cfg: dict[str, Any], target_date: date
 ) -> dict[str, int]:
@@ -165,6 +185,7 @@ def _store_stat(
     missing_actual = 0
     no_projection = 0
     errors = 0
+    ou_graded = 0
 
     projections = (
         db.query(cfg["projection_model"])
@@ -219,6 +240,8 @@ def _store_stat(
             correct = _compute_correct_prediction(
                 proj, float(actual_value), cfg["has_fanduel"]
             )
+            if correct is not None:
+                ou_graded += 1
 
             existing = (
                 db.query(actuals_model)
@@ -278,13 +301,27 @@ def _store_stat(
             errors += 1
             continue
 
-    return {
+    result = {
         "written": written,
         "missing_actual": missing_actual,
         "missing_projection": no_projection,
         "errors": errors,
         "projections_found": len(projections),
     }
+    result.update(
+        _ou_coverage_stats(
+            projections, has_fanduel=cfg["has_fanduel"], graded=ou_graded
+        )
+    )
+    if cfg["has_fanduel"] and projections:
+        logger.info(
+            "store_actuals[%s]: ou_line_coverage=%s%% ou_graded=%s/%s",
+            stat_key,
+            result.get("ou_line_coverage_pct"),
+            ou_graded,
+            len(projections),
+        )
+    return result
 
 
 def _store_pra(db: Session, target_date: date) -> dict[str, int]:
@@ -292,6 +329,7 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
     written = 0
     missing_actual = 0
     errors = 0
+    ou_graded = 0
 
     projections = (
         db.query(PRAProjections).filter(PRAProjections.date == target_date).all()
@@ -328,6 +366,8 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
             correct = _compute_correct_prediction(
                 proj, actual_pra, bool(proj.fanduel_line)
             )
+            if correct is not None:
+                ou_graded += 1
             existing = (
                 db.query(PRAActuals)
                 .filter(
@@ -367,12 +407,21 @@ def _store_pra(db: Session, target_date: date) -> dict[str, int]:
             db.rollback()
             errors += 1
 
-    return {
+    result = {
         "written": written,
         "missing_actual": missing_actual,
         "errors": errors,
         "projections_found": len(projections),
     }
+    result.update(_ou_coverage_stats(projections, has_fanduel=True, graded=ou_graded))
+    if projections:
+        logger.info(
+            "store_actuals[pra]: ou_line_coverage=%s%% ou_graded=%s/%s",
+            result.get("ou_line_coverage_pct"),
+            ou_graded,
+            len(projections),
+        )
+    return result
 
 
 def run(target_date: date | None = None) -> dict:

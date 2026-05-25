@@ -1,0 +1,17 @@
+{
+  "description": "NFL quick backtest (--quick). Tier-table QB + heuristic kicker baseline for CI regression gates.",
+  "updated_at": "2026-05-25",
+  "preset": "quick",
+  "metrics": {
+    "n_qb": 20,
+    "qb_mae": 42.0,
+    "qb_ou_hit_rate": 0.52,
+    "qb_ou_n": 15,
+    "n_kicker": 15,
+    "kicker_mae": 0.55,
+    "kicker_ou_hit_rate": 0.5,
+    "kicker_ou_n": 12,
+    "ou_hit_rate": 0.51,
+    "ou_n": 25
+  }
+}

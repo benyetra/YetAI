@@ -347,61 +347,15 @@ def fetch_hitters_data():
                 batting_order_position,
                 early_season=False,
             ):
-                # Early season: relaxed gates (using prior season / career data)
-                min_hits = 4 if early_season else 7
-                min_avg = 0.220 if early_season else 0.275
-
-                # Check if the conditions for scoring are met
-                if (
-                    hits_in_last_10_games < min_hits
-                    or batting_average_vs_pitcher is None
-                    or batting_average_vs_pitcher <= min_avg
-                    or season_avg_vs_handed is None
-                    or season_avg_vs_handed <= min_avg
-                ):
-                    return 0.0  # Return a score of 0 if conditions are not met
-
-                # Assigning weights to each factor
-                weights = {
-                    "recent_hits_weight": 0.35,  # Slightly reduced to balance other factors
-                    "season_avg_weight": 0.25,  # Reduced to not overly emphasize the season average
-                    "vs_pitcher_weight": 0.45,  # Still high due to its direct matchup relevance
-                    "batting_order_weight": (
-                        1.0
-                        if batting_order_position
-                        and int(batting_order_position / 100) <= 3
-                        else 0.5
-                    ),  # Boosted for top 3 order positions
-                    "at_bats_vs_pitcher_weight": 0.2,  # Adjusted to reflect the importance of sample size without overpowering other stats
-                    "home_runs_weight": 0.15,  # Increased slightly to account for power as an influence on overall hitting potential
-                }
-
-                # Calculate factors
-                recent_hits_factor = (
-                    hits_in_last_10_games * weights["recent_hits_weight"]
+                return combined_score_heuristic(
+                    hits_in_last_10_games,
+                    season_avg_vs_handed,
+                    batting_average_vs_pitcher,
+                    at_bats_vs_pitcher,
+                    home_runs_last_10_games,
+                    batting_order_position,
+                    early_season=early_season,
                 )
-                season_avg_factor = (season_avg_vs_handed or 0) * weights[
-                    "season_avg_weight"
-                ]
-                vs_pitcher_factor = (batting_average_vs_pitcher or 0) * weights[
-                    "vs_pitcher_weight"
-                ]
-                at_bats_vs_pitcher_factor = (at_bats_vs_pitcher or 0) * weights[
-                    "at_bats_vs_pitcher_weight"
-                ]
-                home_runs_factor = home_runs_last_10_games * weights["home_runs_weight"]
-
-                # Combine all factors into the score
-                combined_score = (
-                    recent_hits_factor
-                    + season_avg_factor
-                    + vs_pitcher_factor
-                    + at_bats_vs_pitcher_factor
-                    + home_runs_factor
-                ) * weights["batting_order_weight"]
-
-                # Round the combined score to two decimal places
-                return round(combined_score, 2)
 
             def get_homer_score(
                 hits_in_last_10_games,
@@ -531,6 +485,146 @@ def fetch_hitters_data():
     print(f"Home runs: {len(home_runs)}")
 
     return unique_hitters, home_runs
+
+
+def combined_score_heuristic(
+    hits_in_last_10_games,
+    season_avg_vs_handed,
+    batting_average_vs_pitcher,
+    at_bats_vs_pitcher,
+    home_runs_last_10_games,
+    batting_order_position,
+    early_season=False,
+):
+    """Production hits-board combined score (pure, no I/O).
+
+    Same weights and gates as the inline scorer in ``fetch_hitters_data``.
+    Returns 0.0 when minimum gates are not met.
+    """
+    min_hits = 4 if early_season else 7
+    min_avg = 0.220 if early_season else 0.275
+
+    if (
+        hits_in_last_10_games < min_hits
+        or batting_average_vs_pitcher is None
+        or batting_average_vs_pitcher <= min_avg
+        or season_avg_vs_handed is None
+        or season_avg_vs_handed <= min_avg
+    ):
+        return 0.0
+
+    weights = {
+        "recent_hits_weight": 0.35,
+        "season_avg_weight": 0.25,
+        "vs_pitcher_weight": 0.45,
+        "batting_order_weight": (
+            1.0
+            if batting_order_position and int(batting_order_position / 100) <= 3
+            else 0.5
+        ),
+        "at_bats_vs_pitcher_weight": 0.2,
+        "home_runs_weight": 0.15,
+    }
+
+    recent_hits_factor = hits_in_last_10_games * weights["recent_hits_weight"]
+    season_avg_factor = (season_avg_vs_handed or 0) * weights["season_avg_weight"]
+    vs_pitcher_factor = (batting_average_vs_pitcher or 0) * weights["vs_pitcher_weight"]
+    at_bats_vs_pitcher_factor = (at_bats_vs_pitcher or 0) * weights[
+        "at_bats_vs_pitcher_weight"
+    ]
+    home_runs_factor = home_runs_last_10_games * weights["home_runs_weight"]
+
+    combined_score = (
+        recent_hits_factor
+        + season_avg_factor
+        + vs_pitcher_factor
+        + at_bats_vs_pitcher_factor
+        + home_runs_factor
+    ) * weights["batting_order_weight"]
+
+    return round(combined_score, 2)
+
+
+def lineup_heuristic_score_aggregate(pitcher_stats, lineup_data, side, features=None):
+    """Sum per-batter combined scores when present; else team-level proxy.
+
+    ``lineup_data`` may include ``{side}_batters`` (list of hitter feature dicts)
+    or only ``{side}_lineup`` (player ids). ``features`` supplies team OPS / park
+    when batter-level stats are unavailable (backtest reconstruction).
+    """
+    features = features or {}
+    batters_key = f"{side}_batters"
+    batters = lineup_data.get(batters_key) or []
+
+    if batters:
+        return round(
+            sum(
+                combined_score_heuristic(
+                    b.get("hits_in_last_10_games", b.get("hits_last_10_games", 0)),
+                    b.get(
+                        "season_avg_vs_handed", b.get("batting_average_vs_handedness")
+                    ),
+                    b.get("batting_average_vs_pitcher"),
+                    b.get("at_bats_vs_pitcher", 0),
+                    b.get(
+                        "home_runs_last_10_games",
+                        b.get("home_runs_in_last_10_games", 0),
+                    ),
+                    b.get("batting_order_position"),
+                    b.get("early_season", False),
+                )
+                for b in batters
+            ),
+            2,
+        )
+
+    ops = float(features.get(f"{side}_lineup_ops", 0.72) or 0.72)
+    opp = "away" if side == "home" else "home"
+    p_stats = pitcher_stats.get(f"{opp}_pitcher_stats", {}) or {}
+    whip = float(p_stats.get("whip", 1.35) or 1.35)
+    pf = float(features.get("park_factor", 1.0) or 1.0)
+    home_boost = 0.08 if side == "home" else 0.0
+    proxy_hits = max(4, min(10, int(round(ops * 12))))
+    proxy_avg = max(0.22, min(0.34, ops))
+    proxy_vs_pitcher = max(0.22, min(0.34, proxy_avg * (1.15 - 0.08 * (whip - 1.2))))
+    score = combined_score_heuristic(
+        proxy_hits,
+        proxy_avg,
+        proxy_vs_pitcher,
+        at_bats_vs_pitcher=12,
+        home_runs_last_10_games=2,
+        batting_order_position=100,
+        early_season=features.get("early_season", False),
+    )
+    if score <= 0:
+        return round(max(0.0, (ops - 0.22) * 8 + home_boost + (pf - 1.0) * 0.5), 2)
+    return score
+
+
+def project_lineup_hits_heuristic(pitcher_stats, lineup_data, side, features=None):
+    """Project team hits for a lineup side using production heuristic logic.
+
+    Maps aggregate board score + opposing pitcher quality to expected team hits
+    for backtest MAE. Assumption: ``actual_hits`` in backtest is team total hits
+    from the box score (same granularity as this projection).
+    """
+    features = features or {}
+    agg_score = lineup_heuristic_score_aggregate(
+        pitcher_stats, lineup_data, side, features=features
+    )
+    opp = "away" if side == "home" else "home"
+    p_stats = pitcher_stats.get(f"{opp}_pitcher_stats", {}) or {}
+    whip = float(p_stats.get("whip", 1.35) or 1.35)
+    ops = float(features.get(f"{side}_lineup_ops", 0.72) or 0.72)
+    pf = float(features.get("park_factor", 1.0) or 1.0)
+
+    base_hits = 8.0 * ops * pf
+    pitcher_factor = max(0.75, min(1.25, 1.35 / max(whip, 0.9)))
+    score_factor = max(0.85, min(1.2, agg_score / 4.0)) if agg_score > 0 else 0.9
+    proj = base_hits * pitcher_factor * score_factor
+    if side == "home":
+        proj *= 1.02
+    return round(max(3.0, min(16.0, proj)), 1)
 
 
 def filter_hitters(hitters, min_combined_score=None):

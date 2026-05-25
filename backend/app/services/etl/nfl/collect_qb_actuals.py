@@ -20,54 +20,12 @@ warnings.filterwarnings("ignore")
 
 from app.services.etl.nfl._db import db_session
 from app.models.predictions_models import QBPredictions, QBActuals
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 try:
     import nfl_data_py as nfl
 except ImportError:
     raise SystemExit("nfl_data_py not installed. Run: pip install nfl-data-py")
-
-
-def get_current_nfl_week(season=None) -> int:
-    """
-    Determine current NFL week based on today's date
-    If season is None, auto-detect the current NFL season
-    """
-    today = date.today()
-
-    # Auto-detect season if not provided
-    if season is None:
-        # NFL season starts in September and ends in January of the following year
-        if today.month >= 9:  # September - December
-            season = today.year
-        else:  # January - August
-            season = today.year - 1
-
-    # Calculate season boundaries
-    # NFL season typically starts the first Thursday after Labor Day (first Monday in September)
-    # For simplicity, assume the season starts around September 5-10
-    season_start = date(season, 9, 5)  # Conservative early start
-
-    # Find the actual first Thursday after Labor Day
-    labor_day = date(season, 9, 1)
-    while labor_day.weekday() != 0:  # Find first Monday
-        labor_day = date(season, 9, labor_day.day + 1)
-
-    # First Thursday after Labor Day
-    first_thursday = labor_day + timedelta(days=3)
-    if first_thursday.day > 10:  # If too late, use the Thursday before
-        first_thursday = first_thursday - timedelta(days=7)
-
-    # Calculate weeks from season start
-    if today < first_thursday:
-        return 1  # Pre-season or very early season
-
-    # Calculate days since season start
-    days_since_start = (today - first_thursday).days
-    current_week = (days_since_start // 7) + 1
-
-    # NFL regular season is 18 weeks (Weeks 1-18)
-    # Week 18 ends in early January
-    return min(max(current_week, 1), 18)
 
 
 def collect_qb_game_stats(season: int, week: int) -> List[Dict]:
@@ -446,15 +404,8 @@ def _run_qb_actuals_core():
     print("🏈 QB Actuals Collection Script")
     print("=" * 50)
 
-    # Get current season and week (auto-detect)
-    week = get_current_nfl_week()
-
-    # Determine season from today's date
-    today = date.today()
-    if today.month >= 9:  # September - December
-        season = today.year
-    else:  # January - August
-        season = today.year - 1
+    season = get_nfl_season()
+    week = get_current_nfl_week(season)
 
     print(f"📅 Collecting actuals for {season} Week {week}")
 

@@ -375,6 +375,7 @@ class StrikeoutProjections(Base):
     k_edge = Column(Float, nullable=True)
     pick_confidence = Column(Float, nullable=True)
     park_id = Column(String, nullable=True)
+    model_version = Column(String(20), nullable=True)
 
 
 class StrikeoutActuals(Base):
@@ -1027,6 +1028,8 @@ class AssistsProjections(Base):
     player_name = Column(String(100), nullable=False)
     opponent_team_name = Column(String(100), nullable=False)
     projected_assists = Column(Float, nullable=False)
+    fanduel_line = Column(Float, nullable=True)
+    fanduel_over_under = Column(String(7), nullable=True)
 
 
 class AssistsActuals(Base):
@@ -1053,6 +1056,8 @@ class ReboundsProjections(Base):
     projected_rebounds = Column(Float, nullable=False)
     projected_offensive_rebounds = Column(Float, nullable=True)
     projected_defensive_rebounds = Column(Float, nullable=True)
+    fanduel_line = Column(Float, nullable=True)
+    fanduel_over_under = Column(String(7), nullable=True)
 
 
 class ReboundsActuals(Base):
@@ -1691,6 +1696,9 @@ class NHLPlayerShotsPredictions(Base):
     betting_recommendation = Column(String(20), nullable=True)
     confidence = Column(Float, nullable=True)
 
+    model_version = Column(String(20), nullable=True)
+    features_used = Column(JSON, nullable=True)
+
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -1719,6 +1727,9 @@ class NHLTeamTotalsPredictions(Base):
     confidence = Column(Float, nullable=True)
     edge = Column(Float, nullable=True)  # Difference between our line and DK line
     betting_recommendation = Column(String(20), nullable=True)
+
+    model_version = Column(String(20), nullable=True)
+    features_used = Column(JSON, nullable=True)
 
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 

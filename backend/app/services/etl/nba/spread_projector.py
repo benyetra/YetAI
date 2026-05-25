@@ -1,4 +1,8 @@
-"""NBA spread / win-probability projector (Elo + pace overlay, ported from WNBA)."""
+"""NBA spread / win-probability projector.
+
+Primary: XGBoost margin model when S3 artifact is present (player-availability features).
+Fallback: Elo + pace overlay (ported from WNBA).
+"""
 
 from __future__ import annotations
 
@@ -13,13 +17,15 @@ from app.models.predictions_models import (
     TeamDefenseStats,
     TeamOffenseStats,
 )
+from app.services.etl import _spread_model as _sm
 from app.services.etl._spread_model import (
     NBA_CONFIG,
     load_elos_from_actuals,
     spread_recommendation,
 )
-from app.services.etl import _spread_model as _sm
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._spread_features import build_game_features
+from app.services.etl.nba._spread_ml_predict import model_available, predict_margin
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
@@ -38,6 +44,7 @@ def _load_elos(db) -> dict[str, float]:
 def run() -> dict:
     today = now_eastern().date()
     end = today + timedelta(days=1)
+    use_ml = model_available()
 
     db = SessionLocal()
     upsert_rows: list[dict] = []
@@ -69,7 +76,28 @@ def run() -> dict:
                 cfg=NBA_CONFIG,
             )
 
-            projected_margin = base_margin + pace_adj
+            elo_pace_margin = base_margin + pace_adj
+            projection_method = "elo_pace"
+            projected_margin = elo_pace_margin
+
+            if use_ml:
+                feats = build_game_features(
+                    db,
+                    game_date=g.game_date,
+                    home_team_name=g.home_team_name,
+                    away_team_name=g.away_team_name,
+                    home_team_id=g.home_team_id,
+                    away_team_id=g.away_team_id,
+                    market_spread_home=g.spread_home,
+                    market_total=g.total,
+                    spread_actuals_model=NBASpreadActuals,
+                )
+                if feats is not None:
+                    ml_margin = predict_margin(feats)
+                    if ml_margin is not None:
+                        projected_margin = ml_margin
+                        projection_method = "ml"
+
             home_win_prob = _sm.margin_to_win_prob(projected_margin, cfg=NBA_CONFIG)
             edge, recommendation = spread_recommendation(
                 projected_margin, g.spread_home, cfg=NBA_CONFIG
@@ -97,7 +125,8 @@ def run() -> dict:
                     "factors": {
                         "elo_diff": home_elo - away_elo,
                         "pace_adj": pace_adj,
-                        "method": "elo_pace",
+                        "elo_pace_margin": elo_pace_margin,
+                        "method": projection_method,
                     },
                     "created_at": datetime.utcnow(),
                 }
@@ -109,7 +138,11 @@ def run() -> dict:
             conflict_keys=["game_date", "home_team_name", "away_team_name"],
         )
         db.commit()
-        return {"status": "ok", "games": len(upsert_rows)}
+        return {
+            "status": "ok",
+            "games": len(upsert_rows),
+            "projection_method": "ml" if use_ml else "elo_pace",
+        }
     finally:
         db.close()
 

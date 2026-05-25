@@ -16,8 +16,11 @@ MODULES = [
     "app.services.etl.nhl.collect_historical_data",
     "app.services.etl.nhl.collect_goalie_actuals",
     "app.services.etl.nhl.goalie_saves_model",
+    "app.services.etl.nhl.goalie_saves_ml",
     "app.services.etl.nhl.player_shots_model",
+    "app.services.etl.nhl.player_shots_ml",
     "app.services.etl.nhl.team_totals_model",
+    "app.services.etl.nhl.team_totals_ml",
     "app.services.etl.nhl.generate_daily_predictions",
     "app.services.etl.nhl.daily_predictions",
 ]
