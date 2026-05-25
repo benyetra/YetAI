@@ -13,6 +13,12 @@ Predicts total goals (over/under) for NHL games using:
 import sys
 import os
 
+from app.services.etl.nhl._config import (
+    get_league_avg_combined_shots_pace,
+    get_league_avg_shooting_pct,
+    team_shots_for,
+    team_shooting_pct,
+)
 from app.services.etl.nhl._db import db_session
 from app.models.predictions_models import NHLTeamStats
 from datetime import datetime, date
@@ -44,6 +50,8 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
     if not home_team or not away_team:
         return {"error": "Team not found"}
 
+    league_avg_shooting = get_league_avg_shooting_pct()
+
     # === HOME TEAM EXPECTED GOALS ===
 
     # Start with home offense vs away defense
@@ -66,11 +74,11 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
             home_expected *= 0.92  # -8% reduction
 
     # Shooting percentage adjustment
+    home_shooting = team_shooting_pct(home_team.team_id)
     if home_team.shooting_pct:
-        league_avg_shooting = 0.10  # 10%
-        if home_team.shooting_pct > league_avg_shooting * 1.15:  # Hot shooting
+        if home_shooting > league_avg_shooting * 1.15:  # Hot shooting
             home_expected *= 1.05
-        elif home_team.shooting_pct < league_avg_shooting * 0.85:  # Cold shooting
+        elif home_shooting < league_avg_shooting * 0.85:  # Cold shooting
             home_expected *= 0.95
 
     # === AWAY TEAM EXPECTED GOALS ===
@@ -94,10 +102,11 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
             away_expected *= 0.92
 
     # Shooting percentage adjustment
+    away_shooting = team_shooting_pct(away_team.team_id)
     if away_team.shooting_pct:
-        if away_team.shooting_pct > league_avg_shooting * 1.15:
+        if away_shooting > league_avg_shooting * 1.15:
             away_expected *= 1.05
-        elif away_team.shooting_pct < league_avg_shooting * 0.85:
+        elif away_shooting < league_avg_shooting * 0.85:
             away_expected *= 0.95
 
     # === TOTAL GOALS CALCULATION ===
@@ -105,13 +114,14 @@ def predict_team_total_goals(home_team_name, away_team_name, game_date=None):
     total_goals = home_expected + away_expected
 
     # Pace adjustment (combined shots)
-    home_shots = home_team.shots_for_per_game or 0
-    away_shots = away_team.shots_for_per_game or 0
+    home_shots = team_shots_for(home_team.team_id)
+    away_shots = team_shots_for(away_team.team_id)
     combined_shots = home_shots + away_shots
+    league_pace = get_league_avg_combined_shots_pace()
 
-    if combined_shots > 64:  # High pace game
+    if combined_shots > league_pace + 4.0:  # High pace game
         total_goals *= 1.05  # +5%
-    elif combined_shots < 56:  # Low pace game
+    elif combined_shots < league_pace - 4.0:  # Low pace game
         total_goals *= 0.95  # -5%
 
     # Recent form adjustment (use last 10 games data)

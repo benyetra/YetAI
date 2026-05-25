@@ -4,6 +4,7 @@ Fetches game data, goalie stats, and team stats for the current and past seasons
 """
 
 from app.services.etl.nhl.nhl_api_client import NHLAPIClient
+from app.services.etl.nhl._config import _resolve_season, get_nhl_season
 from app.services.etl.nhl._db import db_session
 from app.models.predictions_models import (
     NHLTeam,
@@ -75,7 +76,7 @@ def populate_teams():
     print(f"✓ Added {len(NHL_TEAMS)} teams")
 
 
-def collect_game_data(season=20252026, max_games_per_team=20):
+def collect_game_data(season=None, max_games_per_team=20):
     """
     Collect historical game data for all teams
     season: NHL season (e.g., 20252026 for 2024-25 season)
@@ -83,6 +84,7 @@ def collect_game_data(season=20252026, max_games_per_team=20):
 
     Returns: Number of games collected
     """
+    season = _resolve_season(season)
     client = NHLAPIClient()
     print(f"\nCollecting game data for {season} season...")
 
@@ -536,15 +538,16 @@ def calculate_team_stats():
     print(f"✓ Updated {teams_updated} teams")
 
 
-def backfill_historical_seasons(start_season=20212022, end_season=20252026):
+def backfill_historical_seasons(start_season=20212022, end_season=None):
     """
     Backfill historical data from multiple seasons
     This populates goalie vs-team history and shot quality metrics
 
     Args:
         start_season: First season to backfill (e.g., 20212022)
-        end_season: Last season to backfill (e.g., 20252026)
+        end_season: Last season to backfill (defaults to NHL_SEASON / get_nhl_season())
     """
+    end_season = _resolve_season(end_season)
     print("\n" + "=" * 80)
     print(f"🔄 BACKFILLING HISTORICAL DATA: {start_season} to {end_season}")
     print("=" * 80)
@@ -716,11 +719,12 @@ def calculate_career_goalie_vs_team_stats():
     print(f"  ✓ Updated career vs-team stats for {total_updated} goalies")
 
 
-def update_special_teams_stats(season=20252026):
+def update_special_teams_stats(season=None):
     """
     Update special teams statistics for all teams
     Collects PP%, PK%, PPO/game, etc. from NHL API
     """
+    season = _resolve_season(season)
     print(f"\nUpdating special teams stats for season {season}...")
 
     client = NHLAPIClient()
@@ -768,10 +772,11 @@ def update_special_teams_stats(season=20252026):
     print(f"  ✓ Updated special teams stats for {teams_updated} teams")
 
 
-def update_realtime_stats(season=20252026):
+def update_realtime_stats(season=None):
     """
     Update realtime statistics including blocked shots
     """
+    season = _resolve_season(season)
     print(f"\nUpdating realtime stats (blocked shots, etc.) for season {season}...")
 
     client = NHLAPIClient()
@@ -803,7 +808,7 @@ def update_realtime_stats(season=20252026):
     print(f"  ✓ Updated realtime stats for {teams_updated} teams")
 
 
-def calculate_shot_quality_metrics(season=20252026, sample_games=50):
+def calculate_shot_quality_metrics(season=None, sample_games=50):
     """
     Calculate shot quality metrics from play-by-play data
     Uses a sample of recent games to avoid API overload
@@ -812,6 +817,7 @@ def calculate_shot_quality_metrics(season=20252026, sample_games=50):
         season: Season to analyze
         sample_games: Number of recent games to sample per team
     """
+    season = _resolve_season(season)
     print(f"\nCalculating shot quality metrics for season {season}...")
     print(f"  (Sampling {sample_games} recent games per team)")
 
@@ -895,11 +901,12 @@ def calculate_shot_quality_metrics(season=20252026, sample_games=50):
     )
 
 
-def collect_season_player_stats(season=20252026):
+def collect_season_player_stats(season=None):
     """
     Collect season-long player statistics for all skaters
     This provides baseline data for player shots/goals predictions
     """
+    season = _resolve_season(season)
     print(f"\nCollecting season player stats for {season}...")
 
     client = NHLAPIClient()
@@ -973,11 +980,12 @@ def collect_season_player_stats(season=20252026):
     print(f"  ✓ Updated {players_updated} players")
 
 
-def collect_team_offensive_stats(season=20252026):
+def collect_team_offensive_stats(season=None):
     """
     Collect detailed team offensive statistics
     Used for: team total goals predictions, over/under predictions
     """
+    season = _resolve_season(season)
     print(f"\nCollecting team offensive stats for {season}...")
 
     # Get all games for the season
@@ -1038,7 +1046,7 @@ def collect_team_offensive_stats(season=20252026):
     print(f"  ✓ Updated offensive stats for {teams_updated} teams")
 
 
-def update_daily_stats(season=20252026):
+def update_daily_stats(season=None):
     """
     Daily update function - updates ALL stats with latest data
     This should be run daily to keep stats current
@@ -1049,6 +1057,7 @@ def update_daily_stats(season=20252026):
     - Player season stats (goals, shots, ice time)
     - Team offensive trends
     """
+    season = _resolve_season(season)
     print("\n" + "=" * 80)
     print(f"📅 DAILY STATS UPDATE - Season {season}")
     print("=" * 80)
@@ -1092,8 +1101,8 @@ def main():
     parser.add_argument(
         "--end-season",
         type=int,
-        default=20252026,
-        help="Ending season for backfill (default: 20252026)",
+        default=None,
+        help=f"Ending season for backfill (default: NHL_SEASON / {get_nhl_season()})",
     )
     parser.add_argument(
         "--daily-update",
@@ -1115,20 +1124,22 @@ def main():
     # Step 1: Populate teams
     populate_teams()
 
+    current_season = get_nhl_season()
+
     if args.daily_update:
         # Daily update mode: update stats only
-        update_daily_stats(20252026)
+        update_daily_stats(current_season)
     elif args.backfill:
         # Backfill mode: collect multiple seasons
         backfill_historical_seasons(args.start_season, args.end_season)
 
         # After backfill, update advanced stats for current season
         print("\n📊 Updating advanced statistics for current season...")
-        update_special_teams_stats(20252026)
-        update_realtime_stats(20252026)
-        calculate_shot_quality_metrics(20252026, sample_games=50)
-        collect_season_player_stats(20252026)
-        collect_team_offensive_stats(20252026)
+        update_special_teams_stats(current_season)
+        update_realtime_stats(current_season)
+        calculate_shot_quality_metrics(current_season, sample_games=50)
+        collect_season_player_stats(current_season)
+        collect_team_offensive_stats(current_season)
     else:
         # Default mode: current season only
         print("\n💡 Tip: Use --backfill to load historical data from 2021-2025")
@@ -1136,7 +1147,7 @@ def main():
         print("\n💡 Tip: Use --daily-update to update team stats daily\n")
 
         # Step 2: Collect game data (current season)
-        collect_game_data(season=20252026, max_games_per_team=20)
+        collect_game_data(season=current_season, max_games_per_team=20)
 
         # Step 3: Calculate goalie stats
         calculate_goalie_stats()
@@ -1145,11 +1156,11 @@ def main():
         calculate_team_stats()
 
         # Step 5: Update advanced stats (all types)
-        update_special_teams_stats(20252026)
-        update_realtime_stats(20252026)
-        calculate_shot_quality_metrics(20252026, sample_games=20)
-        collect_season_player_stats(20252026)
-        collect_team_offensive_stats(20252026)
+        update_special_teams_stats(current_season)
+        update_realtime_stats(current_season)
+        calculate_shot_quality_metrics(current_season, sample_games=20)
+        collect_season_player_stats(current_season)
+        collect_team_offensive_stats(current_season)
 
     print("\n" + "=" * 80)
     print("✓ Data collection complete!")
@@ -1160,9 +1171,10 @@ if __name__ == "__main__":
     main()
 
 
-def run_ingest(season: int = 20252026) -> dict:
+def run_ingest(season: int | None = None) -> dict:
     from app.services.etl.nhl._db import close_session, init_session
 
+    season = _resolve_season(season)
     init_session()
     try:
         populate_teams()
@@ -1179,9 +1191,10 @@ def run_ingest(season: int = 20252026) -> dict:
         close_session()
 
 
-def run_update_daily_stats(season: int = 20252026) -> dict:
+def run_update_daily_stats(season: int | None = None) -> dict:
     from app.services.etl.nhl._db import close_session, init_session
 
+    season = _resolve_season(season)
     init_session()
     try:
         update_daily_stats(season=season)

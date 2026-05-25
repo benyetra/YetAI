@@ -1696,6 +1696,9 @@ class NHLPlayerShotsPredictions(Base):
     betting_recommendation = Column(String(20), nullable=True)
     confidence = Column(Float, nullable=True)
 
+    model_version = Column(String(20), nullable=True)
+    features_used = Column(JSON, nullable=True)
+
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -1724,6 +1727,9 @@ class NHLTeamTotalsPredictions(Base):
     confidence = Column(Float, nullable=True)
     edge = Column(Float, nullable=True)  # Difference between our line and DK line
     betting_recommendation = Column(String(20), nullable=True)
+
+    model_version = Column(String(20), nullable=True)
+    features_used = Column(JSON, nullable=True)
 
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
 
