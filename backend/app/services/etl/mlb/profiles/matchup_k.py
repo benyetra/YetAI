@@ -125,13 +125,29 @@ def compute_lineup_k_matchup(
         sources.append("league")
 
     perf_by_batter: dict[int, dict] = {}
+    db = getattr(store, "db", None)
+    season = as_of_date.year
     for bid in batter_ids:
         snap = store.get_batter(bid, pitcher_hand, as_of_date, window=window)
-        if snap and snap.profile:
+        if snap and snap.profile and snap.n_pitches >= 50:
             perf_by_batter[bid] = batter_perf_from_profile(snap.profile)
             for pt_data in perf_by_batter[bid].values():
                 if isinstance(pt_data, dict) and "_source" in pt_data:
                     sources.append(pt_data["_source"])
+        elif db is not None:
+            try:
+                from app.services.etl.mlb.profiles.archetypes import (
+                    archetype_batter_profile,
+                    get_player_archetype,
+                )
+
+                aid = get_player_archetype(db, bid, season) or "league_avg"
+                prof = archetype_batter_profile(aid)
+                perf_by_batter[bid] = batter_perf_from_profile(prof)
+                sources.append("archetype")
+            except Exception:
+                perf_by_batter[bid] = _league_archetype_batter()
+                sources.append("league")
         else:
             perf_by_batter[bid] = _league_archetype_batter()
             sources.append("archetype")

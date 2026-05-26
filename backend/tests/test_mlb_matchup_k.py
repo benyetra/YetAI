@@ -47,6 +47,7 @@ def test_compute_lineup_k_matchup_from_snapshots():
         "reliability_by_pitch": {"FF": 0.8},
         "cold_zones": {"FF": ["highInside"]},
     }
+    batter_snap.n_pitches = 200
     store.get_pitcher.return_value = pitcher_snap
     store.get_batter.return_value = batter_snap
 
