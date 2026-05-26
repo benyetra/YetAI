@@ -1,9 +1,8 @@
 """Per-day MLB projection accuracy → unified bucket shape.
 
-Builds three buckets via the shared `accuracy_shared` helpers:
-- Pitcher Ks O/U: FanDuel-line call accuracy + K MAE.
-- Projected Hits: success rate for batters projected for ≥1 hit.
-- Projected Home Runs: success rate for batters projected for ≥1 HR.
+Buckets:
+- Pitcher Ks O/U, Projected Hits, Projected Home Runs (prop boards)
+- Game Moneyline, Spread, Total (edge plays from game projections)
 """
 
 from __future__ import annotations
@@ -15,6 +14,8 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import (
+    GameActuals,
+    GameProjections,
     ProjectedHits,
     ProjectedHomers,
     StrikeoutActuals,
@@ -22,9 +23,11 @@ from app.models.predictions_models import (
 )
 from app.services.accuracy_shared import (
     assemble,
+    edge_play_bucket,
     hit_rate_bucket,
     ou_call_bucket,
 )
+from app.services.mlb_game_picks import enrich_game_projection_row
 
 
 def _strikeout_accuracy_by_model_version(
@@ -52,9 +55,37 @@ def _strikeout_accuracy_by_model_version(
     }
 
 
+def _merge_game_rows(db: Session, *, target_date: date_type) -> list[dict[str, Any]]:
+    """Join game projections with final scores for grading buckets."""
+    projections = (
+        db.query(GameProjections).filter(GameProjections.date == target_date).all()
+    )
+    actuals_by_gid = {
+        a.game_id: a
+        for a in db.query(GameActuals).filter(GameActuals.date == target_date).all()
+    }
+    rows: list[dict[str, Any]] = []
+    for proj in projections:
+        row = {c.name: getattr(proj, c.name) for c in proj.__table__.columns}
+        actual = actuals_by_gid.get(proj.game_id)
+        if actual:
+            row.update(
+                {
+                    "actual_home_score": actual.home_score,
+                    "actual_away_score": actual.away_score,
+                    "actual_total_runs": actual.total_runs,
+                    "actual_winner": actual.winner,
+                    "ml_correct": actual.ml_correct,
+                    "spread_correct": actual.spread_correct,
+                    "total_correct": actual.total_correct,
+                }
+            )
+        rows.append(enrich_game_projection_row(row))
+    return rows
+
+
 def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     """Fetch the day's MLB projections + actuals, return the bucketed summary."""
-    # Strikeouts: merge actuals onto each projection via dict lookup.
     proj_rows = (
         db.query(StrikeoutProjections)
         .filter(StrikeoutProjections.date == target_date)
@@ -90,6 +121,8 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         .all()
     ]
 
+    game_rows = _merge_game_rows(db, target_date=target_date)
+
     buckets = [
         ou_call_bucket(
             k_rows,
@@ -118,12 +151,37 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             key="projected_homers",
             secondary="Batters projected for ≥1 HR",
         ),
+        edge_play_bucket(
+            game_rows,
+            pick_field="ml_recommendation",
+            correct_field="ml_correct",
+            label="Game Moneyline",
+            key="game_moneyline",
+            secondary="ML edge plays (HOME/AWAY)",
+        ),
+        edge_play_bucket(
+            game_rows,
+            pick_field="spread_recommendation",
+            correct_field="spread_correct",
+            label="Game Spread",
+            key="game_spread",
+            secondary="Spread edge plays vs market line",
+        ),
+        ou_call_bucket(
+            game_rows,
+            line_field="market_total",
+            pick_field="total_recommendation",
+            actual_field="actual_total_runs",
+            projected_field="projected_total",
+            label="Game Total",
+            key="game_total",
+        ),
     ]
 
     out = assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
-        available=bool(k_rows or hits_rows or homer_rows),
+        available=bool(k_rows or hits_rows or homer_rows or game_rows),
     )
     by_version = _strikeout_accuracy_by_model_version(k_rows)
     if by_version:
