@@ -57,6 +57,7 @@ export default function SportPredictionsPage({
   topSection?: (ctx: {
     data: Record<string, Array<Record<string, unknown>>> | null;
     loading: boolean;
+    isPastDate: boolean;
   }) => ReactNode;
   accuracySummary?: (ctx: GroupsContext) => ReactNode;
 }) {
@@ -164,7 +165,7 @@ export default function SportPredictionsPage({
         <PredictionsError message={error} />
       ) : (
         <div className="predictions-stack">
-          {topSection ? topSection({ data, loading }) : null}
+          {topSection ? topSection({ data, loading, isPastDate }) : null}
 
           {accuracySummary && isPastDate
             ? accuracySummary({ date, isPastDate })

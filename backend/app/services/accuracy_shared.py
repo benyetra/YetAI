@@ -182,6 +182,71 @@ def hit_rate_bucket(
     )
 
 
+def edge_play_bucket(
+    rows: Iterable[dict[str, Any]],
+    *,
+    pick_field: str,
+    correct_field: str,
+    label: str,
+    key: str,
+    secondary: str = "Graded edge plays only",
+) -> AccuracyBucket:
+    """Accuracy for rows with an edge play and a stored correct/incorrect flag."""
+    total = 0
+    correct = 0
+    for row in rows:
+        pick = (row.get(pick_field) or "").strip().upper()
+        if pick in ("", "NO_PLAY", "NONE"):
+            continue
+        graded = row.get(correct_field)
+        if graded is None:
+            continue
+        total += 1
+        if graded:
+            correct += 1
+    accuracy = correct / total if total else None
+    return AccuracyBucket(
+        key=key,
+        label=label,
+        primary=f"{correct}/{total} · {pct(accuracy)}",
+        secondary=secondary if total else "No graded calls",
+        tone=tone_for_rate(accuracy),
+    )
+
+
+def recommendation_side_bucket(
+    rows: Iterable[dict[str, Any]],
+    *,
+    pick_field: str,
+    winner_field: str,
+    label: str,
+    key: str,
+    secondary: str = "Graded edge plays only",
+) -> AccuracyBucket:
+    """Accuracy for HOME/AWAY recommendation picks vs actual winner.
+
+    Rows without a HOME/AWAY pick or without a recorded winner are skipped.
+    """
+    total = 0
+    correct = 0
+    for row in rows:
+        pick = (row.get(pick_field) or "").strip().upper()
+        winner = (row.get(winner_field) or "").strip().lower()
+        if pick not in ("HOME", "AWAY") or winner not in ("home", "away"):
+            continue
+        total += 1
+        if pick == winner.upper():
+            correct += 1
+    accuracy = correct / total if total else None
+    return AccuracyBucket(
+        key=key,
+        label=label,
+        primary=f"{correct}/{total} · {pct(accuracy)}",
+        secondary=secondary if total else "No graded calls",
+        tone=tone_for_rate(accuracy),
+    )
+
+
 def mae_bucket(
     rows: Iterable[dict[str, Any]],
     *,

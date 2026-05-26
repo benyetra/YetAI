@@ -127,7 +127,7 @@ export default function MLBPredictionsPage() {
       leagueLabel="MLB"
       emoji="⚾"
       subtitle="Game slate, strikeouts, projected hits/HR boards, and ML home run picks."
-      topSection={({ data, loading }) => (
+      topSection={({ data, loading, isPastDate }) => (
         <>
           <h2 className="type-section-title" style={{ margin: '0 0 8px' }}>
             Game projections
@@ -135,6 +135,7 @@ export default function MLBPredictionsPage() {
           <MlbGameProjectionsGrid
             rows={(data?.game_projections as Array<Record<string, unknown>>) ?? []}
             loading={loading}
+            isPastDate={isPastDate}
           />
         </>
       )}

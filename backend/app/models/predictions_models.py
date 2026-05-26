@@ -2643,6 +2643,7 @@ class GameProjections(Base):
 
     # Recommendations
     ml_recommendation = Column(String(20), nullable=True)
+    spread_recommendation = Column(String(20), nullable=True)
     total_recommendation = Column(String(20), nullable=True)
     value_rating = Column(String(20), nullable=True)
 

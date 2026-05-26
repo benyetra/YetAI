@@ -2,7 +2,7 @@
 
 Per-bucket math is covered by test_accuracy_shared. This file verifies
 MLB rows feed into the right shared helpers and the assembled response
-carries the three expected bucket keys in order.
+carries the expected bucket keys in order.
 """
 
 from __future__ import annotations
@@ -48,19 +48,69 @@ def _proj_homers(projected_homers=1, actual_homers=0):
     )
 
 
-def _mock_db(strikeouts, actuals, hits, homers):
+def _game_projection(game_id=1):
+    return SimpleNamespace(
+        game_id=game_id,
+        date=date(2026, 5, 23),
+        home_team="Home",
+        away_team="Away",
+        home_win_prob=0.55,
+        away_win_prob=0.45,
+        projected_total=9.0,
+        market_total=8.5,
+        market_spread=-1.5,
+        run_line=2.0,
+        ml_recommendation="HOME",
+        spread_recommendation="HOME",
+        total_recommendation="OVER",
+        __table__=SimpleNamespace(
+            columns=[
+                SimpleNamespace(name="game_id"),
+                SimpleNamespace(name="ml_recommendation"),
+                SimpleNamespace(name="spread_recommendation"),
+                SimpleNamespace(name="total_recommendation"),
+                SimpleNamespace(name="market_total"),
+                SimpleNamespace(name="projected_total"),
+                SimpleNamespace(name="market_spread"),
+                SimpleNamespace(name="run_line"),
+            ]
+        ),
+    )
+
+
+def _game_actual(game_id=1):
+    return SimpleNamespace(
+        game_id=game_id,
+        home_score=6,
+        away_score=3,
+        total_runs=9,
+        winner="home",
+        ml_correct=True,
+        spread_correct=True,
+        total_correct=True,
+    )
+
+
+def _mock_db(strikeouts, actuals, hits, homers, games=None, game_actuals=None):
     db = MagicMock()
+    games = games or []
+    game_actuals = game_actuals or []
 
     def query_side_effect(model):
         result = MagicMock()
-        if "StrikeoutProjections" in model.__name__:
+        name = model.__name__
+        if name == "StrikeoutProjections":
             result.filter.return_value.all.return_value = strikeouts
-        elif "StrikeoutActuals" in model.__name__:
+        elif name == "StrikeoutActuals":
             result.filter.return_value.all.return_value = actuals
-        elif "ProjectedHits" in model.__name__:
+        elif name == "ProjectedHits":
             result.filter.return_value.all.return_value = hits
-        elif "ProjectedHomers" in model.__name__:
+        elif name == "ProjectedHomers":
             result.filter.return_value.all.return_value = homers
+        elif name == "GameProjections":
+            result.filter.return_value.all.return_value = games
+        elif name == "GameActuals":
+            result.filter.return_value.all.return_value = game_actuals
         else:
             result.filter.return_value.all.return_value = []
         return result
@@ -69,16 +119,28 @@ def _mock_db(strikeouts, actuals, hits, homers):
     return db
 
 
-def test_daily_accuracy_returns_three_buckets_in_order():
+EXPECTED_KEYS = [
+    "pitcher_ks_ou",
+    "projected_hits",
+    "projected_homers",
+    "game_moneyline",
+    "game_spread",
+    "game_total",
+]
+
+
+def test_daily_accuracy_returns_six_buckets_in_order():
     db = _mock_db(
         strikeouts=[_proj_strikeout()],
         actuals=[_actual_strikeout()],
         hits=[_proj_hits(2, 1)],
         homers=[_proj_homers(1, 0)],
+        games=[_game_projection()],
+        game_actuals=[_game_actual()],
     )
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     keys = [b["key"] for b in out["buckets"]]
-    assert keys == ["pitcher_ks_ou", "projected_hits", "projected_homers"]
+    assert keys == EXPECTED_KEYS
     assert out["available"] is True
     assert out["date"] == "2026-05-23"
 
@@ -87,14 +149,10 @@ def test_daily_accuracy_marks_unavailable_when_no_rows():
     db = _mock_db(strikeouts=[], actuals=[], hits=[], homers=[])
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 3
+    assert len(out["buckets"]) == len(EXPECTED_KEYS)
 
 
 def test_daily_accuracy_merges_strikeout_actuals_by_pitcher_id():
-    """Strikeout row sent to the O/U bucket has actual pulled from
-    StrikeoutActuals — not from the projection — even when only some
-    pitchers have actuals recorded.
-    """
     db = _mock_db(
         strikeouts=[
             _proj_strikeout(pid="p1", fd_ou="over"),
@@ -106,7 +164,6 @@ def test_daily_accuracy_merges_strikeout_actuals_by_pitcher_id():
     )
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     k_bucket = next(b for b in out["buckets"] if b["key"] == "pitcher_ks_ou")
-    # p1: pick over 5.5, actual 7 → correct. p2: no actual → dropped.
     assert k_bucket["primary"] == "1/1 · 100%"
 
 

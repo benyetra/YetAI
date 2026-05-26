@@ -23,6 +23,7 @@ from app.core.database import get_db
 from app.models.predictions_models import (
     AssistsProjections,
     BlocksProjections,
+    GameActuals,
     GameProjections,
     Homer,
     KickerPredictions,
@@ -201,6 +202,9 @@ def mlb_predictions(
     exists for the same date — the frontend uses these to render
     actual-vs-projection columns on past-date views.
 
+    Game projections are enriched with final scores and ml/spread/total
+    grading flags from pred_game_actuals when available.
+
     Pass ``total_line`` (e.g. 8.5) to add ``p_over_total`` / ``p_under_total`` on
     each game projection (empirical Monte Carlo using stored sim rates).
     """
@@ -262,6 +266,37 @@ def mlb_predictions(
     game_rows = _query_recent(db, GameProjections, "date", target_date, limit, tz=tz)
     if total_line is not None:
         game_rows = [_attach_p_over_total(r, total_line) for r in game_rows]
+
+    game_actuals_date = target_date
+    if game_actuals_date is None and game_rows:
+        first_game_date = game_rows[0].get("date")
+        if first_game_date is not None:
+            game_actuals_date = first_game_date
+    if game_actuals_date is not None:
+        from app.services.mlb_game_picks import enrich_game_projection_row
+
+        actuals_by_gid = {
+            a.game_id: a
+            for a in db.query(GameActuals)
+            .filter(GameActuals.date == game_actuals_date)
+            .all()
+        }
+        enriched_games: list[dict[str, Any]] = []
+        for row in game_rows:
+            actual = actuals_by_gid.get(row.get("game_id"))
+            if actual:
+                row = {
+                    **row,
+                    "actual_home_score": actual.home_score,
+                    "actual_away_score": actual.away_score,
+                    "actual_total_runs": actual.total_runs,
+                    "actual_winner": actual.winner,
+                    "ml_correct": actual.ml_correct,
+                    "spread_correct": actual.spread_correct,
+                    "total_correct": actual.total_correct,
+                }
+            enriched_games.append(enrich_game_projection_row(row))
+        game_rows = enriched_games
 
     return {
         "strikeout_projections": cleaned_strikeouts,

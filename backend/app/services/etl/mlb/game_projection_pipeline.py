@@ -123,6 +123,7 @@ def compute_edge_and_value(prediction, odds_data):
         "market_total": None,
         "market_spread": None,
         "ml_recommendation": "NO_PLAY",
+        "spread_recommendation": "NO_PLAY",
         "total_recommendation": "NO_PLAY",
         "value_rating": "No Edge",
         "model_confidence": 0.5,
@@ -171,6 +172,15 @@ def compute_edge_and_value(prediction, odds_data):
             result["total_recommendation"] = "OVER"
         elif edge_total < -0.5:
             result["total_recommendation"] = "UNDER"
+
+    from app.services.mlb_game_picks import spread_recommendation
+
+    spread_side = spread_recommendation(
+        prediction.get("run_line"),
+        result.get("market_spread"),
+    )
+    if spread_side:
+        result["spread_recommendation"] = spread_side
 
     # Model confidence: based on probability extremity and edge magnitude
     prob_confidence = abs(home_prob - 0.5) * 2.0  # 0.0 at 50/50, 1.0 at 100%
@@ -258,6 +268,7 @@ def store_game_projections(predictions, target_date=None, *, model_version=None)
                 temperature=pred.get("temperature"),
                 wind_speed=pred.get("wind_speed"),
                 ml_recommendation=pred.get("ml_recommendation"),
+                spread_recommendation=pred.get("spread_recommendation"),
                 total_recommendation=pred.get("total_recommendation"),
                 value_rating=pred.get("value_rating"),
                 venue_name=pred.get("venue_name"),
@@ -319,23 +330,36 @@ def store_game_actuals(target_date):
         projection_error = None
 
         if proj:
-            # ML correct: did we favor the winner?
-            our_pick = "home" if proj.home_win_prob > 0.5 else "away"
-            ml_correct = our_pick == winner
+            from app.services.mlb_game_picks import (
+                derive_spread_recommendation_row,
+                grade_moneyline,
+                grade_spread,
+                grade_total,
+            )
 
-            # Total correct
-            if proj.total_recommendation == "OVER":
-                total_correct = total_runs > (market_total or projected_total)
-            elif proj.total_recommendation == "UNDER":
-                total_correct = total_runs < (market_total or projected_total)
+            spread_pick = (
+                proj.spread_recommendation
+                or derive_spread_recommendation_row(
+                    {
+                        "run_line": proj.run_line,
+                        "market_spread": proj.market_spread,
+                    }
+                )
+            )
 
-            # Spread correct
-            if proj.run_line and proj.market_spread:
-                actual_margin = home_score - away_score
-                spread_correct = (
-                    (actual_margin > proj.market_spread)
-                    if proj.ml_recommendation == "HOME"
-                    else None
+            ml_correct = grade_moneyline(proj.ml_recommendation, winner=winner)
+            total_correct = grade_total(
+                proj.total_recommendation,
+                total_runs=total_runs,
+                market_total=market_total,
+                projected_total=projected_total,
+            )
+            if proj.market_spread is not None and spread_pick:
+                spread_correct = grade_spread(
+                    spread_pick,
+                    home_score=home_score,
+                    away_score=away_score,
+                    market_spread_home=float(proj.market_spread),
                 )
 
             projection_error = (

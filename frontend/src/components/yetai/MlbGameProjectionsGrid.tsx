@@ -56,6 +56,9 @@ function formatEdgePct(edge: number | null): string | undefined {
 }
 
 function spreadRecommendation(proj: GameRow): Side | null {
+  const stored = formatString(proj.spread_recommendation);
+  if (stored === 'HOME' || stored === 'AWAY') return stored;
+
   const runLine = num(proj.run_line);
   const marketSpread = num(proj.market_spread);
   if (runLine == null || marketSpread == null) return null;
@@ -65,6 +68,18 @@ function spreadRecommendation(proj: GameRow): Side | null {
   if (edge >= MLB_SPREAD_EDGE_THRESHOLD) return 'HOME';
   if (edge <= -MLB_SPREAD_EDGE_THRESHOLD) return 'AWAY';
   return null;
+}
+
+function pickGrade(proj: GameRow, kind: PickKind): boolean | null {
+  if (kind === 'ml') return typeof proj.ml_correct === 'boolean' ? proj.ml_correct : null;
+  if (kind === 'spread') {
+    return typeof proj.spread_correct === 'boolean' ? proj.spread_correct : null;
+  }
+  return typeof proj.total_correct === 'boolean' ? proj.total_correct : null;
+}
+
+function hasFinalScore(proj: GameRow): boolean {
+  return proj.actual_home_score != null && proj.actual_away_score != null;
 }
 
 function buildPicks(proj: GameRow): ProjectionPick[] {
@@ -137,7 +152,15 @@ function pickKindClass(kind: PickKind): string {
   return 'badge dim';
 }
 
-export default function MlbGameProjectionsGrid({ rows, loading }: { rows: GameRow[]; loading?: boolean }) {
+export default function MlbGameProjectionsGrid({
+  rows,
+  loading,
+  isPastDate = false,
+}: {
+  rows: GameRow[];
+  loading?: boolean;
+  isPastDate?: boolean;
+}) {
   if (loading) {
     return (
       <section className="card" style={{ padding: 24, textAlign: 'center' }}>
@@ -163,7 +186,7 @@ export default function MlbGameProjectionsGrid({ rows, loading }: { rows: GameRo
         <StatChip label="Strong value" value={String(strong)} />
       </div>
       {rows.map((proj) => (
-        <GameCard key={String(proj.game_id ?? proj.id)} proj={proj} />
+        <GameCard key={String(proj.game_id ?? proj.id)} proj={proj} showResults={isPastDate || hasFinalScore(proj)} />
       ))}
     </div>
   );
@@ -178,7 +201,7 @@ function StatChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GameCard({ proj }: { proj: GameRow }) {
+function GameCard({ proj, showResults }: { proj: GameRow; showResults: boolean }) {
   const away = formatString(proj.away_team);
   const home = formatString(proj.home_team);
   const awayWp = typeof proj.away_win_prob === 'number' ? proj.away_win_prob : 0;
@@ -216,7 +239,17 @@ function GameCard({ proj }: { proj: GameRow }) {
         <span className={ratingClass(proj.value_rating)}>{formatString(proj.value_rating) || 'No edge'}</span>
       </div>
 
-      <ProjectionPicksSection picks={picks} hasEdge={hasEdge} valueRating={formatString(proj.value_rating)} />
+      {showResults && hasFinalScore(proj) ? (
+        <FinalScoreBanner proj={proj} />
+      ) : null}
+
+      <ProjectionPicksSection
+        picks={picks}
+        hasEdge={hasEdge}
+        valueRating={formatString(proj.value_rating)}
+        proj={proj}
+        showResults={showResults}
+      />
 
       <div style={{ marginBottom: 12 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="dim">
@@ -247,8 +280,28 @@ function GameCard({ proj }: { proj: GameRow }) {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
-        <MiniStat label="Proj total" value={formatNumber(proj.projected_total, 1)} sub={proj.market_total ? `Mkt ${formatNumber(proj.market_total, 1)}` : undefined} />
-        <MiniStat label="Proj score" value={`${formatNumber(proj.away_projected_runs, 1)}-${formatNumber(proj.home_projected_runs, 1)}`} sub={proj.run_line != null ? `Margin ${formatNumber(proj.run_line, 1)}` : undefined} />
+        <MiniStat
+          label="Proj total"
+          value={formatNumber(proj.projected_total, 1)}
+          sub={
+            showResults && proj.actual_total_runs != null
+              ? `Actual ${formatNumber(proj.actual_total_runs, 0)}`
+              : proj.market_total
+                ? `Mkt ${formatNumber(proj.market_total, 1)}`
+                : undefined
+          }
+        />
+        <MiniStat
+          label="Proj score"
+          value={`${formatNumber(proj.away_projected_runs, 1)}-${formatNumber(proj.home_projected_runs, 1)}`}
+          sub={
+            showResults && hasFinalScore(proj)
+              ? `Final ${formatNumber(proj.away_score ?? proj.actual_away_score, 0)}-${formatNumber(proj.home_score ?? proj.actual_home_score, 0)}`
+              : proj.run_line != null
+                ? `Margin ${formatNumber(proj.run_line, 1)}`
+                : undefined
+          }
+        />
         <MiniStat label="Confidence" value={proj.model_confidence ? pct(proj.model_confidence) : '—'} />
       </div>
     </article>
@@ -324,14 +377,38 @@ function TeamLine({
   );
 }
 
+function FinalScoreBanner({ proj }: { proj: GameRow }) {
+  const away = formatNumber(proj.actual_away_score, 0);
+  const home = formatNumber(proj.actual_home_score, 0);
+  return (
+    <div
+      className="mono"
+      style={{
+        marginBottom: 12,
+        padding: '8px 12px',
+        borderRadius: 'var(--radius-sm)',
+        background: 'var(--surface-2)',
+        fontSize: 13,
+        textAlign: 'center',
+      }}
+    >
+      Final: {away}–{home}
+    </div>
+  );
+}
+
 function ProjectionPicksSection({
   picks,
   hasEdge,
   valueRating,
+  proj,
+  showResults,
 }: {
   picks: ProjectionPick[];
   hasEdge: boolean;
   valueRating: string;
+  proj: GameRow;
+  showResults: boolean;
 }) {
   if (!picks.length) {
     return (
@@ -358,14 +435,27 @@ function ProjectionPicksSection({
       </div>
       <div style={{ display: 'grid', gap: 8 }}>
         {picks.map((pick) => (
-          <PickRow key={`${pick.kind}-${pick.team}-${pick.label}`} pick={pick} emphasized={hasEdge && pick.kind !== 'total'} />
+          <PickRow
+            key={`${pick.kind}-${pick.team}-${pick.label}`}
+            pick={pick}
+            emphasized={hasEdge && pick.kind !== 'total'}
+            grade={showResults ? pickGrade(proj, pick.kind) : null}
+          />
         ))}
       </div>
     </div>
   );
 }
 
-function PickRow({ pick, emphasized }: { pick: ProjectionPick; emphasized: boolean }) {
+function PickRow({
+  pick,
+  emphasized,
+  grade,
+}: {
+  pick: ProjectionPick;
+  emphasized: boolean;
+  grade: boolean | null;
+}) {
   const isTotal = pick.kind === 'total';
 
   return (
@@ -401,6 +491,11 @@ function PickRow({ pick, emphasized }: { pick: ProjectionPick; emphasized: boole
             </div>
           ) : null}
         </div>
+        {grade != null ? (
+          <span className={grade ? 'badge badge-win' : 'badge'} style={{ fontSize: 10, flexShrink: 0 }}>
+            {grade ? 'Hit' : 'Miss'}
+          </span>
+        ) : null}
       </div>
     </div>
   );
