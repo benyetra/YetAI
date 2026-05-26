@@ -117,6 +117,14 @@ celery_app.conf.beat_schedule = {
     # then. Safety net at 2 PM ET catches anything that wasn't posted earlier
     # (the pipeline preserves existing rows when the schedule API is empty,
     # so the later run effectively retries).
+    "mlb-statcast-incremental": {
+        "task": "app.tasks.etl_pipeline.mlb.statcast_incremental",
+        "schedule": crontab(hour=9, minute=30),
+    },
+    "mlb-profile-rebuild": {
+        "task": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
+        "schedule": crontab(hour=10, minute=0),
+    },
     "mlb-projections-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
         "schedule": crontab(hour=14, minute=0),

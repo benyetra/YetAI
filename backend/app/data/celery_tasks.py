@@ -51,6 +51,9 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.mlb.retrain_strikeout_classifier": 3600.0,
     "app.tasks.etl_pipeline.mlb.hr_rebuild_stage": 7200.0,
     "app.tasks.etl_pipeline.mlb.backtest_quick": 1800.0,
+    "app.tasks.etl_pipeline.mlb.statcast_backfill_season": 14400.0,
+    "app.tasks.etl_pipeline.mlb.statcast_incremental": 900.0,
+    "app.tasks.etl_pipeline.mlb.rebuild_profiles": 3600.0,
     "app.tasks.etl_pipeline.nhl.collect_ingest": 1200.0,
     "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
     "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
@@ -188,6 +191,33 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "sport": "mlb",
         "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.mlb.backtest_quick"],
         "description": "20-game backtest; JSON under scripts/mlb_backtest_results/runs/ on worker.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.statcast_backfill_season",
+        "label": "MLB Statcast backfill (season)",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.statcast_backfill_season"
+        ],
+        "description": "Monthly Statcast pitch parquet backfill for one season (Mar–Oct).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.statcast_incremental",
+        "label": "MLB Statcast incremental",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.statcast_incremental"
+        ],
+        "description": "Refresh current month Statcast partition (yesterday's games).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
+        "label": "MLB rebuild profiles",
+        "sport": "mlb",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.mlb.rebuild_profiles"
+        ],
+        "description": "Rebuild batter/pitcher profile snapshots from S3 parquet for as_of_date.",
     },
     {
         "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",
