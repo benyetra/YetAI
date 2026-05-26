@@ -15,6 +15,11 @@ on:
         required: false
         type: boolean
         default: false
+      backfill_mlb_game_actuals:
+        description: After migrate, re-grade MLB game actuals (ML/spread/total) for recent dates
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   migrate:
@@ -70,6 +75,17 @@ jobs:
               print("alembic_version:", rev)
               print("pred_wnba_* tables:", n)
           PY
+
+      - name: Backfill MLB game actuals (production)
+        if: inputs.target == 'production' && inputs.backfill_mlb_game_actuals
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
+          PYTHONPATH=. python3 scripts/backfill_mlb_game_actuals.py --days 45
 
       - name: Refresh MLB strikeouts (production)
         if: inputs.target == 'production' && inputs.refresh_mlb_strikeouts
