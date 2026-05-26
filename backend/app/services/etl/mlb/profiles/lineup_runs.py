@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import date
 from typing import Any
 
 from app.services.etl.mlb.monte_carlo import TeamRunRates
+
+logger = logging.getLogger(__name__)
 from app.services.etl.mlb.profiles.constants import mlb_profiles_enabled
 from app.services.etl.mlb.profiles.matchup_contact import contact_matchup_score
 from app.services.etl.mlb.profiles.matchup_k import compute_lineup_k_matchup
@@ -14,6 +17,43 @@ from app.services.etl.mlb.profiles.profile_store import ProfileStore
 # Run-rate nudge per unit of contact edge / K matchup factor (tuned conservatively).
 CONTACT_RUN_SCALE = 0.35
 K_MATCHUP_RUN_SCALE = -0.12
+
+
+def attach_lineup_features_for_mc(
+    game: dict[str, Any], features: dict[str, Any]
+) -> None:
+    """Populate lineup and pitcher ids on MC features when profiles are enabled."""
+    if not mlb_profiles_enabled():
+        return
+
+    home_id = game.get("home_id") or features.get("home_id")
+    away_id = game.get("away_id") or features.get("away_id")
+    if home_id is not None and away_id is not None:
+        if not features.get("home_lineup") and not features.get("home_lineup_ids"):
+            from app.services.etl.mlb.lineup_utils import projected_lineup
+
+            features["home_lineup"] = projected_lineup(int(home_id))
+        if not features.get("away_lineup") and not features.get("away_lineup_ids"):
+            from app.services.etl.mlb.lineup_utils import projected_lineup
+
+            features["away_lineup"] = projected_lineup(int(away_id))
+
+    for key in (
+        "game_id",
+        "home_pitcher_id",
+        "away_pitcher_id",
+        "home_pitcher_hand",
+        "away_pitcher_hand",
+    ):
+        if key in game and key not in features:
+            features[key] = game[key]
+
+    if "game_date" not in features:
+        gd = game.get("date") or game.get("game_date")
+        if gd is not None:
+            features["game_date"] = gd
+        else:
+            features["game_date"] = date.today().isoformat()
 
 
 def _lineup_offense_adjustment(
@@ -140,6 +180,14 @@ def maybe_adjust_rates_from_lineups(
         )
         if own:
             session.close()
+        if meta and meta.get("lineup_weighted"):
+            logger.info(
+                "MC lineup_weighted game_id=%s home_adj=%s away_adj=%s sources=%s",
+                features.get("game_id"),
+                meta.get("home_run_adj"),
+                meta.get("away_run_adj"),
+                meta.get("matchup_sources"),
+            )
         return rates, meta
     except Exception:
         return base_rates, None

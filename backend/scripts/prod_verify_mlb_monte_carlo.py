@@ -100,7 +100,10 @@ def _check_db_via_app() -> dict:
                     """
                     SELECT COUNT(*) AS n,
                            COUNT(sim_distribution) AS with_sim,
-                           COUNT(*) FILTER (WHERE model_version LIKE '%mc%') AS with_mc_tag
+                           COUNT(*) FILTER (WHERE model_version LIKE '%mc%') AS with_mc_tag,
+                           COUNT(*) FILTER (
+                               WHERE sim_distribution->'matchup_meta'->>'lineup_weighted' = 'true'
+                           ) AS with_lineup_weighted_mc
                     FROM pred_game_projections
                     WHERE date = :d
                     """
@@ -112,6 +115,13 @@ def _check_db_via_app() -> dict:
         )
         out["today"] = today.isoformat()
         out.update(dict(row))
+        mc_n = int(out.get("with_mc_tag") or 0)
+        lw_n = int(out.get("with_lineup_weighted_mc") or 0)
+        if mc_n > 0 and lw_n == 0:
+            out["lineup_weighted_warn"] = (
+                "MC rows exist but none have matchup_meta.lineup_weighted; "
+                "check MLB_PROFILES_ENABLED and lineup attachment on game pipeline"
+            )
         sample = (
             db_session.execute(
                 text(

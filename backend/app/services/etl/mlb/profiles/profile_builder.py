@@ -164,6 +164,7 @@ def load_pitches(prefix: str | None = None) -> pd.DataFrame:
     frames: list[pd.DataFrame] = []
     if root.startswith("s3://"):
         import boto3
+        from io import BytesIO
         from urllib.parse import urlparse
 
         client = boto3.client("s3")
@@ -175,7 +176,8 @@ def load_pitches(prefix: str | None = None) -> pd.DataFrame:
                 obj = client.get_object(
                     Bucket=parsed.netloc, Key=parsed.path.lstrip("/")
                 )
-                frames.append(pd.read_parquet(obj["Body"]))
+                # S3 StreamingBody is not seekable; pyarrow parquet requires it.
+                frames.append(pd.read_parquet(BytesIO(obj["Body"].read())))
     else:
         base = Path(root)
         seasons = set()

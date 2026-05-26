@@ -207,6 +207,12 @@ class HistoricalDataBuilder:
         quality_score = sum(0.25 for v in quality.values() if v)
 
         features = {
+            "game_id": game.game_id,
+            "game_date": game.game_date,
+            "home_id": game.home_id,
+            "away_id": game.away_id,
+            "home_pitcher_id": game.home_pitcher_id,
+            "away_pitcher_id": game.away_pitcher_id,
             "home_starter_era": home_p["era"],
             "away_starter_era": away_p["era"],
             "home_starter_k9": home_p["k9"],
@@ -237,6 +243,9 @@ class HistoricalDataBuilder:
             "home_pitcher_quality": home_pq,
             "away_pitcher_quality": away_pq,
         }
+        if lineup_data.get("home_lineup"):
+            features["home_lineup"] = lineup_data["home_lineup"]
+            features["away_lineup"] = lineup_data.get("away_lineup", [])
 
         metadata = {
             "data_quality_score": quality_score,

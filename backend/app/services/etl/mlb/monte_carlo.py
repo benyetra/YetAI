@@ -320,6 +320,22 @@ def run_monte_carlo_backtest(
         projected_total=predicted_total,
         home_win_prob=predicted_home_wp,
     )
+    matchup_meta = None
+    as_of = features.get("as_of_date") or features.get("game_date")
+    if as_of is not None:
+        from datetime import date as date_type
+
+        if isinstance(as_of, str):
+            as_of = date_type.fromisoformat(str(as_of)[:10])
+        from app.services.etl.mlb.profiles.lineup_runs import (
+            attach_lineup_features_for_mc,
+            maybe_adjust_rates_from_lineups,
+        )
+
+        attach_lineup_features_for_mc(features, features)
+        if features.get("game_id") is None and game_id is not None:
+            features["game_id"] = game_id
+        rates, matchup_meta = maybe_adjust_rates_from_lineups(features, rates, as_of)
     sim = simulate_game(
         rates,
         n_sims=n,
@@ -328,8 +344,9 @@ def run_monte_carlo_backtest(
             "home_win_prob": float(predicted_home_wp),
             "projected_total": float(predicted_total),
         },
+        matchup_meta=matchup_meta,
     )
-    return {
+    out = {
         "mc_home_wp": sim.home_win_prob,
         "mc_total": sim.projected_total_mean,
         "mc_total_std": sim.projected_total_std,
@@ -337,6 +354,9 @@ def run_monte_carlo_backtest(
         "mc_away_runs": sim.away_runs_mean,
         "mc_sim": sim.to_storage_dict(),
     }
+    if matchup_meta and matchup_meta.get("lineup_weighted"):
+        out["mc_lineup_weighted"] = True
+    return out
 
 
 def monte_carlo_enabled() -> bool:
@@ -424,6 +444,11 @@ def enrich_predictions_with_monte_carlo(
         features = build_features(game)
         if not features:
             continue
+        from app.services.etl.mlb.profiles.lineup_runs import (
+            attach_lineup_features_for_mc,
+        )
+
+        attach_lineup_features_for_mc(game, features)
         for key in (
             "home_lineup",
             "away_lineup",

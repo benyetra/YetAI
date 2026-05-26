@@ -45,9 +45,10 @@ Backtest:
 ```bash
 cd backend
 PYTHONPATH=. python scripts/mlb_backtest.py --quick --use-profiles
+PYTHONPATH=. python scripts/mlb_backtest.py --quick --mc-lineup-profiles
 ```
 
-Set `MLB_PROFILES_ENABLED=0` to force legacy API path.
+Set `MLB_PROFILES_ENABLED=0` to force legacy API path. `--mc-lineup-profiles` enables profile-backed game MC lineup lambdas in backtest (uses boxscore lineups when present).
 
 ## Phase 4 — Hits / HR contact
 
@@ -55,9 +56,20 @@ Batter profiles include `xwoba_by_pitch`, `iso_by_pitch`, `barrel_rate_by_pitch`
 
 ## Phase 5 — Game MC lineup lambdas
 
-When lineups and probable pitchers are in game features, `apply_monte_carlo_to_prediction` adjusts team mus via `profiles/lineup_runs.py` before `simulate_game`. `sim_distribution` may include `matchup_meta` (`lineup_weighted`, `archetype_pct`, `matchup_sources`).
+When `MLB_PROFILES_ENABLED=1`, `enrich_predictions_with_monte_carlo` calls `attach_lineup_features_for_mc` (active roster via `projected_lineup`) before `apply_monte_carlo_to_prediction`. Team mus are adjusted via `profiles/lineup_runs.py`; worker logs:
 
-Pass lineup IDs on game dicts (`home_lineup_ids`, `away_lineup_ids`) or feature dicts.
+`MC lineup_weighted game_id=… home_adj=… away_adj=… sources=…`
+
+`sim_distribution.matchup_meta` includes `lineup_weighted`, `archetype_pct`, `matchup_sources`.
+
+**Verify MC + profiles:**
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_mlb_monte_carlo.py
+```
+
+Check `with_lineup_weighted_mc` for today's slate after `mlb.game_projections` runs.
 
 ## Phase 6 — Archetypes
 

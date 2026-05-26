@@ -155,6 +155,11 @@ Examples:
         action="store_true",
         help="Use point-in-time ProfileStore tensors for K matchup (requires snapshots)",
     )
+    parser.add_argument(
+        "--mc-lineup-profiles",
+        action="store_true",
+        help="Enable profiles for game MC lineup lambdas (sets MLB_PROFILES_ENABLED=1)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -176,7 +181,9 @@ def run_backtest(args):
     """Execute the full backtesting pipeline."""
     import os
 
-    if getattr(args, "use_profiles", False):
+    if getattr(args, "use_profiles", False) or getattr(
+        args, "mc_lineup_profiles", False
+    ):
         os.environ["MLB_PROFILES_ENABLED"] = "1"
 
     from app.services.etl.mlb.backtest.sampler import BacktestSampler
