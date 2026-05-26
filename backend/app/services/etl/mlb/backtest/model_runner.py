@@ -193,35 +193,69 @@ class BacktestModelRunner:
         """Run K projection backtesting (REQ-BT-027).
 
         Uses pitcher K/9, opponent K rate, and park factor to project Ks.
+        With MLB_PROFILES_ENABLED, applies lineup matchup factor from snapshots.
         """
         if "k" not in self.models_to_test:
             return {}
 
+        from datetime import date as date_type
+
+        from app.services.etl.mlb.lineup_utils import lineup_matchup_adjusted_strikeouts
+        from app.services.etl.mlb.profiles.constants import mlb_profiles_enabled
+
         results = {}
+        lineup_data = pitcher_stats.get("lineup_data", {})
+        game_date = getattr(game, "game_date", None)
+        if isinstance(game_date, str):
+            as_of = date_type.fromisoformat(game_date[:10])
+        elif game_date is not None:
+            as_of = game_date
+        else:
+            as_of = date_type.today()
+
         for side in ("home", "away"):
-            prefix = side
             p_stats = pitcher_stats.get(f"{side}_pitcher_stats", {})
             k9 = p_stats.get("k9", 8.0)
             last5_k9 = p_stats.get("last5_k9", k9)
             ip = p_stats.get("ip", 0)
             n_starts = p_stats.get("n_starts", 0)
 
-            # Estimate projected innings (average ~5.5 IP for starters)
             proj_ip = 5.5
             if n_starts >= 3:
                 proj_ip = min(ip / max(n_starts, 1), 7.0)
                 proj_ip = max(proj_ip, 4.0)
 
-            # Project Ks: K/9 * projected_innings / 9
             proj_k = (k9 * proj_ip) / 9.0
 
-            # Blend with last-5 K/9 if available
             if n_starts >= 5:
                 last5_proj = (last5_k9 * proj_ip) / 9.0
                 proj_k = 0.6 * proj_k + 0.4 * last5_proj
 
+            matchup_adj = 0.0
+            matchup_source = "none"
+            if mlb_profiles_enabled():
+                opp_side = "away" if side == "home" else "home"
+                pitcher_id = p_stats.get("pitcher_id") or p_stats.get("player_id")
+                batter_ids = lineup_data.get(f"{opp_side}_lineup") or []
+                hand = p_stats.get("pitch_hand", "R")
+                if pitcher_id and batter_ids:
+                    try:
+                        mr = lineup_matchup_adjusted_strikeouts(
+                            int(pitcher_id),
+                            [int(b) for b in batter_ids],
+                            str(hand),
+                            as_of_date=as_of,
+                        )
+                        matchup_adj = mr.factor
+                        matchup_source = mr.source
+                        proj_k = max(0.0, proj_k + matchup_adj * 0.15)
+                    except Exception as exc:
+                        logger.debug("backtest profile K matchup: %s", exc)
+
             results[f"{side}_projected_k"] = round(proj_k, 1)
             results[f"{side}_projected_ip"] = round(proj_ip, 1)
+            results[f"{side}_matchup_factor"] = matchup_adj
+            results[f"{side}_matchup_source"] = matchup_source
 
         return results
 

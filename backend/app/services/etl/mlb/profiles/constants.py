@@ -39,7 +39,8 @@ SHRINKAGE_K_WHIFF = 200
 
 
 def mlb_profiles_enabled() -> bool:
-    return os.getenv("MLB_PROFILES_ENABLED", "1").strip().lower() in (
+    # Default off until Statcast backfill + profile rebuild are verified in prod.
+    return os.getenv("MLB_PROFILES_ENABLED", "0").strip().lower() in (
         "1",
         "true",
         "yes",
