@@ -3,6 +3,8 @@ import pandas as pd
 from app.services.etl.mlb.statcast_ingest.normalize import (
     bucket_zone,
     canonical_pitch_type,
+    is_barrel,
+    iso_from_event,
     prune_statcast_columns,
 )
 
@@ -14,6 +16,11 @@ def test_canonical_pitch_type_maps_four_seam():
 
 def test_bucket_zone_high_inside():
     assert bucket_zone(-0.2, 3.8) == "high_inside"
+
+
+def test_is_barrel_and_iso():
+    assert is_barrel(99, 20) is True
+    assert iso_from_event("home_run") == 1.0
 
 
 def test_prune_keeps_required_columns():

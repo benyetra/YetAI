@@ -1,10 +1,15 @@
-from datetime import date as date_type, datetime, timedelta
+from datetime import date as date_type, date, datetime, timedelta
 import logging
 import sys
 import os
 import statsapi
 
 logger = logging.getLogger(__name__)
+
+from app.services.etl.mlb.profiles.constants import (
+    PROFILE_VERSION,
+    mlb_profiles_enabled,
+)
 import requests
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb._mlb_utils import *
@@ -445,6 +450,15 @@ def fetch_hitters_data():
                 early_season,
             )
 
+            contact_delta, profile_version = _profile_contact_adjustment(
+                player_id, pitcher_id, opponent_pitcher_hand
+            )
+            if contact_delta:
+                combined_score = round(combined_score + contact_delta, 2)
+                homer_score = round(homer_score + contact_delta * 0.5, 2)
+            if profile_version is None and mlb_profiles_enabled():
+                profile_version = PROFILE_VERSION
+
             hitter_data = {
                 "player_id": player_id,
                 "player_name": player_name,
@@ -468,6 +482,9 @@ def fetch_hitters_data():
                 "venue_name": venue_name,
                 "batting_order_position": batting_order_position,
                 "game_id": game_id,
+                "profile_version": profile_version,
+                "matchup_contact_score": contact_delta if contact_delta else None,
+                "opponent_pitcher_id": pitcher_id,
             }
             hitters.append(hitter_data)
 
@@ -627,6 +644,36 @@ def project_lineup_hits_heuristic(pitcher_stats, lineup_data, side, features=Non
     return round(max(3.0, min(16.0, proj)), 1)
 
 
+def _profile_contact_adjustment(
+    batter_id: int, pitcher_id: int, vs_hand: str, as_of: date | None = None
+) -> tuple[float, str | None]:
+    """Contact-quality delta for hits board when profiles enabled."""
+    if not mlb_profiles_enabled():
+        return 0.0, None
+    try:
+        from app.core.database import SessionLocal
+        from app.services.etl.mlb.profiles.matchup_contact import contact_matchup_score
+        from app.services.etl.mlb.profiles.profile_store import ProfileStore
+
+        if SessionLocal is None:
+            return 0.0, None
+        session = SessionLocal()
+        try:
+            store = ProfileStore(session)
+            return contact_matchup_score(
+                store,
+                int(batter_id),
+                int(pitcher_id),
+                str(vs_hand)[0].upper(),
+                as_of or date.today(),
+            )
+        finally:
+            session.close()
+    except Exception as exc:
+        logger.debug("profile contact adjustment skipped: %s", exc)
+        return 0.0, None
+
+
 def filter_hitters(hitters, min_combined_score=None):
     if min_combined_score is None:
         min_combined_score = 2
@@ -709,6 +756,8 @@ def store_hitters_data(hitters):
                 combined_score=hitter_data["combined_score"],
                 venue_name=hitter_data["venue_name"],
                 game_id=hitter_data["game_id"],
+                profile_version=hitter_data.get("profile_version"),
+                matchup_contact_score=hitter_data.get("matchup_contact_score"),
             )
             db_session.add(hitter)
             stored_hitters.append(hitter)
@@ -781,6 +830,8 @@ def store_homers_data(homers):
                 venue_name=hitter_data["venue_name"],
                 homer_score=hitter_data["homer_score"],
                 game_id=hitter_data["game_id"],
+                profile_version=hitter_data.get("profile_version"),
+                matchup_contact_score=hitter_data.get("matchup_contact_score"),
             )
             db_session.add(hitter)
             stored_homers.append(hitter)
@@ -796,6 +847,14 @@ def store_homers_data(homers):
         db_session.rollback()  # Rollback on error
 
     return stored_homers
+
+
+def optional_matchup_contact_for_hr(
+    batter_id: int, pitcher_id: int, vs_hand: str
+) -> float | None:
+    """Optional HR model feature from ProfileStore (Phase 4)."""
+    delta, _ = _profile_contact_adjustment(batter_id, pitcher_id, vs_hand)
+    return delta if delta else None
 
 
 def _run_hits_core():

@@ -127,10 +127,33 @@ def aggregate_batter(
         if cold:
             cold_zones[pt] = cold
 
+    xwoba_by_pitch: dict[str, float] = {}
+    iso_by_pitch: dict[str, float] = {}
+    barrel_rate_by_pitch: dict[str, float] = {}
+
+    for pt, grp in sub.groupby("pitch_type_canon"):
+        wsum = grp["_w"].sum()
+        if wsum <= 0:
+            continue
+        if "estimated_woba_using_speedangle" in grp.columns:
+            xwoba_by_pitch[pt] = float(
+                (grp["estimated_woba_using_speedangle"].fillna(0) * grp["_w"]).sum()
+                / wsum
+            )
+        if "iso_value" in grp.columns:
+            iso_by_pitch[pt] = float((grp["iso_value"] * grp["_w"]).sum() / wsum)
+        if "is_barrel" in grp.columns:
+            barrel_rate_by_pitch[pt] = float(
+                (grp["is_barrel"].astype(float) * grp["_w"]).sum() / wsum
+            )
+
     return {
         "whiff_by_pitch": whiff_by_pitch,
         "reliability_by_pitch": reliability_by_pitch,
         "cold_zones": cold_zones,
+        "xwoba_by_pitch": xwoba_by_pitch,
+        "iso_by_pitch": iso_by_pitch,
+        "barrel_rate_by_pitch": barrel_rate_by_pitch,
         "n_pitches": n,
     }
 
@@ -222,6 +245,11 @@ def build_snapshots_for_date(
                                 "whiff_by_pitch": prof["whiff_by_pitch"],
                                 "reliability_by_pitch": prof["reliability_by_pitch"],
                                 "cold_zones": prof["cold_zones"],
+                                "xwoba_by_pitch": prof.get("xwoba_by_pitch", {}),
+                                "iso_by_pitch": prof.get("iso_by_pitch", {}),
+                                "barrel_rate_by_pitch": prof.get(
+                                    "barrel_rate_by_pitch", {}
+                                ),
                             },
                             created_at=datetime.utcnow(),
                         )

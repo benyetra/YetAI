@@ -21,6 +21,8 @@ KEEP_COLUMNS = [
     "description",
     "events",
     "estimated_woba_using_speedangle",
+    "launch_speed",
+    "launch_angle",
 ]
 
 
@@ -51,6 +53,29 @@ def is_whiff(description: str | None) -> bool:
     return "swinging_strike" in d or d in {"swinging_strike_blocked"}
 
 
+def is_barrel(launch_speed: float, launch_angle: float) -> bool:
+    try:
+        ls, la = float(launch_speed), float(launch_angle)
+    except (TypeError, ValueError):
+        return False
+    return ls >= 98 and 8 <= la <= 32
+
+
+def iso_from_event(events: str | None) -> float:
+    if not events:
+        return 0.0
+    e = str(events).lower()
+    if e in ("home_run",):
+        return 1.0
+    if e in ("triple",):
+        return 0.8
+    if e in ("double",):
+        return 0.5
+    if e in ("single",):
+        return 0.25
+    return 0.0
+
+
 def prune_statcast_columns(df: pd.DataFrame) -> pd.DataFrame:
     cols = [c for c in KEEP_COLUMNS if c in df.columns]
     out = df[cols].copy()
@@ -61,4 +86,17 @@ def prune_statcast_columns(df: pd.DataFrame) -> pd.DataFrame:
         for x, z in zip(out["plate_x"].fillna(0), out["plate_z"].fillna(2.5))
     ]
     out["is_whiff"] = out["description"].map(is_whiff)
+    if "launch_speed" in out.columns and "launch_angle" in out.columns:
+        out["is_barrel"] = [
+            is_barrel(ls, la)
+            for ls, la in zip(
+                out["launch_speed"].fillna(0), out["launch_angle"].fillna(0)
+            )
+        ]
+    else:
+        out["is_barrel"] = False
+    if "events" in out.columns:
+        out["iso_value"] = out["events"].map(iso_from_event)
+    else:
+        out["iso_value"] = 0.0
     return out
