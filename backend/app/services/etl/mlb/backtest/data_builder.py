@@ -10,6 +10,7 @@ REQ-BT-006 through REQ-BT-023.
 import logging
 import math
 from datetime import date, datetime, timedelta
+from typing import Any, Optional
 
 import statsapi as mlbstatsapi
 
@@ -113,6 +114,11 @@ class HistoricalDataBuilder:
         game_date = date.fromisoformat(game.game_date)
         season = game_date.year
 
+        boxscore = self._fetch_boxscore(game.game_id)
+        home_pitcher_id, away_pitcher_id, starter_meta = self._resolve_starter_ids(
+            game, boxscore
+        )
+
         # Data quality tracking (REQ-BT-059)
         quality = {
             "pitcher_stats": False,
@@ -122,13 +128,13 @@ class HistoricalDataBuilder:
         }
 
         # Pitcher stats reconstruction (REQ-BT-006/007/008)
-        home_p = self._reconstruct_pitcher_stats(
-            game.home_pitcher_id, season, game_date
-        )
-        away_p = self._reconstruct_pitcher_stats(
-            game.away_pitcher_id, season, game_date
-        )
-        if home_p["ip"] > 0 or away_p["ip"] > 0:
+        home_p = self._reconstruct_pitcher_stats(home_pitcher_id, season, game_date)
+        away_p = self._reconstruct_pitcher_stats(away_pitcher_id, season, game_date)
+        if (
+            home_pitcher_id
+            and away_pitcher_id
+            and (home_p["ip"] > 0 or away_p["ip"] > 0)
+        ):
             quality["pitcher_stats"] = True
 
         # Team stats reconstruction (REQ-BT-009/010)
@@ -138,7 +144,7 @@ class HistoricalDataBuilder:
         away_ra = self._reconstruct_team_pitching(game.away_id, season, game_date)
 
         # Lineup reconstruction (REQ-BT-011/012)
-        lineup_data = self._reconstruct_lineup(game.game_id)
+        lineup_data = self._reconstruct_lineup(game.game_id, boxscore=boxscore)
         if lineup_data.get("home_lineup"):
             quality["lineup"] = True
             home_ops = lineup_data.get("home_ops", home_hit["ops"])
@@ -175,8 +181,8 @@ class HistoricalDataBuilder:
 
         # TTOP adjustment (REQ-BT-020)
         try:
-            home_ttop = compute_ttop_adjustment(game.home_pitcher_id)
-            away_ttop = compute_ttop_adjustment(game.away_pitcher_id)
+            home_ttop = compute_ttop_adjustment(home_pitcher_id)
+            away_ttop = compute_ttop_adjustment(away_pitcher_id)
         except Exception:
             home_ttop = {"run_adjustment": 0.0}
             away_ttop = {"run_adjustment": 0.0}
@@ -209,10 +215,11 @@ class HistoricalDataBuilder:
         features = {
             "game_id": game.game_id,
             "game_date": game.game_date,
+            "as_of_date": game.game_date,
             "home_id": game.home_id,
             "away_id": game.away_id,
-            "home_pitcher_id": game.home_pitcher_id,
-            "away_pitcher_id": game.away_pitcher_id,
+            "home_pitcher_id": home_pitcher_id,
+            "away_pitcher_id": away_pitcher_id,
             "home_starter_era": home_p["era"],
             "away_starter_era": away_p["era"],
             "home_starter_k9": home_p["k9"],
@@ -256,54 +263,137 @@ class HistoricalDataBuilder:
             "home_pitcher_stats": home_p,
             "away_pitcher_stats": away_p,
             "lineup_data": lineup_data,
+            "starter_resolution": starter_meta,
         }
 
         return features, metadata
+
+    def _fetch_boxscore(self, game_id: int) -> Optional[dict[str, Any]]:
+        """Cached boxscore payload for a completed game."""
+
+        def _fetch():
+            return mlbstatsapi.boxscore_data(game_id)
+
+        return cached_api_call(
+            "boxscore", {"game_id": game_id}, _fetch, cache_only=self.cache_only
+        )
+
+    def _starter_id_from_pitchers_list(
+        self, boxscore: dict[str, Any], side: str
+    ) -> Optional[int]:
+        """First pitcher with IP > 0 in {side}Pitchers (post-game starter)."""
+        pitchers = boxscore.get(f"{side}Pitchers", [])
+        if not pitchers:
+            return None
+
+        for entry in pitchers:
+            stats: dict[str, Any] | None = None
+            pid: Optional[int] = None
+            if isinstance(entry, dict):
+                stats = entry
+                raw_id = entry.get("personId") or entry.get("id")
+                if raw_id is not None:
+                    pid = int(raw_id)
+            elif isinstance(entry, int) or (
+                isinstance(entry, str) and str(entry).isdigit()
+            ):
+                pid = int(entry)
+                stats = boxscore.get(f"ID{pid}", {})
+
+            if not isinstance(stats, dict):
+                continue
+
+            ip_str = stats.get("ip", "0") or "0"
+            try:
+                ip = float(ip_str)
+            except (ValueError, TypeError):
+                ip = 0.0
+
+            if ip > 0 and pid is not None:
+                return pid
+
+        return None
+
+    def _resolve_starter_ids(
+        self, game, boxscore: Optional[dict[str, Any]] = None
+    ) -> tuple[Optional[int], Optional[int], dict[str, Any]]:
+        """Probable IDs from schedule, else post-game boxscore starters."""
+        home_pid = game.home_pitcher_id
+        away_pid = game.away_pitcher_id
+        meta: dict[str, Any] = {
+            "home_from_boxscore": False,
+            "away_from_boxscore": False,
+        }
+
+        if home_pid and away_pid:
+            return home_pid, away_pid, meta
+
+        if boxscore is None:
+            boxscore = self._fetch_boxscore(game.game_id)
+
+        if boxscore:
+            if not home_pid:
+                home_pid = self._starter_id_from_pitchers_list(boxscore, "home")
+                if home_pid:
+                    meta["home_from_boxscore"] = True
+            if not away_pid:
+                away_pid = self._starter_id_from_pitchers_list(boxscore, "away")
+                if away_pid:
+                    meta["away_from_boxscore"] = True
+
+        return home_pid, away_pid, meta
 
     def _reconstruct_pitcher_stats(self, pitcher_id, season, game_date):
         """Reconstruct pitcher stats from game logs up to game_date (REQ-BT-006/007)."""
         if not pitcher_id:
             return dict(DEFAULT_PITCHER)
 
-        def _fetch():
-            return mlbstatsapi.player_stat_data(
-                pitcher_id, group="pitching", type="gameLog", season=str(season)
-            )
+        from app.services.etl.mlb.pitcher_game_logs import (
+            fetch_pitcher_game_logs_for_season,
+        )
 
-        data = cached_api_call(
+        def _fetch():
+            return fetch_pitcher_game_logs_for_season(int(pitcher_id), int(season))
+
+        splits = cached_api_call(
             "player_game_log",
             {"id": pitcher_id, "season": season, "group": "pitching"},
             _fetch,
             cache_only=self.cache_only,
         )
 
-        if not data:
+        if not splits:
             return dict(DEFAULT_PITCHER)
 
-        # Parse game logs and filter to pre-game-date
+        # Parse per-game splits and filter to pre-game-date (point-in-time)
         logs = []
-        if isinstance(data, dict):
-            stats_list = data.get("stats", [])
-            if isinstance(stats_list, list):
-                for entry in stats_list:
-                    s = entry.get("stats", {}) if isinstance(entry, dict) else {}
-                    log_date = entry.get("date", "")
-                    if not log_date or log_date >= game_date.isoformat():
-                        continue  # Skip future games (point-in-time correctness)
-                    ip_str = s.get("inningsPitched", "0") or "0"
-                    ip = float(ip_str)
-                    if ip <= 0:
-                        continue
-                    logs.append(
-                        {
-                            "date": log_date,
-                            "ip": ip,
-                            "er": int(s.get("earnedRuns", 0) or 0),
-                            "k": int(s.get("strikeOuts", 0) or 0),
-                            "bb": int(s.get("baseOnBalls", 0) or 0),
-                            "h": int(s.get("hits", 0) or 0),
-                        }
-                    )
+        cutoff = game_date.isoformat()
+        for split in splits:
+            if not isinstance(split, dict):
+                continue
+            log_date = (split.get("date") or split.get("gameDate") or "")[:10]
+            if not log_date or log_date >= cutoff:
+                continue
+            s = split.get("stat") or {}
+            if not isinstance(s, dict):
+                continue
+            ip_str = s.get("inningsPitched", "0") or "0"
+            try:
+                ip = float(ip_str)
+            except (ValueError, TypeError):
+                ip = 0.0
+            if ip <= 0:
+                continue
+            logs.append(
+                {
+                    "date": log_date,
+                    "ip": ip,
+                    "er": int(float(s.get("earnedRuns", 0) or 0)),
+                    "k": int(float(s.get("strikeOuts", 0) or 0)),
+                    "bb": int(float(s.get("baseOnBalls", 0) or 0)),
+                    "h": int(float(s.get("hits", 0) or 0)),
+                }
+            )
 
         if not logs:
             # No prior starts this season — try prior season (REQ-BT-007)
@@ -460,15 +550,9 @@ class HistoricalDataBuilder:
 
         return round(ra_pg, 2)
 
-    def _reconstruct_lineup(self, game_id):
+    def _reconstruct_lineup(self, game_id, boxscore=None):
         """Reconstruct actual lineup from boxscore (REQ-BT-011/012)."""
-
-        def _fetch():
-            return mlbstatsapi.boxscore_data(game_id)
-
-        data = cached_api_call(
-            "boxscore", {"game_id": game_id}, _fetch, cache_only=self.cache_only
-        )
+        data = boxscore if boxscore is not None else self._fetch_boxscore(game_id)
 
         if not data:
             return {}
@@ -480,11 +564,18 @@ class HistoricalDataBuilder:
                 key = f"{side}Batters"
                 batters = data.get(key, [])
                 lineup = []
-                for batter_id in batters:
-                    if isinstance(batter_id, int):
-                        lineup.append(batter_id)
-                    elif isinstance(batter_id, str) and batter_id.isdigit():
-                        lineup.append(int(batter_id))
+                for entry in batters:
+                    pid = None
+                    if isinstance(entry, dict):
+                        raw = entry.get("personId") or entry.get("id")
+                        if raw is not None:
+                            pid = int(raw)
+                    elif isinstance(entry, int):
+                        pid = entry
+                    elif isinstance(entry, str) and entry.isdigit():
+                        pid = int(entry)
+                    if pid and pid > 0:
+                        lineup.append(pid)
                 result[f"{side}_lineup"] = lineup[:9]  # Top 9 batters
         except Exception:
             pass

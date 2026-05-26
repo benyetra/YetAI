@@ -14,10 +14,11 @@ from app.services.etl.mlb._db import db_session
 logger = logging.getLogger(__name__)
 
 
-def fetch_pitcher_game_logs(pitcher_id):
+def fetch_pitcher_game_logs_for_season(pitcher_id: int, season: int) -> list[dict]:
+    """Per-game pitching splits for one season (Stats API hydrate gameLog)."""
     url = (
         f"https://statsapi.mlb.com/api/v1/people/{pitcher_id}"
-        f"?hydrate=stats(group=[pitching],type=[gameLog],season=2025"
+        f"?hydrate=stats(group=[pitching],type=[gameLog],season={season})"
     )
     response = requests.get(url, timeout=30)
     response.raise_for_status()
@@ -32,6 +33,13 @@ def fetch_pitcher_game_logs(pitcher_id):
         ):
             return stat.get("splits") or []
     return []
+
+
+def fetch_pitcher_game_logs(pitcher_id):
+    from datetime import date
+
+    season = date.today().year
+    return fetch_pitcher_game_logs_for_season(pitcher_id, season)
 
 
 def safe_divide(numerator, denominator):

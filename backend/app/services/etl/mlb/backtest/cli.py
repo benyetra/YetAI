@@ -160,6 +160,20 @@ Examples:
         action="store_true",
         help="Enable profiles for game MC lineup lambdas (sets MLB_PROFILES_ENABLED=1)",
     )
+    parser.add_argument(
+        "--phase5-exit-check",
+        action="store_true",
+        help=(
+            "Phase 5 holdout: dual MC (baseline vs lineup profiles) on same games; "
+            "prints PASS/FAIL on total MAE"
+        ),
+    )
+    parser.add_argument(
+        "--phase5-max-mae-regression",
+        type=float,
+        default=0.05,
+        help="Max allowed lineup MC total MAE increase vs baseline (runs)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -178,10 +192,13 @@ Examples:
 
 
 def run_backtest(args):
-    """Execute the full backtesting pipeline."""
+    """Execute the full backtesting pipeline. Returns exit code when --phase5-exit-check."""
     import os
 
-    if getattr(args, "use_profiles", False) or getattr(
+    phase5_exit = getattr(args, "phase5_exit_check", False)
+    if phase5_exit:
+        os.environ["MLB_PROFILES_ENABLED"] = "1"
+    elif getattr(args, "use_profiles", False) or getattr(
         args, "mc_lineup_profiles", False
     ):
         os.environ["MLB_PROFILES_ENABLED"] = "1"
@@ -208,7 +225,9 @@ def run_backtest(args):
     end_date = date.fromisoformat(args.end_date)
 
     # Parse models to test
-    if args.models == "all":
+    if phase5_exit:
+        models_to_test = {"game"}
+    elif args.models == "all":
         models_to_test = {"game", "k", "hits", "hr"}
     else:
         models_to_test = set(args.models.split(","))
@@ -256,6 +275,7 @@ def run_backtest(args):
     model_runner = BacktestModelRunner(
         model_version=args.model_version,
         models_to_test=models_to_test,
+        phase5_dual_mc=phase5_exit,
     )
     actuals_fetcher = BacktestActualsFetcher(cache_only=args.cache_only)
     scorer = BacktestScorer()
@@ -428,6 +448,7 @@ def run_backtest(args):
         "skip_odds": args.skip_odds,
         "skip_weather": args.skip_weather,
         "min_quality": args.min_quality,
+        "phase5_exit_check": phase5_exit,
     }
 
     # Print temporal leakage audit (REQ-BT-061)
@@ -471,7 +492,22 @@ def run_backtest(args):
         f"{cache_stats['unique_endpoints']} endpoints"
     )
 
-    return backtest_id
+    if phase5_exit:
+        from app.services.etl.mlb.backtest.phase5_exit import (
+            compute_phase5_exit_metrics,
+            evaluate_phase5_exit,
+            format_phase5_exit_report,
+        )
+
+        exit_metrics = compute_phase5_exit_metrics(scorer.game_results)
+        evaluation = evaluate_phase5_exit(
+            exit_metrics,
+            max_mae_regression=args.phase5_max_mae_regression,
+        )
+        print("\n" + format_phase5_exit_report(exit_metrics, evaluation))
+        return 0 if evaluation["pass"] else 1
+
+    return 0
 
 
 def _store_results(backtest_id, config, metrics, data_quality_summary, scorer):
@@ -520,5 +556,9 @@ def _run_comparison(compare_id, current_config, current_metrics):
 
 
 def main():
+    import sys
+
     args = parse_args()
-    run_backtest(args)
+    code = run_backtest(args)
+    if isinstance(code, int):
+        sys.exit(code)

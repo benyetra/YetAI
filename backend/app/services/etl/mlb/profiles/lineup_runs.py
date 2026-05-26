@@ -189,5 +189,6 @@ def maybe_adjust_rates_from_lineups(
                 meta.get("matchup_sources"),
             )
         return rates, meta
-    except Exception:
+    except Exception as e:
+        logger.warning("MC lineup profile adjustment skipped: %s", e)
         return base_rates, None

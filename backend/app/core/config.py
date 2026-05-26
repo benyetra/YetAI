@@ -161,5 +161,13 @@ class Settings(BaseSettings):
             ),
         }
 
+    @model_validator(mode="after")
+    def prefer_public_database_url(self) -> "Settings":
+        """Local dev: use DATABASE_PUBLIC_URL when DATABASE_URL is Railway-internal."""
+        public = os.environ.get("DATABASE_PUBLIC_URL", "").strip()
+        if public and "railway.internal" in (self.DATABASE_URL or ""):
+            return self.model_copy(update={"DATABASE_URL": public})
+        return self
+
 
 settings = Settings()

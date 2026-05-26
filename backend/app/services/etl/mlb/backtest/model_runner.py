@@ -24,9 +24,12 @@ class BacktestModelRunner:
     REQ-BT-030: Apply Venn-Abers calibration.
     """
 
-    def __init__(self, model_version="current", models_to_test=None):
+    def __init__(
+        self, model_version="current", models_to_test=None, phase5_dual_mc=False
+    ):
         self.model_version = model_version
         self.models_to_test = models_to_test or {"game", "k", "hits", "hr"}
+        self.phase5_dual_mc = phase5_dual_mc
         self._win_model = None
         self._total_model = None
         self._models_loaded = False
@@ -176,14 +179,28 @@ class BacktestModelRunner:
         try:
             from app.services.etl.mlb.monte_carlo import run_monte_carlo_backtest
 
-            result.update(
-                run_monte_carlo_backtest(
-                    features,
-                    result["predicted_home_wp"],
-                    result["predicted_total"],
-                    game_id=getattr(game, "game_id", None),
-                )
+            mc_kwargs = dict(
+                features=features,
+                predicted_home_wp=result["predicted_home_wp"],
+                predicted_total=result["predicted_total"],
+                game_id=getattr(game, "game_id", None),
             )
+            if self.phase5_dual_mc:
+                prev_flag = os.environ.get("MLB_PROFILES_ENABLED")
+                os.environ["MLB_PROFILES_ENABLED"] = "0"
+                baseline = run_monte_carlo_backtest(**mc_kwargs)
+                os.environ["MLB_PROFILES_ENABLED"] = "1"
+                lineup = run_monte_carlo_backtest(**mc_kwargs)
+                if prev_flag is None:
+                    os.environ.pop("MLB_PROFILES_ENABLED", None)
+                else:
+                    os.environ["MLB_PROFILES_ENABLED"] = prev_flag
+                result.update(lineup)
+                result["mc_baseline_total"] = baseline.get("mc_total")
+                result["mc_lineup_total"] = lineup.get("mc_total")
+                result["mc_lineup_weighted"] = lineup.get("mc_lineup_weighted", False)
+            else:
+                result.update(run_monte_carlo_backtest(**mc_kwargs))
         except Exception as e:
             logger.debug("Backtest Monte Carlo skipped: %s", e)
 

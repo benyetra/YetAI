@@ -100,6 +100,18 @@ class BacktestScorer:
                     float(prediction["mc_total"]) - actuals["actual_total"]
                 )
 
+            actual_total = float(actuals["actual_total"])
+            if prediction.get("mc_baseline_total") is not None:
+                result["mc_baseline_total_error"] = (
+                    float(prediction["mc_baseline_total"]) - actual_total
+                )
+            if prediction.get("mc_lineup_total") is not None:
+                result["mc_lineup_total_error"] = (
+                    float(prediction["mc_lineup_total"]) - actual_total
+                )
+            if prediction.get("mc_lineup_weighted") is not None:
+                result["mc_lineup_weighted"] = bool(prediction["mc_lineup_weighted"])
+
             market_line = market_total
             if market_line is not None:
                 try:
