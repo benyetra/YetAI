@@ -49,10 +49,14 @@ class GameSimResult:
     dispersion: float = DEFAULT_DISPERSION
     tie_rate: float = 0.0
     ml_baseline: dict[str, float] | None = None
+    matchup_meta: dict[str, Any] | None = None
 
     def to_storage_dict(self) -> dict[str, Any]:
         """JSON-serializable summary for ``pred_game_projections.sim_distribution``."""
-        return asdict(self)
+        d = asdict(self)
+        if d.get("matchup_meta") is None:
+            d.pop("matchup_meta", None)
+        return d
 
 
 def expected_runs_from_features(features: dict[str, Any]) -> TeamRunRates:
@@ -178,6 +182,7 @@ def simulate_game(
     dispersion: float = DEFAULT_DISPERSION,
     seed: int | None = None,
     ml_baseline: dict[str, float] | None = None,
+    matchup_meta: dict[str, Any] | None = None,
 ) -> GameSimResult:
     """Run Monte Carlo for one game; return distribution summaries."""
     n_sims = max(int(n_sims), 100)
@@ -217,6 +222,7 @@ def simulate_game(
         dispersion=dispersion,
         tie_rate=round(tie_rate, 5),
         ml_baseline=ml_baseline,
+        matchup_meta=matchup_meta,
     )
 
 
@@ -362,11 +368,25 @@ def apply_monte_carlo_to_prediction(
         projected_total=ml_baseline["projected_total"],
         home_win_prob=ml_baseline["home_win_prob"],
     )
+    matchup_meta = None
+    as_of = features.get("as_of_date") or features.get("game_date")
+    if as_of is not None:
+        from datetime import date as date_type
+
+        if isinstance(as_of, str):
+            as_of = date_type.fromisoformat(str(as_of)[:10])
+        from app.services.etl.mlb.profiles.lineup_runs import (
+            maybe_adjust_rates_from_lineups,
+        )
+
+        rates, matchup_meta = maybe_adjust_rates_from_lineups(features, rates, as_of)
+
     sim = simulate_game(
         rates,
         n_sims=n_sims or DEFAULT_N_SIMS,
         seed=(seed if seed is not None else DEFAULT_SEED) + int(pred.get("game_id", 0)),
         ml_baseline=ml_baseline,
+        matchup_meta=matchup_meta,
     )
 
     pred["home_win_prob"] = sim.home_win_prob
@@ -404,6 +424,21 @@ def enrich_predictions_with_monte_carlo(
         features = build_features(game)
         if not features:
             continue
+        for key in (
+            "home_lineup",
+            "away_lineup",
+            "home_lineup_ids",
+            "away_lineup_ids",
+            "home_pitcher_id",
+            "away_pitcher_id",
+            "home_pitcher_hand",
+            "away_pitcher_hand",
+            "game_date",
+        ):
+            if key in game and key not in features:
+                features[key] = game[key]
+        if "game_date" not in features and game.get("date"):
+            features["game_date"] = game["date"]
         if apply_monte_carlo_to_prediction(pred, features) is not None:
             enriched += 1
     if enriched:

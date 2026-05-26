@@ -118,3 +118,17 @@ Do not call live S3, Postgres, or sport APIs from this job; keep gates determini
 5. Only then treat the artifact as promoted for auto-pick / public API surfaces.
 
 See [MLB_ML_OPS.md](./MLB_ML_OPS.md) for admin endpoints, retrain commands, and HR rebuild stages.
+
+## MLB matchup profiles (Statcast tensors)
+
+Promotion is **infrastructure + backfill**, not a single pickle. Stages:
+
+1. Apply Alembic `20260526_mlb_profiles` → `20260526_mlb_archetypes` on staging/prod.
+2. S3 Statcast backfill (`scripts/mlb_statcast_backfill.py` or `mlb-statcast-backfill` workflow).
+3. `scripts/mlb_rebuild_profiles.py --as-of <slate-date>`.
+4. `scripts/mlb_assign_archetypes.py --season <year>` (optional but recommended).
+5. `scripts/prod_verify_mlb_profiles.py --min-batter-coverage 80` (tune threshold).
+6. Set `MLB_PROFILES_ENABLED=1` on API + celery-worker; smoke strikeouts + game MC.
+7. Monitor `batter_reliability_coverage_pct` and ingest lag; PA pilot stays off prod MC until Phase 7 sign-off.
+
+Docs: [MLB_MATCHUP_PROFILES.md](./MLB_MATCHUP_PROFILES.md).

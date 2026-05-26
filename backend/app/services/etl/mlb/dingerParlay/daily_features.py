@@ -65,6 +65,41 @@ def build_daily_features(
     ).drop(columns="player_id")
     df = df.dropna(subset=["PowerScore"])
 
+    # Optional ProfileStore contact edge (Phase 4; single source with hits board)
+    try:
+        from app.services.etl.mlb.profiles.constants import mlb_profiles_enabled
+        from app.services.etl.mlb.profiles.matchup_contact import contact_matchup_score
+        from app.services.etl.mlb.profiles.profile_store import ProfileStore
+        from app.core.database import SessionLocal
+
+        if mlb_profiles_enabled() and SessionLocal is not None:
+            session = SessionLocal()
+            try:
+                store = ProfileStore(session)
+                scores = []
+                for row in df.itertuples(index=False):
+                    d, _ = contact_matchup_score(
+                        store,
+                        int(row.batter_id),
+                        int(row.pitcher_id),
+                        str(row.starter_hand)[0].upper(),
+                        (
+                            row.game_date.date()
+                            if hasattr(row.game_date, "date")
+                            else row.game_date
+                        ),
+                    )
+                    scores.append(d)
+                df["matchup_contact_score"] = scores
+                log("Merged ProfileStore matchup_contact_score")
+            finally:
+                session.close()
+        else:
+            df["matchup_contact_score"] = None
+    except Exception as exc:
+        log(f"Profile contact merge skipped: {exc}")
+        df["matchup_contact_score"] = None
+
     # 3) merge pitcher HR9, K9
     log("Merging PitcherStats")
     pstats = smart_read_csv(pitcher_stats_path)

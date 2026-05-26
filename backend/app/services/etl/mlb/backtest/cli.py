@@ -150,6 +150,11 @@ Examples:
         action="store_true",
         help="Full preset: full season, include postseason",
     )
+    parser.add_argument(
+        "--use-profiles",
+        action="store_true",
+        help="Use point-in-time ProfileStore tensors for K matchup (requires snapshots)",
+    )
 
     args = parser.parse_args(argv)
 
@@ -169,6 +174,11 @@ Examples:
 
 def run_backtest(args):
     """Execute the full backtesting pipeline."""
+    import os
+
+    if getattr(args, "use_profiles", False):
+        os.environ["MLB_PROFILES_ENABLED"] = "1"
+
     from app.services.etl.mlb.backtest.sampler import BacktestSampler
     from app.services.etl.mlb.backtest.data_builder import HistoricalDataBuilder
     from app.services.etl.mlb.backtest.model_runner import BacktestModelRunner

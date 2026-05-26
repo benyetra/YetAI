@@ -90,6 +90,8 @@ class Homer(Base):
     home_runs_last_10_games = Column(Integer, nullable=False)
     homer_score = Column(Float, nullable=True)
     game_id = Column(Integer, nullable=False)
+    profile_version = Column(String(32), nullable=True)
+    matchup_contact_score = Column(Float, nullable=True)
 
 
 class Hitter(Base):
@@ -110,6 +112,8 @@ class Hitter(Base):
     at_bats_vs_pitcher = Column(Integer, nullable=False)
     combined_score = Column(Float, nullable=False)
     game_id = Column(Integer, nullable=False)
+    profile_version = Column(String(32), nullable=True)
+    matchup_contact_score = Column(Float, nullable=True)
 
     def __repr__(self):
         return f"<BatterStats {self.player_name}>"

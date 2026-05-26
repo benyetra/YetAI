@@ -29,6 +29,17 @@ PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_strikeouts.py
 
 Optional: `--with-optional` (sklearn tests), `--live` (full `strikeouts.run()` against `DATABASE_URL`).
 
+## MLB matchup profiles (no deploy)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/mlb_statcast_backfill.py --season 2024 --month 5
+PYTHONPATH=. .venv/bin/python scripts/mlb_rebuild_profiles.py --as-of 2024-10-01
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_mlb_profiles.py
+```
+
+See `backend/docs/MLB_MATCHUP_PROFILES.md`.
+
 ## NFL backtest (no deploy)
 
 ```bash

@@ -1,10 +1,21 @@
 # scripts/mlb/lineup_utils.py  (FULL REPLACEMENT, 3.8/3.9 compatible)
 
-from typing import Optional, List
-from datetime import datetime
+from __future__ import annotations
+
+import logging
+from datetime import date, datetime
+from typing import List, Optional
+
 import statsapi
 
-# If these imports fail in your env, keep the try/except fallbacks.
+from app.services.etl.mlb.profiles.constants import mlb_profiles_enabled
+from app.services.etl.mlb.profiles.matchup_k import (
+    MatchupResult,
+    compute_lineup_k_matchup,
+)
+
+logger = logging.getLogger(__name__)
+
 try:
     from app.services.etl.mlb.mlb_pitcher_analysis import (
         fetch_pitcher_data as fetch_pitch_data,
@@ -53,7 +64,7 @@ def batter_k_rate_vs_hand(
         k = float(s.get("strikeOuts", 0) or 0.0)
         return (k / ab) if ab > 0 else 0.20
     except Exception:
-        return 0.20  # safe fallback
+        return 0.20
 
 
 def lineup_k_rate_vs_hand(team_id: int, pitcher_hand_code: str) -> Optional[float]:
@@ -65,14 +76,11 @@ def lineup_k_rate_vs_hand(team_id: int, pitcher_hand_code: str) -> Optional[floa
     return (sum(vals) / len(vals)) if vals else None
 
 
-def lineup_matchup_adjusted_strikeouts(
+def _legacy_lineup_matchup(
     pitcher_id: int, batter_ids: List[int], pitcher_hand_code: str
-) -> float:
-    """
-    Lineup-weighted matchup factor using pitch-type whiffs + location cold zones.
-    """
+) -> MatchupResult:
     if not batter_ids:
-        return 0.0
+        return MatchupResult(0.0, "legacy_api")
 
     pitcher_pitches, pitcher_locations = {}, {}
     if fetch_pitch_data is not None:
@@ -81,7 +89,7 @@ def lineup_matchup_adjusted_strikeouts(
         except Exception:
             pitcher_pitches, pitcher_locations = {}, {}
     if not pitcher_pitches:
-        return 0.0
+        return MatchupResult(0.0, "legacy_api")
 
     perf_by_batter = {}
     if fetch_batter_performance_vs_pitches is not None:
@@ -122,4 +130,50 @@ def lineup_matchup_adjusted_strikeouts(
 
         strikeout_factor += (whiff_weight_avg + loc_adv_avg) * usage
 
-    return round(strikeout_factor, 2)
+    return MatchupResult(round(strikeout_factor, 2), "legacy_api")
+
+
+def lineup_matchup_adjusted_strikeouts(
+    pitcher_id: int,
+    batter_ids: List[int],
+    pitcher_hand_code: str,
+    *,
+    as_of_date: date | None = None,
+    db=None,
+) -> MatchupResult:
+    """
+      Lineup-weighted matchup factor using pitch-type whiffs + location cold zones.
+    Profile path when MLB_PROFILES_ENABLED; else legacy MLB API fetches.
+    """
+    as_of = as_of_date or date.today()
+
+    if mlb_profiles_enabled():
+        try:
+            from app.core.database import SessionLocal
+            from app.services.etl.mlb.profiles.profile_store import ProfileStore
+
+            session = db
+            own = False
+            if session is None and SessionLocal is not None:
+                session = SessionLocal()
+                own = True
+            if session is not None:
+                store = ProfileStore(session)
+                result = compute_lineup_k_matchup(
+                    store,
+                    pitcher_id,
+                    batter_ids,
+                    pitcher_hand_code,
+                    as_of,
+                )
+                if own:
+                    session.close()
+                return result
+        except Exception as exc:
+            logger.warning(
+                "ProfileStore matchup failed pitcher=%s: %s; legacy fallback",
+                pitcher_id,
+                exc,
+            )
+
+    return _legacy_lineup_matchup(pitcher_id, batter_ids, pitcher_hand_code)

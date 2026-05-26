@@ -383,6 +383,39 @@ def mlb_backtest_quick():
     return {"status": "ok", "backtest_id": backtest_id, "preset": "quick"}
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.statcast_backfill_season")
+def mlb_statcast_backfill_season(season: int, force: bool = False) -> dict:
+    from app.services.etl.mlb.statcast_ingest.backfill import backfill_month
+
+    uris: list[str] = []
+    errors: list[str] = []
+    for month in range(3, 11):
+        try:
+            uri = backfill_month(season, month, force=force)
+            if uri:
+                uris.append(uri)
+        except Exception as exc:
+            errors.append(f"{season}-{month:02d}: {exc}")
+    return {"season": season, "partitions": len(uris), "errors": errors}
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.statcast_incremental")
+def mlb_statcast_incremental() -> dict:
+    from app.services.etl.mlb.statcast_ingest.incremental import statcast_incremental
+
+    return statcast_incremental()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.mlb.rebuild_profiles")
+def mlb_rebuild_profiles(as_of_date: str | None = None) -> dict:
+    from datetime import date
+
+    from app.services.etl.mlb.profiles.profile_builder import rebuild_all_profiles
+
+    as_of = date.fromisoformat(as_of_date) if as_of_date else date.today()
+    return rebuild_all_profiles(as_of_date=as_of)
+
+
 # ============================================================================
 # Pipeline orchestrators — one per sport.
 # Run the sub-tasks in dependency order. Failures of a non-critical task

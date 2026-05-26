@@ -526,8 +526,19 @@ def fetch_pitcher_data():
                     )
 
                     # lineup-weighted matchup factor
-                    matchup_factor = lineup_matchup_adjusted_strikeouts(
-                        pitcher_id, batter_ids, pitcher_hand_code
+                    matchup_result = lineup_matchup_adjusted_strikeouts(
+                        pitcher_id,
+                        batter_ids,
+                        pitcher_hand_code,
+                        as_of_date=datetime.today().date(),
+                        db=db_session,
+                    )
+                    matchup_factor = matchup_result.factor
+                    logger.info(
+                        "K matchup pitcher=%s source=%s factor=%s",
+                        pitcher_id,
+                        matchup_result.source,
+                        matchup_factor,
                     )
 
                     park_factor = park_factor_for_venue(venue_name)
