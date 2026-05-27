@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Layers, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
+import { History, Layers, Sparkles, Target, TrendingUp, Zap } from 'lucide-react';
 import { DetailedPick, HeroAIPick } from '../picks';
 import { StatTile } from '../primitives';
+import YetaiBetsHistory, { type YetaiHistoryBet, type YetaiHistoryStats } from '../YetaiBetsHistory';
 import type { DesignPick } from '../types';
+
+export type YetaiBetsTab = 'live' | 'history';
 
 export interface YetaiBetsScreenProps {
   picks: DesignPick[];
@@ -12,6 +15,9 @@ export interface YetaiBetsScreenProps {
   roiLabel?: string;
   modelConfidence?: string;
   onAddToSlip?: (pick: DesignPick) => void;
+  historyBets?: YetaiHistoryBet[];
+  historyStats?: YetaiHistoryStats | null;
+  historyLoading?: boolean;
 }
 
 export default function YetaiBetsScreen({
@@ -20,7 +26,11 @@ export default function YetaiBetsScreen({
   roiLabel,
   modelConfidence,
   onAddToSlip,
+  historyBets = [],
+  historyStats = null,
+  historyLoading = false,
 }: YetaiBetsScreenProps) {
+  const [tab, setTab] = useState<YetaiBetsTab>('live');
   const [filter, setFilter] = useState('All');
   const featured = picks[0];
   const rest = picks.slice(1);
@@ -41,6 +51,31 @@ export default function YetaiBetsScreen({
         </p>
       </div>
 
+      <div className="chip-row" style={{ marginBottom: 18 }}>
+        <button
+          type="button"
+          className={`chip ${tab === 'live' ? 'active' : ''}`}
+          onClick={() => setTab('live')}
+        >
+          <Zap size={12} style={{ marginRight: 4, verticalAlign: -2 }} />
+          Today&apos;s picks
+        </button>
+        <button
+          type="button"
+          className={`chip ${tab === 'history' ? 'active' : ''}`}
+          onClick={() => setTab('history')}
+        >
+          <History size={12} style={{ marginRight: 4, verticalAlign: -2 }} />
+          History
+        </button>
+      </div>
+
+      {tab === 'history' ? (
+        <YetaiBetsHistory bets={historyBets} stats={historyStats} loading={historyLoading} />
+      ) : null}
+
+      {tab === 'live' ? (
+        <>
       <div className="stat-grid" style={{ marginBottom: 18 }}>
         <StatTile
           label={
@@ -110,6 +145,8 @@ export default function YetaiBetsScreen({
           </div>
         </>
       )}
+        </>
+      ) : null}
     </div>
   );
 }

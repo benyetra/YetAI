@@ -2117,13 +2117,65 @@ async def options_yetai_bets():
     return {}
 
 
+@app.options("/api/yetai-bets/history")
+async def options_yetai_bets_history():
+    """Handle CORS preflight for YetAI bets history endpoint"""
+    return {}
+
+
+@app.get("/api/yetai-bets/history")
+async def get_yetai_bets_history(
+    current_user: dict = Depends(get_current_user),
+    days: int = 90,
+    limit: int = 100,
+):
+    """Settled YetAI promoted picks with win/loss track record."""
+    from app.core.database import get_db as _get_db
+
+    user_tier = current_user.get("subscription_tier", "free")
+    days = max(1, min(days, 365))
+    limit = max(1, min(limit, 200))
+
+    if is_service_available("yetai_bets_service"):
+        try:
+            yetai_service = get_service("yetai_bets_service")
+            db = next(_get_db())
+            try:
+                bets, stats = yetai_service.get_yetai_bets_history_for_user(
+                    user_tier, db, days=days, limit=limit
+                )
+            finally:
+                db.close()
+            return {
+                "status": "success",
+                "bets": bets,
+                "stats": stats,
+                "user_tier": user_tier,
+            }
+        except Exception as e:
+            logger.error(f"Error fetching YetAI bets history: {e}")
+
+    return {
+        "status": "success",
+        "bets": [],
+        "stats": {
+            "period_days": days,
+            "total": 0,
+            "won": 0,
+            "lost": 0,
+            "pushed": 0,
+            "win_rate": 0,
+            "units": 0,
+        },
+        "user_tier": user_tier,
+    }
+
+
 @app.get("/api/yetai-bets")
 async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
-    """Get YetAI bets for user based on subscription tier.
+    """Open YetAI promoted picks (active/pending) for the subscriber tier.
 
-    Tier-gated: subscribers only see bets at their tier or lower.
-    Non-active statuses (pending_approval, rejected, expired, etc.) are
-    never returned regardless of tier.
+    Settled history is on GET /api/yetai-bets/history.
     """
     from app.core.database import get_db as _get_db
 

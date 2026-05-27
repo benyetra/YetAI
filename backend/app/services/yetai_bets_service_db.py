@@ -268,35 +268,107 @@ class YetAIBetsServiceDB:
 
     # Statuses that are safe to display to subscribers
     SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed"}
+    YETAI_LIVE_STATUSES = ("active", "pending")
+    YETAI_HISTORY_STATUSES = ("won", "lost", "pushed")
 
-    def get_yetai_bets_for_user(self, user_tier: str, db: Session) -> List[Dict]:
-        """Return bets visible to a subscriber at *user_tier*.
-
-        Visibility rules (hard-gated, never configurable by the caller):
-        - Only bets with status in SUBSCRIBER_VISIBLE_STATUSES are returned.
-          This permanently excludes: pending_approval, rejected, expired,
-          pending_manual_review, and any other non-approved status.
-        - Only bets whose tier_requirement <= user's tier are returned.
-          FREE sees FREE only; PRO sees FREE + PRO; ELITE sees all tiers.
-        """
-        # Normalise to enum; fall back to FREE for unknown values
+    def _allowed_tiers_for_user(self, user_tier: str) -> List[SubscriptionTier]:
         try:
             tier_enum = SubscriptionTier(user_tier.lower())
         except (ValueError, AttributeError):
             tier_enum = SubscriptionTier.FREE
-
         user_rank = self.TIER_RANK[tier_enum]
-        allowed_tiers = [t for t, r in self.TIER_RANK.items() if r <= user_rank]
+        return [t for t, r in self.TIER_RANK.items() if r <= user_rank]
 
-        bets = (
+    def _query_yetai_bets_for_user(
+        self,
+        user_tier: str,
+        db: Session,
+        statuses: tuple[str, ...],
+        *,
+        since: Optional[datetime] = None,
+        limit: Optional[int] = None,
+    ) -> List[YetAIBet]:
+        allowed_tiers = self._allowed_tiers_for_user(user_tier)
+        query = (
             db.query(YetAIBet)
-            .filter(YetAIBet.status.in_(self.SUBSCRIBER_VISIBLE_STATUSES))
+            .filter(YetAIBet.status.in_(statuses))
             .filter(YetAIBet.tier_requirement.in_(allowed_tiers))
-            .order_by(desc(YetAIBet.created_at))
-            .all()
         )
-        visible = [bet for bet in bets if not is_demo_yetai_bet(bet)]
-        return [self._yetai_bet_to_dict(bet) for bet in visible]
+        if since is not None:
+            query = query.filter(
+                or_(
+                    YetAIBet.settled_at >= since,
+                    and_(YetAIBet.settled_at.is_(None), YetAIBet.created_at >= since),
+                )
+            )
+        query = query.order_by(desc(YetAIBet.settled_at), desc(YetAIBet.created_at))
+        if limit is not None:
+            query = query.limit(limit)
+        rows = query.all()
+        return [bet for bet in rows if not is_demo_yetai_bet(bet)]
+
+    @staticmethod
+    def _american_odds_units_profit(odds: float) -> float:
+        if odds > 0:
+            return odds / 100.0
+        if odds < 0:
+            return 100.0 / abs(odds)
+        return 0.0
+
+    def compute_history_stats(
+        self, bets: List[Dict], period_days: int
+    ) -> Dict[str, float | int]:
+        won = [b for b in bets if b.get("status") == "won"]
+        lost = [b for b in bets if b.get("status") == "lost"]
+        pushed = [b for b in bets if b.get("status") == "pushed"]
+        graded = len(won) + len(lost)
+        units = 0.0
+        for bet in bets:
+            status = bet.get("status")
+            try:
+                odds_val = float(bet.get("odds", 0))
+            except (TypeError, ValueError):
+                odds_val = 0.0
+            if status == "won":
+                units += self._american_odds_units_profit(odds_val)
+            elif status == "lost":
+                units -= 1.0
+        win_rate = round((len(won) / graded) * 100, 1) if graded else 0.0
+        return {
+            "period_days": period_days,
+            "total": len(bets),
+            "won": len(won),
+            "lost": len(lost),
+            "pushed": len(pushed),
+            "win_rate": win_rate,
+            "units": round(units, 2),
+        }
+
+    def get_yetai_bets_for_user(self, user_tier: str, db: Session) -> List[Dict]:
+        """Return open YetAI picks (active/pending) for the subscriber tier."""
+        rows = self._query_yetai_bets_for_user(user_tier, db, self.YETAI_LIVE_STATUSES)
+        return [self._yetai_bet_to_dict(bet) for bet in rows]
+
+    def get_yetai_bets_history_for_user(
+        self,
+        user_tier: str,
+        db: Session,
+        *,
+        days: int = 90,
+        limit: int = 100,
+    ) -> tuple[List[Dict], Dict[str, float | int]]:
+        """Settled promoted picks (won/lost/pushed) with aggregate track record."""
+        since = datetime.utcnow() - timedelta(days=max(days, 1))
+        rows = self._query_yetai_bets_for_user(
+            user_tier,
+            db,
+            self.YETAI_HISTORY_STATUSES,
+            since=since,
+            limit=limit,
+        )
+        bets = [self._yetai_bet_to_dict(bet) for bet in rows]
+        stats = self.compute_history_stats(bets, period_days=days)
+        return bets, stats
 
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
         """Get active YetAI Bets based on user tier from database

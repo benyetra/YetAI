@@ -6,6 +6,7 @@ import { getApiUrl } from '@/lib/api-config';
 import { useAuth } from '@/components/Auth';
 import YetAIBetModal from '@/components/YetAIBetModal';
 import { apiBetToDesignPick } from '@/lib/yetai-mappers';
+import type { YetaiHistoryBet, YetaiHistoryStats } from '@/components/yetai/YetaiBetsHistory';
 import YetaiBetsScreen from '../screens/YetaiBetsScreen';
 import type { DesignPick } from '../types';
 
@@ -31,11 +32,49 @@ function americanOddsProfit(odds: string): number {
   return n > 0 ? n / 100 : 100 / Math.abs(n);
 }
 
+function computeStatsFromHistory(history: YetaiHistoryBet[]) {
+  const now = Date.now();
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const startOfTodayMs = startOfToday.getTime();
+  const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
+
+  const settledTs = (b: YetaiHistoryBet) =>
+    b.settled_at
+      ? new Date(b.settled_at).getTime()
+      : b.created_at
+        ? new Date(b.created_at).getTime()
+        : 0;
+
+  const graded = history.filter((b) => b.status === 'won' || b.status === 'lost');
+
+  const settledToday = graded.filter((b) => settledTs(b) >= startOfTodayMs);
+  const wonToday = settledToday.filter((b) => b.status === 'won');
+  const todayWinRate = settledToday.length
+    ? Math.round((wonToday.length / settledToday.length) * 100)
+    : 0;
+
+  const settledWeek = graded.filter((b) => settledTs(b) >= sevenDaysAgo);
+  let weekRoi: number | null = null;
+  if (settledWeek.length > 0) {
+    const units = settledWeek.reduce(
+      (acc, b) => acc + (b.status === 'won' ? americanOddsProfit(String(b.odds)) : -1),
+      0,
+    );
+    weekRoi = Math.round((units / settledWeek.length) * 100);
+  }
+
+  return { todayWinRate, weekRoi };
+}
+
 export default function YetaiBetsView() {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
   const [bets, setBets] = useState<BestBet[]>([]);
+  const [historyBets, setHistoryBets] = useState<YetaiHistoryBet[]>([]);
+  const [historyStats, setHistoryStats] = useState<YetaiHistoryStats | null>(null);
   const [loadingBets, setLoadingBets] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [todayWinRate, setTodayWinRate] = useState(0);
   const [weekRoi, setWeekRoi] = useState<number | null>(null);
   const [modelConfidence, setModelConfidence] = useState<number | null>(null);
@@ -50,44 +89,25 @@ export default function YetaiBetsView() {
     if (!isAuthenticated || !user) return;
     const load = async () => {
       setLoadingBets(true);
+      setLoadingHistory(true);
       try {
         const token = localStorage.getItem('auth_token');
-        const res = await fetch(getApiUrl('/api/yetai-bets'), {
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        });
-        if (res.ok) {
-          const data = await res.json();
+        const headers = {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        };
+
+        const [liveRes, historyRes] = await Promise.all([
+          fetch(getApiUrl('/api/yetai-bets'), { headers }),
+          fetch(getApiUrl('/api/yetai-bets/history?days=90&limit=100'), { headers }),
+        ]);
+
+        if (liveRes.ok) {
+          const data = await liveRes.json();
           const list: BestBet[] = Array.isArray(data.bets) ? data.bets : [];
           setBets(list);
 
-          const now = new Date();
-          const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-          const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
-          const settledTimestamp = (b: BestBet) =>
-            b.settled_at ? new Date(b.settled_at).getTime() : b.created_at ? new Date(b.created_at).getTime() : 0;
-
-          const settledToday = list.filter(
-            (b) => (b.status === 'won' || b.status === 'lost') && settledTimestamp(b) >= startOfToday,
-          );
-          const wonToday = settledToday.filter((b) => b.status === 'won');
-          setTodayWinRate(
-            settledToday.length ? Math.round((wonToday.length / settledToday.length) * 100) : 0,
-          );
-
-          const settledWeek = list.filter(
-            (b) => (b.status === 'won' || b.status === 'lost') && settledTimestamp(b) >= sevenDaysAgo,
-          );
-          if (settledWeek.length > 0) {
-            const units = settledWeek.reduce(
-              (acc, b) => acc + (b.status === 'won' ? americanOddsProfit(b.odds) : -1),
-              0,
-            );
-            setWeekRoi(Math.round((units / settledWeek.length) * 100));
-          } else {
-            setWeekRoi(null);
-          }
-
-          const pending = list.filter((b) => b.status === 'pending');
+          const pending = list.filter((b) => b.status === 'pending' || b.status === 'active');
           if (pending.length > 0) {
             const avg = pending.reduce((s, b) => s + (b.confidence || 0), 0) / pending.length;
             setModelConfidence(Math.round(avg));
@@ -95,10 +115,21 @@ export default function YetaiBetsView() {
             setModelConfidence(null);
           }
         }
+
+        if (historyRes.ok) {
+          const data = await historyRes.json();
+          const list: YetaiHistoryBet[] = Array.isArray(data.bets) ? data.bets : [];
+          setHistoryBets(list);
+          setHistoryStats(data.stats ?? null);
+          const { todayWinRate: twr, weekRoi: wr } = computeStatsFromHistory(list);
+          setTodayWinRate(twr);
+          setWeekRoi(wr);
+        }
       } catch (e) {
         console.error(e);
       } finally {
         setLoadingBets(false);
+        setLoadingHistory(false);
       }
     };
     load();
@@ -130,11 +161,12 @@ export default function YetaiBetsView() {
       <YetaiBetsScreen
         picks={picks}
         hitRate={todayWinRate}
-        roiLabel={
-          weekRoi === null ? undefined : `${weekRoi > 0 ? '+' : ''}${weekRoi}%`
-        }
+        roiLabel={weekRoi === null ? undefined : `${weekRoi > 0 ? '+' : ''}${weekRoi}%`}
         modelConfidence={modelConfidence === null ? undefined : `${modelConfidence}%`}
         onAddToSlip={onAdd}
+        historyBets={historyBets}
+        historyStats={historyStats}
+        historyLoading={loadingHistory}
       />
       <YetAIBetModal
         isOpen={showModal}
