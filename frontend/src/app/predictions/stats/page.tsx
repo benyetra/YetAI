@@ -35,7 +35,7 @@ function toneColor(tone: AccuracyTone): string {
 }
 
 export default function StatProjectionsHubPage() {
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, token } = useAuth();
   const router = useRouter();
   const [overviewItems, setOverviewItems] = useState<AccuracyOverviewItem[] | null>(null);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -46,7 +46,7 @@ export default function StatProjectionsHubPage() {
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {
-    if (!isAuthenticated || loading) return;
+    if (!isAuthenticated || loading || !token) return;
     let cancelled = false;
     setOverviewLoading(true);
     setOverviewError(null);
@@ -66,7 +66,7 @@ export default function StatProjectionsHubPage() {
     return () => {
       cancelled = true;
     };
-  }, [isAuthenticated, loading]);
+  }, [isAuthenticated, loading, token]);
 
   const overviewBySport = useMemo(() => {
     const m: Partial<Record<AccuracySport, AccuracyOverviewItem>> = {};
@@ -85,6 +85,16 @@ export default function StatProjectionsHubPage() {
         subtitle="ML-powered player and game projections by league."
         actions={<BarChart3 size={20} style={{ color: 'var(--accent)' }} />}
       />
+      {overviewLoading && overviewItems === null && !overviewError ? (
+        <p className="dim" style={{ fontSize: 12, marginBottom: 12 }}>
+          Loading season model summaries…
+        </p>
+      ) : null}
+      {overviewError ? (
+        <p className="alert-error" style={{ fontSize: 12, marginBottom: 12, padding: 10, borderRadius: 8 }} role="alert">
+          Season summaries could not be loaded. {overviewError}
+        </p>
+      ) : null}
       <div style={{ display: 'grid', gap: 12 }}>
         {SPORTS.map((s) => {
           const ov = overviewBySport[s.sport];
@@ -131,16 +141,6 @@ export default function StatProjectionsHubPage() {
           );
         })}
       </div>
-      {overviewLoading && overviewItems === null && !overviewError ? (
-        <p className="dim" style={{ fontSize: 11, marginTop: 10 }}>
-          Loading season summaries…
-        </p>
-      ) : null}
-      {overviewError ? (
-        <p className="dim" style={{ fontSize: 11, marginTop: 10 }} role="status">
-          Season summaries unavailable ({overviewError})
-        </p>
-      ) : null}
     </Layout>
   );
 }

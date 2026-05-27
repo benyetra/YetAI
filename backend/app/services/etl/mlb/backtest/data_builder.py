@@ -762,65 +762,14 @@ class HistoricalDataBuilder:
 
     def _fetch_historical_odds(self, game, game_date):
         """Fetch historical odds from The Odds API (REQ-BT-018/019)."""
-        import os
-
-        api_key = os.getenv("ODDS_API_KEY")
-        if not api_key or self.skip_odds:
-            return {}
-
-        import requests
-
-        def _fetch():
-            try:
-                url = f"https://api.the-odds-api.com/v4/historical/sports/baseball_mlb/odds/"
-                params = {
-                    "apiKey": api_key,
-                    "regions": "us",
-                    "markets": "h2h,totals",
-                    "bookmakers": "fanduel",
-                    "date": f"{game_date.isoformat()}T12:00:00Z",
-                }
-                resp = requests.get(url, params=params, timeout=15)
-                if resp.status_code == 200:
-                    return resp.json()
-            except Exception:
-                pass
-            return None
-
-        data = cached_api_call(
-            "historical_odds",
-            {"date": game_date.isoformat()},
-            _fetch,
-            cache_only=self.cache_only,
+        from app.services.etl.mlb.backtest.historical_odds import (
+            fetch_historical_odds_snapshot,
+            match_game_odds,
+            resolve_odds_api_key,
         )
 
-        if not data:
+        if self.skip_odds or not resolve_odds_api_key():
             return {}
 
-        # Find matching game in odds data
-        events = data.get("data", []) if isinstance(data, dict) else data
-        if not isinstance(events, list):
-            return {}
-
-        for event in events:
-            home = event.get("home_team", "")
-            away = event.get("away_team", "")
-            if (game.home_name in home or home in game.home_name) and (
-                game.away_name in away or away in game.away_name
-            ):
-                odds_result = {"h2h": {}, "totals": {}}
-                for bm in event.get("bookmakers", []):
-                    for market in bm.get("markets", []):
-                        if market.get("key") == "h2h":
-                            for o in market.get("outcomes", []):
-                                odds_result["h2h"][o["name"]] = o["price"]
-                        elif market.get("key") == "totals":
-                            for o in market.get("outcomes", []):
-                                if o["name"] == "Over":
-                                    odds_result["totals"]["point"] = o.get("point")
-                                    odds_result["totals"]["over"] = o["price"]
-                                elif o["name"] == "Under":
-                                    odds_result["totals"]["under"] = o["price"]
-                return odds_result
-
-        return {}
+        snapshot = fetch_historical_odds_snapshot(game_date, cache_only=self.cache_only)
+        return match_game_odds(game_date, game.home_name, game.away_name, snapshot)

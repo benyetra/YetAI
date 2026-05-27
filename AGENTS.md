@@ -29,6 +29,18 @@ PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_strikeouts.py
 
 Optional: `--with-optional` (sklearn tests), `--live` (full `strikeouts.run()` against `DATABASE_URL`).
 
+## MLB backtest historical odds (Odds API credits)
+
+Prefetch dates into `scripts/mlb_backtest_cache.db` (~20 credits/date for h2h+totals):
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/mlb_backfill_historical_odds.py \
+  --from-csv scripts/mlb_backtest_results/backtest_<run>_YYYY-MM-DD.csv --max-dates 20 --dry-run
+```
+
+Set `ODDS_API_KEY` in `.env.production` (paid plan). Then rerun `scripts/mlb_backtest.py` **without** `--skip-odds`.
+
 ## MLB matchup profiles (no deploy)
 
 ```bash

@@ -130,17 +130,21 @@ export async function apiRequest(
   options: RequestInit = {}
 ): Promise<Response> {
   const url = getApiUrl(endpoint);
-  
-  const defaultHeaders: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-  
+
+  const method = (options.method ?? 'GET').toString().toUpperCase();
+  const defaultHeaders: HeadersInit = {};
+  // GET/HEAD with Content-Type: application/json is a non-simple CORS request in
+  // browsers and can break cross-origin calls if the API preflight is strict.
+  if (method !== 'GET' && method !== 'HEAD') {
+    defaultHeaders['Content-Type'] = 'application/json';
+  }
+
   // Add auth token if available
   const token = getStoredAuthToken();
   if (token) {
     (defaultHeaders as Record<string, string>).Authorization = `Bearer ${token}`;
   }
-  
+
   const config: RequestInit = {
     ...options,
     headers: {
