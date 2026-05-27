@@ -41,12 +41,12 @@ interface NavItem {
 const mainNavigation: NavItem[] = [
   { name: 'Dashboard', href: '/dashboard', icon: Home, requiresAuth: true },
   { name: 'YetAI Bets', href: '/predictions', icon: Brain, badge: 'AI', pillClass: 'pill-ai' },
+  { name: 'Stat Projections', href: '/predictions/stats', icon: LineChart, requiresAuth: true },
   { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
   { name: 'Live Betting', href: '/live-betting', icon: Activity, requiresAuth: true, badge: 'LIVE', pillClass: 'pill-live' },
 ];
 
 const toolsNavigation: NavItem[] = [
-  { name: 'Stat Projections', href: '/predictions/stats', icon: LineChart, requiresAuth: true },
   { name: 'Bet Calculator', href: '/tools/bet-calculator', icon: Calculator, requiresAuth: true },
   { name: "Owen's Corner", href: '/tools/owens-betting-corner', icon: Sparkles, requiresAuth: true },
   { name: 'Parlays', href: '/parlays', icon: Layers, requiresAuth: true, badge: 'NEW', pillClass: 'pill-new' },
