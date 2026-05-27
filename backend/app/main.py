@@ -2164,8 +2164,6 @@ async def get_yetai_bets_history(
             "won": 0,
             "lost": 0,
             "pushed": 0,
-            "expired": 0,
-            "pending_manual_review": 0,
             "win_rate": 0,
             "units": 0,
         },

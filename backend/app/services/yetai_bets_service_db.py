@@ -269,15 +269,7 @@ class YetAIBetsServiceDB:
     # Statuses that are safe to display to subscribers
     SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed"}
     YETAI_LIVE_STATUSES = ("active", "pending")
-    # Graded picks plus terminal non-grade states (e.g. expired before sync).
-    YETAI_HISTORY_STATUSES = (
-        "won",
-        "lost",
-        "pushed",
-        "expired",
-        "pending_manual_review",
-    )
-    YETAI_GRADED_STATUSES = ("won", "lost", "pushed")
+    YETAI_HISTORY_STATUSES = ("won", "lost", "pushed")
 
     def _allowed_tiers_for_user(self, user_tier: str) -> List[SubscriptionTier]:
         try:
@@ -329,8 +321,6 @@ class YetAIBetsServiceDB:
         won = [b for b in bets if b.get("status") == "won"]
         lost = [b for b in bets if b.get("status") == "lost"]
         pushed = [b for b in bets if b.get("status") == "pushed"]
-        expired = [b for b in bets if b.get("status") == "expired"]
-        manual = [b for b in bets if b.get("status") == "pending_manual_review"]
         graded = len(won) + len(lost)
         units = 0.0
         for bet in bets:
@@ -350,8 +340,6 @@ class YetAIBetsServiceDB:
             "won": len(won),
             "lost": len(lost),
             "pushed": len(pushed),
-            "expired": len(expired),
-            "pending_manual_review": len(manual),
             "win_rate": win_rate,
             "units": round(units, 2),
         }
@@ -845,7 +833,8 @@ class YetAIBetsServiceDB:
             ):
                 expired.append(row)
         for row in expired:
-            row.status = "expired"
+            row.status = "rejected"
+            row.result = clamp_yetai_result("Auto-expired (unapproved)")
         return len(expired)
 
     async def verify_pending_yetai_bets(self) -> Dict:

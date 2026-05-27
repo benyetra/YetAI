@@ -2,7 +2,7 @@
 Celery task: expire PENDING_APPROVAL auto-picks whose game has started.
 
 Runs every 5 minutes via beat. If admin hasn't approved by tipoff/first-pitch,
-the pick auto-flips to EXPIRED so it cannot retroactively appear live.
+the pick is marked rejected so it never appears in subscriber history.
 """
 
 import logging
@@ -11,11 +11,12 @@ from datetime import datetime, timedelta
 from app.celery_app import celery_app
 from app.core.database import SessionLocal
 from app.models.database_models import YetAIBet
+from app.services.yetai_bets_service_db import clamp_yetai_result
 
 log = logging.getLogger(__name__)
 
 PENDING_STATUS = "pending_approval"
-EXPIRED_STATUS = "expired"
+REJECTED_STATUS = "rejected"
 STALE_HOURS = 24
 
 
@@ -38,10 +39,11 @@ def expire_pending_picks() -> int:
             ):
                 expired.append(row)
         for r in expired:
-            r.status = EXPIRED_STATUS
+            r.status = REJECTED_STATUS
+            r.result = clamp_yetai_result("Auto-expired (unapproved)")
         if expired:
             db.commit()
-            log.info("expired %s pending YetAI picks", len(expired))
+            log.info("rejected %s unapproved YetAI picks", len(expired))
         return len(expired)
     finally:
         db.close()

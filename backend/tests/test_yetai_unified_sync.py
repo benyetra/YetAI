@@ -7,17 +7,16 @@ from app.models.simple_unified_bet_model import BetStatus
 from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
 
-def test_compute_history_stats_ignores_expired_for_win_rate():
+def test_compute_history_stats_only_counts_graded_picks():
     service = YetAIBetsServiceDB()
     bets = [
         {"status": "won", "odds": "+100"},
-        {"status": "expired", "odds": "-110"},
+        {"status": "lost", "odds": "-110"},
     ]
     stats = service.compute_history_stats(bets, period_days=30)
     assert stats["total"] == 2
-    assert stats["expired"] == 1
-    assert stats["win_rate"] == 100.0
-    assert stats["units"] == 1.0
+    assert stats["win_rate"] == 50.0
+    assert stats["units"] == 0.0
 
 
 def test_sync_yetai_from_unified_bet_updates_expired_yetai_row():
