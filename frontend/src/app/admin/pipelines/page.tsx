@@ -12,6 +12,7 @@ import {
   type ScheduledEntry,
 } from '@/lib/api/pipelines';
 import { PipelineScheduleEditModal } from '@/components/admin/PipelineScheduleEditModal';
+import AdminCeleryPipelines from '@/components/yetai/AdminCeleryPipelines';
 
 // Sport → accent color. Falls back to neutral when sport is unknown.
 const SPORT_COLOR: Record<string, string> = {
@@ -152,7 +153,7 @@ function ContinuousRow({ entry }: { entry: ContinuousEntry }) {
   );
 }
 
-export default function PipelinesSchedulePage() {
+export default function AdminPipelinesPage() {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
 
@@ -206,12 +207,11 @@ export default function PipelinesSchedulePage() {
       <div className="max-w-6xl mx-auto px-6 py-10 space-y-8 text-zinc-100">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Pipeline Schedule</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Pipelines</h1>
             <p className="text-sm text-zinc-400 mt-1">
-              Daily timeline of every Celery beat-scheduled task. Times are
-              shown in America/New_York. Click <span className="text-zinc-300">Edit</span>{' '}
-              on an orchestrator row to change its schedule; changes apply
-              within ~30 seconds.
+              Beat schedule (America/New_York) plus manual ETL enqueue and data
+              verification. Click <span className="text-zinc-300">Edit</span> on an
+              orchestrator row to change its schedule; changes apply within ~30 seconds.
             </p>
           </div>
           <button
@@ -302,6 +302,10 @@ export default function PipelinesSchedulePage() {
             }}
           />
         )}
+
+        <div className="pt-10 border-t border-zinc-800/60">
+          <AdminCeleryPipelines />
+        </div>
       </div>
     </Layout>
   );
