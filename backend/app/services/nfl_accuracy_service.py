@@ -29,7 +29,39 @@ from app.services.accuracy_shared import (
     assemble,
     mae_bucket,
     ou_call_bucket,
+    ou_call_graded_counts,
+    overview_item_from_totals,
 )
+
+
+def _game_date_only(value: Any) -> date_type:
+    if value is None:
+        raise ValueError("missing game_date")
+    if hasattr(value, "date"):
+        return value.date()
+    if isinstance(value, date_type):
+        return value
+    raise TypeError(f"unsupported date type {type(value)}")
+
+
+def _merge_actuals_qb_range(
+    projections: list[Any], actuals: list[Any]
+) -> list[dict[str, Any]]:
+    by_key = {(a.qb_player_id, _game_date_only(a.game_date)): a for a in actuals}
+    out: list[dict[str, Any]] = []
+    for p in projections:
+        key = (p.qb_player_id, _game_date_only(p.game_date))
+        a = by_key.get(key)
+        out.append(
+            {
+                "qb_player_id": p.qb_player_id,
+                "predicted_passing_yards": p.predicted_passing_yards,
+                "ou_line": p.ou_line,
+                "betting_recommendation": p.betting_recommendation,
+                "actual_passing_yards": a.actual_passing_yards if a else None,
+            }
+        )
+    return out
 
 
 def _merge_actuals_qb(projections, actuals) -> list[dict[str, Any]]:
@@ -117,4 +149,34 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=bool(qb_rows or k_rows),
+    )
+
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window NFL accuracy — QB passing yards O/U only (kicker rows are MAE-only)."""
+    qb_proj = (
+        db.query(QBPredictions)
+        .filter(
+            func.date(QBPredictions.game_date) >= start,
+            func.date(QBPredictions.game_date) <= end,
+        )
+        .all()
+    )
+    qb_actuals = (
+        db.query(QBActuals)
+        .filter(
+            func.date(QBActuals.game_date) >= start,
+            func.date(QBActuals.game_date) <= end,
+        )
+        .all()
+    )
+    qb_rows = _merge_actuals_qb_range(qb_proj, qb_actuals)
+    correct, total = ou_call_graded_counts(
+        qb_rows,
+        line_field="ou_line",
+        pick_field="betting_recommendation",
+        actual_field="actual_passing_yards",
+    )
+    return overview_item_from_totals(
+        sport="nfl", label="NFL", correct=correct, total=total
     )

@@ -222,6 +222,36 @@ def test_mae_bucket_handles_no_graded_rows():
 # ---------------------------------------------------------------------------
 
 
+def test_ou_call_graded_counts_matches_bucket_numerator():
+    rows = [
+        {"line": 5.5, "pick": "over", "actual": 7.0, "projected": 6.5},
+        {"line": 5.5, "pick": "under", "actual": 4.0, "projected": 4.0},
+    ]
+    c, t = ash.ou_call_graded_counts(
+        rows,
+        line_field="line",
+        pick_field="pick",
+        actual_field="actual",
+    )
+    assert (c, t) == (2, 2)
+
+
+def test_overview_item_from_totals_no_data():
+    out = ash.overview_item_from_totals(sport="mlb", label="MLB", correct=0, total=0)
+    assert out["sport"] == "mlb"
+    assert out["has_data"] is False
+    assert out["primary"] == "No graded projections yet"
+    assert out["tone"] == "neutral"
+
+
+def test_overview_item_from_totals_with_data():
+    out = ash.overview_item_from_totals(sport="nba", label="NBA", correct=3, total=4)
+    assert out["has_data"] is True
+    assert out["graded_count"] == 4
+    assert out["primary"] == "75%"
+    assert "4 graded picks" in out["secondary"]
+
+
 def test_assemble_returns_standard_shape():
     bucket = ash.AccuracyBucket(
         key="k",

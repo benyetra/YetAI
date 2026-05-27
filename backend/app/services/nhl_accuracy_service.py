@@ -31,6 +31,8 @@ from app.services.accuracy_shared import (
     assemble,
     mae_bucket,
     ou_call_bucket,
+    ou_call_graded_counts,
+    overview_item_from_totals,
 )
 
 
@@ -245,4 +247,170 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=available,
+    )
+
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window NHL accuracy — combined O/U hit rate across graded line plays."""
+
+    def _goalie_range() -> list[dict[str, Any]]:
+        proj = (
+            db.query(NHLGoaliePredictions)
+            .filter(
+                NHLGoaliePredictions.game_date >= start,
+                NHLGoaliePredictions.game_date <= end,
+            )
+            .all()
+        )
+        actuals = (
+            db.query(NHLGoalieActuals)
+            .filter(
+                NHLGoalieActuals.game_date >= start,
+                NHLGoalieActuals.game_date <= end,
+            )
+            .all()
+        )
+        by_gid = {a.goalie_id: a for a in actuals}
+        return [
+            {
+                "predicted_saves": p.predicted_saves,
+                "saves_line": p.saves_line,
+                "betting_pick": _parse_pick(p.betting_recommendation),
+                "actual_saves": (
+                    by_gid.get(p.goalie_id).actual_saves
+                    if by_gid.get(p.goalie_id)
+                    else None
+                ),
+            }
+            for p in proj
+        ]
+
+    def _team_shots_range() -> list[dict[str, Any]]:
+        proj = (
+            db.query(NHLTeamShotsPredictions)
+            .filter(
+                NHLTeamShotsPredictions.game_date >= start,
+                NHLTeamShotsPredictions.game_date <= end,
+            )
+            .all()
+        )
+        actuals = (
+            db.query(NHLTeamShotsActuals)
+            .filter(
+                NHLTeamShotsActuals.game_date >= start,
+                NHLTeamShotsActuals.game_date <= end,
+            )
+            .all()
+        )
+        by_key = {(a.team_name, a.game_date): a for a in actuals}
+        rows: list[dict[str, Any]] = []
+        for p in proj:
+            a = by_key.get((p.team_name, p.game_date))
+            rows.append(
+                {
+                    "predicted_shots": p.predicted_shots,
+                    "shots_line": p.shots_line,
+                    "betting_pick": _parse_pick(p.betting_recommendation),
+                    "actual_shots": a.actual_shots if a else None,
+                }
+            )
+        return rows
+
+    def _player_shots_range() -> list[dict[str, Any]]:
+        proj = (
+            db.query(NHLPlayerShotsPredictions)
+            .filter(
+                NHLPlayerShotsPredictions.game_date >= start,
+                NHLPlayerShotsPredictions.game_date <= end,
+            )
+            .all()
+        )
+        actuals = (
+            db.query(NHLPlayerShotsActuals)
+            .filter(
+                NHLPlayerShotsActuals.game_date >= start,
+                NHLPlayerShotsActuals.game_date <= end,
+            )
+            .all()
+        )
+        by_pid = {a.player_id: a for a in actuals}
+        rows: list[dict[str, Any]] = []
+        for p in proj:
+            a = by_pid.get(p.player_id)
+            rows.append(
+                {
+                    "predicted_shots": p.predicted_shots,
+                    "shots_line": p.shots_line,
+                    "betting_pick": _parse_pick(p.betting_recommendation),
+                    "actual_shots": a.actual_shots if a else None,
+                }
+            )
+        return rows
+
+    def _team_totals_range() -> list[dict[str, Any]]:
+        proj = (
+            db.query(NHLTeamTotalsPredictions)
+            .filter(
+                NHLTeamTotalsPredictions.game_date >= start,
+                NHLTeamTotalsPredictions.game_date <= end,
+            )
+            .all()
+        )
+        actuals = (
+            db.query(NHLTeamTotalsActuals)
+            .filter(
+                NHLTeamTotalsActuals.game_date >= start,
+                NHLTeamTotalsActuals.game_date <= end,
+            )
+            .all()
+        )
+        by_key = {(a.home_team_name, a.away_team_name): a for a in actuals}
+        rows: list[dict[str, Any]] = []
+        for p in proj:
+            a = by_key.get((p.home_team_name, p.away_team_name))
+            rows.append(
+                {
+                    "predicted_total_goals": p.predicted_total_goals,
+                    "draftkings_ou_line": p.draftkings_ou_line,
+                    "betting_pick": _parse_pick(p.betting_recommendation),
+                    "actual_total_goals": a.actual_total_goals if a else None,
+                }
+            )
+        return rows
+
+    goalie_rows = _goalie_range()
+    team_shots = _team_shots_range()
+    player_shots = _player_shots_range()
+    team_totals = _team_totals_range()
+
+    parts = [
+        ou_call_graded_counts(
+            goalie_rows,
+            line_field="saves_line",
+            pick_field="betting_pick",
+            actual_field="actual_saves",
+        ),
+        ou_call_graded_counts(
+            team_shots,
+            line_field="shots_line",
+            pick_field="betting_pick",
+            actual_field="actual_shots",
+        ),
+        ou_call_graded_counts(
+            player_shots,
+            line_field="shots_line",
+            pick_field="betting_pick",
+            actual_field="actual_shots",
+        ),
+        ou_call_graded_counts(
+            team_totals,
+            line_field="draftkings_ou_line",
+            pick_field="betting_pick",
+            actual_field="actual_total_goals",
+        ),
+    ]
+    correct = sum(p[0] for p in parts)
+    total = sum(p[1] for p in parts)
+    return overview_item_from_totals(
+        sport="nhl", label="NHL", correct=correct, total=total
     )

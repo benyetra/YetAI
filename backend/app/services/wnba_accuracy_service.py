@@ -38,6 +38,8 @@ from app.services.accuracy_shared import (
     assemble,
     mae_bucket,
     ou_call_bucket,
+    ou_call_graded_counts,
+    overview_item_from_totals,
 )
 
 
@@ -50,6 +52,41 @@ def _pick(recommendation: Optional[str]) -> Optional[str]:
 
 def _game_key(row) -> tuple:
     return (row.game_date, row.home_team_name, row.away_team_name)
+
+
+def _player_prop_rows_range(
+    db: Session,
+    start: date_type,
+    end: date_type,
+    projections_cls,
+    actuals_cls,
+    *,
+    proj_field: str,
+    actual_field: str,
+) -> list[dict[str, Any]]:
+    proj = (
+        db.query(projections_cls)
+        .filter(projections_cls.date >= start, projections_cls.date <= end)
+        .all()
+    )
+    actuals = (
+        db.query(actuals_cls)
+        .filter(actuals_cls.date >= start, actuals_cls.date <= end)
+        .all()
+    )
+    by_key = {(a.player_id, a.date): a for a in actuals}
+    rows: list[dict[str, Any]] = []
+    for p in proj:
+        a = by_key.get((p.player_id, p.date))
+        rows.append(
+            {
+                proj_field: getattr(p, proj_field),
+                "market_line": p.market_line,
+                "recommendation": _pick(p.recommendation),
+                actual_field: getattr(a, actual_field) if a else None,
+            }
+        )
+    return rows
 
 
 def _player_prop_rows(
@@ -221,4 +258,97 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=available,
+    )
+
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window WNBA accuracy — game totals + player props O/U (spread is MAE-only)."""
+
+    totals_proj = (
+        db.query(WNBATotalsProjections)
+        .filter(
+            WNBATotalsProjections.game_date >= start,
+            WNBATotalsProjections.game_date <= end,
+        )
+        .all()
+    )
+    totals_actuals = (
+        db.query(WNBATotalsActuals)
+        .filter(
+            WNBATotalsActuals.game_date >= start,
+            WNBATotalsActuals.game_date <= end,
+        )
+        .all()
+    )
+    totals_by_key = {_game_key(a): a for a in totals_actuals}
+    totals_rows: list[dict[str, Any]] = []
+    for p in totals_proj:
+        a = totals_by_key.get(_game_key(p))
+        totals_rows.append(
+            {
+                "projected_total": p.projected_total,
+                "market_total": p.market_total,
+                "recommendation": _pick(p.recommendation),
+                "actual_total": a.actual_total if a else None,
+            }
+        )
+
+    points_rows = _player_prop_rows_range(
+        db,
+        start,
+        end,
+        WNBAPointsProjections,
+        WNBAPointsActuals,
+        proj_field="projected_points",
+        actual_field="actual_points",
+    )
+    assists_rows = _player_prop_rows_range(
+        db,
+        start,
+        end,
+        WNBAAssistsProjections,
+        WNBAAssistsActuals,
+        proj_field="projected_assists",
+        actual_field="actual_assists",
+    )
+    rebounds_rows = _player_prop_rows_range(
+        db,
+        start,
+        end,
+        WNBAReboundsProjections,
+        WNBAReboundsActuals,
+        proj_field="projected_rebounds",
+        actual_field="actual_rebounds",
+    )
+
+    parts = [
+        ou_call_graded_counts(
+            totals_rows,
+            line_field="market_total",
+            pick_field="recommendation",
+            actual_field="actual_total",
+        ),
+        ou_call_graded_counts(
+            points_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_points",
+        ),
+        ou_call_graded_counts(
+            assists_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_assists",
+        ),
+        ou_call_graded_counts(
+            rebounds_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_rebounds",
+        ),
+    ]
+    correct = sum(p[0] for p in parts)
+    total = sum(p[1] for p in parts)
+    return overview_item_from_totals(
+        sport="wnba", label="WNBA", correct=correct, total=total
     )

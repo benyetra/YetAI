@@ -81,6 +81,101 @@
         ]
       }
     },
+    "/api/v1/predictions/accuracy/overview": {
+      "get": {
+        "tags": [
+          "predictions"
+        ],
+        "summary": "Predictions Accuracy Overview",
+        "description": "Season-to-date (or last 30 days) global model accuracy per league.",
+        "operationId": "predictions_accuracy_overview_api_v1_predictions_accuracy_overview_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "window",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "season",
+                "last_30"
+              ],
+              "type": "string",
+              "default": "season",
+              "title": "Window"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Predictions Accuracy Overview Api V1 Predictions Accuracy Overview Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
     "/api/v1/predictions/mlb/p-over-total": {
       "get": {
         "tags": [
@@ -219,7 +314,7 @@
           "predictions"
         ],
         "summary": "Mlb Predictions",
-        "description": "Recent MLB props: strikeouts, game slate, batter boards, HR picks.\n\nEach strikeout projection row is enriched with actual_strikeouts and\nactual_innings_pitched when the corresponding StrikeoutActuals row\nexists for the same date \u2014 the frontend uses these to render\nactual-vs-projection columns on past-date views.\n\nPass ``total_line`` (e.g. 8.5) to add ``p_over_total`` / ``p_under_total`` on\neach game projection (empirical Monte Carlo using stored sim rates).",
+        "description": "Recent MLB props: strikeouts, game slate, batter boards, HR picks.\n\nEach strikeout projection row is enriched with actual_strikeouts and\nactual_innings_pitched when the corresponding StrikeoutActuals row\nexists for the same date \u2014 the frontend uses these to render\nactual-vs-projection columns on past-date views.\n\nGame projections are enriched with final scores and ml/spread/total\ngrading flags from pred_game_actuals when available.\n\nPass ``total_line`` (e.g. 8.5) to add ``p_over_total`` / ``p_under_total`` on\neach game projection (empirical Monte Carlo using stored sim rates).",
         "operationId": "mlb_predictions_api_v1_predictions_mlb_get",
         "security": [
           {
@@ -7592,7 +7687,7 @@
     "/api/yetai-bets": {
       "get": {
         "summary": "Get Yetai Bets",
-        "description": "Get YetAI bets for user based on subscription tier.\n\nTier-gated: subscribers only see bets at their tier or lower.\nNon-active statuses (pending_approval, rejected, expired, etc.) are\nnever returned regardless of tier.",
+        "description": "Open YetAI promoted picks (active/pending) for the subscriber tier.\n\nSettled history is on GET /api/yetai-bets/history.",
         "operationId": "get_yetai_bets_api_yetai_bets_get",
         "responses": {
           "200": {
@@ -7663,6 +7758,122 @@
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "bets"
+        ],
+        "x-audience": "public"
+      }
+    },
+    "/api/yetai-bets/history": {
+      "options": {
+        "summary": "Options Yetai Bets History",
+        "description": "Handle CORS preflight for YetAI bets history endpoint",
+        "operationId": "options_yetai_bets_history_api_yetai_bets_history_options",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "bets"
+        ],
+        "x-audience": "public"
+      },
+      "get": {
+        "summary": "Get Yetai Bets History",
+        "description": "Settled YetAI promoted picks with win/loss track record.",
+        "operationId": "get_yetai_bets_history_api_yetai_bets_history_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 90,
+              "title": "Days"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
               }
             }
           }

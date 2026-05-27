@@ -11,7 +11,7 @@ in dev; the guard will start enforcing real tiers once auth is fixed.
 """
 
 from datetime import date as date_type
-from typing import Any
+from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -122,6 +122,18 @@ def _query_recent(
 def health() -> dict[str, Any]:
     """Public — confirms the predictions module is wired up."""
     return {"status": "ok", "module": "predictions", "tables_exposed": 15}
+
+
+@router.get("/accuracy/overview")
+def predictions_accuracy_overview(
+    window: Literal["season", "last_30"] = Query("season"),
+    _user: dict = Depends(require_paid_tier),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Season-to-date (or last 30 days) global model accuracy per league."""
+    from app.services.accuracy_overview_service import build_accuracy_overview
+
+    return build_accuracy_overview(db, window=window)
 
 
 def _attach_p_over_total(row: dict[str, Any], line: float) -> dict[str, Any]:

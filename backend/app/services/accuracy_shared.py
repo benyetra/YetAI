@@ -40,6 +40,22 @@ class AccuracyBucket:
         return asdict(self)
 
 
+@dataclass
+class AccuracyOverviewItem:
+    """One row in the cross-league accuracy overview (Stat Projections hub)."""
+
+    sport: str
+    label: str
+    primary: str
+    secondary: str
+    tone: Tone
+    has_data: bool
+    graded_count: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 # ---------------------------------------------------------------------------
 # Small formatting helpers
 # ---------------------------------------------------------------------------
@@ -307,3 +323,116 @@ def assemble(
         "available": available,
         "buckets": [b.to_dict() for b in buckets],
     }
+
+
+# ---------------------------------------------------------------------------
+# Season / overview aggregates (graded correct + total across row sets)
+# ---------------------------------------------------------------------------
+
+
+def ou_call_graded_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    line_field: str,
+    pick_field: str,
+    actual_field: str,
+) -> tuple[int, int]:
+    """Return (correct, total) for sportsbook O/U calls; pushes excluded from total."""
+    total = 0
+    correct = 0
+    for row in rows:
+        line = row.get(line_field)
+        pick = (row.get(pick_field) or "").strip().lower()
+        actual = row.get(actual_field)
+        if line is None or not pick or actual is None:
+            continue
+        try:
+            line_f = float(line)
+            actual_f = float(actual)
+        except (TypeError, ValueError):
+            continue
+
+        if actual_f == line_f:
+            continue
+
+        won_over = pick in ("over", "o") and actual_f > line_f
+        won_under = pick in ("under", "u") and actual_f < line_f
+        total += 1
+        if won_over or won_under:
+            correct += 1
+    return correct, total
+
+
+def hit_rate_graded_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    actual_field: str,
+    projected_field: str,
+    threshold: float,
+) -> tuple[int, int]:
+    """Return (hits, total) for hit-rate style props (same rules as hit_rate_bucket)."""
+    total = 0
+    hits = 0
+    for row in rows:
+        projected = row.get(projected_field)
+        actual = row.get(actual_field)
+        try:
+            if projected is None or float(projected) < 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        if actual is None:
+            continue
+        total += 1
+        try:
+            if float(actual) >= threshold:
+                hits += 1
+        except (TypeError, ValueError):
+            continue
+    return hits, total
+
+
+def edge_play_graded_counts(
+    rows: Iterable[dict[str, Any]],
+    *,
+    pick_field: str,
+    correct_field: str,
+) -> tuple[int, int]:
+    """Return (correct, total) for edge plays with a stored correct flag."""
+    total = 0
+    correct = 0
+    for row in rows:
+        pick = (row.get(pick_field) or "").strip().upper()
+        if pick in ("", "NO_PLAY", "NONE"):
+            continue
+        graded = row.get(correct_field)
+        if graded is None:
+            continue
+        total += 1
+        if graded:
+            correct += 1
+    return correct, total
+
+
+def overview_item_from_totals(
+    *,
+    sport: str,
+    label: str,
+    correct: int,
+    total: int,
+) -> dict[str, Any]:
+    """Build one overview dict from summed correct/total across graded categories."""
+    has_data = total > 0
+    rate = correct / total if total else None
+    primary = pct(rate) if has_data else "No graded projections yet"
+    secondary = f"{total} graded picks" if has_data else "Season to date"
+    tone: Tone = tone_for_rate(rate) if has_data else "neutral"
+    return AccuracyOverviewItem(
+        sport=sport,
+        label=label,
+        primary=primary,
+        secondary=secondary,
+        tone=tone,
+        has_data=has_data,
+        graded_count=total if has_data else 0,
+    ).to_dict()

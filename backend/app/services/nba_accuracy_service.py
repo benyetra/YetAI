@@ -31,7 +31,29 @@ from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
     ou_call_bucket,
+    ou_call_graded_counts,
+    overview_item_from_totals,
 )
+
+
+def _merge_actuals_range(
+    projections,
+    actuals,
+    *,
+    pid_attr: str,
+    actual_attr: str,
+    actual_key: str,
+) -> list[dict[str, Any]]:
+    """Pair projections with actuals on (player_id, calendar date)."""
+    by_key = {(getattr(a, pid_attr), a.date): a for a in actuals}
+    out: list[dict[str, Any]] = []
+    for p in projections:
+        key = (getattr(p, pid_attr), p.date)
+        a = by_key.get(key)
+        row: dict[str, Any] = {c.name: getattr(p, c.name) for c in p.__table__.columns}
+        row[actual_key] = getattr(a, actual_attr) if a else None
+        out.append(row)
+    return out
 
 
 def _merge_actuals(
@@ -183,4 +205,93 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=available,
+    )
+
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window NBA accuracy — combined O/U hit rate across core props."""
+
+    def _rng(proj_cls, act_cls, *, pid_attr: str, actual_attr: str, actual_key: str):
+        proj = (
+            db.query(proj_cls)
+            .filter(proj_cls.date >= start, proj_cls.date <= end)
+            .all()
+        )
+        act = db.query(act_cls).filter(act_cls.date >= start, act_cls.date <= end).all()
+        return _merge_actuals_range(
+            proj, act, pid_attr=pid_attr, actual_attr=actual_attr, actual_key=actual_key
+        )
+
+    pts_rows = _rng(
+        PointsProjections,
+        PointsActuals,
+        pid_attr="player_id",
+        actual_attr="actual_points",
+        actual_key="actual_points",
+    )
+    tpm_rows = _rng(
+        ThreePointProjections,
+        ActualThreePointMade,
+        pid_attr="player_id",
+        actual_attr="actual_three_pt_made",
+        actual_key="actual_three_pt_made",
+    )
+    stl_rows = _rng(
+        StealsProjections,
+        StealsActuals,
+        pid_attr="player_id",
+        actual_attr="actual_steals",
+        actual_key="actual_steals",
+    )
+    ast_rows = _rng(
+        AssistsProjections,
+        AssistsActuals,
+        pid_attr="player_id",
+        actual_attr="actual_assists",
+        actual_key="actual_assists",
+    )
+    reb_rows = _rng(
+        ReboundsProjections,
+        ReboundsActuals,
+        pid_attr="player_id",
+        actual_attr="actual_rebounds",
+        actual_key="actual_rebounds",
+    )
+
+    parts = [
+        ou_call_graded_counts(
+            pts_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_points",
+        ),
+        ou_call_graded_counts(
+            tpm_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_three_pt_made",
+        ),
+        ou_call_graded_counts(
+            stl_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_steals",
+        ),
+        ou_call_graded_counts(
+            ast_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_assists",
+        ),
+        ou_call_graded_counts(
+            reb_rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field="actual_rebounds",
+        ),
+    ]
+    correct = sum(p[0] for p in parts)
+    total = sum(p[1] for p in parts)
+    return overview_item_from_totals(
+        sport="nba", label="NBA", correct=correct, total=total
     )
