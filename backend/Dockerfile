@@ -9,9 +9,6 @@ FROM python:3.11-slim
 # which broke `celery -A app.celery_app` until this was set.
 WORKDIR /app
 ENV PYTHONPATH=/app
-# Headless matplotlib backend — prevents pyplot import from failing without a display.
-# Required because pybaseball.__init__ imports plotting.py which does `import matplotlib.pyplot`.
-ENV MPLBACKEND=Agg
 
 # Minimal apt footprint (Railway builders can run out of /var/cache/apt/archives space).
 # gcc + libpq-dev for psycopg2; curl for HEALTHCHECK. No g++ (wheels are prebuilt).
@@ -33,7 +30,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir nfl-data-py==0.3.3 --no-deps \
     && pip install --no-cache-dir boto3==1.35.0 botocore \
     && pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 \
-    && python -c "import boto3, google.auth, statsapi, pybaseball, pyarrow"
+    && python -c "import boto3, google.auth, statsapi"
 
 # Copy application code
 COPY . .

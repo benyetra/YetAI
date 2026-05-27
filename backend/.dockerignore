@@ -60,12 +60,3 @@ pytest_cache/
 # Documentation
 README.md
 docs/
-
-# Large local data files — never needed in production image
-# statcast CSVs, weather CSVs, backtest cache, etc.
-app/services/etl/mlb/dingerParlay/data/
-scripts/*.db
-data/
-*.csv
-*.parquet
-*.db
