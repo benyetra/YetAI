@@ -8,9 +8,17 @@ from app.models.database_models import YetAIBet, BetType
 from app.services.yetai_bets_service_db import (
     YETAI_UNSETTLED_STATUSES,
     YetAIBetsServiceDB,
+    clamp_yetai_result,
     game_date_for_yetai_bet,
     yetai_bet_is_stale,
 )
+
+
+def test_clamp_yetai_result_truncates_long_notes():
+    long = "Auto-expired: unsettled >24h without verifiable result"
+    assert len(long) > 50
+    assert len(clamp_yetai_result(long)) == 50
+    assert clamp_yetai_result(long).endswith("...")
 
 
 def test_unsettled_statuses_include_active():

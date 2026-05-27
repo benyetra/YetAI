@@ -258,7 +258,9 @@ class YetAIBet(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     expires_at = Column(DateTime)
     settled_at = Column(DateTime)
-    result = Column(String(50))  # won, lost, push
+    result = Column(
+        Text
+    )  # settlement note (was varchar(50); too short for prop results)
 
     # AI metadata
     model_version = Column(String(100))

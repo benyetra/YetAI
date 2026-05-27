@@ -50,6 +50,17 @@ def yetai_bet_is_stale(bet: YetAIBet, cutoff: datetime) -> bool:
     return False
 
 
+YETAI_RESULT_MAX_LEN = 50  # legacy DB column until migration widens to Text
+
+
+def clamp_yetai_result(text: str, max_len: int = YETAI_RESULT_MAX_LEN) -> str:
+    """Fit settlement notes into yetai_bets.result (varchar(50) pre-migration)."""
+    value = (text or "").strip()
+    if len(value) <= max_len:
+        return value
+    return value[: max_len - 3] + "..."
+
+
 class YetAIBetsServiceDB:
     """Database-powered admin-created best bets for the YetAI Bets page"""
 
@@ -724,7 +735,7 @@ class YetAIBetsServiceDB:
                         result_status, result_description = outcome
                         bet.status = result_status
                         bet.settled_at = datetime.utcnow()
-                        bet.result = result_description
+                        bet.result = clamp_yetai_result(result_description)
                         total_settled += 1
                         settled = True
                         logger.info(
@@ -749,7 +760,7 @@ class YetAIBetsServiceDB:
                         ):
                             bet.status = result_status
                             bet.settled_at = datetime.utcnow()
-                            bet.result = result_description
+                            bet.result = clamp_yetai_result(result_description)
                             if result_status != "pending_manual_review":
                                 total_settled += 1
                             settled = True
@@ -763,12 +774,10 @@ class YetAIBetsServiceDB:
                     continue
 
                 if yetai_bet_is_stale(bet, stale_cutoff):
-                    bet.status = "pending_manual_review"
+                    bet.status = "expired"
                     bet.settled_at = datetime.utcnow()
                     if not bet.result:
-                        bet.result = (
-                            "Auto-expired: unsettled >24h without verifiable result"
-                        )
+                        bet.result = clamp_yetai_result("Unsettled >24h, no result")
                     total_expired += 1
                     logger.info(
                         "Auto-expired stale YetAI bet %s: %s",
