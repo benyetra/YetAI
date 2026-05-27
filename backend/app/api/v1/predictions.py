@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import DateTime, func
 from sqlalchemy.orm import Session
 
-from app.core.auth import get_current_user
+from app.core.auth import get_current_user, require_admin
 from app.core.database import get_db
 from app.models.predictions_models import (
     AssistsProjections,
@@ -122,6 +122,20 @@ def _query_recent(
 def health() -> dict[str, Any]:
     """Public — confirms the predictions module is wired up."""
     return {"status": "ok", "module": "predictions", "tables_exposed": 15}
+
+
+@router.get("/accuracy/overview/diagnostics")
+async def predictions_accuracy_overview_diagnostics(
+    window: Literal["season", "last_30"] = Query("season"),
+    _admin: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    """Admin-only: row-level breakdown for Stat Projections overview denominators."""
+    from app.services.accuracy_overview_service import (
+        build_accuracy_overview_diagnostics,
+    )
+
+    return build_accuracy_overview_diagnostics(db, window=window)
 
 
 @router.get("/accuracy/overview")

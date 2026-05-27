@@ -330,6 +330,74 @@ def assemble(
 # ---------------------------------------------------------------------------
 
 
+def ou_call_graded_breakdown(
+    rows: Iterable[dict[str, Any]],
+    *,
+    line_field: str,
+    pick_field: str,
+    actual_field: str,
+) -> dict[str, int]:
+    """Per-row counters for sportsbook O/U grading (mirrors ``ou_call_graded_counts``).
+
+    ``rows_scanned`` counts input rows; skip buckets are mutually exclusive in
+    scan order; ``graded_total`` / ``graded_correct`` match the overview numerator
+    and denominator.
+    """
+    rows_scanned = 0
+    missing_line = 0
+    missing_pick = 0
+    missing_actual = 0
+    non_decision_pick = 0
+    invalid_numeric = 0
+    push = 0
+    graded_total = 0
+    graded_correct = 0
+    for row in rows:
+        rows_scanned += 1
+        line = row.get(line_field)
+        pick = (row.get(pick_field) or "").strip().lower()
+        actual = row.get(actual_field)
+        if line is None:
+            missing_line += 1
+            continue
+        if not pick:
+            missing_pick += 1
+            continue
+        if actual is None:
+            missing_actual += 1
+            continue
+        if pick not in ("over", "o", "under", "u"):
+            non_decision_pick += 1
+            continue
+        try:
+            line_f = float(line)
+            actual_f = float(actual)
+        except (TypeError, ValueError):
+            invalid_numeric += 1
+            continue
+
+        if actual_f == line_f:
+            push += 1
+            continue
+
+        won_over = pick in ("over", "o") and actual_f > line_f
+        won_under = pick in ("under", "u") and actual_f < line_f
+        graded_total += 1
+        if won_over or won_under:
+            graded_correct += 1
+    return {
+        "rows_scanned": rows_scanned,
+        "missing_line": missing_line,
+        "missing_pick": missing_pick,
+        "missing_actual": missing_actual,
+        "non_decision_pick": non_decision_pick,
+        "invalid_numeric": invalid_numeric,
+        "push": push,
+        "graded_total": graded_total,
+        "graded_correct": graded_correct,
+    }
+
+
 def ou_call_graded_counts(
     rows: Iterable[dict[str, Any]],
     *,
@@ -338,29 +406,58 @@ def ou_call_graded_counts(
     actual_field: str,
 ) -> tuple[int, int]:
     """Return (correct, total) for sportsbook O/U calls; pushes excluded from total."""
-    total = 0
-    correct = 0
+    b = ou_call_graded_breakdown(
+        rows,
+        line_field=line_field,
+        pick_field=pick_field,
+        actual_field=actual_field,
+    )
+    return b["graded_correct"], b["graded_total"]
+
+
+def hit_rate_graded_breakdown(
+    rows: Iterable[dict[str, Any]],
+    *,
+    actual_field: str,
+    projected_field: str,
+    threshold: float,
+) -> dict[str, int]:
+    """Counters for hit-rate props (mirrors ``hit_rate_graded_counts``)."""
+    rows_scanned = 0
+    skip_low_or_bad_projection = 0
+    skip_missing_actual = 0
+    graded_total = 0
+    graded_hits = 0
+    graded_actual_parse_fail = 0
     for row in rows:
-        line = row.get(line_field)
-        pick = (row.get(pick_field) or "").strip().lower()
+        rows_scanned += 1
+        projected = row.get(projected_field)
         actual = row.get(actual_field)
-        if line is None or not pick or actual is None:
-            continue
         try:
-            line_f = float(line)
-            actual_f = float(actual)
+            if projected is None or float(projected) < 1:
+                skip_low_or_bad_projection += 1
+                continue
         except (TypeError, ValueError):
+            skip_low_or_bad_projection += 1
             continue
-
-        if actual_f == line_f:
+        if actual is None:
+            skip_missing_actual += 1
             continue
-
-        won_over = pick in ("over", "o") and actual_f > line_f
-        won_under = pick in ("under", "u") and actual_f < line_f
-        total += 1
-        if won_over or won_under:
-            correct += 1
-    return correct, total
+        graded_total += 1
+        try:
+            if float(actual) >= threshold:
+                graded_hits += 1
+        except (TypeError, ValueError):
+            graded_actual_parse_fail += 1
+            continue
+    return {
+        "rows_scanned": rows_scanned,
+        "skip_low_or_bad_projection": skip_low_or_bad_projection,
+        "skip_missing_actual": skip_missing_actual,
+        "graded_total": graded_total,
+        "graded_hits": graded_hits,
+        "graded_actual_parse_fail": graded_actual_parse_fail,
+    }
 
 
 def hit_rate_graded_counts(
@@ -371,25 +468,57 @@ def hit_rate_graded_counts(
     threshold: float,
 ) -> tuple[int, int]:
     """Return (hits, total) for hit-rate style props (same rules as hit_rate_bucket)."""
-    total = 0
-    hits = 0
+    b = hit_rate_graded_breakdown(
+        rows,
+        actual_field=actual_field,
+        projected_field=projected_field,
+        threshold=threshold,
+    )
+    return b["graded_hits"], b["graded_total"]
+
+
+def edge_play_graded_breakdown(
+    rows: Iterable[dict[str, Any]],
+    *,
+    pick_field: str,
+    correct_field: str,
+) -> dict[str, int]:
+    """Counters for edge-play grading (mirrors ``edge_play_graded_counts``)."""
+    rows_scanned = 0
+    empty_pick = 0
+    no_play_pick = 0
+    pass_pick = 0
+    missing_grade = 0
+    graded_total = 0
+    graded_correct = 0
     for row in rows:
-        projected = row.get(projected_field)
-        actual = row.get(actual_field)
-        try:
-            if projected is None or float(projected) < 1:
-                continue
-        except (TypeError, ValueError):
+        rows_scanned += 1
+        pick = (row.get(pick_field) or "").strip().upper()
+        if pick == "":
+            empty_pick += 1
             continue
-        if actual is None:
+        if pick in ("NO_PLAY", "NONE"):
+            no_play_pick += 1
             continue
-        total += 1
-        try:
-            if float(actual) >= threshold:
-                hits += 1
-        except (TypeError, ValueError):
+        if pick == "PASS":
+            pass_pick += 1
             continue
-    return hits, total
+        graded = row.get(correct_field)
+        if graded is None:
+            missing_grade += 1
+            continue
+        graded_total += 1
+        if graded:
+            graded_correct += 1
+    return {
+        "rows_scanned": rows_scanned,
+        "empty_pick": empty_pick,
+        "no_play_pick": no_play_pick,
+        "pass_pick": pass_pick,
+        "missing_grade": missing_grade,
+        "graded_total": graded_total,
+        "graded_correct": graded_correct,
+    }
 
 
 def edge_play_graded_counts(
@@ -399,19 +528,10 @@ def edge_play_graded_counts(
     correct_field: str,
 ) -> tuple[int, int]:
     """Return (correct, total) for edge plays with a stored correct flag."""
-    total = 0
-    correct = 0
-    for row in rows:
-        pick = (row.get(pick_field) or "").strip().upper()
-        if pick in ("", "NO_PLAY", "NONE"):
-            continue
-        graded = row.get(correct_field)
-        if graded is None:
-            continue
-        total += 1
-        if graded:
-            correct += 1
-    return correct, total
+    b = edge_play_graded_breakdown(
+        rows, pick_field=pick_field, correct_field=correct_field
+    )
+    return b["graded_correct"], b["graded_total"]
 
 
 def overview_item_from_totals(

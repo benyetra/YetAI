@@ -24,10 +24,13 @@ from app.models.predictions_models import (
 from app.services.accuracy_shared import (
     assemble,
     edge_play_bucket,
+    edge_play_graded_breakdown,
     edge_play_graded_counts,
     hit_rate_bucket,
+    hit_rate_graded_breakdown,
     hit_rate_graded_counts,
     ou_call_bucket,
+    ou_call_graded_breakdown,
     ou_call_graded_counts,
     overview_item_from_totals,
 )
@@ -313,3 +316,174 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
     return overview_item_from_totals(
         sport="mlb", label="MLB", correct=correct, total=total
     )
+
+
+def season_overview_diagnostics(
+    db: Session, *, start: date_type, end: date_type
+) -> dict[str, Any]:
+    """Structured counts for admin/debug — same row sets as ``season_overview``."""
+    proj_rows = (
+        db.query(StrikeoutProjections)
+        .filter(
+            StrikeoutProjections.date >= start,
+            StrikeoutProjections.date <= end,
+        )
+        .all()
+    )
+    actuals_by_pid = {
+        r.pitcher_id: r
+        for r in db.query(StrikeoutActuals)
+        .filter(
+            StrikeoutActuals.date >= start,
+            StrikeoutActuals.date <= end,
+        )
+        .all()
+    }
+    k_rows: list[dict[str, Any]] = []
+    for p in proj_rows:
+        a = actuals_by_pid.get(p.pitcher_id)
+        k_rows.append(
+            {
+                "projected_strikeouts": p.projected_strikeouts,
+                "fanduel_line": p.fanduel_line,
+                "fanduel_over_under": p.fanduel_over_under,
+                "actual_strikeouts": a.actual_strikeouts if a else None,
+            }
+        )
+
+    hits_rows = [
+        {"projected_hits": r.projected_hits, "actual_hits": r.actual_hits}
+        for r in db.query(ProjectedHits)
+        .filter(ProjectedHits.date >= start, ProjectedHits.date <= end)
+        .all()
+    ]
+    homer_rows = [
+        {"projected_homers": r.projected_homers, "actual_homers": r.actual_homers}
+        for r in db.query(ProjectedHomers)
+        .filter(ProjectedHomers.date >= start, ProjectedHomers.date <= end)
+        .all()
+    ]
+
+    game_rows = _merge_game_rows_range(db, start=start, end=end)
+
+    part_specs: list[tuple[str, str, dict[str, Any]]] = [
+        (
+            "pitcher_k_ou",
+            "Pitcher Ks O/U",
+            {
+                "kind": "ou",
+                "rows": k_rows,
+                "line_field": "fanduel_line",
+                "pick_field": "fanduel_over_under",
+                "actual_field": "actual_strikeouts",
+                "extra": {"strikeout_projection_rows": len(proj_rows)},
+            },
+        ),
+        (
+            "projected_hits",
+            "Projected Hits (≥1)",
+            {
+                "kind": "hit_rate",
+                "rows": hits_rows,
+                "actual_field": "actual_hits",
+                "projected_field": "projected_hits",
+                "threshold": 1.0,
+            },
+        ),
+        (
+            "projected_homers",
+            "Projected HR (≥1)",
+            {
+                "kind": "hit_rate",
+                "rows": homer_rows,
+                "actual_field": "actual_homers",
+                "projected_field": "projected_homers",
+                "threshold": 1.0,
+            },
+        ),
+        (
+            "game_ml_edge",
+            "Game ML edge",
+            {
+                "kind": "edge",
+                "rows": game_rows,
+                "pick_field": "ml_recommendation",
+                "correct_field": "ml_correct",
+            },
+        ),
+        (
+            "game_spread_edge",
+            "Game spread edge",
+            {
+                "kind": "edge",
+                "rows": game_rows,
+                "pick_field": "spread_recommendation",
+                "correct_field": "spread_correct",
+            },
+        ),
+        (
+            "game_total_ou",
+            "Game total O/U",
+            {
+                "kind": "ou",
+                "rows": game_rows,
+                "line_field": "market_total",
+                "pick_field": "total_recommendation",
+                "actual_field": "actual_total_runs",
+            },
+        ),
+    ]
+
+    parts_out: list[dict[str, Any]] = []
+    correct = 0
+    total = 0
+    for key, label, spec in part_specs:
+        rows = spec["rows"]
+        if spec["kind"] == "ou":
+            bd = ou_call_graded_breakdown(
+                rows,
+                line_field=spec["line_field"],
+                pick_field=spec["pick_field"],
+                actual_field=spec["actual_field"],
+            )
+            c, t = bd["graded_correct"], bd["graded_total"]
+            extra = spec.get("extra") or {}
+        elif spec["kind"] == "hit_rate":
+            bd = hit_rate_graded_breakdown(
+                rows,
+                actual_field=spec["actual_field"],
+                projected_field=spec["projected_field"],
+                threshold=spec["threshold"],
+            )
+            c, t = bd["graded_hits"], bd["graded_total"]
+            extra = {}
+        else:
+            bd = edge_play_graded_breakdown(
+                rows,
+                pick_field=spec["pick_field"],
+                correct_field=spec["correct_field"],
+            )
+            c, t = bd["graded_correct"], bd["graded_total"]
+            extra = {}
+        correct += c
+        total += t
+        entry: dict[str, Any] = {
+            "key": key,
+            "label": label,
+            "kind": spec["kind"],
+            "breakdown": bd,
+            "graded_correct": c,
+            "graded_total": t,
+        }
+        if extra:
+            entry["extra"] = extra
+        parts_out.append(entry)
+
+    return {
+        "sport": "mlb",
+        "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
+        "overview": overview_item_from_totals(
+            sport="mlb", label="MLB", correct=correct, total=total
+        ),
+        "parts": parts_out,
+    }

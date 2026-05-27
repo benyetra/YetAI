@@ -87,3 +87,37 @@ def test_daily_accuracy_unavailable_when_no_rows():
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
     assert len(out["buckets"]) == 5
+
+
+def test_merge_actuals_range_keeps_latest_projection_per_player_date():
+    projections = [
+        _row(
+            id=1,
+            date=date(2026, 5, 23),
+            player_id=7,
+            projected_points=19.0,
+            fanduel_line=18.5,
+            fanduel_over_under="over",
+        ),
+        _row(
+            id=2,
+            date=date(2026, 5, 23),
+            player_id=7,
+            projected_points=21.0,
+            fanduel_line=20.5,
+            fanduel_over_under="under",
+        ),
+    ]
+    actuals = [SimpleNamespace(player_id=7, date=date(2026, 5, 23), actual_points=20.0)]
+    merged, stats = svc._merge_actuals_range(
+        projections,
+        actuals,
+        pid_attr="player_id",
+        actual_attr="actual_points",
+        actual_key="actual_points",
+    )
+    assert len(merged) == 1
+    assert stats["projection_rows_raw"] == 2
+    assert stats["projection_rows_deduped"] == 1
+    assert merged[0]["projected_points"] == 21.0
+    assert merged[0]["fanduel_line"] == 20.5

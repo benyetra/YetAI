@@ -31,6 +31,7 @@ from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
     ou_call_bucket,
+    ou_call_graded_breakdown,
     ou_call_graded_counts,
     overview_item_from_totals,
 )
@@ -43,17 +44,33 @@ def _merge_actuals_range(
     pid_attr: str,
     actual_attr: str,
     actual_key: str,
-) -> list[dict[str, Any]]:
-    """Pair projections with actuals on (player_id, calendar date)."""
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """Pair projections with actuals on (player_id, calendar date).
+
+    Returns merged row dicts plus projection dedupe stats (latest ``id`` wins).
+    """
+    raw_n = len(projections)
+    latest_by_key: dict[tuple[Any, Any], Any] = {}
+    for p in projections:
+        key = (getattr(p, pid_attr), p.date)
+        prev = latest_by_key.get(key)
+        if prev is None or getattr(p, "id", 0) > getattr(prev, "id", 0):
+            latest_by_key[key] = p
+
     by_key = {(getattr(a, pid_attr), a.date): a for a in actuals}
     out: list[dict[str, Any]] = []
-    for p in projections:
+    for p in latest_by_key.values():
         key = (getattr(p, pid_attr), p.date)
         a = by_key.get(key)
         row: dict[str, Any] = {c.name: getattr(p, c.name) for c in p.__table__.columns}
         row[actual_key] = getattr(a, actual_attr) if a else None
         out.append(row)
-    return out
+    stats = {
+        "projection_rows_raw": raw_n,
+        "projection_rows_deduped": len(latest_by_key),
+        "merged_rows": len(out),
+    }
+    return out, stats
 
 
 def _merge_actuals(
@@ -208,8 +225,10 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     )
 
 
-def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
-    """Window NBA accuracy — combined O/U hit rate across core props."""
+def _nba_season_window_rows(
+    db: Session, *, start: date_type, end: date_type
+) -> list[tuple[str, str, list[dict[str, Any]], dict[str, int]]]:
+    """Load merged row sets for the five NBA props used in ``season_overview``."""
 
     def _rng(proj_cls, act_cls, *, pid_attr: str, actual_attr: str, actual_key: str):
         proj = (
@@ -222,76 +241,132 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
             proj, act, pid_attr=pid_attr, actual_attr=actual_attr, actual_key=actual_key
         )
 
-    pts_rows = _rng(
-        PointsProjections,
-        PointsActuals,
-        pid_attr="player_id",
-        actual_attr="actual_points",
-        actual_key="actual_points",
-    )
-    tpm_rows = _rng(
-        ThreePointProjections,
-        ActualThreePointMade,
-        pid_attr="player_id",
-        actual_attr="actual_three_pt_made",
-        actual_key="actual_three_pt_made",
-    )
-    stl_rows = _rng(
-        StealsProjections,
-        StealsActuals,
-        pid_attr="player_id",
-        actual_attr="actual_steals",
-        actual_key="actual_steals",
-    )
-    ast_rows = _rng(
-        AssistsProjections,
-        AssistsActuals,
-        pid_attr="player_id",
-        actual_attr="actual_assists",
-        actual_key="actual_assists",
-    )
-    reb_rows = _rng(
-        ReboundsProjections,
-        ReboundsActuals,
-        pid_attr="player_id",
-        actual_attr="actual_rebounds",
-        actual_key="actual_rebounds",
-    )
+    return [
+        (
+            "points_ou",
+            "Points O/U",
+            *_rng(
+                PointsProjections,
+                PointsActuals,
+                pid_attr="player_id",
+                actual_attr="actual_points",
+                actual_key="actual_points",
+            ),
+        ),
+        (
+            "three_pt_ou",
+            "3P Made O/U",
+            *_rng(
+                ThreePointProjections,
+                ActualThreePointMade,
+                pid_attr="player_id",
+                actual_attr="actual_three_pt_made",
+                actual_key="actual_three_pt_made",
+            ),
+        ),
+        (
+            "steals_ou",
+            "Steals O/U",
+            *_rng(
+                StealsProjections,
+                StealsActuals,
+                pid_attr="player_id",
+                actual_attr="actual_steals",
+                actual_key="actual_steals",
+            ),
+        ),
+        (
+            "assists_ou",
+            "Assists O/U",
+            *_rng(
+                AssistsProjections,
+                AssistsActuals,
+                pid_attr="player_id",
+                actual_attr="actual_assists",
+                actual_key="actual_assists",
+            ),
+        ),
+        (
+            "rebounds_ou",
+            "Rebounds O/U",
+            *_rng(
+                ReboundsProjections,
+                ReboundsActuals,
+                pid_attr="player_id",
+                actual_attr="actual_rebounds",
+                actual_key="actual_rebounds",
+            ),
+        ),
+    ]
 
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window NBA accuracy — combined O/U hit rate across core props."""
+    actual_fields = [
+        "actual_points",
+        "actual_three_pt_made",
+        "actual_steals",
+        "actual_assists",
+        "actual_rebounds",
+    ]
+    window_rows = _nba_season_window_rows(db, start=start, end=end)
     parts = [
         ou_call_graded_counts(
-            pts_rows,
+            rows,
             line_field="fanduel_line",
             pick_field="fanduel_over_under",
-            actual_field="actual_points",
-        ),
-        ou_call_graded_counts(
-            tpm_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_three_pt_made",
-        ),
-        ou_call_graded_counts(
-            stl_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_steals",
-        ),
-        ou_call_graded_counts(
-            ast_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_assists",
-        ),
-        ou_call_graded_counts(
-            reb_rows,
-            line_field="fanduel_line",
-            pick_field="fanduel_over_under",
-            actual_field="actual_rebounds",
-        ),
+            actual_field=af,
+        )
+        for (_key, _label, rows, _merge), af in zip(window_rows, actual_fields)
     ]
     correct = sum(p[0] for p in parts)
     total = sum(p[1] for p in parts)
     return overview_item_from_totals(
         sport="nba", label="NBA", correct=correct, total=total
     )
+
+
+def season_overview_diagnostics(
+    db: Session, *, start: date_type, end: date_type
+) -> dict[str, Any]:
+    """Structured counts for admin/debug — same window rules as ``season_overview``."""
+    actual_fields = [
+        "actual_points",
+        "actual_three_pt_made",
+        "actual_steals",
+        "actual_assists",
+        "actual_rebounds",
+    ]
+    window_rows = _nba_season_window_rows(db, start=start, end=end)
+    parts_out: list[dict[str, Any]] = []
+    correct = 0
+    total = 0
+    for (key, label, rows, merge_stats), af in zip(window_rows, actual_fields):
+        bd = ou_call_graded_breakdown(
+            rows,
+            line_field="fanduel_line",
+            pick_field="fanduel_over_under",
+            actual_field=af,
+        )
+        c, t = bd["graded_correct"], bd["graded_total"]
+        correct += c
+        total += t
+        parts_out.append(
+            {
+                "key": key,
+                "label": label,
+                "actual_field": af,
+                "merge": merge_stats,
+                "breakdown": bd,
+                "graded_correct": c,
+                "graded_total": t,
+            }
+        )
+    return {
+        "sport": "nba",
+        "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
+        "overview": overview_item_from_totals(
+            sport="nba", label="NBA", correct=correct, total=total
+        ),
+        "parts": parts_out,
+    }

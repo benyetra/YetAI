@@ -236,6 +236,55 @@ def test_ou_call_graded_counts_matches_bucket_numerator():
     assert (c, t) == (2, 2)
 
 
+def test_ou_call_graded_counts_ignores_non_decision_picks():
+    rows = [
+        {"line": 5.5, "pick": "pass", "actual": 7.0, "projected": 6.5},
+        {"line": 5.5, "pick": "lean_over", "actual": 7.0, "projected": 6.5},
+        {"line": 5.5, "pick": "over", "actual": 7.0, "projected": 6.5},
+    ]
+    c, t = ash.ou_call_graded_counts(
+        rows,
+        line_field="line",
+        pick_field="pick",
+        actual_field="actual",
+    )
+    assert (c, t) == (1, 1)
+
+
+def test_ou_call_graded_breakdown_aligns_with_counts():
+    rows = [
+        {"line": 5.5, "pick": "over", "actual": 7.0},
+        {"line": 5.5, "pick": "pass", "actual": 7.0},
+        {"line": 5.5, "pick": "under", "actual": 4.0},
+        {"line": 6.0, "pick": "over", "actual": 6.0},
+        {"line": None, "pick": "over", "actual": 7.0},
+    ]
+    bd = ash.ou_call_graded_breakdown(
+        rows, line_field="line", pick_field="pick", actual_field="actual"
+    )
+    c, t = ash.ou_call_graded_counts(
+        rows, line_field="line", pick_field="pick", actual_field="actual"
+    )
+    assert (bd["graded_correct"], bd["graded_total"]) == (c, t)
+    assert bd["rows_scanned"] == 5
+    assert bd["non_decision_pick"] == 1
+    assert bd["push"] == 1
+    assert bd["missing_line"] == 1
+
+
+def test_edge_play_graded_counts_ignores_pass():
+    rows = [
+        {"pick": "PASS", "graded": True},
+        {"pick": "HOME", "graded": True},
+    ]
+    c, t = ash.edge_play_graded_counts(
+        rows,
+        pick_field="pick",
+        correct_field="graded",
+    )
+    assert (c, t) == (1, 1)
+
+
 def test_overview_item_from_totals_no_data():
     out = ash.overview_item_from_totals(sport="mlb", label="MLB", correct=0, total=0)
     assert out["sport"] == "mlb"

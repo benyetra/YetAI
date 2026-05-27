@@ -29,6 +29,7 @@ from app.services.accuracy_shared import (
     assemble,
     mae_bucket,
     ou_call_bucket,
+    ou_call_graded_breakdown,
     ou_call_graded_counts,
     overview_item_from_totals,
 )
@@ -180,3 +181,50 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
     return overview_item_from_totals(
         sport="nfl", label="NFL", correct=correct, total=total
     )
+
+
+def season_overview_diagnostics(
+    db: Session, *, start: date_type, end: date_type
+) -> dict[str, Any]:
+    """Structured counts for admin/debug — QB pass yards O/U only (overview scope)."""
+    qb_proj = (
+        db.query(QBPredictions)
+        .filter(
+            func.date(QBPredictions.game_date) >= start,
+            func.date(QBPredictions.game_date) <= end,
+        )
+        .all()
+    )
+    qb_actuals = (
+        db.query(QBActuals)
+        .filter(
+            func.date(QBActuals.game_date) >= start,
+            func.date(QBActuals.game_date) <= end,
+        )
+        .all()
+    )
+    qb_rows = _merge_actuals_qb_range(qb_proj, qb_actuals)
+    bd = ou_call_graded_breakdown(
+        qb_rows,
+        line_field="ou_line",
+        pick_field="betting_recommendation",
+        actual_field="actual_passing_yards",
+    )
+    c, t = bd["graded_correct"], bd["graded_total"]
+    return {
+        "sport": "nfl",
+        "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
+        "overview": overview_item_from_totals(
+            sport="nfl", label="NFL", correct=c, total=t
+        ),
+        "parts": [
+            {
+                "key": "qb_passing_ou",
+                "label": "QB Pass Yds O/U",
+                "kind": "ou",
+                "breakdown": bd,
+                "graded_correct": c,
+                "graded_total": t,
+            }
+        ],
+    }

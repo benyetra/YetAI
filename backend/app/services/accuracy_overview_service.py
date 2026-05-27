@@ -2,12 +2,35 @@
 
 from __future__ import annotations
 
+import time
 from datetime import date, timedelta
-from typing import Literal
+from typing import Any, Literal
 
 from sqlalchemy.orm import Session
 
 WindowMode = Literal["season", "last_30"]
+_CACHE_TTL_SECONDS = 300
+_OVERVIEW_CACHE: dict[tuple[WindowMode, str], tuple[float, dict[str, Any]]] = {}
+
+
+def clear_overview_cache() -> None:
+    """Clear in-memory overview cache (used by tests and manual refresh flows)."""
+    _OVERVIEW_CACHE.clear()
+
+
+def _cache_get(key: tuple[WindowMode, str]) -> dict[str, Any] | None:
+    entry = _OVERVIEW_CACHE.get(key)
+    if not entry:
+        return None
+    created_at, payload = entry
+    if time.time() - created_at > _CACHE_TTL_SECONDS:
+        _OVERVIEW_CACHE.pop(key, None)
+        return None
+    return payload
+
+
+def _cache_set(key: tuple[WindowMode, str], payload: dict[str, Any]) -> None:
+    _OVERVIEW_CACHE[key] = (time.time(), payload)
 
 
 def window_date_bounds(
@@ -58,6 +81,13 @@ def build_accuracy_overview(
     )
 
     as_of = today or date_cls.today()
+    # Cache only default prod flow (`today` inferred). Tests and explicit
+    # historical calls bypass cache for deterministic behavior.
+    cache_key = (window, as_of.isoformat())
+    if today is None:
+        cached = _cache_get(cache_key)
+        if cached is not None:
+            return cached
     loaders = [
         ("mlb", mlb_accuracy_service),
         ("nba", nba_accuracy_service),
@@ -69,8 +99,50 @@ def build_accuracy_overview(
     for sport, mod in loaders:
         start, end = window_date_bounds(sport=sport, mode=window, today=as_of)
         items.append(mod.season_overview(db, start=start, end=end))
-    return {
+    payload = {
         "window": window,
         "as_of": as_of.isoformat(),
         "items": items,
+    }
+    if today is None:
+        _cache_set(cache_key, payload)
+    return payload
+
+
+def build_accuracy_overview_diagnostics(
+    db: Session,
+    *,
+    window: WindowMode = "season",
+    today: date | None = None,
+) -> dict[str, Any]:
+    """Per-league breakdown of how overview graded counts are built (admin tooling).
+
+    Not cached — intended for low-frequency inspection.
+    """
+    from datetime import date as date_cls
+
+    from app.services import (
+        mlb_accuracy_service,
+        nba_accuracy_service,
+        nfl_accuracy_service,
+        nhl_accuracy_service,
+        wnba_accuracy_service,
+    )
+
+    as_of = today or date_cls.today()
+    loaders = [
+        ("mlb", mlb_accuracy_service),
+        ("nba", nba_accuracy_service),
+        ("wnba", wnba_accuracy_service),
+        ("nfl", nfl_accuracy_service),
+        ("nhl", nhl_accuracy_service),
+    ]
+    leagues: list[dict[str, Any]] = []
+    for sport, mod in loaders:
+        start, end = window_date_bounds(sport=sport, mode=window, today=as_of)
+        leagues.append(mod.season_overview_diagnostics(db, start=start, end=end))
+    return {
+        "window": window,
+        "as_of": as_of.isoformat(),
+        "leagues": leagues,
     }

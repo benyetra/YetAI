@@ -38,6 +38,7 @@ from app.services.accuracy_shared import (
     assemble,
     mae_bucket,
     ou_call_bucket,
+    ou_call_graded_breakdown,
     ou_call_graded_counts,
     overview_item_from_totals,
 )
@@ -261,9 +262,10 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     )
 
 
-def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
-    """Window WNBA accuracy — game totals + player props O/U (spread is MAE-only)."""
-
+def _wnba_season_overview_row_sets(
+    db: Session, *, start: date_type, end: date_type
+) -> dict[str, list[dict[str, Any]]]:
+    """Row dicts for the four WNBA overview O/U sources."""
     totals_proj = (
         db.query(WNBATotalsProjections)
         .filter(
@@ -320,28 +322,38 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
         proj_field="projected_rebounds",
         actual_field="actual_rebounds",
     )
+    return {
+        "totals": totals_rows,
+        "points": points_rows,
+        "assists": assists_rows,
+        "rebounds": rebounds_rows,
+    }
 
+
+def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:
+    """Window WNBA accuracy — game totals + player props O/U (spread is MAE-only)."""
+    r = _wnba_season_overview_row_sets(db, start=start, end=end)
     parts = [
         ou_call_graded_counts(
-            totals_rows,
+            r["totals"],
             line_field="market_total",
             pick_field="recommendation",
             actual_field="actual_total",
         ),
         ou_call_graded_counts(
-            points_rows,
+            r["points"],
             line_field="market_line",
             pick_field="recommendation",
             actual_field="actual_points",
         ),
         ou_call_graded_counts(
-            assists_rows,
+            r["assists"],
             line_field="market_line",
             pick_field="recommendation",
             actual_field="actual_assists",
         ),
         ou_call_graded_counts(
-            rebounds_rows,
+            r["rebounds"],
             line_field="market_line",
             pick_field="recommendation",
             actual_field="actual_rebounds",
@@ -352,3 +364,73 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
     return overview_item_from_totals(
         sport="wnba", label="WNBA", correct=correct, total=total
     )
+
+
+def season_overview_diagnostics(
+    db: Session, *, start: date_type, end: date_type
+) -> dict[str, Any]:
+    """Structured counts for admin/debug — same row sets as ``season_overview``."""
+    r = _wnba_season_overview_row_sets(db, start=start, end=end)
+    specs = [
+        (
+            "game_totals_ou",
+            "Game totals O/U",
+            "totals",
+            "market_total",
+            "recommendation",
+            "actual_total",
+        ),
+        (
+            "points_ou",
+            "Points O/U",
+            "points",
+            "market_line",
+            "recommendation",
+            "actual_points",
+        ),
+        (
+            "assists_ou",
+            "Assists O/U",
+            "assists",
+            "market_line",
+            "recommendation",
+            "actual_assists",
+        ),
+        (
+            "rebounds_ou",
+            "Rebounds O/U",
+            "rebounds",
+            "market_line",
+            "recommendation",
+            "actual_rebounds",
+        ),
+    ]
+    parts_out: list[dict[str, Any]] = []
+    correct = 0
+    total = 0
+    for key, label, rk, lf, pf, af in specs:
+        rows = r[rk]
+        bd = ou_call_graded_breakdown(
+            rows, line_field=lf, pick_field=pf, actual_field=af
+        )
+        c, t = bd["graded_correct"], bd["graded_total"]
+        correct += c
+        total += t
+        parts_out.append(
+            {
+                "key": key,
+                "label": label,
+                "kind": "ou",
+                "breakdown": bd,
+                "graded_correct": c,
+                "graded_total": t,
+            }
+        )
+    return {
+        "sport": "wnba",
+        "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
+        "overview": overview_item_from_totals(
+            sport="wnba", label="WNBA", correct=correct, total=total
+        ),
+        "parts": parts_out,
+    }
