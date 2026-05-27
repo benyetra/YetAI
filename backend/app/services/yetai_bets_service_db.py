@@ -269,7 +269,15 @@ class YetAIBetsServiceDB:
     # Statuses that are safe to display to subscribers
     SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed"}
     YETAI_LIVE_STATUSES = ("active", "pending")
-    YETAI_HISTORY_STATUSES = ("won", "lost", "pushed")
+    # Graded picks plus terminal non-grade states (e.g. expired before sync).
+    YETAI_HISTORY_STATUSES = (
+        "won",
+        "lost",
+        "pushed",
+        "expired",
+        "pending_manual_review",
+    )
+    YETAI_GRADED_STATUSES = ("won", "lost", "pushed")
 
     def _allowed_tiers_for_user(self, user_tier: str) -> List[SubscriptionTier]:
         try:
@@ -321,6 +329,8 @@ class YetAIBetsServiceDB:
         won = [b for b in bets if b.get("status") == "won"]
         lost = [b for b in bets if b.get("status") == "lost"]
         pushed = [b for b in bets if b.get("status") == "pushed"]
+        expired = [b for b in bets if b.get("status") == "expired"]
+        manual = [b for b in bets if b.get("status") == "pending_manual_review"]
         graded = len(won) + len(lost)
         units = 0.0
         for bet in bets:
@@ -340,9 +350,69 @@ class YetAIBetsServiceDB:
             "won": len(won),
             "lost": len(lost),
             "pushed": len(pushed),
+            "expired": len(expired),
+            "pending_manual_review": len(manual),
             "win_rate": win_rate,
             "units": round(units, 2),
         }
+
+    def sync_yetai_from_unified_bet(self, db: Session, unified_bet) -> bool:
+        """Mirror graded placed-bet outcomes onto the linked YetAI pick row."""
+        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
+
+        yetai_id = getattr(unified_bet, "yetai_bet_id", None)
+        if not yetai_id:
+            return False
+        if unified_bet.status not in (
+            UnifiedBetStatus.WON,
+            UnifiedBetStatus.LOST,
+            UnifiedBetStatus.PUSHED,
+        ):
+            return False
+
+        yetai = db.query(YetAIBet).filter(YetAIBet.id == yetai_id).first()
+        if not yetai:
+            return False
+
+        target = unified_bet.status.value
+        if yetai.status == target and yetai.settled_at is not None:
+            return False
+
+        yetai.status = target
+        yetai.settled_at = unified_bet.settled_at or datetime.utcnow()
+        note = (getattr(unified_bet, "reasoning", None) or "").strip()
+        yetai.result = clamp_yetai_result(note or f"Graded from placed bet ({target})")
+        return True
+
+    def sync_yetai_picks_from_linked_unified_bets(self, db: Session) -> int:
+        """Backfill yetai_bets rows from settled simple_unified_bets with yetai_bet_id."""
+        from app.models.simple_unified_bet_model import (
+            SimpleUnifiedBet,
+            BetStatus as UnifiedBetStatus,
+        )
+
+        linked = (
+            db.query(SimpleUnifiedBet)
+            .filter(SimpleUnifiedBet.yetai_bet_id.isnot(None))
+            .filter(
+                SimpleUnifiedBet.status.in_(
+                    [
+                        UnifiedBetStatus.WON,
+                        UnifiedBetStatus.LOST,
+                        UnifiedBetStatus.PUSHED,
+                    ]
+                )
+            )
+            .all()
+        )
+        updated = 0
+        for unified in linked:
+            if self.sync_yetai_from_unified_bet(db, unified):
+                updated += 1
+        if updated:
+            db.commit()
+            logger.info("Synced %s YetAI pick(s) from linked placed bets", updated)
+        return updated
 
     def get_yetai_bets_for_user(self, user_tier: str, db: Session) -> List[Dict]:
         """Return open YetAI picks (active/pending) for the subscriber tier."""
@@ -357,7 +427,8 @@ class YetAIBetsServiceDB:
         days: int = 90,
         limit: int = 100,
     ) -> tuple[List[Dict], Dict[str, float | int]]:
-        """Settled promoted picks (won/lost/pushed) with aggregate track record."""
+        """Settled promoted picks with aggregate track record."""
+        self.sync_yetai_picks_from_linked_unified_bets(db)
         since = datetime.utcnow() - timedelta(days=max(days, 1))
         rows = self._query_yetai_bets_for_user(
             user_tier,

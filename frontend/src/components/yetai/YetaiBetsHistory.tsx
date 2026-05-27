@@ -12,6 +12,8 @@ export interface YetaiHistoryStats {
   won: number;
   lost: number;
   pushed: number;
+  expired?: number;
+  pending_manual_review?: number;
   win_rate: number;
   units: number;
 }
@@ -39,13 +41,22 @@ function statusIcon(status: string) {
   if (status === 'won') return <Check size={14} />;
   if (status === 'lost') return <X size={14} />;
   if (status === 'pushed') return <Minus size={14} />;
+  if (status === 'expired' || status === 'pending_manual_review') return <Clock size={13} />;
   return <Clock size={13} />;
 }
 
 function statusStyle(status: string): { background: string; color: string } {
   if (status === 'won') return { background: 'var(--win-soft)', color: 'var(--win)' };
   if (status === 'lost') return { background: 'var(--loss-soft)', color: 'var(--loss)' };
+  if (status === 'expired' || status === 'pending_manual_review') {
+    return { background: 'rgba(255,255,255,0.06)', color: 'var(--text-3)' };
+  }
   return { background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)' };
+}
+
+function statusLabel(status: string): string {
+  if (status === 'pending_manual_review') return 'review';
+  return status;
 }
 
 function formatSettledDate(iso?: string | null): string {
@@ -95,6 +106,7 @@ export default function YetaiBetsHistory({
             <div className="section-sub" style={{ marginTop: 4 }}>
               {stats.won}W · {stats.lost}L
               {stats.pushed > 0 ? ` · ${stats.pushed}P` : ''}
+              {(stats.expired ?? 0) > 0 ? ` · ${stats.expired} void` : ''}
             </div>
           </div>
           <div className="card stat-tile">
@@ -180,8 +192,16 @@ export default function YetaiBetsHistory({
                       </div>
                     ) : null}
                   </div>
-                  <span className={`badge badge-${status === 'won' ? 'win' : status === 'lost' ? 'loss' : 'pending'}`}>
-                    {status}
+                  <span
+                    className={`badge badge-${
+                      status === 'won'
+                        ? 'win'
+                        : status === 'lost'
+                          ? 'loss'
+                          : 'pending'
+                    }`}
+                  >
+                    {statusLabel(status)}
                   </span>
                 </div>
               );
