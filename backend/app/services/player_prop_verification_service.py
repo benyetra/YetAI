@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
 from app.core.database import SessionLocal
-from app.models.database_models import Bet, BetStatus, BetType
+from app.models.database_models import Bet, BetStatus, BetType, YetAIBet
 from app.models.simple_unified_bet_model import SimpleUnifiedBet
 from app.services.websocket_manager import manager as websocket_manager
 
@@ -933,6 +933,60 @@ class PlayerPropVerificationService:
             return None
 
     # ==================== COMMON UTILITIES ====================
+
+    def verify_yetai_mlb_prop(
+        self, bet: YetAIBet, game_date
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Settle a YetAI MLB prop using MLB Stats API.
+
+        Returns (status, result_description) with status in won/lost/pushed, or
+        None when stats are not available yet.
+        """
+        prop_details = self._parse_mlb_prop(bet.selection or "")
+        if not prop_details:
+            logger.warning(
+                "Could not parse YetAI MLB prop selection: %r", bet.selection
+            )
+            return None
+
+        stats = self._fetch_mlb_player_stats(
+            prop_details["player_name"], prop_details["stat_type"], game_date
+        )
+        if stats is None:
+            return None
+
+        actual_value = stats.get(prop_details["stat_type"])
+        if actual_value is None:
+            for key, value in stats.items():
+                if key.lower() == prop_details["stat_type"].lower():
+                    actual_value = value
+                    break
+        if actual_value is None:
+            return None
+
+        line_value = prop_details["line_value"]
+        is_over = prop_details["is_over"]
+        if actual_value == line_value:
+            return (
+                "pushed",
+                f"Push: {prop_details['player_name']} exactly {line_value} "
+                f"{prop_details['stat_type']}",
+            )
+
+        won = self._check_prop_outcome(actual_value, line_value, is_over)
+        direction = "Over" if is_over else "Under"
+        if won:
+            return (
+                "won",
+                f"Won: {direction} {line_value} — actual {actual_value} "
+                f"({prop_details['player_name']})",
+            )
+        return (
+            "lost",
+            f"Lost: {direction} {line_value} — actual {actual_value} "
+            f"({prop_details['player_name']})",
+        )
 
     def _check_prop_outcome(
         self, actual_value: float, line_value: float, is_over: bool

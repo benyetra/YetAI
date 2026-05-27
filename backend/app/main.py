@@ -46,6 +46,7 @@ from app.services.bet_scheduler_service import (
 from app.services.unified_bet_verification_service import (
     unified_bet_verification_service,
 )
+from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
 # Import live betting models
 from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
@@ -2881,12 +2882,14 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
         finally:
             db.close()
 
-        # Use the new unified verification service
+        # Unified user bets (simple_unified_bets) + YetAI subscriber picks (yetai_bets)
         result = await unified_bet_verification_service.verify_all_pending_bets()
+        yetai_service = YetAIBetsServiceDB()
+        yetai_result = await yetai_service.verify_pending_yetai_bets()
 
         logger.info(f"Unified verification result: {result}")
+        logger.info(f"YetAI bets verification result: {yetai_result}")
 
-        # Also sync games to ensure we have latest data
         game_sync_result = {
             "success": True,
             "message": "Game sync skipped for unified verification",
@@ -2895,9 +2898,22 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
             "sports_synced": [],
         }
 
+        combined = {
+            **result,
+            "game_sync": game_sync_result,
+            "yetai_bets": yetai_result,
+            "verified": result.get("verified", 0) + yetai_result.get("verified", 0),
+            "settled": result.get("settled", 0) + yetai_result.get("settled", 0),
+            "message": (
+                f"Unified: {result.get('message', '')}; "
+                f"YetAI: verified {yetai_result.get('verified', 0)}, "
+                f"settled {yetai_result.get('settled', 0)}"
+            ),
+        }
+
         return {
             "status": "success",
-            "result": {**result, "game_sync": game_sync_result},
+            "result": combined,
         }
     except Exception as e:
         logger.error(f"Error running unified verification: {e}", exc_info=True)

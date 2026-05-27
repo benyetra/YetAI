@@ -2,8 +2,9 @@
 Database-powered service for managing admin-created YetAI Bets
 """
 
+import re
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
 import logging
 from sqlalchemy.orm import Session
@@ -21,6 +22,32 @@ from app.services.yetai_bets_demo import is_demo_yetai_bet
 from app.services.yetai_bets_display import subscriber_game_label
 
 logger = logging.getLogger(__name__)
+
+# Bets the scheduler should try to settle (subscriber-facing unsettled rows).
+YETAI_UNSETTLED_STATUSES = ("pending", "active")
+MLB_PROP_EVENT_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def game_date_for_yetai_bet(bet: YetAIBet) -> date:
+    """Best-effort game date for prop/stat lookups."""
+    if bet.commence_time:
+        return bet.commence_time.date()
+    factors = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
+    event_id = str(factors.get("event_id") or "")
+    match = MLB_PROP_EVENT_DATE_RE.search(event_id)
+    if match:
+        return date.fromisoformat(match.group(1))
+    if bet.created_at:
+        return bet.created_at.date()
+    return datetime.utcnow().date()
+
+
+def yetai_bet_is_stale(bet: YetAIBet, cutoff: datetime) -> bool:
+    if bet.commence_time is not None:
+        return bet.commence_time < cutoff
+    if bet.created_at is not None:
+        return bet.created_at < cutoff
+    return False
 
 
 class YetAIBetsServiceDB:
@@ -650,93 +677,121 @@ class YetAIBetsServiceDB:
 
     async def verify_pending_yetai_bets(self) -> Dict:
         """
-        Verify all pending YetAI bets and settle completed games
-        Checks database games table for games with FINAL status
+        Verify unsettled YetAI bets (pending + active) and settle when possible.
+
+        - Game-linked bets: ``games`` row with FINAL status + score evaluation.
+        - MLB props: MLB Stats API via PlayerPropVerificationService.
+        - Stale rows (>24h, still unsettled): pending_manual_review (hidden from subscribers).
         """
         from app.models.database_models import Game, GameStatus
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
 
         logger.info("🎯 Starting YetAI bets verification...")
         db = SessionLocal()
+        prop_service = PlayerPropVerificationService(db)
 
         try:
-            # Get all pending YetAI bets
-            pending_bets = db.query(YetAIBet).filter(YetAIBet.status == "pending").all()
+            unsettled = (
+                db.query(YetAIBet)
+                .filter(YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES))
+                .all()
+            )
+            logger.info(
+                "Found %s unsettled YetAI bets (statuses %s)",
+                len(unsettled),
+                YETAI_UNSETTLED_STATUSES,
+            )
 
-            logger.info(f"Found {len(pending_bets)} pending YetAI bets to verify")
-
-            if not pending_bets:
-                return {"success": True, "verified": 0, "settled": 0}
+            if not unsettled:
+                return {"success": True, "verified": 0, "settled": 0, "expired": 0}
 
             total_settled = 0
+            total_expired = 0
+            stale_cutoff = datetime.utcnow() - timedelta(hours=24)
 
-            # First pass: Check bets with game_id against database
-            for bet in pending_bets:
-                if bet.game_id:
+            for bet in unsettled:
+                if bet.status not in YETAI_UNSETTLED_STATUSES:
+                    continue
+
+                settled = False
+
+                if bet.bet_type == BetType.PROP and (bet.sport or "").upper() == "MLB":
+                    game_day = game_date_for_yetai_bet(bet)
+                    outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
+                    if outcome:
+                        result_status, result_description = outcome
+                        bet.status = result_status
+                        bet.settled_at = datetime.utcnow()
+                        bet.result = result_description
+                        total_settled += 1
+                        settled = True
+                        logger.info(
+                            "Settled YetAI MLB prop %s via stats API: %s",
+                            bet.id[:8],
+                            result_status,
+                        )
+
+                elif bet.game_id:
                     game = db.query(Game).filter(Game.id == bet.game_id).first()
                     if game and game.status == GameStatus.FINAL:
-                        # Game is complete, evaluate bet
                         result_status, result_description = (
                             self._evaluate_yetai_bet_outcome(
                                 bet, game.home_score, game.away_score
                             )
                         )
+                        if result_status in (
+                            "won",
+                            "lost",
+                            "pushed",
+                            "pending_manual_review",
+                        ):
+                            bet.status = result_status
+                            bet.settled_at = datetime.utcnow()
+                            bet.result = result_description
+                            if result_status != "pending_manual_review":
+                                total_settled += 1
+                            settled = True
+                            logger.info(
+                                "Settled YetAI bet %s via games DB: %s",
+                                bet.id[:8],
+                                result_status,
+                            )
 
-                        bet.status = result_status
-                        bet.settled_at = datetime.utcnow()
-                        bet.result = result_description
-                        total_settled += 1
-
-                        logger.info(
-                            f"Settled YetAI bet {bet.id[:8]} via DB: {bet.title} - {result_status}"
-                        )
-
-            # Second pass: auto-expire bets whose games started >24h ago and
-            # still couldn't be settled (missing game_id, missing Game row, or
-            # game never marked FINAL). They get marked pending_manual_review
-            # so they leave the user-facing active list.
-            from datetime import timedelta
-
-            stale_cutoff = datetime.utcnow() - timedelta(hours=24)
-            total_expired = 0
-            for bet in pending_bets:
-                if bet.status != "pending":
+                if settled:
                     continue
-                is_stale_with_time = (
-                    bet.commence_time is not None and bet.commence_time < stale_cutoff
-                )
-                is_stale_no_time = (
-                    bet.commence_time is None
-                    and bet.created_at is not None
-                    and bet.created_at < stale_cutoff
-                )
-                if is_stale_with_time or is_stale_no_time:
+
+                if yetai_bet_is_stale(bet, stale_cutoff):
                     bet.status = "pending_manual_review"
                     bet.settled_at = datetime.utcnow()
                     if not bet.result:
                         bet.result = (
-                            "Auto-expired: pending >24h without "
-                            "a final score on file"
+                            "Auto-expired: unsettled >24h without verifiable result"
                         )
                     total_expired += 1
                     logger.info(
-                        f"Auto-expired stale YetAI bet {bet.id[:8]}: {bet.title}"
+                        "Auto-expired stale YetAI bet %s: %s",
+                        bet.id[:8],
+                        bet.title,
                     )
 
             db.commit()
             logger.info(
-                f"✅ YetAI verification complete: {total_settled} settled, "
-                f"{total_expired} auto-expired"
+                "✅ YetAI verification complete: %s settled, %s expired/manual",
+                total_settled,
+                total_expired,
             )
 
             return {
                 "success": True,
-                "verified": len(pending_bets),
+                "verified": len(unsettled),
                 "settled": total_settled,
                 "expired": total_expired,
             }
 
         except Exception as e:
-            logger.error(f"Error in YetAI bet verification: {e}")
+            logger.error(f"Error in YetAI bet verification: {e}", exc_info=True)
             db.rollback()
             return {"success": False, "error": str(e)}
         finally:
