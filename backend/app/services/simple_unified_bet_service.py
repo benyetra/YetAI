@@ -57,6 +57,7 @@ class SimpleUnifiedBetService:
 
                 # If this bet is from a YetAI recommendation, get the correct odds_api_event_id
                 odds_api_event_id = None
+                yetai_bet = None
                 if bet_data.yetai_bet_id:
                     from app.models.database_models import YetAIBet
 
@@ -66,20 +67,26 @@ class SimpleUnifiedBetService:
                         .first()
                     )
                     if yetai_bet and yetai_bet.game_id:
-                        # Use the YetAI bet's game_id as the odds_api_event_id
-                        # This ensures bet verification can find the game
                         odds_api_event_id = yetai_bet.game_id
                         logger.info(
-                            f"📌 Using YetAI bet's game_id as odds_api_event_id: {odds_api_event_id}"
+                            "Using YetAI bet game_id as odds_api_event_id: %s",
+                            odds_api_event_id,
                         )
 
                 # Get or create game record
                 game = await self._get_or_create_game(bet_data, db)
 
-                # Determine final odds_api_event_id
-                # Priority: 1) YetAI bet's game_id, 2) Created game's id, 3) bet_data.game_id
+                # Never use the YetAI pick UUID as an Odds API event id (breaks verification).
+                game_id_from_request = bet_data.game_id
+                if yetai_bet and game_id_from_request == yetai_bet.id:
+                    game_id_from_request = None
+
                 if not odds_api_event_id:
-                    odds_api_event_id = game.id if game else bet_data.game_id
+                    odds_api_event_id = (
+                        game.id
+                        if game
+                        else (game_id_from_request if game_id_from_request else None)
+                    )
 
                 # Generate bet ID
                 bet_id = str(uuid.uuid4())

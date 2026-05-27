@@ -220,6 +220,10 @@ class UnifiedBetVerificationService:
     ) -> Optional[UnifiedBetResult]:
         """Verify a single bet against completed games"""
 
+        # Props (incl. YetAI picks with UUID event ids) use sport stats APIs, not Odds scores.
+        if bet.bet_type == BetType.PROP:
+            return await self._evaluate_bet_outcome(bet, 0, 0)
+
         # Find the game by odds_api_event_id
         game_data = None
         for game in completed_games:

@@ -58,12 +58,7 @@ class PlayerPropVerificationService:
                 logger.warning(f"Could not determine sport for bet {bet.id[:8]}")
                 return None
 
-            # Get game date from bet
-            game_date = (
-                bet.game_commence_time.date()
-                if bet.game_commence_time
-                else datetime.utcnow().date()
-            )
+            game_date = self._game_date_for_unified_prop(bet)
 
             # Verify based on sport
             if sport == "mlb":
@@ -87,20 +82,59 @@ class PlayerPropVerificationService:
             return None
 
     def _determine_sport_from_bet(self, bet: SimpleUnifiedBet) -> Optional[str]:
-        """Determine sport from bet's league or sport_key field"""
+        """Determine sport from bet's league, sport_key, or sport column."""
         league = (bet.league or "").lower()
-        sport_key = (bet.sport_key or "").lower()
+        sport_key = (getattr(bet, "sport_key", None) or "").lower()
+        sport = (bet.sport or "").lower()
 
-        if "mlb" in league or "baseball" in sport_key:
+        blob = " ".join((league, sport_key, sport))
+        if "mlb" in blob or "baseball" in blob:
             return "mlb"
-        elif "nfl" in league or "americanfootball_nfl" in sport_key:
+        if "nfl" in blob or "americanfootball_nfl" in blob or "football_nfl" in blob:
             return "nfl"
-        elif "nhl" in league or "icehockey_nhl" in sport_key:
+        if "nhl" in blob or "icehockey" in blob or "hockey" in blob:
             return "nhl"
-        elif "nba" in league or "basketball_nba" in sport_key:
+        if "nba" in blob or "basketball" in blob:
             return "nba"
 
         return None
+
+    def _game_date_for_unified_prop(self, bet: SimpleUnifiedBet):
+        """Resolve stat lookup date for a placed prop (YetAI-linked or straight)."""
+        import re
+
+        if bet.commence_time:
+            return bet.commence_time.date()
+
+        if bet.yetai_bet_id and self.session:
+            from app.models.database_models import YetAIBet
+
+            yetai = (
+                self.session.query(YetAIBet)
+                .filter(YetAIBet.id == bet.yetai_bet_id)
+                .first()
+            )
+            if yetai:
+                if yetai.commence_time:
+                    return yetai.commence_time.date()
+                factors = (
+                    yetai.prediction_factors
+                    if isinstance(yetai.prediction_factors, dict)
+                    else {}
+                )
+                event_id = str(factors.get("event_id") or "")
+                match = re.search(r"(\d{4}-\d{2}-\d{2})", event_id)
+                if match:
+                    from datetime import date as date_cls
+
+                    return date_cls.fromisoformat(match.group(1))
+                if yetai.created_at:
+                    return yetai.created_at.date()
+
+        if bet.placed_at:
+            return bet.placed_at.date()
+
+        return datetime.utcnow().date()
 
     async def _verify_single_mlb_prop(
         self, bet: SimpleUnifiedBet, game_date

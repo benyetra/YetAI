@@ -686,6 +686,25 @@ class YetAIBetsServiceDB:
             logger.error(f"Error evaluating YetAI bet {bet.id[:8]}: {e}")
             return "pending_manual_review", f"Evaluation error: {str(e)}"
 
+    def _expire_stale_pending_approval(self, db: Session) -> int:
+        """Drop admin-queue picks that are past game day or >24h old without commence_time."""
+        now = datetime.utcnow()
+        stale_cutoff = now - timedelta(hours=24)
+        rows = db.query(YetAIBet).filter(YetAIBet.status == "pending_approval").all()
+        expired = []
+        for row in rows:
+            if row.commence_time is not None and row.commence_time <= now:
+                expired.append(row)
+            elif (
+                row.commence_time is None
+                and row.created_at
+                and row.created_at <= stale_cutoff
+            ):
+                expired.append(row)
+        for row in expired:
+            row.status = "expired"
+        return len(expired)
+
     async def verify_pending_yetai_bets(self) -> Dict:
         """
         Verify unsettled YetAI bets (pending + active) and settle when possible.
@@ -704,6 +723,12 @@ class YetAIBetsServiceDB:
         prop_service = PlayerPropVerificationService(db)
 
         try:
+            expired_approval = self._expire_stale_pending_approval(db)
+            if expired_approval:
+                logger.info(
+                    "Expired %s stale pending_approval YetAI picks", expired_approval
+                )
+
             unsettled = (
                 db.query(YetAIBet)
                 .filter(YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES))
@@ -716,7 +741,15 @@ class YetAIBetsServiceDB:
             )
 
             if not unsettled:
-                return {"success": True, "verified": 0, "settled": 0, "expired": 0}
+                if expired_approval:
+                    db.commit()
+                return {
+                    "success": True,
+                    "verified": 0,
+                    "settled": 0,
+                    "expired": 0,
+                    "expired_pending_approval": expired_approval,
+                }
 
             total_settled = 0
             total_expired = 0
@@ -797,6 +830,7 @@ class YetAIBetsServiceDB:
                 "verified": len(unsettled),
                 "settled": total_settled,
                 "expired": total_expired,
+                "expired_pending_approval": expired_approval,
             }
 
         except Exception as e:
