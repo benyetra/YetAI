@@ -224,7 +224,11 @@ def test_resolve_user_import_error_returns_none():
 
     with patch.dict(
         "sys.modules",
-        {"app.core.database": SN(SessionLocal=MagicMock(side_effect=ImportError("no db")))},
+        {
+            "app.core.database": SN(
+                SessionLocal=MagicMock(side_effect=ImportError("no db"))
+            )
+        },
     ):
         result = nr._resolve_user_for_pick("pick-99")
     assert result is None
@@ -238,7 +242,9 @@ def test_resolve_user_import_error_returns_none():
 def test_push_websocket_sends_json_to_manager():
     manager = MagicMock()
     manager.send_personal_message = AsyncMock()
-    with patch("app.services.notification_router._get_ws_manager", return_value=manager):
+    with patch(
+        "app.services.notification_router._get_ws_manager", return_value=manager
+    ):
         _run(nr._push_websocket(7, {"type": "prop_event", "data": {"x": 1}}))
     manager.send_personal_message.assert_awaited_once()
     args = manager.send_personal_message.call_args
@@ -256,7 +262,9 @@ def test_push_websocket_silent_when_no_manager():
 def test_push_websocket_swallows_send_error():
     manager = MagicMock()
     manager.send_personal_message = AsyncMock(side_effect=RuntimeError("closed"))
-    with patch("app.services.notification_router._get_ws_manager", return_value=manager):
+    with patch(
+        "app.services.notification_router._get_ws_manager", return_value=manager
+    ):
         _run(nr._push_websocket(7, {}))  # must not raise
 
 
@@ -270,7 +278,9 @@ def test_send_sms_calls_twilio_with_from_number(monkeypatch):
     client.messages.create.return_value = MagicMock(sid="SM123")
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15559999999")
     monkeypatch.delenv("TWILIO_MESSAGING_SERVICE_SID", raising=False)
-    with patch("app.services.notification_router._get_twilio_client", return_value=client):
+    with patch(
+        "app.services.notification_router._get_twilio_client", return_value=client
+    ):
         _run(nr._send_sms("+15550001111", "test body"))
     client.messages.create.assert_called_once_with(
         to="+15550001111", body="test body", from_="+15559999999"
@@ -282,7 +292,9 @@ def test_send_sms_prefers_messaging_service_over_from_number(monkeypatch):
     client.messages.create.return_value = MagicMock(sid="SM456")
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15559999999")
     monkeypatch.setenv("TWILIO_MESSAGING_SERVICE_SID", "MGabc123")
-    with patch("app.services.notification_router._get_twilio_client", return_value=client):
+    with patch(
+        "app.services.notification_router._get_twilio_client", return_value=client
+    ):
         _run(nr._send_sms("+15550001111", "test body"))
     kwargs = client.messages.create.call_args.kwargs
     assert kwargs.get("messaging_service_sid") == "MGabc123"
@@ -290,7 +302,9 @@ def test_send_sms_prefers_messaging_service_over_from_number(monkeypatch):
 
 
 def test_send_sms_silent_when_no_twilio_client():
-    with patch("app.services.notification_router._get_twilio_client", return_value=None):
+    with patch(
+        "app.services.notification_router._get_twilio_client", return_value=None
+    ):
         _run(nr._send_sms("+1555", "msg"))  # must not raise
 
 
@@ -298,7 +312,9 @@ def test_send_sms_silent_when_no_from_number_or_service_sid(monkeypatch):
     client = MagicMock()
     monkeypatch.delenv("TWILIO_FROM_NUMBER", raising=False)
     monkeypatch.delenv("TWILIO_MESSAGING_SERVICE_SID", raising=False)
-    with patch("app.services.notification_router._get_twilio_client", return_value=client):
+    with patch(
+        "app.services.notification_router._get_twilio_client", return_value=client
+    ):
         _run(nr._send_sms("+1555", "msg"))
     client.messages.create.assert_not_called()
 
@@ -308,7 +324,9 @@ def test_send_sms_swallows_twilio_error(monkeypatch):
     client.messages.create.side_effect = Exception("network error")
     monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15559999999")
     monkeypatch.delenv("TWILIO_MESSAGING_SERVICE_SID", raising=False)
-    with patch("app.services.notification_router._get_twilio_client", return_value=client):
+    with patch(
+        "app.services.notification_router._get_twilio_client", return_value=client
+    ):
         _run(nr._send_sms("+1555", "msg"))  # must not raise
 
 
