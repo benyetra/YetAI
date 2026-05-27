@@ -1,7 +1,7 @@
 """
 Games Sync Service - Fetches and caches games from Odds API and ESPN API.
 
-This service runs on a scheduled interval (every 3 hours) to fetch all games
+This service runs on a Celery beat schedule (three times daily) to fetch all games
 for all leagues (NFL, MLB, NBA, NHL) and store them in the database with odds
 and broadcast information. This eliminates rate limiting issues when serving
 popular games and provides a single source of truth for game data.

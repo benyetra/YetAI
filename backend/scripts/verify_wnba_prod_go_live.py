@@ -17,7 +17,7 @@ HEALTH_URL = "https://api.yetai.app/health"
 FRONTEND_URL = "https://yetai.app/predictions/wnba"
 WNBA_BEAT_ENTRIES = (
     "wnba-update-pipeline-daily",
-    "wnba-update-game-lines-every-30m",
+    "wnba-update-game-lines-thrice-daily",
     "wnba-update-injuries-every-2h",
     "wnba-projectors-pregame-hourly",
     "wnba-store-actuals-morning",

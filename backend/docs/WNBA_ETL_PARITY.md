@@ -142,10 +142,10 @@ DB or any external API.
 
 | Beat entry | Schedule |
 |---|---|
-| `wnba-update-pipeline-daily` | 03:00 ET daily |
-| `wnba-update-game-lines-every-30m` | every 30 min |
+| `wnba-update-pipeline-daily` | 03:00 ET daily (no Odds API lines; uses `pred_wnba_game_lines`) |
+| `wnba-update-game-lines-thrice-daily` | 06:10 / 14:10 / 22:10 ET (Odds API cap) |
 | `wnba-update-injuries-every-2h` | every 2 h |
-| `wnba-projectors-pregame-hourly` | hourly 09:00–22:00 ET |
+| `wnba-projectors-pregame-hourly` | hourly 09:00–22:00 ET (same orchestrator; no Odds line refresh) |
 | `wnba-store-actuals-morning` | 04:00 ET daily |
 | `wnba-totals-accuracy-morning` | 05:00 ET daily |
 | `wnba-spreads-accuracy-morning` | 05:10 ET daily |

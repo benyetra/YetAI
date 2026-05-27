@@ -41,7 +41,7 @@ def test_wnba_beat_entries_registered():
     entries = celery_app.conf.beat_schedule
     expected = [
         "wnba-update-pipeline-daily",
-        "wnba-update-game-lines-every-30m",
+        "wnba-update-game-lines-thrice-daily",
         "wnba-update-injuries-every-2h",
         "wnba-projectors-pregame-hourly",
         "wnba-store-actuals-morning",

@@ -107,8 +107,10 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         "label": "WNBA daily pipeline",
         "sport": "wnba",
         "description": (
-            "Full WNBA ETL: roster, stats, injury, game lines, totals/spread "
-            "projectors, points/assists/rebounds props (May–Oct ET)."
+            "Full WNBA ETL: roster, stats, injury (ESPN), totals/spread "
+            "projectors, points/assists/rebounds props (May–Oct ET). "
+            "Odds API game lines are refreshed only by the "
+            "`wnba-update-game-lines-thrice-daily` beat entry (not this orchestrator)."
         ),
     },
     {
@@ -242,7 +244,7 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "timeout_s": ADMIN_FIREABLE_TASKS[
             "app.tasks.etl_pipeline.wnba.update_game_lines"
         ],
-        "description": "Consensus O/U and spreads from Odds API (basketball_wnba).",
+        "description": "Consensus O/U and spreads from Odds API (basketball_wnba); beat runs 3x/day.",
     },
     {
         "task_name": "app.tasks.etl_pipeline.wnba.totals_projector",

@@ -584,14 +584,14 @@ def run_nba_update_pipeline(self) -> dict:
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_mlb_update_pipeline", bind=True)
 def run_mlb_update_pipeline(self) -> dict:
-    """MLB pre-game projections (10:00 ET beat). See MLB_ETL_PARITY.md."""
-    logger.info("MLB projections pipeline starting (task_id=%s)", self.request.id)
-    from app.tasks.games_sync import sync_games_cache
+    """MLB pre-game projections (10:00 ET beat). See MLB_ETL_PARITY.md.
 
-    sync = sync_games_cache.run()
-    result = _run_phases("mlb", _mlb_projection_phases())
-    result["games_sync"] = sync
-    return result
+    Games cache (Odds API, 4 sports) is refreshed by ``sync-games-cache-thrice-daily``
+    only — avoid embedding ``sync_games_cache`` here so MLB's twice-daily beat does
+    not multiply Odds API usage.
+    """
+    logger.info("MLB projections pipeline starting (task_id=%s)", self.request.id)
+    return _run_phases("mlb", _mlb_projection_phases())
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_mlb_store_actuals", bind=True)
@@ -916,15 +916,19 @@ def wnba_prop_accuracy():
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_wnba_update_pipeline", bind=True)
 def run_wnba_update_pipeline(self) -> dict:
-    """Daily WNBA orchestrator. Mirrors run_nba_update_pipeline."""
+    """WNBA orchestrator (daily + hourly beat).
+
+    Odds API game lines are **not** pulled here — they are capped at 3x/day via the
+    ``wnba-update-game-lines-thrice-daily`` beat entry. This task refreshes stats,
+    injuries (ESPN), projectors, and props using the latest rows in
+    ``pred_wnba_game_lines``.
+    """
     if not _wnba_in_season():
         return {"status": "out_of_season"}
 
     logger.info("WNBA update pipeline starting (task_id=%s)", self.request.id)
     results: dict[str, dict] = {}
     for label, mod in [
-        # Fast externals first so totals/spreads can populate even if stats.wnba.com is slow.
-        ("update_game_lines", _wnba_update_game_lines),
         ("update_injury_status", _wnba_update_injury),
         ("update_team_offense_stats", _wnba_update_off),
         ("update_team_defense_stats", _wnba_update_def),

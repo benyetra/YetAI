@@ -67,10 +67,13 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.live_pollers.refresh_prop_watchlist",
         "schedule": 300.0,
     },
-    # Popular-games DB cache (Odds API + ESPN broadcast metadata)
-    "sync-games-cache-every-3h": {
+    # Popular-games DB cache (Odds API + ESPN broadcast metadata).
+    # One Odds API request per sport per run (4 sports). Cap at 3 runs/day
+    # to stay within Odds API quota goals.
+    "sync-games-cache-thrice-daily": {
         "task": "app.tasks.games_sync.sync_games_cache",
-        "schedule": 10800.0,  # 3 hours — matches GamesSyncService design
+        "schedule": crontab(hour=[6, 14, 22], minute=0),
+        "options": {"expires": 10800},
     },
     # === ETL pipeline (u9t) — overnight orchestrator ===
     "nba-update-pipeline-daily": {
@@ -87,10 +90,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
         "schedule": crontab(hour=3, minute=0),
     },
-    "wnba-update-game-lines-every-30m": {
+    "wnba-update-game-lines-thrice-daily": {
         "task": "app.tasks.etl_pipeline.wnba.update_game_lines",
-        "schedule": crontab(minute="*/30"),
-        "options": {"expires": 1500},
+        "schedule": crontab(hour=[6, 14, 22], minute=10),
+        "options": {"expires": 10800},
     },
     "wnba-update-injuries-every-2h": {
         "task": "app.tasks.etl_pipeline.wnba.update_injury_status",
@@ -100,6 +103,7 @@ celery_app.conf.beat_schedule = {
     "wnba-projectors-pregame-hourly": {
         "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
         "schedule": crontab(minute=0, hour="9-22"),
+        "options": {"expires": 7200},
     },
     "wnba-store-actuals-morning": {
         "task": "app.tasks.etl_pipeline.wnba.store_actuals",

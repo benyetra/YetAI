@@ -57,7 +57,7 @@ class SchedulerService:
         """Set up default scheduled tasks with rate-limit friendly intervals.
 
         NOTE: ``update_popular_odds`` and ``sync_upcoming_games`` are NOT
-        registered here — the Celery beat task ``sync-games-cache-every-3h``
+        registered here — the Celery beat task ``sync-games-cache-thrice-daily``
         (see ``app/celery_app.py``) already pulls the same 4-sport odds set
         on a similar cadence. Running both produced duplicate Odds API
         calls and split the cache between two processes.
