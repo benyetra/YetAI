@@ -109,3 +109,20 @@ def test_verify_queries_active_not_only_pending():
     assert result["settled"] == 1
     assert active_bet.status == "won"
     mock_prop.verify_yetai_mlb_prop.assert_called_once()
+
+
+def test_lost_evaluation_error_mlb_prop_is_retryable():
+    service = YetAIBetsServiceDB()
+    bet = YetAIBet(
+        id="x",
+        title="A @ B",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Connor Prielipp UNDER 5.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        sport="MLB",
+        status="lost",
+        result="Evaluation error: UnifiedBetVerificationService...",
+    )
+    assert service._is_retryable_error_loss(bet) is True

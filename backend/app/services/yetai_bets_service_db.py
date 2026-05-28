@@ -67,6 +67,17 @@ class YetAIBetsServiceDB:
     def __init__(self):
         pass
 
+    def _is_retryable_error_loss(self, bet: YetAIBet) -> bool:
+        """Permit regrading for legacy rows marked lost due to evaluation errors."""
+        if (bet.status or "").lower() != "lost":
+            return False
+        if bet.bet_type != BetType.PROP:
+            return False
+        if (bet.sport or "").upper() != "MLB":
+            return False
+        reason = (bet.result or "").strip().lower()
+        return reason.startswith("evaluation error")
+
     async def create_bet(
         self, bet_request: CreateYetAIBetRequest, admin_user_id: int
     ) -> Dict:
@@ -861,11 +872,23 @@ class YetAIBetsServiceDB:
                     "Expired %s stale pending_approval YetAI picks", expired_approval
                 )
 
-            unsettled = (
+            candidates = (
                 db.query(YetAIBet)
-                .filter(YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES))
+                .filter(YetAIBet.status.in_((*YETAI_UNSETTLED_STATUSES, "lost")))
                 .all()
             )
+            unsettled = []
+            for bet in candidates:
+                if bet.status in YETAI_UNSETTLED_STATUSES:
+                    unsettled.append(bet)
+                    continue
+                if self._is_retryable_error_loss(bet):
+                    unsettled.append(bet)
+                    logger.info(
+                        "Retrying previously errored YetAI pick %s: %s",
+                        bet.id[:8],
+                        (bet.result or "")[:80],
+                    )
             logger.info(
                 "Found %s unsettled YetAI bets (statuses %s)",
                 len(unsettled),
