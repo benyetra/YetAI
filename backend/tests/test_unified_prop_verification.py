@@ -83,3 +83,21 @@ def test_fetch_mlb_player_stats_uses_game_date_season():
 
     assert stats == {"strikeouts": 10}
     assert "season=2026" in mock_get.call_args_list[1].args[0]
+
+
+def test_retryable_evaluation_error_prop_is_detected():
+    service = UnifiedBetVerificationService()
+    bet = MagicMock()
+    bet.status = BetStatus.LOST
+    bet.bet_type = BetType.PROP
+    bet.reasoning = "Evaluation error: missing session"
+    assert service._is_retryable_evaluation_error(bet) is True
+
+
+def test_non_prop_loss_is_not_retryable():
+    service = UnifiedBetVerificationService()
+    bet = MagicMock()
+    bet.status = BetStatus.LOST
+    bet.bet_type = BetType.SPREAD
+    bet.reasoning = "Evaluation error: parse issue"
+    assert service._is_retryable_evaluation_error(bet) is False

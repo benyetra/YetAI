@@ -58,6 +58,15 @@ class UnifiedBetVerificationService:
     def __init__(self):
         self.odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
+    def _is_retryable_evaluation_error(self, bet: SimpleUnifiedBet) -> bool:
+        """Allow one-way retry for previously failed prop grading attempts."""
+        if bet.status != BetStatus.LOST:
+            return False
+        if bet.bet_type != BetType.PROP:
+            return False
+        reason = (bet.reasoning or "").strip().lower()
+        return reason.startswith("evaluation error")
+
     async def verify_all_pending_bets(self) -> Dict:
         """
         Main method to verify all pending bets in the unified table
@@ -76,12 +85,26 @@ class UnifiedBetVerificationService:
                     f"Bet {bet.id[:8]}: status={bet.status} ({type(bet.status)}) - {bet.selection}"
                 )
 
-            # Get all pending bets from unified table
-            pending_bets = (
+            # Get pending bets and retryable grading failures from unified table
+            candidate_bets = (
                 db.query(SimpleUnifiedBet)
-                .filter(SimpleUnifiedBet.status == BetStatus.PENDING)
+                .filter(
+                    SimpleUnifiedBet.status.in_([BetStatus.PENDING, BetStatus.LOST])
+                )
                 .all()
             )
+            pending_bets = []
+            for bet in candidate_bets:
+                if bet.status == BetStatus.PENDING:
+                    pending_bets.append(bet)
+                    continue
+                if self._is_retryable_evaluation_error(bet):
+                    pending_bets.append(bet)
+                    logger.info(
+                        "Retrying previously errored prop bet %s: %s",
+                        bet.id[:8],
+                        (bet.reasoning or "")[:80],
+                    )
 
             logger.info(f"Found {len(pending_bets)} pending bets to verify")
 
@@ -610,7 +633,10 @@ class UnifiedBetVerificationService:
                     .first()
                 )
 
-                if bet and bet.status == BetStatus.PENDING:
+                if bet and (
+                    bet.status == BetStatus.PENDING
+                    or self._is_retryable_evaluation_error(bet)
+                ):
                     bet.status = result.status
                     bet.result_amount = result.result_amount
                     if result.reasoning:
