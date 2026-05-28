@@ -19,7 +19,24 @@ type ProjectionPick = {
   edge?: string;
 };
 
-const MLB_SPREAD_EDGE_THRESHOLD = 0.5;
+export type GameProjectionsVariant = 'mlb' | 'basketball';
+
+const VARIANT = {
+  mlb: {
+    spreadEdgeThreshold: 0.5,
+    edgeUnit: 'run',
+    showMatchupSubtitle: true,
+    emptySubtitle: 'TBD',
+    includeMoneylinePicks: true,
+  },
+  basketball: {
+    spreadEdgeThreshold: 2.0,
+    edgeUnit: 'pt',
+    showMatchupSubtitle: true,
+    emptySubtitle: '',
+    includeMoneylinePicks: false,
+  },
+} as const;
 
 function pct(v: unknown): string {
   const n = typeof v === 'number' ? v : parseFloat(String(v));
@@ -55,7 +72,7 @@ function formatEdgePct(edge: number | null): string | undefined {
   return `${sign}${(edge * 100).toFixed(1)}% edge`;
 }
 
-function spreadRecommendation(proj: GameRow): Side | null {
+function spreadRecommendation(proj: GameRow, threshold: number): Side | null {
   const stored = formatString(proj.spread_recommendation);
   if (stored === 'HOME' || stored === 'AWAY') return stored;
 
@@ -65,8 +82,8 @@ function spreadRecommendation(proj: GameRow): Side | null {
 
   const impliedMarketMargin = -marketSpread;
   const edge = runLine - impliedMarketMargin;
-  if (edge >= MLB_SPREAD_EDGE_THRESHOLD) return 'HOME';
-  if (edge <= -MLB_SPREAD_EDGE_THRESHOLD) return 'AWAY';
+  if (edge >= threshold) return 'HOME';
+  if (edge <= -threshold) return 'AWAY';
   return null;
 }
 
@@ -82,11 +99,13 @@ function hasFinalScore(proj: GameRow): boolean {
   return proj.actual_home_score != null && proj.actual_away_score != null;
 }
 
-function buildPicks(proj: GameRow): ProjectionPick[] {
+function buildPicks(proj: GameRow, variant: GameProjectionsVariant): ProjectionPick[] {
   const picks: ProjectionPick[] = [];
+  const cfg = VARIANT[variant];
+  const edgeUnit = cfg.edgeUnit;
 
   const mlRaw = formatString(proj.ml_recommendation);
-  if (mlRaw === 'HOME' || mlRaw === 'AWAY') {
+  if (cfg.includeMoneylinePicks && (mlRaw === 'HOME' || mlRaw === 'AWAY')) {
     const edgeMl = num(proj.edge_vs_market_ml);
     picks.push({
       kind: 'ml',
@@ -102,7 +121,7 @@ function buildPicks(proj: GameRow): ProjectionPick[] {
     });
   }
 
-  const spreadSide = spreadRecommendation(proj);
+  const spreadSide = spreadRecommendation(proj, cfg.spreadEdgeThreshold);
   const marketSpread = num(proj.market_spread);
   if (spreadSide && marketSpread != null) {
     const runLine = num(proj.run_line);
@@ -112,11 +131,11 @@ function buildPicks(proj: GameRow): ProjectionPick[] {
       kind: 'spread',
       side: spreadSide,
       team: teamForSide(proj, spreadSide),
-      label: 'Spread',
+      label: variant === 'basketball' ? 'Spread / ML' : 'Spread',
       detail: formatSpreadLine(spreadSide, marketSpread),
       edge:
         edgeRuns != null
-          ? `${edgeRuns > 0 ? '+' : ''}${edgeRuns.toFixed(1)} run edge`
+          ? `${edgeRuns > 0 ? '+' : ''}${edgeRuns.toFixed(1)} ${edgeUnit} edge`
           : undefined,
     });
   }
@@ -132,7 +151,7 @@ function buildPicks(proj: GameRow): ProjectionPick[] {
       detail: proj.market_total != null ? `Line ${formatNumber(proj.market_total, 1)}` : undefined,
       edge:
         edgeTotal != null
-          ? `${edgeTotal > 0 ? '+' : ''}${edgeTotal.toFixed(1)} run edge`
+          ? `${edgeTotal > 0 ? '+' : ''}${edgeTotal.toFixed(1)} ${edgeUnit} edge`
           : undefined,
     });
   }
@@ -152,15 +171,18 @@ function pickKindClass(kind: PickKind): string {
   return 'badge dim';
 }
 
-export default function MlbGameProjectionsGrid({
+export default function GameProjectionsGrid({
   rows,
   loading,
   isPastDate = false,
+  variant = 'mlb',
 }: {
   rows: GameRow[];
   loading?: boolean;
   isPastDate?: boolean;
+  variant?: GameProjectionsVariant;
 }) {
+  const cfg = VARIANT[variant];
   if (loading) {
     return (
       <section className="card" style={{ padding: 24, textAlign: 'center' }}>
@@ -186,7 +208,12 @@ export default function MlbGameProjectionsGrid({
         <StatChip label="Strong value" value={String(strong)} />
       </div>
       {rows.map((proj) => (
-        <GameCard key={String(proj.game_id ?? proj.id)} proj={proj} showResults={isPastDate || hasFinalScore(proj)} />
+        <GameCard
+          key={String(proj.game_id ?? proj.id)}
+          proj={proj}
+          showResults={isPastDate || hasFinalScore(proj)}
+          variant={variant}
+        />
       ))}
     </div>
   );
@@ -201,12 +228,21 @@ function StatChip({ label, value }: { label: string; value: string }) {
   );
 }
 
-function GameCard({ proj, showResults }: { proj: GameRow; showResults: boolean }) {
+function GameCard({
+  proj,
+  showResults,
+  variant,
+}: {
+  proj: GameRow;
+  showResults: boolean;
+  variant: GameProjectionsVariant;
+}) {
+  const cfg = VARIANT[variant];
   const away = formatString(proj.away_team);
   const home = formatString(proj.home_team);
   const awayWp = typeof proj.away_win_prob === 'number' ? proj.away_win_prob : 0;
   const homeWp = typeof proj.home_win_prob === 'number' ? proj.home_win_prob : 0;
-  const picks = buildPicks(proj);
+  const picks = buildPicks(proj, variant);
   const mlPick = picks.find((p) => p.kind === 'ml');
   const recommendedSides = new Set(picks.filter((p) => p.kind !== 'total').map((p) => p.side));
   const hasEdge = formatString(proj.value_rating) !== 'No Edge' && picks.length > 0;
@@ -227,13 +263,14 @@ function GameCard({ proj, showResults }: { proj: GameRow; showResults: boolean }
           <TeamMatchupRow
             away={away}
             home={home}
-            awayPitcher={formatString(proj.away_pitcher_name) || 'TBD'}
-            homePitcher={formatString(proj.home_pitcher_name) || 'TBD'}
+            awayPitcher={formatString(proj.away_pitcher_name) || cfg.emptySubtitle}
+            homePitcher={formatString(proj.home_pitcher_name) || cfg.emptySubtitle}
             recommendedSides={recommendedSides}
             mlFavoredSide={
               mlPick?.side ??
               (homeWp > awayWp ? 'HOME' : awayWp > homeWp ? 'AWAY' : null)
             }
+            showSubtitle={cfg.showMatchupSubtitle}
           />
         </div>
         <span className={ratingClass(proj.value_rating)}>{formatString(proj.value_rating) || 'No edge'}</span>
@@ -315,6 +352,7 @@ function TeamMatchupRow({
   homePitcher,
   recommendedSides,
   mlFavoredSide,
+  showSubtitle,
 }: {
   away: string;
   home: string;
@@ -322,7 +360,13 @@ function TeamMatchupRow({
   homePitcher: string;
   recommendedSides: Set<Side>;
   mlFavoredSide: Side | null;
+  showSubtitle: boolean;
 }) {
+  const subtitle =
+    awayPitcher && homePitcher
+      ? `${awayPitcher} vs ${homePitcher}`
+      : awayPitcher || homePitcher || '';
+
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -330,11 +374,20 @@ function TeamMatchupRow({
         <div className="dim" style={{ fontSize: 11, paddingLeft: 34 }}>@</div>
         <TeamLine name={home} side="HOME" isPick={recommendedSides.has('HOME')} isFavored={mlFavoredSide === 'HOME'} />
       </div>
-      <p className="dim" style={{ fontSize: 11, marginTop: 8 }}>
-        {awayPitcher} vs {homePitcher}
-      </p>
+      {showSubtitle && subtitle ? (
+        <p className="dim" style={{ fontSize: 11, marginTop: 8 }}>
+          {subtitle}
+        </p>
+      ) : null}
     </>
   );
+}
+
+/** @deprecated Use GameProjectionsGrid — kept for MLB imports */
+export function MlbGameProjectionsGrid(
+  props: Parameters<typeof GameProjectionsGrid>[0],
+) {
+  return <GameProjectionsGrid {...props} variant="mlb" />;
 }
 
 function TeamLine({

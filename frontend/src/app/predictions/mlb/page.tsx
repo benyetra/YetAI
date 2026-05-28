@@ -1,7 +1,7 @@
 'use client';
 
 import AccuracySummary from '@/components/yetai/AccuracySummary';
-import MlbGameProjectionsGrid from '@/components/yetai/MlbGameProjectionsGrid';
+import { MlbGameProjectionsGrid } from '@/components/yetai/MlbGameProjectionsGrid';
 import SportPredictionsPage, {
   type GroupsContext,
   type PropGroup,

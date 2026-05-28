@@ -1,14 +1,15 @@
 'use client';
 
 import AccuracySummary from '@/components/yetai/AccuracySummary';
-import NbaTotalsProjectionsTable from '@/components/yetai/NbaTotalsProjectionsTable';
+import GameProjectionsGrid from '@/components/yetai/MlbGameProjectionsGrid';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
-import SpreadProjectionsTable from '@/components/yetai/SpreadProjectionsTable';
 import {
   formatNumber,
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
+import { mergeWnbaGameProjections } from '@/lib/mergeWnbaGameProjections';
+import { useMemo } from 'react';
 
 function propColumns(propKey: string, propLabel: string): ColumnDef[] {
   return [
@@ -26,24 +27,48 @@ const PROP_GROUPS = [
   { title: 'Rebounds', responseKey: 'rebounds', columns: propColumns('projected_rebounds', 'Proj Reb') },
 ];
 
+function WnbaGameProjectionsSection({
+  data,
+  loading,
+  isPastDate,
+}: {
+  data: Record<string, Array<Record<string, unknown>>> | null;
+  loading: boolean;
+  isPastDate: boolean;
+}) {
+  const gameRows = useMemo(
+    () =>
+      mergeWnbaGameProjections(
+        (data?.spreads as Array<Record<string, unknown>>) ?? [],
+        (data?.totals as Array<Record<string, unknown>>) ?? [],
+      ),
+    [data?.spreads, data?.totals],
+  );
+
+  return (
+    <>
+      <h2 className="type-section-title" style={{ margin: '0 0 8px' }}>
+        Game projections
+      </h2>
+      <GameProjectionsGrid
+        rows={gameRows}
+        loading={loading}
+        isPastDate={isPastDate}
+        variant="basketball"
+      />
+    </>
+  );
+}
+
 export default function WNBAPredictionsPage() {
   return (
     <SportPredictionsPage
       sport="wnba"
       leagueLabel="WNBA"
       emoji="🏀"
-      subtitle="Game totals O/U, spread/win-probability, and player props (points, assists, rebounds)."
-      topSection={({ data, loading }) => (
-        <>
-          <SpreadProjectionsTable
-            rows={(data?.spreads as Array<Record<string, unknown>>) ?? []}
-            loading={loading}
-          />
-          <NbaTotalsProjectionsTable
-            rows={(data?.totals as Array<Record<string, unknown>>) ?? []}
-            loading={loading}
-          />
-        </>
+      subtitle="Game slate, spread/win-probability, totals O/U, and player props (points, assists, rebounds)."
+      topSection={({ data, loading, isPastDate }) => (
+        <WnbaGameProjectionsSection data={data} loading={loading} isPastDate={isPastDate} />
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="wnba" date={date} />}
       groups={PROP_GROUPS}
