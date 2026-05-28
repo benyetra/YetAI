@@ -498,6 +498,79 @@ class YetAIBetsServiceDB:
 
         return updated
 
+    def sync_unified_from_yetai_pick(
+        self, db: Session, yetai: YetAIBet, unified_bet
+    ) -> bool:
+        """Mirror a graded YetAI pick onto the user's linked placed bet row."""
+        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
+
+        yetai_status = (yetai.status or "").lower()
+        if yetai_status not in {"won", "lost", "pushed"}:
+            return False
+
+        target = UnifiedBetStatus(yetai_status)
+        if unified_bet.status == target:
+            return False
+
+        # Authoritative YetAI grading should not be overwritten by a winning placed row.
+        if (
+            unified_bet.status == UnifiedBetStatus.WON
+            and target == UnifiedBetStatus.LOST
+        ):
+            return False
+
+        unified_bet.status = target
+        unified_bet.settled_at = yetai.settled_at or datetime.utcnow()
+        note = (yetai.result or "").strip()
+        unified_bet.reasoning = note or f"Graded from YetAI pick ({yetai_status})"
+
+        if target == UnifiedBetStatus.WON:
+            unified_bet.result_amount = unified_bet.amount + unified_bet.potential_win
+        elif target == UnifiedBetStatus.PUSHED:
+            unified_bet.result_amount = unified_bet.amount
+        else:
+            unified_bet.result_amount = 0.0
+
+        if not unified_bet.yetai_bet_id:
+            unified_bet.yetai_bet_id = yetai.id
+
+        return True
+
+    def sync_linked_unified_for_user(self, db: Session, user_id: int) -> int:
+        """Align placed bets with their linked YetAI pick outcomes for one user."""
+        from app.models.simple_unified_bet_model import SimpleUnifiedBet
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+
+        rows = (
+            db.query(SimpleUnifiedBet)
+            .filter(SimpleUnifiedBet.user_id == user_id)
+            .filter(SimpleUnifiedBet.parent_bet_id.is_(None))
+            .order_by(desc(SimpleUnifiedBet.placed_at))
+            .limit(200)
+            .all()
+        )
+        if not rows:
+            return 0
+
+        prop_service = PlayerPropVerificationService(db)
+        updated = 0
+        for unified in rows:
+            yetai = prop_service._resolve_yetai_pick(unified)
+            if not yetai:
+                continue
+            if self.sync_unified_from_yetai_pick(db, yetai, unified):
+                updated += 1
+
+        if updated:
+            db.commit()
+            logger.info(
+                "Synced %s placed bet(s) from YetAI picks for user %s", updated, user_id
+            )
+
+        return updated
+
     def sync_yetai_from_unified_bet(self, db: Session, unified_bet) -> bool:
         """Mirror graded placed-bet outcomes onto the linked YetAI pick row."""
         from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus

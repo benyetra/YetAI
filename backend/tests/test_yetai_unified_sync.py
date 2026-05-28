@@ -42,6 +42,32 @@ def test_sync_yetai_from_unified_bet_updates_expired_yetai_row():
     assert "Scott" in yetai.result
 
 
+def test_sync_unified_from_yetai_when_pick_won_and_placed_bet_lost():
+    service = YetAIBetsServiceDB()
+    db = MagicMock()
+    yetai = SimpleNamespace(
+        id="pick-connor",
+        status="won",
+        settled_at=None,
+        result="Won: Under 5.5 — actual 5 (Connor Prielipp)",
+    )
+    unified = SimpleNamespace(
+        id="placed-1",
+        yetai_bet_id=None,
+        status=BetStatus.LOST,
+        amount=250.0,
+        potential_win=227.27,
+        result_amount=0.0,
+        reasoning="Evaluation error: missing db",
+        settled_at=None,
+    )
+
+    assert service.sync_unified_from_yetai_pick(db, yetai, unified) is True
+    assert unified.status == BetStatus.WON
+    assert unified.yetai_bet_id == "pick-connor"
+    assert unified.result_amount == 250.0 + 227.27
+
+
 def test_sync_yetai_from_unified_bet_skips_when_no_link():
     service = YetAIBetsServiceDB()
     unified = SimpleNamespace(

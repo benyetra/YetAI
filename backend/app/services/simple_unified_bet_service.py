@@ -485,6 +485,15 @@ class SimpleUnifiedBetService:
             if yetai and not bet.yetai_bet_id:
                 bet.yetai_bet_id = yetai.id
 
+            if (
+                yetai
+                and (yetai.status or "").lower() == "won"
+                and yetai_service.sync_unified_from_yetai_pick(db, yetai, bet)
+            ):
+                updated += 1
+                changed = True
+                continue
+
             prop_result = await prop_service.verify_single_prop(bet)
             if prop_result and prop_result.get("status") == BetStatus.WON:
                 bet.status = BetStatus.WON
@@ -518,10 +527,13 @@ class SimpleUnifiedBetService:
         self, user_id: int, include_legs: bool = False
     ) -> List[Dict]:
         """Get all bets for a user"""
+        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
+
         try:
             db = SessionLocal()
             try:
                 await self._repair_user_misgraded_mlb_props(db, user_id)
+                YetAIBetsServiceDB().sync_linked_unified_for_user(db, user_id)
 
                 query = db.query(SimpleUnifiedBet).filter(
                     SimpleUnifiedBet.user_id == user_id
