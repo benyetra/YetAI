@@ -2209,6 +2209,33 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
     }
 
 
+@app.get("/api/admin/yetai-bets")
+async def list_yetai_bets_admin(
+    include_settled: bool = True,
+    include_stale_pending: bool = True,
+    admin_user: dict = Depends(require_admin),
+):
+    """List YetAI bets for admin management (create / delete)."""
+    if is_service_available("yetai_bets_service"):
+        try:
+            yetai_service = get_service("yetai_bets_service")
+            bets = await yetai_service.get_all_bets(
+                include_settled=include_settled,
+                include_stale_pending=include_stale_pending,
+            )
+            return {"status": "success", "bets": bets, "count": len(bets)}
+        except Exception as e:
+            logger.error(f"Error listing YetAI bets for admin: {e}")
+            raise HTTPException(status_code=500, detail="Failed to list YetAI bets")
+
+    return {
+        "status": "success",
+        "bets": [],
+        "count": 0,
+        "message": "YetAI bets service unavailable",
+    }
+
+
 @app.options("/api/admin/yetai-bets/{bet_id}")
 async def options_admin_delete_yetai_bet():
     """Handle CORS preflight for admin YetAI bet deletion"""
@@ -2223,12 +2250,19 @@ async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin
         try:
             yetai_service = get_service("yetai_bets_service")
             result = await yetai_service.delete_bet(bet_id, admin_user["id"])
+            if not result.get("success"):
+                raise HTTPException(
+                    status_code=404,
+                    detail=result.get("error", "Bet not found"),
+                )
 
             return {
                 "status": "success",
                 "message": f"YetAI bet {bet_id} deleted successfully",
                 "result": result,
             }
+        except HTTPException:
+            raise
         except Exception as e:
             logger.error(f"Error deleting YetAI bet {bet_id}: {e}")
             raise HTTPException(status_code=500, detail="Failed to delete bet")

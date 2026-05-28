@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { sportsAPI } from '@/lib/api';
 import AdminOwensBets from '@/components/yetai/AdminOwensBets';
+import AdminYetaiBetsManage from '@/components/yetai/AdminYetaiBetsManage';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
@@ -83,6 +84,7 @@ export default function AdminBetEntriesPage() {
   const [loadingTodaysGames, setLoadingTodaysGames] = useState(false);
   const [selectedGameForFeatured, setSelectedGameForFeatured] = useState<any>(null);
   const [isCleaningUp, setIsCleaningUp] = useState(false);
+  const [betListRefresh, setBetListRefresh] = useState(0);
 
   useEffect(() => {
     if (!loading && (!isAuthenticated || !user?.is_admin)) {
@@ -364,6 +366,7 @@ export default function AdminBetEntriesPage() {
 
       if (response.ok) {
         setMessage({ type: 'success', text: 'Parlay created successfully!' });
+        setBetListRefresh((n) => n + 1);
         // Reset parlay
         setParlayLegs([]);
         setParlayName('');
@@ -401,6 +404,7 @@ export default function AdminBetEntriesPage() {
       
       if (response.ok) {
         setMessage({ type: 'success', text: 'Bet created successfully!' });
+        setBetListRefresh((n) => n + 1);
         // Reset form
         setFormData({
           sport: '',
@@ -703,6 +707,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
         </div>
 
         {activeTab === 'bets' && (
+        <>
         <div className="card">
           <h2 className="text-xl font-semibold mb-4 flex items-center">
             <Plus className="w-5 h-5 mr-2" />
@@ -1091,6 +1096,9 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
             </div>
           )}
         </div>
+
+        <AdminYetaiBetsManage refreshToken={betListRefresh} />
+        </>
         )}
 
         {activeTab === 'featured' && (
