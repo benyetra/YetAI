@@ -115,7 +115,10 @@ class PlayerPropVerificationService:
             if yetai:
                 return yetai
 
-        for raw_id in (bet.game_id, bet.odds_api_event_id):
+        for raw_id in (
+            getattr(bet, "game_id", None),
+            getattr(bet, "odds_api_event_id", None),
+        ):
             if not raw_id:
                 continue
             candidate_id = str(raw_id)
