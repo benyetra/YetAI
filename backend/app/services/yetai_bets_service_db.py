@@ -90,6 +90,58 @@ class YetAIBetsServiceDB:
         reason = (bet.result or "").strip().lower()
         return reason.startswith("evaluation")
 
+    def _retry_historical_error_losses(self, db: Session, *, limit: int = 50) -> int:
+        """
+        Best-effort self-healing for legacy props marked lost due to evaluation errors.
+        Runs during read paths so stale rows can correct even if scheduler misses them.
+        """
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+
+        rows = (
+            db.query(YetAIBet)
+            .filter(YetAIBet.status == "lost")
+            .filter(YetAIBet.result.ilike("Evaluation%"))
+            .order_by(desc(YetAIBet.settled_at), desc(YetAIBet.created_at))
+            .limit(max(1, limit))
+            .all()
+        )
+        if not rows:
+            return 0
+
+        prop_service = PlayerPropVerificationService(db)
+        updated = 0
+        for bet in rows:
+            if not self._is_retryable_error_loss(bet):
+                continue
+
+            game_day = game_date_for_yetai_bet(bet)
+            outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
+            if not outcome:
+                continue
+
+            result_status, result_description = outcome
+            if result_status not in {"won", "lost", "pushed"}:
+                continue
+
+            if (
+                bet.status == result_status
+                and (bet.result or "").strip() == (result_description or "").strip()
+            ):
+                continue
+
+            bet.status = result_status
+            bet.settled_at = datetime.utcnow()
+            bet.result = clamp_yetai_result(result_description)
+            updated += 1
+
+        if updated:
+            db.commit()
+            logger.info("Regraded %s historical YetAI error-loss picks", updated)
+
+        return updated
+
     async def create_bet(
         self, bet_request: CreateYetAIBetRequest, admin_user_id: int
     ) -> Dict:
@@ -439,6 +491,7 @@ class YetAIBetsServiceDB:
         limit: int = 100,
     ) -> tuple[List[Dict], Dict[str, float | int]]:
         """Settled promoted picks with aggregate track record."""
+        self._retry_historical_error_losses(db)
         self.sync_yetai_picks_from_linked_unified_bets(db)
         since = datetime.utcnow() - timedelta(days=max(days, 1))
         rows = self._query_yetai_bets_for_user(
