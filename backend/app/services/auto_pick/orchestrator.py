@@ -24,6 +24,7 @@ from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
+from app.services.yetai_bets_display import game_label_for_matchup
 
 log = logging.getLogger(__name__)
 
@@ -40,18 +41,17 @@ def _json_safe(value: Any) -> Any:
 
 def display_matchup_title(candidate: BetCandidate) -> str:
     """Game line for subscriber UI (maps to API ``game`` / DesignPick ``matchup``)."""
-    away = candidate.away_team
-    home = candidate.home_team
-    if away and home:
-        if " vs " in away or " vs " in home:
-            return f"{away} vs {home}"
-        return f"{away} @ {home}"
-    md = candidate.projection_metadata
-    team = md.get("team")
-    opponent = md.get("opponent")
-    if team and opponent:
-        return f"{team} vs {opponent}"
-    return candidate.selection
+    market = candidate.market_type
+    bet_type = None
+    if market == MarketType.PLAYER_PROP:
+        bet_type = "prop"
+    return game_label_for_matchup(
+        away_team=candidate.away_team,
+        home_team=candidate.home_team,
+        sport=candidate.league,
+        bet_type=bet_type,
+        projection_metadata=candidate.projection_metadata,
+    )
 
 
 def date_range_for_utc_day(now: datetime) -> DateRange:

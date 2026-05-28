@@ -1,11 +1,14 @@
 import { formatSportName } from '@/lib/formatting';
 import { parseOddsValue } from '@/lib/yetai-format';
+import { hasRealMatchup, isPlaceholderMatchup } from '@/lib/yetai-matchup';
 import type { ActivityBet, DesignPick } from '@/components/yetai/types';
 
 function matchupFromApiBet(bet: {
   game?: string;
   home_team?: string;
   away_team?: string;
+  sport?: string;
+  bet_type?: string;
 }): string {
   const away = bet.away_team?.trim();
   const home = bet.home_team?.trim();
@@ -16,14 +19,18 @@ function matchupFromApiBet(bet: {
     return `${away} @ ${home}`;
   }
   const game = bet.game?.trim();
-  if (game && /\s+vs\.?\s+/i.test(game)) {
+  if (game && /^vs\s+/i.test(game)) {
     return game;
   }
-  if (game && !looksLikePropSelectionTitle(game)) {
+  if (game && hasRealMatchup(game)) {
     return game;
   }
-  if (game && looksLikePropSelectionTitle(game)) {
-    return 'Matchup pending';
+  if ((bet.bet_type || '').toLowerCase() === 'prop' || (game && looksLikePropSelectionTitle(game))) {
+    const sport = bet.sport ? formatSportName(bet.sport) : '';
+    return sport ? `${sport} player prop` : 'Player prop';
+  }
+  if (game && !isPlaceholderMatchup(game)) {
+    return game;
   }
   return 'TBD';
 }

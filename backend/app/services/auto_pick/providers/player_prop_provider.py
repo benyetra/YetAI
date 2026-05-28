@@ -34,8 +34,11 @@ class PlayerPropCandidateProvider:
         for r in rows:
             try:
                 selection = f"{r['player']} {r['side'].upper()} {r['line']} {r['stat']}"
-                away = r.get("away_team_name") or r.get("team")
-                home = r.get("home_team_name") or r.get("opponent")
+                away = (r.get("away_team_name") or r.get("team") or "").strip() or None
+                home = (r.get("home_team_name") or "").strip() or None
+                opponent = (
+                    r.get("opponent") or r.get("opponent_team_name") or ""
+                ).strip() or None
                 out.append(
                     BetCandidate(
                         market_type=MarketType.PLAYER_PROP,
@@ -54,7 +57,8 @@ class PlayerPropCandidateProvider:
                             "side": r["side"],
                             "player": r.get("player"),
                             "team": r.get("team"),
-                            "opponent": r.get("opponent"),
+                            "opponent": opponent,
+                            "opponent_team_name": opponent,
                         },
                         away_team=away,
                         home_team=home,

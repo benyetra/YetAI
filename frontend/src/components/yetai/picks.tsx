@@ -4,18 +4,30 @@ import React from 'react';
 import { Crown, Eye, Plus, Sparkles } from 'lucide-react';
 import { ConfidenceBar, LeagueChip, TeamGlyph } from './primitives';
 import { fmtOdds, teamAbbr } from '@/lib/yetai-format';
+import { hasRealMatchup, isPlayerPropDisplay } from '@/lib/yetai-matchup';
 import type { DesignPick } from './types';
 
 function splitMatchup(matchup: string): [string, string] {
   if (matchup.includes('@')) {
     const [a, b] = matchup.split('@').map((s) => s.trim());
-    return [a, b];
+    return [a || 'Away', b || 'Home'];
   }
   const parts = matchup.split(/\s+vs\.?\s+/i);
-  return [parts[0]?.trim() || 'Away', parts[1]?.trim() || 'Home'];
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return [parts[0].trim(), parts[1].trim()];
+  }
+  return ['', ''];
+}
+
+function propMatchupHeadline(pick: DesignPick): string {
+  const m = pick.matchup.trim();
+  if (/^vs\s+/i.test(m)) return m;
+  if (hasRealMatchup(m)) return m;
+  return pick.league ? `${pick.league} · Player prop` : 'Player prop';
 }
 
 export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void }) {
+  const propLayout = isPlayerPropDisplay(pick.bet_type, pick.matchup);
   const [away, home] = splitMatchup(pick.matchup);
 
   return (
@@ -30,18 +42,26 @@ export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void
         </span>
       </div>
       <div className="pick-body">
-        <div className="pick-teams">
-          <div className="pick-team">
-            <span className="t-name">
-              <TeamGlyph abbr={teamAbbr(away)} /> {away}
+        {propLayout ? (
+          <div className="pick-teams" style={{ marginBottom: 8 }}>
+            <span className="t-name" style={{ fontSize: 14, fontWeight: 500 }}>
+              {propMatchupHeadline(pick)}
             </span>
           </div>
-          <div className="pick-team">
-            <span className="t-name">
-              <TeamGlyph abbr={teamAbbr(home)} /> {home}
-            </span>
+        ) : (
+          <div className="pick-teams">
+            <div className="pick-team">
+              <span className="t-name">
+                <TeamGlyph abbr={teamAbbr(away)} /> {away}
+              </span>
+            </div>
+            <div className="pick-team">
+              <span className="t-name">
+                <TeamGlyph abbr={teamAbbr(home)} /> {home}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
         <div className="pick-call">
           <div className="pick-call-text">
             <strong>{pick.pick}</strong>
@@ -72,6 +92,7 @@ export function HeroAIPick({
   pick: DesignPick;
   onAdd?: () => void;
 }) {
+  const propLayout = isPlayerPropDisplay(pick.bet_type, pick.matchup);
   const [away, home] = splitMatchup(pick.matchup);
   const confPct = Math.round(pick.confidence > 1 ? pick.confidence : pick.confidence * 100);
 
@@ -90,17 +111,24 @@ export function HeroAIPick({
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 28, position: 'relative', zIndex: 1 }}>
         <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <TeamGlyph abbr={teamAbbr(away)} size={36} />
-              <div style={{ fontSize: 15, fontWeight: 500 }}>{away}</div>
+          {propLayout ? (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 17, fontWeight: 500 }}>{propMatchupHeadline(pick)}</div>
+              <div style={{ fontSize: 14, color: 'var(--text-3)', marginTop: 6 }}>{pick.pick}</div>
             </div>
-            <span style={{ color: 'var(--text-4)', fontFamily: 'var(--mono)', fontSize: 13 }}>@</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <TeamGlyph abbr={teamAbbr(home)} size={36} />
-              <div style={{ fontSize: 15, fontWeight: 500 }}>{home}</div>
+          ) : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <TeamGlyph abbr={teamAbbr(away)} size={36} />
+                <div style={{ fontSize: 15, fontWeight: 500 }}>{away}</div>
+              </div>
+              <span style={{ color: 'var(--text-4)', fontFamily: 'var(--mono)', fontSize: 13 }}>@</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <TeamGlyph abbr={teamAbbr(home)} size={36} />
+                <div style={{ fontSize: 15, fontWeight: 500 }}>{home}</div>
+              </div>
             </div>
-          </div>
+          )}
           {pick.reasoning && (
             <div style={{ fontSize: 13, color: 'var(--text-3)', lineHeight: 1.6, maxWidth: 560 }}>
               <span style={{ color: 'var(--text)', fontWeight: 500, display: 'block', marginBottom: 6 }}>Why we like it</span>
@@ -142,12 +170,15 @@ export function HeroAIPick({
 
 export function DetailedPick({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void }) {
   const confPct = Math.round(pick.confidence > 1 ? pick.confidence : pick.confidence * 100);
+  const subtitle = isPlayerPropDisplay(pick.bet_type, pick.matchup)
+    ? propMatchupHeadline(pick)
+    : pick.matchup;
   return (
     <div className="card" style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <LeagueChip league={pick.league} />
-          <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{pick.matchup}</span>
+          <span style={{ fontSize: 13, color: 'var(--text-2)' }}>{subtitle}</span>
         </div>
         <span className="badge badge-ai">{confPct}%</span>
       </div>

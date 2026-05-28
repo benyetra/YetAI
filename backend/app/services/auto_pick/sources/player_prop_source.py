@@ -117,6 +117,7 @@ class PlayerPropSource:
                     side = "under"
 
                 player_name = getattr(r, "player_name", None) or f"player_{r.player_id}"
+                opponent = getattr(r, "opponent_team_name", None)
                 event_id = f"nba-prop-{r.date}-{r.player_id}-{stat_label}"
 
                 out.append(
@@ -129,6 +130,8 @@ class PlayerPropSource:
                         "odds": -110,  # No live odds column — use standard juice
                         "projection": float(proj_val),
                         "side": side,
+                        "opponent": opponent,
+                        "opponent_team_name": opponent,
                         "sample_size": None,
                         "generated_at": r.date,
                         "model_confidence": None,
