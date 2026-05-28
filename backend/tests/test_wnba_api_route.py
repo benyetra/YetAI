@@ -13,7 +13,6 @@ def test_wnba_route_exists():
 
 def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
     """The route should return totals, spreads, points, assists, rebounds (some may be empty)."""
-    # Stub _query_recent so we don't need a DB
     captured_models = []
 
     def fake_query_recent(
@@ -22,7 +21,14 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
         captured_models.append(model.__name__)
         return []
 
+    def fake_enrich(db, spreads, totals, *, target_date=None):
+        return spreads, totals
+
     monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        "app.services.wnba_game_picks.enrich_wnba_game_predictions",
+        fake_enrich,
+    )
 
     result = predictions_module.wnba_predictions(
         target_date=date(2026, 5, 21),
@@ -33,10 +39,52 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
     )
 
     assert set(result.keys()) == {"totals", "spreads", "points", "assists", "rebounds"}
-    # Each value should be an empty list (stubbed)
     assert all(v == [] for v in result.values())
     assert "WNBATotalsProjections" in captured_models
     assert "WNBASpreadProjections" in captured_models
     assert "WNBAPointsProjections" in captured_models
     assert "WNBAAssistsProjections" in captured_models
     assert "WNBAReboundsProjections" in captured_models
+
+
+def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
+    spread_row = {
+        "game_date": date(2026, 5, 21),
+        "home_team_name": "Indiana Fever",
+        "away_team_name": "Golden State Valkyries",
+        "recommendation": "HOME",
+        "market_spread_home": -5.5,
+    }
+
+    def fake_query_recent(
+        db, model, date_col_name, target_date, limit, *, tz="UTC", dedupe_keys=None
+    ):
+        if model.__name__ == "WNBASpreadProjections":
+            return [dict(spread_row)]
+        if model.__name__ == "WNBATotalsProjections":
+            return []
+        return []
+
+    def fake_enrich(db, spreads, totals, *, target_date=None):
+        enriched = [dict(spreads[0])]
+        enriched[0]["actual_home_score"] = 90
+        enriched[0]["actual_away_score"] = 82
+        enriched[0]["spread_correct"] = True
+        return enriched, totals
+
+    monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        "app.services.wnba_game_picks.enrich_wnba_game_predictions",
+        fake_enrich,
+    )
+
+    result = predictions_module.wnba_predictions(
+        target_date=date(2026, 5, 21),
+        tz="UTC",
+        limit=50,
+        _user={"subscription_tier": "pro"},
+        db=None,
+    )
+
+    assert result["spreads"][0]["actual_home_score"] == 90
+    assert result["spreads"][0]["spread_correct"] is True

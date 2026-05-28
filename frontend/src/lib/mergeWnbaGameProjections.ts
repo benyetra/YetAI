@@ -79,6 +79,11 @@ function mergeRow(spread?: Row, total?: Row): Row {
     home_pitcher_name: formatStarters(total?.home_starters) ?? '',
     actual_home_score: total?.actual_home_score ?? spread?.actual_home_score,
     actual_away_score: total?.actual_away_score ?? spread?.actual_away_score,
+    actual_total_runs: total?.actual_total_runs ?? total?.actual_total,
+    actual_winner: spread?.actual_winner ?? total?.actual_winner,
+    spread_correct: spread?.spread_correct,
+    total_correct: total?.total_correct,
+    ml_correct: spread?.ml_correct,
   };
 }
 

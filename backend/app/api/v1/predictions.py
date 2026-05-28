@@ -503,15 +503,26 @@ def wnba_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """WNBA: totals, spread/win-prob, and player props."""
+    """WNBA: totals, spread/win-prob, and player props.
+
+    Spread and totals rows include final scores and ml/spread/total grading when
+    pred_wnba_*_actuals exist for the requested date (same pattern as MLB games).
+    """
+    from app.services.wnba_game_picks import enrich_wnba_game_predictions
+
     tz = _safe_tz(tz)
+    spreads = _query_recent(
+        db, WNBASpreadProjections, "game_date", target_date, limit, tz=tz
+    )
+    totals = _query_recent(
+        db, WNBATotalsProjections, "game_date", target_date, limit, tz=tz
+    )
+    spreads, totals = enrich_wnba_game_predictions(
+        db, spreads, totals, target_date=target_date
+    )
     return {
-        "totals": _query_recent(
-            db, WNBATotalsProjections, "game_date", target_date, limit, tz=tz
-        ),
-        "spreads": _query_recent(
-            db, WNBASpreadProjections, "game_date", target_date, limit, tz=tz
-        ),
+        "totals": totals,
+        "spreads": spreads,
         "points": _query_recent(
             db, WNBAPointsProjections, "date", target_date, limit, tz=tz
         ),
