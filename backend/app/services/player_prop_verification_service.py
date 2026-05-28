@@ -493,11 +493,13 @@ class PlayerPropVerificationService:
 
             player_id = search_data["people"][0]["id"]
 
+            season = game_date.year
+
             # Fetch game logs for pitcher
             if stat_type in ["outs", "strikeouts", "hits", "earnedRuns"]:
-                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[pitching],type=[gameLog],season=2025)"
+                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[pitching],type=[gameLog],season={season})"
             else:
-                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[hitting],type=[gameLog],season=2025)"
+                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[hitting],type=[gameLog],season={season})"
 
             response = requests.get(url, timeout=10)
             response.raise_for_status()

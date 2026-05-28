@@ -322,7 +322,7 @@ class UnifiedBetVerificationService:
                 )
 
                 # Verify the prop bet using sport-specific service
-                prop_service = PlayerPropVerificationService(self.db)
+                prop_service = PlayerPropVerificationService()
                 prop_result = await prop_service.verify_single_prop(bet)
 
                 if prop_result:
