@@ -58,14 +58,46 @@ class UnifiedBetVerificationService:
     def __init__(self):
         self.odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
-    def _is_retryable_evaluation_error(self, bet: SimpleUnifiedBet) -> bool:
+    def _is_retryable_evaluation_error(
+        self, bet: SimpleUnifiedBet, db: Optional[Session] = None
+    ) -> bool:
         """Allow one-way retry for previously failed prop grading attempts."""
         if bet.status != BetStatus.LOST:
             return False
         if bet.bet_type != BetType.PROP:
             return False
+
         reason = (bet.reasoning or "").strip().lower()
-        return reason.startswith("evaluation error")
+        if reason.startswith("evaluation"):
+            return True
+
+        sport = (bet.sport or "").lower()
+        if "mlb" not in sport and "baseball" not in sport:
+            return False
+
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+
+        session = db
+        if session is None:
+            session = SessionLocal()
+            close_session = True
+        else:
+            close_session = False
+
+        try:
+            prop_service = PlayerPropVerificationService(session)
+            yetai = prop_service._resolve_yetai_pick(bet)
+            if yetai and (yetai.result or "").strip().lower().startswith("evaluation"):
+                return True
+            if yetai or bet.yetai_bet_id:
+                return True
+        finally:
+            if close_session:
+                session.close()
+
+        return False
 
     async def verify_all_pending_bets(self) -> Dict:
         """
@@ -98,7 +130,7 @@ class UnifiedBetVerificationService:
                 if bet.status == BetStatus.PENDING:
                     pending_bets.append(bet)
                     continue
-                if self._is_retryable_evaluation_error(bet):
+                if self._is_retryable_evaluation_error(bet, db=db):
                     pending_bets.append(bet)
                     logger.info(
                         "Retrying previously errored prop bet %s: %s",
@@ -361,6 +393,8 @@ class UnifiedBetVerificationService:
 
         except Exception as e:
             logger.error(f"Error evaluating bet {bet.id[:8]}: {e}")
+            if bet_type == BetType.PROP:
+                return None
             reasoning = f"Evaluation error: {str(e)}"
 
         return UnifiedBetResult(
@@ -635,7 +669,7 @@ class UnifiedBetVerificationService:
 
                 if bet and (
                     bet.status == BetStatus.PENDING
-                    or self._is_retryable_evaluation_error(bet)
+                    or self._is_retryable_evaluation_error(bet, db=db)
                 ):
                     bet.status = result.status
                     bet.result_amount = result.result_amount

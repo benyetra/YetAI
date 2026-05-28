@@ -76,20 +76,26 @@ class SimpleUnifiedBetService:
                 # Get or create game record
                 game = await self._get_or_create_game(bet_data, db)
 
+                bet_id = str(uuid.uuid4())
+
                 # Never use the YetAI pick UUID as an Odds API event id (breaks verification).
                 game_id_from_request = bet_data.game_id
                 if yetai_bet and game_id_from_request == yetai_bet.id:
                     game_id_from_request = None
 
                 if not odds_api_event_id:
-                    odds_api_event_id = (
-                        game.id
-                        if game
-                        else (game_id_from_request if game_id_from_request else None)
-                    )
+                    if game:
+                        odds_api_event_id = game.id
+                    elif yetai_bet:
+                        # Not an Odds API event id — synthetic key for props/stats grading.
+                        odds_api_event_id = f"yetai-pick-{yetai_bet.id}"
+                    elif game_id_from_request:
+                        odds_api_event_id = game_id_from_request
+                    else:
+                        odds_api_event_id = None
 
-                # Generate bet ID
-                bet_id = str(uuid.uuid4())
+                if not odds_api_event_id:
+                    odds_api_event_id = bet_id
 
                 # Calculate potential win from odds and amount
                 potential_win = self._calculate_potential_win(
@@ -125,6 +131,11 @@ class SimpleUnifiedBetService:
                     sport=bet_data.sport,
                     commence_time=(
                         self._parse_commence_time(bet_data.commence_time)
+                        or (
+                            yetai_bet.commence_time
+                            if yetai_bet and yetai_bet.commence_time
+                            else None
+                        )
                         or (game.commence_time if game else datetime.now(timezone.utc))
                     ),
                     source=BetSource.STRAIGHT,
@@ -439,6 +450,70 @@ class SimpleUnifiedBetService:
             logger.error(f"Error in place_live_bet: {e}")
             return {"success": False, "error": str(e)}
 
+    async def _repair_user_misgraded_mlb_props(self, db: Session, user_id: int) -> int:
+        """Regrade lost MLB props when stats API now resolves (e.g. strikeOuts alias)."""
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+        from app.services.yetai_bets_service_db import (
+            YetAIBetsServiceDB,
+            clamp_yetai_result,
+        )
+
+        candidates = (
+            db.query(SimpleUnifiedBet)
+            .filter(SimpleUnifiedBet.user_id == user_id)
+            .filter(SimpleUnifiedBet.status == BetStatus.LOST)
+            .filter(SimpleUnifiedBet.bet_type == BetType.PROP)
+            .filter(SimpleUnifiedBet.parent_bet_id.is_(None))
+            .order_by(desc(SimpleUnifiedBet.placed_at))
+            .limit(50)
+            .all()
+        )
+
+        prop_service = PlayerPropVerificationService(db)
+        yetai_service = YetAIBetsServiceDB()
+        updated = 0
+        changed = False
+
+        for bet in candidates:
+            sport = (bet.sport or "").lower()
+            if "mlb" not in sport and "baseball" not in sport:
+                continue
+
+            yetai = prop_service._resolve_yetai_pick(bet)
+            if yetai and not bet.yetai_bet_id:
+                bet.yetai_bet_id = yetai.id
+
+            prop_result = await prop_service.verify_single_prop(bet)
+            if prop_result and prop_result.get("status") == BetStatus.WON:
+                bet.status = BetStatus.WON
+                bet.result_amount = prop_result.get("result_amount", 0.0)
+                bet.reasoning = prop_result.get("reasoning")
+                bet.settled_at = datetime.now(timezone.utc)
+                yetai_service.sync_yetai_from_unified_bet(db, bet)
+                updated += 1
+                changed = True
+
+            if yetai and (yetai.result or "").lower().startswith("evaluation"):
+                game_day = prop_service._game_date_for_yetai_pick(yetai)
+                outcome = prop_service.verify_yetai_mlb_prop(yetai, game_day)
+                if outcome:
+                    result_status, result_description = outcome
+                    if result_status in {"won", "lost", "pushed"}:
+                        yetai.status = result_status
+                        yetai.settled_at = datetime.utcnow()
+                        yetai.result = clamp_yetai_result(result_description)
+                        changed = True
+
+        if changed:
+            db.commit()
+            logger.info(
+                "Regraded %s misgraded MLB prop bet(s) for user %s", updated, user_id
+            )
+
+        return updated
+
     async def get_user_bets(
         self, user_id: int, include_legs: bool = False
     ) -> List[Dict]:
@@ -446,6 +521,8 @@ class SimpleUnifiedBetService:
         try:
             db = SessionLocal()
             try:
+                await self._repair_user_misgraded_mlb_props(db, user_id)
+
                 query = db.query(SimpleUnifiedBet).filter(
                     SimpleUnifiedBet.user_id == user_id
                 )

@@ -99,37 +99,92 @@ class PlayerPropVerificationService:
 
         return None
 
-    def _game_date_for_unified_prop(self, bet: SimpleUnifiedBet):
-        """Resolve stat lookup date for a placed prop (YetAI-linked or straight)."""
-        import re
+    def _resolve_yetai_pick(self, bet: SimpleUnifiedBet) -> Optional[YetAIBet]:
+        """Find linked YetAI pick from yetai_bet_id or legacy UUID game/event ids."""
+        if not self.session:
+            return None
 
-        if bet.commence_time:
-            return bet.commence_time.date()
+        from app.models.database_models import YetAIBet
 
-        if bet.yetai_bet_id and self.session:
-            from app.models.database_models import YetAIBet
-
+        if bet.yetai_bet_id:
             yetai = (
                 self.session.query(YetAIBet)
                 .filter(YetAIBet.id == bet.yetai_bet_id)
                 .first()
             )
             if yetai:
-                if yetai.commence_time:
-                    return yetai.commence_time.date()
-                factors = (
-                    yetai.prediction_factors
-                    if isinstance(yetai.prediction_factors, dict)
-                    else {}
-                )
-                event_id = str(factors.get("event_id") or "")
-                match = re.search(r"(\d{4}-\d{2}-\d{2})", event_id)
-                if match:
-                    from datetime import date as date_cls
+                return yetai
 
-                    return date_cls.fromisoformat(match.group(1))
-                if yetai.created_at:
-                    return yetai.created_at.date()
+        for raw_id in (bet.game_id, bet.odds_api_event_id):
+            if not raw_id:
+                continue
+            candidate_id = str(raw_id)
+            if candidate_id.startswith("yetai-pick-"):
+                candidate_id = candidate_id[len("yetai-pick-") :]
+            yetai = (
+                self.session.query(YetAIBet).filter(YetAIBet.id == candidate_id).first()
+            )
+            if yetai:
+                return yetai
+
+        return None
+
+    @staticmethod
+    def _extract_stat_value(stats: Dict, stat_type: str):
+        """Read MLB stat values with API key aliases (e.g. strikeOuts vs strikeouts)."""
+        if not stats:
+            return None
+
+        direct = stats.get(stat_type)
+        if direct is not None:
+            return direct
+
+        aliases = {
+            "strikeouts": ("strikeOuts", "strikeouts"),
+            "earnedruns": ("earnedRuns", "earnedRuns"),
+            "totalbases": ("totalBases", "totalBases"),
+            "home runs": ("homeRuns", "homeRuns"),
+        }
+        for alias in aliases.get(stat_type.lower(), ()):
+            if alias in stats:
+                return stats[alias]
+
+        target = stat_type.lower()
+        for key, value in stats.items():
+            if key.lower() == target:
+                return value
+
+        return None
+
+    def _game_date_for_yetai_pick(self, yetai: YetAIBet):
+        import re
+
+        if yetai.commence_time:
+            return yetai.commence_time.date()
+
+        factors = (
+            yetai.prediction_factors
+            if isinstance(yetai.prediction_factors, dict)
+            else {}
+        )
+        event_id = str(factors.get("event_id") or "")
+        match = re.search(r"(\d{4}-\d{2}-\d{2})", event_id)
+        if match:
+            from datetime import date as date_cls
+
+            return date_cls.fromisoformat(match.group(1))
+        if yetai.created_at:
+            return yetai.created_at.date()
+        return datetime.utcnow().date()
+
+    def _game_date_for_unified_prop(self, bet: SimpleUnifiedBet):
+        """Resolve stat lookup date for a placed prop (YetAI-linked or straight)."""
+        yetai = self._resolve_yetai_pick(bet)
+        if yetai:
+            return self._game_date_for_yetai_pick(yetai)
+
+        if bet.commence_time:
+            return bet.commence_time.date()
 
         if bet.placed_at:
             return bet.placed_at.date()
@@ -151,7 +206,10 @@ class PlayerPropVerificationService:
             if stats is None:
                 return None
 
-            actual_value = stats.get(prop_details["stat_type"])
+            actual_value = self._extract_stat_value(stats, prop_details["stat_type"])
+            if actual_value is None:
+                return None
+
             line_value = prop_details["line_value"]
             is_over = prop_details["is_over"]
             won = self._check_prop_outcome(actual_value, line_value, is_over)
@@ -992,12 +1050,7 @@ class PlayerPropVerificationService:
         if stats is None:
             return None
 
-        actual_value = stats.get(prop_details["stat_type"])
-        if actual_value is None:
-            for key, value in stats.items():
-                if key.lower() == prop_details["stat_type"].lower():
-                    actual_value = value
-                    break
+        actual_value = self._extract_stat_value(stats, prop_details["stat_type"])
         if actual_value is None:
             return None
 

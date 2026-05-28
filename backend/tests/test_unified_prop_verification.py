@@ -94,6 +94,38 @@ def test_retryable_evaluation_error_prop_is_detected():
     assert service._is_retryable_evaluation_error(bet) is True
 
 
+def test_extract_stat_value_reads_strikeouts_alias():
+    service = PlayerPropVerificationService()
+    stats = {"strikeOuts": 5, "inningsPitched": "4.1"}
+    assert service._extract_stat_value(stats, "strikeouts") == 5
+
+
+def test_game_date_prefers_yetai_commence_over_placement_time():
+    from app.models.database_models import YetAIBet, BetType
+
+    yetai = YetAIBet(
+        id="pick-connor",
+        title="Twins @ Sox",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Connor Prielipp UNDER 5.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        commence_time=datetime(2026, 5, 27, 23, 40),
+    )
+    bet = MagicMock()
+    bet.yetai_bet_id = None
+    bet.game_id = "pick-connor"
+    bet.odds_api_event_id = "pick-connor"
+    bet.commence_time = datetime(2026, 5, 27, 16, 22)
+    bet.placed_at = datetime(2026, 5, 27, 16, 22)
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter.return_value.first.return_value = yetai
+    svc = PlayerPropVerificationService(mock_db)
+    assert svc._game_date_for_unified_prop(bet).isoformat() == "2026-05-27"
+
+
 def test_non_prop_loss_is_not_retryable():
     service = UnifiedBetVerificationService()
     bet = MagicMock()
