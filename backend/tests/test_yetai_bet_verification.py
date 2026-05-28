@@ -145,6 +145,50 @@ def test_lost_evaluation_error_baseball_mlb_is_retryable():
     assert service._is_retryable_error_loss(bet) is True
 
 
+def test_verify_regrades_lost_evaluation_error_mlb_prop():
+    service = YetAIBetsServiceDB()
+    mock_db = MagicMock()
+    lost_bet = YetAIBet(
+        id="connor-pick",
+        title="Twins @ Sox",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Connor Prielipp UNDER 5.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        sport="MLB",
+        status="lost",
+        result="Evaluation error: missing db",
+        commence_time=datetime(2026, 5, 27, 23, 40),
+        created_at=datetime(2026, 5, 27, 16, 20),
+    )
+
+    chain = mock_db.query.return_value.filter.return_value
+    chain.all.return_value = [lost_bet]
+
+    with (
+        patch(
+            "app.services.yetai_bets_service_db.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch.object(service, "_expire_stale_pending_approval", return_value=0),
+        patch(
+            "app.services.player_prop_verification_service.PlayerPropVerificationService"
+        ) as mock_prop_cls,
+    ):
+        mock_prop = mock_prop_cls.return_value
+        mock_prop.verify_yetai_mlb_prop.return_value = (
+            "won",
+            "Won: Under 5.5 — actual 5 (Connor Prielipp)",
+        )
+        result = asyncio.run(service.verify_pending_yetai_bets())
+
+    assert result["success"] is True
+    assert result["settled"] == 1
+    assert lost_bet.status == "won"
+    mock_prop.verify_yetai_mlb_prop.assert_called_once()
+
+
 def test_retryable_error_allows_evaluation_prefix_variants():
     service = YetAIBetsServiceDB()
     bet = YetAIBet(

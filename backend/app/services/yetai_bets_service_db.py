@@ -419,13 +419,92 @@ class YetAIBetsServiceDB:
             "units": round(units, 2),
         }
 
+    def _linked_unified_bets_for_yetai_pick(self, db: Session, yetai: YetAIBet) -> List:
+        """Find placed-bet rows tied to a YetAI pick (yetai_bet_id or legacy UUID ids)."""
+        from app.models.simple_unified_bet_model import SimpleUnifiedBet
+
+        return (
+            db.query(SimpleUnifiedBet)
+            .filter(
+                or_(
+                    SimpleUnifiedBet.yetai_bet_id == yetai.id,
+                    SimpleUnifiedBet.game_id == yetai.id,
+                    SimpleUnifiedBet.odds_api_event_id == yetai.id,
+                    SimpleUnifiedBet.odds_api_event_id == f"yetai-pick-{yetai.id}",
+                )
+            )
+            .all()
+        )
+
+    def _repair_unified_for_evaluation_yetai_picks(self, db: Session) -> int:
+        """Regrade linked placed bets for YetAI picks stuck on evaluation errors."""
+        import asyncio
+
+        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+
+        rows = (
+            db.query(YetAIBet)
+            .filter(YetAIBet.status == "lost")
+            .filter(YetAIBet.result.ilike("Evaluation%"))
+            .limit(50)
+            .all()
+        )
+        if not rows:
+            return 0
+
+        prop_service = PlayerPropVerificationService(db)
+        updated = 0
+
+        for yetai in rows:
+            if not self._is_retryable_error_loss(yetai):
+                continue
+
+            for unified in self._linked_unified_bets_for_yetai_pick(db, yetai):
+                if unified.status != UnifiedBetStatus.LOST:
+                    continue
+                if not self._is_prop_bet(yetai):
+                    continue
+
+                prop_result = asyncio.run(prop_service.verify_single_prop(unified))
+                if not prop_result or prop_result.get("status") != UnifiedBetStatus.WON:
+                    continue
+
+                unified.status = UnifiedBetStatus.WON
+                unified.result_amount = prop_result.get("result_amount", 0.0)
+                unified.reasoning = prop_result.get("reasoning")
+                unified.settled_at = datetime.utcnow()
+                if not unified.yetai_bet_id:
+                    unified.yetai_bet_id = yetai.id
+                updated += 1
+
+            game_day = game_date_for_yetai_bet(yetai)
+            outcome = prop_service.verify_yetai_mlb_prop(yetai, game_day)
+            if outcome:
+                result_status, result_description = outcome
+                if result_status in {"won", "lost", "pushed"}:
+                    yetai.status = result_status
+                    yetai.settled_at = datetime.utcnow()
+                    yetai.result = clamp_yetai_result(result_description)
+                    updated += 1
+
+        if updated:
+            db.commit()
+            logger.info(
+                "Regraded %s linked unified/YetAI rows after evaluation errors", updated
+            )
+
+        return updated
+
     def sync_yetai_from_unified_bet(self, db: Session, unified_bet) -> bool:
         """Mirror graded placed-bet outcomes onto the linked YetAI pick row."""
         from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
 
-        yetai_id = getattr(unified_bet, "yetai_bet_id", None)
-        if not yetai_id:
-            return False
         if unified_bet.status not in (
             UnifiedBetStatus.WON,
             UnifiedBetStatus.LOST,
@@ -433,11 +512,26 @@ class YetAIBetsServiceDB:
         ):
             return False
 
-        yetai = db.query(YetAIBet).filter(YetAIBet.id == yetai_id).first()
+        prop_service = PlayerPropVerificationService(db)
+        yetai = None
+        yetai_id = getattr(unified_bet, "yetai_bet_id", None)
+        if yetai_id:
+            yetai = db.query(YetAIBet).filter(YetAIBet.id == yetai_id).first()
+        if not yetai:
+            yetai = prop_service._resolve_yetai_pick(unified_bet)
         if not yetai:
             return False
 
+        unified_reason = (getattr(unified_bet, "reasoning", None) or "").strip().lower()
+        yetai_reason = (yetai.result or "").strip().lower()
+        if yetai_reason.startswith("evaluation") or unified_reason.startswith(
+            "evaluation"
+        ):
+            return False
+
         target = unified_bet.status.value
+        if yetai.status == "won" and target == "lost":
+            return False
         if yetai.status == target and yetai.settled_at is not None:
             return False
 
@@ -491,6 +585,7 @@ class YetAIBetsServiceDB:
         limit: int = 100,
     ) -> tuple[List[Dict], Dict[str, float | int]]:
         """Settled promoted picks with aggregate track record."""
+        self._repair_unified_for_evaluation_yetai_picks(db)
         self._retry_historical_error_losses(db)
         self.sync_yetai_picks_from_linked_unified_bets(db)
         since = datetime.utcnow() - timedelta(days=max(days, 1))
@@ -976,10 +1071,28 @@ class YetAIBetsServiceDB:
             stale_cutoff = datetime.utcnow() - timedelta(hours=24)
 
             for bet in unsettled:
-                if bet.status not in YETAI_UNSETTLED_STATUSES:
+                settled = False
+
+                if self._is_retryable_error_loss(bet):
+                    if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
+                        game_day = game_date_for_yetai_bet(bet)
+                        outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
+                        if outcome:
+                            result_status, result_description = outcome
+                            bet.status = result_status
+                            bet.settled_at = datetime.utcnow()
+                            bet.result = clamp_yetai_result(result_description)
+                            total_settled += 1
+                            settled = True
+                            logger.info(
+                                "Regraded errored YetAI MLB prop %s: %s",
+                                bet.id[:8],
+                                result_status,
+                            )
                     continue
 
-                settled = False
+                if bet.status not in YETAI_UNSETTLED_STATUSES:
+                    continue
 
                 if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
                     game_day = game_date_for_yetai_bet(bet)
