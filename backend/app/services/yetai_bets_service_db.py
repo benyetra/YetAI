@@ -67,16 +67,28 @@ class YetAIBetsServiceDB:
     def __init__(self):
         pass
 
+    @staticmethod
+    def _is_prop_bet(bet: YetAIBet) -> bool:
+        value = getattr(bet, "bet_type", None)
+        if value == BetType.PROP:
+            return True
+        return str(value).lower() == "prop"
+
+    @staticmethod
+    def _is_mlb_sport(value: Optional[str]) -> bool:
+        blob = (value or "").strip().lower()
+        return "mlb" in blob or "baseball" in blob
+
     def _is_retryable_error_loss(self, bet: YetAIBet) -> bool:
         """Permit regrading for legacy rows marked lost due to evaluation errors."""
         if (bet.status or "").lower() != "lost":
             return False
-        if bet.bet_type != BetType.PROP:
+        if not self._is_prop_bet(bet):
             return False
-        if (bet.sport or "").upper() != "MLB":
+        if not self._is_mlb_sport(bet.sport):
             return False
         reason = (bet.result or "").strip().lower()
-        return reason.startswith("evaluation error")
+        return reason.startswith("evaluation")
 
     async def create_bet(
         self, bet_request: CreateYetAIBetRequest, admin_user_id: int
@@ -916,7 +928,7 @@ class YetAIBetsServiceDB:
 
                 settled = False
 
-                if bet.bet_type == BetType.PROP and (bet.sport or "").upper() == "MLB":
+                if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
                     game_day = game_date_for_yetai_bet(bet)
                     outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
                     if outcome:

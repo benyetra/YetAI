@@ -126,3 +126,20 @@ def test_lost_evaluation_error_mlb_prop_is_retryable():
         result="Evaluation error: UnifiedBetVerificationService...",
     )
     assert service._is_retryable_error_loss(bet) is True
+
+
+def test_lost_evaluation_error_baseball_mlb_is_retryable():
+    service = YetAIBetsServiceDB()
+    bet = YetAIBet(
+        id="y",
+        title="A @ B",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Pitcher UNDER 5.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        sport="baseball_mlb",
+        status="lost",
+        result="Evaluation error: timeout",
+    )
+    assert service._is_retryable_error_loss(bet) is True
