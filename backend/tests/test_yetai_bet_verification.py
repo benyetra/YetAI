@@ -11,6 +11,7 @@ from app.services.yetai_bets_service_db import (
     clamp_yetai_result,
     game_date_for_yetai_bet,
     yetai_bet_is_stale,
+    yetai_bet_visible_as_live,
 )
 
 
@@ -53,6 +54,54 @@ def test_game_date_prefers_commence_time():
         prediction_factors={"event_id": "mlb-prop-2026-05-24-12345-strikeouts"},
     )
     assert game_date_for_yetai_bet(bet) == date(2026, 5, 25)
+
+
+def test_game_date_from_nba_prop_event_id():
+    bet = YetAIBet(
+        id="x",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        prediction_factors={"event_id": "nba-prop-2026-05-28-12345-points"},
+    )
+    assert game_date_for_yetai_bet(bet) == date(2026, 5, 28)
+
+
+def test_live_visibility_ends_after_game_day_buffer():
+    bet = YetAIBet(
+        id="x",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        created_at=datetime(2026, 5, 28, 17, 0),
+        prediction_factors={"event_id": "nba-prop-2026-05-28-1-points"},
+    )
+    still_live = datetime(2026, 5, 29, 6, 0)
+    assert yetai_bet_visible_as_live(bet, now=still_live) is True
+    after_window = datetime(2026, 5, 29, 12, 0)
+    assert yetai_bet_visible_as_live(bet, now=after_window) is False
+
+
+def test_stale_after_game_day_even_if_created_recently():
+    bet = YetAIBet(
+        id="x",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        created_at=datetime.utcnow() - timedelta(hours=2),
+        prediction_factors={"event_id": "nba-prop-2026-05-26-1-points"},
+    )
+    cutoff = datetime.utcnow() - timedelta(hours=24)
+    assert yetai_bet_is_stale(bet, cutoff) is True
 
 
 def test_stale_uses_created_at_when_no_commence_time():
@@ -187,6 +236,51 @@ def test_verify_regrades_lost_evaluation_error_mlb_prop():
     assert result["settled"] == 1
     assert lost_bet.status == "won"
     mock_prop.verify_yetai_mlb_prop.assert_called_once()
+
+
+def test_verify_settles_nba_prop():
+    service = YetAIBetsServiceDB()
+    mock_db = MagicMock()
+    nba_bet = MagicMock()
+    nba_bet.id = "nba-prop-1"
+    nba_bet.status = "active"
+    nba_bet.bet_type = BetType.PROP
+    nba_bet.sport = "NBA"
+    nba_bet.game_id = None
+    nba_bet.selection = "Luke Kornet OVER 1.5 points"
+    nba_bet.title = "NBA player prop"
+    nba_bet.commence_time = None
+    nba_bet.created_at = datetime(2026, 5, 28, 17, 0)
+    nba_bet.prediction_factors = {"event_id": "nba-prop-2026-05-28-1-points"}
+    nba_bet.home_team = None
+    nba_bet.away_team = None
+
+    chain = mock_db.query.return_value.filter.return_value
+    chain.all.return_value = [nba_bet]
+    chain.first.return_value = None
+
+    with (
+        patch(
+            "app.services.yetai_bets_service_db.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch.object(service, "_expire_stale_pending_approval", return_value=0),
+        patch(
+            "app.services.player_prop_verification_service.PlayerPropVerificationService"
+        ) as mock_prop_cls,
+    ):
+        mock_prop = mock_prop_cls.return_value
+        mock_prop.verify_yetai_mlb_prop = MagicMock()
+        mock_prop.verify_yetai_nba_prop.return_value = (
+            "won",
+            "Won: Over 1.5 — actual 8 (Luke Kornet)",
+        )
+        result = asyncio.run(service.verify_pending_yetai_bets())
+
+    assert result["success"] is True
+    assert result["settled"] == 1
+    assert nba_bet.status == "won"
+    mock_prop.verify_yetai_nba_prop.assert_called_once()
 
 
 def test_retryable_error_allows_evaluation_prefix_variants():

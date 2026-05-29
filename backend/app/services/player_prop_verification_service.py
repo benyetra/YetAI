@@ -988,6 +988,7 @@ class PlayerPropVerificationService:
             "is_over": match.group(2).lower() == "over",
             "line_value": float(match.group(3)),
             "stat_type": stat_key,
+            "stat_label": stat_type,
         }
 
     def _find_nba_player_stats(
@@ -1079,6 +1080,113 @@ class PlayerPropVerificationService:
             f"Lost: {direction} {line_value} — actual {actual_value} "
             f"({prop_details['player_name']})",
         )
+
+    def verify_yetai_nba_prop(
+        self, bet: YetAIBet, game_date
+    ) -> Optional[Tuple[str, str]]:
+        """
+        Settle a YetAI NBA prop using pred_*_actuals, then nba_api box scores.
+
+        Returns (status, result_description) or None when stats are not available yet.
+        """
+        prop_details = self._parse_nba_prop(bet.selection or "")
+        if not prop_details:
+            logger.warning(
+                "Could not parse YetAI NBA prop selection: %r", bet.selection
+            )
+            return None
+
+        actual_value = self._fetch_nba_prop_actual_from_db(
+            prop_details["player_name"],
+            prop_details.get("stat_label", ""),
+            game_date,
+        )
+        if actual_value is None:
+            actual_value = self._fetch_nba_prop_actual_from_api(prop_details, game_date)
+        if actual_value is None:
+            return None
+
+        line_value = prop_details["line_value"]
+        is_over = prop_details["is_over"]
+        if actual_value == line_value:
+            return (
+                "pushed",
+                f"Push: {prop_details['player_name']} exactly {line_value} "
+                f"{prop_details.get('stat_label', 'stat')}",
+            )
+
+        won = self._check_prop_outcome(actual_value, line_value, is_over)
+        direction = "Over" if is_over else "Under"
+        if won:
+            return (
+                "won",
+                f"Won: {direction} {line_value} — actual {actual_value} "
+                f"({prop_details['player_name']})",
+            )
+        return (
+            "lost",
+            f"Lost: {direction} {line_value} — actual {actual_value} "
+            f"({prop_details['player_name']})",
+        )
+
+    def _fetch_nba_prop_actual_from_db(
+        self, player_name: str, stat_label: str, game_date
+    ) -> Optional[float]:
+        from app.models.predictions_models import (
+            AssistsActuals,
+            PointsActuals,
+            ReboundsActuals,
+            StealsActuals,
+        )
+
+        table_map = {
+            "points": (PointsActuals, "actual_points"),
+            "rebounds": (ReboundsActuals, "actual_rebounds"),
+            "assists": (AssistsActuals, "actual_assists"),
+            "steals": (StealsActuals, "actual_steals"),
+        }
+        spec = table_map.get((stat_label or "").strip().lower())
+        if not spec or not self.session:
+            return None
+
+        model, attr = spec
+        needle = player_name.strip().lower()
+        rows = self.session.query(model).filter(model.date == game_date).all()
+        for row in rows:
+            name = (getattr(row, "player_name", None) or "").strip().lower()
+            if not name:
+                continue
+            if name == needle or needle in name or name in needle:
+                value = getattr(row, attr, None)
+                if value is not None:
+                    return float(value)
+        return None
+
+    def _fetch_nba_prop_actual_from_api(
+        self, prop_details: Dict, game_date
+    ) -> Optional[float]:
+        try:
+            from nba_api.stats.endpoints import scoreboardv2
+        except ImportError:
+            logger.warning("nba_api not installed; cannot verify NBA props via API")
+            return None
+
+        formatted_date = game_date.strftime("%m/%d/%Y")
+        try:
+            scoreboard = scoreboardv2.ScoreboardV2(game_date=formatted_date, timeout=60)
+            games = scoreboard.game_header.get_dict()["data"]
+        except Exception as e:
+            logger.warning("NBA scoreboard fetch failed for %s: %s", game_date, e)
+            return None
+
+        stats = self._find_nba_player_stats(
+            games,
+            prop_details["player_name"],
+            prop_details["stat_type"],
+        )
+        if stats is None:
+            return None
+        return float(stats.get(prop_details["stat_type"], 0))
 
     def _check_prop_outcome(
         self, actual_value: float, line_value: float, is_over: bool
