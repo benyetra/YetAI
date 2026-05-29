@@ -199,6 +199,40 @@ class BettingAnalyticsService:
         streak_type = "win" if current_status == "won" else "loss"
         return {"type": streak_type, "count": streak_count}
 
+    @staticmethod
+    def _new_breakdown_bucket() -> Dict[str, Any]:
+        return {
+            "total": 0,
+            "won": 0,
+            "lost": 0,
+            "pending": 0,
+            "win_rate": 0,
+            "total_wagered": 0.0,
+            "net_profit": 0.0,
+        }
+
+    @staticmethod
+    def _apply_bet_financials(bucket: Dict[str, Any], bet) -> None:
+        """Accumulate wagered / P&L for a resolved straight bet (not parlay-split)."""
+        if bet.status not in ("won", "lost", "pushed"):
+            return
+        amount = float(bet.amount or 0)
+        bucket["total_wagered"] = round(bucket["total_wagered"] + amount, 2)
+        if bet.status == "won":
+            bucket["net_profit"] = round(
+                bucket["net_profit"] + float(bet.result_amount or 0) - amount, 2
+            )
+        elif bet.status == "lost":
+            bucket["net_profit"] = round(bucket["net_profit"] - amount, 2)
+
+    def _finalize_breakdown(self, breakdown: Dict[str, Any]) -> Dict[str, Any]:
+        for key in breakdown:
+            bucket = breakdown[key]
+            bucket["count"] = bucket["total"]
+            bucket["total_wagered"] = round(float(bucket.get("total_wagered", 0)), 2)
+            bucket["net_profit"] = round(float(bucket.get("net_profit", 0)), 2)
+        return breakdown
+
     def _calculate_breakdown_by_sport(self, bets: List) -> Dict[str, Any]:
         """Calculate win/loss breakdown by sport"""
         breakdown = {}
@@ -214,13 +248,7 @@ class BettingAnalyticsService:
                 # Count this bet for each unique sport in the parlay
                 for sport in sports:
                     if sport not in breakdown:
-                        breakdown[sport] = {
-                            "total": 0,
-                            "won": 0,
-                            "lost": 0,
-                            "pending": 0,
-                            "win_rate": 0,
-                        }
+                        breakdown[sport] = self._new_breakdown_bucket()
 
                     breakdown[sport]["total"] += 1
 
@@ -235,13 +263,7 @@ class BettingAnalyticsService:
                 sport = self._format_sport_name(bet.sport or "Unknown")
 
                 if sport not in breakdown:
-                    breakdown[sport] = {
-                        "total": 0,
-                        "won": 0,
-                        "lost": 0,
-                        "pending": 0,
-                        "win_rate": 0,
-                    }
+                    breakdown[sport] = self._new_breakdown_bucket()
 
                 breakdown[sport]["total"] += 1
 
@@ -252,6 +274,8 @@ class BettingAnalyticsService:
                 elif bet.status in ["pending", None]:
                     breakdown[sport]["pending"] += 1
 
+                self._apply_bet_financials(breakdown[sport], bet)
+
         # Calculate win rates
         for sport in breakdown:
             resolved = breakdown[sport]["won"] + breakdown[sport]["lost"]
@@ -260,7 +284,7 @@ class BettingAnalyticsService:
                     breakdown[sport]["won"] / resolved * 100, 1
                 )
 
-        return breakdown
+        return self._finalize_breakdown(breakdown)
 
     def _calculate_breakdown_by_type(self, bets: List) -> Dict[str, Any]:
         """Calculate win/loss breakdown by bet type"""
@@ -270,13 +294,7 @@ class BettingAnalyticsService:
             bet_type = self._format_bet_type_name(str(bet.bet_type or "Unknown"))
 
             if bet_type not in breakdown:
-                breakdown[bet_type] = {
-                    "total": 0,
-                    "won": 0,
-                    "lost": 0,
-                    "pending": 0,
-                    "win_rate": 0,
-                }
+                breakdown[bet_type] = self._new_breakdown_bucket()
 
             breakdown[bet_type]["total"] += 1
 
@@ -287,6 +305,8 @@ class BettingAnalyticsService:
             elif bet.status in ["pending", None]:
                 breakdown[bet_type]["pending"] += 1
 
+            self._apply_bet_financials(breakdown[bet_type], bet)
+
         # Calculate win rates
         for bet_type in breakdown:
             resolved = breakdown[bet_type]["won"] + breakdown[bet_type]["lost"]
@@ -295,7 +315,7 @@ class BettingAnalyticsService:
                     breakdown[bet_type]["won"] / resolved * 100, 1
                 )
 
-        return breakdown
+        return self._finalize_breakdown(breakdown)
 
     async def _calculate_monthly_summary(
         self, user_id: int, db: Session

@@ -59,6 +59,43 @@ function periodChartLabel(days: number): string {
   return `last ${days} days`;
 }
 
+/** API uses `total` (betting analytics) or `count` (performance tracker). */
+function mapMetricsBreakdownEntry(
+  key: string,
+  data: Record<string, unknown>,
+  labelFormatter: (k: string) => string,
+): {
+  key: string;
+  sport: string;
+  sport_name: string;
+  bet_type: string;
+  bet_type_name: string;
+  total_bets: number;
+  total_wagered: number;
+  profit_loss: number;
+  win_rate: number;
+  roi: number;
+} {
+  const total_bets = Number(data.total ?? data.count ?? 0);
+  const total_wagered = Number(data.total_wagered ?? 0);
+  const profit_loss = Number(data.net_profit ?? data.profit_loss ?? 0);
+  const win_rate = Math.round(Number(data.win_rate ?? 0));
+  const label = labelFormatter(key);
+  return {
+    key,
+    sport: key,
+    sport_name: label,
+    bet_type: key,
+    bet_type_name: label,
+    total_bets,
+    total_wagered,
+    profit_loss,
+    win_rate,
+    roi:
+      total_wagered > 0 ? Math.round((profit_loss / total_wagered) * 100) : 0,
+  };
+}
+
 export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanceProps) {
   const router = useRouter();
   const [performanceData, setPerformanceData] = useState<PerformanceData | null>(null);
@@ -132,32 +169,22 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
             pending_bets: metrics.pending_predictions || 0,
           },
           sport_breakdown: metrics.by_sport
-            ? Object.entries(metrics.by_sport).map(([sport, data]: [string, any]) => ({
-                sport,
-                sport_name: sport.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
-                total_bets: data.count || 0,
-                total_wagered: data.total_wagered || 0,
-                profit_loss: data.net_profit || 0,
-                win_rate: Math.round(data.win_rate || 0),
-                roi:
-                  data.total_wagered > 0
-                    ? Math.round((data.net_profit / data.total_wagered) * 100)
-                    : 0,
-              }))
+            ? Object.entries(metrics.by_sport)
+                .map(([sport, data]) =>
+                  mapMetricsBreakdownEntry(sport, data as Record<string, unknown>, (s) =>
+                    s.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+                  ),
+                )
+                .filter((row) => row.total_bets > 0)
             : [],
           bet_type_breakdown: metrics.by_type
-            ? Object.entries(metrics.by_type).map(([type, data]: [string, any]) => ({
-                bet_type: type,
-                bet_type_name: type.charAt(0).toUpperCase() + type.slice(1),
-                total_bets: data.count || 0,
-                total_wagered: data.total_wagered || 0,
-                profit_loss: data.net_profit || 0,
-                win_rate: Math.round(data.win_rate || 0),
-                roi:
-                  data.total_wagered > 0
-                    ? Math.round((data.net_profit / data.total_wagered) * 100)
-                    : 0,
-              }))
+            ? Object.entries(metrics.by_type)
+                .map(([type, data]) =>
+                  mapMetricsBreakdownEntry(type, data as Record<string, unknown>, (t) =>
+                    t.charAt(0).toUpperCase() + t.slice(1),
+                  ),
+                )
+                .filter((row) => row.total_bets > 0)
             : [],
           daily_pnl: Array.isArray(personal.daily_pnl) ? personal.daily_pnl : [],
           win_rate_delta: trends.accuracy_change,
@@ -182,6 +209,7 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
       label: s.sport_name,
       sublabel: `${s.total_bets} bets · ${s.win_rate}%`,
       profit: s.profit_loss,
+      weight: s.total_bets,
     }));
   }, [performanceData]);
 
@@ -190,8 +218,9 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
     return performanceData.bet_type_breakdown.slice(0, 6).map((t) => ({
       key: t.bet_type,
       label: t.bet_type_name,
-      sublabel: `${t.total_bets} bet${t.total_bets !== 1 ? 's' : ''}`,
+      sublabel: `${t.total_bets} bet${t.total_bets !== 1 ? 's' : ''} · ${t.win_rate}%`,
       profit: t.profit_loss,
+      weight: t.total_bets,
     }));
   }, [performanceData]);
 

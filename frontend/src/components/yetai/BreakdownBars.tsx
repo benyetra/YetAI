@@ -7,6 +7,8 @@ export type BreakdownItem = {
   label: string;
   sublabel?: string;
   profit: number;
+  /** Used for bar width when all profits are zero (e.g. bet count). */
+  weight?: number;
 };
 
 export default function BreakdownBars({ items }: { items: BreakdownItem[] }) {
@@ -14,12 +16,18 @@ export default function BreakdownBars({ items }: { items: BreakdownItem[] }) {
     return <p className="dim" style={{ fontSize: 13 }}>No data for this period yet.</p>;
   }
 
-  const total = items.reduce((sum, item) => sum + Math.abs(item.profit), 0) || 1;
+  const profitTotal = items.reduce((sum, item) => sum + Math.abs(item.profit), 0);
+  const weightTotal =
+    profitTotal > 0
+      ? profitTotal
+      : items.reduce((sum, item) => sum + (item.weight ?? 0), 0) || 1;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {items.map((item) => {
-        const pct = (Math.abs(item.profit) / total) * 100;
+        const weight =
+          profitTotal > 0 ? Math.abs(item.profit) : (item.weight ?? 0);
+        const pct = (weight / weightTotal) * 100;
         return (
           <div key={item.key}>
             <div
