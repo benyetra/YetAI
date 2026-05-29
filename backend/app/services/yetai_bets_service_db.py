@@ -130,6 +130,16 @@ class YetAIBetsServiceDB:
         reason = (bet.result or "").strip().lower()
         return reason.startswith("evaluation")
 
+    def _is_retryable_nba_prop_regrade(self, bet: YetAIBet) -> bool:
+        """Re-run NBA prop grading after box-score parser fixes (recent settlements)."""
+        if not self._is_prop_bet(bet) or not self._is_nba_sport(bet.sport):
+            return False
+        if (bet.status or "").lower() not in ("won", "lost"):
+            return False
+        if not bet.settled_at:
+            return False
+        return bet.settled_at >= datetime.utcnow() - timedelta(days=7)
+
     def _retry_historical_error_losses(self, db: Session, *, limit: int = 50) -> int:
         """
         Best-effort self-healing for legacy props marked lost due to evaluation errors.
@@ -1169,9 +1179,21 @@ class YetAIBetsServiceDB:
                     "Expired %s stale pending_approval YetAI picks", expired_approval
                 )
 
+            recent_regrade_cutoff = datetime.utcnow() - timedelta(days=7)
+            from sqlalchemy import and_, or_
+
             candidates = (
                 db.query(YetAIBet)
-                .filter(YetAIBet.status.in_((*YETAI_UNSETTLED_STATUSES, "lost")))
+                .filter(
+                    or_(
+                        YetAIBet.status.in_((*YETAI_UNSETTLED_STATUSES, "lost")),
+                        and_(
+                            YetAIBet.status.in_(("won", "lost")),
+                            YetAIBet.settled_at.isnot(None),
+                            YetAIBet.settled_at >= recent_regrade_cutoff,
+                        ),
+                    )
+                )
                 .all()
             )
             unsettled = []
@@ -1185,6 +1207,14 @@ class YetAIBetsServiceDB:
                         "Retrying previously errored YetAI pick %s: %s",
                         bet.id[:8],
                         (bet.result or "")[:80],
+                    )
+                    continue
+                if self._is_retryable_nba_prop_regrade(bet):
+                    unsettled.append(bet)
+                    logger.info(
+                        "Regrading recent NBA prop %s (was %s)",
+                        bet.id[:8],
+                        bet.status,
                     )
             logger.info(
                 "Found %s unsettled YetAI bets (statuses %s)",
@@ -1210,7 +1240,9 @@ class YetAIBetsServiceDB:
             for bet in unsettled:
                 settled = False
 
-                if self._is_retryable_error_loss(bet):
+                if self._is_retryable_error_loss(
+                    bet
+                ) or self._is_retryable_nba_prop_regrade(bet):
                     game_day = game_date_for_yetai_bet(bet)
                     outcome = None
                     if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
@@ -1225,7 +1257,7 @@ class YetAIBetsServiceDB:
                         total_settled += 1
                         settled = True
                         logger.info(
-                            "Regraded errored YetAI prop %s: %s",
+                            "Regraded YetAI prop %s: %s",
                             bet.id[:8],
                             result_status,
                         )

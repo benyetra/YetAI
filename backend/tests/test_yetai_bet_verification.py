@@ -298,3 +298,136 @@ def test_retryable_error_allows_evaluation_prefix_variants():
         result="Evaluation failed: timeout",
     )
     assert service._is_retryable_error_loss(bet) is True
+
+
+def test_nba_boxscore_uses_pts_not_pf_column():
+    from app.services.player_prop_verification_service import (
+        _nba_boxscore_row_to_stats,
+        _nba_player_names_match,
+        PlayerPropVerificationService,
+    )
+
+    headers = [
+        "GAME_ID",
+        "TEAM_ID",
+        "TEAM_ABBREVIATION",
+        "TEAM_CITY",
+        "PLAYER_ID",
+        "PLAYER_NAME",
+        "NICKNAME",
+        "START_POSITION",
+        "COMMENT",
+        "MIN",
+        "FGM",
+        "FGA",
+        "FG_PCT",
+        "FG3M",
+        "FG3A",
+        "FG3_PCT",
+        "FTM",
+        "FTA",
+        "FT_PCT",
+        "OREB",
+        "DREB",
+        "REB",
+        "AST",
+        "STL",
+        "BLK",
+        "TO",
+        "PF",
+        "PTS",
+        "PLUS_MINUS",
+    ]
+    row = [None] * len(headers)
+    name_idx = headers.index("PLAYER_NAME")
+    pf_idx = headers.index("PF")
+    pts_idx = headers.index("PTS")
+    row[name_idx] = "Luke Kornet"
+    row[pf_idx] = 1
+    row[pts_idx] = 3
+    stats = _nba_boxscore_row_to_stats(dict(zip(headers, row)))
+    assert stats["PTS"] == 3.0
+    assert stats["PTS"] != row[pf_idx]
+    assert _nba_player_names_match("Luke Kornet", "Luke Kornet")
+    assert not _nba_player_names_match("Victor Wembanyama", "Victor Oladipo")
+
+    service = PlayerPropVerificationService()
+    games = [[None, None, "0022400001"]]
+
+    class FakeBox:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @property
+        def player_stats(self):
+            return self
+
+        def get_dict(self):
+            return {"headers": headers, "data": [row]}
+
+    with patch(
+        "nba_api.stats.endpoints.boxscoretraditionalv2.BoxScoreTraditionalV2",
+        FakeBox,
+    ):
+        found = service._find_nba_player_stats(games, "Luke Kornet", "PTS")
+    assert found["PTS"] == 3.0
+
+
+def test_verify_yetai_nba_prop_prefers_api_over_db():
+    from app.services.player_prop_verification_service import (
+        PlayerPropVerificationService,
+    )
+
+    bet = YetAIBet(
+        id="nba-1",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Victor Wembanyama UNDER 27.5 points",
+        odds=-110,
+        confidence=80,
+        sport="NBA",
+        prediction_factors={"event_id": "nba-prop-2026-05-28-1-points"},
+    )
+    service = PlayerPropVerificationService(db=MagicMock())
+    with (
+        patch.object(
+            service, "_fetch_nba_prop_actual_from_api", return_value=28.0
+        ) as api,
+        patch.object(service, "_fetch_nba_prop_actual_from_db", return_value=0.0) as db,
+    ):
+        outcome = service.verify_yetai_nba_prop(bet, date(2026, 5, 28))
+    assert outcome[0] == "lost"
+    api.assert_called_once()
+    db.assert_not_called()
+
+
+def test_retryable_nba_prop_regrade_recent_won_lost():
+    service = YetAIBetsServiceDB()
+    recent = YetAIBet(
+        id="r1",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        sport="NBA",
+        status="lost",
+        settled_at=datetime.utcnow() - timedelta(hours=2),
+        result="Lost: Over 1.5 — actual 1.0 (Luke Kornet)",
+    )
+    old = YetAIBet(
+        id="r2",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Old Player OVER 10.5 points",
+        odds=-110,
+        confidence=80,
+        sport="NBA",
+        status="won",
+        settled_at=datetime.utcnow() - timedelta(days=30),
+    )
+    assert service._is_retryable_nba_prop_regrade(recent) is True
+    assert service._is_retryable_nba_prop_regrade(old) is False

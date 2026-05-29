@@ -26,6 +26,53 @@ from app.services.websocket_manager import manager as websocket_manager
 
 logger = logging.getLogger(__name__)
 
+# BoxScoreTraditionalV2 player_stats column order (nba_api); PTS is index 27, not 26.
+_NBA_BOXSCORE_STAT_KEYS = ("PTS", "REB", "AST", "STL", "BLK", "FG3M")
+
+
+def _normalize_player_name(name: str) -> str:
+    """Lowercase, collapse whitespace, strip accents for matching."""
+    import unicodedata
+
+    cleaned = unicodedata.normalize("NFKD", (name or "").strip())
+    ascii_name = cleaned.encode("ascii", "ignore").decode("ascii")
+    return " ".join(ascii_name.lower().split())
+
+
+def _nba_player_names_match(requested: str, box_name: str) -> bool:
+    """Match full name or same first token + last name (avoids 'Victor' ⊂ wrong player)."""
+    req = _normalize_player_name(requested)
+    box = _normalize_player_name(box_name)
+    if not req or not box:
+        return False
+    if req == box:
+        return True
+    req_parts = req.split()
+    box_parts = box.split()
+    if len(req_parts) < 2 or len(box_parts) < 2:
+        return False
+    if req_parts[-1] != box_parts[-1]:
+        return False
+    req_first, box_first = req_parts[0], box_parts[0]
+    return (
+        req_first == box_first
+        or box_first.startswith(req_first)
+        or req_first.startswith(box_first)
+    )
+
+
+def _nba_boxscore_row_to_stats(record: Dict) -> Dict:
+    """Extract stat fields from a box score row dict."""
+    stats: Dict = {}
+    for key in _NBA_BOXSCORE_STAT_KEYS:
+        value = record.get(key)
+        if value is not None and value != "":
+            try:
+                stats[key] = float(value)
+            except (TypeError, ValueError):
+                continue
+    return stats
+
 
 class PlayerPropVerificationService:
     """Service for verifying player prop bets using sport-specific stats APIs"""
@@ -994,7 +1041,7 @@ class PlayerPropVerificationService:
     def _find_nba_player_stats(
         self, games: List, player_name: str, stat_type: str
     ) -> Optional[Dict]:
-        """Find NBA player stats from games"""
+        """Find NBA player stats from games (named columns; PTS is not index 26)."""
         try:
             from nba_api.stats.endpoints import boxscoretraditionalv2
 
@@ -1005,20 +1052,16 @@ class PlayerPropVerificationService:
                     boxscore = boxscoretraditionalv2.BoxScoreTraditionalV2(
                         game_id=game_id, timeout=60
                     )
-                    player_stats = boxscore.player_stats.get_dict()["data"]
-
-                    for player in player_stats:
-                        player_full_name = player[5]  # PLAYER_NAME is at index 5
-                        if player_name.lower() in player_full_name.lower():
-                            # Return stats dict with relevant fields
-                            return {
-                                "PTS": player[26],  # Points
-                                "REB": player[20],  # Rebounds
-                                "AST": player[21],  # Assists
-                                "STL": player[22],  # Steals
-                                "BLK": player[23],  # Blocks
-                                "FG3M": player[12],  # 3-pointers made
-                            }
+                    payload = boxscore.player_stats.get_dict()
+                    headers = payload.get("headers") or []
+                    for row in payload.get("data") or []:
+                        record = dict(zip(headers, row))
+                        box_name = record.get("PLAYER_NAME") or ""
+                        if not _nba_player_names_match(player_name, box_name):
+                            continue
+                        stats = _nba_boxscore_row_to_stats(record)
+                        if stats:
+                            return stats
 
                 except Exception as e:
                     logger.error(f"Error fetching NBA boxscore for game {game_id}: {e}")
@@ -1096,13 +1139,14 @@ class PlayerPropVerificationService:
             )
             return None
 
-        actual_value = self._fetch_nba_prop_actual_from_db(
-            prop_details["player_name"],
-            prop_details.get("stat_label", ""),
-            game_date,
-        )
+        # Prefer live box score (named columns); DB actuals can be stale or mis-keyed.
+        actual_value = self._fetch_nba_prop_actual_from_api(prop_details, game_date)
         if actual_value is None:
-            actual_value = self._fetch_nba_prop_actual_from_api(prop_details, game_date)
+            actual_value = self._fetch_nba_prop_actual_from_db(
+                prop_details["player_name"],
+                prop_details.get("stat_label", ""),
+                game_date,
+            )
         if actual_value is None:
             return None
 
@@ -1150,16 +1194,16 @@ class PlayerPropVerificationService:
             return None
 
         model, attr = spec
-        needle = player_name.strip().lower()
         rows = self.session.query(model).filter(model.date == game_date).all()
         for row in rows:
-            name = (getattr(row, "player_name", None) or "").strip().lower()
+            name = getattr(row, "player_name", None) or ""
             if not name:
                 continue
-            if name == needle or needle in name or name in needle:
-                value = getattr(row, attr, None)
-                if value is not None:
-                    return float(value)
+            if not _nba_player_names_match(player_name, name):
+                continue
+            value = getattr(row, attr, None)
+            if value is not None:
+                return float(value)
         return None
 
     def _fetch_nba_prop_actual_from_api(
