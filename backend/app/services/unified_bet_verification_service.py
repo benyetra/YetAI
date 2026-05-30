@@ -58,6 +58,13 @@ class UnifiedBetVerificationService:
     def __init__(self):
         self.odds_service = get_optimized_odds_service(settings.ODDS_API_KEY)
 
+    @staticmethod
+    def _is_prop_bet(bet: SimpleUnifiedBet) -> bool:
+        bet_type = bet.bet_type
+        if bet_type == BetType.PROP:
+            return True
+        return str(getattr(bet_type, "value", bet_type)).lower() == BetType.PROP.value
+
     def _is_retryable_evaluation_error(
         self, bet: SimpleUnifiedBet, db: Optional[Session] = None
     ) -> bool:
@@ -205,10 +212,35 @@ class UnifiedBetVerificationService:
                     all_results.extend(parlay_results)
                     continue
 
-                try:
-                    logger.info(f"Verifying {len(sport_bets)} {sport.upper()} bets...")
+                prop_bets = [b for b in sport_bets if self._is_prop_bet(b)]
+                game_bets = [b for b in sport_bets if not self._is_prop_bet(b)]
 
-                    # Get completed games for this sport (last 3 days)
+                # Props use MLB/NBA/etc. stats APIs — never block on Odds API scores.
+                if prop_bets:
+                    logger.info(
+                        f"Verifying {len(prop_bets)} {sport.upper()} prop bet(s) via stats API..."
+                    )
+                    for bet in prop_bets:
+                        try:
+                            result = await self._verify_single_bet(bet, [])
+                            if result:
+                                all_results.append(result)
+                                total_verified += 1
+                                if result.status != BetStatus.PENDING:
+                                    total_settled += 1
+                        except Exception as e:
+                            logger.error(
+                                "Error verifying prop bet %s: %s", bet.id[:8], e
+                            )
+
+                if not game_bets:
+                    continue
+
+                try:
+                    logger.info(
+                        f"Verifying {len(game_bets)} {sport.upper()} game bet(s)..."
+                    )
+
                     normalized_sport = self._normalize_sport(sport)
                     completed_games = await self.odds_service.get_scores_optimized(
                         normalized_sport, include_completed=True
@@ -218,8 +250,7 @@ class UnifiedBetVerificationService:
                         f"Retrieved {len(completed_games)} game results for {sport}"
                     )
 
-                    # Process each bet for this sport
-                    for bet in sport_bets:
+                    for bet in game_bets:
                         result = await self._verify_single_bet(bet, completed_games)
                         if result:
                             all_results.append(result)
@@ -228,7 +259,7 @@ class UnifiedBetVerificationService:
                                 total_settled += 1
 
                 except Exception as e:
-                    logger.error(f"Error verifying {sport} bets: {e}")
+                    logger.error(f"Error verifying {sport} game bets: {e}")
                     continue
 
             # Apply leg/straight bet results before evaluating parlay parents
@@ -276,7 +307,7 @@ class UnifiedBetVerificationService:
         """Verify a single bet against completed games"""
 
         # Props (incl. YetAI picks with UUID event ids) use sport stats APIs, not Odds scores.
-        if bet.bet_type == BetType.PROP:
+        if self._is_prop_bet(bet):
             return await self._evaluate_bet_outcome(bet, 0, 0)
 
         # Find the game by odds_api_event_id

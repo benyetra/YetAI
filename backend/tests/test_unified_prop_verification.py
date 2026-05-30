@@ -133,3 +133,101 @@ def test_non_prop_loss_is_not_retryable():
     bet.bet_type = BetType.SPREAD
     bet.reasoning = "Evaluation error: parse issue"
     assert service._is_retryable_evaluation_error(bet) is False
+
+
+def test_unified_verify_settles_mlb_props_without_odds_scores():
+    import asyncio
+
+    service = UnifiedBetVerificationService()
+    mock_db = MagicMock()
+    prop_bet = MagicMock()
+    prop_bet.id = "prop-wheeler"
+    prop_bet.status = BetStatus.PENDING
+    prop_bet.bet_type = BetType.PROP
+    prop_bet.sport = "MLB"
+    prop_bet.selection = "Zack Wheeler OVER 6.5 strikeouts"
+    prop_bet.odds_api_event_id = "evt-1"
+    prop_bet.game_id = "evt-1"
+    prop_bet.home_team = "Philadelphia Phillies"
+    prop_bet.away_team = "Los Angeles Dodgers"
+    prop_bet.amount = 50.0
+    prop_bet.potential_win = 68.0
+    prop_bet.reasoning = None
+    prop_bet.yetai_bet_id = None
+
+    mock_db.query.return_value.filter.return_value.all.return_value = [prop_bet]
+    mock_db.query.return_value.filter.return_value.first.return_value = prop_bet
+
+    with (
+        patch(
+            "app.services.unified_bet_verification_service.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch.object(
+            service.odds_service,
+            "get_scores_optimized",
+            side_effect=RuntimeError("Odds API unavailable"),
+        ) as mock_scores,
+        patch(
+            "app.services.player_prop_verification_service.PlayerPropVerificationService.verify_single_prop",
+            new=AsyncMock(
+                return_value={
+                    "status": BetStatus.LOST,
+                    "result_amount": 0.0,
+                    "reasoning": "MLB prop graded",
+                }
+            ),
+        ),
+        patch(
+            "app.services.yetai_bets_service_db.YetAIBetsServiceDB.sync_yetai_from_unified_bet",
+            return_value=None,
+        ),
+    ):
+        result = asyncio.run(service.verify_all_pending_bets())
+
+    assert result["success"] is True
+    assert result["settled"] >= 1
+    mock_scores.assert_not_called()
+    assert prop_bet.status == BetStatus.LOST
+
+
+def test_mlb_fetch_tries_prior_season_when_calendar_year_differs():
+    service = PlayerPropVerificationService()
+    game_date = datetime(2026, 5, 29).date()
+
+    search_response = MagicMock()
+    search_response.raise_for_status.return_value = None
+    search_response.json.return_value = {"people": [{"id": 554430}]}
+
+    stats_2026 = MagicMock()
+    stats_2026.raise_for_status.return_value = None
+    stats_2026.json.return_value = {"people": [{"stats": []}]}
+
+    stats_2025 = MagicMock()
+    stats_2025.raise_for_status.return_value = None
+    stats_2025.json.return_value = {
+        "people": [
+            {
+                "stats": [
+                    {
+                        "type": {"displayName": "gameLog"},
+                        "splits": [
+                            {
+                                "date": "2025-05-29",
+                                "stat": {"strikeOuts": 6},
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    with patch(
+        "app.services.player_prop_verification_service.requests.get",
+        side_effect=[search_response, stats_2026, stats_2025],
+    ) as mock_get:
+        stats = service._fetch_mlb_player_stats("Zack Wheeler", "strikeouts", game_date)
+
+    assert service._extract_stat_value(stats, "strikeouts") == 6
+    assert "season=2025" in mock_get.call_args_list[2].args[0]

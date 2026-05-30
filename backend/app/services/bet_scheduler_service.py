@@ -155,10 +155,27 @@ class BetSchedulerService:
                 if retries > 0:
                     await asyncio.sleep(self.config.rate_limit_delay)
 
+                prop_result: Dict = {"verified": 0, "settled": 0, "errors": 0}
+
                 # Run the unified verification (uses API directly)
                 result = (
                     await unified_bet_verification_service.verify_all_pending_bets()
                 )
+
+                # Backup path: settle unified props even if Odds scores fetch failed
+                from app.core.database import SessionLocal
+                from app.services.player_prop_verification_service import (
+                    PlayerPropVerificationService,
+                )
+
+                prop_db = SessionLocal()
+                try:
+                    prop_service = PlayerPropVerificationService(prop_db)
+                    prop_result = await prop_service.verify_pending_unified_props(
+                        prop_db, days_back=14
+                    )
+                finally:
+                    prop_db.close()
 
                 # Also run YetAI bets verification
                 yetai_service = YetAIBetsServiceDB()
@@ -179,6 +196,10 @@ class BetSchedulerService:
                             "verified", 0
                         )
                         self.stats.total_bets_settled += yetai_result.get("settled", 0)
+
+                    if prop_result.get("settled", 0):
+                        self.stats.total_bets_verified += prop_result.get("verified", 0)
+                        self.stats.total_bets_settled += prop_result.get("settled", 0)
 
                     logger.info(
                         f"Verification run completed successfully: {result.get('message', 'No message')}"

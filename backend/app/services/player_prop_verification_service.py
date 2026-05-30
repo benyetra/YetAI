@@ -14,7 +14,7 @@ import asyncio
 import logging
 import re
 import requests
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
@@ -229,17 +229,51 @@ class PlayerPropVerificationService:
 
     def _game_date_for_unified_prop(self, bet: SimpleUnifiedBet):
         """Resolve stat lookup date for a placed prop (YetAI-linked or straight)."""
+        return self._game_date_candidates_for_unified_prop(bet)[0]
+
+    def _game_date_candidates_for_unified_prop(
+        self, bet: SimpleUnifiedBet
+    ) -> List[date]:
+        """Dates to try when matching MLB/NBA game logs (placement vs game day)."""
+        candidates: List[date] = []
         yetai = self._resolve_yetai_pick(bet)
         if yetai:
-            return self._game_date_for_yetai_pick(yetai)
+            candidates.append(self._game_date_for_yetai_pick(yetai))
 
-        if bet.commence_time:
-            return bet.commence_time.date()
+        for dt in (
+            getattr(bet, "commence_time", None),
+            getattr(bet, "placed_at", None),
+        ):
+            if dt:
+                candidates.append(dt.date())
 
-        if bet.placed_at:
-            return bet.placed_at.date()
+        today = datetime.now(timezone.utc).date()
+        candidates.append(today)
+        candidates.append(today - timedelta(days=1))
 
-        return datetime.utcnow().date()
+        unique: List[date] = []
+        for d in candidates:
+            if d not in unique:
+                unique.append(d)
+        return unique
+
+    @staticmethod
+    def _mlb_season_candidates(game_date: date) -> List[int]:
+        """MLB Stats API season labels to try (handles year skew vs game_date)."""
+        seasons = [game_date.year, game_date.year - 1]
+        out: List[int] = []
+        for s in seasons:
+            if s not in out:
+                out.append(s)
+        return out
+
+    @staticmethod
+    def _align_date_to_mlb_season(game_date: date, season: int) -> date:
+        """Map app calendar date to the season year used in MLB game logs."""
+        try:
+            return game_date.replace(year=season)
+        except ValueError:
+            return game_date.replace(year=season, day=28)
 
     async def _verify_single_mlb_prop(
         self, bet: SimpleUnifiedBet, game_date
@@ -250,9 +284,15 @@ class PlayerPropVerificationService:
             if not prop_details:
                 return None
 
-            stats = self._fetch_mlb_player_stats(
-                prop_details["player_name"], prop_details["stat_type"], game_date
-            )
+            stats = None
+            for candidate_date in self._game_date_candidates_for_unified_prop(bet):
+                stats = self._fetch_mlb_player_stats(
+                    prop_details["player_name"],
+                    prop_details["stat_type"],
+                    candidate_date,
+                )
+                if stats is not None:
+                    break
             if stats is None:
                 return None
 
@@ -372,6 +412,92 @@ class PlayerPropVerificationService:
             logger.error(f"Error verifying NBA prop: {e}")
             return None
 
+    async def verify_pending_unified_props(
+        self, db: Optional[Session] = None, *, days_back: int = 14
+    ) -> Dict:
+        """
+        Settle pending player props in simple_unified_bets via sport stats APIs.
+
+        Complements unified bet verification (which uses Odds API for game markets).
+        """
+        from app.models.simple_unified_bet_model import (
+            BetStatus as UnifiedBetStatus,
+            BetType as UnifiedBetType,
+        )
+        from app.services.unified_bet_verification_service import (
+            UnifiedBetResult,
+            UnifiedBetVerificationService,
+        )
+
+        owns_session = db is None
+        if owns_session:
+            db = SessionLocal()
+        self.session = db
+
+        settled = 0
+        errors = 0
+        results: List[UnifiedBetResult] = []
+
+        try:
+            cutoff = datetime.utcnow() - timedelta(days=days_back)
+            pending = (
+                db.query(SimpleUnifiedBet)
+                .filter(
+                    SimpleUnifiedBet.bet_type == UnifiedBetType.PROP,
+                    SimpleUnifiedBet.status == UnifiedBetStatus.PENDING,
+                    SimpleUnifiedBet.parent_bet_id.is_(None),
+                    SimpleUnifiedBet.placed_at >= cutoff,
+                )
+                .all()
+            )
+
+            if not pending:
+                return {"verified": 0, "settled": 0, "errors": 0}
+
+            logger.info(
+                "Verifying %s pending unified prop bet(s) (last %s days)",
+                len(pending),
+                days_back,
+            )
+
+            for bet in pending:
+                try:
+                    prop_result = await self.verify_single_prop(bet)
+                    if not prop_result:
+                        continue
+                    status = prop_result["status"]
+                    if status == UnifiedBetStatus.PENDING:
+                        continue
+                    results.append(
+                        UnifiedBetResult(
+                            bet_id=bet.id,
+                            status=status,
+                            result_amount=prop_result.get("result_amount", 0.0),
+                            reasoning=prop_result.get("reasoning", ""),
+                        )
+                    )
+                except Exception as e:
+                    errors += 1
+                    logger.error("Error verifying unified prop %s: %s", bet.id[:8], e)
+
+            if results:
+                verifier = UnifiedBetVerificationService()
+                await verifier._apply_results(results, db)
+                db.commit()
+                settled = sum(
+                    1 for r in results if r.status != UnifiedBetStatus.PENDING
+                )
+
+            return {
+                "verified": len(pending),
+                "settled": settled,
+                "errors": errors,
+            }
+        finally:
+            if owns_session:
+                db.close()
+                self.session = None
+
     async def verify_previous_day_props(self) -> Dict:
         """
         Main entry point - verify all pending prop bets from previous day
@@ -383,13 +509,21 @@ class PlayerPropVerificationService:
 
         self.session = SessionLocal()
         try:
-            # Get all pending prop bets from yesterday
+            unified_result = await self.verify_pending_unified_props(
+                self.session, days_back=14
+            )
+
+            # Get all pending prop bets from yesterday (legacy bets table)
             yesterday = datetime.utcnow().date() - timedelta(days=1)
             pending_props = self._get_pending_props(yesterday)
 
-            if not pending_props:
+            if not pending_props and not unified_result.get("settled"):
                 logger.info("No pending prop bets from yesterday to verify")
-                return {"verified": 0, "settled": 0, "errors": 0}
+                return {
+                    "verified": unified_result.get("verified", 0),
+                    "settled": unified_result.get("settled", 0),
+                    "errors": unified_result.get("errors", 0),
+                }
 
             logger.info(f"Found {len(pending_props)} pending prop bets to verify")
 
@@ -439,7 +573,9 @@ class PlayerPropVerificationService:
                 results["settled"] += nba_results["settled"]
                 results["errors"] += nba_results["errors"]
 
-            results["verified"] = len(pending_props)
+            results["verified"] = len(pending_props) + unified_result.get("verified", 0)
+            results["settled"] += unified_result.get("settled", 0)
+            results["errors"] += unified_result.get("errors", 0)
 
             logger.info(
                 f"✅ Prop verification complete: {results['settled']} settled, "
@@ -601,38 +737,41 @@ class PlayerPropVerificationService:
 
             player_id = search_data["people"][0]["id"]
 
-            season = game_date.year
+            pitching_stats = stat_type in ["outs", "strikeouts", "hits", "earnedruns"]
+            target_str = game_date.strftime("%Y-%m-%d")
 
-            # Fetch game logs for pitcher
-            if stat_type in ["outs", "strikeouts", "hits", "earnedRuns"]:
-                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[pitching],type=[gameLog],season={season})"
-            else:
-                url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[hitting],type=[gameLog],season={season})"
+            for season in self._mlb_season_candidates(game_date):
+                if pitching_stats:
+                    url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[pitching],type=[gameLog],season={season})"
+                else:
+                    url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[hitting],type=[gameLog],season={season})"
 
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            data = response.json()
+                response = requests.get(url, timeout=10)
+                response.raise_for_status()
+                data = response.json()
 
-            if "people" not in data or not data["people"]:
-                return None
+                if "people" not in data or not data["people"]:
+                    continue
 
-            stats = data["people"][0].get("stats", [])
-            game_logs = next(
-                (
-                    stat["splits"]
-                    for stat in stats
-                    if stat["type"]["displayName"] == "gameLog"
-                ),
-                [],
-            )
+                stat_blocks = data["people"][0].get("stats") or []
+                game_logs = next(
+                    (
+                        stat["splits"]
+                        for stat in stat_blocks
+                        if stat.get("type", {}).get("displayName") == "gameLog"
+                    ),
+                    [],
+                )
 
-            # Find the game from target date
-            for game in game_logs:
-                game_date_str = game.get("date")
-                if game_date_str and game_date_str.startswith(
-                    game_date.strftime("%Y-%m-%d")
-                ):
-                    return game.get("stat", {})
+                aligned = self._align_date_to_mlb_season(game_date, season).strftime(
+                    "%Y-%m-%d"
+                )
+                for game in game_logs:
+                    game_date_str = (game.get("date") or "")[:10]
+                    if game_date_str in (target_str, aligned):
+                        stat_payload = game.get("stat")
+                        if stat_payload:
+                            return stat_payload
 
             return None
 

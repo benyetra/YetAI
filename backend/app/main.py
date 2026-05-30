@@ -2970,6 +2970,20 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
 
         # Unified user bets (simple_unified_bets) + YetAI subscriber picks (yetai_bets)
         result = await unified_bet_verification_service.verify_all_pending_bets()
+
+        from app.services.player_prop_verification_service import (
+            PlayerPropVerificationService,
+        )
+
+        prop_db = SessionLocal()
+        try:
+            prop_service = PlayerPropVerificationService(prop_db)
+            prop_result = await prop_service.verify_pending_unified_props(
+                prop_db, days_back=14
+            )
+        finally:
+            prop_db.close()
+
         yetai_service = YetAIBetsServiceDB()
         yetai_result = await yetai_service.verify_pending_yetai_bets()
 
@@ -2987,11 +3001,17 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
         combined = {
             **result,
             "game_sync": game_sync_result,
+            "unified_props": prop_result,
             "yetai_bets": yetai_result,
-            "verified": result.get("verified", 0) + yetai_result.get("verified", 0),
-            "settled": result.get("settled", 0) + yetai_result.get("settled", 0),
+            "verified": result.get("verified", 0)
+            + prop_result.get("verified", 0)
+            + yetai_result.get("verified", 0),
+            "settled": result.get("settled", 0)
+            + prop_result.get("settled", 0)
+            + yetai_result.get("settled", 0),
             "message": (
                 f"Unified: {result.get('message', '')}; "
+                f"Props: settled {prop_result.get('settled', 0)}; "
                 f"YetAI: verified {yetai_result.get('verified', 0)}, "
                 f"settled {yetai_result.get('settled', 0)}"
             ),
