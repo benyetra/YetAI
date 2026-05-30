@@ -495,8 +495,12 @@ class SimpleUnifiedBetService:
                 continue
 
             prop_result = await prop_service.verify_single_prop(bet)
-            if prop_result and prop_result.get("status") == BetStatus.WON:
-                bet.status = BetStatus.WON
+            if prop_result and prop_result.get("status") in (
+                BetStatus.WON,
+                BetStatus.LOST,
+                BetStatus.PUSHED,
+            ):
+                bet.status = prop_result["status"]
                 bet.result_amount = prop_result.get("result_amount", 0.0)
                 bet.reasoning = prop_result.get("reasoning")
                 bet.settled_at = datetime.now(timezone.utc)
@@ -530,8 +534,14 @@ class SimpleUnifiedBetService:
         from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
         try:
+            from app.services.player_prop_verification_service import (
+                PlayerPropVerificationService,
+            )
+
             db = SessionLocal()
             try:
+                prop_service = PlayerPropVerificationService(db)
+                await prop_service.settle_pending_props_for_user(db, user_id)
                 await self._repair_user_misgraded_mlb_props(db, user_id)
                 YetAIBetsServiceDB().sync_linked_unified_for_user(db, user_id)
 

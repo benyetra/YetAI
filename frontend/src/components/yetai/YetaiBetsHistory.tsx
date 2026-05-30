@@ -136,10 +136,20 @@ export default function YetaiBetsHistory({
           <div className="section-head" style={{ padding: '14px 16px', marginBottom: 0 }}>
             <div>
               <div className="section-title">Pick history</div>
-              <div className="section-sub">Graded YetAI promoted bets</div>
+              <div className="section-sub">
+                {stats && stats.total > 0
+                  ? `${bets.length} graded pick${bets.length !== 1 ? 's' : ''} · last ${stats.period_days} days`
+                  : 'Graded YetAI promoted bets'}
+              </div>
             </div>
           </div>
-          <div>
+          <div
+            style={{
+              maxHeight: 'min(70vh, 560px)',
+              overflowY: 'auto',
+              WebkitOverflowScrolling: 'touch',
+            }}
+          >
             {bets.map((bet, i) => {
               const status = (bet.status || 'pending').toLowerCase();
               const pick = picks[i];

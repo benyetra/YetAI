@@ -412,6 +412,69 @@ class PlayerPropVerificationService:
             logger.error(f"Error verifying NBA prop: {e}")
             return None
 
+    async def settle_pending_props_for_user(
+        self, db: Session, user_id: int
+    ) -> Dict[str, int]:
+        """Grade this user's pending props (used when loading bet history)."""
+        from app.models.simple_unified_bet_model import (
+            BetStatus as UnifiedBetStatus,
+            BetType as UnifiedBetType,
+        )
+        from app.services.unified_bet_verification_service import (
+            UnifiedBetResult,
+            UnifiedBetVerificationService,
+        )
+
+        self.session = db
+        pending = (
+            db.query(SimpleUnifiedBet)
+            .filter(
+                SimpleUnifiedBet.user_id == user_id,
+                SimpleUnifiedBet.bet_type == UnifiedBetType.PROP,
+                SimpleUnifiedBet.status == UnifiedBetStatus.PENDING,
+                SimpleUnifiedBet.parent_bet_id.is_(None),
+            )
+            .all()
+        )
+        if not pending:
+            return {"verified": 0, "settled": 0, "errors": 0}
+
+        results: List[UnifiedBetResult] = []
+        errors = 0
+        for bet in pending:
+            try:
+                prop_result = await self.verify_single_prop(bet)
+                if not prop_result:
+                    continue
+                status = prop_result["status"]
+                if status == UnifiedBetStatus.PENDING:
+                    continue
+                results.append(
+                    UnifiedBetResult(
+                        bet_id=bet.id,
+                        status=status,
+                        result_amount=prop_result.get("result_amount", 0.0),
+                        reasoning=prop_result.get("reasoning", ""),
+                    )
+                )
+            except Exception as e:
+                errors += 1
+                logger.error(
+                    "Error settling pending prop %s for user %s: %s",
+                    bet.id[:8],
+                    user_id,
+                    e,
+                )
+
+        settled = 0
+        if results:
+            verifier = UnifiedBetVerificationService()
+            await verifier._apply_results(results, db)
+            db.commit()
+            settled = len(results)
+
+        return {"verified": len(pending), "settled": settled, "errors": errors}
+
     async def verify_pending_unified_props(
         self, db: Optional[Session] = None, *, days_back: int = 14
     ) -> Dict:

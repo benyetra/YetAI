@@ -726,6 +726,7 @@ class YetAIBetsServiceDB:
         )
         bets = [self._yetai_bet_to_dict(bet) for bet in rows]
         stats = self.compute_history_stats(bets, period_days=days)
+        stats["returned"] = len(bets)
         return bets, stats
 
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
@@ -1186,7 +1187,11 @@ class YetAIBetsServiceDB:
                 db.query(YetAIBet)
                 .filter(
                     or_(
-                        YetAIBet.status.in_((*YETAI_UNSETTLED_STATUSES, "lost")),
+                        YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES),
+                        and_(
+                            YetAIBet.status == "lost",
+                            YetAIBet.result.ilike("Evaluation%"),
+                        ),
                         and_(
                             YetAIBet.status.in_(("won", "lost")),
                             YetAIBet.settled_at.isnot(None),
