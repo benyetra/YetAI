@@ -2,11 +2,19 @@
 
 Port of YetiBets ``utilities/utilities_functions.get_event_id_for_game`` and
 ``get_fanduel_line``. Used by projection ETL tasks when ``ODDS_API_KEY`` is set.
+
+The Odds API returns *all* players for a market in a single event-odds response,
+but the projection ETL looks each player up individually. To avoid spending one
+Odds API credit per player, we memoize the per-sport events list and each
+``(sport, event_id, market)`` odds payload for a short TTL. Within one ETL run
+every player lookup for the same (game, market) reuses one HTTP response, while
+the short TTL guarantees the next scheduled run pulls fresh lines.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any, Tuple
 
 import requests
@@ -17,11 +25,44 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.the-odds-api.com/v4/sports"
 
+# A single ETL pipeline run completes well within this window, so all player
+# lookups for the same (game, market) reuse one HTTP response. The next
+# scheduled run (hours later) misses the cache and pulls fresh lines.
+_CACHE_TTL_SECONDS = 600
 
-def get_event_id_for_game(sport: str, team1: str, team2: str) -> str | None:
+# key -> (expires_at_monotonic, value)
+_cache: dict[Any, Tuple[float, Any]] = {}
+
+
+def _cache_get(key: Any) -> Any | None:
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    expires_at, value = entry
+    if time.monotonic() >= expires_at:
+        _cache.pop(key, None)
+        return None
+    return value
+
+
+def _cache_set(key: Any, value: Any) -> None:
+    _cache[key] = (time.monotonic() + _CACHE_TTL_SECONDS, value)
+
+
+def clear_cache() -> None:
+    """Drop all memoized Odds API responses (used by tests / run boundaries)."""
+    _cache.clear()
+
+
+def _get_events(sport: str) -> list[dict]:
+    """Return the Odds API events list for ``sport`` (memoized per run)."""
+    cache_key = ("events", sport)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     api_key = settings.ODDS_API_KEY
     if not api_key:
-        return None
+        return []
     try:
         resp = requests.get(
             f"{_BASE_URL}/{sport}/events",
@@ -30,28 +71,33 @@ def get_event_id_for_game(sport: str, team1: str, team2: str) -> str | None:
         )
         if resp.status_code != 200:
             logger.debug("Odds API events %s: HTTP %s", sport, resp.status_code)
-            return None
-        for event in resp.json():
-            home = event.get("home_team")
-            away = event.get("away_team")
-            if {home, away} == {team1, team2}:
-                return event.get("id")
+            return []
+        events = resp.json() or []
+        _cache_set(cache_key, events)
+        return events
     except Exception as exc:
-        logger.debug("get_event_id_for_game failed: %s", exc)
+        logger.debug("get_events failed: %s", exc)
+        return []
+
+
+def get_event_id_for_game(sport: str, team1: str, team2: str) -> str | None:
+    for event in _get_events(sport):
+        home = event.get("home_team")
+        away = event.get("away_team")
+        if {home, away} == {team1, team2}:
+            return event.get("id")
     return None
 
 
-def get_fanduel_line(
-    sport: str,
-    event_id: str,
-    player_name: str,
-    market: str,
-    projection: float,
-) -> Tuple[float, float, str]:
-    """Return (line, american_price, 'o'|'u'|'n') for a player prop market."""
+def _get_event_market_odds(sport: str, event_id: str, market: str) -> dict:
+    """Return the FanDuel event-odds payload for one market (memoized per run)."""
+    cache_key = ("odds", sport, event_id, market)
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
     api_key = settings.ODDS_API_KEY
     if not api_key:
-        return 0.0, 0.0, "n"
+        return {}
     try:
         resp = requests.get(
             f"{_BASE_URL}/{sport}/events/{event_id}/odds",
@@ -65,8 +111,27 @@ def get_fanduel_line(
             timeout=30,
         )
         if resp.status_code != 200:
-            return 0.0, 0.0, "n"
-        data = resp.json()
+            return {}
+        data = resp.json() or {}
+        _cache_set(cache_key, data)
+        return data
+    except Exception as exc:
+        logger.debug("get_event_market_odds %s/%s: %s", event_id, market, exc)
+        return {}
+
+
+def get_fanduel_line(
+    sport: str,
+    event_id: str,
+    player_name: str,
+    market: str,
+    projection: float,
+) -> Tuple[float, float, str]:
+    """Return (line, american_price, 'o'|'u'|'n') for a player prop market."""
+    data = _get_event_market_odds(sport, event_id, market)
+    if not data:
+        return 0.0, 0.0, "n"
+    try:
         for bookmaker in data.get("bookmakers", []):
             if bookmaker.get("title") != "FanDuel":
                 continue
