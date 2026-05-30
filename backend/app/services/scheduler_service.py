@@ -1,8 +1,9 @@
 """
 Scheduler Service for automated data updates.
 
-This service manages scheduled tasks for updating sports data, odds, and scores
-from The Odds API at regular intervals.
+This service manages scheduled tasks for refreshing the sports list, cleaning
+up cache entries, and verifying player props at regular intervals. Odds and
+scores are pulled by the Celery beat pipeline, not here.
 """
 
 import asyncio
@@ -67,20 +68,6 @@ class SchedulerService:
             "update_sports_list",
             self._update_sports_list,
             interval_seconds=21600,  # 6 hours
-        )
-
-        # Live games update once an hour. The previous 30-min cadence over
-        # 9 sports was the biggest single Odds API drain; ``get_live_games``
-        # now filters to in-season sports too.
-        self.add_task(
-            "update_live_games",
-            self._update_live_games,
-            interval_seconds=3600,  # 1 hour
-        )
-
-        # Update scores every 4 hours (scores don't change that often for completed games)
-        self.add_task(
-            "update_scores", self._update_scores, interval_seconds=14400  # 4 hours
         )
 
         # Clean up old cache entries every 30 minutes
@@ -355,134 +342,6 @@ class SchedulerService:
         except Exception as e:
             logger.error(f"Failed to update sports list: {e}")
             raise
-
-    async def _update_live_games(self):
-        """Update live/upcoming games"""
-        if not settings.ODDS_API_KEY:
-            logger.warning("No Odds API key configured, skipping live games update")
-            return
-
-        try:
-            from app.services.odds_api_service import get_live_games
-
-            games = await get_live_games()
-
-            if games:
-                # Convert to cacheable format
-                games_data = []
-                for game in games:
-                    bookmakers_data = []
-                    for bookmaker in game.bookmakers:
-                        bookmakers_data.append(
-                            {
-                                "key": bookmaker.key,
-                                "title": bookmaker.title,
-                                "last_update": bookmaker.last_update.isoformat(),
-                                "markets": bookmaker.markets,
-                            }
-                        )
-
-                    games_data.append(
-                        {
-                            "id": game.id,
-                            "sport_key": game.sport_key,
-                            "sport_title": game.sport_title,
-                            "commence_time": game.commence_time.isoformat(),
-                            "home_team": game.home_team,
-                            "away_team": game.away_team,
-                            "bookmakers": bookmakers_data,
-                        }
-                    )
-
-                # Store in a special cache key for live games
-                live_games_key = "odds_api:live_games:all"
-                result = {
-                    "status": "success",
-                    "count": len(games_data),
-                    "games": games_data,
-                    "description": "Games starting within the next 2 hours",
-                    "last_updated": datetime.utcnow().isoformat(),
-                    "cached": False,
-                }
-
-                await cache_service.set(
-                    live_games_key, result, expire_seconds=1800
-                )  # 30 minutes
-                logger.info(f"Updated live games: {len(games)} games")
-
-        except Exception as e:
-            logger.error(f"Failed to update live games: {e}")
-            raise
-
-    async def _update_scores(self):
-        """Update game scores"""
-        if not settings.ODDS_API_KEY:
-            logger.warning("No Odds API key configured, skipping scores update")
-            return
-
-        sports_to_check = [
-            SportKey.AMERICANFOOTBALL_NFL,
-            SportKey.BASKETBALL_NBA,
-            SportKey.BASEBALL_MLB,
-            SportKey.ICEHOCKEY_NHL,
-        ]
-
-        updated_count = 0
-
-        async with OddsAPIService(settings.ODDS_API_KEY) as service:
-            for i, sport in enumerate(sports_to_check):
-                try:
-                    scores = await service.get_scores(sport.value, days_from=1)
-
-                    if scores:
-                        # Convert to cacheable format
-                        scores_data = []
-                        for score in scores:
-                            scores_data.append(
-                                {
-                                    "id": score.id,
-                                    "sport_key": score.sport_key,
-                                    "sport_title": score.sport_title,
-                                    "commence_time": score.commence_time.isoformat(),
-                                    "home_team": score.home_team,
-                                    "away_team": score.away_team,
-                                    "completed": score.completed,
-                                    "home_score": score.home_score,
-                                    "away_score": score.away_score,
-                                    "last_update": score.last_update.isoformat(),
-                                }
-                            )
-
-                        result = {
-                            "status": "success",
-                            "sport": sport.value,
-                            "days_from": 1,
-                            "count": len(scores_data),
-                            "scores": scores_data,
-                            "last_updated": datetime.utcnow().isoformat(),
-                            "cached": False,
-                        }
-
-                        # Cache scores for 4 hours (same as refresh interval)
-                        await cache_service.set_scores(
-                            sport.value, 1, result, expire_seconds=14400
-                        )
-
-                        updated_count += 1
-                        logger.info(
-                            f"Updated scores for {sport.value}: {len(scores)} games"
-                        )
-
-                except Exception as e:
-                    logger.error(f"Failed to update scores for {sport.value}: {e}")
-                    continue
-
-                # Add delay between API calls to avoid rate limiting (except after last sport)
-                # Use longer delay for scheduled background tasks
-                if i < len(sports_to_check) - 1:
-                    await asyncio.sleep(15)  # 15 second delay between sports
-
-        logger.info(f"Completed scores update: {updated_count} sports updated")
 
     async def _cleanup_cache(self):
         """Clean up old cache entries"""

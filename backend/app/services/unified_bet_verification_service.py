@@ -236,6 +236,28 @@ class UnifiedBetVerificationService:
                 if not game_bets:
                     continue
 
+                # Only spend an Odds API scores credit when at least one pending
+                # game bet has actually started — a not-yet-started game can't
+                # have a result, so fetching its scores every run is wasted spend.
+                now_utc = datetime.now(timezone.utc)
+
+                def _has_started(commence_time) -> bool:
+                    if commence_time is None:
+                        # Unknown start time — don't strand the bet; allow the fetch.
+                        return True
+                    if commence_time.tzinfo is None:
+                        commence_time = commence_time.replace(tzinfo=timezone.utc)
+                    return commence_time <= now_utc
+
+                if not any(_has_started(b.commence_time) for b in game_bets):
+                    logger.info(
+                        "Skipping %s scores fetch — none of %d pending game bet(s) "
+                        "have started yet",
+                        sport.upper(),
+                        len(game_bets),
+                    )
+                    continue
+
                 try:
                     logger.info(
                         f"Verifying {len(game_bets)} {sport.upper()} game bet(s)..."

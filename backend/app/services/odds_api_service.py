@@ -12,7 +12,7 @@ import aiohttp
 import asyncio
 import time
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 import logging
 from dataclasses import dataclass
 from enum import Enum
@@ -625,38 +625,6 @@ class OddsAPIService:
 # Utility functions for common operations
 
 
-def _in_season_sports(now: datetime) -> List[SportKey]:
-    """Return the sports likely to have games in the next ~24h based on
-    the calendar month. Used to avoid paying for Odds API calls for sports
-    that are out of season."""
-    month = now.month
-    sports: List[SportKey] = []
-
-    # MLB: regular season ~ April–October, playoffs into early November
-    if 3 <= month <= 11:
-        sports.append(SportKey.BASEBALL_MLB)
-    # NFL/NCAAF: late August through early February
-    if month in (8, 9, 10, 11, 12, 1, 2):
-        sports.extend([SportKey.AMERICANFOOTBALL_NFL, SportKey.AMERICANFOOTBALL_NCAAF])
-    # NBA/NCAAB: October through June (Finals)
-    if month in (10, 11, 12, 1, 2, 3, 4, 5, 6):
-        sports.extend([SportKey.BASKETBALL_NBA, SportKey.BASKETBALL_NCAAB])
-    # WNBA: May through October
-    if 5 <= month <= 10:
-        sports.append(SportKey.BASKETBALL_WNBA)
-    # NHL: October through June
-    if month in (10, 11, 12, 1, 2, 3, 4, 5, 6):
-        sports.append(SportKey.ICEHOCKEY_NHL)
-    # EPL: August through May
-    if month in (8, 9, 10, 11, 12, 1, 2, 3, 4, 5):
-        sports.append(SportKey.SOCCER_EPL)
-    # MLS: late February through early December
-    if 2 <= month <= 12:
-        sports.append(SportKey.SOCCER_MLS)
-
-    return sports
-
-
 async def get_popular_sports_odds() -> List[Game]:
     """
     Get odds for filtered sports (mlb, nba, nhl, nfl, ncaaf, ncaab, wnba, epl, mls)
@@ -720,46 +688,3 @@ async def get_popular_sports_odds() -> List[Game]:
         raise HTTPException(status_code=404, detail=error_msg)
 
     return all_games
-
-
-async def get_live_games() -> List[Game]:
-    """
-    Get games that are currently live or starting soon (within 2 hours) from
-    sports that are actually in season for the current month.
-
-    Filtering by month cuts ~50% of Odds API spend on this path since the
-    previous 9-sport list paid for football odds in May and baseball odds
-    in January even when no games were on the slate.
-
-    Returns:
-        List of live/upcoming games from currently in-season sports only
-    """
-    from ..core.config import settings
-
-    now = datetime.now(timezone.utc)
-    two_hours_from_now = now + timedelta(hours=2)
-
-    sports_to_check = _in_season_sports(now)
-
-    live_games = []
-
-    async with OddsAPIService(settings.ODDS_API_KEY) as service:
-        for i, sport in enumerate(sports_to_check):
-            try:
-                sport_key = sport.value if hasattr(sport, "value") else sport
-                games = await service.get_odds(
-                    sport_key,
-                    commence_time_from=now,
-                    commence_time_to=two_hours_from_now,
-                )
-                live_games.extend(games)
-            except Exception as e:
-                sport_key = sport.value if hasattr(sport, "value") else sport
-                logger.error(f"Failed to get live games for {sport_key}: {e}")
-                continue
-
-            # Add delay between API calls to avoid rate limiting (except after last sport)
-            if i < len(sports_to_check) - 1:
-                await asyncio.sleep(1.5)  # 1.5 second delay between sports
-
-    return live_games
