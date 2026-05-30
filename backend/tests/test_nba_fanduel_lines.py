@@ -15,6 +15,7 @@ from app.services.etl.nba import (
     generate_rebounds_predictions as reb_mod,
     store_actuals as sa_mod,
 )
+from app.services.etl.nba import _fanduel_lines as fdl
 from app.services.etl.nba._fanduel_lines import (
     PROP_MARKETS,
     apply_fanduel_to_projection,
@@ -222,3 +223,111 @@ def test_compute_correct_prediction_under_side():
     proj = SimpleNamespace(fanduel_line=20.5, fanduel_over_under="u")
     assert sa_mod._compute_correct_prediction(proj, 18.0, True) is True
     assert sa_mod._compute_correct_prediction(proj, 22.0, True) is False
+
+
+class _FakeResp:
+    def __init__(self, payload, status=200):
+        self._payload = payload
+        self.status_code = status
+
+    def json(self):
+        return self._payload
+
+
+def _events_payload():
+    return [{"id": "evt1", "home_team": "Boston Celtics", "away_team": "Miami Heat"}]
+
+
+def _odds_payload(market):
+    def outcome(desc, name, point):
+        return {"description": desc, "name": name, "point": point, "price": -110}
+
+    return {
+        "bookmakers": [
+            {
+                "title": "FanDuel",
+                "markets": [
+                    {
+                        "key": market,
+                        "outcomes": [
+                            outcome("Jayson Tatum", "Over", 27.5),
+                            outcome("Jayson Tatum", "Under", 27.5),
+                            outcome("Jaylen Brown", "Over", 24.5),
+                            outcome("Jaylen Brown", "Under", 24.5),
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+
+def test_event_and_odds_lookups_are_memoized_per_run(monkeypatch):
+    """One HTTP call per sport-events and per (event, market), not per player."""
+    fdl.clear_cache()
+    monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
+    calls: list[str] = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(url)
+        if url.endswith("/events"):
+            return _FakeResp(_events_payload())
+        return _FakeResp(_odds_payload(params["markets"]))
+
+    monkeypatch.setattr(fdl.requests, "get", fake_get)
+
+    # Resolving the same game twice (order swapped) hits /events once.
+    assert (
+        fdl.get_event_id_for_game("basketball_nba", "Boston Celtics", "Miami Heat")
+        == "evt1"
+    )
+    assert (
+        fdl.get_event_id_for_game("basketball_nba", "Miami Heat", "Boston Celtics")
+        == "evt1"
+    )
+    assert sum(u.endswith("/events") for u in calls) == 1
+
+    # Two players in the same (event, market) share one odds HTTP call.
+    line_tatum = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_points", 30.0
+    )
+    line_brown = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jaylen Brown", "player_points", 20.0
+    )
+    assert sum(u.endswith("/odds") for u in calls) == 1
+    # Projection above the line -> over; well below -> under.
+    assert line_tatum[2] == "o"
+    assert line_brown[2] == "u"
+
+    # A different market is a distinct cache key -> exactly one more odds call.
+    fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_rebounds", 8.0
+    )
+    assert sum(u.endswith("/odds") for u in calls) == 2
+
+    fdl.clear_cache()
+
+
+def test_clear_cache_forces_refetch(monkeypatch):
+    fdl.clear_cache()
+    monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
+    calls: list[str] = []
+
+    def fake_get(url, params=None, timeout=None):
+        calls.append(url)
+        if url.endswith("/events"):
+            return _FakeResp(_events_payload())
+        return _FakeResp(_odds_payload(params["markets"]))
+
+    monkeypatch.setattr(fdl.requests, "get", fake_get)
+
+    fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_points", 30.0
+    )
+    fdl.clear_cache()
+    fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_points", 30.0
+    )
+    assert sum(u.endswith("/odds") for u in calls) == 2
+
+    fdl.clear_cache()

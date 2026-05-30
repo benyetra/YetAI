@@ -435,6 +435,36 @@ class LiveBettingServiceDB:
 
                 for idx, sport_key in enumerate(sports_to_check):
                     try:
+                        # Fetch live scores FIRST (cheap: 1 Odds API credit). Markets
+                        # are only ever created for games present in live_scores, so
+                        # when nothing is live we can skip the 3-credit odds call.
+                        logger.info(
+                            f"Attempting to fetch live scores for {sport_key.value}"
+                        )
+                        live_scores = {}
+                        try:
+                            live_scores = await self.get_real_live_scores(
+                                sport_key.value
+                            )
+                            logger.info(
+                                f"Found {len(live_scores)} games with live scores"
+                            )
+                        except Exception as score_error:
+                            logger.warning(
+                                f"Could not fetch live scores: {score_error}"
+                            )
+
+                        # No live games -> no markets would be produced from odds, so
+                        # don't spend Odds API credits fetching them.
+                        if not live_scores:
+                            logger.info(
+                                f"No live games for {sport_key.value}; "
+                                "skipping odds fetch"
+                            )
+                            if idx < len(sports_to_check) - 1:
+                                await asyncio.sleep(1.5)
+                            continue
+
                         # Fetch odds for this sport
                         logger.info(f"Fetching odds for sport: {sport_key.value}")
                         odds_data = await odds_service.get_odds(
@@ -456,23 +486,6 @@ class LiveBettingServiceDB:
                         logger.info(
                             f"API returned {len(games_data)} games for {sport_key.value}"
                         )
-
-                        # Try to get live scores (optional, for displaying actual scores)
-                        logger.info(
-                            f"Attempting to fetch live scores for {sport_key.value}"
-                        )
-                        live_scores = {}
-                        try:
-                            live_scores = await self.get_real_live_scores(
-                                sport_key.value
-                            )
-                            logger.info(
-                                f"Found {len(live_scores)} games with live scores"
-                            )
-                        except Exception as score_error:
-                            logger.warning(
-                                f"Could not fetch live scores: {score_error}"
-                            )
 
                         # Process each game to create live markets
                         for i, game in enumerate(games_data):
