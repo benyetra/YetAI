@@ -191,6 +191,117 @@ def test_unified_verify_settles_mlb_props_without_odds_scores():
     assert prop_bet.status == BetStatus.LOST
 
 
+def test_is_unified_prop_accepts_database_bet_type_enum():
+    from app.models.database_models import BetType as LegacyBetType
+
+    bet = MagicMock()
+    bet.bet_type = LegacyBetType.PROP
+    from app.services.player_prop_verification_service import _is_unified_prop_bet
+
+    assert _is_unified_prop_bet(bet) is True
+
+
+def test_apply_prop_settlement_updates_pending_bet():
+    from app.services.player_prop_verification_service import (
+        PlayerPropVerificationService,
+    )
+
+    bet = MagicMock()
+    bet.id = "ab0e4476-ccbe-48c8-a72f-897d9b184b02"
+    bet.status = BetStatus.PENDING
+    bet.reasoning = None
+    bet.amount = 50.0
+    bet.potential_win = 68.0
+
+    mock_db = MagicMock()
+    with patch(
+        "app.services.yetai_bets_service_db.YetAIBetsServiceDB.sync_yetai_from_unified_bet",
+        return_value=None,
+    ):
+        ok = PlayerPropVerificationService._apply_prop_settlement(
+            mock_db,
+            bet,
+            {
+                "status": BetStatus.LOST,
+                "result_amount": 0.0,
+                "reasoning": "MLB prop graded",
+            },
+        )
+
+    assert ok is True
+    assert bet.status == BetStatus.LOST
+    assert bet.settled_at is not None
+
+
+def test_mlb_boxscore_fallback_when_gamelog_empty():
+    service = PlayerPropVerificationService()
+    bet = MagicMock()
+    bet.home_team = "Los Angeles Dodgers"
+    bet.away_team = "Philadelphia Phillies"
+    game_date = datetime(2026, 5, 29).date()
+
+    search_response = MagicMock()
+    search_response.raise_for_status.return_value = None
+    search_response.json.return_value = {"people": [{"id": 554430}]}
+
+    empty_log = MagicMock()
+    empty_log.raise_for_status.return_value = None
+    empty_log.json.return_value = {"people": [{"stats": []}]}
+
+    schedule_response = MagicMock()
+    schedule_response.raise_for_status.return_value = None
+    schedule_response.json.return_value = {
+        "dates": [
+            {
+                "games": [
+                    {
+                        "gamePk": 777001,
+                        "teams": {
+                            "home": {"team": {"name": "Los Angeles Dodgers"}},
+                            "away": {"team": {"name": "Philadelphia Phillies"}},
+                        },
+                    }
+                ]
+            }
+        ]
+    }
+
+    box_response = MagicMock()
+    box_response.raise_for_status.return_value = None
+    box_response.json.return_value = {
+        "teams": {
+            "home": {
+                "players": {
+                    "ID554430": {
+                        "person": {"fullName": "Zack Wheeler"},
+                        "stats": {"pitching": {"strikeOuts": 4}},
+                    }
+                }
+            },
+            "away": {"players": {}},
+        }
+    }
+
+    with patch(
+        "app.services.player_prop_verification_service.requests.get",
+        side_effect=[
+            search_response,
+            empty_log,
+            empty_log,
+            schedule_response,
+            box_response,
+        ],
+    ):
+        stats = service._fetch_mlb_player_stats(
+            "Zack Wheeler",
+            "strikeouts",
+            game_date,
+            bet=bet,
+        )
+
+    assert service._extract_stat_value(stats, "strikeouts") == 4
+
+
 def test_mlb_fetch_tries_prior_season_when_calendar_year_differs():
     service = PlayerPropVerificationService()
     game_date = datetime(2026, 5, 29).date()

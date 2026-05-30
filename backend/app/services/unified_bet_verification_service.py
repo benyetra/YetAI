@@ -407,12 +407,16 @@ class UnifiedBetVerificationService:
                     PlayerPropVerificationService,
                 )
 
-                # Verify the prop bet using sport-specific service
-                prop_service = PlayerPropVerificationService()
+                from sqlalchemy.orm import object_session
+
+                prop_db = object_session(bet) or SessionLocal()
+                prop_service = PlayerPropVerificationService(prop_db)
                 prop_result = await prop_service.verify_single_prop(bet)
 
                 if prop_result:
-                    status = prop_result["status"]
+                    status = BetStatus(
+                        getattr(prop_result["status"], "value", prop_result["status"])
+                    )
                     result_amount = prop_result.get("result_amount", 0.0)
                     reasoning = prop_result.get("reasoning", "Prop verified via API")
                 else:
@@ -702,7 +706,9 @@ class UnifiedBetVerificationService:
                     bet.status == BetStatus.PENDING
                     or self._is_retryable_evaluation_error(bet, db=db)
                 ):
-                    bet.status = result.status
+                    bet.status = BetStatus(
+                        getattr(result.status, "value", result.status)
+                    )
                     bet.result_amount = result.result_amount
                     if result.reasoning:
                         bet.reasoning = result.reasoning

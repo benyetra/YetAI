@@ -21,7 +21,11 @@ from sqlalchemy import and_
 
 from app.core.database import SessionLocal
 from app.models.database_models import Bet, BetStatus, BetType, YetAIBet
-from app.models.simple_unified_bet_model import SimpleUnifiedBet
+from app.models.simple_unified_bet_model import (
+    BetStatus as UnifiedBetStatus,
+    BetType as UnifiedBetType,
+    SimpleUnifiedBet,
+)
 from app.services.websocket_manager import manager as websocket_manager
 
 logger = logging.getLogger(__name__)
@@ -61,6 +65,35 @@ def _nba_player_names_match(requested: str, box_name: str) -> bool:
     )
 
 
+def _bet_type_value(bet_type) -> str:
+    if bet_type is None:
+        return ""
+    return str(getattr(bet_type, "value", bet_type)).lower()
+
+
+def _is_unified_prop_bet(bet) -> bool:
+    return _bet_type_value(getattr(bet, "bet_type", None)) == UnifiedBetType.PROP.value
+
+
+def _coerce_unified_status(status) -> UnifiedBetStatus:
+    if isinstance(status, UnifiedBetStatus):
+        return status
+    raw = getattr(status, "value", status)
+    return UnifiedBetStatus(str(raw).lower())
+
+
+def _normalize_team_token(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def _mlb_team_names_match(stored: str, api_name: str) -> bool:
+    a = _normalize_team_token(stored)
+    b = _normalize_team_token(api_name)
+    if not a or not b:
+        return False
+    return a in b or b in a or a.split()[-1] == b.split()[-1]
+
+
 def _nba_boxscore_row_to_stats(record: Dict) -> Dict:
     """Extract stat fields from a box score row dict."""
     stats: Dict = {}
@@ -81,6 +114,32 @@ class PlayerPropVerificationService:
         self.session = db
         self.db = db
 
+    @staticmethod
+    def _apply_prop_settlement(
+        db: Session, bet: SimpleUnifiedBet, prop_result: Dict
+    ) -> bool:
+        """Persist a graded prop on the bet row (avoids enum/session mismatches)."""
+        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
+
+        status = _coerce_unified_status(prop_result["status"])
+        if status == UnifiedBetStatus.PENDING:
+            return False
+
+        bet.status = status
+        bet.result_amount = float(prop_result.get("result_amount", 0.0) or 0.0)
+        reasoning = prop_result.get("reasoning")
+        if reasoning:
+            bet.reasoning = str(reasoning)
+        bet.settled_at = datetime.now(timezone.utc)
+        YetAIBetsServiceDB().sync_yetai_from_unified_bet(db, bet)
+        logger.info(
+            "Settled prop %s: %s — %s",
+            bet.id[:8],
+            status.value,
+            (bet.reasoning or "")[:120],
+        )
+        return True
+
     async def verify_single_prop(self, bet: SimpleUnifiedBet) -> Optional[Dict]:
         """
         Verify a single prop bet immediately (used by unified verification service)
@@ -91,7 +150,12 @@ class PlayerPropVerificationService:
         Returns:
             Dict with status, result_amount, reasoning if verified, None otherwise
         """
-        if not bet or bet.bet_type != BetType.PROP:
+        if not bet or not _is_unified_prop_bet(bet):
+            logger.debug(
+                "Skipping non-prop bet %s (bet_type=%r)",
+                getattr(bet, "id", "?")[:8],
+                getattr(bet, "bet_type", None),
+            )
             return None
 
         # Ensure we have a database session
@@ -99,10 +163,13 @@ class PlayerPropVerificationService:
             self.session = SessionLocal()
 
         try:
-            # Determine sport from the sport_key or league field
             sport = self._determine_sport_from_bet(bet)
             if not sport:
-                logger.warning(f"Could not determine sport for bet {bet.id[:8]}")
+                logger.warning(
+                    "Could not determine sport for prop %s (sport=%r)",
+                    bet.id[:8],
+                    getattr(bet, "sport", None),
+                )
                 return None
 
             game_date = self._game_date_for_unified_prop(bet)
@@ -120,6 +187,13 @@ class PlayerPropVerificationService:
                 logger.warning(f"Unsupported sport for prop verification: {sport}")
                 return None
 
+            if result is None:
+                logger.info(
+                    "Prop %s (%s) not gradable yet on %s",
+                    bet.id[:8],
+                    bet.selection[:60],
+                    sport,
+                )
             return result
 
         except Exception as e:
@@ -129,8 +203,8 @@ class PlayerPropVerificationService:
             return None
 
     def _determine_sport_from_bet(self, bet: SimpleUnifiedBet) -> Optional[str]:
-        """Determine sport from bet's league, sport_key, or sport column."""
-        league = (bet.league or "").lower()
+        """Determine sport from sport_key or sport column."""
+        league = (getattr(bet, "league", None) or "").lower()
         sport_key = (getattr(bet, "sport_key", None) or "").lower()
         sport = (bet.sport or "").lower()
 
@@ -290,6 +364,7 @@ class PlayerPropVerificationService:
                     prop_details["player_name"],
                     prop_details["stat_type"],
                     candidate_date,
+                    bet=bet,
                 )
                 if stats is not None:
                     break
@@ -304,7 +379,7 @@ class PlayerPropVerificationService:
             is_over = prop_details["is_over"]
             won = self._check_prop_outcome(actual_value, line_value, is_over)
 
-            status = BetStatus.WON if won else BetStatus.LOST
+            status = UnifiedBetStatus.WON if won else UnifiedBetStatus.LOST
             result_amount = (bet.amount + bet.potential_win) if won else 0.0
 
             return {
@@ -336,7 +411,7 @@ class PlayerPropVerificationService:
             is_over = prop_details["is_over"]
             won = self._check_prop_outcome(actual_value, line_value, is_over)
 
-            status = BetStatus.WON if won else BetStatus.LOST
+            status = UnifiedBetStatus.WON if won else UnifiedBetStatus.LOST
             result_amount = (bet.amount + bet.potential_win) if won else 0.0
 
             return {
@@ -368,7 +443,7 @@ class PlayerPropVerificationService:
             is_over = prop_details["is_over"]
             won = self._check_prop_outcome(actual_value, line_value, is_over)
 
-            status = BetStatus.WON if won else BetStatus.LOST
+            status = UnifiedBetStatus.WON if won else UnifiedBetStatus.LOST
             result_amount = (bet.amount + bet.potential_win) if won else 0.0
 
             return {
@@ -400,7 +475,7 @@ class PlayerPropVerificationService:
             is_over = prop_details["is_over"]
             won = self._check_prop_outcome(actual_value, line_value, is_over)
 
-            status = BetStatus.WON if won else BetStatus.LOST
+            status = UnifiedBetStatus.WON if won else UnifiedBetStatus.LOST
             result_amount = (bet.amount + bet.potential_win) if won else 0.0
 
             return {
@@ -416,15 +491,6 @@ class PlayerPropVerificationService:
         self, db: Session, user_id: int
     ) -> Dict[str, int]:
         """Grade this user's pending props (used when loading bet history)."""
-        from app.models.simple_unified_bet_model import (
-            BetStatus as UnifiedBetStatus,
-            BetType as UnifiedBetType,
-        )
-        from app.services.unified_bet_verification_service import (
-            UnifiedBetResult,
-            UnifiedBetVerificationService,
-        )
-
         self.session = db
         pending = (
             db.query(SimpleUnifiedBet)
@@ -439,24 +505,15 @@ class PlayerPropVerificationService:
         if not pending:
             return {"verified": 0, "settled": 0, "errors": 0}
 
-        results: List[UnifiedBetResult] = []
+        settled = 0
         errors = 0
         for bet in pending:
             try:
                 prop_result = await self.verify_single_prop(bet)
                 if not prop_result:
                     continue
-                status = prop_result["status"]
-                if status == UnifiedBetStatus.PENDING:
-                    continue
-                results.append(
-                    UnifiedBetResult(
-                        bet_id=bet.id,
-                        status=status,
-                        result_amount=prop_result.get("result_amount", 0.0),
-                        reasoning=prop_result.get("reasoning", ""),
-                    )
-                )
+                if self._apply_prop_settlement(db, bet, prop_result):
+                    settled += 1
             except Exception as e:
                 errors += 1
                 logger.error(
@@ -466,12 +523,8 @@ class PlayerPropVerificationService:
                     e,
                 )
 
-        settled = 0
-        if results:
-            verifier = UnifiedBetVerificationService()
-            await verifier._apply_results(results, db)
+        if settled:
             db.commit()
-            settled = len(results)
 
         return {"verified": len(pending), "settled": settled, "errors": errors}
 
@@ -487,10 +540,6 @@ class PlayerPropVerificationService:
             BetStatus as UnifiedBetStatus,
             BetType as UnifiedBetType,
         )
-        from app.services.unified_bet_verification_service import (
-            UnifiedBetResult,
-            UnifiedBetVerificationService,
-        )
 
         owns_session = db is None
         if owns_session:
@@ -499,7 +548,6 @@ class PlayerPropVerificationService:
 
         settled = 0
         errors = 0
-        results: List[UnifiedBetResult] = []
 
         try:
             cutoff = datetime.utcnow() - timedelta(days=days_back)
@@ -527,29 +575,20 @@ class PlayerPropVerificationService:
                 try:
                     prop_result = await self.verify_single_prop(bet)
                     if not prop_result:
-                        continue
-                    status = prop_result["status"]
-                    if status == UnifiedBetStatus.PENDING:
-                        continue
-                    results.append(
-                        UnifiedBetResult(
-                            bet_id=bet.id,
-                            status=status,
-                            result_amount=prop_result.get("result_amount", 0.0),
-                            reasoning=prop_result.get("reasoning", ""),
+                        logger.info(
+                            "Unified prop %s still pending (no stats): %s",
+                            bet.id[:8],
+                            (bet.selection or "")[:80],
                         )
-                    )
+                        continue
+                    if self._apply_prop_settlement(db, bet, prop_result):
+                        settled += 1
                 except Exception as e:
                     errors += 1
                     logger.error("Error verifying unified prop %s: %s", bet.id[:8], e)
 
-            if results:
-                verifier = UnifiedBetVerificationService()
-                await verifier._apply_results(results, db)
+            if settled:
                 db.commit()
-                settled = sum(
-                    1 for r in results if r.status != UnifiedBetStatus.PENDING
-                )
 
             return {
                 "verified": len(pending),
@@ -782,25 +821,137 @@ class PlayerPropVerificationService:
             "is_over": over_under == "over",
         }
 
-    def _fetch_mlb_player_stats(
-        self, player_name: str, stat_type: str, game_date
-    ) -> Optional[Dict]:
-        """Fetch MLB player stats from MLB Stats API"""
+    def _resolve_mlb_game_pk(self, bet: SimpleUnifiedBet, game_date) -> Optional[int]:
+        """Find MLB gamePk from schedule using stored home/away team names."""
+        if not bet.home_team or not bet.away_team:
+            return None
+        date_str = game_date.strftime("%Y-%m-%d")
         try:
-            # First, search for player ID
+            response = requests.get(
+                "https://statsapi.mlb.com/api/v1/schedule",
+                params={"sportId": 1, "date": date_str},
+                timeout=15,
+            )
+            response.raise_for_status()
+            for day in response.json().get("dates") or []:
+                for game in day.get("games") or []:
+                    teams = game.get("teams") or {}
+                    home = (teams.get("home") or {}).get("team") or {}
+                    away = (teams.get("away") or {}).get("team") or {}
+                    home_name = home.get("name") or home.get("teamName") or ""
+                    away_name = away.get("name") or away.get("teamName") or ""
+                    normal = _mlb_team_names_match(
+                        bet.home_team, home_name
+                    ) and _mlb_team_names_match(bet.away_team, away_name)
+                    swapped = _mlb_team_names_match(
+                        bet.home_team, away_name
+                    ) and _mlb_team_names_match(bet.away_team, home_name)
+                    if normal or swapped:
+                        return game.get("gamePk")
+            return None
+        except Exception as e:
+            logger.warning(
+                "MLB schedule lookup failed for %s @ %s on %s: %s",
+                bet.away_team,
+                bet.home_team,
+                date_str,
+                e,
+            )
+            return None
+
+    def _fetch_mlb_player_stats_from_boxscore(
+        self,
+        bet: SimpleUnifiedBet,
+        player_name: str,
+        stat_type: str,
+        game_date,
+    ) -> Optional[Dict]:
+        """Box score fallback when game logs miss a start (common in prod)."""
+        game_pk = self._resolve_mlb_game_pk(bet, game_date)
+        if not game_pk:
+            return None
+        pitching_stats = stat_type.lower() in (
+            "outs",
+            "strikeouts",
+            "hits",
+            "earnedruns",
+        )
+        try:
+            response = requests.get(
+                f"https://statsapi.mlb.com/api/v1/game/{game_pk}/boxscore",
+                timeout=15,
+            )
+            response.raise_for_status()
+            box = response.json()
+            players = (box.get("teams") or {}).get("home", {}).get("players") or {}
+            players.update(
+                (box.get("teams") or {}).get("away", {}).get("players") or {}
+            )
+            target = _normalize_player_name(player_name)
+            for pdata in players.values():
+                person = pdata.get("person") or {}
+                full = person.get("fullName") or ""
+                if _normalize_player_name(
+                    full
+                ) != target and not _nba_player_names_match(player_name, full):
+                    continue
+                if pitching_stats:
+                    stat_payload = pdata.get("stats", {}).get("pitching") or {}
+                else:
+                    stat_payload = pdata.get("stats", {}).get("batting") or {}
+                if stat_payload:
+                    logger.info(
+                        "MLB boxscore stats for %s gamePk=%s date=%s",
+                        player_name,
+                        game_pk,
+                        game_date,
+                    )
+                    return stat_payload
+            return None
+        except Exception as e:
+            logger.error(
+                "MLB boxscore fetch failed gamePk=%s player=%s: %s",
+                game_pk,
+                player_name,
+                e,
+            )
+            return None
+
+    def _fetch_mlb_player_stats(
+        self,
+        player_name: str,
+        stat_type: str,
+        game_date,
+        *,
+        bet: Optional[SimpleUnifiedBet] = None,
+    ) -> Optional[Dict]:
+        """Fetch MLB player stats from MLB Stats API (game log, then boxscore)."""
+        try:
             search_url = (
                 f"https://statsapi.mlb.com/api/v1/people/search?names={player_name}"
             )
-            response = requests.get(search_url, timeout=10)
+            response = requests.get(search_url, timeout=15)
             response.raise_for_status()
 
             search_data = response.json()
             if not search_data.get("people"):
+                logger.warning(
+                    "MLB player search returned no match for %r", player_name
+                )
+                if bet:
+                    return self._fetch_mlb_player_stats_from_boxscore(
+                        bet, player_name, stat_type, game_date
+                    )
                 return None
 
             player_id = search_data["people"][0]["id"]
 
-            pitching_stats = stat_type in ["outs", "strikeouts", "hits", "earnedruns"]
+            pitching_stats = stat_type.lower() in [
+                "outs",
+                "strikeouts",
+                "hits",
+                "earnedruns",
+            ]
             target_str = game_date.strftime("%Y-%m-%d")
 
             for season in self._mlb_season_candidates(game_date):
@@ -809,7 +960,7 @@ class PlayerPropVerificationService:
                 else:
                     url = f"https://statsapi.mlb.com/api/v1/people/{player_id}?hydrate=stats(group=[hitting],type=[gameLog],season={season})"
 
-                response = requests.get(url, timeout=10)
+                response = requests.get(url, timeout=15)
                 response.raise_for_status()
                 data = response.json()
 
@@ -836,10 +987,18 @@ class PlayerPropVerificationService:
                         if stat_payload:
                             return stat_payload
 
+            if bet:
+                return self._fetch_mlb_player_stats_from_boxscore(
+                    bet, player_name, stat_type, game_date
+                )
             return None
 
         except Exception as e:
             logger.error(f"Error fetching MLB stats for {player_name}: {e}")
+            if bet:
+                return self._fetch_mlb_player_stats_from_boxscore(
+                    bet, player_name, stat_type, game_date
+                )
             return None
 
     # ==================== NFL VERIFICATION ====================
@@ -1293,9 +1452,15 @@ class PlayerPropVerificationService:
             )
             return None
 
-        stats = self._fetch_mlb_player_stats(
-            prop_details["player_name"], prop_details["stat_type"], game_date
-        )
+        stats = None
+        for candidate_date in [game_date, game_date - timedelta(days=1)]:
+            stats = self._fetch_mlb_player_stats(
+                prop_details["player_name"],
+                prop_details["stat_type"],
+                candidate_date,
+            )
+            if stats is not None:
+                break
         if stats is None:
             return None
 
