@@ -85,14 +85,22 @@ export function apiHistoryToActivity(bet: {
   source?: string;
   status?: string;
   stake?: number;
+  amount?: number;
   potential_win?: number;
   payout?: number;
+  result_amount?: number;
 }): ActivityBet {
   const statusRaw = (bet.status || 'pending').toLowerCase();
   const status =
     statusRaw === 'won' || statusRaw === 'lost' || statusRaw === 'pushed'
       ? statusRaw
       : 'pending';
+
+  const stake = bet.stake ?? bet.amount;
+  const payout =
+    bet.payout ??
+    bet.result_amount ??
+    (stake != null && bet.potential_win != null ? stake + bet.potential_win : bet.potential_win);
 
   return {
     id: bet.id,
@@ -102,8 +110,8 @@ export function apiHistoryToActivity(bet: {
     date: bet.created_at || bet.placed_at || '',
     source: bet.source || 'YetAI',
     status,
-    stake: bet.stake,
-    payout: bet.payout ?? bet.potential_win,
+    stake,
+    payout,
   };
 }
 
