@@ -6,10 +6,30 @@ import { Check, ChevronRight, Clock, X } from 'lucide-react';
 import { fmtMoney, fmtMoneyShort, fmtOdds } from '@/lib/yetai-format';
 import type { ActivityBet } from './types';
 
-export function PerformanceChart({ dailyPnl }: { dailyPnl: number[] }) {
-  const history = dailyPnl.length > 0 ? dailyPnl : [0, 0, 0, 0, 0, 0, 0];
+function pnlDayLabels(count: number): string[] {
+  const today = new Date();
+  today.setHours(12, 0, 0, 0);
+  return Array.from({ length: count }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(d.getDate() - (count - 1 - i));
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  });
+}
+
+export function PerformanceChart({
+  dailyPnl,
+  lifetimeProfit,
+}: {
+  dailyPnl: number[];
+  lifetimeProfit?: number;
+}) {
+  const history = dailyPnl.length > 0 ? dailyPnl : Array(14).fill(0);
+  const labels = pnlDayLabels(history.length);
   const max = Math.max(...history.map(Math.abs), 1);
-  const total = history.reduce((s, v) => s + v, 0);
+  const periodTotal = history.reduce((s, v) => s + v, 0);
+  const axisStart = labels[0] ?? 'Start';
+  const axisMid = labels[Math.floor(labels.length / 2)] ?? 'Mid';
+  const axisEnd = labels[labels.length - 1] ?? 'Today';
 
   return (
     <div className="card">
@@ -19,29 +39,43 @@ export function PerformanceChart({ dailyPnl }: { dailyPnl: number[] }) {
           <div className="section-sub">Last {history.length} days · Daily P&L</div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          <div className="mono" style={{ fontSize: 22, fontWeight: 500, color: total >= 0 ? 'var(--win)' : 'var(--loss)' }}>
-            {fmtMoney(total, { signed: true })}
+          <div
+            className="mono"
+            style={{
+              fontSize: 22,
+              fontWeight: 500,
+              color: periodTotal >= 0 ? 'var(--win)' : 'var(--loss)',
+            }}
+          >
+            {fmtMoney(periodTotal, { signed: true })}
           </div>
-          <div className="section-sub">net profit</div>
+          <div className="section-sub">{history.length}-day P&L</div>
+          {lifetimeProfit != null && (
+            <div className="section-sub" style={{ marginTop: 4 }}>
+              Lifetime {fmtMoney(lifetimeProfit, { signed: true })}
+            </div>
+          )}
         </div>
       </div>
-      <div className="chart-bars">
-        {history.map((v, i) => (
-          <div
-            key={i}
-            className={`chart-bar ${v > 0 ? 'win' : v < 0 ? 'loss' : 'zero'}`}
-            style={{
-              height: `${Math.max(4, (Math.abs(v) / max) * 100)}%`,
-              alignSelf: v < 0 ? 'flex-start' : 'flex-end',
-            }}
-            title={`Day ${i + 1}: ${fmtMoney(v, { signed: true })}`}
-          />
-        ))}
+      <div className="pnl-chart-bars">
+        {history.map((v, i) => {
+          const pct = Math.max(2, (Math.abs(v) / max) * 50);
+          const barClass = v > 0 ? 'win above' : v < 0 ? 'loss below' : 'zero';
+          return (
+            <div key={i} className="chart-bar-col">
+              <div
+                className={`chart-bar ${barClass}`}
+                style={{ height: `${pct}%` }}
+                title={`${labels[i]}: ${fmtMoney(v, { signed: true })}`}
+              />
+            </div>
+          );
+        })}
       </div>
       <div className="chart-axis">
-        <span>Start</span>
-        <span>Mid</span>
-        <span>Today</span>
+        <span>{axisStart}</span>
+        <span>{axisMid}</span>
+        <span>{axisEnd}</span>
       </div>
     </div>
   );

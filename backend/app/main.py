@@ -4,7 +4,14 @@ Consolidates development and production functionality into a single file
 Version: 1.0.1
 """
 
-from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    HTTPException,
+    Depends,
+    WebSocket,
+    WebSocketDisconnect,
+    Query,
+)
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -769,8 +776,15 @@ async def options_user_performance():
 
 
 @app.get("/api/user/performance")
-async def get_user_performance(current_user: dict = Depends(get_current_user)):
-    """Get user performance metrics based on real bet data"""
+async def get_user_performance(
+    days: Optional[int] = Query(None, ge=1, le=365),
+    current_user: dict = Depends(get_current_user),
+):
+    """Get user performance metrics based on real bet data.
+
+    When ``days`` is omitted, returns all-time stats (dashboard). When set,
+    metrics and breakdowns are scoped to bets placed in that window.
+    """
     try:
         user_id = current_user.get("id") or current_user.get("user_id")
 
@@ -778,7 +792,14 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         analytics_service = get_service("betting_analytics_service")
         if not analytics_service:
             raise Exception("Betting analytics service not available")
-        stats = await analytics_service.get_user_stats(user_id)
+
+        period_days = days if days is not None else 30
+        if days is not None:
+            stats = await analytics_service.get_user_period_stats(user_id, days)
+            net_profit = stats["net_profit"]
+        else:
+            stats = await analytics_service.get_user_stats(user_id)
+            net_profit = round(stats["total_winnings"] - stats["total_wagered"], 2)
 
         # Get trend data from betting analytics
         from app.core.database import SessionLocal
@@ -789,10 +810,10 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         finally:
             db.close()
 
-        daily_pnl = await analytics_service.get_daily_pnl(user_id, days=14)
+        chart_days = min(period_days, 14) if days is not None else 14
+        daily_pnl = await analytics_service.get_daily_pnl(user_id, days=chart_days)
 
         # Calculate weekly and monthly changes
-        monthly_summary = stats.get("monthly_summary", {})
         weekly_bet_change = trends.get("recent_period", {}).get("total_bets", 0)
         accuracy_change = trends.get("win_rate_change", 0)
         profit_change = trends.get("profit_change", 0)
@@ -801,7 +822,8 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
         personal_stats = {
             "predictions_made": stats["total_bets"],
             "accuracy_rate": round(stats["win_rate"] * 100, 1),
-            "total_profit": round(stats["total_winnings"] - stats["total_wagered"], 2),
+            "total_profit": net_profit,
+            "bankroll": net_profit,
             "roi": round(stats["roi"] * 100, 1),
             "total_wagered": round(stats["total_wagered"], 2),
             "total_winnings": round(stats["total_winnings"], 2),
@@ -813,6 +835,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
             "profit_change": profit_change,
             "trend_direction": trends.get("trend_direction", "stable"),
             "daily_pnl": daily_pnl,
+            "chart_days": chart_days,
         }
 
         # Return in the format expected by frontend
@@ -823,9 +846,7 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                 "total_predictions": stats["total_bets"],
                 "overall_accuracy": round(stats["win_rate"] * 100, 1),
                 "total_wagered": round(stats["total_wagered"], 2),
-                "net_profit": round(
-                    stats["total_winnings"] - stats["total_wagered"], 2
-                ),
+                "net_profit": net_profit,
                 "resolved_predictions": stats.get(
                     "total_resolved_bets", stats["total_bets"]
                 ),
@@ -843,7 +864,8 @@ async def get_user_performance(current_user: dict = Depends(get_current_user)):
                     "accuracy_change": accuracy_change,
                     "profit_change": profit_change,
                 },
-                "period_days": 30,
+                "period_days": period_days,
+                "chart_days": chart_days,
             },
             "user_id": user_id,
         }

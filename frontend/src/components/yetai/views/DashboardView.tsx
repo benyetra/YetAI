@@ -15,7 +15,7 @@ export default function DashboardView() {
   const [bankroll, setBankroll] = useState(0);
   const [winRate, setWinRate] = useState(0);
   const [winRateDelta, setWinRateDelta] = useState(0);
-  const [weekDelta, setWeekDelta] = useState(0);
+  const [profitChange, setProfitChange] = useState(0);
   const [openBets, setOpenBets] = useState(0);
   const [openPotential, setOpenPotential] = useState(0);
   const [streak, setStreak] = useState(0);
@@ -45,7 +45,7 @@ export default function DashboardView() {
           setBankroll(ps.bankroll ?? ps.total_profit ?? 0);
           setWinRate(ps.accuracy_rate ?? 0);
           setWinRateDelta(ps.accuracy_change ?? 0);
-          setWeekDelta(ps.weekly_bet_change ?? 0);
+          setProfitChange(ps.profit_change ?? 0);
           setStreak(ps.win_streak ?? 0);
           if (Array.isArray(ps.daily_pnl)) {
             setDailyPnl(ps.daily_pnl);
@@ -93,7 +93,7 @@ export default function DashboardView() {
     <DashboardScreen
       userName={user?.first_name}
       bankroll={bankroll}
-      weekDelta={weekDelta}
+      profitChange={profitChange}
       winRate={winRate}
       winRateDelta={winRateDelta}
       openBets={openBets}

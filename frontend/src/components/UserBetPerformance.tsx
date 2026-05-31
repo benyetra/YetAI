@@ -45,13 +45,15 @@ export interface PerformanceData {
   }>;
   daily_pnl: number[];
   win_rate_delta?: number;
+  profit_delta?: number;
+  chart_days?: number;
 }
 
 type UserBetPerformanceProps = {
   selectedPeriod: number;
 };
 
-function periodChartLabel(days: number): string {
+function periodLabel(days: number): string {
   if (days >= 365) return 'all time';
   if (days >= 90) return 'last 3 months';
   if (days >= 30) return 'last 30 days';
@@ -148,9 +150,13 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
         const personal = response.personal_stats || {};
         const trends = metrics.trends || {};
 
+        const apiPeriodDays = Number(response.metrics?.period_days ?? selectedPeriod);
+        const apiChartDays = Number(response.metrics?.chart_days ?? Math.min(apiPeriodDays, 14));
+        const profitChange = trends.profit_change;
+
         const transformedData: PerformanceData = {
           status: response.status,
-          period_days: selectedPeriod,
+          period_days: apiPeriodDays,
           overview: {
             total_bets: metrics.total_predictions || 0,
             total_wagered: metrics.total_wagered || 0,
@@ -188,6 +194,8 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
             : [],
           daily_pnl: Array.isArray(personal.daily_pnl) ? personal.daily_pnl : [],
           win_rate_delta: trends.accuracy_change,
+          profit_delta: typeof profitChange === 'number' ? profitChange : undefined,
+          chart_days: apiChartDays,
         };
 
         setPerformanceData(transformedData);
@@ -257,20 +265,24 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
     );
   }
 
-  const { overview, daily_pnl, win_rate_delta } = performanceData;
+  const { overview, daily_pnl, win_rate_delta, profit_delta, period_days, chart_days } =
+    performanceData;
   const pending = actualPendingCount > 0 ? actualPendingCount : overview.pending_bets;
-  const chartDays = Math.min(selectedPeriod, 14);
-  const chartData = daily_pnl.length ? daily_pnl.slice(-chartDays) : [];
+  const chartDayCount = chart_days ?? Math.min(period_days, 14);
+  const chartData = daily_pnl.length ? daily_pnl.slice(-chartDayCount) : [];
+  const chartPeriodText = periodLabel(chartDayCount);
 
   return (
     <>
       <div className="stat-grid cols-4">
         <StatTile
-          label={`Net profit · ${selectedPeriod}d`}
+          label={`Net profit · ${period_days}d`}
           value={fmtMoney(overview.total_profit, { signed: true })}
-          delta="vs zero"
-          deltaKind={overview.total_profit >= 0 ? 'up' : 'down'}
-          sub={`${periodChartLabel(chartDays)}`}
+          delta={
+            profit_delta != null ? fmtMoney(profit_delta, { signed: true }) : undefined
+          }
+          deltaKind={profit_delta != null && profit_delta < 0 ? 'down' : 'up'}
+          sub="vs prev 7 days"
         />
         <StatTile
           label="Win rate"
@@ -281,7 +293,7 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
               : undefined
           }
           deltaKind={win_rate_delta != null && win_rate_delta < 0 ? 'down' : 'up'}
-          sub="vs prev period"
+          sub="vs prev 7 days"
         />
         <StatTile
           label="Bets"
@@ -295,7 +307,11 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
         />
       </div>
 
-      <MyBetsPnLChart data={chartData} periodLabel={periodChartLabel(chartDays)} />
+      <MyBetsPnLChart
+        data={chartData}
+        periodLabel={chartPeriodText}
+        dayCount={chartDayCount}
+      />
 
       <div className="my-bets-breakdown-grid">
         <div className="card">

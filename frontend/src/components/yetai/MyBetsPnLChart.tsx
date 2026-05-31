@@ -5,19 +5,25 @@ import { fmtMoney } from '@/lib/yetai-format';
 type MyBetsPnLChartProps = {
   data: number[];
   periodLabel?: string;
+  dayCount?: number;
 };
 
-export default function MyBetsPnLChart({ data, periodLabel = 'last 14 days' }: MyBetsPnLChartProps) {
-  const history = data.length > 0 ? data : Array(14).fill(0);
+export default function MyBetsPnLChart({
+  data,
+  periodLabel = 'last 14 days',
+  dayCount = 14,
+}: MyBetsPnLChartProps) {
+  const history = data.length > 0 ? data : Array(dayCount).fill(0);
   const max = Math.max(...history.map(Math.abs), 1);
   const total = history.reduce((sum, v) => sum + v, 0);
+  const totalLabel = `${dayCount}-day P&L`;
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="section-head" style={{ marginBottom: 8 }}>
         <div>
           <div className="section-title">P&L · {periodLabel}</div>
-          <div className="section-sub">Daily profit/loss</div>
+          <div className="section-sub">Daily profit/loss by settlement date</div>
         </div>
         <div style={{ textAlign: 'right' }}>
           <div
@@ -30,6 +36,7 @@ export default function MyBetsPnLChart({ data, periodLabel = 'last 14 days' }: M
           >
             {fmtMoney(total, { signed: true })}
           </div>
+          <div className="section-sub">{totalLabel}</div>
         </div>
       </div>
       <div className="pnl-chart-bars">

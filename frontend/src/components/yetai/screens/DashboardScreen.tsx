@@ -12,7 +12,7 @@ import type { ActivityBet, DesignPick } from '../types';
 export interface DashboardScreenProps {
   userName?: string;
   bankroll?: number;
-  weekDelta?: number;
+  profitChange?: number;
   winRate?: number;
   winRateDelta?: number;
   openBets?: number;
@@ -33,7 +33,7 @@ function greetingLine(name?: string) {
 export default function DashboardScreen({
   userName,
   bankroll = 0,
-  weekDelta = 0,
+  profitChange = 0,
   winRate = 0,
   winRateDelta = 0,
   openBets = 0,
@@ -78,18 +78,26 @@ export default function DashboardScreen({
             </>
           }
           value={fmtMoney(bankroll)}
-          delta={weekDelta ? `+${weekDelta}% wk` : undefined}
-          deltaKind="up"
+          delta={
+            profitChange
+              ? `${profitChange >= 0 ? '+' : ''}${fmtMoneyShort(profitChange)} vs prev wk`
+              : undefined
+          }
+          deltaKind={profitChange >= 0 ? 'up' : 'down'}
         />
         <StatTile
           label={
             <>
-              <Target size={12} /> Win Rate · 30d
+              <Target size={12} /> Win Rate · All time
             </>
           }
           value={`${winRate.toFixed(0)}%`}
-          delta={winRateDelta ? `+${winRateDelta}pp` : undefined}
-          deltaKind="up"
+          delta={
+            winRateDelta
+              ? `${winRateDelta >= 0 ? '+' : ''}${winRateDelta}pp vs prev wk`
+              : undefined
+          }
+          deltaKind={winRateDelta >= 0 ? 'up' : 'down'}
         />
         <StatTile
           label="Open Bets"
@@ -144,7 +152,7 @@ export default function DashboardScreen({
       )}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 'var(--gap-grid)' }}>
-        <PerformanceChart dailyPnl={dailyPnl} />
+        <PerformanceChart dailyPnl={dailyPnl} lifetimeProfit={bankroll} />
         <RecentActivity bets={recentBets} />
       </div>
     </div>

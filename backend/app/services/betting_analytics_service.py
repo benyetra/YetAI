@@ -172,6 +172,113 @@ class BettingAnalyticsService:
                 },
             }
 
+    async def get_user_period_stats(self, user_id: int, days: int) -> Dict[str, Any]:
+        """Betting stats for bets placed in the last `days` days (matches breakdown P&L)."""
+        empty = {
+            "total_bets": 0,
+            "total_resolved_bets": 0,
+            "total_pending_bets": 0,
+            "total_wagered": 0.0,
+            "total_winnings": 0.0,
+            "net_profit": 0.0,
+            "win_rate": 0.0,
+            "roi": 0.0,
+            "average_odds": 0,
+            "favorite_sport": "N/A",
+            "favorite_bet_type": "N/A",
+            "current_streak": {"type": "none", "count": 0},
+            "by_sport": {},
+            "by_bet_type": {},
+        }
+        try:
+            db = SessionLocal()
+            try:
+                cutoff_date = datetime.now() - timedelta(days=days)
+                user_bets = (
+                    db.query(SimpleUnifiedBet)
+                    .filter(
+                        and_(
+                            SimpleUnifiedBet.user_id == user_id,
+                            SimpleUnifiedBet.placed_at >= cutoff_date,
+                            SimpleUnifiedBet.parent_bet_id.is_(None),
+                        )
+                    )
+                    .all()
+                )
+
+                if not user_bets:
+                    return empty
+
+                won_bets = [bet for bet in user_bets if bet.status == "won"]
+                lost_bets = [bet for bet in user_bets if bet.status == "lost"]
+                pushed_bets = [bet for bet in user_bets if bet.status == "pushed"]
+                pending_bets = [
+                    bet
+                    for bet in user_bets
+                    if bet.status not in ["won", "lost", "pushed"]
+                ]
+
+                resolved_bets_list = won_bets + lost_bets + pushed_bets
+                total_wagered = sum(bet.amount for bet in resolved_bets_list)
+                total_winnings = sum(bet.result_amount or 0 for bet in won_bets)
+                net_profit = round(total_winnings - total_wagered, 2)
+
+                settled_bets = len(won_bets) + len(lost_bets)
+                win_rate = (len(won_bets) / settled_bets) if settled_bets > 0 else 0.0
+                roi = (net_profit / total_wagered) if total_wagered > 0 else 0.0
+
+                odds_sum = 0
+                odds_count = 0
+                for bet in user_bets:
+                    if bet.odds:
+                        odds_sum += bet.odds
+                        odds_count += 1
+                average_odds = int(odds_sum / odds_count) if odds_count > 0 else -110
+
+                sport_counts: Dict[str, int] = {}
+                for bet in user_bets:
+                    sport = bet.sport or "Unknown"
+                    sport_counts[sport] = sport_counts.get(sport, 0) + 1
+                favorite_sport = (
+                    self._format_sport_name(max(sport_counts, key=sport_counts.get))
+                    if sport_counts
+                    else "N/A"
+                )
+
+                bet_type_counts: Dict[str, int] = {}
+                for bet in user_bets:
+                    bet_type = bet.bet_type or "Unknown"
+                    bet_type_counts[bet_type] = bet_type_counts.get(bet_type, 0) + 1
+                favorite_bet_type = (
+                    self._format_bet_type_name(
+                        max(bet_type_counts, key=bet_type_counts.get)
+                    )
+                    if bet_type_counts
+                    else "N/A"
+                )
+
+                return {
+                    "total_bets": len(user_bets),
+                    "total_resolved_bets": len(resolved_bets_list),
+                    "total_pending_bets": len(pending_bets),
+                    "total_wagered": round(total_wagered, 2),
+                    "total_winnings": round(total_winnings, 2),
+                    "net_profit": net_profit,
+                    "win_rate": round(win_rate, 3),
+                    "roi": round(roi, 3),
+                    "average_odds": average_odds,
+                    "favorite_sport": favorite_sport,
+                    "favorite_bet_type": favorite_bet_type,
+                    "current_streak": self._calculate_current_streak(user_bets),
+                    "by_sport": self._calculate_breakdown_by_sport(user_bets),
+                    "by_bet_type": self._calculate_breakdown_by_type(user_bets),
+                }
+            finally:
+                db.close()
+        except Exception as e:
+            logger.error(f"Error getting user period stats: {e}")
+            return empty
+
     def _calculate_current_streak(self, bets: List) -> Dict[str, Any]:
         """Calculate the current win/loss streak"""
         if not bets:
@@ -721,12 +828,22 @@ class BettingAnalyticsService:
             return {}
 
     async def get_daily_pnl(self, user_id: int, days: int = 14) -> List[float]:
-        """Return daily realized P&L for the last `days` days (oldest first)."""
+        """Return daily realized P&L for the last `days` days (oldest first).
+
+        Bets are included when they *settled* in the window (``settled_at``, or
+        ``placed_at`` when unsettled timestamp is missing), not when they were placed.
+        """
         db = SessionLocal()
         try:
             now = datetime.now()
             start = (now - timedelta(days=days - 1)).replace(
                 hour=0, minute=0, second=0, microsecond=0
+            )
+            end_exclusive = (now + timedelta(days=1)).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
+            settled_at = func.coalesce(
+                SimpleUnifiedBet.settled_at, SimpleUnifiedBet.placed_at
             )
 
             bets = (
@@ -734,9 +851,10 @@ class BettingAnalyticsService:
                 .filter(
                     and_(
                         SimpleUnifiedBet.user_id == user_id,
-                        SimpleUnifiedBet.placed_at >= start,
                         SimpleUnifiedBet.parent_bet_id.is_(None),
                         SimpleUnifiedBet.status.in_(["won", "lost"]),
+                        settled_at >= start,
+                        settled_at < end_exclusive,
                     )
                 )
                 .all()
@@ -744,15 +862,19 @@ class BettingAnalyticsService:
 
             buckets = [0.0] * days
             for b in bets:
-                placed = b.settled_at or b.placed_at
-                if not placed:
+                settled = b.settled_at or b.placed_at
+                if not settled:
                     continue
-                idx = (placed.date() - start.date()).days
+                idx = (settled.date() - start.date()).days
                 if 0 <= idx < days:
+                    amount = float(b.amount or 0)
                     if b.status == "won":
-                        buckets[idx] += float((b.potential_win or 0) - (b.amount or 0))
+                        if b.result_amount is not None:
+                            buckets[idx] += float(b.result_amount) - amount
+                        else:
+                            buckets[idx] += float(b.potential_win or 0) - amount
                     elif b.status == "lost":
-                        buckets[idx] -= float(b.amount or 0)
+                        buckets[idx] -= amount
 
             return [round(v, 2) for v in buckets]
         except Exception as e:
