@@ -297,7 +297,11 @@ async def lifespan(_app: FastAPI):
                 from app.services.games_sync_service import run_games_sync
 
                 logger.info("🔄 Starting background game sync...")
-                result = await run_games_sync()
+                # force=False: skip the Odds API pull if a sync ran recently.
+                # The API process can restart frequently (deploys, health checks,
+                # replica cycling); without this guard each boot re-spends ~12
+                # Odds API credits. Celery beat still forces the 3x/day refresh.
+                result = await run_games_sync(force=False)
                 logger.info(
                     f"✅ Initial game sync: {result.get('total_games_fetched', 0)} fetched, "
                     f"{result.get('total_games_created', 0)} created, "

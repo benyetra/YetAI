@@ -23,6 +23,14 @@ from app.core.database import get_db
 
 logger = logging.getLogger(__name__)
 
+# Shared marker (Redis) recording the last completed games sync. Used to skip
+# redundant Odds API pulls when the API process restarts: the startup hook calls
+# run_games_sync(force=False), so a restart storm (or multiple replicas) can't
+# re-spend ~12 Odds API credits per boot. The Celery beat job still forces a
+# refresh on its 3x/day schedule. TTL doubles as the cooldown window.
+_GAMES_SYNC_MARKER_KEY = "games_sync:last_completed_at"
+_GAMES_SYNC_COOLDOWN_SECONDS = 10800  # 3 hours
+
 
 def _normalize_commence_time(commence_time: datetime) -> datetime:
     """Store commence_time as UTC-naive for consistent DB comparisons."""
@@ -262,13 +270,42 @@ class GamesSyncService:
         logger.info("Broadcast info update completed")
 
 
-async def run_games_sync():
+async def run_games_sync(force: bool = True):
     """
-    Entry point for scheduled games sync.
+    Entry point for games sync.
 
-    This function is called by the scheduler service.
+    Args:
+        force: When True (Celery beat, on-demand admin), always pull fresh odds.
+            When False (app startup hook), skip the Odds API pull if a sync
+            completed within the cooldown window — this prevents app restarts
+            from re-spending ~12 Odds API credits per boot.
     """
-    logger.info("Games sync task triggered")
+    logger.info("Games sync task triggered (force=%s)", force)
+
+    # Imported lazily: importing cache_service at module load triggers an
+    # asyncio.create_task side effect that requires a running event loop.
+    from app.services.cache_service import cache_service
+
+    if not force:
+        try:
+            last_completed = await cache_service.get(_GAMES_SYNC_MARKER_KEY)
+        except Exception as marker_err:
+            logger.warning("Games-sync marker read failed: %s", marker_err)
+            last_completed = None
+
+        if last_completed:
+            logger.info(
+                "Skipping startup games sync — a sync completed recently (%s), "
+                "still within the %ss cooldown. Avoids redundant Odds API pulls "
+                "on restart.",
+                last_completed,
+                _GAMES_SYNC_COOLDOWN_SECONDS,
+            )
+            return {
+                "status": "skipped",
+                "reason": "recent_sync",
+                "last_completed_at": last_completed,
+            }
 
     # Get database session
     db = next(get_db())
@@ -276,6 +313,15 @@ async def run_games_sync():
     try:
         service = GamesSyncService(db)
         stats = await service.sync_all_games()
+
+        try:
+            await cache_service.set(
+                _GAMES_SYNC_MARKER_KEY,
+                {"at": datetime.now(timezone.utc).isoformat()},
+                expire_seconds=_GAMES_SYNC_COOLDOWN_SECONDS,
+            )
+        except Exception as marker_err:
+            logger.warning("Games-sync marker write failed: %s", marker_err)
 
         logger.info(f"Games sync completed successfully: {stats}")
         return stats
