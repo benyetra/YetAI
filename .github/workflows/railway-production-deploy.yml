@@ -2,6 +2,12 @@ name: Railway Production Deploy
 
 on:
   workflow_dispatch:
+  # Auto-deploy merged changes to production. Without this, merges to main sit
+  # undeployed until someone manually dispatches — which silently stranded the
+  # Odds API rate fixes for days. CI (backend-ci-cd) runs independently on push;
+  # this job only handles the Railway deploy.
+  push:
+    branches: [main]
 
 jobs:
   deploy-api:

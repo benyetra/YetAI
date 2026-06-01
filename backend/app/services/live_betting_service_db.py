@@ -35,6 +35,29 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 
+# Rough in-season month windows (ET) per sport. Used to skip Odds API scores
+# calls for sports that are clearly out of season — e.g. NFL in June. When a
+# month is ambiguous we err toward "in season" so we never hide live games.
+_SPORT_SEASON_MONTHS = {
+    "americanfootball_nfl": {9, 10, 11, 12, 1, 2},  # Sep–Feb
+    "basketball_nba": {10, 11, 12, 1, 2, 3, 4, 5, 6},  # Oct–Jun
+    "baseball_mlb": {3, 4, 5, 6, 7, 8, 9, 10},  # Mar–Oct
+}
+
+
+def _sport_in_season(sport_key: str, *, month: Optional[int] = None) -> bool:
+    """Return True when ``sport_key`` is plausibly in season this month.
+
+    Defaults to True for any sport we don't have a window for, so unknown sports
+    are never silently dropped.
+    """
+    months = _SPORT_SEASON_MONTHS.get(sport_key)
+    if not months:
+        return True
+    current_month = month if month is not None else datetime.utcnow().month
+    return current_month in months
+
+
 class LiveBettingServiceDB:
     """Database-powered live betting service with persistent storage"""
 
@@ -427,10 +450,17 @@ class LiveBettingServiceDB:
                         sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)
                     ]
                 else:
+                    # Only poll sports that are plausibly in season — an
+                    # out-of-season sport has no live games, so its scores call
+                    # is pure wasted Odds API spend on this public endpoint.
                     sports_to_check = [
-                        SportKey.AMERICANFOOTBALL_NFL,
-                        SportKey.BASKETBALL_NBA,
-                        SportKey.BASEBALL_MLB,
+                        sk
+                        for sk in (
+                            SportKey.AMERICANFOOTBALL_NFL,
+                            SportKey.BASKETBALL_NBA,
+                            SportKey.BASEBALL_MLB,
+                        )
+                        if _sport_in_season(sk.value)
                     ]
 
                 for idx, sport_key in enumerate(sports_to_check):

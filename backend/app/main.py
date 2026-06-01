@@ -6819,9 +6819,11 @@ async def options_live_markets():
 async def get_live_betting_markets(sport: Optional[str] = None):
     """Get available live betting markets with real sports data (public endpoint).
 
-    Cached for 60 seconds — this endpoint hits the Odds API for 4 sports
-    on every uncached call. Without a cache, any polling client can rip
-    through the daily credit budget very fast.
+    Cached for 5 minutes — this endpoint hits the Odds API (1 scores credit per
+    in-season sport, plus odds only when games are actually live) on every
+    uncached call. Without a generous cache, any polling client can rip through
+    the daily credit budget very fast. A 5-minute TTL caps worst-case polling at
+    ~12 refills/hour while live scores stay fresh enough for an in-play UI.
     """
     from app.services.cache_service import cache_service
 
@@ -6833,7 +6835,7 @@ async def get_live_betting_markets(sport: Optional[str] = None):
     try:
         markets = await live_betting_service.get_live_betting_markets(sport)
         response = {"status": "success", "count": len(markets), "markets": markets}
-        await cache_service.set(cache_key, response, expire_seconds=60)
+        await cache_service.set(cache_key, response, expire_seconds=300)
         return response
 
     except Exception as e:
