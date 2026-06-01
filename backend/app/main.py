@@ -5851,17 +5851,21 @@ def _odds_fetch_failure_payload(
 # The Odds API has a 20K/month quota. Every direct call from the frontend
 # (page loads, polling) used to hit the API. We now serve from cache by
 # default with two TTLs:
-#   - FRESH (5 min): served as success; no API call
+#   - FRESH (30 min): served as success; no API call. Longer than the old 5 min
+#     TTL because Celery beat already refreshes the games table 3×/day and the
+#     frontend polls /api/odds/popular — at 5 min × 8 sports that alone was
+#     ~96 Odds API calls/hour from a single open dashboard tab.
 #   - LAST_KNOWN_GOOD (24 hr): served with stale=True when the API errors
 #     out (quota exceeded, 401, network error, etc.) so the UI never goes
 #     blank just because we hit the cap.
 # -----------------------------------------------------------------------------
 
-_ODDS_CACHE_TTL_FRESH = 300  # 5 minutes
+_ODDS_CACHE_TTL_FRESH = 1800  # 30 minutes
 _ODDS_CACHE_TTL_LKG = 86400  # 24 hours (stale fallback)
 _ODDS_QUOTA_SAFETY_THRESHOLD = 50  # stop calling API when fewer than N credits left
 _ODDS_QUOTA_KEY = "odds:quota"
 _ODDS_QUOTA_TTL = 7 * 24 * 3600  # 1 week — quota state survives restarts
+_POPULAR_ODDS_BUNDLE_KEY = "odds:popular:bundle"
 
 
 def _odds_cache_key_fresh(sport_key: str) -> str:
@@ -6135,15 +6139,30 @@ async def get_nfl_odds_legacy():
 
 @app.get("/api/odds/popular")
 async def get_popular_sports_odds():
-    """Get odds for popular sports via shared per-sport cache.
+    """Get odds for in-season popular sports via a shared bundle cache.
 
-    Each sport is fetched through _get_odds_with_cache, so cache hits are
-    shared with the per-sport endpoints (one cache fill serves both).
+    Serves the entire multi-sport payload from one cache key so polling clients
+    (e.g. LiveBettingDashboard every 30s) cannot trigger up to 8 per-sport Odds
+    API calls on each TTL expiry. Off-season sports are skipped entirely.
     """
+    from app.services.cache_service import cache_service
+    from app.services.live_betting_service_db import _sport_in_season
+
     if not settings.ODDS_API_KEY:
         payload = _odds_not_configured_payload("odds data")
         payload["count"] = 0
         return payload
+
+    cached_bundle = await cache_service.get(_POPULAR_ODDS_BUNDLE_KEY)
+    if cached_bundle and "games" in cached_bundle:
+        return {
+            "status": "success",
+            "games": cached_bundle["games"],
+            "count": len(cached_bundle["games"]),
+            "cached": True,
+            "stale": bool(cached_bundle.get("stale")),
+            "cached_at": cached_bundle.get("cached_at"),
+        }
 
     sports = [
         ("americanfootball_nfl", "NFL"),
@@ -6159,17 +6178,33 @@ async def get_popular_sports_odds():
     all_games = []
     any_stale = False
     for sport_key, sport_label in sports:
+        if not _sport_in_season(sport_key):
+            continue
         result = await _get_odds_with_cache(sport_key, sport_label)
         if result.get("status") == "success":
             all_games.extend(result.get("games", []))
             if result.get("stale"):
                 any_stale = True
 
+    cached_at = datetime.now(timezone.utc).isoformat()
+    bundle_payload = {
+        "games": all_games,
+        "stale": any_stale,
+        "cached_at": cached_at,
+    }
+    await cache_service.set(
+        _POPULAR_ODDS_BUNDLE_KEY,
+        bundle_payload,
+        expire_seconds=_ODDS_CACHE_TTL_FRESH,
+    )
+
     return {
         "status": "success",
         "games": all_games,
         "count": len(all_games),
+        "cached": False,
         "stale": any_stale,
+        "cached_at": cached_at,
     }
 
 
@@ -6358,7 +6393,7 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
                 logger.info(
                     "No games in popular-games window — running on-demand games sync"
                 )
-                await run_games_sync()
+                await run_games_sync(force=False)
                 db.expire_all()
                 games_query = _query_todays_games()
             except Exception as sync_err:

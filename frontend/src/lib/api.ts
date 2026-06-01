@@ -225,6 +225,24 @@ export const enhancedApiClient = {
     token?: string,
     useCache: boolean = true
   ): Promise<T> {
+    // Serve fresh-enough cached data without hitting the network. Previously
+    // cache was only read on failure, so polling components re-requested the
+    // backend on every tick even when odds hadn't changed.
+    if (useCache && typeof window !== 'undefined') {
+      const cacheKey = `api_cache_${endpoint.replace(/[^a-zA-Z0-9]/g, '_')}`;
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        try {
+          const { data, timestamp, ttl } = JSON.parse(cached);
+          if (Date.now() - timestamp < ttl && data && (data as { status?: string }).status === 'success') {
+            return data as T;
+          }
+        } catch {
+          localStorage.removeItem(cacheKey);
+        }
+      }
+    }
+
     try {
       const result = await apiCircuitBreaker.execute(async () => {
         const response = await withRetry(() => this.get(endpoint, token));
@@ -243,7 +261,7 @@ export const enhancedApiClient = {
         localStorage.setItem(cacheKey, JSON.stringify({
           data: result,
           timestamp: Date.now(),
-          ttl: 300000 // 5 minutes
+          ttl: 1800000 // 30 minutes — align with backend odds cache TTL
         }));
       }
 

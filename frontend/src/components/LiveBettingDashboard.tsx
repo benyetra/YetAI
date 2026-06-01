@@ -78,8 +78,9 @@ export default function LiveBettingDashboard({ onBetPlaced }: LiveBettingDashboa
   useEffect(() => {
     loadData();
     
-    // Set up auto-refresh every 30 seconds
-    const interval = setInterval(loadData, 30000);
+    // Match backend live-markets / odds cache TTL (5 min) — 30s polling was
+    // hammering /api/odds/popular and burning ~96 Odds API credits/hour.
+    const interval = setInterval(loadData, 300000);
     setRefreshInterval(interval);
     
     return () => {

@@ -40,8 +40,13 @@ logger = logging.getLogger(__name__)
 # month is ambiguous we err toward "in season" so we never hide live games.
 _SPORT_SEASON_MONTHS = {
     "americanfootball_nfl": {9, 10, 11, 12, 1, 2},  # Sep–Feb
+    "americanfootball_ncaaf": {8, 9, 10, 11, 12, 1},  # Aug–Jan
     "basketball_nba": {10, 11, 12, 1, 2, 3, 4, 5, 6},  # Oct–Jun
+    "basketball_wnba": {5, 6, 7, 8, 9, 10},  # May–Oct
     "baseball_mlb": {3, 4, 5, 6, 7, 8, 9, 10},  # Mar–Oct
+    "icehockey_nhl": {10, 11, 12, 1, 2, 3, 4, 5, 6},  # Oct–Jun
+    "soccer_epl": {8, 9, 10, 11, 12, 1, 2, 3, 4, 5},  # Aug–May
+    "soccer_mls": {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},  # Feb–Dec
 }
 
 
