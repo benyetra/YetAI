@@ -297,28 +297,6 @@ class CacheService:
         )
         await self.set(key, data, expire_seconds)
 
-    async def get_scores(
-        self, sport_key: str, days_from: int
-    ) -> Optional[Dict[str, Any]]:
-        """Get cached scores data"""
-        key = self._generate_cache_key(
-            "scores", sport_key=sport_key, days_from=days_from
-        )
-        return await self.get(key)
-
-    async def set_scores(
-        self,
-        sport_key: str,
-        days_from: int,
-        data: Dict[str, Any],
-        expire_seconds: int = 600,
-    ):
-        """Cache scores data (expires in 10 minutes)"""
-        key = self._generate_cache_key(
-            "scores", sport_key=sport_key, days_from=days_from
-        )
-        await self.set(key, data, expire_seconds)
-
     async def get_event_odds(
         self,
         sport_key: str,

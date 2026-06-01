@@ -1,6 +1,7 @@
 import sys
 import os
 import logging
+import time
 
 import pandas as pd
 from sqlalchemy import text
@@ -97,6 +98,49 @@ BASE_URL = "https://api.the-odds-api.com/v4/sports/baseball_mlb"
 HEADERS = {
     "Content-Type": "application/json",
 }
+
+# Per-event strikeout odds cache. The Odds API returns *every* pitcher for the
+# pitcher_strikeouts market in a single event-odds response, but the build loop
+# calls get_book_line() once per pitcher. Both starters in a game share one
+# event_id, so without memoization we spend ~2x the credits we need (twice a day,
+# all season). Cache the raw payload per event_id for a short TTL: within one ETL
+# run every pitcher lookup for the same game reuses one HTTP response, while the
+# TTL guarantees the next scheduled run pulls fresh lines.
+_STRIKEOUT_ODDS_CACHE_TTL_SECONDS = 600
+_strikeout_odds_cache: dict = {}  # event_id -> (expires_at_monotonic, payload)
+
+
+def clear_strikeout_odds_cache() -> None:
+    """Drop memoized event-odds payloads (used by tests / run boundaries)."""
+    _strikeout_odds_cache.clear()
+
+
+def _fetch_event_strikeout_odds(event_id):
+    """Return the raw pitcher_strikeouts event-odds payload, memoized per event_id."""
+    entry = _strikeout_odds_cache.get(event_id)
+    if entry is not None:
+        expires_at, payload = entry
+        if time.monotonic() < expires_at:
+            return payload
+        _strikeout_odds_cache.pop(event_id, None)
+
+    odds_url = f"{BASE_URL}/events/{event_id}/odds"
+    params = {
+        "regions": "us",
+        "oddsFormat": "american",
+        "apiKey": ODDS_API_KEY,
+        "markets": "pitcher_strikeouts",
+    }
+    resp = requests.get(odds_url, headers=HEADERS, params=params)
+    resp.raise_for_status()
+    data = resp.json()
+    _strikeout_odds_cache[event_id] = (
+        time.monotonic() + _STRIKEOUT_ODDS_CACHE_TTL_SECONDS,
+        data,
+    )
+    return data
+
+
 # ————————————————
 # PARK FACTORS (offline CI: empty map when S3/credentials unavailable)
 PARK_FACTORS_CSV = "s3://yetibets/mlb/park_factors.csv"
@@ -673,16 +717,7 @@ def get_book_line(event_id, pitcher_name):
     if not event_id or not ODDS_API_KEY:
         return 0.0, None, None
     try:
-        odds_url = f"{BASE_URL}/events/{event_id}/odds"
-        params = {
-            "regions": "us",
-            "oddsFormat": "american",
-            "apiKey": ODDS_API_KEY,
-            "markets": "pitcher_strikeouts",
-        }
-        resp = requests.get(odds_url, headers=HEADERS, params=params)
-        resp.raise_for_status()
-        data = resp.json()
+        data = _fetch_event_strikeout_odds(event_id)
 
         for bm in data.get("bookmakers", []):
             key = (bm.get("key") or bm.get("title", "")).lower()
