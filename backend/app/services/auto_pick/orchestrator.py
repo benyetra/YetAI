@@ -25,6 +25,7 @@ from app.services.auto_pick.context_builder import build_scoring_context
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
 from app.services.yetai_bets_display import game_label_for_matchup
+from app.services.yetai_bets_service_db import clamp_yetai_result
 
 log = logging.getLogger(__name__)
 
@@ -52,6 +53,17 @@ def display_matchup_title(candidate: BetCandidate) -> str:
         bet_type=bet_type,
         projection_metadata=candidate.projection_metadata,
     )
+
+
+def pending_pick_key(
+    *,
+    selection: str,
+    sport: str,
+    bet_type: BetType,
+    event_id: str,
+) -> tuple[str, str, str, str]:
+    """Stable identity for pending auto-picks (see design spec idempotency)."""
+    return (bet_type.value, sport or "", event_id or "", selection)
 
 
 def date_range_for_utc_day(now: datetime) -> DateRange:
@@ -158,8 +170,9 @@ class AutoPickOrchestrator:
         self.db.add(run)
         self.db.flush()  # populates run.id
 
+        pending_by_key = self._load_pending_auto_index()
         for p in picks:
-            self.db.add(self._build_bet(p, run.id))
+            self._upsert_pick(p, run.id, pending_by_key)
 
         self.db.commit()
         log.info("auto_pick run %s: %s picks, status=%s", run.id, len(picks), status)
@@ -190,6 +203,95 @@ class AutoPickOrchestrator:
         if n_picks == 0:
             return AutoPickRunStatus.NO_PICKS
         return AutoPickRunStatus.SUCCESS
+
+    def _candidate_pick_key(self, c: BetCandidate) -> tuple[str, str, str, str]:
+        bet_type = _MARKET_TYPE_TO_BET_TYPE.get(c.market_type, BetType.PROP)
+        return pending_pick_key(
+            selection=c.selection,
+            sport=c.league,
+            bet_type=bet_type,
+            event_id=c.event_id,
+        )
+
+    @staticmethod
+    def _bet_row_pick_key(bet: YetAIBet) -> tuple[str, str, str, str]:
+        event_id = ""
+        if isinstance(bet.prediction_factors, dict):
+            event_id = str(bet.prediction_factors.get("event_id") or "")
+        return pending_pick_key(
+            selection=bet.selection or "",
+            sport=bet.sport or "",
+            bet_type=bet.bet_type or BetType.PROP,
+            event_id=event_id,
+        )
+
+    def _load_pending_auto_index(
+        self,
+    ) -> dict[tuple[str, str, str, str], list[YetAIBet]]:
+        rows = (
+            self.db.query(YetAIBet)
+            .filter(
+                YetAIBet.status == "pending_approval",
+                YetAIBet.source == BetSource.AUTO,
+            )
+            .all()
+        )
+        index: dict[tuple[str, str, str, str], list[YetAIBet]] = {}
+        for bet in rows:
+            index.setdefault(self._bet_row_pick_key(bet), []).append(bet)
+        return index
+
+    def _upsert_pick(
+        self,
+        p: ScoredCandidate,
+        run_id: int,
+        pending_by_key: dict[tuple[str, str, str, str], list[YetAIBet]],
+    ) -> None:
+        key = self._candidate_pick_key(p.candidate)
+        existing = pending_by_key.get(key, [])
+        if existing:
+            primary = min(
+                existing,
+                key=lambda b: b.created_at or datetime.min,
+            )
+            self._apply_pick_fields(primary, p, run_id)
+            for dup in existing:
+                if dup.id != primary.id:
+                    dup.status = "rejected"
+                    dup.result = clamp_yetai_result("Superseded by newer auto-pick run")
+            log.info("auto_pick refreshed pending pick %s (key=%s)", primary.id, key)
+            return
+
+        bet = self._build_bet(p, run_id)
+        self.db.add(bet)
+        pending_by_key.setdefault(key, []).append(bet)
+
+    def _apply_pick_fields(
+        self, bet: YetAIBet, p: ScoredCandidate, run_id: int
+    ) -> None:
+        """Update an existing pending row in place (preserves id and created_at)."""
+        fresh = self._build_bet(p, run_id)
+        for field in (
+            "title",
+            "description",
+            "bet_type",
+            "selection",
+            "odds",
+            "confidence",
+            "status",
+            "source",
+            "tier_requirement",
+            "confidence_score",
+            "score_breakdown",
+            "reasoning",
+            "auto_pick_run_id",
+            "sport",
+            "home_team",
+            "away_team",
+            "commence_time",
+            "prediction_factors",
+        ):
+            setattr(bet, field, getattr(fresh, field))
 
     def _build_bet(self, p: ScoredCandidate, run_id: int) -> YetAIBet:
         """

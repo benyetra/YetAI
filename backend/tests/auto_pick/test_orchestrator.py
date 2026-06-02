@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from app.models.database_models import AutoPickRunStatus
 from app.services.auto_pick.candidate import BetCandidate, MarketType
+from app.models.database_models import BetSource, BetType, YetAIBet
 from app.services.auto_pick.orchestrator import AutoPickOrchestrator
 
 
@@ -160,6 +161,63 @@ async def test_orchestrator_result_id_matches_run():
     result = await orch.run()
 
     assert result.id == 1  # set by _make_db's flush side-effect
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_refreshes_existing_pending_pick(monkeypatch):
+    """Re-run must update the same pending row, not insert a duplicate."""
+    db = _make_db()
+    prov = AsyncMock()
+    prov.get_candidates = AsyncMock(return_value=[_strider()])
+
+    existing = YetAIBet(
+        id="existing-pick-id",
+        title="old title",
+        bet_type=BetType.PROP,
+        selection="Strider OVER 5.5 K",
+        odds=-110.0,
+        confidence=50.0,
+        status="pending_approval",
+        source=BetSource.AUTO,
+        sport="basketball_nba",
+        prediction_factors={"event_id": "e1"},
+        created_at=datetime(2026, 5, 22, 8, 0, 0),
+    )
+    duplicate = YetAIBet(
+        id="duplicate-pick-id",
+        title="old title",
+        bet_type=BetType.PROP,
+        selection="Strider OVER 5.5 K",
+        odds=-110.0,
+        confidence=50.0,
+        status="pending_approval",
+        source=BetSource.AUTO,
+        sport="basketball_nba",
+        prediction_factors={"event_id": "e1"},
+        created_at=datetime(2026, 5, 22, 9, 0, 0),
+    )
+    key = AutoPickOrchestrator(db, [], datetime.utcnow())._candidate_pick_key(
+        _strider()
+    )
+    pending_index = {key: [existing, duplicate]}
+
+    monkeypatch.setattr(
+        AutoPickOrchestrator,
+        "_load_pending_auto_index",
+        lambda self: pending_index,
+    )
+
+    orch = AutoPickOrchestrator(db=db, providers=[prov], now=datetime(2026, 5, 22, 9))
+    result = await orch.run()
+
+    assert result.pick_count == 1
+    assert existing.id == "existing-pick-id"
+    assert existing.confidence_score is not None
+    assert existing.confidence_score > 50.0
+    assert existing.auto_pick_run_id == 1
+    assert duplicate.status == "rejected"
+    # AutoPickRun + no new YetAIBet insert
+    assert db.add.call_count == 1
 
 
 @pytest.mark.asyncio
