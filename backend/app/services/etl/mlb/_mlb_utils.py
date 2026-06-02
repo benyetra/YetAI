@@ -87,6 +87,12 @@ def isGameOver(game: dict) -> str:
     return "future" if est_time > datetime.now() else "past"
 
 
+def normalize_pitch_hand(hand: str | None) -> str:
+    """Map statsapi pitch_hand ('Right'/'Left') or codes to 'R' or 'L'."""
+    token = (hand or "R").strip().upper()
+    return "R" if token.startswith("R") else "L"
+
+
 def get_todays_games():
     today = datetime.today().date().strftime("%Y-%m-%d")
     schedule = statsapi.schedule(date=today)

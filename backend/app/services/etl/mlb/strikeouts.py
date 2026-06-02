@@ -380,7 +380,10 @@ def fetch_pitcher_data():
 
                 last_5_avg_k_per_9 = get_last_5_games_k_per_9(pitcher_id)
 
-                sit_code = "vr" if pitch_hand == "R" else "vl"
+                from app.services.etl.mlb._mlb_utils import normalize_pitch_hand
+
+                pitcher_hand_code = normalize_pitch_hand(pitch_hand)
+                sit_code = "vr" if pitcher_hand_code == "R" else "vl"
                 # Use current season, fall back to prior season if no data yet
                 current_season = str(datetime.today().year)
                 opponent_stats = statsapi.get(
@@ -467,9 +470,6 @@ def fetch_pitcher_data():
                     # 2) Opponent lineup → batter_ids and lineup K% vs hand
                     opponent_team_id = game[f"{opponent_team}_id"]
                     batter_ids = projected_lineup(opponent_team_id)
-                    pitcher_hand_code = (
-                        "R" if (pitch_hand or "R").startswith("R") else "L"
-                    )
                     opp_k_rate_lineup = lineup_k_rate_vs_hand(
                         opponent_team_id, pitcher_hand_code
                     )

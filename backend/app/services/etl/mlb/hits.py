@@ -205,7 +205,8 @@ def get_career_batting_average_against_pitcher(player_id, opponent_id):
 
 
 def calculate_batting_average(player_id, pitch_hand):
-    sit_code = "vr" if pitch_hand == "R" else "vl"
+    hand_code = normalize_pitch_hand(pitch_hand)
+    sit_code = "vr" if hand_code == "R" else "vl"
     url = f"https://statsapi.mlb.com/api/v1/people/{player_id}"
 
     # Try current season splits first
@@ -260,8 +261,11 @@ def calculate_batting_average(player_id, pitch_hand):
                         if avg > 0:
                             return avg
 
-    print(
-        f"Error fetching batting average for player {player_id} against {pitch_hand} hand"
+    logger.debug(
+        "No platoon batting average for player %s vs %s hand (sitCodes=%s)",
+        player_id,
+        hand_code,
+        sit_code,
     )
     return 0.0
 
@@ -315,7 +319,7 @@ def fetch_hitters_data():
             except KeyError:
                 print(f"Error extracting pitch hand for {opponent_pitcher}")
                 pitch_hand = "Unknown"
-            opponent_pitcher_hand = pitch_hand
+            opponent_pitcher_hand = normalize_pitch_hand(pitch_hand)
             game_logs = get_game_logs(player_id)
 
             # Detect early season: no game logs from the current year
@@ -341,7 +345,11 @@ def fetch_hitters_data():
                     f"The career batting average against pitcher {pitcher_id} is: {batting_average_vs_pitcher:.3f}"
                 )
             else:
-                print("No data available for the specified player and opponent.")
+                logger.debug(
+                    "No career vs-pitcher sample for batter %s vs pitcher %s",
+                    player_id,
+                    pitcher_id,
+                )
 
             def get_combined_score(
                 hits_in_last_10_games,
