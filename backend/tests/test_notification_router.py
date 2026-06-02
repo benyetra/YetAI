@@ -29,7 +29,8 @@ import app.services.notification_router as nr
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run async notification_router coroutines from sync tests (pytest-asyncio AUTO)."""
+    return asyncio.run(coro)
 
 
 def _make_event(**overrides):
