@@ -541,8 +541,12 @@ export const sportsAPI = {
 
     try {
       const endpoint = `/api/player-props/${sportKey}/${eventId}${params.toString() ? '?' + params.toString() : ''}`;
-      const response = await enhancedApiClient.get(endpoint, authToken);
-      return response;
+      return await enhancedApiClient.getWithFallback(
+        endpoint,
+        fallbackData,
+        authToken ?? undefined,
+        true
+      );
     } catch (error) {
       console.warn('Failed to fetch player props:', error);
       return fallbackData;

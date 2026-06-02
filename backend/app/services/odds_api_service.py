@@ -10,15 +10,32 @@ This service handles all interactions with The Odds API including:
 
 import aiohttp
 import asyncio
-import time
-from typing import Dict, List, Optional, Any
-from datetime import datetime
+import contextvars
 import logging
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime
 from enum import Enum
+from typing import Any, Dict, List, Optional
+
 from fastapi import HTTPException
 
 logger = logging.getLogger(__name__)
+
+_odds_api_caller: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "odds_api_caller", default="unknown"
+)
+
+
+@contextmanager
+def odds_api_call_scope(caller: str):
+    """Tag downstream Odds API requests with a logical caller name."""
+    token = _odds_api_caller.set(caller)
+    try:
+        yield
+    finally:
+        _odds_api_caller.reset(token)
 
 
 class SportKey(str, Enum):
@@ -249,10 +266,20 @@ class OddsAPIService:
             self.daily_requests += 1
             self.monthly_requests += 1
 
+            last_cost = headers.get("x-requests-last", "?")
             logger.info(
-                f"Rate limit: {self.rate_limit_used} used, {self.rate_limit_remaining} remaining | "
-                f"Our usage: {self.daily_requests}/{self.DAILY_LIMIT} daily, "
-                f"{self.monthly_requests}/{self.MONTHLY_LIMIT} monthly"
+                "Odds API call caller=%s remaining=%s used=%s last_cost=%s",
+                _odds_api_caller.get(),
+                self.rate_limit_remaining,
+                self.rate_limit_used,
+                last_cost,
+            )
+            logger.debug(
+                "Odds API process counters: %s/%s daily, %s/%s monthly",
+                self.daily_requests,
+                self.DAILY_LIMIT,
+                self.monthly_requests,
+                self.MONTHLY_LIMIT,
             )
         except (ValueError, TypeError):
             logger.warning("Could not parse rate limit headers")

@@ -438,141 +438,124 @@ class LiveBettingServiceDB:
         markets = []
 
         try:
-            logger.info(
-                f"Starting to fetch live betting markets, ODDS_API_KEY configured: {bool(settings.ODDS_API_KEY)}"
+            from app.services.odds_api_service import odds_api_call_scope
+
+            logger.debug(
+                "Fetching live betting markets (odds key configured=%s)",
+                bool(settings.ODDS_API_KEY),
             )
-            # Get live games from The Odds API
-            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
-                # Get upcoming games that could be live
-                if sport:
-                    # If a specific sport is requested, convert string to SportKey enum
-                    sport_mapping = {
-                        "americanfootball_nfl": SportKey.AMERICANFOOTBALL_NFL,
-                        "basketball_nba": SportKey.BASKETBALL_NBA,
-                        "baseball_mlb": SportKey.BASEBALL_MLB,
-                    }
-                    sports_to_check = [
-                        sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)
-                    ]
-                else:
-                    # Only poll sports that are plausibly in season — an
-                    # out-of-season sport has no live games, so its scores call
-                    # is pure wasted Odds API spend on this public endpoint.
-                    sports_to_check = [
-                        sk
-                        for sk in (
-                            SportKey.AMERICANFOOTBALL_NFL,
-                            SportKey.BASKETBALL_NBA,
-                            SportKey.BASEBALL_MLB,
-                        )
-                        if _sport_in_season(sk.value)
-                    ]
+            with odds_api_call_scope("live_bets.markets"):
+                async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+                    if sport:
+                        sport_mapping = {
+                            "americanfootball_nfl": SportKey.AMERICANFOOTBALL_NFL,
+                            "basketball_nba": SportKey.BASKETBALL_NBA,
+                            "baseball_mlb": SportKey.BASEBALL_MLB,
+                        }
+                        sports_to_check = [
+                            sport_mapping.get(sport, SportKey.AMERICANFOOTBALL_NFL)
+                        ]
+                    else:
+                        sports_to_check = [
+                            sk
+                            for sk in (
+                                SportKey.AMERICANFOOTBALL_NFL,
+                                SportKey.BASKETBALL_NBA,
+                                SportKey.BASEBALL_MLB,
+                            )
+                            if _sport_in_season(sk.value)
+                        ]
 
-                for idx, sport_key in enumerate(sports_to_check):
-                    try:
-                        # Fetch live scores FIRST (cheap: 1 Odds API credit). Markets
-                        # are only ever created for games present in live_scores, so
-                        # when nothing is live we can skip the 3-credit odds call.
-                        logger.info(
-                            f"Attempting to fetch live scores for {sport_key.value}"
-                        )
-                        live_scores = {}
+                    for idx, sport_key in enumerate(sports_to_check):
                         try:
-                            live_scores = await self.get_real_live_scores(
-                                sport_key.value
-                            )
-                            logger.info(
-                                f"Found {len(live_scores)} games with live scores"
-                            )
-                        except Exception as score_error:
-                            logger.warning(
-                                f"Could not fetch live scores: {score_error}"
-                            )
-
-                        # No live games -> no markets would be produced from odds, so
-                        # don't spend Odds API credits fetching them.
-                        if not live_scores:
-                            logger.info(
-                                f"No live games for {sport_key.value}; "
-                                "skipping odds fetch"
-                            )
-                            if idx < len(sports_to_check) - 1:
-                                await asyncio.sleep(1.5)
-                            continue
-
-                        # Fetch odds for this sport
-                        logger.info(f"Fetching odds for sport: {sport_key.value}")
-                        odds_data = await odds_service.get_odds(
-                            sport=sport_key.value,
-                            markets=[
-                                MarketKey.H2H.value,
-                                MarketKey.SPREADS.value,
-                                MarketKey.TOTALS.value,
-                            ],
-                            regions=["us"],
-                            odds_format=OddsFormat.AMERICAN,
-                        )
-
-                        games_data = (
-                            odds_data
-                            if isinstance(odds_data, list)
-                            else odds_data.get("data", [])
-                        )
-                        logger.info(
-                            f"API returned {len(games_data)} games for {sport_key.value}"
-                        )
-
-                        # Process each game to create live markets
-                        for i, game in enumerate(games_data):
-                            logger.info(
-                                f"[{i+1}/{len(games_data)}] Checking: {game.home_team} vs {game.away_team}"
-                            )
-                            logger.info(f"  Commence time: {game.commence_time}")
-
+                            live_scores = {}
                             try:
-                                # ONLY create markets for games that are actually live (in live_scores)
-                                if game.id in live_scores:
+                                scores = await odds_service.get_scores(sport_key.value)
+                                for score in scores:
+                                    if (
+                                        not score.completed
+                                        and score.home_score is not None
+                                        and score.away_score is not None
+                                    ):
+                                        live_scores[score.id] = {
+                                            "home_score": score.home_score,
+                                            "away_score": score.away_score,
+                                            "home_team": score.home_team,
+                                            "away_team": score.away_team,
+                                            "sport": score.sport_title,
+                                            "completed": score.completed,
+                                            "last_update": score.last_update,
+                                        }
+                            except Exception as score_error:
+                                logger.warning(
+                                    "Live scores fetch failed for %s: %s",
+                                    sport_key.value,
+                                    score_error,
+                                )
+
+                            if not live_scores:
+                                logger.debug(
+                                    "No live games for %s; skipping odds fetch",
+                                    sport_key.value,
+                                )
+                                if idx < len(sports_to_check) - 1:
+                                    await asyncio.sleep(1.5)
+                                continue
+
+                            logger.debug(
+                                "Fetching odds for live sport %s (%d live games)",
+                                sport_key.value,
+                                len(live_scores),
+                            )
+                            odds_data = await odds_service.get_odds(
+                                sport=sport_key.value,
+                                markets=[
+                                    MarketKey.H2H.value,
+                                    MarketKey.SPREADS.value,
+                                    MarketKey.TOTALS.value,
+                                ],
+                                regions=["us"],
+                                odds_format=OddsFormat.AMERICAN,
+                            )
+
+                            games_data = (
+                                odds_data
+                                if isinstance(odds_data, list)
+                                else odds_data.get("data", [])
+                            )
+
+                            for game in games_data:
+                                if game.id not in live_scores:
+                                    continue
+                                try:
                                     score_data = live_scores[game.id]
-                                    logger.info(
-                                        f"  Game is LIVE with scores: {score_data['home_score']}-{score_data['away_score']}"
-                                    )
-
-                                    # Create the live market
                                     market = await self._create_simple_live_market(game)
-
-                                    # Update with actual live scores
                                     if market:
                                         market.home_score = score_data["home_score"]
                                         market.away_score = score_data["away_score"]
-
-                                        logger.info(
-                                            f"✓ Live market created: {market.home_team} vs {market.away_team} ({market.home_score}-{market.away_score})"
-                                        )
                                         markets.append(market)
-                                else:
-                                    logger.info(
-                                        f"✗ Game not in live scores (upcoming or finished)"
+                                except Exception as e:
+                                    logger.error(
+                                        "Error creating live market for %s: %s",
+                                        game.id,
+                                        e,
                                     )
-                            except Exception as e:
-                                logger.error(f"✗ Error creating market: {e}")
-                                import traceback
 
-                                logger.error(traceback.format_exc())
-                                continue
+                        except Exception as e:
+                            logger.error(
+                                "Error fetching live markets for %s: %s",
+                                sport_key,
+                                e,
+                            )
+                            continue
 
-                    except Exception as e:
-                        logger.error(f"Error fetching odds for {sport_key}: {e}")
-                        continue
-
-                    # Add delay between sports to avoid rate limiting (except after last sport)
-                    if idx < len(sports_to_check) - 1:
-                        await asyncio.sleep(1.5)  # 1.5 second delay between sports
+                        if idx < len(sports_to_check) - 1:
+                            await asyncio.sleep(1.5)
 
         except Exception as e:
             logger.error(f"Error in main try block: {e}")
 
-        logger.info(f"Total markets created from real API: {len(markets)}")
-        logger.info(f"Returning {len(markets)} live markets")
+        logger.info("Live markets: returning %d market(s)", len(markets))
         return markets
 
     def get_user_live_bets(

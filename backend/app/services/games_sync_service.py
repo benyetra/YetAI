@@ -74,18 +74,23 @@ class GamesSyncService:
 
         try:
             # Fetch games from Odds API for each sport
-            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
-                for sport_key in self.SPORTS:
-                    try:
-                        sport_stats = await self._sync_sport(odds_service, sport_key)
-                        stats["sports_synced"][sport_key] = sport_stats
-                        stats["total_games_fetched"] += sport_stats["games_fetched"]
-                        stats["total_games_created"] += sport_stats["games_created"]
-                        stats["total_games_updated"] += sport_stats["games_updated"]
-                    except Exception as e:
-                        error_msg = f"Failed to sync {sport_key}: {str(e)}"
-                        logger.error(error_msg, exc_info=True)
-                        stats["errors"].append(error_msg)
+            from app.services.odds_api_service import odds_api_call_scope
+
+            with odds_api_call_scope("games_sync.sync_all_games"):
+                async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+                    for sport_key in self.SPORTS:
+                        try:
+                            sport_stats = await self._sync_sport(
+                                odds_service, sport_key
+                            )
+                            stats["sports_synced"][sport_key] = sport_stats
+                            stats["total_games_fetched"] += sport_stats["games_fetched"]
+                            stats["total_games_created"] += sport_stats["games_created"]
+                            stats["total_games_updated"] += sport_stats["games_updated"]
+                        except Exception as e:
+                            error_msg = f"Failed to sync {sport_key}: {str(e)}"
+                            logger.error(error_msg, exc_info=True)
+                            stats["errors"].append(error_msg)
 
             # Commit all changes
             self.db.commit()

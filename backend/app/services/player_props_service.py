@@ -207,39 +207,20 @@ class PlayerPropsService:
         Returns:
             Dictionary with event info and organized player props by market
         """
-        # If markets not specified, discover what's actually available for this event
+        # Default to a short fallback list — do NOT call the per-event /markets
+        # discovery endpoint (extra billed request on every props load).
         if not markets:
-            logger.info(f"Discovering available markets for {sport} event {event_id}")
-            markets_to_fetch = await self.get_available_markets_for_event(
-                sport, event_id
-            )
-
+            markets_to_fetch = FALLBACK_PLAYER_PROP_MARKETS.get(sport, [])
             if not markets_to_fetch:
-                # Discovery can come back empty when the event-level markets
-                # endpoint isn't available on this Odds API plan, or when
-                # FanDuel hasn't posted props yet for the event. Fall back to
-                # a SHORT list of high-value markets — each market in the
-                # fetch costs Odds API credits, so we cap the blast radius
-                # instead of asking for all 15-18 supported markets.
-                fallback = FALLBACK_PLAYER_PROP_MARKETS.get(sport, [])
-                if fallback:
-                    logger.info(
-                        "Markets discovery empty for %s — falling back to "
-                        "%d high-value markets.",
-                        event_id,
-                        len(fallback),
-                    )
-                    markets_to_fetch = fallback
-                else:
-                    logger.warning(
-                        f"No player prop markets available for event {event_id}"
-                    )
-                    return {
-                        "event_id": event_id,
-                        "sport_key": sport,
-                        "markets": {},
-                        "error": "No player prop markets available for this event",
-                    }
+                logger.warning(
+                    "No fallback player prop markets configured for sport %s", sport
+                )
+                return {
+                    "event_id": event_id,
+                    "sport_key": sport,
+                    "markets": {},
+                    "error": "No player prop markets available for this event",
+                }
         else:
             markets_to_fetch = markets
 

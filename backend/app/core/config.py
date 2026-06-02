@@ -162,6 +162,13 @@ class Settings(BaseSettings):
         }
 
     @model_validator(mode="after")
+    def disable_debug_in_production(self) -> "Settings":
+        """Production must not run SQL echo / verbose dev defaults (Railway log floods)."""
+        if self.ENVIRONMENT == "production":
+            object.__setattr__(self, "DEBUG", False)
+        return self
+
+    @model_validator(mode="after")
     def prefer_public_database_url(self) -> "Settings":
         """Local dev: use DATABASE_PUBLIC_URL when DATABASE_URL is Railway-internal."""
         public = os.environ.get("DATABASE_PUBLIC_URL", "").strip()

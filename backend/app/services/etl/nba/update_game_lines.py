@@ -61,14 +61,10 @@ def _odds_get(path: str, params: dict) -> list | dict | None:
         return None
 
 
-def _fetch_events() -> list[dict]:
-    data = _odds_get(f"{SPORT}/events", {"dateFormat": "iso"})
-    return data if isinstance(data, list) else []
-
-
-def _fetch_odds_for(event_id: str) -> dict | None:
-    return _odds_get(
-        f"{SPORT}/events/{event_id}/odds",
+def _fetch_bulk_odds() -> list[dict]:
+    """One Odds API request for all NBA h2h/spreads/totals (replaces N per-event calls)."""
+    data = _odds_get(
+        f"{SPORT}/odds",
         {
             "regions": "us",
             "markets": "spreads,totals,h2h",
@@ -76,6 +72,7 @@ def _fetch_odds_for(event_id: str) -> dict | None:
             "bookmakers": ",".join(BOOKMAKER_PRIORITY),
         },
     )
+    return data if isinstance(data, list) else []
 
 
 def _parse_odds(odds_data: dict | None, home_team: str, away_team: str) -> dict:
@@ -128,7 +125,7 @@ def _parse_odds(odds_data: dict | None, home_team: str, away_team: str) -> dict:
 
 
 def run() -> dict:
-    events = _fetch_events()
+    events = _fetch_bulk_odds()
     if not events:
         return {
             "status": "ok",
@@ -166,7 +163,7 @@ def run() -> dict:
                 home_norm = _normalize(home_team)
                 away_norm = _normalize(away_team)
 
-                odds = _parse_odds(_fetch_odds_for(event_id), home_team, away_team)
+                odds = _parse_odds(game, home_team, away_team)
 
                 existing = (
                     db.query(NBAGameLines)

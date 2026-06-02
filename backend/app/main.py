@@ -5862,10 +5862,16 @@ def _odds_fetch_failure_payload(
 
 _ODDS_CACHE_TTL_FRESH = 1800  # 30 minutes
 _ODDS_CACHE_TTL_LKG = 86400  # 24 hours (stale fallback)
+_LIVE_MARKETS_CACHE_TTL = (
+    1800  # align with odds cache — 5 min caused ~3 credits×3 sports×12/hr
+)
+_PLAYER_PROPS_CACHE_TTL = 1800
 _ODDS_QUOTA_SAFETY_THRESHOLD = 50  # stop calling API when fewer than N credits left
 _ODDS_QUOTA_KEY = "odds:quota"
 _ODDS_QUOTA_TTL = 7 * 24 * 3600  # 1 week — quota state survives restarts
 _POPULAR_ODDS_BUNDLE_KEY = "odds:popular:bundle"
+_POPULAR_ODDS_BUNDLE_LOCK_KEY = "odds:popular:bundle:refresh_lock"
+_popular_odds_bundle_lock = asyncio.Lock()
 
 
 def _odds_cache_key_fresh(sport_key: str) -> str:
@@ -5971,41 +5977,42 @@ async def _get_odds_with_cache(
         }
 
     try:
-        from app.services.odds_api_service import OddsAPIService
+        from app.services.odds_api_service import OddsAPIService, odds_api_call_scope
 
-        async with OddsAPIService(settings.ODDS_API_KEY) as service:
-            games = await service.get_odds(sport_key)
-            try:
-                await _odds_quota_update(
-                    service.rate_limit_remaining, service.rate_limit_used
+        with odds_api_call_scope(f"api.odds.{sport_key}"):
+            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+                games = await service.get_odds(sport_key)
+                try:
+                    await _odds_quota_update(
+                        service.rate_limit_remaining, service.rate_limit_used
+                    )
+                except Exception as quota_err:
+                    logger.warning(f"Quota tracking update failed: {quota_err}")
+                try:
+                    stored_count = await _store_games_in_database(games, sport_key)
+                    logger.info(
+                        f"{sport_label}: Fetched {len(games)} games, stored {stored_count} in database"
+                    )
+                except Exception as db_err:
+                    logger.warning(f"DB store failed for {sport_label}: {db_err}")
+
+                serialized = _serialize_games(games)
+                payload_to_cache = {
+                    "games": serialized,
+                    "cached_at": datetime.now(timezone.utc).isoformat(),
+                }
+                await cache_service.set(fresh_key, payload_to_cache, expire_seconds=ttl)
+                await cache_service.set(
+                    lkg_key, payload_to_cache, expire_seconds=_ODDS_CACHE_TTL_LKG
                 )
-            except Exception as quota_err:
-                logger.warning(f"Quota tracking update failed: {quota_err}")
-            try:
-                stored_count = await _store_games_in_database(games, sport_key)
-                logger.info(
-                    f"{sport_label}: Fetched {len(games)} games, stored {stored_count} in database"
-                )
-            except Exception as db_err:
-                logger.warning(f"DB store failed for {sport_label}: {db_err}")
 
-            serialized = _serialize_games(games)
-            payload_to_cache = {
-                "games": serialized,
-                "cached_at": datetime.now(timezone.utc).isoformat(),
-            }
-            await cache_service.set(fresh_key, payload_to_cache, expire_seconds=ttl)
-            await cache_service.set(
-                lkg_key, payload_to_cache, expire_seconds=_ODDS_CACHE_TTL_LKG
-            )
-
-            return {
-                "status": "success",
-                odds_key: serialized,
-                "cached": False,
-                "stale": False,
-                "cached_at": payload_to_cache["cached_at"],
-            }
+                return {
+                    "status": "success",
+                    odds_key: serialized,
+                    "cached": False,
+                    "stale": False,
+                    "cached_at": payload_to_cache["cached_at"],
+                }
     except Exception as e:
         logger.error(f"Error fetching {sport_label} odds: {e}")
         lkg = await cache_service.get(lkg_key)
@@ -6164,48 +6171,85 @@ async def get_popular_sports_odds():
             "cached_at": cached_bundle.get("cached_at"),
         }
 
-    sports = [
-        ("americanfootball_nfl", "NFL"),
-        ("americanfootball_ncaaf", "NCAAF"),
-        ("basketball_nba", "NBA"),
-        ("basketball_wnba", "WNBA"),
-        ("baseball_mlb", "MLB"),
-        ("icehockey_nhl", "NHL"),
-        ("soccer_epl", "EPL"),
-        ("soccer_mls", "MLS"),
-    ]
+    async with _popular_odds_bundle_lock:
+        cached_bundle = await cache_service.get(_POPULAR_ODDS_BUNDLE_KEY)
+        if cached_bundle and "games" in cached_bundle:
+            return {
+                "status": "success",
+                "games": cached_bundle["games"],
+                "count": len(cached_bundle["games"]),
+                "cached": True,
+                "stale": bool(cached_bundle.get("stale")),
+                "cached_at": cached_bundle.get("cached_at"),
+            }
 
-    all_games = []
-    any_stale = False
-    for sport_key, sport_label in sports:
-        if not _sport_in_season(sport_key):
-            continue
-        result = await _get_odds_with_cache(sport_key, sport_label)
-        if result.get("status") == "success":
-            all_games.extend(result.get("games", []))
-            if result.get("stale"):
-                any_stale = True
+        lock_acquired = await cache_service.set_nx(
+            _POPULAR_ODDS_BUNDLE_LOCK_KEY,
+            {"at": datetime.now(timezone.utc).isoformat()},
+            expire_seconds=120,
+        )
+        if not lock_acquired:
+            for _ in range(8):
+                await asyncio.sleep(0.5)
+                cached_bundle = await cache_service.get(_POPULAR_ODDS_BUNDLE_KEY)
+                if cached_bundle and "games" in cached_bundle:
+                    return {
+                        "status": "success",
+                        "games": cached_bundle["games"],
+                        "count": len(cached_bundle["games"]),
+                        "cached": True,
+                        "stale": bool(cached_bundle.get("stale")),
+                        "cached_at": cached_bundle.get("cached_at"),
+                    }
 
-    cached_at = datetime.now(timezone.utc).isoformat()
-    bundle_payload = {
-        "games": all_games,
-        "stale": any_stale,
-        "cached_at": cached_at,
-    }
-    await cache_service.set(
-        _POPULAR_ODDS_BUNDLE_KEY,
-        bundle_payload,
-        expire_seconds=_ODDS_CACHE_TTL_FRESH,
-    )
+        sports = [
+            ("americanfootball_nfl", "NFL"),
+            ("americanfootball_ncaaf", "NCAAF"),
+            ("basketball_nba", "NBA"),
+            ("basketball_wnba", "WNBA"),
+            ("baseball_mlb", "MLB"),
+            ("icehockey_nhl", "NHL"),
+            ("soccer_epl", "EPL"),
+            ("soccer_mls", "MLS"),
+        ]
 
-    return {
-        "status": "success",
-        "games": all_games,
-        "count": len(all_games),
-        "cached": False,
-        "stale": any_stale,
-        "cached_at": cached_at,
-    }
+        all_games = []
+        any_stale = False
+        from app.services.odds_api_service import odds_api_call_scope
+
+        try:
+            with odds_api_call_scope("api.odds.popular.bundle"):
+                for sport_key, sport_label in sports:
+                    if not _sport_in_season(sport_key):
+                        continue
+                    result = await _get_odds_with_cache(sport_key, sport_label)
+                    if result.get("status") == "success":
+                        all_games.extend(result.get("games", []))
+                        if result.get("stale"):
+                            any_stale = True
+
+            cached_at = datetime.now(timezone.utc).isoformat()
+            bundle_payload = {
+                "games": all_games,
+                "stale": any_stale,
+                "cached_at": cached_at,
+            }
+            await cache_service.set(
+                _POPULAR_ODDS_BUNDLE_KEY,
+                bundle_payload,
+                expire_seconds=_ODDS_CACHE_TTL_FRESH,
+            )
+
+            return {
+                "status": "success",
+                "games": all_games,
+                "count": len(all_games),
+                "cached": False,
+                "stale": any_stale,
+                "cached_at": cached_at,
+            }
+        finally:
+            await cache_service.delete(_POPULAR_ODDS_BUNDLE_LOCK_KEY)
 
 
 # === PLAYER PROPS ENDPOINTS ===
@@ -6255,32 +6299,33 @@ async def get_player_props(
         return {"status": "success", "data": cached, "cached": True}
 
     try:
-        from app.services.odds_api_service import OddsAPIService
+        from app.services.odds_api_service import (
+            OddsAPIService,
+            odds_api_call_scope,
+        )
         from app.services.player_props_service import PlayerPropsService
 
-        async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
-            props_service = PlayerPropsService(odds_service)
+        with odds_api_call_scope(f"api.player_props.{sport}"):
+            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+                props_service = PlayerPropsService(odds_service)
+                markets_list = markets.split(",") if markets else None
+                props_data = await props_service.get_player_props_for_event(
+                    sport=sport,
+                    event_id=event_id,
+                    markets=markets_list,
+                )
 
-            # Parse markets if provided
-            markets_list = markets.split(",") if markets else None
+        if "error" in props_data:
+            raise HTTPException(status_code=404, detail=props_data["error"])
 
-            props_data = await props_service.get_player_props_for_event(
-                sport=sport,
-                event_id=event_id,
-                markets=markets_list,
-            )
+        await cache_service.set(
+            cache_key, props_data, expire_seconds=_PLAYER_PROPS_CACHE_TTL
+        )
 
-            if "error" in props_data:
-                raise HTTPException(status_code=404, detail=props_data["error"])
-
-            # Player props move slowly pre-game; 5-min cache keeps the UI
-            # responsive without re-billing Odds API on every page render.
-            await cache_service.set(cache_key, props_data, expire_seconds=300)
-
-            return {
-                "status": "success",
-                "data": props_data,
-            }
+        return {
+            "status": "success",
+            "data": props_data,
+        }
 
     except HTTPException:
         raise
@@ -6858,11 +6903,9 @@ async def options_live_markets():
 async def get_live_betting_markets(sport: Optional[str] = None):
     """Get available live betting markets with real sports data (public endpoint).
 
-    Cached for 5 minutes — this endpoint hits the Odds API (1 scores credit per
-    in-season sport, plus odds only when games are actually live) on every
-    uncached call. Without a generous cache, any polling client can rip through
-    the daily credit budget very fast. A 5-minute TTL caps worst-case polling at
-    ~12 refills/hour while live scores stay fresh enough for an in-play UI.
+    Cached 30 minutes — each uncached call costs ~1 Odds API credit per in-season
+    sport for live scores (odds only when games are actually live). A 5-minute
+    TTL was burning ~3 sports × 12/hour ≈ 36 credits/hour with zero live games.
     """
     from app.services.cache_service import cache_service
 
@@ -6874,7 +6917,9 @@ async def get_live_betting_markets(sport: Optional[str] = None):
     try:
         markets = await live_betting_service.get_live_betting_markets(sport)
         response = {"status": "success", "count": len(markets), "markets": markets}
-        await cache_service.set(cache_key, response, expire_seconds=300)
+        await cache_service.set(
+            cache_key, response, expire_seconds=_LIVE_MARKETS_CACHE_TTL
+        )
         return response
 
     except Exception as e:

@@ -73,30 +73,10 @@ export default function ParlaysPage() {
   const fetchAvailableGames = async () => {
     setGamesLoading(true);
     try {
-      // Fetch from major sports endpoints to get diverse games
-      const majorSports = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'icehockey_nhl'];
-      const allGames = [];
-      
-      // Use Promise.allSettled to get results from all sports, even if some fail
-      const results = await Promise.allSettled(
-        majorSports.map(sport => sportsAPI.getOdds(sport))
-      );
-      
-      results.forEach((result, index) => {
-        if (result.status === 'fulfilled' && result.value.status === 'success' && result.value.games) {
-          allGames.push(...result.value.games);
-        } else {
-          console.warn(`Failed to fetch games for ${majorSports[index]}:`, result.status === 'rejected' ? result.reason : 'No games found');
-        }
-      });
-      
-      if (allGames.length === 0) {
-        // Fallback to popular odds if no games found from individual sports
-        console.log('No games found from individual sports, falling back to popular odds');
-        const fallbackResult = await sportsAPI.getPopularOdds();
-        if (fallbackResult.status === 'success' && fallbackResult.games) {
-          allGames.push(...fallbackResult.games);
-        }
+      const allGames: Array<Record<string, unknown>> = [];
+      const popularResult = await sportsAPI.getPopularOdds();
+      if (popularResult.status === 'success' && popularResult.games) {
+        allGames.push(...popularResult.games);
       }
       
       const transformedGames = transformApiGamesToParlayFormat(allGames);

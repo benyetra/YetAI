@@ -221,6 +221,30 @@ class CacheService:
         except Exception as e:
             logger.error(f"Cache set error for key {key}: {e}")
 
+    async def set_nx(
+        self, key: str, data: Dict[str, Any], expire_seconds: int = 60
+    ) -> bool:
+        """Set key only if absent (best-effort distributed lock). Returns True if set."""
+        try:
+            serialized = json.dumps(data, default=str)
+            if self._redis_available and await self._test_redis_connection():
+                try:
+                    return bool(
+                        await self._redis_client.set(
+                            key, serialized, ex=expire_seconds, nx=True
+                        )
+                    )
+                except Exception as e:
+                    logger.warning(f"Redis set_nx failed: {e}")
+            existing = await self._memory_cache.get(key)
+            if existing is not None:
+                return False
+            await self._memory_cache.set(key, serialized, expire_seconds)
+            return True
+        except Exception as e:
+            logger.error(f"Cache set_nx error for key {key}: {e}")
+            return False
+
     async def delete(self, key: str):
         """Delete cached data"""
         try:
