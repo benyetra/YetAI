@@ -12,7 +12,6 @@ import {
   ChevronRight,
   BarChart3,
   Users,
-  Activity,
   Bell,
   LogOut,
   User,
@@ -43,7 +42,6 @@ const mainNavigation: NavItem[] = [
   { name: 'YetAI Bets', href: '/predictions', icon: Brain, badge: 'AI', pillClass: 'pill-ai' },
   { name: 'Stat Projections', href: '/predictions/stats', icon: LineChart, requiresAuth: true },
   { name: 'Place Bet', href: '/bet', icon: Target, requiresAuth: true },
-  { name: 'Live Betting', href: '/live-betting', icon: Activity, requiresAuth: true, badge: 'LIVE', pillClass: 'pill-live' },
 ];
 
 const toolsNavigation: NavItem[] = [
@@ -59,7 +57,6 @@ const ROUTE_LABELS: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/predictions': 'YetAI Bets',
   '/bet': 'Place Bet',
-  '/live-betting': 'Live',
   '/parlays': 'Parlays',
   '/fantasy': 'Fantasy',
   '/bets': 'My Bets',
@@ -400,7 +397,7 @@ export function MobileBottomNav() {
   const mobileNav = [
     { name: 'Home', href: '/dashboard', icon: Home },
     { name: 'AI', href: '/predictions', icon: Brain },
-    { name: 'Live', href: '/live-betting', icon: Activity },
+    { name: 'Bets', href: '/bets', icon: History },
     { name: 'Bet', href: '/bet', icon: Target },
     { name: 'More', href: '/profile', icon: Menu },
   ];
@@ -425,7 +422,7 @@ export function MobileBottomNav() {
           const needsAuth =
             item.href === '/bet' ||
             item.href === '/dashboard' ||
-            item.href === '/live-betting' ||
+            item.href === '/bets' ||
             item.href === '/profile';
 
           return (

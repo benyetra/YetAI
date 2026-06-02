@@ -1,9 +1,7 @@
 """
 Celery application + Beat schedule for YetAI background workers.
 
-Two task groups:
-- live_pollers (Development-9gk): poll sportsbook/league feeds every N seconds,
-  surface prop events to alerting + user notifications.
+Task groups:
 - etl_pipeline (Development-u9t): nightly run of the prediction-generation
   pipeline (ports YetiBets's nba_update_runner.py + sibling sport orchestrators).
 
@@ -23,7 +21,6 @@ celery_app = Celery(
     broker=_broker_url,
     backend=_broker_url,
     include=[
-        "app.tasks.live_pollers",
         "app.tasks.etl_pipeline",
         "app.tasks.games_sync",
         "app.tasks.health",
@@ -52,21 +49,6 @@ celery_app.conf.update(
 celery_app.conf.beat_scheduler = "app.core.db_scheduler.DatabaseScheduler"
 
 celery_app.conf.beat_schedule = {
-    # === Live pollers (9gk) — fire frequently during games ===
-    "mlb-live-poll-every-20s": {
-        "task": "app.tasks.live_pollers.poll_mlb_live",
-        "schedule": 20.0,
-        "options": {"expires": 25},
-    },
-    "nhl-live-poll-every-20s": {
-        "task": "app.tasks.live_pollers.poll_nhl_live",
-        "schedule": 20.0,
-        "options": {"expires": 25},
-    },
-    "refresh-prop-watchlist-every-5m": {
-        "task": "app.tasks.live_pollers.refresh_prop_watchlist",
-        "schedule": 300.0,
-    },
     # Popular-games DB cache (Odds API + ESPN broadcast metadata).
     # One Odds API request per sport per run (4 sports). Cap at 3 runs/day
     # to stay within Odds API quota goals.

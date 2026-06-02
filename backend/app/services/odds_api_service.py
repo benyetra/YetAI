@@ -74,6 +74,29 @@ class OddsFormat(str, Enum):
     AMERICAN = "american"
 
 
+# Rough in-season month windows (UTC) per sport. Used to skip Odds API calls for
+# sports that are clearly out of season. Unknown sports default to in-season.
+_SPORT_SEASON_MONTHS = {
+    "americanfootball_nfl": {9, 10, 11, 12, 1, 2},
+    "americanfootball_ncaaf": {8, 9, 10, 11, 12, 1},
+    "basketball_nba": {10, 11, 12, 1, 2, 3, 4, 5, 6},
+    "basketball_wnba": {5, 6, 7, 8, 9, 10},
+    "baseball_mlb": {3, 4, 5, 6, 7, 8, 9, 10},
+    "icehockey_nhl": {10, 11, 12, 1, 2, 3, 4, 5, 6},
+    "soccer_epl": {8, 9, 10, 11, 12, 1, 2, 3, 4, 5},
+    "soccer_mls": {2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12},
+}
+
+
+def sport_in_season(sport_key: str, *, month: Optional[int] = None) -> bool:
+    """Return True when ``sport_key`` is plausibly in season this month."""
+    months = _SPORT_SEASON_MONTHS.get(sport_key)
+    if not months:
+        return True
+    current_month = month if month is not None else datetime.utcnow().month
+    return current_month in months
+
+
 @dataclass
 class Bookmaker:
     """Represents a bookmaker and their odds"""

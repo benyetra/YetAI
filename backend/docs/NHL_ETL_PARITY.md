@@ -73,7 +73,6 @@ PYTHONPATH=. python3 scripts/smoke_import_nhl_etl.py
 
 - `confirm_starters.py` — pre-game starter confirmation (wired in `daily_predictions.py`)
 - `collect_available_data.py` backfill CLI
-- `poll_nhl_live` — still noop in `live_pollers.py`
 
 ## Season
 

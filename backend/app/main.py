@@ -38,12 +38,6 @@ from sqlalchemy.orm import Session
 # Import unified bet service
 from app.services.simple_unified_bet_service import simple_unified_bet_service
 
-# Import live betting service
-from app.services.live_betting_service_db import LiveBettingServiceDB
-
-# Initialize service instances
-live_betting_service = LiveBettingServiceDB()
-
 # Import bet scheduler service
 from app.services.bet_scheduler_service import (
     bet_scheduler,
@@ -55,8 +49,6 @@ from app.services.unified_bet_verification_service import (
 )
 from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
-# Import live betting models
-from app.models.live_bet_models import PlaceLiveBetRequest, LiveBetResponse
 from app.models.bet_models import CreateYetAIBetRequest, CreateParlayBetRequest
 
 # Configure logging
@@ -5862,9 +5854,6 @@ def _odds_fetch_failure_payload(
 
 _ODDS_CACHE_TTL_FRESH = 1800  # 30 minutes
 _ODDS_CACHE_TTL_LKG = 86400  # 24 hours (stale fallback)
-_LIVE_MARKETS_CACHE_TTL = (
-    1800  # align with odds cache — 5 min caused ~3 credits×3 sports×12/hr
-)
 _PLAYER_PROPS_CACHE_TTL = 1800
 _ODDS_QUOTA_SAFETY_THRESHOLD = 50  # stop calling API when fewer than N credits left
 _ODDS_QUOTA_KEY = "odds:quota"
@@ -6149,11 +6138,11 @@ async def get_popular_sports_odds():
     """Get odds for in-season popular sports via a shared bundle cache.
 
     Serves the entire multi-sport payload from one cache key so polling clients
-    (e.g. LiveBettingDashboard every 30s) cannot trigger up to 8 per-sport Odds
-    API calls on each TTL expiry. Off-season sports are skipped entirely.
+    cannot trigger up to 8 per-sport Odds API calls on each TTL expiry.
+    Off-season sports are skipped entirely.
     """
     from app.services.cache_service import cache_service
-    from app.services.live_betting_service_db import _sport_in_season
+    from app.services.odds_api_service import sport_in_season
 
     if not settings.ODDS_API_KEY:
         payload = _odds_not_configured_payload("odds data")
@@ -6220,7 +6209,7 @@ async def get_popular_sports_odds():
         try:
             with odds_api_call_scope("api.odds.popular.bundle"):
                 for sport_key, sport_label in sports:
-                    if not _sport_in_season(sport_key):
+                    if not sport_in_season(sport_key):
                         continue
                     result = await _get_odds_with_cache(sport_key, sport_label)
                     if result.get("status") == "success":
@@ -6892,102 +6881,6 @@ async def get_profile_status(current_user: dict = Depends(get_current_user)):
     }
 
 
-# Live betting endpoints
-@app.options("/api/live-bets/markets")
-async def options_live_markets():
-    """Handle CORS preflight for live markets"""
-    return {}
-
-
-@app.get("/api/live-bets/markets")
-async def get_live_betting_markets(sport: Optional[str] = None):
-    """Get available live betting markets with real sports data (public endpoint).
-
-    Cached 30 minutes — each uncached call costs ~1 Odds API credit per in-season
-    sport for live scores (odds only when games are actually live). A 5-minute
-    TTL was burning ~3 sports × 12/hour ≈ 36 credits/hour with zero live games.
-    """
-    from app.services.cache_service import cache_service
-
-    cache_key = f"live_markets:{sport or 'all'}"
-    cached = await cache_service.get(cache_key)
-    if cached:
-        return cached
-
-    try:
-        markets = await live_betting_service.get_live_betting_markets(sport)
-        response = {"status": "success", "count": len(markets), "markets": markets}
-        await cache_service.set(
-            cache_key, response, expire_seconds=_LIVE_MARKETS_CACHE_TTL
-        )
-        return response
-
-    except Exception as e:
-        logger.error(f"Error getting live markets: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get live markets")
-
-
-@app.options("/api/live-bets/active")
-async def options_active_live_bets():
-    """Handle CORS preflight for active live bets"""
-    return {}
-
-
-@app.get("/api/live-bets/active")
-async def get_active_live_bets(current_user: dict = Depends(get_current_user)):
-    """Get active live bets for the current user"""
-    if is_service_available("bet_service"):
-        try:
-            bet_service = get_service("bet_service")
-            active_bets = await bet_service.get_active_live_bets(
-                current_user.get("id") or current_user.get("user_id")
-            )
-            return {"status": "success", "active_bets": active_bets}
-        except Exception as e:
-            logger.error(f"Error fetching active live bets: {e}")
-            return {"status": "error", "error": str(e), "active_bets": []}
-
-    return {
-        "status": "error",
-        "error": "Bet service is currently unavailable",
-        "active_bets": [],
-    }
-
-
-@app.options("/api/live-bets/place")
-async def options_place_live_bet():
-    """Handle CORS preflight for live bet placement"""
-    return {}
-
-
-@app.post("/api/live-bets/place")
-async def place_live_bet(
-    bet_request: PlaceLiveBetRequest, current_user: dict = Depends(get_current_user)
-):
-    """Place a live bet during active game"""
-    try:
-        result = await simple_unified_bet_service.place_live_bet(
-            user_id=current_user.get("id") or current_user.get("user_id"),
-            live_bet_data=bet_request,
-        )
-
-        if result.get("success"):
-            return {
-                "status": "success",
-                "bet": result.get("bet"),
-                "message": result.get("message", "Live bet placed successfully"),
-            }
-        else:
-            return {
-                "status": "error",
-                "error": result.get("error", "Failed to place live bet"),
-            }
-
-    except Exception as e:
-        logger.error(f"Error placing live bet: {e}")
-        raise HTTPException(status_code=500, detail="Failed to place live bet")
-
-
 # Sports data endpoints
 @app.get("/api/games/nfl")
 async def get_nfl_games():
@@ -7424,10 +7317,6 @@ async def endpoint_health_check():
         "Profile & Status": {
             "endpoints": ["/api/profile/sports", "/api/profile/status"],
             "operational": is_service_available("auth_service"),
-        },
-        "Live Betting": {
-            "endpoints": ["/api/live-bets/markets", "/api/live-bets/active"],
-            "operational": is_service_available("bet_service"),
         },
         "AI Chat": {
             "endpoints": ["/api/chat/message", "/api/chat/suggestions"],

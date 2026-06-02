@@ -1,6 +1,20 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  async redirects() {
+    return [
+      {
+        source: "/live-betting",
+        destination: "/bets",
+        permanent: true,
+      },
+      {
+        source: "/live-betting/:path*",
+        destination: "/bets",
+        permanent: true,
+      },
+    ];
+  },
   // Temporarily disable TypeScript and ESLint checking during build
   typescript: {
     ignoreBuildErrors: true,

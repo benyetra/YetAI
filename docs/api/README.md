@@ -69,7 +69,7 @@ Extension fields:
 | Tag | Domain |
 |-----|--------|
 | `auth` | JWT, OAuth, profile |
-| `bets` | YetAI picks, user bets, live betting |
+| `bets` | YetAI picks, user bets, verification |
 | `predictions` | MLB/NFL/NBA/NHL/WNBA ML tables |
 | `fantasy` | Sleeper connect, leagues, recommendations |
 | `fantasy-analytics` | Historical player analytics (`/api/v1/fantasy/analytics/*`) |

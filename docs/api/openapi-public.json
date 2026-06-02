@@ -1271,7 +1271,7 @@
           "predictions"
         ],
         "summary": "Wnba Predictions",
-        "description": "WNBA: totals, spread/win-prob, and player props.",
+        "description": "WNBA: totals, spread/win-prob, and player props.\n\nSpread and totals rows include final scores and ml/spread/total grading when\npred_wnba_*_actuals exist for the requested date (same pattern as MLB games).",
         "operationId": "wnba_predictions_api_v1_predictions_wnba_get",
         "security": [
           {
@@ -3395,16 +3395,70 @@
       }
     },
     "/api/user/performance": {
-      "get": {
-        "summary": "Get User Performance",
-        "description": "Get user performance metrics based on real bet data",
-        "operationId": "get_user_performance_api_user_performance_get",
+      "options": {
+        "summary": "Options User Performance",
+        "description": "Handle CORS preflight for user performance endpoint",
+        "operationId": "options_user_performance_api_user_performance_options",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "users"
+        ],
+        "x-audience": "public"
+      },
+      "get": {
+        "summary": "Get User Performance",
+        "description": "Get user performance metrics based on real bet data.\n\nWhen ``days`` is omitted, returns all-time stats (dashboard). When set,\nmetrics and breakdowns are scoped to bets placed in that window.",
+        "operationId": "get_user_performance_api_user_performance_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 365,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
               }
             }
           },
@@ -3444,30 +3498,6 @@
                 "example": {
                   "detail": "Service is currently unavailable"
                 }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "tags": [
-          "users"
-        ],
-        "x-audience": "public"
-      },
-      "options": {
-        "summary": "Options User Performance",
-        "description": "Handle CORS preflight for user performance endpoint",
-        "operationId": "options_user_performance_api_user_performance_options",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
               }
             }
           }
@@ -8354,7 +8384,7 @@
     "/api/odds/popular": {
       "get": {
         "summary": "Get Popular Sports Odds",
-        "description": "Get odds for popular sports via shared per-sport cache.\n\nEach sport is fetched through _get_odds_with_cache, so cache hits are\nshared with the per-sport endpoints (one cache fill serves both).",
+        "description": "Get odds for in-season popular sports via a shared bundle cache.\n\nServes the entire multi-sport payload from one cache key so polling clients\ncannot trigger up to 8 per-sport Odds API calls on each TTL expiry.\nOff-season sports are skipped entirely.",
         "operationId": "get_popular_sports_odds_api_odds_popular_get",
         "responses": {
           "200": {
@@ -9332,306 +9362,6 @@
         },
         "tags": [
           "platform"
-        ],
-        "x-audience": "public"
-      }
-    },
-    "/api/live-bets/markets": {
-      "options": {
-        "summary": "Options Live Markets",
-        "description": "Handle CORS preflight for live markets",
-        "operationId": "options_live_markets_api_live_bets_markets_options",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "tags": [
-          "bets"
-        ],
-        "x-audience": "public"
-      },
-      "get": {
-        "summary": "Get Live Betting Markets",
-        "description": "Get available live betting markets with real sports data (public endpoint).\n\nCached for 60 seconds \u2014 this endpoint hits the Odds API for 4 sports\non every uncached call. Without a cache, any polling client can rip\nthrough the daily credit budget very fast.",
-        "operationId": "get_live_betting_markets_api_live_bets_markets_get",
-        "parameters": [
-          {
-            "name": "sport",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Sport"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid JWT",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Invalid or expired token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden \u2014 insufficient role or subscription tier",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Admin privileges required"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Required backend service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Service is currently unavailable"
-                }
-              }
-            }
-          }
-        },
-        "tags": [
-          "bets"
-        ],
-        "x-audience": "public",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ]
-      }
-    },
-    "/api/live-bets/active": {
-      "get": {
-        "summary": "Get Active Live Bets",
-        "description": "Get active live bets for the current user",
-        "operationId": "get_active_live_bets_api_live_bets_active_get",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid JWT",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Invalid or expired token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden \u2014 insufficient role or subscription tier",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Admin privileges required"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Required backend service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Service is currently unavailable"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "tags": [
-          "bets"
-        ],
-        "x-audience": "public"
-      },
-      "options": {
-        "summary": "Options Active Live Bets",
-        "description": "Handle CORS preflight for active live bets",
-        "operationId": "options_active_live_bets_api_live_bets_active_options",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "tags": [
-          "bets"
-        ],
-        "x-audience": "public"
-      }
-    },
-    "/api/live-bets/place": {
-      "post": {
-        "summary": "Place Live Bet",
-        "description": "Place a live bet during active game",
-        "operationId": "place_live_bet_api_live_bets_place_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/PlaceLiveBetRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "Missing or invalid JWT",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Invalid or expired token"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Forbidden \u2014 insufficient role or subscription tier",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Admin privileges required"
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "Required backend service unavailable",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                },
-                "example": {
-                  "detail": "Service is currently unavailable"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
-        "tags": [
-          "bets"
-        ],
-        "x-audience": "public"
-      },
-      "options": {
-        "summary": "Options Place Live Bet",
-        "description": "Handle CORS preflight for live bet placement",
-        "operationId": "options_place_live_bet_api_live_bets_place_options",
-        "responses": {
-          "200": {
-            "description": "Successful Response",
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            }
-          }
-        },
-        "tags": [
-          "bets"
         ],
         "x-audience": "public"
       }
@@ -12160,58 +11890,6 @@
         ],
         "title": "PlaceBetRequest"
       },
-      "PlaceLiveBetRequest": {
-        "properties": {
-          "game_id": {
-            "type": "string",
-            "title": "Game Id"
-          },
-          "bet_type": {
-            "type": "string",
-            "title": "Bet Type"
-          },
-          "selection": {
-            "type": "string",
-            "title": "Selection"
-          },
-          "odds": {
-            "type": "number",
-            "title": "Odds"
-          },
-          "amount": {
-            "type": "number",
-            "maximum": 10000.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Amount"
-          },
-          "accept_odds_change": {
-            "type": "boolean",
-            "title": "Accept Odds Change",
-            "default": false
-          },
-          "min_odds": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Odds"
-          }
-        },
-        "type": "object",
-        "required": [
-          "game_id",
-          "bet_type",
-          "selection",
-          "odds",
-          "amount"
-        ],
-        "title": "PlaceLiveBetRequest",
-        "description": "Request to place a live bet"
-      },
       "PlaceParlayRequest": {
         "properties": {
           "amount": {
@@ -12888,7 +12566,7 @@
     },
     {
       "name": "bets",
-      "description": "YetAI picks, parlays, user bets, verification, and live betting."
+      "description": "YetAI picks, parlays, user bets, and verification."
     },
     {
       "name": "odds",

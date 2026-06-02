@@ -125,10 +125,10 @@ def test_serialize_schedule_splits_crontab_and_float():
             "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
             "schedule": crontab(hour=3, minute=30),
         },
-        "mlb-poll": {
-            "task": "app.tasks.live_pollers.poll_mlb_live",
-            "schedule": 20.0,
-            "options": {"expires": 25},
+        "games-cache": {
+            "task": "app.tasks.games_sync.sync_games_cache",
+            "schedule": 300.0,
+            "options": {"expires": 600},
         },
     }
     today = datetime(2026, 5, 23, 0, 0, tzinfo=ET)
@@ -143,8 +143,8 @@ def test_serialize_schedule_splits_crontab_and_float():
 
     assert len(out["continuous"]) == 1
     c = out["continuous"][0]
-    assert c["key"] == "mlb-poll"
-    assert c["interval_seconds"] == 20.0
+    assert c["key"] == "games-cache"
+    assert c["interval_seconds"] == 300.0
 
 
 def test_serialize_schedule_marks_orchestrators():

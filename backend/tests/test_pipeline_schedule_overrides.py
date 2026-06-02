@@ -97,5 +97,5 @@ def test_upsert_validates_hour_minute_ranges():
 def test_is_editable_only_for_catalog_orchestrators():
     assert ovr.is_editable("app.tasks.etl_pipeline.run_nba_update_pipeline")
     assert ovr.is_editable("app.tasks.etl_pipeline.run_mlb_update_pipeline")
-    assert not ovr.is_editable("app.tasks.live_pollers.poll_mlb_live")
+    assert not ovr.is_editable("app.tasks.games_sync.sync_games_cache")
     assert not ovr.is_editable("")

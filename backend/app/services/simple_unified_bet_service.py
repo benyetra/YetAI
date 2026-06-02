@@ -35,7 +35,6 @@ from app.models.simple_unified_bet_model import (
     OverUnder,
 )
 from app.models.bet_models import PlaceBetRequest, PlaceParlayRequest
-from app.models.live_bet_models import PlaceLiveBetRequest
 
 logger = logging.getLogger(__name__)
 
@@ -348,106 +347,6 @@ class SimpleUnifiedBetService:
 
         except Exception as e:
             logger.error(f"Error in place_parlay: {e}")
-            return {"success": False, "error": str(e)}
-
-    async def place_live_bet(
-        self, user_id: int, live_bet_data: PlaceLiveBetRequest
-    ) -> Dict:
-        """Place a live bet during game play"""
-        try:
-            db = SessionLocal()
-            try:
-                # Validate bet limits
-                if not await self._check_bet_limits(user_id, live_bet_data.amount, db):
-                    return {"success": False, "error": "Live bet exceeds limits"}
-
-                # Get or create game record (same as place_bet for consistency)
-                game = await self._get_or_create_game(live_bet_data, db)
-
-                # Determine odds_api_event_id (use game's ID if available)
-                odds_api_event_id = game.id if game else live_bet_data.game_id
-
-                # Generate bet ID
-                bet_id = str(uuid.uuid4())
-
-                # Parse selection
-                live_bet_type_str = (
-                    live_bet_data.bet_type.value
-                    if hasattr(live_bet_data.bet_type, "value")
-                    else str(live_bet_data.bet_type)
-                )
-                parsed_selection = self._parse_bet_selection(
-                    live_bet_data.selection,
-                    live_bet_type_str,
-                    live_bet_data.home_team,
-                    live_bet_data.away_team,
-                )
-
-                # Create live bet record
-                live_bet = SimpleUnifiedBet(
-                    id=bet_id,
-                    user_id=user_id,
-                    odds_api_event_id=odds_api_event_id,
-                    game_id=game.id if game else live_bet_data.game_id,
-                    bet_type=BetType(live_bet_type_str.lower()),
-                    amount=live_bet_data.amount,
-                    odds=live_bet_data.odds,
-                    potential_win=live_bet_data.potential_win,
-                    selection=live_bet_data.selection,
-                    home_team=live_bet_data.home_team,
-                    away_team=live_bet_data.away_team,
-                    sport=getattr(live_bet_data, "sport", "Unknown"),
-                    commence_time=(
-                        self._parse_commence_time(
-                            getattr(live_bet_data, "commence_time", None)
-                        )
-                        or datetime.now(timezone.utc)
-                    ),
-                    source=BetSource.LIVE,
-                    bookmaker="fanduel",
-                    is_live=True,
-                    game_time_at_placement=getattr(live_bet_data, "game_time", None),
-                    score_at_placement=getattr(live_bet_data, "current_score", None),
-                    cash_out_available=getattr(
-                        live_bet_data, "cash_out_available", False
-                    ),
-                    cash_out_value=getattr(live_bet_data, "cash_out_value", None),
-                    # Structured data
-                    team_selection=parsed_selection.get(
-                        "team_selection", TeamSide.NONE
-                    ),
-                    selected_team_name=parsed_selection.get("selected_team_name"),
-                    spread_value=parsed_selection.get("spread_value"),
-                    spread_selection=parsed_selection.get(
-                        "spread_selection", TeamSide.NONE
-                    ),
-                    total_points=parsed_selection.get("total_points"),
-                    over_under_selection=parsed_selection.get(
-                        "over_under_selection", OverUnder.NONE
-                    ),
-                )
-
-                db.add(live_bet)
-                db.commit()
-
-                logger.info(f"Placed live bet {bet_id} for user {user_id}")
-
-                return {
-                    "success": True,
-                    "bet_id": bet_id,
-                    "message": "Live bet placed successfully",
-                    "bet": self._format_bet_response(live_bet),
-                }
-
-            except Exception as e:
-                db.rollback()
-                logger.error(f"Error placing live bet: {e}")
-                return {"success": False, "error": str(e)}
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Error in place_live_bet: {e}")
             return {"success": False, "error": str(e)}
 
     async def _repair_user_misgraded_mlb_props(self, db: Session, user_id: int) -> int:

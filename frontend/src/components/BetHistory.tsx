@@ -107,7 +107,6 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
   const { user, token } = useAuth();
   const { isConnected } = useWebSocket();
   const [bets, setBets] = useState<Bet[]>([]);
-  const [liveBets, setLiveBets] = useState<any[]>([]);
   const [stats, setStats] = useState<BetStats | null>(null);
   const [totalBetsFromAPI, setTotalBetsFromAPI] = useState<number>(0);
   const [loading, setLoading] = useState(true);
@@ -124,7 +123,6 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
   useEffect(() => {
     if (user && token) {
       fetchBetHistory();
-      fetchLiveBets();
       fetchBetStats();
     }
   }, [user, token, filterStatus, filterBetType]);
@@ -157,17 +155,6 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
       console.error('Error fetching bet history:', error);
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchLiveBets = async () => {
-    try {
-      const response = await apiClient.get('/api/live-bets/active?include_settled=true', token);
-      if (response.status === 'success') {
-        setLiveBets(response.bets || []);
-      }
-    } catch (error) {
-      console.error('Error fetching live bets:', error);
     }
   };
 
@@ -279,7 +266,6 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
     
     const cleanBetType = bet.bet_type?.replace('live_', '') || 'bet';
     
-    // If we have team information, use the ActiveLiveBets formatting logic
     if (bet.home_team && bet.away_team) {
       const gameInfo = `${bet.away_team} @ ${bet.home_team}`;
       
@@ -315,7 +301,6 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
       }
     }
     
-    // Fallback for cases without team info - match the ActiveLiveBets format
     if (bet.selection) {
       return `${cleanBetType.toUpperCase()} - ${bet.selection.toUpperCase()}`;
     }
@@ -356,35 +341,7 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
     return parts.join(' • ');
   };
 
-  // Convert live bets to the same format as regular bets for display
-  const normalizedLiveBets = liveBets.map((liveBet, index) => ({
-    id: `live_${liveBet.id}`, // Prefix with 'live_' to avoid duplicate keys
-    user_id: liveBet.user_id,
-    game_id: liveBet.game_id,
-    bet_type: `live_${liveBet.bet_type}`, // Mark as live bet
-    selection: liveBet.selection,
-    odds: liveBet.original_odds,
-    amount: liveBet.amount,
-    potential_win: liveBet.potential_win,
-    status: liveBet.status,
-    placed_at: liveBet.placed_at,
-    settled_at: liveBet.settled_at,
-    result_amount: liveBet.result_amount,
-    parlay_id: null,
-    // Include team information from live bets
-    home_team: liveBet.home_team,
-    away_team: liveBet.away_team,
-    sport: liveBet.sport,
-    // Additional live bet fields for display
-    current_odds: liveBet.current_odds,
-    cash_out_value: liveBet.cash_out_value,
-    cash_out_available: liveBet.cash_out_available
-  }));
-
-  // Combine regular bets and live bets
-  const allBets = [...(bets || []), ...(normalizedLiveBets || [])];
-
-  const filteredBets = allBets.filter(bet => {
+  const filteredBets = (bets || []).filter(bet => {
     // Status filter
     if (filterStatus !== 'all' && bet.status !== filterStatus) {
       return false;

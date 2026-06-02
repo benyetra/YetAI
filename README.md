@@ -1,6 +1,6 @@
 # YetAI
 
-AI-powered sports betting and fantasy analytics platform. YetAI combines real-time odds, ML-driven predictions across major leagues, live betting, parlays, Sleeper fantasy sync, and an admin operations surface for ETL pipelines and automated picks.
+AI-powered sports betting and fantasy analytics platform. YetAI combines real-time odds, ML-driven predictions across major leagues, parlays, Sleeper fantasy sync, and an admin operations surface for ETL pipelines and automated picks.
 
 | Surface | Production | Local dev |
 |--------|------------|-----------|
@@ -15,7 +15,7 @@ Committed OpenAPI specs for agents and integrations: [docs/api/](docs/api/) (`op
 ## What YetAI does
 
 - **Predictions** — Daily and in-season models for MLB, NBA, NHL, NFL, and WNBA (player props, spreads, totals, strikeouts, and related markets). See [backend/docs/](backend/docs/) for per-sport ETL parity notes.
-- **Betting** — Place and track bets, parlays, live betting, bet sharing, leaderboard, and performance views.
+- **Betting** — Place and track bets, parlays, bet sharing, leaderboard, and performance views.
 - **AI assistant** — In-app chat backed by OpenAI (when configured).
 - **Fantasy** — Sleeper integration and fantasy analytics APIs.
 - **Subscriptions** — Stripe checkout for upgrades (frontend + backend).
@@ -64,7 +64,7 @@ YetAI/
 │   ├── Dockerfile           # API + worker image (Railway)
 │   └── .env.example
 ├── frontend/                # Next.js 15 (App Router), Tailwind 4, Playwright
-│   └── src/app/             # Routes: predictions, bets, live-betting, admin, …
+│   └── src/app/             # Routes: predictions, bets, parlays, admin, …
 ├── database/                # Legacy local bootstrap (schema.sql + setup_db.sh)
 ├── scripts/                 # start_dev.sh — start API + frontend together
 ├── docs/                    # Runbooks, OpenAPI specs (docs/api/), plans
@@ -276,7 +276,6 @@ Interactive exploration: **http://localhost:8000/docs** (Swagger) and **/redoc**
 Celery app: `backend/app/celery_app.py`. Task modules include:
 
 - `app.tasks.etl_pipeline` — Daily sport pipelines (MLB, NBA, NHL, NFL, …)
-- `app.tasks.live_pollers` — Live odds / prop polling
 - `app.tasks.games_sync` — Game schedule sync
 - `app.tasks.auto_pick` — Automated YetAI bet selection (feature-flagged)
 - `app.tasks.health` — Worker health probes
@@ -304,7 +303,7 @@ Celery app: `backend/app/celery_app.py`. Task modules include:
 | `/dashboard` | User home |
 | `/predictions` | Predictions hub |
 | `/predictions/{mlb,nba,nhl,nfl,wnba}` | Sport-specific views |
-| `/bets`, `/parlays`, `/live-betting` | Betting |
+| `/bets`, `/parlays` | Betting |
 | `/odds`, `/leaderboard`, `/performance` | Markets & stats |
 | `/fantasy` | Fantasy / Sleeper |
 | `/chat` | AI assistant |

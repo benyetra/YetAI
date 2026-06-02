@@ -29,7 +29,6 @@ from app.core.config import settings
 # model lives outside database_models.py.
 from app.models import bet_models  # noqa: F401
 from app.models import sports_models  # noqa: F401
-from app.models import live_bet_models  # noqa: F401
 from app.models import simple_unified_bet_model  # noqa: F401
 from app.models import fantasy_models  # noqa: F401
 from app.models import player_mapping  # noqa: F401

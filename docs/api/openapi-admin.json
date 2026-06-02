@@ -6132,58 +6132,6 @@
         ],
         "title": "PlaceBetRequest"
       },
-      "PlaceLiveBetRequest": {
-        "properties": {
-          "game_id": {
-            "type": "string",
-            "title": "Game Id"
-          },
-          "bet_type": {
-            "type": "string",
-            "title": "Bet Type"
-          },
-          "selection": {
-            "type": "string",
-            "title": "Selection"
-          },
-          "odds": {
-            "type": "number",
-            "title": "Odds"
-          },
-          "amount": {
-            "type": "number",
-            "maximum": 10000.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Amount"
-          },
-          "accept_odds_change": {
-            "type": "boolean",
-            "title": "Accept Odds Change",
-            "default": false
-          },
-          "min_odds": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Min Odds"
-          }
-        },
-        "type": "object",
-        "required": [
-          "game_id",
-          "bet_type",
-          "selection",
-          "odds",
-          "amount"
-        ],
-        "title": "PlaceLiveBetRequest",
-        "description": "Request to place a live bet"
-      },
       "PlaceParlayRequest": {
         "properties": {
           "amount": {
@@ -6860,7 +6808,7 @@
     },
     {
       "name": "bets",
-      "description": "YetAI picks, parlays, user bets, verification, and live betting."
+      "description": "YetAI picks, parlays, user bets, and verification."
     },
     {
       "name": "odds",

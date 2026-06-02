@@ -57,23 +57,23 @@ def test_apply_overrides_ignores_orphan_overrides():
 
 
 def test_apply_overrides_skips_non_orchestrator_tasks():
-    """Live pollers etc. are never overridden, even if a row exists."""
+    """Non-orchestrator tasks are never overridden, even if a row exists."""
     schedule_dict = {
-        "mlb-poll": {
-            "task": "app.tasks.live_pollers.poll_mlb_live",
-            "schedule": 20.0,
+        "games-cache": {
+            "task": "app.tasks.games_sync.sync_games_cache",
+            "schedule": crontab(hour=6, minute=0),
         },
     }
     override = PipelineSchedule(
-        task_name="app.tasks.live_pollers.poll_mlb_live",
+        task_name="app.tasks.games_sync.sync_games_cache",
         hour=6,
         minute=15,
         enabled=True,
     )
     out = apply_overrides(
-        schedule_dict, {"app.tasks.live_pollers.poll_mlb_live": override}
+        schedule_dict, {"app.tasks.games_sync.sync_games_cache": override}
     )
-    assert out["mlb-poll"]["schedule"] == 20.0
+    assert out["games-cache"]["schedule"] == crontab(hour=6, minute=0)
 
 
 def test_apply_overrides_handles_multiple_simultaneous():

@@ -28,7 +28,7 @@ OPENAPI_TAGS = [
     },
     {
         "name": "bets",
-        "description": "YetAI picks, parlays, user bets, verification, and live betting.",
+        "description": "YetAI picks, parlays, user bets, and verification.",
     },
     {
         "name": "odds",

@@ -31,7 +31,7 @@ def test_is_tracked_pipeline_rejects_leaf_tasks_and_unknowns():
     # nba.spread_projector IS in the catalog as a sub-task entry, so we use
     # a leaf task that's not exposed in PIPELINE_ENQUEUE_CATALOG.
     assert not ans.is_tracked_pipeline("app.tasks.etl_pipeline.nba.update_team_roster")
-    assert not ans.is_tracked_pipeline("app.tasks.live_pollers.poll_mlb_live")
+    assert not ans.is_tracked_pipeline("app.tasks.games_sync.sync_games_cache")
     assert not ans.is_tracked_pipeline("")
     assert not ans.is_tracked_pipeline("totally.made.up.task")
 
@@ -108,12 +108,12 @@ class _FakeTask:
 
 
 def test_prerun_handler_skips_non_pipeline_tasks():
-    """task_prerun for live_pollers must not call record_started."""
+    """task_prerun for non-pipeline tasks must not call record_started."""
     with patch.object(ans, "record_started") as rs:
         celery_signals._on_pipeline_prerun(
-            sender=_FakeTask("app.tasks.live_pollers.poll_mlb_live"),
+            sender=_FakeTask("app.tasks.games_sync.sync_games_cache"),
             task_id="abc",
-            task=_FakeTask("app.tasks.live_pollers.poll_mlb_live"),
+            task=_FakeTask("app.tasks.games_sync.sync_games_cache"),
         )
     rs.assert_not_called()
 

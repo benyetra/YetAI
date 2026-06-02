@@ -238,8 +238,7 @@ async def _send_sms(to_number: str, body: str) -> None:
 async def route_prop_events(events: Iterable) -> None:
     """Dispatch each prop event to all relevant notification channels.
 
-    `events` is an iterable of PropEvent dataclasses from
-    app.services.live_betting.prop_events. For each event:
+    `events` is an iterable of prop-event dicts or dataclasses. For each event:
 
       1. Resolve the user behind ev.pick_id (PikkitPick -> PikkitBet ->
          User via raw JSONB; see _resolve_user_for_pick TODO).
