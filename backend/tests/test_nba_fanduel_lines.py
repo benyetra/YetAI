@@ -268,13 +268,13 @@ def test_event_and_odds_lookups_are_memoized_per_run(monkeypatch):
     monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_get(url, params=None, timeout=None):
+    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
         calls.append(url)
         if url.endswith("/events"):
             return _FakeResp(_events_payload())
         return _FakeResp(_odds_payload(params["markets"]))
 
-    monkeypatch.setattr(fdl.requests, "get", fake_get)
+    monkeypatch.setattr(fdl, "sync_odds_get", fake_sync_get)
 
     # Resolving the same game twice (order swapped) hits /events once.
     assert (
@@ -313,13 +313,13 @@ def test_clear_cache_forces_refetch(monkeypatch):
     monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_get(url, params=None, timeout=None):
+    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
         calls.append(url)
         if url.endswith("/events"):
             return _FakeResp(_events_payload())
         return _FakeResp(_odds_payload(params["markets"]))
 
-    monkeypatch.setattr(fdl.requests, "get", fake_get)
+    monkeypatch.setattr(fdl, "sync_odds_get", fake_sync_get)
 
     fdl.get_fanduel_line(
         "basketball_nba", "evt1", "Jayson Tatum", "player_points", 30.0
