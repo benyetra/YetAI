@@ -149,6 +149,13 @@ class PlayerPropsService:
             List of available market keys for this event
         """
         try:
+            from app.services.odds_api_budget import guard_async, record_async
+
+            caller = f"api.player_props.markets.{sport}"
+            if not await guard_async(caller):
+                logger.warning("Odds API budget blocked %s", caller)
+                return []
+
             url = f"https://api.the-odds-api.com/v4/sports/{sport}/events/{event_id}/markets"
             params = {
                 "apiKey": self.odds_api.api_key,
@@ -157,6 +164,12 @@ class PlayerPropsService:
 
             async with aiohttp.ClientSession() as session:
                 async with session.get(url, params=params) as response:
+                    try:
+                        last_cost = int(response.headers.get("x-requests-last", 1) or 1)
+                        await record_async(last_cost, caller)
+                    except Exception as budget_err:
+                        logger.warning("Odds API budget record failed: %s", budget_err)
+
                     if response.status != 200:
                         logger.error(
                             f"Failed to fetch available markets: {response.status}"

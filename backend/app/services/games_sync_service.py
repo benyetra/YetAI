@@ -76,9 +76,23 @@ class GamesSyncService:
             # Fetch games from Odds API for each sport
             from app.services.odds_api_service import odds_api_call_scope
 
+            from app.services.odds_api_service import sport_in_season
+
             with odds_api_call_scope("games_sync.sync_all_games"):
                 async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
                     for sport_key in self.SPORTS:
+                        if not sport_in_season(sport_key):
+                            logger.info(
+                                "Skipping %s games sync (off-season)", sport_key
+                            )
+                            stats["sports_synced"][sport_key] = {
+                                "games_fetched": 0,
+                                "games_created": 0,
+                                "games_updated": 0,
+                                "errors": [],
+                                "skipped": "off_season",
+                            }
+                            continue
                         try:
                             sport_stats = await self._sync_sport(
                                 odds_service, sport_key

@@ -25,14 +25,27 @@ SPORT = "americanfootball_nfl"
 
 def get_nfl_games_and_lines():
     """Get NFL games and O/U lines from odds API"""
+    from app.services.odds_api_service import sport_in_season
+    from app.services.odds_api_sync import sync_odds_get
+
+    if not sport_in_season(SPORT):
+        print("⏭️  NFL off-season — skipping Odds API QB lines fetch")
+        return {}
+
     try:
         # Get NFL games
         url = f"{BASE_URL}{SPORT}/events"
         params = {"apiKey": ODDS_API_KEY, "dateFormat": "iso"}
-        response = requests.get(url, params=params)
+        response = sync_odds_get(
+            url,
+            params=params,
+            caller="etl.nfl.qb_betting.events",
+            raise_for_status=False,
+        )
 
-        if response.status_code != 200:
-            print(f"❌ Failed to fetch NFL games: {response.status_code}")
+        if response is None or response.status_code != 200:
+            code = response.status_code if response is not None else "blocked"
+            print(f"❌ Failed to fetch NFL games: {code}")
             return {}
 
         games = response.json()
@@ -53,8 +66,13 @@ def get_nfl_games_and_lines():
                 "bookmakers": "fanduel,draftkings,betmgm",
             }
 
-            odds_response = requests.get(odds_url, params=odds_params)
-            if odds_response.status_code == 200:
+            odds_response = sync_odds_get(
+                odds_url,
+                params=odds_params,
+                caller=f"etl.nfl.qb_betting.odds.{event_id}",
+                raise_for_status=False,
+            )
+            if odds_response is not None and odds_response.status_code == 200:
                 odds_data = odds_response.json()
 
                 for bookmaker in odds_data.get("bookmakers", []):

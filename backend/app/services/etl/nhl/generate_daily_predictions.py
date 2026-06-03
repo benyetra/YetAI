@@ -20,7 +20,6 @@ from app.services.etl.nhl.goalie_saves_model import (
 )
 from datetime import datetime, date
 import time
-import requests
 import logging
 
 # Configuration
@@ -28,8 +27,58 @@ ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 SPORT = "icehockey_nhl"
 
+# One event-odds response includes all NHL prop markets we need (1 credit vs 3).
+_NHL_EVENT_ODDS_MARKETS = "player_total_saves,player_shots_on_goal,totals"
+_NHL_EVENT_ODDS_CACHE_TTL_SECONDS = 600
+_nhl_event_odds_cache: dict = {}  # event_id -> (expires_at_monotonic, payload)
+
 # Global dict to store Fanatics lines
 FANATICS_LINES = {}
+
+
+def clear_nhl_event_odds_cache() -> None:
+    """Drop memoized NHL event-odds payloads (tests / run boundaries)."""
+    _nhl_event_odds_cache.clear()
+
+
+def _fetch_nhl_event_odds_payload(event_id: str) -> dict:
+    """Return DraftKings event odds for saves, player SOG, and totals (memoized)."""
+    entry = _nhl_event_odds_cache.get(event_id)
+    if entry is not None:
+        expires_at, payload = entry
+        if time.monotonic() < expires_at:
+            return payload
+        _nhl_event_odds_cache.pop(event_id, None)
+
+    if not ODDS_API_KEY:
+        return {}
+
+    from app.services.odds_api_sync import sync_odds_get
+
+    url = f"{ODDS_API_BASE}/sports/{SPORT}/events/{event_id}/odds"
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": _NHL_EVENT_ODDS_MARKETS,
+        "bookmakers": "draftkings",
+        "oddsFormat": "american",
+    }
+    resp = sync_odds_get(
+        url,
+        params=params,
+        caller=f"etl.nhl.event_odds.{event_id}",
+        timeout=10,
+        raise_for_status=False,
+    )
+    if resp is None or resp.status_code != 200:
+        return {}
+    data = resp.json()
+    _nhl_event_odds_cache[event_id] = (
+        time.monotonic() + _NHL_EVENT_ODDS_CACHE_TTL_SECONDS,
+        data,
+    )
+    return data
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -102,12 +151,21 @@ def get_nhl_events_from_odds_api():
     Fetch today's NHL events from The Odds API
     Returns: list of events with event IDs
     """
+    from app.services.odds_api_sync import sync_odds_get
+
     url = f"{ODDS_API_BASE}/sports/{SPORT}/events"
     params = {"apiKey": ODDS_API_KEY, "regions": "us", "bookmakers": "draftkings"}
 
     try:
-        response = requests.get(url, params=params, timeout=10)
-        response.raise_for_status()
+        response = sync_odds_get(
+            url,
+            params=params,
+            caller="etl.nhl.events",
+            timeout=10,
+            raise_for_status=True,
+        )
+        if response is None:
+            return []
         all_events = response.json()
 
         # Don't filter by date - return all events
@@ -139,25 +197,14 @@ def get_goalie_saves_odds_for_event(event_id, home_team, away_team):
     Returns:
         dict mapping goalie names to their lines
     """
-    url = f"{ODDS_API_BASE}/sports/{SPORT}/events/{event_id}/odds"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "player_total_saves",
-        "bookmakers": "draftkings",
-        "oddsFormat": "american",
-    }
-
     try:
-        response = requests.get(url, params=params, timeout=10)
-
-        if response.status_code != 200:
+        data = _fetch_nhl_event_odds_payload(event_id)
+        if not data:
             logging.warning(
-                f"Odds API returned {response.status_code} for {away_team} @ {home_team}"
+                "No Odds API payload for goalie saves %s @ %s", away_team, home_team
             )
             return {}
 
-        data = response.json()
         goalie_lines = {}
 
         # Parse bookmakers
@@ -231,25 +278,14 @@ def get_player_shots_odds_for_event(event_id, home_team, away_team):
     Returns:
         dict mapping player names to their lines
     """
-    url = f"{ODDS_API_BASE}/sports/{SPORT}/events/{event_id}/odds"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "player_shots_on_goal",
-        "bookmakers": "draftkings",
-        "oddsFormat": "american",
-    }
-
     try:
-        response = requests.get(url, params=params, timeout=10)
-
-        if response.status_code != 200:
+        data = _fetch_nhl_event_odds_payload(event_id)
+        if not data:
             logging.warning(
-                f"Odds API returned {response.status_code} for player shots {away_team} @ {home_team}"
+                "No Odds API payload for player shots %s @ %s", away_team, home_team
             )
             return {}
 
-        data = response.json()
         player_lines = {}
 
         # Parse bookmakers
@@ -305,25 +341,14 @@ def get_team_totals_odds_for_event(event_id, home_team, away_team):
     Returns:
         dict with totals line and odds
     """
-    url = f"{ODDS_API_BASE}/sports/{SPORT}/events/{event_id}/odds"
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "totals",
-        "bookmakers": "draftkings",
-        "oddsFormat": "american",
-    }
-
     try:
-        response = requests.get(url, params=params, timeout=10)
-
-        if response.status_code != 200:
+        data = _fetch_nhl_event_odds_payload(event_id)
+        if not data:
             logging.warning(
-                f"Odds API returned {response.status_code} for totals {away_team} @ {home_team}"
+                "No Odds API payload for totals %s @ %s", away_team, home_team
             )
             return {}
 
-        data = response.json()
         totals_data = {}
 
         # Parse bookmakers
