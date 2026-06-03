@@ -326,6 +326,12 @@ class OddsAPIService:
         if not self._check_rate_limit():
             raise Exception("Rate limit exceeded")
 
+        caller = _odds_api_caller.get() or "unknown"
+        from app.services.odds_api_budget import guard_async
+
+        if not await guard_async(caller):
+            raise Exception("Odds API daily credit budget exceeded")
+
         if not self.session:
             raise Exception("Session not initialized. Use async context manager.")
 
@@ -337,7 +343,15 @@ class OddsAPIService:
         try:
             self.last_request_time = time.time()
             async with self.session.get(url, params=request_params) as response:
-                self._update_rate_limit(dict(response.headers))
+                headers = dict(response.headers)
+                self._update_rate_limit(headers)
+                try:
+                    from app.services.odds_api_budget import record_async
+
+                    last_cost = int(headers.get("x-requests-last", 1) or 1)
+                    await record_async(last_cost, caller)
+                except Exception as budget_err:
+                    logger.warning("Odds API budget record failed: %s", budget_err)
 
                 if response.status == 401:
                     raise Exception("Invalid API key")

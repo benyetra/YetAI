@@ -44,18 +44,24 @@ def _odds_get(path: str, params: dict) -> list | dict | None:
     api_key = os.environ.get(ODDS_API_KEY_ENV)
     if not api_key:
         raise RuntimeError(f"{ODDS_API_KEY_ENV} env var is required")
+    from app.services.odds_api_sync import sync_odds_get
+
     try:
-        r = requests.get(
+        resp = sync_odds_get(
             f"{ODDS_BASE_URL}/{path}",
             params={"apiKey": api_key, **params},
+            caller=f"etl.nba.update_game_lines.{path}",
             timeout=30,
+            raise_for_status=False,
         )
-        if r.status_code != 200:
+        if resp is None:
+            return None
+        if resp.status_code != 200:
             logger.warning(
-                "odds-api %s returned %d: %s", path, r.status_code, r.text[:200]
+                "odds-api %s returned %d: %s", path, resp.status_code, resp.text[:200]
             )
             return None
-        return r.json()
+        return resp.json()
     except requests.RequestException:
         logger.exception("odds-api request failed: %s", path)
         return None

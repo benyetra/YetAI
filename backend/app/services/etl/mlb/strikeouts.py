@@ -131,8 +131,16 @@ def _fetch_event_strikeout_odds(event_id):
         "apiKey": ODDS_API_KEY,
         "markets": "pitcher_strikeouts",
     }
-    resp = requests.get(odds_url, headers=HEADERS, params=params)
-    resp.raise_for_status()
+    from app.services.odds_api_sync import sync_odds_get
+
+    resp = sync_odds_get(
+        odds_url,
+        params=params,
+        headers=HEADERS,
+        caller=f"etl.mlb.strikeouts.{event_id}",
+    )
+    if resp is None:
+        return {}
     data = resp.json()
     _strikeout_odds_cache[event_id] = (
         time.monotonic() + _STRIKEOUT_ODDS_CACHE_TTL_SECONDS,

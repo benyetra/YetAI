@@ -316,6 +316,20 @@ async def lifespan(_app: FastAPI):
         f"✅ Services online: {len(available_services)}/{len(service_loader.get_status())}"
     )
 
+    try:
+        from app.services.cache_service import cache_service
+
+        cache_stats = await cache_service.get_cache_stats()
+        if not cache_stats.get("redis_live"):
+            logger.error(
+                "⚠️  Redis odds cache unavailable — each API worker keeps its own "
+                "in-memory cache, which multiplies Odds API usage across replicas"
+            )
+        else:
+            logger.info("✅ Redis odds cache connected")
+    except Exception as cache_err:
+        logger.warning(f"⚠️  Could not verify odds cache backend: {cache_err}")
+
     yield
 
     # Shutdown
@@ -5852,7 +5866,7 @@ def _odds_fetch_failure_payload(
 #     blank just because we hit the cap.
 # -----------------------------------------------------------------------------
 
-_ODDS_CACHE_TTL_FRESH = 1800  # 30 minutes
+_ODDS_CACHE_TTL_FRESH = 3600  # 1 hour — reduces refresh churn under polling
 _ODDS_CACHE_TTL_LKG = 86400  # 24 hours (stale fallback)
 _PLAYER_PROPS_CACHE_TTL = 1800
 _ODDS_QUOTA_SAFETY_THRESHOLD = 50  # stop calling API when fewer than N credits left
@@ -5924,6 +5938,7 @@ async def _get_odds_with_cache(
        payload with stale=True instead of failing the request.
     """
     from app.services.cache_service import cache_service
+    from app.services.odds_api_service import sport_in_season
 
     if not settings.ODDS_API_KEY:
         return _odds_not_configured_payload(sport_label, odds_key=odds_key)
@@ -5939,6 +5954,50 @@ async def _get_odds_with_cache(
             "cached": True,
             "stale": False,
             "cached_at": cached.get("cached_at"),
+        }
+
+    if not sport_in_season(sport_key):
+        lkg = await cache_service.get(lkg_key)
+        if lkg and "games" in lkg:
+            return {
+                "status": "success",
+                odds_key: lkg["games"],
+                "cached": True,
+                "stale": True,
+                "cached_at": lkg.get("cached_at"),
+                "off_season": True,
+                "message": f"{sport_label} is off-season; serving last-known-good odds.",
+            }
+        return {
+            "status": "success",
+            odds_key: [],
+            "cached": False,
+            "stale": False,
+            "off_season": True,
+            "message": f"{sport_label} is off-season; no Odds API fetch.",
+        }
+
+    from app.services.odds_api_budget import guard_async, get_daily_usage_async
+
+    if not await guard_async(f"api.odds.{sport_key}"):
+        used = await get_daily_usage_async()
+        lkg = await cache_service.get(lkg_key)
+        if lkg and "games" in lkg:
+            return {
+                "status": "success",
+                odds_key: lkg["games"],
+                "cached": True,
+                "stale": True,
+                "cached_at": lkg.get("cached_at"),
+                "daily_budget_used": used,
+                "message": f"Daily Odds API budget reached; showing cached {sport_label} odds.",
+            }
+        return {
+            "status": "error",
+            odds_key: [],
+            "message": f"Daily Odds API budget reached and no cached {sport_label} data.",
+            "odds_api_configured": True,
+            "daily_budget_used": used,
         }
 
     remaining = await _odds_quota_remaining()
@@ -6022,8 +6081,11 @@ async def _get_odds_with_cache(
 async def get_odds_quota_status():
     """Report cached Odds API quota state and cache freshness."""
     from app.services.cache_service import cache_service
+    from app.services.odds_api_budget import DAILY_CREDIT_BUDGET, get_daily_usage_async
 
     quota = await cache_service.get(_ODDS_QUOTA_KEY)
+    cache_stats = await cache_service.get_cache_stats()
+    daily_used = await get_daily_usage_async()
     sports = [
         "americanfootball_nfl",
         "americanfootball_ncaaf",
@@ -6047,6 +6109,12 @@ async def get_odds_quota_status():
     return {
         "status": "success",
         "quota": quota or {"remaining": None, "used": None, "updated_at": None},
+        "daily_budget": {
+            "limit": DAILY_CREDIT_BUDGET,
+            "used": daily_used,
+            "remaining": max(DAILY_CREDIT_BUDGET - daily_used, 0),
+        },
+        "cache_backend": cache_stats,
         "safety_threshold": _ODDS_QUOTA_SAFETY_THRESHOLD,
         "cache_ttl_fresh_seconds": _ODDS_CACHE_TTL_FRESH,
         "cache_ttl_lkg_seconds": _ODDS_CACHE_TTL_LKG,
@@ -6417,21 +6485,11 @@ async def get_popular_games(sport: Optional[str] = None, db: Session = Depends(g
         games_query = _query_todays_games()
         cache_refresh_attempted = False
 
-        # Empty window usually means the cache was never populated or is stale
-        # (common after YetiBets → YetAI DB cutover). Refresh once per request path.
-        if not games_query and settings.ODDS_API_KEY:
-            cache_refresh_attempted = True
-            try:
-                from app.services.games_sync_service import run_games_sync
-
-                logger.info(
-                    "No games in popular-games window — running on-demand games sync"
-                )
-                await run_games_sync(force=False)
-                db.expire_all()
-                games_query = _query_todays_games()
-            except Exception as sync_err:
-                logger.warning(f"On-demand games sync failed: {sync_err}")
+        if not games_query:
+            logger.info(
+                "No games in popular-games window — skipping on-demand Odds API sync "
+                "(scheduled Celery sync runs 3x/day)"
+            )
 
         logger.info(f"Found {len(games_query)} games in database for today")
 

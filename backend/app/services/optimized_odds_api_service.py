@@ -76,6 +76,12 @@ class OptimizedOddsAPIService:
         """
         await self._ensure_session()
 
+        caller = "optimized_odds_api"
+        from app.services.odds_api_budget import guard_async
+
+        if not await guard_async(caller):
+            raise Exception("Odds API daily credit budget exceeded")
+
         # Add API key
         params["apiKey"] = self.api_key
 
@@ -88,6 +94,13 @@ class OptimizedOddsAPIService:
 
             # Update usage stats from response headers
             self._update_usage_stats(headers)
+            try:
+                from app.services.odds_api_budget import record_async
+
+                last_cost = int(headers.get("x-requests-last", 1) or 1)
+                await record_async(last_cost, caller)
+            except Exception as budget_err:
+                logger.warning("Odds API budget record failed: %s", budget_err)
 
             if response.status == 429:
                 logger.error("Rate limit exceeded - requests too frequent")

@@ -8,6 +8,7 @@ to reduce API calls and improve response times.
 import json
 import asyncio
 import hashlib
+import time
 from typing import Optional, Dict, Any, Union
 from datetime import datetime, timedelta
 import logging
@@ -122,10 +123,13 @@ class CacheService:
     Main cache service that can use Redis or fall back to in-memory caching.
     """
 
+    _REDIS_PING_INTERVAL_SECONDS = 30.0
+
     def __init__(self):
         self._redis_client = None
         self._memory_cache = InMemoryCache()
         self._redis_available = False
+        self._redis_last_ping_ok: Optional[float] = None
         self._initialize_redis()
 
     def _initialize_redis(self):
@@ -152,18 +156,30 @@ class CacheService:
             logger.warning(f"Failed to initialize Redis, using in-memory cache: {e}")
             self._redis_available = False
 
-    async def _test_redis_connection(self) -> bool:
-        """Test if Redis is available"""
-        if not self._redis_available or not self._redis_client:
+    async def _redis_is_live(self) -> bool:
+        """Return True when Redis responds; ping at most once per interval."""
+        if not self._redis_client:
             return False
+
+        now = time.monotonic()
+        if (
+            self._redis_last_ping_ok is not None
+            and (now - self._redis_last_ping_ok) < self._REDIS_PING_INTERVAL_SECONDS
+        ):
+            return True
 
         try:
             await self._redis_client.ping()
+            self._redis_last_ping_ok = now
+            self._redis_available = True
             return True
         except Exception as e:
-            logger.warning(f"Redis connection test failed: {e}")
-            self._redis_available = False
+            logger.warning(f"Redis ping failed: {e}")
             return False
+
+    async def _test_redis_connection(self) -> bool:
+        """Backward-compatible alias for health checks."""
+        return await self._redis_is_live()
 
     def _generate_cache_key(self, prefix: str, **kwargs) -> str:
         """Generate a consistent cache key from parameters"""
@@ -183,7 +199,7 @@ class CacheService:
         """Get cached data"""
         try:
             # Try Redis first
-            if self._redis_available and await self._test_redis_connection():
+            if await self._redis_is_live():
                 try:
                     cached_data = await self._redis_client.get(key)
                     if cached_data:
@@ -208,7 +224,7 @@ class CacheService:
             serialized_data = json.dumps(data, default=str)
 
             # Try Redis first
-            if self._redis_available and await self._test_redis_connection():
+            if await self._redis_is_live():
                 try:
                     await self._redis_client.setex(key, expire_seconds, serialized_data)
                     return
@@ -227,7 +243,7 @@ class CacheService:
         """Set key only if absent (best-effort distributed lock). Returns True if set."""
         try:
             serialized = json.dumps(data, default=str)
-            if self._redis_available and await self._test_redis_connection():
+            if await self._redis_is_live():
                 try:
                     return bool(
                         await self._redis_client.set(
@@ -249,7 +265,7 @@ class CacheService:
         """Delete cached data"""
         try:
             # Try Redis first
-            if self._redis_available and await self._test_redis_connection():
+            if await self._redis_is_live():
                 try:
                     await self._redis_client.delete(key)
                 except Exception as e:
@@ -264,7 +280,7 @@ class CacheService:
     async def clear_pattern(self, pattern: str):
         """Clear all keys matching a pattern"""
         try:
-            if self._redis_available and await self._test_redis_connection():
+            if await self._redis_is_live():
                 try:
                     keys = await self._redis_client.keys(pattern)
                     if keys:
@@ -380,6 +396,37 @@ class CacheService:
         )
         await self.set(key, data, expire_seconds)
 
+    async def get_int(self, key: str) -> Optional[int]:
+        """Get an integer counter (Redis-only semantics; best-effort in memory)."""
+        try:
+            if await self._redis_is_live():
+                val = await self._redis_client.get(key)
+                return int(val) if val is not None else None
+            raw = await self._memory_cache.get(f"int:{key}")
+            return int(raw) if raw is not None else None
+        except Exception as e:
+            logger.error(f"Cache get_int error for key {key}: {e}")
+            return None
+
+    async def incrby(self, key: str, amount: int, expire_seconds: int = 172800) -> int:
+        """Increment a counter; returns the new value."""
+        amount = int(amount)
+        try:
+            if await self._redis_is_live():
+                pipe = self._redis_client.pipeline()
+                pipe.incrby(key, amount)
+                pipe.expire(key, expire_seconds)
+                new_val, _ = await pipe.execute()
+                return int(new_val)
+            mem_key = f"int:{key}"
+            current = await self.get_int(key) or 0
+            new_val = current + amount
+            await self._memory_cache.set(mem_key, str(new_val), expire_seconds)
+            return new_val
+        except Exception as e:
+            logger.error(f"Cache incrby error for key {key}: {e}")
+            return amount
+
     async def invalidate_sport_caches(self, sport_key: str):
         """Invalidate all caches for a specific sport"""
         patterns = [
@@ -395,10 +442,11 @@ class CacheService:
         """Get cache statistics"""
         stats = {
             "redis_available": self._redis_available,
+            "redis_live": await self._redis_is_live(),
             "memory_cache": self._memory_cache.get_stats(),
         }
 
-        if self._redis_available and await self._test_redis_connection():
+        if await self._redis_is_live():
             try:
                 redis_info = await self._redis_client.info("memory")
                 stats["redis"] = {

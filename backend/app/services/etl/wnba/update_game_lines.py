@@ -31,15 +31,21 @@ def _odds_get(path: str, params: dict) -> list | dict | None:
     api_key = os.environ.get(ODDS_API_KEY_ENV)
     if not api_key:
         raise RuntimeError(f"{ODDS_API_KEY_ENV} env var is required")
-    r = requests.get(
+    from app.services.odds_api_sync import sync_odds_get
+
+    resp = sync_odds_get(
         f"{ODDS_BASE_URL}/{path}",
         params={"apiKey": api_key, **params},
+        caller=f"etl.wnba.update_game_lines.{path}",
         timeout=20,
+        raise_for_status=False,
     )
-    if r.status_code != 200:
-        logger.warning("odds-api %s -> %s: %s", path, r.status_code, r.text[:200])
+    if resp is None:
         return None
-    return r.json()
+    if resp.status_code != 200:
+        logger.warning("odds-api %s -> %s: %s", path, resp.status_code, resp.text[:200])
+        return None
+    return resp.json()
 
 
 def _consensus(values: list) -> float | None:

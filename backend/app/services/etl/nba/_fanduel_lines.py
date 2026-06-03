@@ -17,9 +17,8 @@ import logging
 import time
 from typing import Any, Tuple
 
-import requests
-
 from app.core.config import settings
+from app.services.odds_api_sync import sync_odds_get
 
 logger = logging.getLogger(__name__)
 
@@ -64,13 +63,16 @@ def _get_events(sport: str) -> list[dict]:
     if not api_key:
         return []
     try:
-        resp = requests.get(
+        resp = sync_odds_get(
             f"{_BASE_URL}/{sport}/events",
             params={"apiKey": api_key},
+            caller=f"etl.nba.fanduel_lines.events.{sport}",
             timeout=30,
+            raise_for_status=False,
         )
-        if resp.status_code != 200:
-            logger.debug("Odds API events %s: HTTP %s", sport, resp.status_code)
+        if resp is None or resp.status_code != 200:
+            code = resp.status_code if resp is not None else "blocked"
+            logger.debug("Odds API events %s: HTTP %s", sport, code)
             return []
         events = resp.json() or []
         _cache_set(cache_key, events)
@@ -99,7 +101,7 @@ def _get_event_market_odds(sport: str, event_id: str, market: str) -> dict:
     if not api_key:
         return {}
     try:
-        resp = requests.get(
+        resp = sync_odds_get(
             f"{_BASE_URL}/{sport}/events/{event_id}/odds",
             params={
                 "regions": "us",
@@ -108,9 +110,11 @@ def _get_event_market_odds(sport: str, event_id: str, market: str) -> dict:
                 "markets": market,
                 "bookmakers": "fanduel",
             },
+            caller=f"etl.nba.fanduel_lines.odds.{sport}.{event_id}",
             timeout=30,
+            raise_for_status=False,
         )
-        if resp.status_code != 200:
+        if resp is None or resp.status_code != 200:
             return {}
         data = resp.json() or {}
         _cache_set(cache_key, data)

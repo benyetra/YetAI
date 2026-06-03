@@ -49,6 +49,8 @@ def fetch_game_odds():
         return {}
 
     try:
+        from app.services.odds_api_sync import sync_odds_get
+
         url = f"{BASE_URL}{SPORT}/odds/"
         params = {
             "apiKey": ODDS_API_KEY,
@@ -57,8 +59,11 @@ def fetch_game_odds():
             "bookmakers": "fanduel,fanatics",
             "oddsFormat": "american",
         }
-        resp = requests.get(url, params=params, timeout=15)
-        resp.raise_for_status()
+        resp = sync_odds_get(
+            url, params=params, caller="etl.mlb.game_projection", timeout=15
+        )
+        if resp is None:
+            return {}
         events = resp.json()
     except Exception as e:
         logger.warning(f"Failed to fetch odds: {e}")

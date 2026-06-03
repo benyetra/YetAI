@@ -176,7 +176,9 @@ def get_odds(schedule, stats: dict | None = None):
     preferred = ("fanduel", "draftkings", "fanatics")
 
     try:
-        resp = requests.get(
+        from app.services.odds_api_sync import sync_odds_get
+
+        resp = sync_odds_get(
             f"{BASE_URL}{SPORT}/odds/",
             params={
                 "apiKey": ODDS_API_KEY,
@@ -185,9 +187,12 @@ def get_odds(schedule, stats: dict | None = None):
                 "oddsFormat": "american",
                 "bookmakers": ",".join(preferred),
             },
+            caller="etl.mlb.mlb_ev",
             timeout=30,
+            raise_for_status=True,
         )
-        resp.raise_for_status()
+        if resp is None:
+            return {}
         events = resp.json()
     except Exception as e:
         logging.warning("bulk odds fetch failed: %s", e)

@@ -6,7 +6,7 @@ import { TrendingUp, Target, Users, MessageCircle, Clock, Send, BarChart3, Crown
 import PerformanceDashboard from './PerformanceDashboard';
 import { useAuth } from './Auth';
 import BetModal from './BetModal';
-import { oddsUtils } from '../lib/api';
+import { oddsUtils, sportsAPI } from '../lib/api';
 import { getApiUrl, apiRequest } from '@/lib/api-config';
 import { 
   formatSportName, 
@@ -140,13 +140,13 @@ export default function BettingDashboard() {
       
       const [gamesData, oddsData, predictionsData, fantasyData] = await Promise.all([
         api.get('/api/games/nfl'),
-        api.get('/api/odds/nfl'),
+        sportsAPI.getPopularOdds(true),
         api.get('/api/predictions/daily'),
         api.get('/api/fantasy/projections')
       ]);
 
       if (gamesData) setGames(gamesData.games || []);
-      if (oddsData) setOdds(oddsData.odds || []);
+      if (oddsData) setOdds(oddsData.games || []);
       if (predictionsData) setPredictions(predictionsData.predictions || []);
       if (fantasyData) setFantasyProjections(fantasyData.projections || []);
       
@@ -157,8 +157,8 @@ export default function BettingDashboard() {
     fetchData();
     loadChatSuggestions();
     
-    // Refresh every 5 minutes
-    const interval = setInterval(fetchData, 5 * 60 * 1000);
+    // Refresh every 15 minutes (backend caches odds for 1 hour)
+    const interval = setInterval(fetchData, 15 * 60 * 1000);
     return () => clearInterval(interval);
   }, []);
   
