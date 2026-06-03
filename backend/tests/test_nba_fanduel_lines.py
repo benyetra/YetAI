@@ -268,7 +268,15 @@ def test_event_and_odds_lookups_are_memoized_per_run(monkeypatch):
     monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
+    def fake_sync_get(
+        url,
+        *,
+        params=None,
+        headers=None,
+        caller="sync",
+        timeout=30,
+        raise_for_status=True,
+    ):
         calls.append(url)
         if url.endswith("/events"):
             return _FakeResp(_events_payload())
@@ -313,7 +321,15 @@ def test_clear_cache_forces_refetch(monkeypatch):
     monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
+    def fake_sync_get(
+        url,
+        *,
+        params=None,
+        headers=None,
+        caller="sync",
+        timeout=30,
+        raise_for_status=True,
+    ):
         calls.append(url)
         if url.endswith("/events"):
             return _FakeResp(_events_payload())

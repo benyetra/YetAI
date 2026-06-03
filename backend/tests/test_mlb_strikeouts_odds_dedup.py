@@ -54,13 +54,19 @@ def test_book_line_lookup_is_memoized_per_event(monkeypatch):
     monkeypatch.setattr(so, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
+    def fake_sync_get(
+        url,
+        *,
+        params=None,
+        headers=None,
+        caller="sync",
+        timeout=30,
+        raise_for_status=True,
+    ):
         calls.append(url)
         return _FakeResp(_odds_payload())
 
-    monkeypatch.setattr(
-        "app.services.odds_api_sync.sync_odds_get", fake_sync_get
-    )
+    monkeypatch.setattr("app.services.odds_api_sync.sync_odds_get", fake_sync_get)
 
     home = so.get_book_line("evt-1", "Gerrit Cole")
     away = so.get_book_line("evt-1", "Zack Wheeler")
@@ -77,13 +83,19 @@ def test_clear_cache_forces_refetch(monkeypatch):
     monkeypatch.setattr(so, "ODDS_API_KEY", "test-key", raising=False)
     calls: list[str] = []
 
-    def fake_sync_get(url, *, params=None, headers=None, caller="sync", timeout=30, raise_for_status=True):
+    def fake_sync_get(
+        url,
+        *,
+        params=None,
+        headers=None,
+        caller="sync",
+        timeout=30,
+        raise_for_status=True,
+    ):
         calls.append(url)
         return _FakeResp(_odds_payload())
 
-    monkeypatch.setattr(
-        "app.services.odds_api_sync.sync_odds_get", fake_sync_get
-    )
+    monkeypatch.setattr("app.services.odds_api_sync.sync_odds_get", fake_sync_get)
 
     so.get_book_line("evt-1", "Gerrit Cole")
     so.clear_strikeout_odds_cache()
