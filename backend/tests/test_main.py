@@ -119,6 +119,35 @@ class TestProductionApp:
         assert response.status_code == 200
         mock_get_odds.assert_awaited_once_with("basketball_wnba", "WNBA")
 
+    @patch("app.main._wnba_games_from_pred_lines")
+    @patch("app.main._get_odds_with_cache", new_callable=AsyncMock)
+    def test_wnba_odds_falls_back_to_pred_game_lines(
+        self, mock_get_odds, mock_db_games, client
+    ):
+        mock_get_odds.return_value = {
+            "status": "error",
+            "games": [],
+            "message": "Failed to fetch WNBA odds: Invalid API key",
+            "odds_api_configured": True,
+        }
+        mock_db_games.return_value = [
+            {
+                "id": "evt-wnba-1",
+                "sport_key": "basketball_wnba",
+                "home_team": "New York Liberty",
+                "away_team": "Las Vegas Aces",
+                "commence_time": "2026-06-05T00:00:00Z",
+                "bookmakers": [],
+            }
+        ]
+        response = client.get("/api/odds/basketball_wnba")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["source"] == "pred_wnba_game_lines"
+        assert len(data["games"]) == 1
+        assert data["games"][0]["id"] == "evt-wnba-1"
+
     @patch("app.core.service_loader.is_service_available")
     @patch("app.core.service_loader.get_service")
     def test_chat_message_endpoint_success(

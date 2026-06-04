@@ -5692,10 +5692,17 @@ def _odds_not_configured_payload(sport_label: str, *, odds_key: str = "games") -
 def _odds_fetch_failure_payload(
     sport_label: str, error: Exception, *, odds_key: str = "games"
 ) -> dict:
+    detail = str(error)
+    message = f"Failed to fetch {sport_label} odds: {detail}"
+    if "Invalid API key" in detail:
+        message += (
+            " Verify ODDS_API_KEY on the API service matches your active key at "
+            "the-odds-api.com (Railway variable, no extra quotes)."
+        )
     return {
         "status": "error",
         odds_key: [],
-        "message": f"Failed to fetch {sport_label} odds: {error}",
+        "message": message,
         "odds_api_configured": True,
     }
 
@@ -5995,6 +6002,66 @@ async def get_nba_odds():
     return await _get_odds_with_cache("basketball_nba", "NBA")
 
 
+def _wnba_games_from_pred_lines(*, days_ahead: int = 14) -> list[dict]:
+    """Upcoming WNBA slates from pred_wnba_game_lines (ETL / Odds API sync).
+
+    Used when live Odds API calls fail (e.g. bad key on API worker) so admin bet
+    entry can still list games that have odds_api_event_id for prop lookups.
+    """
+    from datetime import datetime, time, timedelta, timezone
+
+    from app.core.database import SessionLocal
+    from app.models.predictions_models import WNBAGameLines
+    from app.services.etl.wnba._espn import EASTERN, now_eastern
+
+    today = now_eastern().date()
+    end = today + timedelta(days=days_ahead)
+    db = SessionLocal()
+    try:
+        rows = (
+            db.query(WNBAGameLines)
+            .filter(
+                WNBAGameLines.game_date >= today,
+                WNBAGameLines.game_date <= end,
+            )
+            .order_by(WNBAGameLines.game_date, WNBAGameLines.game_time)
+            .all()
+        )
+    finally:
+        db.close()
+
+    games: list[dict] = []
+    for row in rows:
+        commence = row.game_time
+        if commence is None:
+            commence = datetime.combine(
+                row.game_date, time(19, 0), tzinfo=EASTERN
+            ).astimezone(timezone.utc)
+        elif commence.tzinfo is None:
+            commence = commence.replace(tzinfo=timezone.utc)
+        else:
+            commence = commence.astimezone(timezone.utc)
+
+        event_id = row.odds_api_event_id
+        if not event_id:
+            slug_home = (row.home_team_name or "home").replace(" ", "-")
+            slug_away = (row.away_team_name or "away").replace(" ", "-")
+            event_id = f"wnba-{row.game_date}-{slug_away}-at-{slug_home}"
+
+        games.append(
+            {
+                "id": event_id,
+                "sport_key": "basketball_wnba",
+                "sport_title": "WNBA",
+                "commence_time": commence.isoformat().replace("+00:00", "Z"),
+                "home_team": row.home_team_name,
+                "away_team": row.away_team_name,
+                "bookmakers": [],
+            }
+        )
+    return games
+
+
 @app.options("/api/odds/basketball_wnba")
 async def options_wnba_odds():
     """Handle CORS preflight for WNBA odds"""
@@ -6003,8 +6070,28 @@ async def options_wnba_odds():
 
 @app.get("/api/odds/basketball_wnba")
 async def get_wnba_odds():
-    """Get WNBA odds (cache-first)."""
-    return await _get_odds_with_cache("basketball_wnba", "WNBA")
+    """Get WNBA odds (cache-first, with pred_wnba_game_lines fallback)."""
+    result = await _get_odds_with_cache("basketball_wnba", "WNBA")
+    if result.get("status") == "success" and result.get("games"):
+        return result
+
+    db_games = _wnba_games_from_pred_lines()
+    if db_games:
+        payload = {
+            "status": "success",
+            "games": db_games,
+            "count": len(db_games),
+            "cached": True,
+            "source": "pred_wnba_game_lines",
+        }
+        if result.get("status") != "success":
+            payload["message"] = (
+                f"Live Odds API unavailable ({result.get('message', 'error')}); "
+                "showing games from WNBA game lines table."
+            )
+        return payload
+
+    return result
 
 
 @app.options("/api/odds/baseball_mlb")
