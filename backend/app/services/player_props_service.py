@@ -54,6 +54,22 @@ PLAYER_PROP_MARKETS = {
         "player_double_double",  # Double double
         "player_triple_double",  # Triple double
     ],
+    "basketball_wnba": [
+        "player_points",
+        "player_rebounds",
+        "player_assists",
+        "player_threes",
+        "player_blocks",
+        "player_steals",
+        "player_turnovers",
+        "player_points_rebounds_assists",
+        "player_points_rebounds",
+        "player_points_assists",
+        "player_rebounds_assists",
+        "player_blocks_steals",
+        "player_double_double",
+        "player_triple_double",
+    ],
     "icehockey_nhl": [
         "player_points",  # Points (Goals + Assists)
         "player_assists",  # Assists
@@ -102,6 +118,13 @@ FALLBACK_PLAYER_PROP_MARKETS = {
         "player_anytime_td",
     ],
     "basketball_nba": [
+        "player_points",
+        "player_rebounds",
+        "player_assists",
+        "player_threes",
+        "player_points_rebounds_assists",
+    ],
+    "basketball_wnba": [
         "player_points",
         "player_rebounds",
         "player_assists",

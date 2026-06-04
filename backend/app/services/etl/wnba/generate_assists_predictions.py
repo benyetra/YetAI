@@ -15,6 +15,7 @@ from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.etl.wnba._ml_predict import predict
+from app.services.etl.wnba._prop_lines import attach_prop_market_fields
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ def run() -> dict:
     upsert_rows: list[dict] = []
     skipped_injured = 0
     skipped_thin = 0
+    lines_attached = 0
     try:
         active_rows = (
             db.query(WNBATodayActivePlayers)
@@ -58,20 +60,28 @@ def run() -> dict:
             except Exception as exc:
                 logger.warning("predict failed for player %s: %s", p.player_id, exc)
                 continue
-            upsert_rows.append(
-                {
-                    "date": today,
-                    "player_id": p.player_id,
-                    "player_name": p.player_name,
-                    "opponent_team_name": p.opponent_team_name,
-                    "projected_assists": projected,
-                    "market_line": None,
-                    "edge": None,
-                    "recommendation": "NO_PLAY",
-                    "confidence_score": None,
-                    "created_at": datetime.utcnow(),
-                }
-            )
+            row = {
+                "date": today,
+                "player_id": p.player_id,
+                "player_name": p.player_name,
+                "opponent_team_name": p.opponent_team_name,
+                "projected_assists": projected,
+                "market_line": None,
+                "edge": None,
+                "recommendation": "NO_PLAY",
+                "confidence_score": None,
+                "created_at": datetime.utcnow(),
+            }
+            if attach_prop_market_fields(
+                row,
+                team_name=p.team_name,
+                opponent_team_name=p.opponent_team_name or "",
+                player_name=p.player_name,
+                stat=STAT,
+                projected=projected,
+            ):
+                lines_attached += 1
+            upsert_rows.append(row)
         upsert_many(
             db,
             WNBAAssistsProjections,
@@ -79,10 +89,16 @@ def run() -> dict:
             conflict_keys=["player_id", "date"],
         )
         db.commit()
+        rows_written = len(upsert_rows)
+        coverage = (
+            round(100.0 * lines_attached / rows_written, 1) if rows_written else None
+        )
         return {
             "status": "ok",
             "date": today.isoformat(),
-            "projections_written": len(upsert_rows),
+            "projections_written": rows_written,
+            "market_lines_attached": lines_attached,
+            "market_line_coverage_pct": coverage,
             "skipped_injured": skipped_injured,
             "skipped_thin_history": skipped_thin,
         }

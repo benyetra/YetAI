@@ -187,13 +187,15 @@ def fetch_fanduel_prop_for_player(
     player_name: str,
     market: str,
     projection: float,
+    *,
+    sport: str = NBA_SPORT,
 ) -> tuple[float | None, str | None]:
     """Resolve FanDuel line + pick side for one player prop, or (None, None)."""
-    event_id = get_event_id_for_game(NBA_SPORT, team_name, opponent_team_name)
+    event_id = get_event_id_for_game(sport, team_name, opponent_team_name)
     if not event_id:
         return None, None
     line, _price, flag = get_fanduel_line(
-        NBA_SPORT, event_id, player_name, market, projection
+        sport, event_id, player_name, market, projection
     )
     if line <= 0 or flag == "n":
         return None, None

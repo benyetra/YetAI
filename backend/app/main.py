@@ -6188,6 +6188,7 @@ async def get_player_props(
     supported_sports = [
         "americanfootball_nfl",
         "basketball_nba",
+        "basketball_wnba",
         "icehockey_nhl",
         "baseball_mlb",
     ]
