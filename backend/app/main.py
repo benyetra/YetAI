@@ -6053,6 +6053,8 @@ def _wnba_games_from_pred_lines(*, days_ahead: int = 14) -> list[dict]:
             slug_away = (row.away_team_name or "away").replace(" ", "-")
             event_id = f"wnba-{row.game_date}-{slug_away}-at-{slug_home}"
 
+        from app.services.wnba_admin_odds_fallback import bookmakers_from_game_line
+
         games.append(
             {
                 "id": event_id,
@@ -6061,7 +6063,7 @@ def _wnba_games_from_pred_lines(*, days_ahead: int = 14) -> list[dict]:
                 "commence_time": commence.isoformat().replace("+00:00", "Z"),
                 "home_team": row.home_team_name,
                 "away_team": row.away_team_name,
-                "bookmakers": [],
+                "bookmakers": bookmakers_from_game_line(row),
             }
         )
     return games
@@ -6342,6 +6344,28 @@ async def get_player_props(
         raise
     except Exception as e:
         logger.error(f"Error fetching player props for {sport} event {event_id}: {e}")
+        if sport == "basketball_wnba" and "Invalid API key" in str(e):
+            from app.core.database import SessionLocal
+            from app.services.wnba_admin_odds_fallback import (
+                wnba_player_props_from_projections,
+            )
+
+            db = SessionLocal()
+            try:
+                props_data = wnba_player_props_from_projections(db, event_id=event_id)
+            finally:
+                db.close()
+            if props_data:
+                return {
+                    "status": "success",
+                    "data": props_data,
+                    "cached": False,
+                    "source": "pred_wnba_prop_projections",
+                    "message": (
+                        "Live Odds API unavailable (invalid API key); "
+                        "showing WNBA projection market lines (-110 placeholder odds)."
+                    ),
+                }
         raise HTTPException(status_code=500, detail=str(e))
 
 
