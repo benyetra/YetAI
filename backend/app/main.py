@@ -6018,15 +6018,20 @@ def _wnba_games_from_pred_lines(*, days_ahead: int = 14) -> list[dict]:
     end = today + timedelta(days=days_ahead)
     db = SessionLocal()
     try:
-        rows = (
-            db.query(WNBAGameLines)
-            .filter(
-                WNBAGameLines.game_date >= today,
-                WNBAGameLines.game_date <= end,
+        try:
+            rows = (
+                db.query(WNBAGameLines)
+                .filter(
+                    WNBAGameLines.game_date >= today,
+                    WNBAGameLines.game_date <= end,
+                )
+                .order_by(WNBAGameLines.game_date, WNBAGameLines.game_time)
+                .all()
             )
-            .order_by(WNBAGameLines.game_date, WNBAGameLines.game_time)
-            .all()
-        )
+        except Exception as exc:
+            # CI / fresh DBs may not have WNBA migrations applied yet.
+            logger.warning("pred_wnba_game_lines fallback unavailable: %s", exc)
+            return []
     finally:
         db.close()
 
