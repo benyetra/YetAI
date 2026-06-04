@@ -4,11 +4,11 @@ from typing import Optional
 from app.models.database_models import SubscriptionTier
 from app.services.auto_pick.confidence_score import ConfidenceScore
 from app.services.auto_pick.parlay_utils import (
+    MIN_PARLAY_COMBINED_ODDS,
     combine_parlay_odds,
     meets_parlay_odds_target,
 )
 from app.services.auto_pick.selector import ScoredCandidate, SelectorConfig
-from app.services.mlb_hit_pick import MIN_PARLAY_COMBINED_ODDS
 
 
 @dataclass
@@ -20,13 +20,19 @@ class ScoredParlayPick:
     drop_reason: Optional[str] = None
 
 
-def _is_parlay_eligible(sc: ScoredCandidate, threshold: float) -> bool:
-    if sc.score.total < threshold:
-        return False
-    md = sc.candidate.projection_metadata or {}
-    if not md.get("parlay_eligible"):
-        return False
-    return md.get("stat") == "hits"
+def filter_parlay_eligible(
+    scored: list[ScoredCandidate], config: SelectorConfig
+) -> list[ScoredCandidate]:
+    """Same quality bar as straight picks: threshold + odds bounds."""
+    eligible: list[ScoredCandidate] = []
+    for sc in scored:
+        if sc.score.total < config.threshold:
+            continue
+        odds = sc.candidate.market_odds
+        if odds < config.odds_min or odds > config.odds_max:
+            continue
+        eligible.append(sc)
+    return eligible
 
 
 def _parlay_confidence(
@@ -37,20 +43,20 @@ def _parlay_confidence(
     breakdown = {
         "leg_a_score": round(leg_a.score.total, 1),
         "leg_b_score": round(leg_b.score.total, 1),
-        "strategy": "mlb_2leg_hits",
+        "strategy": "auto_2leg",
     }
     reasoning = (
-        f"2-leg MLB hit parlay. Leg 1: {leg_a.candidate.selection} "
-        f"(confidence {leg_a.score.total:.0f}). "
+        f"2-leg parlay. Leg 1: {leg_a.candidate.selection} "
+        f"({leg_a.candidate.league}, confidence {leg_a.score.total:.0f}). "
         f"Leg 2: {leg_b.candidate.selection} "
-        f"(confidence {leg_b.score.total:.0f}). "
+        f"({leg_b.candidate.league}, confidence {leg_b.score.total:.0f}). "
         f"Parlay confidence {total:.0f} (conservative min-leg blend)."
     )
     return ConfidenceScore(total=total, breakdown=breakdown, reasoning=reasoning)
 
 
 class ParlaySelector:
-    """Build at most one 2-leg hit parlay when combined odds are better than -125."""
+    """Build at most one 2-leg parlay from any confident auto-pick candidates."""
 
     def __init__(self, config: SelectorConfig):
         self.config = config
@@ -58,9 +64,7 @@ class ParlaySelector:
     def select_parlay(
         self, scored: list[ScoredCandidate]
     ) -> Optional[ScoredParlayPick]:
-        eligible = [
-            sc for sc in scored if _is_parlay_eligible(sc, self.config.threshold)
-        ]
+        eligible = filter_parlay_eligible(scored, self.config)
         if len(eligible) < 2:
             return None
 

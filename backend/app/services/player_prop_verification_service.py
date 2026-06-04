@@ -804,6 +804,7 @@ class PlayerPropVerificationService:
         stat_mapping = {
             "pitcher outs": "outs",
             "strikeouts": "strikeouts",
+            "hits": "hits",
             "hits allowed": "hits",
             "earned runs": "earnedRuns",
             "total bases": "totalBases",

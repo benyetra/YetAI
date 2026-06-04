@@ -5,8 +5,6 @@ from __future__ import annotations
 MIN_COMBINED_SCORE_FOR_AUTO_PICK = 2.0
 DEFAULT_HIT_LINE = 0.5
 DEFAULT_HIT_ODDS = -110
-# Combined 2-leg parlay must pay better than -125 American (e.g. -124, -110, +264).
-MIN_PARLAY_COMBINED_ODDS = -125
 
 
 def qualifies_for_hit_auto_pick(combined_score: float | None) -> bool:

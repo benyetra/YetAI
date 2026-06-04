@@ -1,5 +1,8 @@
 """American odds helpers for auto-pick parlay construction."""
 
+# Combined 2-leg parlay must pay better than -125 American (e.g. -124, -110, +264).
+MIN_PARLAY_COMBINED_ODDS = -125
+
 
 def american_to_decimal(odds: int) -> float:
     if odds > 0:
@@ -20,6 +23,8 @@ def combine_parlay_odds(leg_odds: list[int]) -> int:
     return decimal_to_american(combined)
 
 
-def meets_parlay_odds_target(combined_odds: int, min_floor: int = -125) -> bool:
+def meets_parlay_odds_target(
+    combined_odds: int, min_floor: int = MIN_PARLAY_COMBINED_ODDS
+) -> bool:
     """True when combined American odds are better than ``min_floor`` (e.g. > -125)."""
     return combined_odds > min_floor

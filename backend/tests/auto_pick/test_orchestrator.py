@@ -236,7 +236,7 @@ async def test_orchestrator_persists_parlay_when_two_hit_legs_qualify(monkeypatc
         market_line=0.5,
         market_odds=-110,
         our_projection=0.9,
-        projection_metadata={"stat": "hits", "side": "over", "parlay_eligible": True},
+        projection_metadata={"stat": "hits", "side": "over"},
     )
     hit_b = BetCandidate(
         market_type=MarketType.PLAYER_PROP,
@@ -246,7 +246,7 @@ async def test_orchestrator_persists_parlay_when_two_hit_legs_qualify(monkeypatc
         market_line=0.5,
         market_odds=-110,
         our_projection=0.85,
-        projection_metadata={"stat": "hits", "side": "over", "parlay_eligible": True},
+        projection_metadata={"stat": "hits", "side": "over"},
     )
     prov = AsyncMock()
     prov.get_candidates = AsyncMock(return_value=[hit_a, hit_b])

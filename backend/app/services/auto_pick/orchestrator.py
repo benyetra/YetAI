@@ -93,6 +93,22 @@ _MARKET_TYPE_TO_BET_TYPE: dict[MarketType, BetType] = {
     MarketType.PLAYER_PROP: BetType.PROP,
 }
 
+_MARKET_TYPE_TO_LEG_BET_TYPE: dict[MarketType, str] = {
+    MarketType.MONEYLINE: "Moneyline",
+    MarketType.SPREAD: "Spread",
+    MarketType.TOTAL: "Total",
+    MarketType.PLAYER_PROP: "Player Prop",
+}
+
+AUTO_PARLAY_STRATEGY = "auto_2leg"
+
+
+def parlay_sport_label(legs: tuple[ScoredCandidate, ScoredCandidate]) -> str:
+    leagues = {leg.candidate.league for leg in legs if leg.candidate.league}
+    if len(leagues) == 1:
+        return next(iter(leagues))
+    return "Multi-Sport"
+
 
 @dataclass
 class OrchestratorResult:
@@ -263,7 +279,7 @@ class AutoPickOrchestrator:
         run_id: int,
         pending_by_key: dict[tuple[str, str, str, str], list[YetAIBet]],
     ) -> None:
-        key = pending_parlay_key(strategy="mlb_2leg_hits", sport="MLB")
+        key = pending_parlay_key(strategy=AUTO_PARLAY_STRATEGY, sport="Multi-Sport")
         existing = pending_by_key.get(key, [])
         if existing:
             primary = min(
@@ -313,6 +329,7 @@ class AutoPickOrchestrator:
         c = leg.candidate
         game_label = display_matchup_title(c)
         odds_str = f"+{c.market_odds}" if c.market_odds > 0 else str(c.market_odds)
+        leg_bet_type = _MARKET_TYPE_TO_LEG_BET_TYPE.get(c.market_type, "Player Prop")
         return _json_safe(
             {
                 "sport": c.league,
@@ -320,7 +337,8 @@ class AutoPickOrchestrator:
                 "game_id": c.event_id,
                 "home_team": c.home_team,
                 "away_team": c.away_team,
-                "bet_type": "Player Prop",
+                "bet_type": leg_bet_type,
+                "market_type": c.market_type.value,
                 "pick": c.selection,
                 "odds": odds_str,
                 "confidence": int(round(leg.score.total)),
@@ -348,7 +366,8 @@ class AutoPickOrchestrator:
         combined_str = (
             f"+{p.combined_odds}" if p.combined_odds > 0 else str(p.combined_odds)
         )
-        title = f"MLB 2-Leg Hit Parlay ({combined_str})"
+        sport_label = parlay_sport_label(p.legs)
+        title = f"2-Leg Parlay ({combined_str})"
         reasoning_text = s.reasoning or ""
 
         return YetAIBet(
@@ -366,18 +385,22 @@ class AutoPickOrchestrator:
             score_breakdown=s.breakdown,
             reasoning=reasoning_text,
             auto_pick_run_id=run_id,
-            sport="MLB",
+            sport=sport_label,
             home_team=None,
             away_team=None,
             commence_time=earliest_commence,
             parlay_legs=legs_json,
             prediction_factors=_json_safe(
                 {
-                    "strategy": "mlb_2leg_hits",
+                    "strategy": AUTO_PARLAY_STRATEGY,
                     "combined_odds": p.combined_odds,
                     "leg_event_ids": [
                         leg_a.candidate.event_id,
                         leg_b.candidate.event_id,
+                    ],
+                    "leg_market_types": [
+                        leg_a.candidate.market_type.value,
+                        leg_b.candidate.market_type.value,
                     ],
                 }
             ),

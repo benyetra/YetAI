@@ -72,7 +72,6 @@ class MLBHitsSource:
                     "away_team_name": r.team,
                     "home_team_name": r.opponent,
                     "commence_time": r.game_time,
-                    "parlay_eligible": True,
                     "combined_score": float(r.combined_score),
                     "game_id": str(r.game_id),
                 }

@@ -29,7 +29,7 @@ def _fake_hitter(**kwargs):
     return r
 
 
-def test_mlb_hits_source_returns_parlay_eligible_candidates():
+def test_mlb_hits_source_returns_hit_candidates():
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [_fake_hitter()]
 
@@ -41,7 +41,6 @@ def test_mlb_hits_source_returns_parlay_eligible_candidates():
     assert r["stat"] == "hits"
     assert r["side"] == "over"
     assert r["line"] == 0.5
-    assert r["parlay_eligible"] is True
     assert "mlb-hit" in r["event_id"]
 
 

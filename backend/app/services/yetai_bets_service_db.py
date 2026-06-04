@@ -113,6 +113,17 @@ class YetAIBetsServiceDB:
         return "nba" in blob and "wnba" not in blob
 
     @staticmethod
+    def _is_nhl_sport(value: Optional[str]) -> bool:
+        blob = (value or "").strip().lower()
+        return "nhl" in blob or "hockey" in blob or "icehockey" in blob
+
+    @staticmethod
+    def _is_parlay_bet(bet: YetAIBet) -> bool:
+        if getattr(bet, "bet_type", None) == BetType.PARLAY:
+            return True
+        return bool(getattr(bet, "parlay_legs", None))
+
+    @staticmethod
     def _is_spread_bet(bet: YetAIBet) -> bool:
         value = getattr(bet, "bet_type", None)
         if value == BetType.SPREAD:
@@ -1269,6 +1280,27 @@ class YetAIBetsServiceDB:
                     continue
 
                 if bet.status not in YETAI_UNSETTLED_STATUSES:
+                    continue
+
+                if self._is_parlay_bet(bet):
+                    from app.services.yetai_parlay_verification import (
+                        verify_yetai_parlay,
+                    )
+
+                    parlay_outcome = verify_yetai_parlay(bet, self, prop_service, db)
+                    if parlay_outcome:
+                        result_status, result_description, updated_legs = parlay_outcome
+                        bet.parlay_legs = updated_legs
+                        bet.status = result_status
+                        bet.settled_at = datetime.utcnow()
+                        bet.result = clamp_yetai_result(result_description)
+                        total_settled += 1
+                        settled = True
+                        logger.info(
+                            "Settled YetAI parlay %s: %s",
+                            bet.id[:8],
+                            result_status,
+                        )
                     continue
 
                 if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):

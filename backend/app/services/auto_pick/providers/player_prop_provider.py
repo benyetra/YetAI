@@ -59,7 +59,6 @@ class PlayerPropCandidateProvider:
                             "team": r.get("team"),
                             "opponent": opponent,
                             "opponent_team_name": opponent,
-                            "parlay_eligible": r.get("parlay_eligible", False),
                             "combined_score": r.get("combined_score"),
                             "game_id": r.get("game_id"),
                         },
