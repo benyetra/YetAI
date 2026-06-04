@@ -1,8 +1,9 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
 import { teamColor } from '@/lib/yetai-format';
+import { teamLogoUrl } from '@/lib/team-logos';
 
 const LEAGUE_COLORS: Record<string, string> = {
   NBA: '#C8102E',
@@ -17,7 +18,43 @@ const LEAGUE_COLORS: Record<string, string> = {
   NCAAB: '#C8102E',
 };
 
-export function TeamGlyph({ abbr, size = 22 }: { abbr: string; size?: number }) {
+export function TeamGlyph({
+  abbr,
+  name,
+  league,
+  sportKey,
+  size = 22,
+}: {
+  abbr: string;
+  /** Full team name — used to resolve MLB/NFL logo SVGs */
+  name?: string;
+  league?: string;
+  sportKey?: string;
+  size?: number;
+}) {
+  const [logoFailed, setLogoFailed] = useState(false);
+  const label = (name || abbr).trim();
+  const logoSrc =
+    !logoFailed && label
+      ? teamLogoUrl(label, { league, sportKey, abbr })
+      : null;
+
+  if (logoSrc) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- local static SVGs
+      <img
+        src={logoSrc}
+        alt=""
+        role="presentation"
+        className="team-logo"
+        width={size}
+        height={size}
+        onError={() => setLogoFailed(true)}
+        style={{ width: size, height: size }}
+      />
+    );
+  }
+
   return (
     <span
       className="team-glyph"
@@ -27,6 +64,7 @@ export function TeamGlyph({ abbr, size = 22 }: { abbr: string; size?: number }) 
         height: size,
         fontSize: Math.max(9, size * 0.42),
       }}
+      aria-hidden
     >
       {abbr.slice(0, 3)}
     </span>

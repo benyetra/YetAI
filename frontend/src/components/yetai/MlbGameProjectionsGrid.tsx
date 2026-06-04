@@ -414,7 +414,7 @@ function TeamLine({
         border: isPick ? '1px solid color-mix(in oklab, var(--win) 35%, transparent)' : '1px solid transparent',
       }}
     >
-      <TeamGlyph abbr={teamAbbr(name)} />
+      <TeamGlyph abbr={teamAbbr(name)} name={name} league="MLB" />
       <span className="type-section-title" style={{ margin: 0, fontSize: 15, flex: 1 }}>
         {name}
       </span>
@@ -523,7 +523,7 @@ function PickRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        {!isTotal ? <TeamGlyph abbr={teamAbbr(pick.team)} /> : null}
+        {!isTotal ? <TeamGlyph abbr={teamAbbr(pick.team)} name={pick.team} league="MLB" /> : null}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className={pickKindClass(pick.kind)} style={{ fontSize: 10 }}>

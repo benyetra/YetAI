@@ -52,12 +52,12 @@ export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void
           <div className="pick-teams">
             <div className="pick-team">
               <span className="t-name">
-                <TeamGlyph abbr={teamAbbr(away)} /> {away}
+                <TeamGlyph abbr={teamAbbr(away)} name={away} league={pick.league} sportKey={pick.sport} /> {away}
               </span>
             </div>
             <div className="pick-team">
               <span className="t-name">
-                <TeamGlyph abbr={teamAbbr(home)} /> {home}
+                <TeamGlyph abbr={teamAbbr(home)} name={home} league={pick.league} sportKey={pick.sport} /> {home}
               </span>
             </div>
           </div>
@@ -119,12 +119,12 @@ export function HeroAIPick({
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <TeamGlyph abbr={teamAbbr(away)} size={36} />
+                <TeamGlyph abbr={teamAbbr(away)} name={away} league={pick.league} sportKey={pick.sport} size={36} />
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{away}</div>
               </div>
               <span style={{ color: 'var(--text-4)', fontFamily: 'var(--mono)', fontSize: 13 }}>@</span>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <TeamGlyph abbr={teamAbbr(home)} size={36} />
+                <TeamGlyph abbr={teamAbbr(home)} name={home} league={pick.league} sportKey={pick.sport} size={36} />
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{home}</div>
               </div>
             </div>

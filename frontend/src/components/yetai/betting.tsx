@@ -49,12 +49,12 @@ export function GameOddsRow({
     <div className="game-row">
       <div className="game-teams">
         <div className="game-team">
-          <TeamGlyph abbr={game.away.abbr} size={20} />
+          <TeamGlyph abbr={game.away.abbr} name={game.away.name} league={game.league} sportKey={game.sport_key} size={20} />
           <span className="t-name">{game.away.name}</span>
           {game.away.rec ? <span className="dim mono" style={{ fontSize: 11 }}>{game.away.rec}</span> : null}
         </div>
         <div className="game-team">
-          <TeamGlyph abbr={game.home.abbr} size={20} />
+          <TeamGlyph abbr={game.home.abbr} name={game.home.name} league={game.league} sportKey={game.sport_key} size={20} />
           <span className="t-name">{game.home.name}</span>
           {game.home.rec ? <span className="dim mono" style={{ fontSize: 11 }}>{game.home.rec}</span> : null}
         </div>

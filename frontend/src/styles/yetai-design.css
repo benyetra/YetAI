@@ -428,7 +428,8 @@ input { font: inherit; }
 .pick-team { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; }
 .pick-team .t-name { display: flex; align-items: center; gap: 8px; }
 .pick-team .t-rec { color: var(--text-3); font-size: 11.5px; }
-.team-glyph { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: white; letter-spacing: -0.02em; font-family: var(--mono); }
+.team-glyph { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: white; letter-spacing: -0.02em; font-family: var(--mono); flex-shrink: 0; }
+.team-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; padding: 2px; box-sizing: border-box; }
 
 .pick-call {
   background: var(--bg-elev);

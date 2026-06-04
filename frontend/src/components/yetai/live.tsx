@@ -43,7 +43,7 @@ export function LiveGameCard({
       </div>
       <div className="live-score">
         <div className="live-team">
-          <TeamGlyph abbr={game.away.abbr} size={28} />
+          <TeamGlyph abbr={game.away.abbr} name={game.away.name} league={game.league} sportKey={game.sport_key} size={28} />
           <div>
             <div style={{ fontSize: 13.5 }}>{game.away.name}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Away</div>
@@ -59,7 +59,7 @@ export function LiveGameCard({
             <div style={{ fontSize: 13.5 }}>{game.home.name}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Home</div>
           </div>
-          <TeamGlyph abbr={game.home.abbr} size={28} />
+          <TeamGlyph abbr={game.home.abbr} name={game.home.name} league={game.league} sportKey={game.sport_key} size={28} />
         </div>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6, marginTop: 4 }}>
