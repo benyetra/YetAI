@@ -360,6 +360,20 @@ def calculate_venue_adjustment(home_team: str) -> float:
     return adjustment
 
 
+def _points_values(games) -> list[float]:
+    """Extract numeric points from recent-game rows; skip null/invalid."""
+    values: list[float] = []
+    for game in games:
+        pts = game.points
+        if pts is None:
+            continue
+        try:
+            values.append(float(pts))
+        except (TypeError, ValueError):
+            continue
+    return values
+
+
 def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
     """
     Calculate a team's recent form by comparing tracked players' recent
@@ -392,11 +406,11 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
         # Get all games for this player
         all_games = db.query(WNBARecentGames).filter_by(player_id=player_id).all()
 
-        if len(all_games) < 5:  # Need enough games for meaningful comparison
+        season_points = _points_values(all_games)
+        if len(season_points) < 5:  # Need enough games with scored points
             continue
 
-        # Calculate season average PPG
-        season_avg_ppg = sum(g.points for g in all_games) / len(all_games)
+        season_avg_ppg = sum(season_points) / len(season_points)
 
         if season_avg_ppg < 5.0:  # Skip low-minute players
             continue
@@ -405,7 +419,11 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
         recent_games = sorted(all_games, key=lambda x: x.game_date, reverse=True)[
             :num_recent_games
         ]
-        recent_avg_ppg = sum(g.points for g in recent_games) / len(recent_games)
+        recent_points = _points_values(recent_games)
+        if not recent_points:
+            continue
+
+        recent_avg_ppg = sum(recent_points) / len(recent_points)
 
         # Calculate deviation from season average
         deviation = recent_avg_ppg - season_avg_ppg
