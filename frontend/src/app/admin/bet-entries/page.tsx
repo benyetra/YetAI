@@ -486,6 +486,13 @@ export default function AdminBetEntriesPage() {
       const result = await sportsAPI.getOdds(sportKey);
       if (result.status === 'success' && result.games) {
         setAvailableGames(result.games);
+      } else if (result.status === 'error') {
+        const detail =
+          (result as { message?: string }).message ||
+          (result as { detail?: string }).detail ||
+          'Odds API returned no games';
+        setMessage({ type: 'error', text: `${selectedSport}: ${detail}` });
+        setAvailableGames([]);
       }
     } catch (error) {
       console.error('Error fetching games:', error);

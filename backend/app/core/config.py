@@ -4,6 +4,43 @@ from typing import List, Optional
 from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Template values from .env.example / .env.production — must never be sent to Odds API.
+_ODDS_API_KEY_PLACEHOLDERS = frozenset(
+    {
+        "your_odds_api_key_here",
+        "your-odds-api-key",
+        "your-odds-api-key-here",
+    }
+)
+
+
+def _clean_odds_api_key(raw: Optional[str]) -> Optional[str]:
+    if raw is None:
+        return None
+    if not isinstance(raw, str):
+        return raw
+    cleaned = raw.strip().strip('"').strip("'")
+    if not cleaned or cleaned in _ODDS_API_KEY_PLACEHOLDERS:
+        return None
+    return cleaned
+
+
+def _resolve_odds_api_key(
+    field_value: Optional[str] = None,
+) -> tuple[Optional[str], str]:
+    """Return (key, source_label) using the same precedence as Settings."""
+    env_primary = _clean_odds_api_key(os.environ.get("ODDS_API_KEY"))
+    if env_primary:
+        return env_primary, "ODDS_API_KEY"
+    field_key = _clean_odds_api_key(field_value)
+    if field_key:
+        return field_key, "settings_field"
+    for env_name in ("ODDS_API", "THE_ODDS_API_KEY"):
+        alias_key = _clean_odds_api_key(os.environ.get(env_name))
+        if alias_key:
+            return alias_key, env_name
+    return None, "none"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -21,11 +58,10 @@ class Settings(BaseSettings):
         "postgresql://sports_user:sports_pass@localhost:5432/sports_betting_ai"
     )
 
-    # External APIs — accept ODDS_API_KEY or ODDS_API (common Railway/Vercel typo)
-    ODDS_API_KEY: Optional[str] = Field(
-        default=None,
-        validation_alias=AliasChoices("ODDS_API_KEY", "ODDS_API"),
-    )
+    # Odds API: bind only ODDS_API_KEY here. ODDS_API is a manual fallback in
+    # _coalesce_odds_api_key so a stale ODDS_API placeholder cannot override a
+    # valid ODDS_API_KEY on Railway.
+    ODDS_API_KEY: Optional[str] = Field(default=None, validation_alias="ODDS_API_KEY")
     OPENAI_API_KEY: Optional[str] = None
     WEATHER_API_KEY: Optional[str] = None
 
@@ -117,44 +153,38 @@ class Settings(BaseSettings):
     @classmethod
     def _normalize_odds_api_key(cls, value: Optional[str]) -> Optional[str]:
         """Strip dashboard copy/paste artifacts (quotes, whitespace)."""
-        if value is None:
-            return None
-        if not isinstance(value, str):
-            return value
-        cleaned = value.strip().strip('"').strip("'")
-        if not cleaned or cleaned == "your_odds_api_key_here":
-            return None
-        return cleaned
+        return _clean_odds_api_key(value)
 
     @model_validator(mode="after")
     def _coalesce_odds_api_key(self) -> "Settings":
-        """Read ODDS_API_KEY directly from os.environ as a safety net in case
-        pydantic-settings fails to resolve it via AliasChoices, then fall back
-        to alternate env var names used by some dashboards."""
-        if not self.ODDS_API_KEY:
-            raw = (
-                os.environ.get("ODDS_API_KEY")
-                or os.environ.get("ODDS_API")
-                or os.environ.get("THE_ODDS_API_KEY")
-            )
-            if raw:
-                cleaned = raw.strip().strip('"').strip("'")
-                if cleaned and cleaned not in (
-                    "your_odds_api_key_here",
-                    "your-odds-api-key",
-                ):
-                    self.ODDS_API_KEY = cleaned
+        """Resolve Odds API key from process env with explicit precedence.
+
+        1. ``ODDS_API_KEY`` env (Railway canonical name) — always wins when valid.
+        2. Field value from pydantic (e.g. local ``.env``) if not a placeholder.
+        3. ``ODDS_API`` / ``THE_ODDS_API_KEY`` env aliases when (1) missing.
+        """
+        key, _source = _resolve_odds_api_key(self.ODDS_API_KEY)
+        object.__setattr__(self, "ODDS_API_KEY", key)
         return self
 
     def odds_api_env_diagnostics(self) -> dict:
         """Non-secret hints for debugging env wiring (Railway vs Vercel)."""
-        raw = os.environ.get("ODDS_API_KEY") or os.environ.get("ODDS_API") or ""
-        key = self.ODDS_API_KEY or ""
+        env_key_raw = os.environ.get("ODDS_API_KEY") or ""
+        env_alias_raw = os.environ.get("ODDS_API") or ""
+        key, resolved_from = _resolve_odds_api_key(self.ODDS_API_KEY)
+        env_primary = _clean_odds_api_key(env_key_raw)
+        env_alias = _clean_odds_api_key(env_alias_raw)
         return {
             "resolved_key_configured": bool(key),
-            "env_ODDS_API_KEY_set": bool(os.environ.get("ODDS_API_KEY")),
-            "env_ODDS_API_set": bool(os.environ.get("ODDS_API")),
-            "raw_env_length": len(raw),
+            "resolved_from": resolved_from,
+            "env_ODDS_API_KEY_set": bool(env_key_raw.strip()),
+            "env_ODDS_API_set": bool(env_alias_raw.strip()),
+            "env_ODDS_API_KEY_usable": bool(env_primary),
+            "env_ODDS_API_usable": bool(env_alias),
+            "env_ODDS_API_KEY_placeholder": bool(
+                env_key_raw.strip() and not env_primary
+            ),
+            "env_ODDS_API_placeholder": bool(env_alias_raw.strip() and not env_alias),
             "resolved_key_length": len(key),
             "resolved_key_preview": (
                 f"{key[:4]}...{key[-4:]}" if len(key) >= 8 else "too_short"
