@@ -17,7 +17,9 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OUT_ROOT = REPO_ROOT / "frontend" / "public" / "team-logos"
-REGISTRY_PATH = REPO_ROOT / "frontend" / "src" / "lib" / "team-logo-registry.generated.ts"
+REGISTRY_PATH = (
+    REPO_ROOT / "frontend" / "src" / "lib" / "team-logo-registry.generated.ts"
+)
 
 # YetAI folder key -> ESPN (sport, league, query)
 LEAGUES: dict[str, tuple[str, str, str]] = {
