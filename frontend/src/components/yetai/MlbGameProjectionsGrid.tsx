@@ -28,6 +28,8 @@ const VARIANT = {
     showMatchupSubtitle: true,
     emptySubtitle: 'TBD',
     includeMoneylinePicks: true,
+    logoLeague: 'MLB',
+    sportKey: 'baseball_mlb',
   },
   basketball: {
     spreadEdgeThreshold: 2.0,
@@ -35,6 +37,8 @@ const VARIANT = {
     showMatchupSubtitle: true,
     emptySubtitle: '',
     includeMoneylinePicks: false,
+    logoLeague: 'WNBA',
+    sportKey: 'basketball_wnba',
   },
 } as const;
 
@@ -213,6 +217,8 @@ export default function GameProjectionsGrid({
           proj={proj}
           showResults={isPastDate || hasFinalScore(proj)}
           variant={variant}
+          logoLeague={cfg.logoLeague}
+          sportKey={cfg.sportKey}
         />
       ))}
     </div>
@@ -232,10 +238,14 @@ function GameCard({
   proj,
   showResults,
   variant,
+  logoLeague,
+  sportKey,
 }: {
   proj: GameRow;
   showResults: boolean;
   variant: GameProjectionsVariant;
+  logoLeague: string;
+  sportKey: string;
 }) {
   const cfg = VARIANT[variant];
   const away = formatString(proj.away_team);
@@ -271,6 +281,8 @@ function GameCard({
               (homeWp > awayWp ? 'HOME' : awayWp > homeWp ? 'AWAY' : null)
             }
             showSubtitle={cfg.showMatchupSubtitle}
+            logoLeague={logoLeague}
+            sportKey={sportKey}
           />
         </div>
         <span className={ratingClass(proj.value_rating)}>{formatString(proj.value_rating) || 'No edge'}</span>
@@ -286,6 +298,8 @@ function GameCard({
         valueRating={formatString(proj.value_rating)}
         proj={proj}
         showResults={showResults}
+        logoLeague={logoLeague}
+        sportKey={sportKey}
       />
 
       <div style={{ marginBottom: 12 }}>
@@ -353,6 +367,8 @@ function TeamMatchupRow({
   recommendedSides,
   mlFavoredSide,
   showSubtitle,
+  logoLeague,
+  sportKey,
 }: {
   away: string;
   home: string;
@@ -361,6 +377,8 @@ function TeamMatchupRow({
   recommendedSides: Set<Side>;
   mlFavoredSide: Side | null;
   showSubtitle: boolean;
+  logoLeague: string;
+  sportKey: string;
 }) {
   const subtitle =
     awayPitcher && homePitcher
@@ -370,9 +388,9 @@ function TeamMatchupRow({
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <TeamLine name={away} side="AWAY" isPick={recommendedSides.has('AWAY')} isFavored={mlFavoredSide === 'AWAY'} />
+        <TeamLine name={away} side="AWAY" isPick={recommendedSides.has('AWAY')} isFavored={mlFavoredSide === 'AWAY'} logoLeague={logoLeague} sportKey={sportKey} />
         <div className="dim" style={{ fontSize: 11, paddingLeft: 34 }}>@</div>
-        <TeamLine name={home} side="HOME" isPick={recommendedSides.has('HOME')} isFavored={mlFavoredSide === 'HOME'} />
+        <TeamLine name={home} side="HOME" isPick={recommendedSides.has('HOME')} isFavored={mlFavoredSide === 'HOME'} logoLeague={logoLeague} sportKey={sportKey} />
       </div>
       {showSubtitle && subtitle ? (
         <p className="dim" style={{ fontSize: 11, marginTop: 8 }}>
@@ -395,11 +413,15 @@ function TeamLine({
   side,
   isPick,
   isFavored,
+  logoLeague,
+  sportKey,
 }: {
   name: string;
   side: Side;
   isPick: boolean;
   isFavored: boolean;
+  logoLeague: string;
+  sportKey: string;
 }) {
   return (
     <div
@@ -414,7 +436,7 @@ function TeamLine({
         border: isPick ? '1px solid color-mix(in oklab, var(--win) 35%, transparent)' : '1px solid transparent',
       }}
     >
-      <TeamGlyph abbr={teamAbbr(name)} name={name} league="MLB" />
+      <TeamGlyph abbr={teamAbbr(name)} name={name} league={logoLeague} sportKey={sportKey} />
       <span className="type-section-title" style={{ margin: 0, fontSize: 15, flex: 1 }}>
         {name}
       </span>
@@ -456,12 +478,16 @@ function ProjectionPicksSection({
   valueRating,
   proj,
   showResults,
+  logoLeague,
+  sportKey,
 }: {
   picks: ProjectionPick[];
   hasEdge: boolean;
   valueRating: string;
   proj: GameRow;
   showResults: boolean;
+  logoLeague: string;
+  sportKey: string;
 }) {
   if (!picks.length) {
     return (
@@ -493,6 +519,8 @@ function ProjectionPicksSection({
             pick={pick}
             emphasized={hasEdge && pick.kind !== 'total'}
             grade={showResults ? pickGrade(proj, pick.kind) : null}
+            logoLeague={logoLeague}
+            sportKey={sportKey}
           />
         ))}
       </div>
@@ -504,10 +532,14 @@ function PickRow({
   pick,
   emphasized,
   grade,
+  logoLeague,
+  sportKey,
 }: {
   pick: ProjectionPick;
   emphasized: boolean;
   grade: boolean | null;
+  logoLeague: string;
+  sportKey: string;
 }) {
   const isTotal = pick.kind === 'total';
 
@@ -523,7 +555,9 @@ function PickRow({
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        {!isTotal ? <TeamGlyph abbr={teamAbbr(pick.team)} name={pick.team} league="MLB" /> : null}
+        {!isTotal ? (
+          <TeamGlyph abbr={teamAbbr(pick.team)} name={pick.team} league={logoLeague} sportKey={sportKey} />
+        ) : null}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span className={pickKindClass(pick.kind)} style={{ fontSize: 10 }}>
