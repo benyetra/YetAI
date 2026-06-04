@@ -1,0 +1,9 @@
+# Keep Railway uploads small — docker build uses backend/ context only.
+# Without this, `railway up` from repo root ships the whole monorepo (team-logos, etc.).
+
+frontend/
+docs/
+design/
+node_modules/
+.git/
+.github/

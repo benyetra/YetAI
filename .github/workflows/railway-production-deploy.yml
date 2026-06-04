@@ -2,12 +2,16 @@ name: Railway Production Deploy
 
 on:
   workflow_dispatch:
-  # Auto-deploy merged changes to production. Without this, merges to main sit
-  # undeployed until someone manually dispatches — which silently stranded the
-  # Odds API rate fixes for days. CI (backend-ci-cd) runs independently on push;
-  # this job only handles the Railway deploy.
+  # Deploy only when backend or deploy config changes. Frontend-only pushes (e.g.
+  # team-logos assets) must not trigger `railway up` — that uploaded ~165MB and
+  # left api.yetai.app returning 502 after a false-positive health check.
   push:
     branches: [main]
+    paths:
+      - 'backend/**'
+      - 'railway.json'
+      - '.railwayignore'
+      - '.github/workflows/railway-production-deploy.yml'
 
 jobs:
   deploy-api:
@@ -22,7 +26,6 @@ jobs:
 
       # Project token only (Project → Settings → Tokens → production environment).
       # Do NOT set RAILWAY_API_TOKEN in the same step — Railway rejects both at once.
-      # No `railway link` needed: pass the API service id on `up`.
       - name: Deploy API (api.yetai.app)
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
@@ -35,17 +38,29 @@ jobs:
         run: |
           railway up --detach --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4
 
-      - name: Wait for health check
+      # --detach returns after upload; wait for the new image to boot before probing.
+      - name: Wait for production health
         run: |
-          for i in $(seq 1 36); do
-            if curl -fsS https://api.yetai.app/health | grep -q '"odds_api"'; then
-              echo "Production health includes odds_api diagnostics."
-              curl -fsS https://api.yetai.app/health
-              exit 0
+          echo "Giving Railway time to build and switch traffic..."
+          sleep 120
+          ok_streak=0
+          for i in $(seq 1 40); do
+            code=$(curl -sS -o /tmp/health.json -w "%{http_code}" https://api.yetai.app/health || echo "000")
+            if [ "$code" = "200" ] && grep -q '"odds_api"' /tmp/health.json && grep -q '"status":"healthy"' /tmp/health.json; then
+              ok_streak=$((ok_streak + 1))
+              echo "Healthy response ($ok_streak/3)"
+              if [ "$ok_streak" -ge 3 ]; then
+                cat /tmp/health.json
+                exit 0
+              fi
+            else
+              ok_streak=0
+              echo "Attempt $i: HTTP $code — waiting..."
+              head -c 400 /tmp/health.json 2>/dev/null || true
+              echo ""
             fi
-            echo "Waiting for deploy... ($i/36)"
             sleep 15
           done
-          echo "Timed out waiting for odds_api in /health"
-          curl -fsS https://api.yetai.app/health || true
+          echo "Production API did not stay healthy after deploy"
+          curl -sS https://api.yetai.app/health || true
           exit 1

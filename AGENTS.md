@@ -69,6 +69,10 @@ cd backend && PYTHONPATH=. python3 scripts/download_espn_team_logos.py
 
 Refreshes `frontend/public/team-logos/{nba,wnba,nhl,epl,mls,ucl,ncaaf,ncaab}/` and `frontend/src/lib/team-logo-registry.generated.ts`.
 
+## Railway production deploy
+
+**Railway Production Deploy** runs only on `backend/**`, `railway.json`, or workflow changes — not on frontend-only commits. Use **workflow_dispatch** if you need to redeploy API after a frontend-only push.
+
 ## OpenAPI / Swagger
 
 Regenerate committed specs after API route changes:
