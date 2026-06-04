@@ -1,6 +1,11 @@
-/** Team logo paths (from YetiBets/static) served under /team-logos/ */
+/** Team logos: MLB/NFL SVGs (YetiBets) + ESPN PNGs for other leagues */
 
-export type TeamLogoLeague = 'mlb' | 'nfl';
+import {
+  ESPN_TEAM_LOGO_REGISTRY,
+  type EspnLogoLeague,
+} from '@/lib/team-logo-registry.generated';
+
+export type TeamLogoLeague = 'mlb' | 'nfl' | EspnLogoLeague;
 
 const NFL_SLUG_BY_ABBR: Record<string, string> = {
   ARI: 'arizona_cardinals',
@@ -45,6 +50,44 @@ const MLB_NAME_ALIASES: Record<string, string> = {
   'cleveland indians': 'cleveland_guardians',
 };
 
+const SPORT_KEY_TO_LEAGUE: Record<string, TeamLogoLeague> = {
+  baseball_mlb: 'mlb',
+  americanfootball_nfl: 'nfl',
+  basketball_nba: 'nba',
+  basketball_wnba: 'wnba',
+  icehockey_nhl: 'nhl',
+  soccer_epl: 'epl',
+  soccer_mls: 'mls',
+  soccer_uefa_champs_league: 'ucl',
+  americanfootball_ncaaf: 'ncaaf',
+  basketball_ncaab: 'ncaab',
+};
+
+const LEAGUE_LABEL_TO_FOLDER: Record<string, TeamLogoLeague> = {
+  MLB: 'mlb',
+  NFL: 'nfl',
+  NBA: 'nba',
+  WNBA: 'wnba',
+  NHL: 'nhl',
+  EPL: 'epl',
+  MLS: 'mls',
+  UCL: 'ucl',
+  NCAAF: 'ncaaf',
+  NCAAB: 'ncaab',
+  'PREMIER LEAGUE': 'epl',
+  'CHAMPIONS LEAGUE': 'ucl',
+};
+
+export function normalizeTeamSlug(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/['.]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
 function normalizeKey(value: string): string {
   return value.trim().toLowerCase().replace(/\./g, '');
 }
@@ -65,20 +108,41 @@ export function nflLogoSlug(teamNameOrAbbr: string): string | null {
   return trimmed.replace(/\s+/g, '_').replace(/\./g, '').toLowerCase();
 }
 
+function resolveEspnStem(
+  league: EspnLogoLeague,
+  name: string,
+  abbr?: string,
+): string | null {
+  const reg = ESPN_TEAM_LOGO_REGISTRY[league];
+  const slug = normalizeTeamSlug(name);
+  if (slug && reg.byName[slug]) return reg.byName[slug];
+  const upper = (abbr || '').trim().toUpperCase();
+  if (upper && reg.byAbbr[upper]) return reg.byAbbr[upper];
+  if (name.length <= 4) {
+    const fromAbbr = reg.byAbbr[name.trim().toUpperCase()];
+    if (fromAbbr) return fromAbbr;
+  }
+  return null;
+}
+
+function logoAssetPath(league: TeamLogoLeague, stem: string): string {
+  if (league === 'mlb' || league === 'nfl') {
+    return `/team-logos/${league}/${stem}.svg`;
+  }
+  return `/team-logos/${league}/${stem}.png`;
+}
+
 export function inferLogoLeague(
   league?: string,
   sportKey?: string,
 ): TeamLogoLeague | null {
   const leagueKey = (league || '').trim().toUpperCase();
-  if (leagueKey === 'MLB') return 'mlb';
-  if (leagueKey === 'NFL') return 'nfl';
+  if (LEAGUE_LABEL_TO_FOLDER[leagueKey]) return LEAGUE_LABEL_TO_FOLDER[leagueKey];
 
   const sport = (sportKey || '').toLowerCase();
-  if (sport.includes('baseball_mlb') || sport.endsWith('_mlb') || sport === 'baseball_mlb') {
-    return 'mlb';
-  }
-  if (sport.includes('americanfootball_nfl') || sport.endsWith('_nfl')) {
-    return 'nfl';
+  if (SPORT_KEY_TO_LEAGUE[sport]) return SPORT_KEY_TO_LEAGUE[sport];
+  for (const [key, folder] of Object.entries(SPORT_KEY_TO_LEAGUE)) {
+    if (sport.includes(key) || sport.endsWith(`_${folder}`)) return folder;
   }
   return null;
 }
@@ -90,63 +154,17 @@ export function teamLogoUrl(
   const name = teamNameOrAbbr.trim();
   if (!name) return null;
 
-  let logoLeague = inferLogoLeague(opts.league, opts.sportKey);
-  if (!logoLeague) logoLeague = inferLogoLeagueFromName(name);
-  if (!logoLeague && opts.abbr && NFL_SLUG_BY_ABBR[opts.abbr.toUpperCase()]) {
-    logoLeague = 'nfl';
-  }
+  const logoLeague = inferLogoLeague(opts.league, opts.sportKey);
+  if (!logoLeague) return null;
 
   if (logoLeague === 'mlb') {
-    return `/team-logos/mlb/${mlbLogoSlug(name)}.svg`;
+    return logoAssetPath('mlb', mlbLogoSlug(name));
   }
   if (logoLeague === 'nfl') {
     const slug = nflLogoSlug(name) ?? (opts.abbr ? nflLogoSlug(opts.abbr) : null);
-    return slug ? `/team-logos/nfl/${slug}.svg` : null;
+    return slug ? logoAssetPath('nfl', slug) : null;
   }
-  return null;
-}
 
-/** Guess league from full team name when sport metadata is missing. */
-function inferLogoLeagueFromName(name: string): TeamLogoLeague | null {
-  const slug = mlbLogoSlug(name);
-  const mlbHints = [
-    'yankees',
-    'red sox',
-    'dodgers',
-    'cubs',
-    'mets',
-    'guardians',
-    'marlins',
-    'diamondbacks',
-    'padres',
-    'rockies',
-    'rangers',
-    'rays',
-    'nationals',
-    'brewers',
-    'twins',
-    'royals',
-    'tigers',
-    'orioles',
-    'phillies',
-    'pirates',
-    'braves',
-    'mariners',
-    'cardinals',
-    'athletics',
-    'angels',
-    'astros',
-    'giants',
-    'blue jays',
-    'white sox',
-    'reds',
-  ];
-  const lower = name.toLowerCase();
-  if (mlbHints.some((h) => lower.includes(h))) return 'mlb';
-  if (nflLogoSlug(name)) return 'nfl';
-  if (Object.values(NFL_SLUG_BY_ABBR).some((s) => s.replace(/_/g, ' ') === lower)) {
-    return 'nfl';
-  }
-  if (slug && !lower.includes('city') && !lower.includes('united')) return 'mlb';
-  return null;
+  const stem = resolveEspnStem(logoLeague, name, opts.abbr);
+  return stem ? logoAssetPath(logoLeague, stem) : null;
 }

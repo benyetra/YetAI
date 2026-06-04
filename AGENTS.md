@@ -59,6 +59,16 @@ cd backend
 PYTHONPATH=. .venv/bin/python scripts/nfl_backtest.py --quick
 ```
 
+## Team logos (design UI)
+
+MLB/NFL SVGs live under `frontend/public/team-logos/{mlb,nfl}/`. Other leagues are synced from ESPN’s public teams API:
+
+```bash
+cd backend && PYTHONPATH=. python3 scripts/download_espn_team_logos.py
+```
+
+Refreshes `frontend/public/team-logos/{nba,wnba,nhl,epl,mls,ucl,ncaaf,ncaab}/` and `frontend/src/lib/team-logo-registry.generated.ts`.
+
 ## OpenAPI / Swagger
 
 Regenerate committed specs after API route changes:
