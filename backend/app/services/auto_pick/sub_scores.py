@@ -21,6 +21,8 @@ def edge_sub_score(candidate: BetCandidate) -> float:
     else:
         delta = candidate.our_projection - candidate.market_line
     norm = EDGE_NORMALIZERS[candidate.market_type]
+    if candidate.projection_metadata.get("stat") == "hits":
+        norm = 0.20
     raw = (delta / norm) * 100.0
     if raw > 100.0:
         return 100.0

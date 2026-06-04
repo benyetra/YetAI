@@ -20,6 +20,10 @@ from app.services.auto_pick.providers.player_prop_provider import (
 )
 from app.services.auto_pick.providers.spread_provider import SpreadCandidateProvider
 from app.services.auto_pick.providers.totals_provider import TotalsCandidateProvider
+from app.services.auto_pick.providers.player_prop_provider import (
+    PlayerPropCandidateProvider,
+)
+from app.services.auto_pick.sources.mlb_hits_source import MLBHitsSource
 from app.services.auto_pick.sources.mlb_strikeout_source import MLBStrikeoutSource
 from app.services.auto_pick.sources.nba_moneyline_source import NBAMoneylineSource
 from app.services.auto_pick.sources.nba_spread_source import NBASpreadSource
@@ -41,6 +45,7 @@ def _build_providers(db):
         MoneylineCandidateProvider(source=NBAMoneylineSource(db)),
         # MLB
         PlayerPropCandidateProvider(source=MLBStrikeoutSource(db)),
+        PlayerPropCandidateProvider(source=MLBHitsSource(db)),
         # NHL
         PlayerPropCandidateProvider(source=NHLGoalieSavesSource(db)),
         TotalsCandidateProvider(source=NHLTotalsSource(db)),

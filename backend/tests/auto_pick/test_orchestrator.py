@@ -221,6 +221,67 @@ async def test_orchestrator_refreshes_existing_pending_pick(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_orchestrator_persists_parlay_when_two_hit_legs_qualify(monkeypatch):
+    """When parlay selector finds a pair, a parlay YetAIBet row is persisted."""
+    from app.services.auto_pick.confidence_score import ConfidenceScore
+    from app.services.auto_pick.parlay_selector import ScoredParlayPick
+    from app.services.auto_pick.selector import ScoredCandidate
+
+    db = _make_db()
+    hit_a = BetCandidate(
+        market_type=MarketType.PLAYER_PROP,
+        league="MLB",
+        event_id="mlb-hit-1-a",
+        selection="Judge OVER 0.5 hits",
+        market_line=0.5,
+        market_odds=-110,
+        our_projection=0.9,
+        projection_metadata={"stat": "hits", "side": "over", "parlay_eligible": True},
+    )
+    hit_b = BetCandidate(
+        market_type=MarketType.PLAYER_PROP,
+        league="MLB",
+        event_id="mlb-hit-2-b",
+        selection="Soto OVER 0.5 hits",
+        market_line=0.5,
+        market_odds=-110,
+        our_projection=0.85,
+        projection_metadata={"stat": "hits", "side": "over", "parlay_eligible": True},
+    )
+    prov = AsyncMock()
+    prov.get_candidates = AsyncMock(return_value=[hit_a, hit_b])
+
+    leg_a = ScoredCandidate(
+        candidate=hit_a,
+        score=ConfidenceScore(total=88, breakdown={}, reasoning=""),
+    )
+    leg_b = ScoredCandidate(
+        candidate=hit_b,
+        score=ConfidenceScore(total=86, breakdown={}, reasoning=""),
+    )
+    fake_parlay = ScoredParlayPick(
+        legs=(leg_a, leg_b),
+        combined_odds=264,
+        score=ConfidenceScore(total=84, breakdown={}, reasoning="2-leg parlay"),
+    )
+
+    monkeypatch.setattr(
+        "app.services.auto_pick.orchestrator.ParlaySelector.select_parlay",
+        lambda self, scored: fake_parlay,
+    )
+
+    orch = AutoPickOrchestrator(db=db, providers=[prov], now=datetime(2026, 5, 22, 9))
+    result = await orch.run()
+
+    assert result.pick_count >= 1
+    added = [call.args[0] for call in db.add.call_args_list]
+    parlays = [b for b in added if getattr(b, "bet_type", None) == BetType.PARLAY]
+    assert len(parlays) == 1
+    assert parlays[0].parlay_legs is not None
+    assert len(parlays[0].parlay_legs) == 2
+
+
+@pytest.mark.asyncio
 async def test_orchestrator_no_providers_returns_failed():
     """Edge case: zero providers → all (zero) providers failed → FAILED."""
     db = _make_db()
