@@ -121,7 +121,8 @@ class YetAIBetsServiceDB:
     def _is_parlay_bet(bet: YetAIBet) -> bool:
         if getattr(bet, "bet_type", None) == BetType.PARLAY:
             return True
-        return bool(getattr(bet, "parlay_legs", None))
+        legs = getattr(bet, "parlay_legs", None)
+        return isinstance(legs, list) and len(legs) >= 2
 
     @staticmethod
     def _is_spread_bet(bet: YetAIBet) -> bool:

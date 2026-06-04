@@ -120,6 +120,28 @@ def test_stale_uses_created_at_when_no_commence_time():
     assert yetai_bet_is_stale(bet, cutoff) is True
 
 
+def test_is_parlay_bet_ignores_magicmock_parlay_legs():
+    service = YetAIBetsServiceDB()
+    mock_bet = MagicMock()
+    mock_bet.bet_type = BetType.PROP
+    assert service._is_parlay_bet(mock_bet) is False
+
+
+def test_is_parlay_bet_true_for_json_legs():
+    service = YetAIBetsServiceDB()
+    bet = YetAIBet(
+        id="p1",
+        title="Parlay",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="2-Leg Parlay",
+        odds=250,
+        confidence=80,
+        parlay_legs=[{"pick": "Leg 1"}, {"pick": "Leg 2"}],
+    )
+    assert service._is_parlay_bet(bet) is True
+
+
 def test_verify_queries_active_not_only_pending():
     service = YetAIBetsServiceDB()
     mock_db = MagicMock()
