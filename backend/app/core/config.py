@@ -185,9 +185,9 @@ class Settings(BaseSettings):
                 env_key_raw.strip() and not env_primary
             ),
             "env_ODDS_API_placeholder": bool(env_alias_raw.strip() and not env_alias),
-            "resolved_key_length": len(key),
+            "resolved_key_length": len(key) if key else 0,
             "resolved_key_preview": (
-                f"{key[:4]}...{key[-4:]}" if len(key) >= 8 else "too_short"
+                f"{key[:4]}...{key[-4:]}" if key and len(key) >= 8 else "too_short"
             ),
         }
 

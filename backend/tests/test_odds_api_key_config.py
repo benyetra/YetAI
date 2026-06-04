@@ -37,3 +37,12 @@ def test_settings_coalesce_uses_odds_api_key_when_alias_is_placeholder():
     ):
         s = Settings()
     assert s.ODDS_API_KEY == "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+
+
+def test_odds_api_env_diagnostics_without_key():
+    with patch.dict(os.environ, {}, clear=True):
+        s = Settings()
+    diag = s.odds_api_env_diagnostics()
+    assert diag["resolved_key_configured"] is False
+    assert diag["resolved_key_length"] == 0
+    assert diag["resolved_key_preview"] == "too_short"
