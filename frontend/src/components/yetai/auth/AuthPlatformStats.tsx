@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
-import { Activity, DollarSign, TrendingUp, Users } from 'lucide-react';
+import { Activity, TrendingUp, Users } from 'lucide-react';
 
 export interface PlatformStats {
   total_users: number;
@@ -94,21 +94,12 @@ export default function AuthPlatformStats() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-        <div className="auth-stat-card">
-          <DollarSign size={18} style={{ color: 'var(--win)', marginBottom: 8 }} />
-          <div className="auth-stat-val" style={{ fontSize: 20 }}>
-            ${stats ? stats.total_winnings.toLocaleString() : '0'}
-          </div>
-          <p className="auth-stat-sub">Total winnings</p>
+      <div className="auth-stat-card">
+        <Users size={18} style={{ color: 'var(--accent)', marginBottom: 8 }} />
+        <div className="auth-stat-val" style={{ fontSize: 20 }}>
+          {stats ? stats.total_users.toLocaleString() : '0'}
         </div>
-        <div className="auth-stat-card">
-          <Users size={18} style={{ color: 'var(--accent)', marginBottom: 8 }} />
-          <div className="auth-stat-val" style={{ fontSize: 20 }}>
-            {stats ? stats.total_users.toLocaleString() : '0'}
-          </div>
-          <p className="auth-stat-sub">Registered users</p>
-        </div>
+        <p className="auth-stat-sub">Registered users</p>
       </div>
 
       {stats && stats.user_avatars.length > 0 ? (
