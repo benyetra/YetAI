@@ -7,6 +7,7 @@ CommonTeamRoster only when the league dashboard is empty or unavailable.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 
 from app.core.database import SessionLocal
@@ -17,6 +18,9 @@ from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
 
 logger = logging.getLogger(__name__)
+
+# Pause between per-team roster calls when league-wide fetch failed (rate limits).
+ROSTER_FALLBACK_DELAY_SECONDS = 2.0
 
 
 def _current_season() -> str:
@@ -60,7 +64,9 @@ def _rows_from_per_team_rosters(season: str) -> tuple[list[dict], int, int]:
     teams_processed = 0
     errors = 0
 
-    for wnba_team_id, team_name in WNBA_ID_TO_NAME.items():
+    for idx, (wnba_team_id, team_name) in enumerate(WNBA_ID_TO_NAME.items()):
+        if idx > 0:
+            time.sleep(ROSTER_FALLBACK_DELAY_SECONDS)
         try:
             rows = _wnba_stats.fetch_team_roster(
                 team_id=int(wnba_team_id), season=season

@@ -27,9 +27,11 @@ from nba_api.stats.endpoints import (  # type: ignore
 logger = logging.getLogger(__name__)
 
 LEAGUE_ID = "10"  # WNBA. NBA is "00".
-MAX_ATTEMPTS = 3
+MAX_ATTEMPTS = 4
 # Keep backoff modest — the daily orchestrator runs many endpoints sequentially.
-BACKOFF_SECONDS = 15.0
+BACKOFF_SECONDS = 20.0
+# nba_api defaults to 30s; stats.nba.com often exceeds that from cloud workers.
+STATS_HTTP_TIMEOUT: tuple[int, int] = (15, 90)
 
 
 def _retry(callable_, label: str):
@@ -59,6 +61,7 @@ def fetch_team_dashboard(
             season_type_all_star="Regular Season",
             measure_type_detailed_defense=measure_type,
             per_mode_detailed=per_mode,
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, f"LeagueDashTeamStats({measure_type})")
@@ -73,6 +76,7 @@ def fetch_team_roster(team_id: int, season: str) -> list[dict[str, Any]]:
             league_id_nullable=LEAGUE_ID,
             team_id=team_id,
             season=season,
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, f"CommonTeamRoster(team={team_id})")
@@ -88,6 +92,7 @@ def fetch_player_game_log(player_id: int, season: str) -> list[dict[str, Any]]:
             player_id=player_id,
             season=season,
             season_type_all_star="Regular Season",
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, f"PlayerGameLog({player_id})")
@@ -101,6 +106,7 @@ def fetch_player_career(player_id: int) -> dict[str, list[dict[str, Any]]]:
         return playercareerstats.PlayerCareerStats(
             league_id_nullable=LEAGUE_ID,
             player_id=player_id,
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, f"PlayerCareerStats({player_id})")
@@ -115,6 +121,7 @@ def fetch_scoreboard(game_date_yyyymmdd: str) -> dict[str, list[dict[str, Any]]]
             league_id=LEAGUE_ID,
             game_date=game_date_yyyymmdd,
             day_offset=0,
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, "ScoreboardV2")
@@ -133,6 +140,7 @@ def fetch_league_player_stats(
             season_type_all_star="Regular Season",
             measure_type_detailed_defense=measure_type,
             per_mode_detailed="PerGame",
+            timeout=STATS_HTTP_TIMEOUT,
         )
 
     obj = _retry(call, f"LeagueDashPlayerStats({measure_type})")
