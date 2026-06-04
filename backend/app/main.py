@@ -546,169 +546,18 @@ async def options_platform_stats():
 @app.get("/api/platform/stats")
 async def get_platform_statistics(db: Session = Depends(get_db)):
     """Get platform-wide statistics for display on login page"""
-    from app.models.database_models import User, YetAIBet
-    from sqlalchemy import func, and_
-    from datetime import timedelta
+    from app.services.platform_stats import compute_platform_stats
 
     try:
-        # Get total registered users (excluding hidden users)
-        total_users = (
-            db.query(func.count(User.id)).filter(User.is_hidden == False).scalar() or 0
-        )
+        data = compute_platform_stats(db)
         logger.info(
-            f"Platform stats: Found {total_users} total users (excluding hidden)"
+            "Platform stats response: users=%s, winnings=%s, 30d_bets=%s, avatars=%s",
+            data["total_users"],
+            data["total_winnings"],
+            data["performance_30d"]["total_bets"],
+            len(data["user_avatars"]),
         )
-
-        # Get total winnings from YetAI bets (won bets only)
-        # Calculate based on $100 wager per bet
-        won_bets = db.query(YetAIBet).filter(YetAIBet.result == "won").all()
-
-        total_winnings = 0
-        for bet in won_bets:
-            # Calculate profit from $100 wager using American odds
-            if bet.odds > 0:
-                profit = 100 * (bet.odds / 100)
-            else:
-                profit = 100 * (100 / abs(bet.odds))
-            total_winnings += profit
-
-        # Get 30-day performance
-        thirty_days_ago = datetime.utcnow() - timedelta(days=30)
-        seven_days_ago = datetime.utcnow() - timedelta(days=7)
-
-        # Last 30 days bets
-        last_30_days_bets = (
-            db.query(YetAIBet)
-            .filter(
-                and_(
-                    YetAIBet.settled_at >= thirty_days_ago,
-                    YetAIBet.result.in_(["won", "lost"]),
-                )
-            )
-            .all()
-        )
-
-        # Last 7 days bets (for week-over-week comparison)
-        last_7_days_bets = (
-            db.query(YetAIBet)
-            .filter(
-                and_(
-                    YetAIBet.settled_at >= seven_days_ago,
-                    YetAIBet.result.in_(["won", "lost"]),
-                )
-            )
-            .all()
-        )
-
-        # Calculate 30-day performance
-        wins_30d = sum(1 for bet in last_30_days_bets if bet.result == "won")
-        total_30d = len(last_30_days_bets)
-        win_rate_30d = (wins_30d / total_30d * 100) if total_30d > 0 else 0
-
-        # Calculate profit/loss for 30 days
-        profit_30d = 0
-        for bet in last_30_days_bets:
-            if bet.result == "won":
-                if bet.odds > 0:
-                    profit_30d += 100 * (bet.odds / 100)
-                else:
-                    profit_30d += 100 * (100 / abs(bet.odds))
-            else:
-                profit_30d -= 100
-
-        # Calculate 7-day performance for comparison
-        wins_7d = sum(1 for bet in last_7_days_bets if bet.result == "won")
-        total_7d = len(last_7_days_bets)
-        win_rate_7d = (wins_7d / total_7d * 100) if total_7d > 0 else 0
-
-        profit_7d = 0
-        for bet in last_7_days_bets:
-            if bet.result == "won":
-                if bet.odds > 0:
-                    profit_7d += 100 * (bet.odds / 100)
-                else:
-                    profit_7d += 100 * (100 / abs(bet.odds))
-            else:
-                profit_7d -= 100
-
-        # Calculate week-over-week percentage change
-        # Compare last 7 days to previous 7 days (8-14 days ago)
-        fourteen_days_ago = datetime.utcnow() - timedelta(days=14)
-        previous_7_days_bets = (
-            db.query(YetAIBet)
-            .filter(
-                and_(
-                    YetAIBet.settled_at >= fourteen_days_ago,
-                    YetAIBet.settled_at < seven_days_ago,
-                    YetAIBet.result.in_(["won", "lost"]),
-                )
-            )
-            .all()
-        )
-
-        profit_prev_7d = 0
-        for bet in previous_7_days_bets:
-            if bet.result == "won":
-                if bet.odds > 0:
-                    profit_prev_7d += 100 * (bet.odds / 100)
-                else:
-                    profit_prev_7d += 100 * (100 / abs(bet.odds))
-            else:
-                profit_prev_7d -= 100
-
-        # Calculate week-over-week change
-        if profit_prev_7d != 0:
-            wow_change = ((profit_7d - profit_prev_7d) / abs(profit_prev_7d)) * 100
-        elif profit_7d > 0:
-            wow_change = 100  # 100% increase from 0
-        else:
-            wow_change = 0
-
-        # Get recent user avatars (latest 3 users with avatars, excluding hidden users)
-        recent_users = (
-            db.query(User)
-            .filter(and_(User.avatar_url.isnot(None), User.is_hidden == False))
-            .order_by(User.created_at.desc())
-            .limit(3)
-            .all()
-        )
-
-        user_avatars = []
-        for user in recent_users:
-            if user.avatar_url:
-                user_avatars.append(
-                    {
-                        "url": user.avatar_url,
-                        "name": f"{user.first_name or ''} {user.last_name or ''}".strip()
-                        or user.username,
-                    }
-                )
-
-        result = {
-            "status": "success",
-            "data": {
-                "total_users": total_users,
-                "total_winnings": round(total_winnings, 2),
-                "performance_30d": {
-                    "win_rate": round(win_rate_30d, 1),
-                    "profit": round(profit_30d, 2),
-                    "total_bets": total_30d,
-                    "wins": wins_30d,
-                    "losses": total_30d - wins_30d,
-                },
-                "performance_7d": {
-                    "win_rate": round(win_rate_7d, 1),
-                    "profit": round(profit_7d, 2),
-                    "wow_change": round(wow_change, 1),
-                },
-                "user_avatars": user_avatars,
-            },
-        }
-        logger.info(
-            f"Platform stats response: users={total_users}, winnings={total_winnings}, "
-            f"30d_bets={total_30d}, avatars={len(user_avatars)}"
-        )
-        return result
+        return {"status": "success", "data": data}
 
     except Exception as e:
         logger.error(f"Error fetching platform statistics: {e}")
