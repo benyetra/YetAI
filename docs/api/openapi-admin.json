@@ -1572,13 +1572,13 @@
         "x-audience": "admin"
       }
     },
-    "/api/admin/pipelines/{task_name}/schedule": {
+    "/api/admin/pipelines/{schedule_id}/schedule": {
       "patch": {
         "tags": [
           "admin-pipelines"
         ],
         "summary": "Update Schedule",
-        "operationId": "update_schedule_api_admin_pipelines__task_name__schedule_patch",
+        "operationId": "update_schedule_api_admin_pipelines__schedule_id__schedule_patch",
         "security": [
           {
             "BearerAuth": []
@@ -1586,12 +1586,12 @@
         ],
         "parameters": [
           {
-            "name": "task_name",
+            "name": "schedule_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Task Name"
+              "title": "Schedule Id"
             }
           }
         ],
@@ -1667,13 +1667,13 @@
         "x-audience": "admin"
       }
     },
-    "/api/admin/pipelines/{task_name}/schedule/reset": {
+    "/api/admin/pipelines/{schedule_id}/schedule/reset": {
       "post": {
         "tags": [
           "admin-pipelines"
         ],
         "summary": "Reset Schedule",
-        "operationId": "reset_schedule_api_admin_pipelines__task_name__schedule_reset_post",
+        "operationId": "reset_schedule_api_admin_pipelines__schedule_id__schedule_reset_post",
         "security": [
           {
             "BearerAuth": []
@@ -1681,12 +1681,12 @@
         ],
         "parameters": [
           {
-            "name": "task_name",
+            "name": "schedule_id",
             "in": "path",
             "required": true,
             "schema": {
               "type": "string",
-              "title": "Task Name"
+              "title": "Schedule Id"
             }
           }
         ],

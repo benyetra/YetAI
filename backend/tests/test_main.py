@@ -111,6 +111,14 @@ class TestProductionApp:
         assert data["odds"] == []
         assert "ODDS_API_KEY not configured" in data["message"]
 
+    @patch("app.main._get_odds_with_cache", new_callable=AsyncMock)
+    def test_wnba_odds_endpoint(self, mock_get_odds, client):
+        """WNBA odds route is registered (admin bet-entries game picker)."""
+        mock_get_odds.return_value = {"status": "success", "games": [], "count": 0}
+        response = client.get("/api/odds/basketball_wnba")
+        assert response.status_code == 200
+        mock_get_odds.assert_awaited_once_with("basketball_wnba", "WNBA")
+
     @patch("app.core.service_loader.is_service_available")
     @patch("app.core.service_loader.get_service")
     def test_chat_message_endpoint_success(

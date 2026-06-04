@@ -7980,6 +7980,90 @@
         "x-audience": "public"
       }
     },
+    "/api/odds/basketball_wnba": {
+      "get": {
+        "summary": "Get Wnba Odds",
+        "description": "Get WNBA odds (cache-first).",
+        "operationId": "get_wnba_odds_api_odds_basketball_wnba_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "odds"
+        ],
+        "x-audience": "public",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      },
+      "options": {
+        "summary": "Options Wnba Odds",
+        "description": "Handle CORS preflight for WNBA odds",
+        "operationId": "options_wnba_odds_api_odds_basketball_wnba_options",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "odds"
+        ],
+        "x-audience": "public"
+      }
+    },
     "/api/odds/baseball_mlb": {
       "get": {
         "summary": "Get Mlb Odds",

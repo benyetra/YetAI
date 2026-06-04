@@ -309,6 +309,7 @@ export const sportsAPI = {
       sports: [
         { key: 'americanfootball_nfl', title: 'NFL', category: 'Football', active: true },
         { key: 'basketball_nba', title: 'NBA', category: 'Basketball', active: true },
+        { key: 'basketball_wnba', title: 'WNBA', category: 'Basketball', active: true },
         { key: 'baseball_mlb', title: 'MLB', category: 'Baseball', active: true },
         { key: 'icehockey_nhl', title: 'NHL', category: 'Hockey', active: true }
       ],

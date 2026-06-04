@@ -5995,6 +5995,18 @@ async def get_nba_odds():
     return await _get_odds_with_cache("basketball_nba", "NBA")
 
 
+@app.options("/api/odds/basketball_wnba")
+async def options_wnba_odds():
+    """Handle CORS preflight for WNBA odds"""
+    return {}
+
+
+@app.get("/api/odds/basketball_wnba")
+async def get_wnba_odds():
+    """Get WNBA odds (cache-first)."""
+    return await _get_odds_with_cache("basketball_wnba", "WNBA")
+
+
 @app.options("/api/odds/baseball_mlb")
 async def options_mlb_odds():
     """Handle CORS preflight for MLB odds"""
@@ -7212,6 +7224,7 @@ async def endpoint_health_check():
                 "/api/odds/americanfootball_nfl",
                 "/api/odds/americanfootball_ncaaf",
                 "/api/odds/basketball_nba",
+                "/api/odds/basketball_wnba",
                 "/api/odds/baseball_mlb",
                 "/api/odds/icehockey_nhl",
                 "/api/odds/popular",
