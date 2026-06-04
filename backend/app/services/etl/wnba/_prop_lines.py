@@ -3,18 +3,33 @@
 Uses the same market keys as NBA (player_points, player_rebounds, player_assists)
 for sport ``basketball_wnba``. See:
 https://the-odds-api.com/sports-odds-data/betting-markets.html
+
+Event IDs are resolved from ``pred_wnba_game_lines.odds_api_event_id`` when
+available (populated by the thrice-daily ``update_game_lines`` task), then fall
+back to the live /events list with canonical team-name normalization.
 """
 
 from __future__ import annotations
 
+import logging
+from datetime import date
 from typing import Any
 
+from sqlalchemy.orm import Session
+
+from app.models.predictions_models import WNBAGameLines
 from app.services.etl.nba._fanduel_lines import (
     PROP_MARKETS,
     fetch_fanduel_prop_for_player,
+    get_event_id_for_game,
 )
 
 WNBA_SPORT = "basketball_wnba"
+
+logger = logging.getLogger(__name__)
+
+# FanDuel often has thin WNBA prop books; include common US books in one request.
+WNBA_PROP_BOOKMAKERS = "fanduel,draftkings,betmgm"
 
 # Minimum |projected - line| to emit OVER/UNDER (stat-specific).
 EDGE_THRESHOLDS: dict[str, float] = {
@@ -22,6 +37,44 @@ EDGE_THRESHOLDS: dict[str, float] = {
     "assists": 0.5,
     "rebounds": 0.5,
 }
+
+
+def lookup_wnba_event_id(
+    db: Session,
+    game_date: date,
+    team_name: str,
+    opponent_team_name: str,
+) -> str | None:
+    """Match today's game row and return stored Odds API event id."""
+    pair = {team_name.strip(), (opponent_team_name or "").strip()}
+    if len(pair) != 2 or "" in pair:
+        return None
+    rows = (
+        db.query(
+            WNBAGameLines.odds_api_event_id,
+            WNBAGameLines.home_team_name,
+            WNBAGameLines.away_team_name,
+        )
+        .filter(WNBAGameLines.game_date == game_date)
+        .all()
+    )
+    for event_id, home, away in rows:
+        if event_id and {home, away} == pair:
+            return event_id
+    return None
+
+
+def resolve_wnba_event_id(
+    db: Session,
+    game_date: date,
+    team_name: str,
+    opponent_team_name: str,
+) -> str | None:
+    """Prefer DB-backed event id; fall back to live /events team matching."""
+    event_id = lookup_wnba_event_id(db, game_date, team_name, opponent_team_name)
+    if event_id:
+        return event_id
+    return get_event_id_for_game(WNBA_SPORT, team_name, opponent_team_name)
 
 
 def _edge_and_recommendation(
@@ -36,11 +89,14 @@ def _edge_and_recommendation(
 def attach_prop_market_fields(
     row: dict[str, Any],
     *,
+    db: Session,
+    game_date: date,
     team_name: str,
     opponent_team_name: str,
     player_name: str,
     stat: str,
     projected: float,
+    event_id: str | None = None,
 ) -> bool:
     """Set market_line, edge, and recommendation on a projection upsert row.
 
@@ -50,6 +106,9 @@ def attach_prop_market_fields(
     if not market:
         return False
 
+    if not event_id:
+        event_id = resolve_wnba_event_id(db, game_date, team_name, opponent_team_name)
+
     line, _flag = fetch_fanduel_prop_for_player(
         team_name,
         opponent_team_name,
@@ -57,6 +116,8 @@ def attach_prop_market_fields(
         market,
         projected,
         sport=WNBA_SPORT,
+        event_id=event_id,
+        bookmakers=WNBA_PROP_BOOKMAKERS,
     )
     if line is None:
         return False

@@ -238,14 +238,15 @@ def _events_payload():
     return [{"id": "evt1", "home_team": "Boston Celtics", "away_team": "Miami Heat"}]
 
 
-def _odds_payload(market):
+def _odds_payload(market, *, book_key="fanduel", book_title="FanDuel"):
     def outcome(desc, name, point):
         return {"description": desc, "name": name, "point": point, "price": -110}
 
     return {
         "bookmakers": [
             {
-                "title": "FanDuel",
+                "key": book_key,
+                "title": book_title,
                 "markets": [
                     {
                         "key": market,
@@ -313,6 +314,53 @@ def test_event_and_odds_lookups_are_memoized_per_run(monkeypatch):
     )
     assert sum(u.endswith("/odds") for u in calls) == 2
 
+    fdl.clear_cache()
+
+
+def test_get_event_id_for_game_normalizes_wnba_aliases(monkeypatch):
+    fdl.clear_cache()
+    monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
+
+    def fake_sync_get(url, **kwargs):
+        if url.endswith("/events"):
+            return _FakeResp(
+                [
+                    {
+                        "id": "evt-wnba",
+                        "home_team": "Los Angeles Sparks",
+                        "away_team": "Las Vegas Aces",
+                    }
+                ]
+            )
+        return _FakeResp({})
+
+    monkeypatch.setattr(fdl, "sync_odds_get", fake_sync_get)
+    assert (
+        fdl.get_event_id_for_game(
+            "basketball_wnba", "Los Angeles Sparks", "Las Vegas Aces"
+        )
+        == "evt-wnba"
+    )
+    assert (
+        fdl.get_event_id_for_game("basketball_wnba", "LA Sparks", "Las Vegas Aces")
+        == "evt-wnba"
+    )
+    fdl.clear_cache()
+
+
+def test_get_fanduel_line_accepts_bookmaker_key_without_title(monkeypatch):
+    fdl.clear_cache()
+    monkeypatch.setattr(fdl.settings, "ODDS_API_KEY", "test-key", raising=False)
+    monkeypatch.setattr(
+        fdl,
+        "_get_event_market_odds",
+        lambda *a, **k: _odds_payload("player_points", book_title=""),
+    )
+    line, _price, flag = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_points", 30.0
+    )
+    assert line == 27.5
+    assert flag == "o"
     fdl.clear_cache()
 
 

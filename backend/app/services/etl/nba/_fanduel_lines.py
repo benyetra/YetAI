@@ -82,18 +82,40 @@ def _get_events(sport: str) -> list[dict]:
         return []
 
 
+def _normalize_event_team(sport: str, name: str | None) -> str:
+    raw = (name or "").strip()
+    if sport == "basketball_wnba":
+        from app.services.etl.wnba._team_id_map import normalize_team_name
+
+        return normalize_team_name(raw)
+    return raw
+
+
 def get_event_id_for_game(sport: str, team1: str, team2: str) -> str | None:
+    want = {_normalize_event_team(sport, team1), _normalize_event_team(sport, team2)}
     for event in _get_events(sport):
-        home = event.get("home_team")
-        away = event.get("away_team")
-        if {home, away} == {team1, team2}:
+        home = _normalize_event_team(sport, event.get("home_team"))
+        away = _normalize_event_team(sport, event.get("away_team"))
+        if {home, away} == want:
             return event.get("id")
     return None
 
 
-def _get_event_market_odds(sport: str, event_id: str, market: str) -> dict:
-    """Return the FanDuel event-odds payload for one market (memoized per run)."""
-    cache_key = ("odds", sport, event_id, market)
+def _bookmaker_matches(bookmaker: dict, bookmakers: str) -> bool:
+    """True when this bookmaker should be used for line extraction."""
+    allowed = {b.strip().lower() for b in bookmakers.split(",") if b.strip()}
+    key = (bookmaker.get("key") or "").lower()
+    if key in allowed:
+        return True
+    title = (bookmaker.get("title") or "").strip()
+    return "fanduel" in allowed and title == "FanDuel"
+
+
+def _get_event_market_odds(
+    sport: str, event_id: str, market: str, *, bookmakers: str = "fanduel"
+) -> dict:
+    """Return the event-odds payload for one market (memoized per run)."""
+    cache_key = ("odds", sport, event_id, market, bookmakers)
     cached = _cache_get(cache_key)
     if cached is not None:
         return cached
@@ -108,7 +130,7 @@ def _get_event_market_odds(sport: str, event_id: str, market: str) -> dict:
                 "oddsFormat": "american",
                 "apiKey": api_key,
                 "markets": market,
-                "bookmakers": "fanduel",
+                "bookmakers": bookmakers,
             },
             caller=f"etl.nba.fanduel_lines.odds.{sport}.{event_id}",
             timeout=30,
@@ -130,14 +152,16 @@ def get_fanduel_line(
     player_name: str,
     market: str,
     projection: float,
+    *,
+    bookmakers: str = "fanduel",
 ) -> Tuple[float, float, str]:
     """Return (line, american_price, 'o'|'u'|'n') for a player prop market."""
-    data = _get_event_market_odds(sport, event_id, market)
+    data = _get_event_market_odds(sport, event_id, market, bookmakers=bookmakers)
     if not data:
         return 0.0, 0.0, "n"
     try:
         for bookmaker in data.get("bookmakers", []):
-            if bookmaker.get("title") != "FanDuel":
+            if not _bookmaker_matches(bookmaker, bookmakers):
                 continue
             for mkt in bookmaker.get("markets", []):
                 if mkt.get("key") != market:
@@ -189,13 +213,21 @@ def fetch_fanduel_prop_for_player(
     projection: float,
     *,
     sport: str = NBA_SPORT,
+    event_id: str | None = None,
+    bookmakers: str = "fanduel",
 ) -> tuple[float | None, str | None]:
     """Resolve FanDuel line + pick side for one player prop, or (None, None)."""
-    event_id = get_event_id_for_game(sport, team_name, opponent_team_name)
+    if not event_id:
+        event_id = get_event_id_for_game(sport, team_name, opponent_team_name)
     if not event_id:
         return None, None
     line, _price, flag = get_fanduel_line(
-        sport, event_id, player_name, market, projection
+        sport,
+        event_id,
+        player_name,
+        market,
+        projection,
+        bookmakers=bookmakers,
     )
     if line <= 0 or flag == "n":
         return None, None

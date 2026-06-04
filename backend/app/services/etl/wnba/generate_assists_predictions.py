@@ -15,7 +15,10 @@ from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.etl.wnba._ml_predict import predict
-from app.services.etl.wnba._prop_lines import attach_prop_market_fields
+from app.services.etl.wnba._prop_lines import (
+    attach_prop_market_fields,
+    resolve_wnba_event_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +33,7 @@ def run() -> dict:
     skipped_injured = 0
     skipped_thin = 0
     lines_attached = 0
+    event_ids: dict[tuple[str, str], str | None] = {}
     try:
         active_rows = (
             db.query(WNBATodayActivePlayers)
@@ -72,13 +76,21 @@ def run() -> dict:
                 "confidence_score": None,
                 "created_at": datetime.utcnow(),
             }
+            matchup = (p.team_name, p.opponent_team_name or "")
+            if matchup not in event_ids:
+                event_ids[matchup] = resolve_wnba_event_id(
+                    db, today, matchup[0], matchup[1]
+                )
             if attach_prop_market_fields(
                 row,
+                db=db,
+                game_date=today,
                 team_name=p.team_name,
                 opponent_team_name=p.opponent_team_name or "",
                 player_name=p.player_name,
                 stat=STAT,
                 projected=projected,
+                event_id=event_ids[matchup],
             ):
                 lines_attached += 1
             upsert_rows.append(row)
