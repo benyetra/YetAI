@@ -39,6 +39,17 @@ EDGE_THRESHOLDS: dict[str, float] = {
 }
 
 
+def _matchup_team_pair(team_name: str, opponent_team_name: str) -> set[str] | None:
+    """Return canonical {team, opponent} names, or None when inputs are invalid."""
+    if not isinstance(team_name, str) or not isinstance(opponent_team_name, str):
+        return None
+    home = team_name.strip()
+    away = (opponent_team_name or "").strip()
+    if not home or not away or home == away:
+        return None
+    return {home, away}
+
+
 def lookup_wnba_event_id(
     db: Session,
     game_date: date,
@@ -46,8 +57,8 @@ def lookup_wnba_event_id(
     opponent_team_name: str,
 ) -> str | None:
     """Match today's game row and return stored Odds API event id."""
-    pair = {team_name.strip(), (opponent_team_name or "").strip()}
-    if len(pair) != 2 or "" in pair:
+    pair = _matchup_team_pair(team_name, opponent_team_name)
+    if pair is None:
         return None
     rows = (
         db.query(
@@ -58,7 +69,10 @@ def lookup_wnba_event_id(
         .filter(WNBAGameLines.game_date == game_date)
         .all()
     )
-    for event_id, home, away in rows:
+    for row in rows:
+        if not isinstance(row, (tuple, list)) or len(row) != 3:
+            continue
+        event_id, home, away = row
         if event_id and {home, away} == pair:
             return event_id
     return None

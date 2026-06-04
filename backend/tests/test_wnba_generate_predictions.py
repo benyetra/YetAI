@@ -31,6 +31,7 @@ def test_inference_writes_projection_when_features_available(
     active = MagicMock()
     active.player_id = 100
     active.player_name = "P1"
+    active.team_name = "Home Team"
     active.opponent_team_id = 999
     active.opponent_team_name = "Opp"
     active.game_date = date(2026, 6, 15)

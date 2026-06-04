@@ -5,10 +5,15 @@ from unittest.mock import MagicMock, patch
 
 from app.services.etl.wnba._prop_lines import (
     EDGE_THRESHOLDS,
+    _matchup_team_pair,
     attach_prop_market_fields,
     lookup_wnba_event_id,
     resolve_wnba_event_id,
 )
+
+
+def test_matchup_team_pair_rejects_non_string_names():
+    assert _matchup_team_pair(MagicMock(), "Opp") is None  # type: ignore[arg-type]
 
 
 def test_lookup_wnba_event_id_matches_stored_game():
