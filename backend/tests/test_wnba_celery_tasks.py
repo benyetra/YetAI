@@ -12,6 +12,7 @@ def test_wnba_celery_tasks_registered():
     from app.celery_app import celery_app
 
     expected = [
+        "app.tasks.etl_pipeline.run_wnba_team_stats_daily",
         "app.tasks.etl_pipeline.wnba.update_team_roster",
         "app.tasks.etl_pipeline.wnba.update_team_offense_stats",
         "app.tasks.etl_pipeline.wnba.update_team_defense_stats",
@@ -43,6 +44,7 @@ def test_wnba_beat_entries_registered():
         "wnba-update-pipeline-daily",
         "wnba-update-game-lines-thrice-daily",
         "wnba-update-injuries-every-2h",
+        "wnba-update-team-stats-daily",
         "wnba-projectors-pregame-hourly",
         "wnba-store-actuals-morning",
         "wnba-totals-accuracy-morning",

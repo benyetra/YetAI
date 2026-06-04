@@ -28,10 +28,17 @@ def _current_season() -> str:
     return str(now_eastern().year)
 
 
-def _rows_from_league_player_stats(season: str) -> list[dict] | None:
+def _rows_from_league_player_stats(
+    season: str, *, profile: str = "default"
+) -> list[dict] | None:
     """Single league-wide fetch; None if the API call failed."""
     try:
-        stats_rows = _wnba_stats.fetch_league_player_stats(season=season)
+        stats_rows = _wnba_stats.fetch_league_player_stats(
+            season=season, profile=profile
+        )
+    except _wnba_stats.StatsNbaUnavailable as exc:
+        logger.warning("league player stats roster fetch failed: %s", exc)
+        return None
     except Exception as exc:
         logger.warning("league player stats roster fetch failed: %s", exc)
         return None
@@ -58,7 +65,9 @@ def _rows_from_league_player_stats(season: str) -> list[dict] | None:
     return upsert_rows
 
 
-def _rows_from_per_team_rosters(season: str) -> tuple[list[dict], int, int]:
+def _rows_from_per_team_rosters(
+    season: str, *, profile: str = "default"
+) -> tuple[list[dict], int, int]:
     """Legacy path: one CommonTeamRoster call per team (slow; rate-limit prone)."""
     upsert_rows: list[dict] = []
     teams_processed = 0
@@ -69,7 +78,7 @@ def _rows_from_per_team_rosters(season: str) -> tuple[list[dict], int, int]:
             time.sleep(ROSTER_FALLBACK_DELAY_SECONDS)
         try:
             rows = _wnba_stats.fetch_team_roster(
-                team_id=int(wnba_team_id), season=season
+                team_id=int(wnba_team_id), season=season, profile=profile
             )
         except Exception as exc:
             logger.warning("roster fetch failed for %s: %s", team_name, exc)
@@ -95,19 +104,28 @@ def _rows_from_per_team_rosters(season: str) -> tuple[list[dict], int, int]:
     return upsert_rows, teams_processed, errors
 
 
-def run(season: str | None = None) -> dict:
+def run(season: str | None = None, *, profile: str = "default") -> dict:
     season = season or _current_season()
-    upsert_rows = _rows_from_league_player_stats(season)
+    upsert_rows = _rows_from_league_player_stats(season, profile=profile)
     source = "league_dash_player_stats"
     teams_processed = 0
     errors = 0
 
+    if upsert_rows is None:
+        return {
+            "status": "skipped",
+            "reason": "stats_nba_unavailable",
+            "season": season,
+        }
+
     if not upsert_rows:
         logger.info(
-            "league player stats empty or failed — falling back to per-team roster (%d teams)",
+            "league player stats empty — falling back to per-team roster (%d teams)",
             len(WNBA_ID_TO_NAME),
         )
-        upsert_rows, teams_processed, errors = _rows_from_per_team_rosters(season)
+        upsert_rows, teams_processed, errors = _rows_from_per_team_rosters(
+            season, profile=profile
+        )
         source = "common_team_roster"
 
     players_seen = len(upsert_rows)

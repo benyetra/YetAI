@@ -71,6 +71,19 @@ def test_run_falls_back_to_per_team_when_league_empty(monkeypatch):
     um.assert_called_once()
 
 
+def test_run_skipped_when_league_stats_unavailable(monkeypatch):
+    from app.services.etl.wnba import _wnba_stats
+
+    with patch(
+        "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_league_player_stats",
+        side_effect=_wnba_stats.StatsNbaUnavailable("timeout"),
+    ):
+        result = urr.run(season="2026")
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "stats_nba_unavailable"
+
+
 def test_run_handles_per_team_fetch_failure_gracefully(monkeypatch):
     mock_db = MagicMock(name="Session")
     monkeypatch.setattr(
@@ -79,7 +92,7 @@ def test_run_handles_per_team_fetch_failure_gracefully(monkeypatch):
 
     with patch(
         "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_league_player_stats",
-        side_effect=RuntimeError("upstream failure"),
+        return_value=[],
     ):
         with patch(
             "app.services.etl.wnba.update_team_roster._wnba_stats.fetch_team_roster",

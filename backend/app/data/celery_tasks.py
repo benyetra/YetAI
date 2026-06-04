@@ -107,10 +107,18 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         "label": "WNBA daily pipeline",
         "sport": "wnba",
         "description": (
-            "Full WNBA ETL: roster, stats, injury (ESPN), totals/spread "
-            "projectors, points/assists/rebounds props (May–Oct ET). "
-            "Odds API game lines are refreshed only by the "
-            "`wnba-update-game-lines-thrice-daily` beat entry (not this orchestrator)."
+            "WNBA pregame ETL: injury (ESPN), recent games, slate, totals/spread "
+            "projectors, points/assists/rebounds props (May–Oct ET). Team "
+            "offense/defense/roster refresh is `run_wnba_team_stats_daily`. Odds API "
+            "game lines: `wnba-update-game-lines-thrice-daily`."
+        ),
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_wnba_team_stats_daily",
+        "label": "WNBA team stats daily",
+        "sport": "wnba",
+        "description": (
+            "stats.wnba.com team offense/defense dashboards + roster (daily beat)."
         ),
     },
     {

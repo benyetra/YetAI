@@ -25,6 +25,19 @@ import AdminYetaiBetsManage from '@/components/yetai/AdminYetaiBetsManage';
 import Link from 'next/link';
 import { ArrowLeft } from 'lucide-react';
 
+/** Display label → Odds API sport key for game/prop fetches. */
+const ADMIN_BET_SPORT_KEY_MAP: Record<string, string> = {
+  NFL: 'americanfootball_nfl',
+  NBA: 'basketball_nba',
+  WNBA: 'basketball_wnba',
+  MLB: 'baseball_mlb',
+  NHL: 'icehockey_nhl',
+  'NCAA Football': 'americanfootball_ncaaf',
+  'NCAA Basketball': 'basketball_ncaab',
+  Soccer: 'soccer_epl',
+  Tennis: 'tennis_atp',
+};
+
 export default function AdminBetEntriesPage() {
   const { isAuthenticated, loading, user } = useAuth();
   const router = useRouter();
@@ -192,7 +205,14 @@ export default function AdminBetEntriesPage() {
   const loadTodaysGames = async () => {
     setLoadingTodaysGames(true);
     try {
-      const sports = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'icehockey_nhl', 'soccer_epl'];
+      const sports = [
+        'americanfootball_nfl',
+        'basketball_nba',
+        'basketball_wnba',
+        'baseball_mlb',
+        'icehockey_nhl',
+        'soccer_epl',
+      ];
       const allGames: any[] = [];
 
       for (const sport of sports) {
@@ -457,19 +477,7 @@ export default function AdminBetEntriesPage() {
     
     setLoadingGames(true);
     try {
-      // Map sport names to API keys
-      const sportKeyMap: {[key: string]: string} = {
-        'NFL': 'americanfootball_nfl',
-        'NBA': 'basketball_nba',
-        'MLB': 'baseball_mlb',
-        'NHL': 'icehockey_nhl',
-        'NCAA Football': 'americanfootball_ncaaf',
-        'NCAA Basketball': 'basketball_ncaab',
-        'Soccer': 'soccer_epl',
-        'Tennis': 'tennis_atp'
-      };
-      
-      const sportKey = sportKeyMap[selectedSport];
+      const sportKey = ADMIN_BET_SPORT_KEY_MAP[selectedSport];
       if (!sportKey) {
         console.warn('Unsupported sport:', selectedSport);
         return;
@@ -547,15 +555,7 @@ export default function AdminBetEntriesPage() {
   const loadPlayerPropsForGame = async (game: any) => {
     setLoadingPlayerProps(true);
     try {
-      // Map sport names to API keys
-      const sportKeyMap: {[key: string]: string} = {
-        'NFL': 'americanfootball_nfl',
-        'NBA': 'basketball_nba',
-        'MLB': 'baseball_mlb',
-        'NHL': 'icehockey_nhl'
-      };
-
-      const sportKey = sportKeyMap[formData.sport] || game.sport_key;
+      const sportKey = ADMIN_BET_SPORT_KEY_MAP[formData.sport] || game.sport_key;
       if (!sportKey) return;
 
       const result = await sportsAPI.getPlayerProps(sportKey, game.id);
@@ -778,6 +778,7 @@ message.type === 'success' ? 'alert alert-success' : 'alert alert-error'
                 <option value="">Select Sport</option>
                 <option value="NFL">NFL</option>
                 <option value="NBA">NBA</option>
+                <option value="WNBA">WNBA</option>
                 <option value="MLB">MLB</option>
                 <option value="NHL">NHL</option>
                 <option value="NCAA Football">NCAA Football</option>

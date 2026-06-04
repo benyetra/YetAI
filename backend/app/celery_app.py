@@ -82,6 +82,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(minute=0, hour="*/2"),
         "options": {"expires": 6600},
     },
+    # Slow stats.wnba.com dashboards — not in hourly pregame orchestrator.
+    "wnba-update-team-stats-daily": {
+        "task": "app.tasks.etl_pipeline.run_wnba_team_stats_daily",
+        "schedule": crontab(hour=4, minute=30),
+        "options": {"expires": 14400},
+    },
     "wnba-projectors-pregame-hourly": {
         "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
         "schedule": crontab(minute=0, hour="9-22"),

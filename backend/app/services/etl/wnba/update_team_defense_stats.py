@@ -22,11 +22,26 @@ def _current_season() -> str:
     return str(now_eastern().year)
 
 
-def run(season: str | None = None) -> dict:
+def run(season: str | None = None, *, profile: str = "default") -> dict:
     season = season or _current_season()
-    base = _wnba_stats.fetch_team_dashboard(season=season, measure_type="Base")
-    defense = _wnba_stats.fetch_team_dashboard(season=season, measure_type="Defense")
-    advanced = _wnba_stats.fetch_team_dashboard(season=season, measure_type="Advanced")
+    try:
+        base = _wnba_stats.fetch_team_dashboard(
+            season=season, measure_type="Base", profile=profile
+        )
+        defense = _wnba_stats.fetch_team_dashboard(
+            season=season, measure_type="Defense", profile=profile
+        )
+        advanced = _wnba_stats.fetch_team_dashboard(
+            season=season, measure_type="Advanced", profile=profile
+        )
+    except _wnba_stats.StatsNbaUnavailable as exc:
+        logger.warning("team defense stats skipped: %s", exc)
+        return {
+            "status": "skipped",
+            "reason": "stats_nba_unavailable",
+            "season": season,
+            "error": str(exc),
+        }
 
     base_by_id = {row["TEAM_ID"]: row for row in base}
     advanced_by_id = {row["TEAM_ID"]: row for row in advanced}

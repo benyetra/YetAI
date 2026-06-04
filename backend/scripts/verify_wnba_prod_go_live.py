@@ -19,6 +19,7 @@ WNBA_BEAT_ENTRIES = (
     "wnba-update-pipeline-daily",
     "wnba-update-game-lines-thrice-daily",
     "wnba-update-injuries-every-2h",
+    "wnba-update-team-stats-daily",
     "wnba-projectors-pregame-hourly",
     "wnba-store-actuals-morning",
     "wnba-totals-accuracy-morning",

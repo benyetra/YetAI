@@ -25,7 +25,7 @@ from nba_api.stats.endpoints import (  # type: ignore
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
 from app.services.etl.wnba._db_upsert import upsert_many
-from app.services.etl.wnba._wnba_stats import BACKOFF_SECONDS, LEAGUE_ID, _retry
+from app.services.etl.wnba._wnba_stats import LEAGUE_ID, _retry
 
 logger = logging.getLogger(__name__)
 

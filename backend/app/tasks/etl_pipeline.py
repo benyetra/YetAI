@@ -914,14 +914,39 @@ def wnba_prop_accuracy():
     return _wnba_prop_accuracy.run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.run_wnba_team_stats_daily", bind=True)
+def run_wnba_team_stats_daily(self) -> dict:
+    """Refresh WNBA team offense/defense dashboards and roster from stats.wnba.com.
+
+    Uses the default (longer) HTTP retry profile. Scheduled once daily so the
+    hourly pregame orchestrator is not blocked on slow NBA Stats responses.
+    """
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+
+    logger.info("WNBA team stats daily refresh starting (task_id=%s)", self.request.id)
+    results: dict[str, dict] = {}
+    for label, mod in [
+        ("update_team_offense_stats", _wnba_update_off),
+        ("update_team_defense_stats", _wnba_update_def),
+        ("update_team_roster", _wnba_update_roster),
+    ]:
+        try:
+            results[label] = mod.run(profile="default")
+        except Exception as exc:
+            logger.exception("WNBA team stats step %s failed", label)
+            results[label] = {"status": "error", "error": str(exc)}
+    return {"status": "ok", "results": results}
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.run_wnba_update_pipeline", bind=True)
 def run_wnba_update_pipeline(self) -> dict:
-    """WNBA orchestrator (daily + hourly beat).
+    """WNBA pregame orchestrator (daily + hourly beat).
 
     Odds API game lines are **not** pulled here — they are capped at 3x/day via the
-    ``wnba-update-game-lines-thrice-daily`` beat entry. This task refreshes stats,
-    injuries (ESPN), projectors, and props using the latest rows in
-    ``pred_wnba_game_lines``.
+    ``wnba-update-game-lines-thrice-daily`` beat entry. Team offense/defense/roster
+    refresh runs on ``wnba-update-team-stats-daily`` instead. This task refreshes
+    injuries (ESPN), slate, projectors, and props using rows in ``pred_wnba_game_lines``.
     """
     if not _wnba_in_season():
         return {"status": "out_of_season"}
@@ -930,9 +955,6 @@ def run_wnba_update_pipeline(self) -> dict:
     results: dict[str, dict] = {}
     for label, mod in [
         ("update_injury_status", _wnba_update_injury),
-        ("update_team_offense_stats", _wnba_update_off),
-        ("update_team_defense_stats", _wnba_update_def),
-        ("update_team_roster", _wnba_update_roster),
         ("update_recent_games", _wnba_update_recent),
         ("today_active_players", _wnba_today_active),
         ("update_expected_minutes", _wnba_expected_minutes),

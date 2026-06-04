@@ -1,5 +1,7 @@
 from unittest.mock import patch, MagicMock
 
+import pytest
+
 from app.services.etl.wnba import _wnba_stats as ws
 
 
@@ -19,7 +21,6 @@ def test_get_team_dashboard_passes_league_id_10():
 
     cls.assert_called_once()
     kwargs = cls.call_args.kwargs
-    # nba_api uses `league_id_nullable` for LeagueDashTeamStats — pinned to "10" for WNBA
     assert kwargs.get("league_id_nullable") == "10"
     assert kwargs.get("season") == "2026"
     assert kwargs.get("timeout") == ws.STATS_HTTP_TIMEOUT
@@ -48,4 +49,22 @@ def test_retry_on_exception_backs_off(monkeypatch):
         rows = ws.fetch_team_dashboard(season="2026")
 
     assert len(rows) == 1
-    assert sleeps  # at least one backoff sleep happened
+    assert sleeps
+
+
+def test_fast_profile_raises_stats_nba_unavailable_after_two_attempts(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(
+        "app.services.etl.wnba._wnba_stats.time.sleep", lambda s: sleeps.append(s)
+    )
+
+    with patch(
+        "app.services.etl.wnba._wnba_stats.leaguedashteamstats.LeagueDashTeamStats"
+    ) as cls:
+        cls.side_effect = Exception("read timed out")
+
+        with pytest.raises(ws.StatsNbaUnavailable):
+            ws.fetch_team_dashboard(season="2026", profile="fast")
+
+    assert cls.call_count == 2
+    assert len(sleeps) == 1
