@@ -1,8 +1,7 @@
 'use client';
 
 import AccuracySummary from '@/components/yetai/AccuracySummary';
-import NbaTotalsProjectionsTable from '@/components/yetai/NbaTotalsProjectionsTable';
-import SpreadProjectionsTable from '@/components/yetai/SpreadProjectionsTable';
+import GameProjectionsSection from '@/components/yetai/GameProjectionsSection';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -37,17 +36,13 @@ export default function NBAPredictionsPage() {
       leagueLabel="NBA"
       emoji="🏀"
       subtitle="Game totals O/U, spread/win-probability, plus points, assists, rebounds, threes, steals, blocks, and PRA."
-      topSection={({ data, loading }) => (
-        <>
-          <SpreadProjectionsTable
-            rows={(data?.spreads as Array<Record<string, unknown>>) ?? []}
-            loading={loading}
-          />
-          <NbaTotalsProjectionsTable
-            rows={(data?.totals as Array<Record<string, unknown>>) ?? []}
-            loading={loading}
-          />
-        </>
+      topSection={({ data, loading, isPastDate }) => (
+        <GameProjectionsSection
+          variant="nba"
+          data={data}
+          loading={loading}
+          isPastDate={isPastDate}
+        />
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="nba" date={date} />}
       groups={PROP_GROUPS}

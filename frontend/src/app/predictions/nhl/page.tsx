@@ -1,6 +1,7 @@
 'use client';
 
 import AccuracySummary from '@/components/yetai/AccuracySummary';
+import GameProjectionsSection from '@/components/yetai/GameProjectionsSection';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
   formatNumber,
@@ -26,27 +27,25 @@ const SHOTS_COLUMNS: ColumnDef[] = [
   { key: 'confidence', label: 'Conf', align: 'right', mono: true, format: (v) => formatNumber(v, 2) },
 ];
 
-const TOTALS_COLUMNS: ColumnDef[] = [
-  { key: 'away_team_name', label: 'Away', format: (v) => formatString(v) },
-  { key: 'home_team_name', label: 'Home', format: (v) => formatString(v) },
-  { key: 'predicted_total_goals', label: 'Proj', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'draftkings_ou_line', label: 'Line', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'edge', label: 'Edge', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'betting_recommendation', label: 'Pick', format: (v) => formatString(v) },
-];
-
 export default function NHLPredictionsPage() {
   return (
     <SportPredictionsPage
       sport="nhl"
       leagueLabel="NHL"
       emoji="🏒"
-      subtitle="Goalie saves, player shots on goal, and game totals over/under."
+      subtitle="Game slate totals O/U, goalie saves, and player shots on goal."
+      topSection={({ data, loading, isPastDate }) => (
+        <GameProjectionsSection
+          variant="nhl"
+          data={data}
+          loading={loading}
+          isPastDate={isPastDate}
+        />
+      )}
       accuracySummary={({ date }) => <AccuracySummary sport="nhl" date={date} />}
       groups={[
         { title: 'Goalie Predictions', responseKey: 'goalie_predictions', columns: GOALIE_COLUMNS },
         { title: 'Player Shots Predictions', responseKey: 'player_shots', columns: SHOTS_COLUMNS },
-        { title: 'Game Totals (O/U)', responseKey: 'team_totals', columns: TOTALS_COLUMNS },
       ]}
     />
   );

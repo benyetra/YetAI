@@ -1,7 +1,7 @@
 'use client';
 
 import { formatNumber, formatString } from '@/components/PredictionsTable';
-import { teamAbbr } from '@/lib/yetai-format';
+import { teamAbbr, teamColor } from '@/lib/yetai-format';
 import { TeamGlyph } from './primitives';
 
 type GameRow = Record<string, unknown>;
@@ -10,70 +10,104 @@ type Side = 'HOME' | 'AWAY';
 
 type PickKind = 'ml' | 'spread' | 'total';
 
-type ProjectionPick = {
+type PrimaryPick = {
   kind: PickKind;
-  side: Side;
+  side?: Side;
   team: string;
-  label: string;
+  betLabel: string;
   detail?: string;
-  edge?: string;
 };
 
-export type GameProjectionsVariant = 'mlb' | 'basketball';
+export type GameProjectionsVariant = 'mlb' | 'nba' | 'wnba' | 'nfl' | 'nhl';
+
+export type GameProjectionSlipPick = {
+  team: string;
+  betType: string;
+  matchup: string;
+  odds?: number;
+};
 
 const VARIANT = {
   mlb: {
     spreadEdgeThreshold: 0.5,
-    edgeUnit: 'run',
     showMatchupSubtitle: true,
     emptySubtitle: 'TBD',
-    includeMoneylinePicks: true,
+    primaryPickKind: 'ml' as PickKind,
+    pickBetSuffix: 'ML',
     logoLeague: 'MLB',
     sportKey: 'baseball_mlb',
-  },
-  basketball: {
-    spreadEdgeThreshold: 2.0,
+    scoreUnit: 'runs',
     edgeUnit: 'pt',
+    marginUnit: 'run',
+  },
+  nba: {
+    spreadEdgeThreshold: 2.0,
     showMatchupSubtitle: true,
     emptySubtitle: '',
-    includeMoneylinePicks: false,
+    primaryPickKind: 'spread' as PickKind,
+    pickBetSuffix: 'Spread / ML',
+    logoLeague: 'NBA',
+    sportKey: 'basketball_nba',
+    scoreUnit: 'pts',
+    edgeUnit: 'pt',
+    marginUnit: 'pt',
+  },
+  wnba: {
+    spreadEdgeThreshold: 2.0,
+    showMatchupSubtitle: true,
+    emptySubtitle: '',
+    primaryPickKind: 'spread' as PickKind,
+    pickBetSuffix: 'Spread / ML',
     logoLeague: 'WNBA',
     sportKey: 'basketball_wnba',
+    scoreUnit: 'pts',
+    edgeUnit: 'pt',
+    marginUnit: 'pt',
+  },
+  nfl: {
+    spreadEdgeThreshold: 3.0,
+    showMatchupSubtitle: false,
+    emptySubtitle: '',
+    primaryPickKind: 'spread' as PickKind,
+    pickBetSuffix: 'Spread / ML',
+    logoLeague: 'NFL',
+    sportKey: 'americanfootball_nfl',
+    scoreUnit: 'pts',
+    edgeUnit: 'pt',
+    marginUnit: 'pt',
+  },
+  nhl: {
+    spreadEdgeThreshold: 0.5,
+    showMatchupSubtitle: false,
+    emptySubtitle: '',
+    primaryPickKind: 'total' as PickKind,
+    pickBetSuffix: 'Total',
+    logoLeague: 'NHL',
+    sportKey: 'icehockey_nhl',
+    scoreUnit: 'goals',
+    edgeUnit: 'goal',
+    marginUnit: 'goal',
   },
 } as const;
-
-function pct(v: unknown): string {
-  const n = typeof v === 'number' ? v : parseFloat(String(v));
-  if (!Number.isFinite(n)) return '—';
-  return `${(n * 100).toFixed(1)}%`;
-}
 
 function num(v: unknown): number | null {
   const n = typeof v === 'number' ? v : parseFloat(String(v));
   return Number.isFinite(n) ? n : null;
 }
 
-function ratingClass(rating: unknown): string {
-  const r = formatString(rating);
-  if (r === 'Strong') return 'badge badge-win';
-  if (r === 'Lean') return 'badge';
-  return 'badge dim';
+function pctPoints(prob: number): string {
+  return `${(prob * 100).toFixed(1)}`;
 }
 
-function teamForSide(proj: GameRow, side: Side): string {
-  return side === 'HOME' ? formatString(proj.home_team) : formatString(proj.away_team);
+function formatModelConfidence(v: unknown): string {
+  const n = num(v);
+  if (n == null) return '—';
+  const pctVal = n <= 1 ? n * 100 : n;
+  return `${Math.round(pctVal)}%`;
 }
 
-function formatSpreadLine(side: Side, marketSpreadHome: number): string {
-  const line = side === 'HOME' ? marketSpreadHome : -marketSpreadHome;
-  const sign = line > 0 ? '+' : '';
-  return `${sign}${line.toFixed(1)}`;
-}
-
-function formatEdgePct(edge: number | null): string | undefined {
-  if (edge == null) return undefined;
-  const sign = edge > 0 ? '+' : '';
-  return `${sign}${(edge * 100).toFixed(1)}% edge`;
+function hasFinalScore(proj: GameRow): boolean {
+  return proj.actual_home_score != null && proj.actual_away_score != null;
 }
 
 function spreadRecommendation(proj: GameRow, threshold: number): Side | null {
@@ -91,88 +125,99 @@ function spreadRecommendation(proj: GameRow, threshold: number): Side | null {
   return null;
 }
 
-function pickGrade(proj: GameRow, kind: PickKind): boolean | null {
-  if (kind === 'ml') return typeof proj.ml_correct === 'boolean' ? proj.ml_correct : null;
-  if (kind === 'spread') {
-    return typeof proj.spread_correct === 'boolean' ? proj.spread_correct : null;
-  }
-  return typeof proj.total_correct === 'boolean' ? proj.total_correct : null;
+function teamForSide(proj: GameRow, side: Side): string {
+  return side === 'HOME' ? formatString(proj.home_team) : formatString(proj.away_team);
 }
 
-function hasFinalScore(proj: GameRow): boolean {
-  return proj.actual_home_score != null && proj.actual_away_score != null;
-}
-
-function buildPicks(proj: GameRow, variant: GameProjectionsVariant): ProjectionPick[] {
-  const picks: ProjectionPick[] = [];
+function primaryPick(proj: GameRow, variant: GameProjectionsVariant): PrimaryPick | null {
   const cfg = VARIANT[variant];
-  const edgeUnit = cfg.edgeUnit;
 
-  const mlRaw = formatString(proj.ml_recommendation);
-  if (cfg.includeMoneylinePicks && (mlRaw === 'HOME' || mlRaw === 'AWAY')) {
-    const edgeMl = num(proj.edge_vs_market_ml);
-    picks.push({
+  if (cfg.primaryPickKind === 'ml') {
+    const mlRaw = formatString(proj.ml_recommendation);
+    if (mlRaw !== 'HOME' && mlRaw !== 'AWAY') return null;
+    const side = mlRaw;
+    const odds =
+      side === 'HOME' ? num(proj.market_home_ml) : num(proj.market_away_ml);
+    return {
       kind: 'ml',
-      side: mlRaw,
-      team: teamForSide(proj, mlRaw),
-      label: 'Moneyline',
-      detail: proj.market_home_ml != null && mlRaw === 'HOME'
-        ? fmtAmerican(proj.market_home_ml)
-        : proj.market_away_ml != null && mlRaw === 'AWAY'
-          ? fmtAmerican(proj.market_away_ml)
-          : undefined,
-      edge: formatEdgePct(edgeMl),
-    });
+      side,
+      team: teamForSide(proj, side),
+      betLabel: cfg.pickBetSuffix,
+      detail: odds != null ? fmtAmerican(odds) : undefined,
+    };
+  }
+
+  if (cfg.primaryPickKind === 'total') {
+    const totalRaw = formatString(proj.total_recommendation);
+    if (totalRaw !== 'OVER' && totalRaw !== 'UNDER') return null;
+    const line = num(proj.market_total);
+    return {
+      kind: 'total',
+      team: totalRaw === 'OVER' ? 'Over' : 'Under',
+      betLabel: line != null ? line.toFixed(1) : cfg.pickBetSuffix,
+      detail: undefined,
+    };
   }
 
   const spreadSide = spreadRecommendation(proj, cfg.spreadEdgeThreshold);
+  if (!spreadSide) return null;
   const marketSpread = num(proj.market_spread);
-  if (spreadSide && marketSpread != null) {
-    const runLine = num(proj.run_line);
-    const edgeRuns =
-      runLine != null ? runLine - -marketSpread : null;
-    picks.push({
-      kind: 'spread',
-      side: spreadSide,
-      team: teamForSide(proj, spreadSide),
-      label: variant === 'basketball' ? 'Spread / ML' : 'Spread',
-      detail: formatSpreadLine(spreadSide, marketSpread),
-      edge:
-        edgeRuns != null
-          ? `${edgeRuns > 0 ? '+' : ''}${edgeRuns.toFixed(1)} ${edgeUnit} edge`
-          : undefined,
-    });
-  }
-
-  const totalRaw = formatString(proj.total_recommendation);
-  if (totalRaw === 'OVER' || totalRaw === 'UNDER') {
-    const edgeTotal = num(proj.edge_vs_market_total);
-    picks.push({
-      kind: 'total',
-      side: 'HOME',
-      team: totalRaw,
-      label: 'Total',
-      detail: proj.market_total != null ? `Line ${formatNumber(proj.market_total, 1)}` : undefined,
-      edge:
-        edgeTotal != null
-          ? `${edgeTotal > 0 ? '+' : ''}${edgeTotal.toFixed(1)} ${edgeUnit} edge`
-          : undefined,
-    });
-  }
-
-  return picks;
+  return {
+    kind: 'spread',
+    side: spreadSide,
+    team: teamForSide(proj, spreadSide),
+    betLabel: cfg.pickBetSuffix,
+    detail:
+      marketSpread != null ? formatSpreadLine(spreadSide, marketSpread) : undefined,
+  };
 }
 
-function fmtAmerican(odds: unknown): string | undefined {
-  const n = num(odds);
-  if (n == null) return undefined;
-  return n > 0 ? `+${Math.round(n)}` : `${Math.round(n)}`;
+function fmtAmerican(odds: number): string {
+  return odds > 0 ? `+${Math.round(odds)}` : `${Math.round(odds)}`;
 }
 
-function pickKindClass(kind: PickKind): string {
-  if (kind === 'ml') return 'badge badge-ai';
-  if (kind === 'spread') return 'badge';
-  return 'badge dim';
+function formatSpreadLine(side: Side, marketSpreadHome: number): string {
+  const line = side === 'HOME' ? marketSpreadHome : -marketSpreadHome;
+  const sign = line > 0 ? '+' : '';
+  return `${sign}${line.toFixed(1)}`;
+}
+
+function projectedTotal(proj: GameRow): number | null {
+  const total = num(proj.projected_total);
+  if (total != null) return total;
+  const away = num(proj.away_projected_runs);
+  const home = num(proj.home_projected_runs);
+  if (away != null && home != null) return away + home;
+  return null;
+}
+
+function projectedMargin(proj: GameRow, favSide: Side): number | null {
+  const away = num(proj.away_projected_runs);
+  const home = num(proj.home_projected_runs);
+  if (away != null && home != null) return Math.abs(away - home);
+  const runLine = num(proj.run_line);
+  if (runLine != null) return Math.abs(runLine);
+  const favProb = favSide === 'HOME' ? num(proj.home_win_prob) : num(proj.away_win_prob);
+  if (favProb != null) return Math.abs((favProb - 0.5) * 10);
+  return null;
+}
+
+function pickGrade(proj: GameRow, kind: PickKind): boolean | null {
+  if (kind === 'ml') return typeof proj.ml_correct === 'boolean' ? proj.ml_correct : null;
+  if (kind === 'total') return typeof proj.total_correct === 'boolean' ? proj.total_correct : null;
+  return typeof proj.spread_correct === 'boolean' ? proj.spread_correct : null;
+}
+
+function verdictClass(valueRating: string, hasPick: boolean): string {
+  if (valueRating === 'Strong') return 'proj-verdict v-strong';
+  if (hasPick || valueRating === 'Lean') return 'proj-verdict v-lean';
+  return 'proj-verdict v-none';
+}
+
+function verdictLabel(valueRating: string, hasPick: boolean): string {
+  if (valueRating === 'Strong') return 'Strong value';
+  if (hasPick || valueRating === 'Lean') return 'Model lean';
+  return 'No edge';
 }
 
 export default function GameProjectionsGrid({
@@ -180,13 +225,14 @@ export default function GameProjectionsGrid({
   loading,
   isPastDate = false,
   variant = 'mlb',
+  onAddToSlip,
 }: {
   rows: GameRow[];
   loading?: boolean;
   isPastDate?: boolean;
   variant?: GameProjectionsVariant;
+  onAddToSlip?: (pick: GameProjectionSlipPick) => void;
 }) {
-  const cfg = VARIANT[variant];
   if (loading) {
     return (
       <section className="card" style={{ padding: 24, textAlign: 'center' }}>
@@ -209,7 +255,12 @@ export default function GameProjectionsGrid({
     <div style={{ display: 'grid', gap: 14 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 10 }}>
         <StatChip label="Games" value={String(rows.length)} />
-        <StatChip label="Strong value" value={String(strong)} />
+        <StatChip
+          label="Strong value"
+          value={String(strong)}
+          sub={strong === 0 ? 'no high-edge plays' : `${strong} ${strong === 1 ? 'pick' : 'picks'} with edge`}
+          muted={strong === 0}
+        />
       </div>
       {rows.map((proj) => (
         <GameCard
@@ -217,19 +268,38 @@ export default function GameProjectionsGrid({
           proj={proj}
           showResults={isPastDate || hasFinalScore(proj)}
           variant={variant}
-          logoLeague={cfg.logoLeague}
-          sportKey={cfg.sportKey}
+          onAddToSlip={onAddToSlip}
         />
       ))}
     </div>
   );
 }
 
-function StatChip({ label, value }: { label: string; value: string }) {
+function StatChip({
+  label,
+  value,
+  sub,
+  muted,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  muted?: boolean;
+}) {
   return (
     <div className="card" style={{ padding: 12, textAlign: 'center' }}>
       <div className="dim" style={{ fontSize: 10 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 22, marginTop: 4 }}>{value}</div>
+      <div
+        className="mono"
+        style={{
+          fontSize: 22,
+          marginTop: 4,
+          color: muted ? 'var(--text-3)' : undefined,
+        }}
+      >
+        {value}
+      </div>
+      {sub ? <div className="dim" style={{ fontSize: 9, marginTop: 4 }}>{sub}</div> : null}
     </div>
   );
 }
@@ -238,216 +308,325 @@ function GameCard({
   proj,
   showResults,
   variant,
-  logoLeague,
-  sportKey,
+  onAddToSlip,
 }: {
   proj: GameRow;
   showResults: boolean;
   variant: GameProjectionsVariant;
-  logoLeague: string;
-  sportKey: string;
+  onAddToSlip?: (pick: GameProjectionSlipPick) => void;
 }) {
   const cfg = VARIANT[variant];
   const away = formatString(proj.away_team);
   const home = formatString(proj.home_team);
-  const awayWp = typeof proj.away_win_prob === 'number' ? proj.away_win_prob : 0;
-  const homeWp = typeof proj.home_win_prob === 'number' ? proj.home_win_prob : 0;
-  const picks = buildPicks(proj, variant);
-  const mlPick = picks.find((p) => p.kind === 'ml');
-  const recommendedSides = new Set(picks.filter((p) => p.kind !== 'total').map((p) => p.side));
-  const hasEdge = formatString(proj.value_rating) !== 'No Edge' && picks.length > 0;
+  const awayAbbr = teamAbbr(away);
+  const homeAbbr = teamAbbr(home);
+  const awayWp = num(proj.away_win_prob) ?? 0;
+  const homeWp = num(proj.home_win_prob) ?? 0;
+  const homeFav = homeWp >= awayWp;
+  const favSide: Side = homeFav ? 'HOME' : 'AWAY';
+  const favAbbr = homeFav ? homeAbbr : awayAbbr;
+  const valueRating = formatString(proj.value_rating);
+  const isStrong = valueRating === 'Strong';
+  const pick = primaryPick(proj, variant);
+  const hasPick = pick != null;
+  const awayRuns = num(proj.away_projected_runs);
+  const homeRuns = num(proj.home_projected_runs);
+  const leanPts = Math.abs(homeWp - awayWp) * 100;
+  const margin = projectedMargin(proj, favSide);
+  const total = projectedTotal(proj);
 
   return (
-    <article
-      className="card"
-      style={{
-        padding: 'var(--pad-card)',
-        borderColor:
-          formatString(proj.value_rating) === 'Strong'
-            ? 'color-mix(in oklab, var(--win) 40%, var(--border))'
-            : undefined,
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: 12 }}>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <TeamMatchupRow
-            away={away}
-            home={home}
-            awayPitcher={formatString(proj.away_pitcher_name) || cfg.emptySubtitle}
-            homePitcher={formatString(proj.home_pitcher_name) || cfg.emptySubtitle}
-            recommendedSides={recommendedSides}
-            mlFavoredSide={
-              mlPick?.side ??
-              (homeWp > awayWp ? 'HOME' : awayWp > homeWp ? 'AWAY' : null)
-            }
-            showSubtitle={cfg.showMatchupSubtitle}
-            logoLeague={logoLeague}
-            sportKey={sportKey}
-          />
+    <article className={`proj-card${isStrong ? ' is-strong' : ''}`}>
+      <div className="proj-head">
+        <div className="proj-head-title">
+          {away} <span className="proj-at">@</span> {home}
         </div>
-        <span className={ratingClass(proj.value_rating)}>{formatString(proj.value_rating) || 'No edge'}</span>
+        <span className={verdictClass(valueRating, hasPick)}>{verdictLabel(valueRating, hasPick)}</span>
       </div>
 
-      {showResults && hasFinalScore(proj) ? (
-        <FinalScoreBanner proj={proj} />
-      ) : null}
+      {showResults && hasFinalScore(proj) ? <FinalScoreBanner proj={proj} /> : null}
 
-      <ProjectionPicksSection
-        picks={picks}
-        hasEdge={hasEdge}
-        valueRating={formatString(proj.value_rating)}
-        proj={proj}
+      <div className="proj-matchup">
+        <ProjTeamLine
+          abbr={awayAbbr}
+          name={away}
+          role="Away"
+          subtitle={formatString(proj.away_pitcher_name) || cfg.emptySubtitle}
+          showSubtitle={cfg.showMatchupSubtitle}
+          score={awayRuns}
+          scoreUnit={cfg.scoreUnit}
+          prob={awayWp}
+          isFav={!homeFav}
+          isPick={pick?.kind !== 'total' && pick?.side === 'AWAY'}
+          logoLeague={cfg.logoLeague}
+          sportKey={cfg.sportKey}
+        />
+        <ProjTeamLine
+          abbr={homeAbbr}
+          name={home}
+          role="Home"
+          subtitle={formatString(proj.home_pitcher_name) || cfg.emptySubtitle}
+          showSubtitle={cfg.showMatchupSubtitle}
+          score={homeRuns}
+          scoreUnit={cfg.scoreUnit}
+          prob={homeWp}
+          isFav={homeFav}
+          isPick={pick?.kind !== 'total' && pick?.side === 'HOME'}
+          logoLeague={cfg.logoLeague}
+          sportKey={cfg.sportKey}
+        />
+      </div>
+
+      <div
+        className="proj-bar"
+        role="img"
+        aria-label={`${awayAbbr} ${pctPoints(awayWp)}% vs ${homeAbbr} ${pctPoints(homeWp)}%`}
+      >
+        <div
+          className="proj-bar-seg"
+          style={{ width: `${awayWp * 100}%`, background: teamColor(awayAbbr) }}
+        />
+        <div
+          className="proj-bar-seg"
+          style={{ width: `${homeWp * 100}%`, background: teamColor(homeAbbr) }}
+        />
+      </div>
+
+      <ModelPickModule
+        pick={pick}
+        pickProbPct={(pick?.side === 'HOME' ? homeWp : pick?.side === 'AWAY' ? awayWp : homeFav ? homeWp : awayWp) * 100}
+        favAbbr={favAbbr}
+        leanPts={leanPts}
+        projectedTotal={total}
+        marketTotal={num(proj.market_total)}
+        totalEdge={num(proj.edge_vs_market_total)}
+        edgeUnit={cfg.edgeUnit}
+        scoreUnit={cfg.scoreUnit}
         showResults={showResults}
-        logoLeague={logoLeague}
-        sportKey={sportKey}
+        grade={pick && showResults ? pickGrade(proj, pick.kind) : null}
+        onAdd={
+          pick && onAddToSlip
+            ? () =>
+                onAddToSlip({
+                  team: pick.kind === 'total' ? `${pick.team} ${pick.betLabel}` : pick.team,
+                  betType: pick.betLabel,
+                  matchup: `${away} @ ${home}`,
+                  odds:
+                    pick.kind === 'ml' && pick.side
+                      ? (pick.side === 'HOME'
+                          ? num(proj.market_home_ml)
+                          : num(proj.market_away_ml)) ?? undefined
+                      : undefined,
+                })
+            : undefined
+        }
       />
 
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }} className="dim">
-          <span style={{ color: recommendedSides.has('AWAY') ? 'var(--text)' : undefined, fontWeight: recommendedSides.has('AWAY') ? 600 : undefined }}>
-            {pct(awayWp)}
-          </span>
-          <span>Win prob</span>
-          <span style={{ color: recommendedSides.has('HOME') ? 'var(--text)' : undefined, fontWeight: recommendedSides.has('HOME') ? 600 : undefined }}>
-            {pct(homeWp)}
-          </span>
-        </div>
-        <div style={{ display: 'flex', height: 8, borderRadius: 4, overflow: 'hidden', marginTop: 4, background: 'var(--surface-3)' }}>
-          <div
-            style={{
-              width: `${awayWp * 100}%`,
-              background: recommendedSides.has('AWAY') ? 'var(--win)' : 'var(--loss)',
-              boxShadow: recommendedSides.has('AWAY') ? 'inset 0 0 0 1px color-mix(in oklab, white 25%, transparent)' : undefined,
-            }}
-          />
-          <div
-            style={{
-              width: `${homeWp * 100}%`,
-              background: recommendedSides.has('HOME') ? 'var(--win)' : 'var(--accent)',
-              boxShadow: recommendedSides.has('HOME') ? 'inset 0 0 0 1px color-mix(in oklab, white 25%, transparent)' : undefined,
-            }}
-          />
-        </div>
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, textAlign: 'center' }}>
-        <MiniStat
+      <div className="proj-foot">
+        <KVStat
           label="Proj total"
-          value={formatNumber(proj.projected_total, 1)}
+          value={total != null ? total.toFixed(1) : '—'}
           sub={
             showResults && proj.actual_total_runs != null
               ? `Actual ${formatNumber(proj.actual_total_runs, 0)}`
-              : proj.market_total
+              : proj.market_total != null
                 ? `Mkt ${formatNumber(proj.market_total, 1)}`
                 : undefined
           }
         />
-        <MiniStat
-          label="Proj score"
-          value={`${formatNumber(proj.away_projected_runs, 1)}-${formatNumber(proj.home_projected_runs, 1)}`}
+        <KVStat
+          label="Proj margin"
+          value={margin != null ? `${favAbbr} by ${margin.toFixed(1)}` : '—'}
           sub={
             showResults && hasFinalScore(proj)
-              ? `Final ${formatNumber(proj.away_score ?? proj.actual_away_score, 0)}-${formatNumber(proj.home_score ?? proj.actual_home_score, 0)}`
-              : proj.run_line != null
-                ? `Margin ${formatNumber(proj.run_line, 1)}`
-                : undefined
+              ? `Final ${formatNumber(proj.actual_away_score, 0)}–${formatNumber(proj.actual_home_score, 0)}`
+              : undefined
           }
         />
-        <MiniStat label="Confidence" value={proj.model_confidence ? pct(proj.model_confidence) : '—'} />
+        <KVStat label="Model confidence" value={formatModelConfidence(proj.model_confidence)} />
       </div>
     </article>
   );
 }
 
-function TeamMatchupRow({
-  away,
-  home,
-  awayPitcher,
-  homePitcher,
-  recommendedSides,
-  mlFavoredSide,
+function ProjTeamLine({
+  abbr,
+  name,
+  role,
+  subtitle,
   showSubtitle,
+  score,
+  scoreUnit,
+  prob,
+  isFav,
+  isPick,
   logoLeague,
   sportKey,
 }: {
-  away: string;
-  home: string;
-  awayPitcher: string;
-  homePitcher: string;
-  recommendedSides: Set<Side>;
-  mlFavoredSide: Side | null;
+  abbr: string;
+  name: string;
+  role: string;
+  subtitle: string;
   showSubtitle: boolean;
+  score: number | null;
+  scoreUnit: string;
+  prob: number;
+  isFav: boolean;
+  isPick: boolean;
   logoLeague: string;
   sportKey: string;
 }) {
-  const subtitle =
-    awayPitcher && homePitcher
-      ? `${awayPitcher} vs ${homePitcher}`
-      : awayPitcher || homePitcher || '';
+  const meta =
+    showSubtitle && subtitle ? (
+      <>
+        <span className="proj-role">{role}</span>
+        <span className="proj-dot">·</span>
+        <span className="mono">{subtitle}</span>
+      </>
+    ) : (
+      <span className="proj-role">{role}</span>
+    );
 
   return (
-    <>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <TeamLine name={away} side="AWAY" isPick={recommendedSides.has('AWAY')} isFavored={mlFavoredSide === 'AWAY'} logoLeague={logoLeague} sportKey={sportKey} />
-        <div className="dim" style={{ fontSize: 11, paddingLeft: 34 }}>@</div>
-        <TeamLine name={home} side="HOME" isPick={recommendedSides.has('HOME')} isFavored={mlFavoredSide === 'HOME'} logoLeague={logoLeague} sportKey={sportKey} />
+    <div className={`proj-team${isFav ? ' is-fav' : ''}`}>
+      <TeamGlyph abbr={abbr} name={name} league={logoLeague} sportKey={sportKey} size={30} />
+      <div className="proj-team-id">
+        <div className="proj-team-name">
+          {name}
+          {isPick ? <span className="proj-tag-pick">PICK</span> : null}
+        </div>
+        <div className="proj-team-meta">{meta}</div>
       </div>
-      {showSubtitle && subtitle ? (
-        <p className="dim" style={{ fontSize: 11, marginTop: 8 }}>
-          {subtitle}
-        </p>
-      ) : null}
-    </>
+      <div className="proj-team-score">
+        <span className="proj-team-runs mono">{score != null ? score.toFixed(1) : '—'}</span>
+        <span className="proj-team-runs-lab">proj {scoreUnit}</span>
+      </div>
+      <div className="proj-team-prob">
+        <span className={`proj-prob-val mono${isFav ? ' fav' : ''}`}>
+          {pctPoints(prob)}
+          <i>%</i>
+        </span>
+        <span className="proj-prob-lab">win prob</span>
+      </div>
+    </div>
   );
 }
 
-/** @deprecated Use GameProjectionsGrid — kept for MLB imports */
-export function MlbGameProjectionsGrid(
-  props: Parameters<typeof GameProjectionsGrid>[0],
-) {
-  return <GameProjectionsGrid {...props} variant="mlb" />;
+function ModelPickModule({
+  pick,
+  pickProbPct,
+  favAbbr,
+  leanPts,
+  projectedTotal,
+  marketTotal,
+  totalEdge,
+  edgeUnit,
+  scoreUnit,
+  showResults,
+  grade,
+  onAdd,
+}: {
+  pick: PrimaryPick | null;
+  pickProbPct: number;
+  favAbbr: string;
+  leanPts: number;
+  projectedTotal: number | null;
+  marketTotal: number | null;
+  totalEdge: number | null;
+  edgeUnit: string;
+  scoreUnit: string;
+  showResults: boolean;
+  grade: boolean | null;
+  onAdd?: () => void;
+}) {
+  if (!pick) {
+    return (
+      <div className="proj-pick is-none">
+        <div className="proj-pick-main">
+          <span className="proj-pick-kicker">No play</span>
+          <span className="proj-pick-bet dim">Model leans {favAbbr}, below betting threshold</span>
+        </div>
+      </div>
+    );
+  }
+
+  const teamShort = pick.team.split(' ').slice(-1)[0] ?? pick.team;
+  const whyCopy =
+    pick.kind === 'total' ? (
+      <>
+        Model projects{' '}
+        <b className="mono">{projectedTotal != null ? projectedTotal.toFixed(1) : '—'}</b> total {scoreUnit}
+        {marketTotal != null && totalEdge != null ? (
+          <>
+            {' '}
+            — a <b className="mono">{Math.abs(totalEdge).toFixed(1)}-{edgeUnit}</b> edge over the{' '}
+            <b className="mono">{marketTotal.toFixed(1)}</b> market line.
+          </>
+        ) : (
+          '.'
+        )}
+      </>
+    ) : (
+      <>
+        Model gives {teamShort} a <b className="mono">{pickProbPct.toFixed(1)}%</b> win probability — a{' '}
+        <b className="mono">{leanPts.toFixed(1)}-pt</b> edge over a coin flip.
+      </>
+    );
+
+  return (
+    <div className="proj-pick">
+      <div className="proj-pick-main">
+        <span className="proj-pick-kicker">Model pick</span>
+        <span className="proj-pick-bet">
+          {pick.kind === 'total' ? (
+            <>
+              {pick.team} <b>{pick.betLabel}</b>
+            </>
+          ) : (
+            <>
+              {pick.team} <b>{pick.betLabel}</b>
+            </>
+          )}
+          {pick.detail ? (
+            <span className="mono dim" style={{ marginLeft: 8, fontSize: 13 }}>
+              {pick.detail}
+            </span>
+          ) : null}
+        </span>
+        {showResults && grade != null ? (
+          <span className={grade ? 'badge badge-win' : 'badge'} style={{ fontSize: 10 }}>
+            {grade ? 'Hit' : 'Miss'}
+          </span>
+        ) : null}
+      </div>
+      <div className="proj-pick-why">{whyCopy}</div>
+      <button
+        type="button"
+        className="proj-pick-add"
+        onClick={onAdd}
+        disabled={!onAdd}
+        style={!onAdd ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+      >
+        + Add to slip
+      </button>
+    </div>
+  );
 }
 
-function TeamLine({
-  name,
-  side,
-  isPick,
-  isFavored,
-  logoLeague,
-  sportKey,
-}: {
-  name: string;
-  side: Side;
-  isPick: boolean;
-  isFavored: boolean;
-  logoLeague: string;
-  sportKey: string;
-}) {
+function KVStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8,
-        padding: '4px 8px',
-        marginLeft: -8,
-        borderRadius: 'var(--radius-sm)',
-        background: isPick ? 'var(--win-soft)' : undefined,
-        border: isPick ? '1px solid color-mix(in oklab, var(--win) 35%, transparent)' : '1px solid transparent',
-      }}
-    >
-      <TeamGlyph abbr={teamAbbr(name)} name={name} league={logoLeague} sportKey={sportKey} />
-      <span className="type-section-title" style={{ margin: 0, fontSize: 15, flex: 1 }}>
-        {name}
-      </span>
-      {isPick ? (
-        <span className="badge badge-win" style={{ fontSize: 9, letterSpacing: '0.06em' }}>
-          PICK
-        </span>
-      ) : isFavored ? (
-        <span className="dim" style={{ fontSize: 10 }}>favored</span>
+    <div>
+      <div className="field-label" style={{ marginBottom: 3 }}>
+        {label}
+      </div>
+      <div className="mono" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
+        {value}
+      </div>
+      {sub ? (
+        <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>
+          {sub}
+        </div>
       ) : null}
-      <span className="dim" style={{ fontSize: 10, textTransform: 'uppercase' }}>{side === 'HOME' ? 'Home' : 'Away'}</span>
     </div>
   );
 }
@@ -459,7 +638,7 @@ function FinalScoreBanner({ proj }: { proj: GameRow }) {
     <div
       className="mono"
       style={{
-        marginBottom: 12,
+        margin: '0 14px 8px',
         padding: '8px 12px',
         borderRadius: 'var(--radius-sm)',
         background: 'var(--surface-2)',
@@ -472,128 +651,9 @@ function FinalScoreBanner({ proj }: { proj: GameRow }) {
   );
 }
 
-function ProjectionPicksSection({
-  picks,
-  hasEdge,
-  valueRating,
-  proj,
-  showResults,
-  logoLeague,
-  sportKey,
-}: {
-  picks: ProjectionPick[];
-  hasEdge: boolean;
-  valueRating: string;
-  proj: GameRow;
-  showResults: boolean;
-  logoLeague: string;
-  sportKey: string;
-}) {
-  if (!picks.length) {
-    return (
-      <div
-        className="dim"
-        style={{
-          marginBottom: 12,
-          padding: '10px 12px',
-          background: 'var(--surface-2)',
-          borderRadius: 'var(--radius-sm)',
-          fontSize: 12,
-          textAlign: 'center',
-        }}
-      >
-        No ML or spread play — model edge below threshold ({valueRating || 'No Edge'})
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ marginBottom: 12 }}>
-      <div className="dim" style={{ fontSize: 10, letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 8 }}>
-        Projection picks
-      </div>
-      <div style={{ display: 'grid', gap: 8 }}>
-        {picks.map((pick) => (
-          <PickRow
-            key={`${pick.kind}-${pick.team}-${pick.label}`}
-            pick={pick}
-            emphasized={hasEdge && pick.kind !== 'total'}
-            grade={showResults ? pickGrade(proj, pick.kind) : null}
-            logoLeague={logoLeague}
-            sportKey={sportKey}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function PickRow({
-  pick,
-  emphasized,
-  grade,
-  logoLeague,
-  sportKey,
-}: {
-  pick: ProjectionPick;
-  emphasized: boolean;
-  grade: boolean | null;
-  logoLeague: string;
-  sportKey: string;
-}) {
-  const isTotal = pick.kind === 'total';
-
-  return (
-    <div
-      className="pick-call"
-      style={{
-        margin: 0,
-        background: emphasized ? 'var(--accent-soft)' : 'var(--surface-2)',
-        border: emphasized
-          ? '1px solid color-mix(in oklab, var(--accent) 40%, var(--border))'
-          : '1px solid var(--border)',
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-        {!isTotal ? (
-          <TeamGlyph abbr={teamAbbr(pick.team)} name={pick.team} league={logoLeague} sportKey={sportKey} />
-        ) : null}
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span className={pickKindClass(pick.kind)} style={{ fontSize: 10 }}>
-              {pick.label}
-            </span>
-            <strong style={{ fontSize: 14, color: 'var(--text)' }}>
-              {pick.team}
-            </strong>
-            {pick.detail ? (
-              <span className="mono" style={{ fontSize: 13, color: 'var(--text-2)' }}>
-                {pick.detail}
-              </span>
-            ) : null}
-          </div>
-          {pick.edge ? (
-            <div className="dim" style={{ fontSize: 11, marginTop: 4 }}>
-              {pick.edge}
-            </div>
-          ) : null}
-        </div>
-        {grade != null ? (
-          <span className={grade ? 'badge badge-win' : 'badge'} style={{ fontSize: 10, flexShrink: 0 }}>
-            {grade ? 'Hit' : 'Miss'}
-          </span>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function MiniStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div style={{ padding: 10, background: 'var(--surface-2)', borderRadius: 'var(--radius-sm)' }}>
-      <div className="dim" style={{ fontSize: 9 }}>{label}</div>
-      <div className="mono" style={{ fontSize: 14, marginTop: 2 }}>{value}</div>
-      {sub ? <div className="dim" style={{ fontSize: 9, marginTop: 2 }}>{sub}</div> : null}
-    </div>
-  );
+/** @deprecated Use GameProjectionsGrid — kept for MLB imports */
+export function MlbGameProjectionsGrid(
+  props: Parameters<typeof GameProjectionsGrid>[0],
+) {
+  return <GameProjectionsGrid {...props} variant="mlb" />;
 }

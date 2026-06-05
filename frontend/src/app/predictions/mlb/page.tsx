@@ -1,7 +1,7 @@
 'use client';
 
 import AccuracySummary from '@/components/yetai/AccuracySummary';
-import { MlbGameProjectionsGrid } from '@/components/yetai/MlbGameProjectionsGrid';
+import GameProjectionsSection from '@/components/yetai/GameProjectionsSection';
 import SportPredictionsPage, {
   type GroupsContext,
   type PropGroup,
@@ -87,9 +87,6 @@ const HR_COLUMNS: ColumnDef[] = [
 ];
 
 function buildGroups({ isPastDate }: GroupsContext): PropGroup[] {
-  // On past dates we surface actuals next to projections so users can grade
-  // each call at a glance. On today/future, those columns would only show
-  // null placeholders, so we hide them.
   return [
     {
       title: 'Pitcher Strikeout Projections',
@@ -128,16 +125,12 @@ export default function MLBPredictionsPage() {
       emoji="⚾"
       subtitle="Game slate, strikeouts, projected hits/HR boards, and ML home run picks."
       topSection={({ data, loading, isPastDate }) => (
-        <>
-          <h2 className="type-section-title" style={{ margin: '0 0 8px' }}>
-            Game projections
-          </h2>
-          <MlbGameProjectionsGrid
-            rows={(data?.game_projections as Array<Record<string, unknown>>) ?? []}
-            loading={loading}
-            isPastDate={isPastDate}
-          />
-        </>
+        <GameProjectionsSection
+          variant="mlb"
+          data={data}
+          loading={loading}
+          isPastDate={isPastDate}
+        />
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="mlb" date={date} />}
       groups={buildGroups}

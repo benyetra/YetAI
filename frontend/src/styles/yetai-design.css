@@ -450,6 +450,301 @@ input { font: inherit; }
 .conf-bar { height: 4px; background: var(--surface-3); border-radius: 999px; overflow: hidden; }
 .conf-fill { height: 100%; background: linear-gradient(90deg, var(--accent), color-mix(in oklab, var(--accent) 60%, #34D399)); border-radius: 999px; }
 
+/* Game projection card */
+.proj-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.proj-card.is-strong {
+  border-color: color-mix(in oklab, var(--accent) 32%, var(--border));
+  background:
+    radial-gradient(420px 150px at 100% 0%, var(--accent-soft), transparent 70%),
+    var(--surface);
+}
+.proj-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px 10px;
+}
+.proj-head-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: -0.01em;
+  min-width: 0;
+}
+.proj-head-title .proj-at {
+  color: var(--text-4);
+  margin: 0 4px;
+  font-family: var(--mono);
+}
+.proj-verdict {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 4px 9px;
+  border-radius: 999px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.proj-verdict.v-strong {
+  background: var(--accent-soft);
+  color: color-mix(in oklab, var(--accent) 70%, white);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 35%, transparent);
+}
+.proj-verdict.v-lean {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-2);
+}
+.proj-verdict.v-none {
+  background: transparent;
+  color: var(--text-4);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+.proj-matchup {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.proj-team {
+  display: grid;
+  grid-template-columns: 30px 1fr auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+}
+.proj-team + .proj-team {
+  border-top: 1px solid var(--border);
+}
+.proj-team.is-fav {
+  background: color-mix(in oklab, var(--text) 3%, transparent);
+}
+.proj-team-id {
+  min-width: 0;
+}
+.proj-team-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.proj-team:not(.is-fav) .proj-team-name {
+  color: var(--text-2);
+}
+.proj-tag-pick {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  color: color-mix(in oklab, var(--accent) 65%, white);
+  background: var(--accent-soft);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.proj-team-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.proj-role {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 9.5px;
+  color: var(--text-4);
+}
+.proj-dot {
+  color: var(--text-4);
+}
+.proj-team-score {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 56px;
+}
+.proj-team-runs {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-2);
+}
+.proj-team.is-fav .proj-team-runs {
+  color: var(--text);
+}
+.proj-team-runs-lab {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-4);
+}
+.proj-team-prob {
+  text-align: right;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 64px;
+}
+.proj-prob-val {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-3);
+  letter-spacing: -0.02em;
+}
+.proj-prob-val.fav {
+  color: var(--text);
+}
+.proj-prob-val i {
+  font-size: 11px;
+  font-style: normal;
+  color: var(--text-4);
+  margin-left: 1px;
+}
+.proj-prob-lab {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-4);
+}
+.proj-bar {
+  display: flex;
+  gap: 2px;
+  height: 5px;
+  margin: 12px 14px 4px;
+  border-radius: 999px;
+  overflow: hidden;
+}
+.proj-bar-seg {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 3px;
+  opacity: 0.9;
+}
+.proj-pick {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-areas: 'main add' 'why add';
+  column-gap: 14px;
+  row-gap: 4px;
+  align-items: center;
+  margin: 8px 6px 6px;
+  padding: 13px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.is-strong .proj-pick {
+  background: color-mix(in oklab, var(--accent) 9%, var(--bg-elev));
+  border-color: color-mix(in oklab, var(--accent) 28%, var(--border));
+}
+.proj-pick.is-none {
+  grid-template-columns: 1fr;
+  grid-template-areas: 'main';
+  background: transparent;
+}
+.proj-pick-main {
+  grid-area: main;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.proj-pick-kicker {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: color-mix(in oklab, var(--accent) 60%, white);
+}
+.proj-pick.is-none .proj-pick-kicker {
+  color: var(--text-4);
+}
+.proj-pick-bet {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.proj-pick-bet b {
+  color: var(--text-3);
+  font-weight: 500;
+}
+.proj-pick-why {
+  grid-area: why;
+  font-size: 11.5px;
+  color: var(--text-3);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.proj-pick-why b {
+  color: var(--text-2);
+  font-weight: 500;
+}
+.proj-pick-add {
+  grid-area: add;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 8px;
+  color: color-mix(in oklab, var(--accent) 60%, white);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 28%, transparent);
+  transition: background 0.12s, color 0.12s;
+  white-space: nowrap;
+}
+.proj-pick-add:hover {
+  background: var(--accent);
+  color: white;
+}
+.proj-foot {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  padding: 12px 16px 14px;
+  border-top: 1px solid var(--border);
+  margin-top: 2px;
+}
+@media (max-width: 560px) {
+  .proj-team {
+    grid-template-columns: 26px 1fr auto;
+    grid-template-rows: auto auto;
+  }
+  .proj-team-prob {
+    grid-column: 2 / -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 4px;
+  }
+  .proj-prob-lab {
+    order: -1;
+  }
+  .proj-foot {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  .proj-pick {
+    grid-template-columns: 1fr;
+    grid-template-areas: 'main' 'why' 'add';
+  }
+  .proj-pick-add {
+    justify-self: start;
+  }
+}
+
 /* Game row (place bet) */
 .game-row {
   display: grid;
