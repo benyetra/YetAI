@@ -409,11 +409,9 @@ class YetAIBetsServiceDB:
             try:
                 parlay_id = str(uuid.uuid4())
 
-                # Find the earliest game time from all legs for the parlay
-                earliest_game_time = None
                 earliest_commence_time = None
                 for leg in parlay_request.legs:
-                    if hasattr(leg, "commence_time") and leg.commence_time:
+                    if leg.commence_time:
                         try:
                             from dateutil import parser
 
@@ -423,29 +421,28 @@ class YetAIBetsServiceDB:
                                 or leg_commence < earliest_commence_time
                             ):
                                 earliest_commence_time = leg_commence
-                                earliest_game_time = (
-                                    leg.game_time if hasattr(leg, "game_time") else None
-                                )
                         except Exception as e:
                             logger.warning(f"Could not parse leg commence_time: {e}")
-                            continue
 
-                # Use the earliest time found, or default to "TBD"
-                parlay_game_time = earliest_game_time if earliest_game_time else "TBD"
+                odds_value = parlay_request.total_odds
+                if isinstance(odds_value, str):
+                    if odds_value.startswith("+"):
+                        odds_value = float(odds_value.replace("+", ""))
+                    elif odds_value.startswith("-"):
+                        odds_value = -float(odds_value.replace("-", ""))
+                    else:
+                        odds_value = float(odds_value)
+                else:
+                    odds_value = float(odds_value)
 
-                # Create main parlay entry with legs stored as JSON
                 parlay_bet = YetAIBet(
                     id=parlay_id,
                     sport="Multi-Sport",
                     title=parlay_request.name,
                     description=parlay_request.reasoning,
-                    bet_type="parlay",
+                    bet_type=BetType.PARLAY,
                     selection=f"{len(parlay_request.legs)}-Team Parlay",
-                    odds=float(
-                        parlay_request.total_odds.replace("+", "").replace("-", "")
-                        if isinstance(parlay_request.total_odds, str)
-                        else parlay_request.total_odds
-                    ),
+                    odds=odds_value,
                     confidence=float(parlay_request.confidence),
                     tier_requirement=(
                         SubscriptionTier.PRO
@@ -454,9 +451,11 @@ class YetAIBetsServiceDB:
                     ),
                     status="pending",
                     created_at=datetime.utcnow(),
-                    parlay_legs=[leg.dict() for leg in parlay_request.legs],
-                    game_time=parlay_game_time,
+                    parlay_legs=[
+                        leg.model_dump(mode="json") for leg in parlay_request.legs
+                    ],
                     commence_time=earliest_commence_time,
+                    reasoning=parlay_request.reasoning,
                 )
 
                 db.add(parlay_bet)
@@ -477,8 +476,9 @@ class YetAIBetsServiceDB:
                 db.close()
 
         except Exception as e:
-            logger.error(f"Error creating YetAI Parlay: {e}")
-            return {"success": False, "error": "Failed to create parlay"}
+            logger.error(f"Error creating YetAI Parlay: {e}", exc_info=True)
+            detail = str(e).strip() or type(e).__name__
+            return {"success": False, "error": f"Failed to create parlay: {detail}"}
 
     # Tier rank: higher rank = higher access level
     TIER_RANK = {
