@@ -1,7 +1,8 @@
 'use client';
 
 import { formatNumber, formatString } from '@/components/PredictionsTable';
-import { teamAbbr, teamColor } from '@/lib/yetai-format';
+import { teamAbbr } from '@/lib/yetai-format';
+import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { TeamGlyph } from './primitives';
 
 type GameRow = Record<string, unknown>;
@@ -384,11 +385,25 @@ function GameCard({
       >
         <div
           className="proj-bar-seg"
-          style={{ width: `${awayWp * 100}%`, background: teamColor(awayAbbr) }}
+          style={{
+            width: `${awayWp * 100}%`,
+            background: teamPrimaryColor(away, {
+              league: cfg.logoLeague,
+              sportKey: cfg.sportKey,
+              abbr: awayAbbr,
+            }),
+          }}
         />
         <div
           className="proj-bar-seg"
-          style={{ width: `${homeWp * 100}%`, background: teamColor(homeAbbr) }}
+          style={{
+            width: `${homeWp * 100}%`,
+            background: teamPrimaryColor(home, {
+              league: cfg.logoLeague,
+              sportKey: cfg.sportKey,
+              abbr: homeAbbr,
+            }),
+          }}
         />
       </div>
 
@@ -404,6 +419,14 @@ function GameCard({
         scoreUnit={cfg.scoreUnit}
         showResults={showResults}
         grade={pick && showResults ? pickGrade(proj, pick.kind) : null}
+        pickTeamColors={
+          pick && pick.kind !== 'total'
+            ? teamColorStyle(pick.team, {
+                league: cfg.logoLeague,
+                sportKey: cfg.sportKey,
+              })
+            : undefined
+        }
         onAdd={
           pick && onAddToSlip
             ? () =>
@@ -488,7 +511,10 @@ function ProjTeamLine({
     );
 
   return (
-    <div className={`proj-team${isFav ? ' is-fav' : ''}`}>
+    <div
+      className={`proj-team${isFav ? ' is-fav' : ''}${isPick ? ' is-pick' : ''}`}
+      style={teamColorStyle(name, { league: logoLeague, sportKey, abbr })}
+    >
       <TeamGlyph abbr={abbr} name={name} league={logoLeague} sportKey={sportKey} size={30} />
       <div className="proj-team-id">
         <div className="proj-team-name">
@@ -524,6 +550,7 @@ function ModelPickModule({
   scoreUnit,
   showResults,
   grade,
+  pickTeamColors,
   onAdd,
 }: {
   pick: PrimaryPick | null;
@@ -537,6 +564,7 @@ function ModelPickModule({
   scoreUnit: string;
   showResults: boolean;
   grade: boolean | null;
+  pickTeamColors?: Record<string, string>;
   onAdd?: () => void;
 }) {
   if (!pick) {
@@ -574,7 +602,7 @@ function ModelPickModule({
     );
 
   return (
-    <div className="proj-pick">
+    <div className="proj-pick" style={pickTeamColors}>
       <div className="proj-pick-main">
         <span className="proj-pick-kicker">Model pick</span>
         <span className="proj-pick-bet">

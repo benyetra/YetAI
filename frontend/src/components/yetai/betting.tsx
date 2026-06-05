@@ -4,6 +4,7 @@ import React, { useMemo, useState } from 'react';
 import { Layers, X } from 'lucide-react';
 import { LeagueChip, TeamGlyph } from './primitives';
 import { calcPayout, fmtMoney, fmtOdds } from '@/lib/yetai-format';
+import { teamColorStyle } from '@/lib/team-colors';
 import { parlayAmericanOdds, parlayToWin } from '@/lib/slip-to-bet';
 import { spreadLabel } from '@/lib/yetai-odds';
 import type { BetSlipPlaceContext, DesignGame, SlipItem } from './types';
@@ -48,12 +49,26 @@ export function GameOddsRow({
   return (
     <div className="game-row">
       <div className="game-teams">
-        <div className="game-team">
+        <div
+          className="game-team"
+          style={teamColorStyle(game.away.name, {
+            league: game.league,
+            sportKey: game.sport_key,
+            abbr: game.away.abbr,
+          })}
+        >
           <TeamGlyph abbr={game.away.abbr} name={game.away.name} league={game.league} sportKey={game.sport_key} size={20} />
           <span className="t-name">{game.away.name}</span>
           {game.away.rec ? <span className="dim mono" style={{ fontSize: 11 }}>{game.away.rec}</span> : null}
         </div>
-        <div className="game-team">
+        <div
+          className="game-team"
+          style={teamColorStyle(game.home.name, {
+            league: game.league,
+            sportKey: game.sport_key,
+            abbr: game.home.abbr,
+          })}
+        >
           <TeamGlyph abbr={game.home.abbr} name={game.home.name} league={game.league} sportKey={game.sport_key} size={20} />
           <span className="t-name">{game.home.name}</span>
           {game.home.rec ? <span className="dim mono" style={{ fontSize: 11 }}>{game.home.rec}</span> : null}

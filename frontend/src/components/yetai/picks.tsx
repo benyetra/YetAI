@@ -4,6 +4,7 @@ import React from 'react';
 import { Crown, Eye, Plus, Sparkles } from 'lucide-react';
 import { ConfidenceBar, LeagueChip, TeamGlyph } from './primitives';
 import { fmtOdds, teamAbbr } from '@/lib/yetai-format';
+import { teamColorStyle } from '@/lib/team-colors';
 import { hasRealMatchup, isPlayerPropDisplay } from '@/lib/yetai-matchup';
 import type { DesignPick } from './types';
 
@@ -50,12 +51,18 @@ export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void
           </div>
         ) : (
           <div className="pick-teams">
-            <div className="pick-team">
+            <div
+              className="pick-team"
+              style={teamColorStyle(away, { league: pick.league, sportKey: pick.sport, abbr: teamAbbr(away) })}
+            >
               <span className="t-name">
                 <TeamGlyph abbr={teamAbbr(away)} name={away} league={pick.league} sportKey={pick.sport} /> {away}
               </span>
             </div>
-            <div className="pick-team">
+            <div
+              className="pick-team"
+              style={teamColorStyle(home, { league: pick.league, sportKey: pick.sport, abbr: teamAbbr(home) })}
+            >
               <span className="t-name">
                 <TeamGlyph abbr={teamAbbr(home)} name={home} league={pick.league} sportKey={pick.sport} /> {home}
               </span>
@@ -118,12 +125,34 @@ export function HeroAIPick({
             </div>
           ) : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  ...teamColorStyle(away, { league: pick.league, sportKey: pick.sport, abbr: teamAbbr(away) }),
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  borderLeft: '3px solid var(--team-primary)',
+                  background: 'color-mix(in oklab, var(--team-primary) 8%, transparent)',
+                }}
+              >
                 <TeamGlyph abbr={teamAbbr(away)} name={away} league={pick.league} sportKey={pick.sport} size={36} />
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{away}</div>
               </div>
               <span style={{ color: 'var(--text-4)', fontFamily: 'var(--mono)', fontSize: 13 }}>@</span>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  ...teamColorStyle(home, { league: pick.league, sportKey: pick.sport, abbr: teamAbbr(home) }),
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  borderLeft: '3px solid var(--team-primary)',
+                  background: 'color-mix(in oklab, var(--team-primary) 8%, transparent)',
+                }}
+              >
                 <TeamGlyph abbr={teamAbbr(home)} name={home} league={pick.league} sportKey={pick.sport} size={36} />
                 <div style={{ fontSize: 15, fontWeight: 500 }}>{home}</div>
               </div>

@@ -425,11 +425,11 @@ input { font: inherit; }
 .pick-league { font-size: 11px; color: var(--text-3); letter-spacing: 0.06em; text-transform: uppercase; display: flex; align-items: center; gap: 6px; }
 .pick-body { padding: 14px 16px 16px; flex: 1; display: flex; flex-direction: column; gap: 12px; }
 .pick-teams { display: flex; flex-direction: column; gap: 8px; }
-.pick-team { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; }
+.pick-team { display: flex; align-items: center; justify-content: space-between; font-size: 13.5px; padding: 6px 10px; border-radius: 8px; border-left: 3px solid var(--team-primary, transparent); background: color-mix(in oklab, var(--team-primary, transparent) 8%, transparent); }
 .pick-team .t-name { display: flex; align-items: center; gap: 8px; }
 .pick-team .t-rec { color: var(--text-3); font-size: 11.5px; }
 .team-glyph { width: 22px; height: 22px; border-radius: 5px; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; color: white; letter-spacing: -0.02em; font-family: var(--mono); flex-shrink: 0; }
-.team-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; background: var(--surface-2); border: 1px solid var(--border); flex-shrink: 0; padding: 2px; box-sizing: border-box; }
+.team-logo { width: 22px; height: 22px; border-radius: 5px; object-fit: contain; background: color-mix(in oklab, var(--team-primary, var(--surface-2)) 12%, var(--surface-2)); border: 1px solid color-mix(in oklab, var(--team-primary, var(--border)) 35%, var(--border)); flex-shrink: 0; padding: 2px; box-sizing: border-box; }
 
 .pick-call {
   background: var(--bg-elev);
@@ -520,12 +520,17 @@ input { font: inherit; }
   align-items: center;
   gap: 12px;
   padding: 12px 14px;
+  border-left: 3px solid var(--team-primary, transparent);
+  background: color-mix(in oklab, var(--team-primary, transparent) 6%, transparent);
 }
 .proj-team + .proj-team {
   border-top: 1px solid var(--border);
 }
 .proj-team.is-fav {
-  background: color-mix(in oklab, var(--text) 3%, transparent);
+  background: color-mix(in oklab, var(--team-primary, var(--text)) 14%, transparent);
+}
+.proj-team.is-pick {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--team-primary, var(--accent)) 35%, transparent);
 }
 .proj-team-id {
   min-width: 0;
@@ -547,8 +552,8 @@ input { font: inherit; }
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.07em;
-  color: color-mix(in oklab, var(--accent) 65%, white);
-  background: var(--accent-soft);
+  color: color-mix(in oklab, var(--team-primary, var(--accent)) 20%, white);
+  background: color-mix(in oklab, var(--team-primary, var(--accent)) 18%, transparent);
   padding: 2px 6px;
   border-radius: 4px;
 }
@@ -604,7 +609,7 @@ input { font: inherit; }
   letter-spacing: -0.02em;
 }
 .proj-prob-val.fav {
-  color: var(--text);
+  color: var(--team-primary, var(--text));
 }
 .proj-prob-val i {
   font-size: 11px;
@@ -641,13 +646,13 @@ input { font: inherit; }
   align-items: center;
   margin: 8px 6px 6px;
   padding: 13px 14px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
+  background: color-mix(in oklab, var(--team-primary, var(--bg-elev)) 10%, var(--bg-elev));
+  border: 1px solid color-mix(in oklab, var(--team-primary, var(--border)) 28%, var(--border));
   border-radius: var(--radius);
 }
 .is-strong .proj-pick {
-  background: color-mix(in oklab, var(--accent) 9%, var(--bg-elev));
-  border-color: color-mix(in oklab, var(--accent) 28%, var(--border));
+  background: color-mix(in oklab, var(--team-primary, var(--accent)) 12%, var(--bg-elev));
+  border-color: color-mix(in oklab, var(--team-primary, var(--accent)) 32%, var(--border));
 }
 .proj-pick.is-none {
   grid-template-columns: 1fr;
@@ -666,7 +671,7 @@ input { font: inherit; }
   font-weight: 700;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: color-mix(in oklab, var(--accent) 60%, white);
+  color: color-mix(in oklab, var(--team-primary, var(--accent)) 55%, white);
 }
 .proj-pick.is-none .proj-pick-kicker {
   color: var(--text-4);
@@ -757,7 +762,7 @@ input { font: inherit; }
 .game-row:last-child { border-bottom: 0; }
 .game-row:hover { background: color-mix(in oklab, var(--surface-2) 50%, transparent); }
 .game-teams { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
-.game-team { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; }
+.game-team { display: flex; align-items: center; gap: 8px; font-size: 13px; min-width: 0; padding: 4px 0 4px 8px; border-left: 3px solid var(--team-primary, transparent); background: color-mix(in oklab, var(--team-primary, transparent) 5%, transparent); border-radius: 0 6px 6px 0; }
 .game-team .t-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .game-time { font-size: 11px; color: var(--text-3); margin-top: 4px; font-family: var(--mono); }
 
@@ -845,7 +850,7 @@ input { font: inherit; }
 }
 .live-head { display: flex; align-items: center; justify-content: space-between; font-size: 11.5px; color: var(--text-3); }
 .live-score { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 14px; }
-.live-team { display: flex; align-items: center; gap: 10px; }
+.live-team { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 8px; border-left: 3px solid var(--team-primary, transparent); background: color-mix(in oklab, var(--team-primary, transparent) 8%, transparent); }
 .live-team.away { justify-content: flex-end; }
 .live-score-num { font-family: var(--mono); font-size: 32px; font-weight: 500; letter-spacing: -0.03em; }
 .live-divider { font-family: var(--mono); color: var(--text-4); font-size: 16px; }

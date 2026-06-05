@@ -1,5 +1,15 @@
 # YetAI agent notes
 
+## Pre-commit quality gates (required)
+
+Before **commit or push**, run formatters and tests for every area you changed; **fix failures and re-run until green**. See `.cursor/rules/yetai-pre-commit-gates.mdc`.
+
+**Backend:** `cd backend && python3 -m black . && python3 -m black --check . && PYTHONPATH=. .venv/bin/python -m pytest -q`
+
+**Frontend:** `cd frontend && npm run lint && npm run type-check && npm run test:ci`
+
+Regenerate `docs/api/openapi*.json` after API route changes (`scripts/export_openapi.py`).
+
 ## Python formatting (required)
 
 Backend CI enforces **Black** from `backend/`:
@@ -68,6 +78,14 @@ cd backend && PYTHONPATH=. python3 scripts/download_espn_team_logos.py
 ```
 
 Refreshes `frontend/public/team-logos/{nba,wnba,nhl,epl,mls,ucl,ncaaf,ncaab}/` and `frontend/src/lib/team-logo-registry.generated.ts`.
+
+Team primary/secondary colors (same ESPN source):
+
+```bash
+cd backend && PYTHONPATH=. python3 scripts/sync_team_colors.py
+```
+
+Refreshes `frontend/src/lib/team-colors-registry.generated.ts`. UI lookups: `frontend/src/lib/team-colors.ts`.
 
 ## Railway production deploy
 

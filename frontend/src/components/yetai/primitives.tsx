@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { ArrowDown, ArrowUp } from 'lucide-react';
-import { teamColor } from '@/lib/yetai-format';
+import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { teamLogoUrl } from '@/lib/team-logos';
 
 const LEAGUE_COLORS: Record<string, string> = {
@@ -38,6 +38,7 @@ export function TeamGlyph({
     !logoFailed && label
       ? teamLogoUrl(label, { league, sportKey, abbr })
       : null;
+  const glyphColor = teamPrimaryColor(label, { league, sportKey, abbr });
 
   if (logoSrc) {
     return (
@@ -50,7 +51,11 @@ export function TeamGlyph({
         width={size}
         height={size}
         onError={() => setLogoFailed(true)}
-        style={{ width: size, height: size }}
+        style={{
+          width: size,
+          height: size,
+          ...teamColorStyle(label, { league, sportKey, abbr }),
+        }}
       />
     );
   }
@@ -59,10 +64,11 @@ export function TeamGlyph({
     <span
       className="team-glyph"
       style={{
-        background: teamColor(abbr),
+        background: glyphColor,
         width: size,
         height: size,
         fontSize: Math.max(9, size * 0.42),
+        ...teamColorStyle(label, { league, sportKey, abbr }),
       }}
       aria-hidden
     >

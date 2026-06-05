@@ -1,5 +1,7 @@
 /** Formatting helpers aligned with YetAI design prototype */
 
+import { teamPrimaryColor } from '@/lib/team-colors';
+
 export function teamAbbr(name: string): string {
   const known: Record<string, string> = {
     'Boston Celtics': 'BOS',
@@ -25,55 +27,16 @@ export function teamAbbr(name: string): string {
   return name.slice(0, 3).toUpperCase();
 }
 
-export function teamColor(abbr: string): string {
-  const map: Record<string, string> = {
-    BOS: '#007A33',
-    NYK: '#F58426',
-    LAL: '#552583',
-    GSW: '#1D428A',
-    MIA: '#98002E',
-    OKC: '#007AC1',
-    MIN: '#0C2340',
-    IND: '#FDBB30',
-    NYY: '#003087',
-    RED: '#BD3039',
-    LAD: '#005A9C',
-    SFG: '#FD5A1E',
-    PHI: '#006BB6',
-    CHC: '#0E3386',
-    NYM: '#FF5910',
-    HOU: '#EB6E1F',
-    ATL: '#CE1141',
-    ARI: '#A71930',
-    COL: '#33006F',
-    TEX: '#003278',
-    LAA: '#BA0021',
-    SDP: '#2F241D',
-    OAK: '#003831',
-    MIL: '#12284B',
-    KCR: '#004687',
-    SEA: '#0C2C56',
-    BAL: '#DF4601',
-    PIT: '#FDB827',
-    STL: '#C41E3A',
-    TOR: '#134A8E',
-    CIN: '#C6011F',
-    CLE: '#00385D',
-    DET: '#0C2340',
-    CWS: '#27251F',
-    TBR: '#092C5C',
-    WSH: '#AB0003',
-    RMA: '#FEBE10',
-    MAN: '#6CABDD',
-    NFL: '#013369',
-    NBA: '#C8102E',
-    MLB: '#002D72',
-    NHL: '#000000',
-    UCL: '#0D1B43',
-    UFC: '#D20A0A',
-    WNBA: '#F37021',
-  };
-  return map[abbr] || '#444';
+export function teamColor(
+  teamNameOrAbbr: string,
+  opts: { name?: string; league?: string; sportKey?: string; abbr?: string } = {},
+): string {
+  const label = opts.name?.trim() || teamNameOrAbbr.trim();
+  return teamPrimaryColor(label, {
+    league: opts.league,
+    sportKey: opts.sportKey,
+    abbr: opts.abbr || teamNameOrAbbr,
+  });
 }
 
 export function fmtOdds(n: number | string): string {

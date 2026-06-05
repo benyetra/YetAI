@@ -4,6 +4,7 @@ import React from 'react';
 import { ChevronRight } from 'lucide-react';
 import { LeagueChip, TeamGlyph } from './primitives';
 import { fmtOdds } from '@/lib/yetai-format';
+import { teamColorStyle } from '@/lib/team-colors';
 import type { DesignGame, SlipItem } from './types';
 
 export function LiveGameCard({
@@ -42,7 +43,14 @@ export function LiveGameCard({
         </button>
       </div>
       <div className="live-score">
-        <div className="live-team">
+        <div
+          className="live-team"
+          style={teamColorStyle(game.away.name, {
+            league: game.league,
+            sportKey: game.sport_key,
+            abbr: game.away.abbr,
+          })}
+        >
           <TeamGlyph abbr={game.away.abbr} name={game.away.name} league={game.league} sportKey={game.sport_key} size={28} />
           <div>
             <div style={{ fontSize: 13.5 }}>{game.away.name}</div>
@@ -54,7 +62,14 @@ export function LiveGameCard({
           <span className="live-divider">·</span>
           <span className="live-score-num">{homeScore}</span>
         </div>
-        <div className="live-team away">
+        <div
+          className="live-team away"
+          style={teamColorStyle(game.home.name, {
+            league: game.league,
+            sportKey: game.sport_key,
+            abbr: game.home.abbr,
+          })}
+        >
           <div style={{ textAlign: 'right' }}>
             <div style={{ fontSize: 13.5 }}>{game.home.name}</div>
             <div style={{ fontSize: 11.5, color: 'var(--text-3)' }}>Home</div>
