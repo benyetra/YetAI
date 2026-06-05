@@ -23,9 +23,68 @@ from app.services.yetai_bets_display import subscriber_game_label
 
 logger = logging.getLogger(__name__)
 
+# Admin UI sport label → (Odds API sport_key, games.sport_title)
+_ADMIN_SPORT_TO_GAME_META: dict[str, tuple[str, str]] = {
+    "NFL": ("americanfootball_nfl", "NFL"),
+    "NBA": ("basketball_nba", "NBA"),
+    "WNBA": ("basketball_wnba", "WNBA"),
+    "MLB": ("baseball_mlb", "MLB"),
+    "NHL": ("icehockey_nhl", "NHL"),
+    "NCAA Football": ("americanfootball_ncaaf", "NCAA Football"),
+    "NCAA Basketball": ("basketball_ncaab", "NCAA Basketball"),
+    "Soccer": ("soccer_epl", "Soccer"),
+    "Tennis": ("tennis_atp", "Tennis"),
+}
+
 # Bets the scheduler should try to settle (subscriber-facing unsettled rows).
 YETAI_UNSETTLED_STATUSES = ("pending", "active")
 PROP_EVENT_DATE_RE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def _ensure_game_row_for_yetai_bet(
+    db: Session,
+    *,
+    game_id: Optional[str],
+    sport: str,
+    home_team: str,
+    away_team: str,
+    commence_time: Optional[datetime],
+) -> Optional[str]:
+    """Insert a games row when admin picks use Odds API ids not yet synced."""
+    if not game_id:
+        return None
+
+    from app.models.database_models import Game, GameStatus
+
+    if db.query(Game).filter(Game.id == game_id).first():
+        return game_id
+
+    sport_key, sport_title = _ADMIN_SPORT_TO_GAME_META.get(
+        sport, (sport.lower().replace(" ", "_"), sport)
+    )
+    commence = commence_time or datetime.utcnow()
+    db.add(
+        Game(
+            id=game_id,
+            sport_key=sport_key,
+            sport_title=sport_title,
+            home_team=home_team,
+            away_team=away_team,
+            commence_time=commence,
+            status=GameStatus.SCHEDULED,
+            last_update=datetime.utcnow(),
+        )
+    )
+    db.flush()
+    logger.info(
+        "Created games row for admin YetAI bet %s (%s @ %s)",
+        game_id,
+        away_team,
+        home_team,
+    )
+    return game_id
+
+
 # Backwards-compatible alias
 MLB_PROP_EVENT_DATE_RE = PROP_EVENT_DATE_RE
 
@@ -244,12 +303,22 @@ class YetAIBetsServiceDB:
                     "proposition": "prop",
                     "player props": "prop",
                     "player prop": "prop",
+                    "puck line": "spread",
                 }
 
                 # Normalize bet type to enum value
                 normalized_bet_type = bet_type_mapping.get(
                     bet_request.bet_type.lower(), bet_request.bet_type.lower()
                 )
+                valid_bet_types = {member.value for member in BetType}
+                if normalized_bet_type not in valid_bet_types:
+                    return {
+                        "success": False,
+                        "error": (
+                            f"Unsupported bet type '{bet_request.bet_type}'. "
+                            f"Use one of: spread, moneyline, total, prop."
+                        ),
+                    }
                 logger.info(
                     f"Mapped bet_type '{bet_request.bet_type}' to '{normalized_bet_type}'"
                 )
@@ -273,6 +342,15 @@ class YetAIBetsServiceDB:
 
                 logger.info(
                     f"Using provided game data: game_id={game_id}, {away_team} @ {home_team}"
+                )
+
+                game_id = _ensure_game_row_for_yetai_bet(
+                    db,
+                    game_id=game_id,
+                    sport=bet_request.sport,
+                    home_team=home_team,
+                    away_team=away_team,
+                    commence_time=game_commence_time,
                 )
 
                 new_bet = YetAIBet(
@@ -313,8 +391,14 @@ class YetAIBetsServiceDB:
                 db.close()
 
         except Exception as e:
-            logger.error(f"Error creating YetAI Bet: {e}")
-            return {"success": False, "error": "Failed to create bet"}
+            logger.error(f"Error creating YetAI Bet: {e}", exc_info=True)
+            detail = str(e).strip() or type(e).__name__
+            if "foreign key" in detail.lower():
+                detail = (
+                    f"{detail} (game_id must exist in games table; "
+                    "sync was attempted automatically)"
+                )
+            return {"success": False, "error": f"Failed to create bet: {detail}"}
 
     async def create_parlay(
         self, parlay_request: CreateParlayBetRequest, admin_user_id: int

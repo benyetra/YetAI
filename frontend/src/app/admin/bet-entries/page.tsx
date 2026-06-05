@@ -483,7 +483,7 @@ export default function AdminBetEntriesPage() {
         return;
       }
       
-      const result = await sportsAPI.getOdds(sportKey);
+      const result = await sportsAPI.getOdds(sportKey, { useCache: false });
       if (result.status === 'success' && result.games) {
         setAvailableGames(result.games);
       } else if (result.status === 'error') {

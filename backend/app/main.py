@@ -5796,7 +5796,10 @@ async def _get_odds_with_cache(
     from app.services.cache_service import cache_service
     from app.services.odds_api_service import sport_in_season
 
-    if not settings.ODDS_API_KEY:
+    from app.core.config import get_odds_api_key
+
+    api_key = get_odds_api_key()
+    if not api_key:
         return _odds_not_configured_payload(sport_label, odds_key=odds_key)
 
     fresh_key = _odds_cache_key_fresh(sport_key)
@@ -5884,7 +5887,7 @@ async def _get_odds_with_cache(
         from app.services.odds_api_service import OddsAPIService, odds_api_call_scope
 
         with odds_api_call_scope(f"api.odds.{sport_key}"):
-            async with OddsAPIService(settings.ODDS_API_KEY) as service:
+            async with OddsAPIService(api_key) as service:
                 games = await service.get_odds(sport_key)
                 try:
                     await _odds_quota_update(
@@ -5998,75 +6001,51 @@ async def options_nba_odds():
 
 @app.get("/api/odds/basketball_nba")
 async def get_nba_odds():
-    """Get NBA odds (cache-first)."""
-    return await _get_odds_with_cache("basketball_nba", "NBA")
+    """Get NBA odds (cache-first, with pred_nba_game_lines fallback)."""
+    return await _get_odds_with_pred_lines_fallback("basketball_nba", "NBA")
 
 
-def _wnba_games_from_pred_lines(*, days_ahead: int = 14) -> list[dict]:
-    """Upcoming WNBA slates from pred_wnba_game_lines (ETL / Odds API sync).
+async def _get_odds_with_pred_lines_fallback(sport_key: str, sport_label: str) -> dict:
+    """Odds endpoint with DB consensus lines when live API or cache lack markets."""
+    from app.services.admin_game_lines_odds import (
+        enrich_games_with_pred_lines,
+        game_has_betting_markets,
+        games_from_pred_lines,
+    )
 
-    Used when live Odds API calls fail (e.g. bad key on API worker) so admin bet
-    entry can still list games that have odds_api_event_id for prop lookups.
-    """
-    from datetime import datetime, time, timedelta, timezone
-
-    from app.core.database import SessionLocal
-    from app.models.predictions_models import WNBAGameLines
-    from app.services.etl.wnba._espn import EASTERN, now_eastern
-
-    today = now_eastern().date()
-    end = today + timedelta(days=days_ahead)
-    db = SessionLocal()
-    try:
-        try:
-            rows = (
-                db.query(WNBAGameLines)
-                .filter(
-                    WNBAGameLines.game_date >= today,
-                    WNBAGameLines.game_date <= end,
+    result = await _get_odds_with_cache(sport_key, sport_label)
+    games = list(result.get("games") or [])
+    if games:
+        games = enrich_games_with_pred_lines(sport_key, games)
+        if any(game_has_betting_markets(g) for g in games):
+            payload = {**result, "games": games, "count": len(games)}
+            if result.get("status") == "success" and not any(
+                game_has_betting_markets(g) for g in (result.get("games") or [])
+            ):
+                payload["source"] = (
+                    f"pred_{sport_key.split('_')[-1]}_game_lines_enriched"
                 )
-                .order_by(WNBAGameLines.game_date, WNBAGameLines.game_time)
-                .all()
+            return payload
+
+    db_games = games_from_pred_lines(sport_key)
+    if db_games:
+        payload = {
+            "status": "success",
+            "games": db_games,
+            "count": len(db_games),
+            "cached": True,
+            "source": f"pred_{sport_key.split('_')[-1]}_game_lines",
+        }
+        if result.get("status") != "success":
+            payload["message"] = (
+                f"Live Odds API unavailable ({result.get('message', 'error')}); "
+                f"showing games from {sport_label} game lines table."
             )
-        except Exception as exc:
-            # CI / fresh DBs may not have WNBA migrations applied yet.
-            logger.warning("pred_wnba_game_lines fallback unavailable: %s", exc)
-            return []
-    finally:
-        db.close()
+        return payload
 
-    games: list[dict] = []
-    for row in rows:
-        commence = row.game_time
-        if commence is None:
-            commence = datetime.combine(
-                row.game_date, time(19, 0), tzinfo=EASTERN
-            ).astimezone(timezone.utc)
-        elif commence.tzinfo is None:
-            commence = commence.replace(tzinfo=timezone.utc)
-        else:
-            commence = commence.astimezone(timezone.utc)
-
-        event_id = row.odds_api_event_id
-        if not event_id:
-            slug_home = (row.home_team_name or "home").replace(" ", "-")
-            slug_away = (row.away_team_name or "away").replace(" ", "-")
-            event_id = f"wnba-{row.game_date}-{slug_away}-at-{slug_home}"
-
-        from app.services.wnba_admin_odds_fallback import bookmakers_from_game_line
-
-        games.append(
-            {
-                "id": event_id,
-                "sport_key": "basketball_wnba",
-                "sport_title": "WNBA",
-                "commence_time": commence.isoformat().replace("+00:00", "Z"),
-                "home_team": row.home_team_name,
-                "away_team": row.away_team_name,
-                "bookmakers": bookmakers_from_game_line(row),
-            }
-        )
-    return games
+    if games:
+        return {**result, "games": games, "count": len(games)}
+    return result
 
 
 @app.options("/api/odds/basketball_wnba")
@@ -6078,27 +6057,7 @@ async def options_wnba_odds():
 @app.get("/api/odds/basketball_wnba")
 async def get_wnba_odds():
     """Get WNBA odds (cache-first, with pred_wnba_game_lines fallback)."""
-    result = await _get_odds_with_cache("basketball_wnba", "WNBA")
-    if result.get("status") == "success" and result.get("games"):
-        return result
-
-    db_games = _wnba_games_from_pred_lines()
-    if db_games:
-        payload = {
-            "status": "success",
-            "games": db_games,
-            "count": len(db_games),
-            "cached": True,
-            "source": "pred_wnba_game_lines",
-        }
-        if result.get("status") != "success":
-            payload["message"] = (
-                f"Live Odds API unavailable ({result.get('message', 'error')}); "
-                "showing games from WNBA game lines table."
-            )
-        return payload
-
-    return result
+    return await _get_odds_with_pred_lines_fallback("basketball_wnba", "WNBA")
 
 
 @app.options("/api/odds/baseball_mlb")
@@ -6284,7 +6243,10 @@ async def get_player_props(
     Returns:
         Player props organized by market with FanDuel odds
     """
-    if not settings.ODDS_API_KEY:
+    from app.core.config import get_odds_api_key
+
+    api_key = get_odds_api_key()
+    if not api_key:
         raise HTTPException(
             status_code=500,
             detail="ODDS_API_KEY not configured. Please set your API key.",
@@ -6319,7 +6281,7 @@ async def get_player_props(
         from app.services.player_props_service import PlayerPropsService
 
         with odds_api_call_scope(f"api.player_props.{sport}"):
-            async with OddsAPIService(settings.ODDS_API_KEY) as odds_service:
+            async with OddsAPIService(api_key) as odds_service:
                 props_service = PlayerPropsService(odds_service)
                 markets_list = markets.split(",") if markets else None
                 props_data = await props_service.get_player_props_for_event(
@@ -6344,7 +6306,10 @@ async def get_player_props(
         raise
     except Exception as e:
         logger.error(f"Error fetching player props for {sport} event {event_id}: {e}")
-        if sport == "basketball_wnba" and "Invalid API key" in str(e):
+        err_text = str(e)
+        if sport == "basketball_wnba" and (
+            "Invalid API key" in err_text or "401" in err_text
+        ):
             from app.core.database import SessionLocal
             from app.services.wnba_admin_odds_fallback import (
                 wnba_player_props_from_projections,
@@ -6366,6 +6331,20 @@ async def get_player_props(
                         "showing WNBA projection market lines (-110 placeholder odds)."
                     ),
                 }
+            return {
+                "status": "success",
+                "data": {
+                    "event_id": event_id,
+                    "sport_key": sport,
+                    "markets": {},
+                },
+                "cached": False,
+                "source": "pred_wnba_prop_projections",
+                "message": (
+                    "Live Odds API unavailable (invalid API key); "
+                    "no WNBA projection lines found for this event yet."
+                ),
+            }
         raise HTTPException(status_code=500, detail=str(e))
 
 

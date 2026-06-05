@@ -208,3 +208,9 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def get_odds_api_key() -> Optional[str]:
+    """Resolve Odds API key at call time (Railway env may update without reload)."""
+    key, _source = _resolve_odds_api_key(settings.ODDS_API_KEY)
+    return key

@@ -215,6 +215,18 @@ class CircuitBreaker {
 // Global circuit breaker for API calls
 const apiCircuitBreaker = new CircuitBreaker(5, 60000);
 
+/** Skip stale localStorage odds cache that lists games without spread/ML/total markets. */
+function oddsResponseHasPickMarkets(data: unknown): boolean {
+  if (!data || typeof data !== 'object') return false;
+  const games = (data as { games?: unknown[] }).games;
+  if (!Array.isArray(games) || games.length === 0) return false;
+  return games.some((game) =>
+    (game.bookmakers || []).some((bm: { markets?: { outcomes?: unknown[] }[] }) =>
+      (bm.markets || []).some((m) => (m.outcomes || []).length > 0)
+    )
+  );
+}
+
 // Enhanced API client with error handling
 export const enhancedApiClient = {
   ...apiClient,
@@ -234,8 +246,14 @@ export const enhancedApiClient = {
       if (cached) {
         try {
           const { data, timestamp, ttl } = JSON.parse(cached);
-          if (Date.now() - timestamp < ttl && data && (data as { status?: string }).status === 'success') {
+          const isSuccess = data && (data as { status?: string }).status === 'success';
+          const isOddsEndpoint = endpoint.includes('/api/odds/');
+          const oddsCacheOk = !isOddsEndpoint || oddsResponseHasPickMarkets(data);
+          if (Date.now() - timestamp < ttl && isSuccess && oddsCacheOk) {
             return data as T;
+          }
+          if (isOddsEndpoint && isSuccess && !oddsCacheOk) {
+            localStorage.removeItem(cacheKey);
           }
         } catch {
           localStorage.removeItem(cacheKey);
@@ -354,9 +372,9 @@ export const sportsAPI = {
     };
     
     return enhancedApiClient.getWithFallback(
-      `/api/odds/${sportKey}?${params}`, 
-      fallbackData, 
-      undefined, 
+      `/api/odds/${sportKey}?${params}&_lines=v2`,
+      fallbackData,
+      undefined,
       useCache
     );
   },

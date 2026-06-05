@@ -23,6 +23,12 @@ _PROP_MODELS: dict[str, type] = {
     "player_assists": WNBAAssistsProjections,
 }
 
+_PROP_STAT_FIELD: dict[str, str] = {
+    "player_points": "projected_points",
+    "player_rebounds": "projected_rebounds",
+    "player_assists": "projected_assists",
+}
+
 
 def _american_or_none(value: Optional[int]) -> Optional[int]:
     if value is None:
@@ -148,17 +154,22 @@ def wnba_player_props_from_projections(
             db.query(model)
             .filter(
                 model.date == target_date,
-                model.market_line.isnot(None),
                 model.opponent_team_name.in_(teams),
             )
             .all()
         )
         players = []
+        proj_field = _PROP_STAT_FIELD.get(market_key, "")
         for row in rows:
+            line_val = row.market_line
+            if line_val is None and proj_field:
+                line_val = getattr(row, proj_field, None)
+            if line_val is None:
+                continue
             players.append(
                 {
                     "player_name": row.player_name or f"Player {row.player_id}",
-                    "line": float(row.market_line),
+                    "line": float(line_val),
                     "over": -110,
                     "under": None,
                 }
