@@ -6,6 +6,9 @@ Dates default to distinct game_date values in pred_wnba_spread_actuals for the w
 
 Usage (from backend/):
 
+    # Requires prod DATABASE_URL (see backend/.env or Railway dashboard Connect tab)
+    export DATABASE_URL='postgresql://...'
+
     # Credit estimate only
     PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
       --start 2024-05-01 --end 2025-10-01 --dry-run
@@ -29,30 +32,11 @@ if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
 
 
-def _bootstrap_env() -> None:
-    try:
-        from dotenv import load_dotenv
-    except ImportError:
-        return
-    import os
-
-    for name in (".env.production", ".env"):
-        path = BACKEND_ROOT / name
-        if path.is_file():
-            load_dotenv(path)
-    public = os.environ.get("DATABASE_PUBLIC_URL", "").strip()
-    db_url = os.environ.get("DATABASE_URL", "").strip()
-    if public and (
-        not db_url
-        or "railway.internal" in db_url
-        or ":port" in db_url
-        or "@host:" in db_url
-    ):
-        os.environ["DATABASE_URL"] = public
-
-
 def main() -> int:
-    _bootstrap_env()
+    from scripts._bootstrap_env import bootstrap_env, ensure_database_url
+
+    bootstrap_env(backend_root=BACKEND_ROOT)
+    ensure_database_url(backend_root=BACKEND_ROOT)
     from app.services.etl.wnba.backfill_historical_game_lines import main as cli_main
 
     logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")

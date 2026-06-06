@@ -5,9 +5,7 @@ from __future__ import annotations
 import logging
 import os
 import time
-from datetime import date, datetime
-
-from sqlalchemy import func
+from datetime import date, datetime, timedelta
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBAGameLines, WNBASpreadActuals
@@ -110,20 +108,49 @@ def dates_with_spread_actuals(
         db.close()
 
 
+def _line_exists_for_actual(
+    db,
+    game_date: date,
+    home_team_name: str,
+    away_team_name: str,
+) -> bool:
+    """Match lines stored on Eastern commence date (±1 day from actuals date)."""
+    window_start = game_date - timedelta(days=1)
+    window_end = game_date + timedelta(days=1)
+    return (
+        db.query(WNBAGameLines.id)
+        .filter(WNBAGameLines.home_team_name == home_team_name)
+        .filter(WNBAGameLines.away_team_name == away_team_name)
+        .filter(WNBAGameLines.game_date >= window_start)
+        .filter(WNBAGameLines.game_date <= window_end)
+        .first()
+        is not None
+    )
+
+
 def dates_missing_game_lines(dates: list[date]) -> list[date]:
     if not dates:
         return []
     db = SessionLocal()
     try:
-        existing = {
-            row[0]
-            for row in db.query(WNBAGameLines.game_date)
-            .filter(WNBAGameLines.game_date.in_(dates))
-            .group_by(WNBAGameLines.game_date)
-            .having(func.count(WNBAGameLines.id) > 0)
-            .all()
-        }
-        return [d for d in dates if d not in existing]
+        missing: list[date] = []
+        for game_date in dates:
+            actuals = (
+                db.query(
+                    WNBASpreadActuals.home_team_name,
+                    WNBASpreadActuals.away_team_name,
+                )
+                .filter(WNBASpreadActuals.game_date == game_date)
+                .all()
+            )
+            if not actuals:
+                continue
+            if any(
+                not _line_exists_for_actual(db, game_date, home, away)
+                for home, away in actuals
+            ):
+                missing.append(game_date)
+        return missing
     finally:
         db.close()
 
@@ -151,6 +178,7 @@ def backfill_dates(
     dry_run: bool = False,
     skip_existing: bool = True,
     delay_seconds: float = 1.0,
+    max_dates: int | None = None,
 ) -> dict:
     if skip_existing:
         target_dates = dates_missing_game_lines(dates)
@@ -158,6 +186,9 @@ def backfill_dates(
     else:
         target_dates = list(dates)
         skipped = 0
+
+    if max_dates is not None:
+        target_dates = target_dates[:max_dates]
 
     if dry_run:
         est_credits = len(target_dates) * CREDITS_PER_DATE
@@ -215,13 +246,12 @@ def backfill_from_actuals_window(
     delay_seconds: float = 1.0,
 ) -> dict:
     dates = dates_with_spread_actuals(season_start, season_end)
-    if max_dates is not None:
-        dates = dates[:max_dates]
     result = backfill_dates(
         dates,
         dry_run=dry_run,
         skip_existing=skip_existing,
         delay_seconds=delay_seconds,
+        max_dates=max_dates,
     )
     result["season_start"] = season_start.isoformat()
     result["season_end"] = season_end.isoformat()

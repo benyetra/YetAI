@@ -10,13 +10,35 @@ import sys
 from urllib.parse import quote_plus
 
 
+def _railway_run(args: list[str]) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["railway", *args],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except FileNotFoundError as exc:
+        raise SystemExit(
+            "Railway CLI not found. Install it or export DATABASE_URL manually."
+        ) from exc
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or "").strip()
+        if "unauthorized" in detail.lower() or "please login" in detail.lower():
+            raise SystemExit(
+                "Railway CLI is not logged in. Run:\n"
+                "  railway login\n"
+                "  railway link   # if needed for this project\n"
+                "Then retry:\n"
+                '  export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"'
+            ) from exc
+        raise SystemExit(
+            f"Railway CLI failed: railway {' '.join(args)}\n{detail or exc}"
+        ) from exc
+
+
 def _load_variables(service_id: str) -> dict[str, str]:
-    proc = subprocess.run(
-        ["railway", "variable", "list", "--service", service_id, "--json"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    proc = _railway_run(["variable", "list", "--service", service_id, "--json"])
     data = json.loads(proc.stdout)
     if isinstance(data, dict):
         return {str(k): str(v) for k, v in data.items()}
@@ -61,12 +83,7 @@ def resolve(service_id: str) -> str:
 def _postgres_service_id() -> str:
     if service_id := os.environ.get("POSTGRES_SERVICE_ID"):
         return service_id
-    proc = subprocess.run(
-        ["railway", "service", "list", "--json"],
-        capture_output=True,
-        text=True,
-        check=True,
-    )
+    proc = _railway_run(["service", "list", "--json"])
     services = json.loads(proc.stdout)
     for svc in services:
         name = str(svc.get("name", "")).lower()
