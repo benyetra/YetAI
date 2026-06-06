@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from scripts._bootstrap_env import is_placeholder_database_url, resolve_database_url
 
 
@@ -13,8 +15,10 @@ def test_is_placeholder_database_url_detects_template_tokens() -> None:
 
 
 def test_resolve_database_url_prefers_local_env_over_production_template(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("DATABASE_PUBLIC_URL", raising=False)
     (tmp_path / ".env.production").write_text(
         'DATABASE_URL="postgresql://user:pass@host:port/railway"\n',
         encoding="utf-8",
@@ -29,7 +33,10 @@ def test_resolve_database_url_prefers_local_env_over_production_template(
     assert resolved == "postgresql://local:secret@127.0.0.1:5433/yetai"
 
 
-def test_resolve_database_url_keeps_valid_shell_export(tmp_path: Path) -> None:
+def test_resolve_database_url_keeps_valid_shell_export(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://ci:secret@localhost:5432/test_db")
     (tmp_path / ".env.production").write_text(
         'DATABASE_URL="postgresql://user:pass@host:port/railway"\n',
         encoding="utf-8",

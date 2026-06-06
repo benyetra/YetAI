@@ -56,38 +56,39 @@ def resolve_database_url(
 ) -> str | None:
     """Pick the best Postgres URL without letting template placeholders win."""
     root = backend_root or BACKEND_ROOT
-    candidates: list[str] = []
 
-    def add(url: str | None) -> None:
-        cleaned = (url or "").strip()
+    pre_shell = shell_database_url.strip()
+    if pre_shell and not is_placeholder_database_url(pre_shell):
+        return pre_shell
+
+    pre_public = shell_public_url.strip()
+    if pre_public and not is_placeholder_database_url(pre_public):
+        return pre_public
+
+    env_public = (os.environ.get("DATABASE_PUBLIC_URL") or "").strip()
+    env_db = (os.environ.get("DATABASE_URL") or "").strip()
+
+    if env_public and not is_placeholder_database_url(env_public):
         if (
-            cleaned
-            and not is_placeholder_database_url(cleaned)
-            and cleaned not in candidates
+            not env_db
+            or is_placeholder_database_url(env_db)
+            or "railway.internal" in env_db
         ):
-            candidates.append(cleaned)
+            return env_public
 
-    add(shell_database_url)
-    add(shell_public_url)
-    add(os.environ.get("DATABASE_PUBLIC_URL"))
-    add(_database_url_from_file(root / ".env"))
-    add(_database_url_from_file(root / ".env.production"))
-    add(os.environ.get("DATABASE_URL"))
+    for name in (".env", ".env.production"):
+        file_url = _database_url_from_file(root / name)
+        if file_url and not is_placeholder_database_url(file_url):
+            return file_url
 
-    current = (os.environ.get("DATABASE_URL") or "").strip()
     if (
-        current
-        and not is_placeholder_database_url(current)
-        and "railway.internal" not in current
+        env_db
+        and not is_placeholder_database_url(env_db)
+        and "railway.internal" not in env_db
     ):
-        return current
+        return env_db
 
-    public = (os.environ.get("DATABASE_PUBLIC_URL") or shell_public_url or "").strip()
-    if public and not is_placeholder_database_url(public):
-        if is_placeholder_database_url(current) or "railway.internal" in current:
-            return public
-
-    return candidates[0] if candidates else None
+    return None
 
 
 def bootstrap_env(*, backend_root: Path | None = None) -> None:
