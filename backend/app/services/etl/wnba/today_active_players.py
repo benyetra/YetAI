@@ -66,10 +66,16 @@ def run() -> dict:
         roster_rows = (
             db.query(WNBATeamRoster).filter(WNBATeamRoster.team_id.in_(team_ids)).all()
         )
+        seen_player_ids: set[int] = set()
+        duplicates_skipped = 0
         for r in roster_rows:
             meta = team_meta.get(r.team_id)
             if not meta:
                 continue
+            if r.player_id in seen_player_ids:
+                duplicates_skipped += 1
+                continue
+            seen_player_ids.add(r.player_id)
             upsert_rows.append(
                 {
                     "player_id": r.player_id,
@@ -84,6 +90,12 @@ def run() -> dict:
                 }
             )
             players_written += 1
+        if duplicates_skipped:
+            logger.warning(
+                "today_active_players: skipped %d duplicate player_id roster rows for %s",
+                duplicates_skipped,
+                today,
+            )
         upsert_many(
             db,
             WNBATodayActivePlayers,
@@ -96,6 +108,7 @@ def run() -> dict:
             "date": today.isoformat(),
             "games": len(matchups),
             "players": players_written,
+            "duplicates_skipped": duplicates_skipped,
             "kept_stale": False,
         }
     finally:

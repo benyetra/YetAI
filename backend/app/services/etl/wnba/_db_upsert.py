@@ -22,6 +22,22 @@ def _normalize_row_keys(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     return [{key: row.get(key) for key in all_keys} for row in rows]
 
 
+def _dedupe_rows(
+    rows: Sequence[dict[str, Any]],
+    *,
+    conflict_keys: Sequence[str],
+) -> list[dict[str, Any]]:
+    """Keep one row per conflict key tuple (last wins). Postgres rejects duplicate
+    conflict targets within a single INSERT ... ON CONFLICT batch."""
+    if not conflict_keys:
+        return list(rows)
+    deduped: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in conflict_keys)
+        deduped[key] = row
+    return list(deduped.values())
+
+
 def upsert_many(
     session: Session,
     model: type,
@@ -34,7 +50,7 @@ def upsert_many(
     if not rows:
         return 0
 
-    normalized = _normalize_row_keys(rows)
+    normalized = _normalize_row_keys(_dedupe_rows(rows, conflict_keys=conflict_keys))
     table = model.__table__
     if update_keys is None:
         skip = set(conflict_keys) | {"id"}
@@ -51,7 +67,7 @@ def upsert_many(
             set_=set_,
         )
     session.execute(stmt)
-    return len(rows)
+    return len(normalized)
 
 
 def replace_matching(

@@ -1,7 +1,11 @@
 from unittest.mock import MagicMock
 
 from app.services.etl.wnba._db_upsert import upsert_many
-from app.models.predictions_models import WNBATeamRoster, WNBARecentGames
+from app.models.predictions_models import (
+    WNBARecentGames,
+    WNBATeamRoster,
+    WNBATodayActivePlayers,
+)
 
 
 def test_upsert_many_noop_on_empty():
@@ -29,6 +33,33 @@ def test_upsert_many_executes_insert_statement():
         WNBATeamRoster,
         rows,
         conflict_keys=["team_id", "player_id"],
+    )
+    assert count == 1
+    session.execute.assert_called_once()
+
+
+def test_upsert_many_dedupes_duplicate_conflict_keys():
+    """Postgres rejects ON CONFLICT when the same key appears twice in one batch."""
+    session = MagicMock()
+    rows = [
+        {
+            "player_id": 99,
+            "game_date": "2026-06-06",
+            "player_name": "First",
+            "team_id": 1,
+        },
+        {
+            "player_id": 99,
+            "game_date": "2026-06-06",
+            "player_name": "Second",
+            "team_id": 2,
+        },
+    ]
+    count = upsert_many(
+        session,
+        WNBATodayActivePlayers,
+        rows,
+        conflict_keys=["player_id", "game_date"],
     )
     assert count == 1
     session.execute.assert_called_once()
