@@ -32,7 +32,7 @@ export function PipelineScheduleEditModal({ entry, onClose, onSaved }: Props) {
     setBusy(true);
     setErr(null);
     try {
-      await updatePipelineSchedule(entry.task_name, { hour, minute, enabled });
+      await updatePipelineSchedule(entry.key, { hour, minute, enabled });
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -46,7 +46,7 @@ export function PipelineScheduleEditModal({ entry, onClose, onSaved }: Props) {
     setBusy(true);
     setErr(null);
     try {
-      await resetPipelineSchedule(entry.task_name);
+      await resetPipelineSchedule(entry.key);
       onSaved();
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));
@@ -72,6 +72,8 @@ export function PipelineScheduleEditModal({ entry, onClose, onSaved }: Props) {
 
         <div className="p-4 space-y-4">
           <div className="text-[11px] text-zinc-500 font-mono break-all">
+            {entry.key}
+            <span className="text-zinc-600"> · </span>
             {entry.task_name}
           </div>
 

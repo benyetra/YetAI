@@ -210,7 +210,7 @@ def test_serialize_schedule_demotes_high_frequency_crontab_to_continuous():
 
 
 def test_serialize_schedule_flags_overridden_entries():
-    """When overrides arg is passed, entries whose task_name has a row get
+    """When overrides arg is passed, entries whose beat key has a row get
     is_overridden=True and is_enabled mirrors the row's enabled flag."""
 
     class _Ovr:
@@ -223,7 +223,7 @@ def test_serialize_schedule_flags_overridden_entries():
             "schedule": crontab(hour=3, minute=30),
         },
     }
-    overrides = {"app.tasks.etl_pipeline.run_nba_update_pipeline": _Ovr(enabled=True)}
+    overrides = {"nba-daily": _Ovr(enabled=True)}
     out = svc.serialize_schedule(
         beat,
         now_et=datetime(2026, 5, 23, 0, 0, tzinfo=ET),

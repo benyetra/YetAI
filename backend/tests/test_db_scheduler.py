@@ -24,40 +24,52 @@ def test_apply_overrides_replaces_hour_minute_for_known_orchestrator():
             "schedule": crontab(hour=3, minute=30),
         },
     }
-    override = PipelineSchedule(task_name=NBA_TASK, hour=6, minute=15, enabled=True)
-    out = apply_overrides(schedule_dict, {NBA_TASK: override})
+    override = PipelineSchedule(
+        beat_key="nba-daily",
+        task_name=NBA_TASK,
+        hour=6,
+        minute=15,
+        enabled=True,
+    )
+    out = apply_overrides(schedule_dict, {"nba-daily": override})
 
     new_cron = out["nba-daily"]["schedule"]
     assert new_cron.hour == {6}
     assert new_cron.minute == {15}
-    # Original input untouched (no in-place mutation).
     assert schedule_dict["nba-daily"]["schedule"].hour == {3}
 
 
 def test_apply_overrides_removes_entry_when_disabled():
-    """enabled=False removes the entry — beat won't fire it."""
     schedule_dict = {
         "nba-daily": {"task": NBA_TASK, "schedule": crontab(hour=3, minute=30)}
     }
-    override = PipelineSchedule(task_name=NBA_TASK, hour=6, minute=15, enabled=False)
-    out = apply_overrides(schedule_dict, {NBA_TASK: override})
+    override = PipelineSchedule(
+        beat_key="nba-daily",
+        task_name=NBA_TASK,
+        hour=6,
+        minute=15,
+        enabled=False,
+    )
+    out = apply_overrides(schedule_dict, {"nba-daily": override})
     assert "nba-daily" not in out
 
 
 def test_apply_overrides_ignores_orphan_overrides():
-    """Override for a task that no longer exists in beat_schedule is ignored."""
     schedule_dict = {
         "nba-daily": {"task": NBA_TASK, "schedule": crontab(hour=3, minute=30)}
     }
     orphan = PipelineSchedule(
-        task_name="some.removed.task", hour=6, minute=15, enabled=True
+        beat_key="orphan-beat-key",
+        task_name="some.removed.task",
+        hour=6,
+        minute=15,
+        enabled=True,
     )
-    out = apply_overrides(schedule_dict, {"some.removed.task": orphan})
+    out = apply_overrides(schedule_dict, {"orphan-beat-key": orphan})
     assert out == schedule_dict
 
 
 def test_apply_overrides_skips_non_orchestrator_tasks():
-    """Non-orchestrator tasks are never overridden, even if a row exists."""
     schedule_dict = {
         "games-cache": {
             "task": "app.tasks.games_sync.sync_games_cache",
@@ -65,14 +77,13 @@ def test_apply_overrides_skips_non_orchestrator_tasks():
         },
     }
     override = PipelineSchedule(
+        beat_key="games-cache",
         task_name="app.tasks.games_sync.sync_games_cache",
         hour=6,
         minute=15,
         enabled=True,
     )
-    out = apply_overrides(
-        schedule_dict, {"app.tasks.games_sync.sync_games_cache": override}
-    )
+    out = apply_overrides(schedule_dict, {"games-cache": override})
     assert out["games-cache"]["schedule"] == crontab(hour=6, minute=0)
 
 
@@ -82,11 +93,53 @@ def test_apply_overrides_handles_multiple_simultaneous():
         "mlb-daily": {"task": MLB_TASK, "schedule": crontab(hour=14, minute=0)},
     }
     overrides = {
-        NBA_TASK: PipelineSchedule(task_name=NBA_TASK, hour=5, minute=0, enabled=True),
-        MLB_TASK: PipelineSchedule(
-            task_name=MLB_TASK, hour=15, minute=30, enabled=False
+        "nba-daily": PipelineSchedule(
+            beat_key="nba-daily",
+            task_name=NBA_TASK,
+            hour=5,
+            minute=0,
+            enabled=True,
+        ),
+        "mlb-daily": PipelineSchedule(
+            beat_key="mlb-daily",
+            task_name=MLB_TASK,
+            hour=15,
+            minute=30,
+            enabled=False,
         ),
     }
     out = apply_overrides(schedule_dict, overrides)
     assert out["nba-daily"]["schedule"].hour == {5}
     assert "mlb-daily" not in out
+
+
+def test_apply_overrides_mlb_daily_and_safety_net_independently():
+    schedule_dict = {
+        "mlb-projections-daily": {
+            "task": MLB_TASK,
+            "schedule": crontab(hour=14, minute=0),
+        },
+        "mlb-projections-safety-net": {
+            "task": MLB_TASK,
+            "schedule": crontab(hour=18, minute=0),
+        },
+    }
+    overrides = {
+        "mlb-projections-daily": PipelineSchedule(
+            beat_key="mlb-projections-daily",
+            task_name=MLB_TASK,
+            hour=11,
+            minute=0,
+            enabled=True,
+        ),
+        "mlb-projections-safety-net": PipelineSchedule(
+            beat_key="mlb-projections-safety-net",
+            task_name=MLB_TASK,
+            hour=18,
+            minute=0,
+            enabled=True,
+        ),
+    }
+    out = apply_overrides(schedule_dict, overrides)
+    assert out["mlb-projections-daily"]["schedule"].hour == {11}
+    assert out["mlb-projections-safety-net"]["schedule"].hour == {18}

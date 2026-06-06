@@ -50,7 +50,7 @@ def apply_overrides(
     out: dict[str, dict[str, Any]] = {}
     for key, entry in schedule_dict.items():
         task_name = entry.get("task")
-        override = overrides.get(task_name) if task_name else None
+        override = overrides.get(key)
 
         # Skip overrides on non-orchestrator tasks entirely.
         if override is not None and task_name in _ORCHESTRATOR_NAMES:

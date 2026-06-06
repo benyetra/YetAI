@@ -190,7 +190,7 @@ def serialize_schedule(
         )
         sport = _PIPELINE_SPORTS.get(task_name) or _sport_from_key(key)
         sched = entry.get("schedule")
-        override = overrides.get(task_name)
+        override = overrides.get(key)
         is_overridden = override is not None
         is_enabled = bool(getattr(override, "enabled", True)) if is_overridden else True
 

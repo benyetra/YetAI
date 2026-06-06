@@ -316,6 +316,15 @@ def get_admin_user_ids(db: Session) -> list[int]:
     return [uid for (uid,) in db.query(User.id).filter(User.is_admin.is_(True)).all()]
 
 
+def _utc_iso(dt: Optional[datetime]) -> str:
+    """Serialize UTC datetimes with an explicit Z suffix for JS clients."""
+    value = dt or datetime.utcnow()
+    text = value.isoformat()
+    if text.endswith("Z") or text.endswith("+00:00") or "+" in text[10:]:
+        return text
+    return f"{text}Z"
+
+
 def _to_dto(row: AdminNotification, *, is_read: bool) -> NotificationDTO:
     return NotificationDTO(
         id=row.id,
@@ -333,7 +342,7 @@ def _to_dto(row: AdminNotification, *, is_read: bool) -> NotificationDTO:
         message=row.message,
         error_message=row.error_message,
         extra=row.extra or {},
-        created_at=(row.created_at or datetime.utcnow()).isoformat(),
+        created_at=_utc_iso(row.created_at),
         is_read=is_read,
     )
 

@@ -669,7 +669,7 @@ async def get_user_performance(
         finally:
             db.close()
 
-        chart_days = min(period_days, 14) if days is not None else 14
+        chart_days = period_days if days is not None else 30
         daily_pnl = await analytics_service.get_daily_pnl(user_id, days=chart_days)
 
         # Calculate weekly and monthly changes
@@ -3252,141 +3252,28 @@ async def debug_bet_status(admin_user: dict = Depends(require_admin)):
 
 @app.post("/api/admin/bets/manual-verify")
 async def manual_verify_bet(request: dict, admin_user: dict = Depends(require_admin)):
-    """Manually verify and settle a specific bet (Admin only)"""
+    """Manually verify and settle a specific unified bet (Admin only)"""
     try:
         bet_id = request.get("bet_id")
         if not bet_id:
             raise HTTPException(status_code=400, detail="bet_id is required")
 
-        logger.info(f"🔧 Manual bet verification for bet {bet_id[:8]}...")
+        logger.info(f"🔧 Manual unified bet verification for bet {bet_id[:8]}...")
 
-        from sqlalchemy import text
-        from app.models.database_models import Bet, BetStatus, BetHistory
-        from app.core.database import SessionLocal
-        from datetime import datetime
+        result = await unified_bet_verification_service.verify_bet_by_id(bet_id)
 
-        db = SessionLocal()
-        try:
-            # Get the bet
-            bet = db.query(Bet).filter(Bet.id == bet_id).first()
-            if not bet:
-                raise HTTPException(status_code=404, detail="Bet not found")
-
-            if bet.status != BetStatus.PENDING:
-                return {
-                    "success": False,
-                    "message": f"Bet {bet_id[:8]}... is already settled ({bet.status.value})",
-                }
-
-            # Get the game for this bet
-            if not bet.game_id:
-                raise HTTPException(
-                    status_code=400, detail="Bet has no associated game"
-                )
-
-            # Check if game has finished and get the result
-            game_query = """
-            SELECT home_team, away_team, home_score, away_score, status, commence_time
-            FROM games
-            WHERE id = :game_id
-            """
-            result = db.execute(text(game_query), {"game_id": bet.game_id})
-            game = result.fetchone()
-
-            if not game:
-                raise HTTPException(status_code=404, detail="Game not found")
-
-            home_team, away_team, home_score, away_score, game_status, commence_time = (
-                game
+        if not result.get("success"):
+            status_code = 404 if result.get("error") == "Bet not found" else 400
+            raise HTTPException(
+                status_code=status_code,
+                detail=result.get("error")
+                or result.get("message", "Verification failed"),
             )
 
-            # Check if game is completed
-            if game_status != "completed" or home_score is None or away_score is None:
-                return {
-                    "success": False,
-                    "message": f"Game {home_team} vs {away_team} is not completed yet (status: {game_status})",
-                    "game_info": {
-                        "home_team": home_team,
-                        "away_team": away_team,
-                        "home_score": home_score,
-                        "away_score": away_score,
-                        "status": game_status,
-                    },
-                }
+        return result
 
-            # Determine bet result based on bet type and selection
-            bet_won = False
-            if bet.bet_type.value == "moneyline":
-                # For moneyline, check if selected team won
-                if bet.selection == home_team and home_score > away_score:
-                    bet_won = True
-                elif bet.selection == away_team and away_score > home_score:
-                    bet_won = True
-            elif bet.bet_type.value == "spread":
-                # For spread bets, need to check against the line
-                if bet.selection == home_team:
-                    adjusted_home_score = home_score + (bet.line_value or 0)
-                    bet_won = adjusted_home_score > away_score
-                elif bet.selection == away_team:
-                    adjusted_away_score = away_score + (bet.line_value or 0)
-                    bet_won = adjusted_away_score > home_score
-
-            # Determine final status and amount
-            if bet_won:
-                final_status = BetStatus.WON
-                result_amount = bet.amount + bet.potential_win
-            else:
-                final_status = BetStatus.LOST
-                result_amount = 0
-
-            # Update bet status
-            old_status = bet.status.value
-            bet.status = final_status
-            bet.result_amount = result_amount
-            bet.settled_at = datetime.utcnow()
-
-            # Create bet_history record
-            bet_history = BetHistory(
-                bet_id=bet.id,
-                action="settled",
-                old_status=old_status,
-                new_status=final_status.value,
-                amount=result_amount,
-                timestamp=datetime.utcnow(),
-            )
-            db.add(bet_history)
-
-            # Commit changes
-            db.commit()
-
-            logger.info(
-                f"✅ Manually settled bet {bet_id[:8]}... as {final_status.value}"
-            )
-
-            return {
-                "success": True,
-                "message": f"Bet {bet_id[:8]}... manually settled as {final_status.value}",
-                "bet_info": {
-                    "bet_id": bet_id[:8] + "...",
-                    "teams": f"{home_team} vs {away_team}",
-                    "selection": bet.selection,
-                    "bet_type": bet.bet_type.value,
-                    "old_status": old_status,
-                    "new_status": final_status.value,
-                    "result_amount": result_amount,
-                },
-                "game_info": {
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "home_score": home_score,
-                    "away_score": away_score,
-                    "final_score": f"{home_team} {home_score} - {away_score} {away_team}",
-                },
-            }
-
-        finally:
-            db.close()
-
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Manual bet verification failed: {e}")
         raise HTTPException(
@@ -3446,8 +3333,8 @@ async def manual_update_game(request: dict, admin_user: dict = Depends(require_a
             UPDATE games
             SET home_score = :home_score,
                 away_score = :away_score,
-                status = 'completed',
-                updated_at = CURRENT_TIMESTAMP
+                status = 'final',
+                last_update = CURRENT_TIMESTAMP
             WHERE id = :game_id
             """
 
@@ -3462,8 +3349,10 @@ async def manual_update_game(request: dict, admin_user: dict = Depends(require_a
 
             db.commit()
 
-            logger.info(
-                f"✅ Updated game {game_id[:8]}... to completed with final score"
+            logger.info(f"✅ Updated game {game_id[:8]}... to final with final score")
+
+            verify_result = (
+                await unified_bet_verification_service.verify_all_pending_bets()
             )
 
             return {
@@ -3473,11 +3362,12 @@ async def manual_update_game(request: dict, admin_user: dict = Depends(require_a
                     "game_id": game_id[:8] + "...",
                     "teams": f"{home_team} vs {away_team}",
                     "old_status": current_status,
-                    "new_status": "completed",
+                    "new_status": "final",
                     "old_score": f"{current_home_score or 0}-{current_away_score or 0}",
                     "new_score": f"{home_score}-{away_score}",
                     "final_result": f"{home_team} {home_score} - {away_score} {away_team}",
                 },
+                "verification": verify_result,
             }
 
         finally:
@@ -6022,19 +5912,26 @@ async def _get_odds_with_pred_lines_fallback(sport_key: str, sport_label: str) -
             if result.get("status") == "success" and not any(
                 game_has_betting_markets(g) for g in (result.get("games") or [])
             ):
-                payload["source"] = (
-                    f"pred_{sport_key.split('_')[-1]}_game_lines_enriched"
-                )
+                if sport_key == "baseball_mlb":
+                    payload["source"] = "pred_game_projections_enriched"
+                else:
+                    payload["source"] = (
+                        f"pred_{sport_key.split('_')[-1]}_game_lines_enriched"
+                    )
             return payload
 
     db_games = games_from_pred_lines(sport_key)
     if db_games:
+        if sport_key == "baseball_mlb":
+            source = "pred_game_projections"
+        else:
+            source = f"pred_{sport_key.split('_')[-1]}_game_lines"
         payload = {
             "status": "success",
             "games": db_games,
             "count": len(db_games),
             "cached": True,
-            "source": f"pred_{sport_key.split('_')[-1]}_game_lines",
+            "source": source,
         }
         if result.get("status") != "success":
             payload["message"] = (
@@ -6068,8 +5965,8 @@ async def options_mlb_odds():
 
 @app.get("/api/odds/baseball_mlb")
 async def get_mlb_odds():
-    """Get MLB odds (cache-first)."""
-    return await _get_odds_with_cache("baseball_mlb", "MLB")
+    """Get MLB odds (cache-first, with pred_game_projections fallback)."""
+    return await _get_odds_with_pred_lines_fallback("baseball_mlb", "MLB")
 
 
 @app.options("/api/odds/icehockey_nhl")
@@ -6307,17 +6204,35 @@ async def get_player_props(
     except Exception as e:
         logger.error(f"Error fetching player props for {sport} event {event_id}: {e}")
         err_text = str(e)
-        if sport == "basketball_wnba" and (
-            "Invalid API key" in err_text or "401" in err_text
-        ):
+        if "Invalid API key" in err_text or "401" in err_text:
             from app.core.database import SessionLocal
-            from app.services.wnba_admin_odds_fallback import (
-                wnba_player_props_from_projections,
-            )
 
             db = SessionLocal()
             try:
-                props_data = wnba_player_props_from_projections(db, event_id=event_id)
+                if sport == "basketball_wnba":
+                    from app.services.wnba_admin_odds_fallback import (
+                        wnba_player_props_from_projections,
+                    )
+
+                    props_data = wnba_player_props_from_projections(
+                        db, event_id=event_id
+                    )
+                    source = "pred_wnba_prop_projections"
+                    label = "WNBA"
+                elif sport == "baseball_mlb":
+                    from app.services.mlb_admin_odds_fallback import (
+                        mlb_player_props_from_projections,
+                    )
+
+                    props_data = mlb_player_props_from_projections(
+                        db, event_id=event_id
+                    )
+                    source = "pred_mlb_prop_projections"
+                    label = "MLB"
+                else:
+                    props_data = None
+                    source = ""
+                    label = sport
             finally:
                 db.close()
             if props_data:
@@ -6325,26 +6240,27 @@ async def get_player_props(
                     "status": "success",
                     "data": props_data,
                     "cached": False,
-                    "source": "pred_wnba_prop_projections",
+                    "source": source,
                     "message": (
                         "Live Odds API unavailable (invalid API key); "
-                        "showing WNBA projection market lines (-110 placeholder odds)."
+                        f"showing {label} projection market lines."
                     ),
                 }
-            return {
-                "status": "success",
-                "data": {
-                    "event_id": event_id,
-                    "sport_key": sport,
-                    "markets": {},
-                },
-                "cached": False,
-                "source": "pred_wnba_prop_projections",
-                "message": (
-                    "Live Odds API unavailable (invalid API key); "
-                    "no WNBA projection lines found for this event yet."
-                ),
-            }
+            if sport in ("basketball_wnba", "baseball_mlb"):
+                return {
+                    "status": "success",
+                    "data": {
+                        "event_id": event_id,
+                        "sport_key": sport,
+                        "markets": {},
+                    },
+                    "cached": False,
+                    "source": source,
+                    "message": (
+                        "Live Odds API unavailable (invalid API key); "
+                        f"no {label} projection lines found for this event yet."
+                    ),
+                }
         raise HTTPException(status_code=500, detail=str(e))
 
 

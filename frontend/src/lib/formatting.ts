@@ -54,10 +54,66 @@ export function formatLocalTime(dateString: string): string {
 }
 
 /**
+ * Parse API/DB timestamps. Naive ISO strings from Python utcnow().isoformat()
+ * are treated as UTC (append Z) so browsers don't misread them as local time.
+ */
+export function parseApiTimestamp(value: string | Date | null | undefined): Date | null {
+  if (value instanceof Date) {
+    return Number.isFinite(value.getTime()) ? value : null;
+  }
+  if (value == null) return null;
+  const s = String(value).trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?$/.test(s)) {
+    const parsed = new Date(`${s}Z`);
+    return Number.isFinite(parsed.getTime()) ? parsed : null;
+  }
+  const parsed = new Date(s);
+  return Number.isFinite(parsed.getTime()) ? parsed : null;
+}
+
+/** Relative time for notifications and activity feeds. */
+export function formatTimeAgo(value: Date | string | null | undefined): string {
+  const date = value instanceof Date ? value : parseApiTimestamp(value);
+  if (!date) return '—';
+
+  const diffMs = Date.now() - date.getTime();
+  if (!Number.isFinite(diffMs)) return '—';
+
+  if (diffMs < 0) {
+    if (diffMs > -60_000) return 'Just now';
+    return date.toLocaleString(undefined, {
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  }
+
+  const diffMinutes = Math.floor(diffMs / 60_000);
+  if (diffMinutes < 1) return 'Just now';
+  if (diffMinutes < 60) return `${diffMinutes}m ago`;
+
+  const diffHours = Math.floor(diffMinutes / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `${diffDays}d ago`;
+
+  return date.toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+/**
  * Format time relative to now (e.g., "2h", "Live", "Yesterday")
  */
 export function formatTimeFromNow(dateString: string): string {
-  const time = new Date(dateString);
+  const time = parseApiTimestamp(dateString);
+  if (!time) return '—';
   const now = new Date();
   const diffMinutes = Math.floor((time.getTime() - now.getTime()) / (1000 * 60));
   
@@ -91,10 +147,12 @@ export function formatTimeFromNow(dateString: string): string {
  * Format odds number for display
  */
 export function formatOdds(odds: number): string {
-  if (odds > 0) {
-    return `+${odds}`;
+  if (!Number.isFinite(odds)) return '—';
+  const rounded = Math.round(odds);
+  if (rounded > 0) {
+    return `+${rounded}`;
   }
-  return odds.toString();
+  return `${rounded}`;
 }
 
 /**

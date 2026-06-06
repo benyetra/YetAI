@@ -1,0 +1,57 @@
+---
+description: Run formatters and tests before every commit/push; fix and retry until green
+alwaysApply: true
+---
+
+# Pre-commit quality gates (required)
+
+Before **any** `git commit` or `git push` that includes code changes, run the gates below for the areas you touched. If anything fails, **fix it and re-run** until all gates pass. Do not commit or push with known failures.
+
+## Workflow
+
+1. Identify what changed (`backend/`, `frontend/`, `docs/api/openapi*.json`, etc.).
+2. Run the matching gates (all that apply).
+3. If a gate fails → fix → re-run **all** gates that apply (not only the one that failed).
+4. Only then `git add` (specific paths), `git commit`, and `git push`.
+
+## Backend (`backend/**`)
+
+From repo root:
+
+```bash
+cd backend && python3 -m black .
+cd backend && python3 -m black --check .
+cd backend && PYTHONPATH=. .venv/bin/python -m pytest -q
+```
+
+- After API route changes, also regenerate OpenAPI and include specs in the commit:
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python scripts/export_openapi.py
+```
+
+- For focused changes, you may run a targeted subset first (e.g. `tests/test_main.py`), but **always finish with full `pytest -q`** before push unless the user explicitly asked for a narrower scope.
+
+## Frontend (`frontend/**`)
+
+```bash
+cd frontend && npm run lint
+cd frontend && npm run type-check
+cd frontend && npm run test:ci
+```
+
+- If only TS/TSX files changed and CI build risk is low, `test:ci` is still required before push; run `npm run build` when routes, env, or shared libs changed.
+
+## Docs-only / no code
+
+Skip test/format gates only when the commit is strictly non-executable (markdown-only, no OpenAPI JSON drift).
+
+## Push policy
+
+- Treat **push as part of the same gate**: never push a commit you have not validated.
+- If push is requested, gates must have passed on the exact tree being pushed.
+
+## When CI still fails after local green
+
+- Reproduce the failing job locally (same commands as `.github/workflows/backend-ci-cd.yml` / `frontend-ci-cd.yml`).
+- Fix, re-run gates, new commit (do not skip hooks).

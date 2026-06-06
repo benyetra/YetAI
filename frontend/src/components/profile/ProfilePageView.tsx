@@ -179,27 +179,15 @@ function ToggleRow({
         <div style={{ fontSize: 13.5, fontWeight: 500 }}>{label}</div>
         <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 2 }}>{hint}</div>
       </div>
-      <label className="relative inline-flex items-center cursor-pointer">
+      <label className="profile-switch">
         <input
           type="checkbox"
-          className="sr-only"
+          className="profile-switch-input"
           checked={checked}
           onChange={(e) => onChange(e.target.checked)}
         />
-        <span
-          className={`w-11 h-6 rounded-full transition-colors ${checked ? 'btn-primary' : ''}`}
-          style={{
-            display: 'inline-block',
-            background: checked ? undefined : 'var(--surface-3)',
-          }}
-        >
-          <span
-            className="block w-5 h-5 bg-white rounded-full shadow-md transition-transform"
-            style={{
-              marginTop: 2,
-              transform: checked ? 'translateX(22px)' : 'translateX(2px)',
-            }}
-          />
+        <span className="profile-switch-track" aria-hidden="true">
+          <span className="profile-switch-thumb" />
         </span>
       </label>
     </div>

@@ -151,7 +151,7 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
         const trends = metrics.trends || {};
 
         const apiPeriodDays = Number(response.metrics?.period_days ?? selectedPeriod);
-        const apiChartDays = Number(response.metrics?.chart_days ?? Math.min(apiPeriodDays, 14));
+        const apiChartDays = Number(response.metrics?.chart_days ?? apiPeriodDays);
         const profitChange = trends.profit_change;
 
         const transformedData: PerformanceData = {
@@ -268,9 +268,9 @@ export default function UserBetPerformance({ selectedPeriod }: UserBetPerformanc
   const { overview, daily_pnl, win_rate_delta, profit_delta, period_days, chart_days } =
     performanceData;
   const pending = actualPendingCount > 0 ? actualPendingCount : overview.pending_bets;
-  const chartDayCount = chart_days ?? Math.min(period_days, 14);
-  const chartData = daily_pnl.length ? daily_pnl.slice(-chartDayCount) : [];
-  const chartPeriodText = periodLabel(chartDayCount);
+  const chartDayCount = daily_pnl.length || chart_days || period_days || selectedPeriod;
+  const chartData = daily_pnl.length ? daily_pnl : Array(chartDayCount).fill(0);
+  const chartPeriodText = periodLabel(selectedPeriod);
 
   return (
     <>

@@ -18,6 +18,7 @@ import {
   Workflow
 } from 'lucide-react';
 import { useNotifications, Notification } from './NotificationProvider';
+import { formatTimeAgo } from '@/lib/formatting';
 
 const NotificationIcon: React.FC<{ type: Notification['type'] }> = ({ type }) => {
   const iconProps = { className: "w-4 h-4" };
@@ -46,20 +47,6 @@ const NotificationItem: React.FC<{
   onMarkAsRead: (id: string) => void;
   onRemove: (id: string) => void;
 }> = ({ notification, onMarkAsRead, onRemove }) => {
-  const timeAgo = (date: Date) => {
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    
-    const diffInHours = Math.floor(diffInMinutes / 60);
-    if (diffInHours < 24) return `${diffInHours}h ago`;
-    
-    const diffInDays = Math.floor(diffInHours / 24);
-    return `${diffInDays}d ago`;
-  };
-
   return (
     <div 
       className={`
@@ -84,7 +71,7 @@ const NotificationItem: React.FC<{
               <div className="flex items-center space-x-4 mt-2">
                 <div className="flex items-center space-x-1 text-xs text-gray-500">
                   <Clock className="w-3 h-3" />
-                  <span>{timeAgo(notification.timestamp)}</span>
+                  <span>{formatTimeAgo(notification.timestamp)}</span>
                 </div>
                 {notification.priority === 'high' && (
                   <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">

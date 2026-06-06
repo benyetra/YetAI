@@ -28,7 +28,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './Auth';
 import { apiClient } from '@/lib/api';
-import { useWebSocket } from '@/hooks/useWebSocket';
+import { useNotifications } from './NotificationProvider';
 import BetShareModal from './BetShareModal';
 import AppLoading from '@/components/yetai/AppLoading';
 import MyBetsBetRow from '@/components/yetai/MyBetsBetRow';
@@ -105,7 +105,8 @@ type BetHistoryProps = { embedded?: boolean };
 
 const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
   const { user, token } = useAuth();
-  const { isConnected } = useWebSocket();
+  const { wsStatus } = useNotifications();
+  const isConnected = wsStatus.connected;
   const [bets, setBets] = useState<Bet[]>([]);
   const [stats, setStats] = useState<BetStats | null>(null);
   const [totalBetsFromAPI, setTotalBetsFromAPI] = useState<number>(0);

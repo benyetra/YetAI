@@ -67,6 +67,13 @@ def games_from_pred_lines(
     db: Optional[Session] = None,
 ) -> list[dict[str, Any]]:
     """Upcoming slates from pred_*_game_lines for admin game/prop pickers."""
+    if sport_key == "baseball_mlb":
+        from app.services.mlb_admin_odds_fallback import (
+            games_from_pred_game_projections,
+        )
+
+        return games_from_pred_game_projections(days_ahead=days_ahead, db=db)
+
     if sport_key not in _LINE_MODELS:
         return []
 
@@ -141,7 +148,7 @@ def enrich_games_with_pred_lines(
     games: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Attach consensus bookmakers from DB when live/cached games lack markets."""
-    if sport_key not in _LINE_MODELS or not games:
+    if not games:
         return games
 
     from app.core.database import SessionLocal
@@ -153,12 +160,25 @@ def enrich_games_with_pred_lines(
             if game_has_betting_markets(game):
                 enriched.append(game)
                 continue
-            row = _lookup_line_row(db, sport_key, game)
-            if row:
-                bookmakers = bookmakers_from_game_line(row)
-                if bookmakers:
-                    enriched.append({**game, "bookmakers": bookmakers})
-                    continue
+            if sport_key == "baseball_mlb":
+                from app.services.mlb_admin_odds_fallback import (
+                    bookmakers_from_game_projection,
+                    lookup_projection_for_game,
+                )
+
+                row = lookup_projection_for_game(db, game)
+                if row:
+                    bookmakers = bookmakers_from_game_projection(row)
+                    if bookmakers:
+                        enriched.append({**game, "bookmakers": bookmakers})
+                        continue
+            elif sport_key in _LINE_MODELS:
+                row = _lookup_line_row(db, sport_key, game)
+                if row:
+                    bookmakers = bookmakers_from_game_line(row)
+                    if bookmakers:
+                        enriched.append({**game, "bookmakers": bookmakers})
+                        continue
             enriched.append(game)
         return enriched
     finally:

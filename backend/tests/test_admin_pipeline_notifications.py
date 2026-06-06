@@ -141,3 +141,9 @@ def test_postrun_handler_skips_when_state_is_failure():
             sender=task, task_id="abc", task=task, retval=None, state="FAILURE"
         )
     rf.assert_not_called()
+
+
+def test_utc_iso_appends_z_for_naive_datetime():
+    from datetime import datetime
+
+    assert ans._utc_iso(datetime(2026, 6, 5, 14, 30, 0)) == "2026-06-05T14:30:00Z"

@@ -41,8 +41,9 @@ export function teamColor(
 
 export function fmtOdds(n: number | string): string {
   const num = typeof n === 'string' ? parseFloat(n.replace(/[^0-9.+-]/g, '')) : n;
-  if (Number.isNaN(num)) return String(n);
-  return num > 0 ? `+${num}` : `${num}`;
+  if (Number.isNaN(num) || !Number.isFinite(num)) return String(n);
+  const rounded = Math.round(num);
+  return rounded > 0 ? `+${rounded}` : `${rounded}`;
 }
 
 export function fmtMoney(

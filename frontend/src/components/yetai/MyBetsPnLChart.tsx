@@ -10,13 +10,15 @@ type MyBetsPnLChartProps = {
 
 export default function MyBetsPnLChart({
   data,
-  periodLabel = 'last 14 days',
-  dayCount = 14,
+  periodLabel = 'last 30 days',
+  dayCount = 30,
 }: MyBetsPnLChartProps) {
   const history = data.length > 0 ? data : Array(dayCount).fill(0);
+  const barCount = history.length;
+  const dense = barCount > 31;
   const max = Math.max(...history.map(Math.abs), 1);
   const total = history.reduce((sum, v) => sum + v, 0);
-  const totalLabel = `${dayCount}-day P&L`;
+  const totalLabel = `${barCount}-day P&L`;
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -39,7 +41,7 @@ export default function MyBetsPnLChart({
           <div className="section-sub">{totalLabel}</div>
         </div>
       </div>
-      <div className="pnl-chart-bars">
+      <div className={`pnl-chart-bars${dense ? ' dense' : ''}`}>
         {history.map((v, i) => {
           const pct = Math.max(2, (Math.abs(v) / max) * 50);
           const barClass =

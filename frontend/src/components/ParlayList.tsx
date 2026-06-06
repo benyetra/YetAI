@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { Layers, Clock, CheckCircle, XCircle, DollarSign, Calendar, Share2 } from 'lucide-react';
 import BetShareModal from './BetShareModal';
-import { formatLocalDate, formatLocalTime } from '@/lib/formatting';
+import { formatLocalDate, formatLocalTime, formatOdds, formatTimeAgo } from '@/lib/formatting';
 
 interface ParlayLeg {
   id: string;
@@ -93,10 +93,6 @@ export default function ParlayList({ refreshTrigger = 0 }: ParlayListProps) {
       default:
         return 'text-gray-600 bg-gray-50';
     }
-  };
-
-  const formatOdds = (odds: number) => {
-    return odds > 0 ? `+${odds}` : `${odds}`;
   };
 
   const openShareModal = (parlay: Parlay) => {

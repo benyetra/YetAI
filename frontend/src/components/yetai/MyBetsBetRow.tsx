@@ -40,8 +40,9 @@ export default function MyBetsBetRow({
   const normalized = status.toLowerCase();
   const isWon = normalized === 'won';
   const isLost = normalized === 'lost';
-  const dotColor = isWon ? 'var(--win)' : isLost ? 'var(--loss)' : 'var(--warn)';
-  const dotBg = isWon ? 'var(--win-soft)' : isLost ? 'var(--loss-soft)' : 'rgba(255,255,255,0.04)';
+  const isPushed = normalized === 'pushed';
+  const dotColor = isWon ? 'var(--win)' : isLost ? 'var(--loss)' : isPushed ? 'var(--text-2)' : 'var(--warn)';
+  const dotBg = isWon ? 'var(--win-soft)' : isLost ? 'var(--loss-soft)' : isPushed ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.04)';
 
   const statusLabel = normalized.charAt(0).toUpperCase() + normalized.slice(1);
   const oddsDisplay = typeof odds === 'number' ? fmtOdds(odds) : odds;
@@ -80,7 +81,7 @@ export default function MyBetsBetRow({
           <span className="dim mono" style={{ fontSize: 12, fontWeight: 400 }}>
             {oddsDisplay}
           </span>
-          <span className={`badge badge-${isWon ? 'win' : isLost ? 'loss' : 'pending'}`}>{statusLabel}</span>
+          <span className={`badge badge-${isWon ? 'win' : isLost ? 'loss' : isPushed ? 'pending' : 'pending'}`}>{statusLabel}</span>
           {legCount != null && legCount > 1 ? (
             <span className="badge badge-ai">{legCount}-Leg</span>
           ) : null}

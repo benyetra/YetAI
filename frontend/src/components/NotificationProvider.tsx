@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from './Auth';
 import { getWsUrl, apiRequest } from '@/lib/api-config';
+import { parseApiTimestamp } from '@/lib/formatting';
 
 export interface Notification {
   id: string;
@@ -87,7 +88,7 @@ function adminPayloadToNotification(p: AdminPipelinePayload): Notification {
     type: 'pipeline',
     title,
     message: p.message,
-    timestamp: new Date(p.created_at),
+    timestamp: parseApiTimestamp(p.created_at) ?? new Date(),
     read: p.is_read,
     priority,
     data: p,
@@ -105,6 +106,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
   const [ws, setWs] = useState<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const isAdmin = !!user?.is_admin;
+  const userId = user?.id ?? user?.user_id;
 
   // Reset on auth change
   useEffect(() => {
@@ -146,13 +148,7 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
 
   // WebSocket connection management
   const connectWebSocket = useCallback(() => {
-    if (!isAuthenticated || !user) return;
-
-    const userId = user.id || user.user_id;
-    if (!userId) {
-      console.warn('No user ID found for WebSocket connection');
-      return;
-    }
+    if (!isAuthenticated || !userId) return;
 
     try {
       setWsStatus(prev => ({ ...prev, reconnecting: true }));
@@ -275,21 +271,20 @@ export const NotificationProvider: React.FC<NotificationProviderProps> = ({ chil
       console.error('Failed to connect WebSocket:', error);
       setWsStatus(prev => ({ ...prev, reconnecting: false }));
     }
-  }, [isAuthenticated, user?.id, user?.user_id]);
+  }, [isAuthenticated, userId]);
 
-  // Connect WebSocket when authenticated
+  // Connect WebSocket when authenticated (key off user id, not whole user object)
   useEffect(() => {
-    if (isAuthenticated && user && !ws) {
-      connectWebSocket();
-    }
+    if (!isAuthenticated || !userId) return;
+    connectWebSocket();
 
     return () => {
-      if (ws) {
-        ws.close();
-        setWs(null);
-      }
+      setWs((prev) => {
+        prev?.close();
+        return null;
+      });
     };
-  }, [isAuthenticated, user]);
+  }, [isAuthenticated, userId, connectWebSocket]);
 
   // Notification management functions
   const addNotification = useCallback((notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => {

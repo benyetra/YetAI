@@ -113,6 +113,43 @@ class TestProductionApp:
 
     @patch("app.services.admin_game_lines_odds.games_from_pred_lines", return_value=[])
     @patch("app.main._get_odds_with_cache", new_callable=AsyncMock)
+    def test_mlb_odds_endpoint(self, mock_get_odds, _mock_db_games, client):
+        """MLB odds route uses pred_game_projections fallback like WNBA."""
+        mock_get_odds.return_value = {"status": "success", "games": [], "count": 0}
+        response = client.get("/api/odds/baseball_mlb")
+        assert response.status_code == 200
+        mock_get_odds.assert_awaited_once_with("baseball_mlb", "MLB")
+
+    @patch("app.services.admin_game_lines_odds.games_from_pred_lines")
+    @patch("app.main._get_odds_with_cache", new_callable=AsyncMock)
+    def test_mlb_odds_falls_back_to_pred_game_projections(
+        self, mock_get_odds, mock_db_games, client
+    ):
+        mock_get_odds.return_value = {
+            "status": "error",
+            "games": [],
+            "message": "Failed to fetch MLB odds: 401 Unauthorized",
+            "odds_api_configured": True,
+        }
+        mock_db_games.return_value = [
+            {
+                "id": "mlb-2026-06-05-Rockies-at-Phillies",
+                "sport_key": "baseball_mlb",
+                "home_team": "Philadelphia Phillies",
+                "away_team": "Colorado Rockies",
+                "commence_time": "2026-06-05T23:05:00Z",
+                "bookmakers": [{"markets": [{"key": "h2h", "outcomes": [{}]}]}],
+            }
+        ]
+        response = client.get("/api/odds/baseball_mlb")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "success"
+        assert data["source"] == "pred_game_projections"
+        assert len(data["games"]) == 1
+
+    @patch("app.services.admin_game_lines_odds.games_from_pred_lines", return_value=[])
+    @patch("app.main._get_odds_with_cache", new_callable=AsyncMock)
     def test_wnba_odds_endpoint(self, mock_get_odds, _mock_db_games, client):
         """WNBA odds route is registered (admin bet-entries game picker)."""
         mock_get_odds.return_value = {"status": "success", "games": [], "count": 0}

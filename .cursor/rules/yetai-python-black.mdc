@@ -6,6 +6,8 @@ alwaysApply: true
 
 # YetAI Python formatting (Black)
 
+Part of the mandatory pre-commit workflow in `yetai-pre-commit-gates.mdc` (Black + pytest before commit/push).
+
 Backend CI runs `black --check .` from `backend/` (see `.github/workflows/backend-ci-cd.yml`). A formatting drift fails the pipeline.
 
 ## Before every commit that touches Python under `backend/`

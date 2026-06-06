@@ -17,6 +17,7 @@ from app.core.database import get_db
 
 
 NBA_TASK = "app.tasks.etl_pipeline.run_nba_update_pipeline"
+NBA_BEAT_KEY = "nba-update-pipeline-daily"
 
 
 @pytest.fixture
@@ -53,33 +54,54 @@ def test_patch_rejects_out_of_range_values(admin_client):
         f"/api/admin/pipelines/{NBA_TASK}/schedule",
         json={"hour": 25, "minute": 0, "enabled": True},
     )
-    assert r.status_code == 422  # pydantic validation
+    assert r.status_code == 422
 
 
 def test_patch_calls_upsert_for_editable_task(admin_client, monkeypatch):
-    """Body forwarded to ovr.upsert and the result is returned as JSON."""
     from app.services import pipeline_schedule_overrides as ovr
 
     client, _db = admin_client
     fake_row = MagicMock(
+        beat_key=NBA_BEAT_KEY,
         task_name=NBA_TASK,
         hour=6,
         minute=15,
         enabled=True,
     )
-    monkeypatch.setattr(ovr, "upsert", MagicMock(return_value=fake_row))
+    monkeypatch.setattr(ovr, "upsert_schedule_id", MagicMock(return_value=[fake_row]))
 
     r = client.patch(
-        f"/api/admin/pipelines/{NBA_TASK}/schedule",
+        f"/api/admin/pipelines/{NBA_BEAT_KEY}/schedule",
         json={"hour": 6, "minute": 15, "enabled": True},
     )
     assert r.status_code == 200
-    assert r.json() == {
-        "task_name": NBA_TASK,
-        "hour": 6,
-        "minute": 15,
-        "enabled": True,
-    }
+    body = r.json()
+    assert body["beat_key"] == NBA_BEAT_KEY
+    assert body["task_name"] == NBA_TASK
+    assert body["hour"] == 6
+    assert body["minute"] == 15
+    assert body["enabled"] is True
+
+
+def test_patch_accepts_beat_key_for_mlb_daily(admin_client, monkeypatch):
+    from app.services import pipeline_schedule_overrides as ovr
+
+    client, _ = admin_client
+    fake_row = MagicMock(
+        beat_key="mlb-projections-daily",
+        task_name="app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        hour=11,
+        minute=0,
+        enabled=True,
+    )
+    monkeypatch.setattr(ovr, "upsert_schedule_id", MagicMock(return_value=[fake_row]))
+
+    r = client.patch(
+        "/api/admin/pipelines/mlb-projections-daily/schedule",
+        json={"hour": 11, "minute": 0, "enabled": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["beat_key"] == "mlb-projections-daily"
 
 
 def test_reset_rejects_unknown_task(admin_client):
@@ -94,6 +116,6 @@ def test_reset_returns_deleted_flag(admin_client, monkeypatch):
     client, _ = admin_client
     monkeypatch.setattr(ovr, "delete", MagicMock(return_value=True))
 
-    r = client.post(f"/api/admin/pipelines/{NBA_TASK}/schedule/reset")
+    r = client.post(f"/api/admin/pipelines/{NBA_BEAT_KEY}/schedule/reset")
     assert r.status_code == 200
     assert r.json() == {"reset": True}

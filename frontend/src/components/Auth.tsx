@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, createContext, useContext } from 'react';
+import React, { useState, useEffect, createContext, useContext, useCallback, useMemo } from 'react';
 import { User as UserIcon, LogOut, Settings, Crown, Mail, Lock, Eye, EyeOff } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { apiRequest, parseApiErrorResponse } from '@/lib/api-config';
@@ -158,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const login = async (emailOrUsername: string, password: string) => {
+  const login = useCallback(async (emailOrUsername: string, password: string) => {
     try {
       const response = await authAPI.post('/api/auth/login', { email_or_username: emailOrUsername, password });
       
@@ -178,9 +178,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       return { success: false, message: error.message };
     }
-  };
+  }, []);
 
-  const signup = async (email: string, username: string, password: string, firstName = '', lastName = '') => {
+  const signup = useCallback(async (email: string, username: string, password: string, firstName = '', lastName = '') => {
     try {
       const response = await authAPI.post('/api/auth/register', {
         email,
@@ -213,24 +213,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       return { success: false, message: error.message };
     }
-  };
+  }, []);
 
-  const logout = () => {
+  const logout = useCallback(() => {
     cancelSessionMonitoring();
     clearAuthStorage();
     setUser(null);
     setToken(null);
-  };
+  }, []);
 
-  const refreshUser = async () => {
+  const refreshUser = useCallback(async () => {
     if (!token) return;
     
     try {
       const response = await authAPI.get('/api/auth/me', token);
       
       if (response.status === 'success') {
-        setUser(response.user);
-        localStorage.setItem('user_data', JSON.stringify(response.user));
+        setUser((prev: any) => {
+          const next = response.user;
+          if (prev && JSON.stringify(prev) === JSON.stringify(next)) {
+            return prev;
+          }
+          localStorage.setItem('user_data', JSON.stringify(next));
+          return next;
+        });
         return { success: true };
       } else {
         return { success: false, message: response.detail || 'Failed to refresh user data' };
@@ -238,18 +244,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       return { success: false, message: error.message };
     }
-  };
+  }, [token]);
 
-  const value = {
-    user,
-    token,
-    login,
-    signup,
-    logout,
-    refreshUser,
-    isAuthenticated: !!user && !!token && !isTokenExpired(token),
-    loading
-  };
+  const isAuthenticated = !!user && !!token && !isTokenExpired(token);
+
+  const value = useMemo(
+    () => ({
+      user,
+      token,
+      login,
+      signup,
+      logout,
+      refreshUser,
+      isAuthenticated,
+      loading,
+    }),
+    [user, token, login, signup, logout, refreshUser, isAuthenticated, loading],
+  );
 
   return (
     <AuthContext.Provider value={value}>

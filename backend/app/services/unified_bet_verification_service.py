@@ -222,7 +222,7 @@ class UnifiedBetVerificationService:
                     )
                     for bet in prop_bets:
                         try:
-                            result = await self._verify_single_bet(bet, [])
+                            result = await self._verify_single_bet(bet, [], db=db)
                             if result:
                                 all_results.append(result)
                                 total_verified += 1
@@ -273,7 +273,9 @@ class UnifiedBetVerificationService:
                     )
 
                     for bet in game_bets:
-                        result = await self._verify_single_bet(bet, completed_games)
+                        result = await self._verify_single_bet(
+                            bet, completed_games, db=db
+                        )
                         if result:
                             all_results.append(result)
                             total_verified += 1
@@ -323,8 +325,146 @@ class UnifiedBetVerificationService:
         finally:
             db.close()
 
-    async def _verify_single_bet(
+    async def verify_bet_by_id(self, bet_id: str) -> Dict:
+        """Verify and settle a single unified bet (admin manual verify)."""
+        db = SessionLocal()
+        try:
+            bet = (
+                db.query(SimpleUnifiedBet).filter(SimpleUnifiedBet.id == bet_id).first()
+            )
+            if not bet:
+                return {"success": False, "error": "Bet not found"}
+
+            if bet.status != BetStatus.PENDING:
+                return {
+                    "success": False,
+                    "error": f"Bet already settled ({bet.status.value})",
+                }
+
+            result: Optional[UnifiedBetResult] = None
+            if self._is_prop_bet(bet):
+                result = await self._verify_single_bet(bet, [], db=db)
+            else:
+                sport = self._normalize_sport(bet.sport or "unknown")
+                completed_games = await self.odds_service.get_scores_optimized(
+                    sport, include_completed=True
+                )
+                result = await self._verify_single_bet(bet, completed_games, db=db)
+
+            if not result or result.status == BetStatus.PENDING:
+                return {
+                    "success": False,
+                    "message": "Bet could not be settled yet — game may still be in progress or scores unavailable",
+                    "bet_id": bet_id,
+                }
+
+            await self._apply_results([result], db)
+            db.commit()
+
+            return {
+                "success": True,
+                "message": f"Bet settled as {result.status.value}",
+                "bet_info": {
+                    "bet_id": bet_id,
+                    "selection": bet.selection,
+                    "bet_type": bet.bet_type.value,
+                    "new_status": result.status.value,
+                    "result_amount": result.result_amount,
+                    "reasoning": result.reasoning,
+                },
+            }
+        except Exception as e:
+            logger.error("Manual verify failed for bet %s: %s", bet_id[:8], e)
+            db.rollback()
+            return {"success": False, "error": str(e)}
+        finally:
+            db.close()
+
+    @staticmethod
+    def _teams_match(stored_name: Optional[str], api_name: Optional[str]) -> bool:
+        """Loose team-name match for Odds API vs UI naming differences."""
+        if not stored_name or not api_name:
+            return False
+        a = stored_name.strip().lower()
+        b = api_name.strip().lower()
+        if a == b:
+            return True
+        if a in b or b in a:
+            return True
+        a_parts = a.split()
+        b_parts = b.split()
+        if a_parts and b_parts and a_parts[-1] == b_parts[-1]:
+            return True
+        return False
+
+    def _find_completed_game(
         self, bet: SimpleUnifiedBet, completed_games: List[Dict]
+    ) -> Optional[Dict]:
+        """Match a bet to a completed Odds API scores row."""
+        event_id = bet.odds_api_event_id
+        if event_id and not str(event_id).startswith("yetai-pick-"):
+            for game in completed_games:
+                if game.get("id") == event_id:
+                    return game
+
+        for game in completed_games:
+            if not game.get("completed"):
+                continue
+            if self._teams_match(
+                bet.home_team, game.get("home_team", "")
+            ) and self._teams_match(bet.away_team, game.get("away_team", "")):
+                return game
+        return None
+
+    def _get_scores_from_db(
+        self, bet: SimpleUnifiedBet, db: Session
+    ) -> Optional[Tuple[int, int, str]]:
+        """Fallback: use locally synced games table when Odds API scores miss."""
+        from app.models.database_models import Game, GameStatus
+
+        game = None
+        for game_id in (bet.game_id, bet.odds_api_event_id):
+            if not game_id or str(game_id).startswith("yetai-pick-"):
+                continue
+            game = db.query(Game).filter(Game.id == game_id).first()
+            if game:
+                break
+
+        if not game and bet.home_team and bet.away_team:
+            candidates = (
+                db.query(Game)
+                .filter(
+                    Game.home_team == bet.home_team,
+                    Game.away_team == bet.away_team,
+                )
+                .order_by(desc(Game.commence_time))
+                .limit(1)
+                .all()
+            )
+            game = candidates[0] if candidates else None
+
+        if not game:
+            return None
+
+        status_val = (
+            game.status.value
+            if isinstance(game.status, GameStatus)
+            else str(game.status).lower()
+        )
+        if status_val not in ("final", "completed"):
+            return None
+
+        if game.home_score is None or game.away_score is None:
+            return None
+
+        source = f"local games table ({game.id[:8]})"
+        return int(game.home_score), int(game.away_score), source
+
+    async def _verify_single_bet(
+        self,
+        bet: SimpleUnifiedBet,
+        completed_games: List[Dict],
+        db: Optional[Session] = None,
     ) -> Optional[UnifiedBetResult]:
         """Verify a single bet against completed games"""
 
@@ -332,65 +472,51 @@ class UnifiedBetVerificationService:
         if self._is_prop_bet(bet):
             return await self._evaluate_bet_outcome(bet, 0, 0)
 
-        # Find the game by odds_api_event_id
-        game_data = None
-        for game in completed_games:
-            if game.get("id") == bet.odds_api_event_id:
-                game_data = game
-                break
+        home_score: Optional[int] = None
+        away_score: Optional[int] = None
+        score_source = "odds api"
 
-        if not game_data:
-            logger.debug(
-                f"Game {bet.odds_api_event_id[:8]} not found in completed games"
-            )
-            return None
+        game_data = self._find_completed_game(bet, completed_games)
+        if game_data and game_data.get("completed"):
+            scores = game_data.get("scores")
+            if scores and len(scores) >= 2:
+                for score_entry in scores:
+                    team_name = score_entry.get("name", "")
+                    score_value = score_entry.get("score")
+                    if self._teams_match(bet.home_team, team_name):
+                        home_score = int(score_value) if score_value is not None else 0
+                    elif self._teams_match(bet.away_team, team_name):
+                        away_score = int(score_value) if score_value is not None else 0
 
-        # Check if game is completed using the completed boolean field from Odds API
-        is_completed = game_data.get("completed")
-        if not is_completed:
-            logger.debug(
-                f"Game {bet.odds_api_event_id[:8]} not yet completed "
-                f"(completed={is_completed})"
-            )
-            return None
+        if (home_score is None or away_score is None) and db is not None:
+            db_scores = self._get_scores_from_db(bet, db)
+            if db_scores:
+                home_score, away_score, score_source = db_scores
+                logger.info(
+                    "Using DB fallback scores for bet %s: %s %s - %s %s",
+                    bet.id[:8],
+                    bet.away_team,
+                    away_score,
+                    bet.home_team,
+                    home_score,
+                )
 
-        # Get final scores - match by team name, not array index
-        scores = game_data.get("scores")
-        if not scores or len(scores) < 2:
-            logger.warning(f"Invalid scores for game {bet.odds_api_event_id[:8]}")
-            return None
-
-        # Match scores to home/away teams by name
-        home_score = None
-        away_score = None
-
-        for score_entry in scores:
-            team_name = score_entry.get("name", "")
-            score_value = score_entry.get("score")
-
-            # Match against bet's stored team names
-            if team_name == bet.home_team:
-                home_score = int(score_value) if score_value is not None else 0
-            elif team_name == bet.away_team:
-                away_score = int(score_value) if score_value is not None else 0
-
-        # Verify we found both scores
         if home_score is None or away_score is None:
-            logger.warning(
-                f"Could not match scores to teams for game {bet.odds_api_event_id[:8]}. "
-                f"Expected teams: {bet.home_team} vs {bet.away_team}. "
-                f"API teams: {[s.get('name') for s in scores]}"
+            logger.debug(
+                "No final scores for bet %s (%s vs %s)",
+                bet.id[:8],
+                bet.away_team,
+                bet.home_team,
             )
             return None
 
         logger.info(
-            f"Verifying bet {bet.id[:8]}: {bet.bet_type.value} - {bet.selection}"
+            f"Verifying bet {bet.id[:8]} via {score_source}: {bet.bet_type.value} - {bet.selection}"
         )
         logger.info(
             f"Final score: {bet.away_team} {away_score} - {bet.home_team} {home_score}"
         )
 
-        # Determine bet outcome
         return await self._evaluate_bet_outcome(bet, home_score, away_score)
 
     async def _evaluate_bet_outcome(
@@ -495,11 +621,25 @@ class UnifiedBetVerificationService:
         if not bet.spread_value:
             return BetStatus.LOST, 0.0, "Invalid spread value"
 
-        # spread_value already includes +/- sign (e.g., -7.5 or +3.5)
         spread = bet.spread_value
+        spread_side = bet.spread_selection
+        if spread_side == TeamSide.NONE:
+            if self._teams_match(bet.selected_team_name, bet.home_team):
+                spread_side = TeamSide.HOME
+            elif self._teams_match(bet.selected_team_name, bet.away_team):
+                spread_side = TeamSide.AWAY
+            elif (
+                bet.home_team and bet.home_team.lower() in (bet.selection or "").lower()
+            ):
+                spread_side = TeamSide.HOME
+            elif (
+                bet.away_team and bet.away_team.lower() in (bet.selection or "").lower()
+            ):
+                spread_side = TeamSide.AWAY
+            else:
+                return BetStatus.LOST, 0.0, "Could not determine spread side"
 
-        # Apply spread to selected team (spread already has correct sign)
-        if bet.spread_selection == TeamSide.HOME:
+        if spread_side == TeamSide.HOME:
             adjusted_home = home_score + spread
             if adjusted_home > away_score:
                 payout = bet.amount + bet.potential_win
@@ -755,6 +895,7 @@ class UnifiedBetVerificationService:
             "mlb": "baseball_mlb",
             "nfl": "americanfootball_nfl",
             "nba": "basketball_nba",
+            "wnba": "basketball_wnba",
             "nhl": "icehockey_nhl",
             "baseball": "baseball_mlb",
             "football": "americanfootball_nfl",
@@ -762,6 +903,8 @@ class UnifiedBetVerificationService:
             "hockey": "icehockey_nhl",
             "americanfootball_nfl": "americanfootball_nfl",
             "baseball_mlb": "baseball_mlb",
+            "basketball_nba": "basketball_nba",
+            "basketball_wnba": "basketball_wnba",
         }
 
         normalized = sport_mapping.get(sport.lower(), sport.lower())

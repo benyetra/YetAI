@@ -567,14 +567,15 @@ class AdminNotificationRead(Base):
 class PipelineSchedule(Base):
     """Admin-editable override of a Celery beat schedule entry.
 
-    Keyed by Celery task_name (must be in PIPELINE_ENQUEUE_CATALOG). When a
-    row exists, the custom DatabaseScheduler uses these values instead of
-    the hardcoded beat_schedule entry. Deleting the row reverts to default.
+    Keyed by beat_schedule dict key (e.g. ``mlb-projections-daily``). The
+    Celery ``task_name`` is stored for display. When a row exists, the custom
+    DatabaseScheduler uses these values instead of the hardcoded entry.
     """
 
     __tablename__ = "pipeline_schedules"
 
-    task_name = Column(String(255), primary_key=True)
+    beat_key = Column(String(255), primary_key=True)
+    task_name = Column(String(255), nullable=False)
     minute = Column(Integer, nullable=False)
     hour = Column(Integer, nullable=False)
     enabled = Column(Boolean, nullable=False, default=True)

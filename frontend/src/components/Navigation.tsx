@@ -20,7 +20,6 @@ import {
   Target,
   Sparkles,
   Shield,
-  Search,
   Calculator,
   LineChart,
 } from 'lucide-react';
@@ -357,11 +356,7 @@ export function Header() {
       )}
 
       {isAuthenticated && (
-        <>
-          <button type="button" className="icon-btn hidden md:grid" aria-label="Search">
-            <Search size={14} />
-          </button>
-          <div className="relative">
+        <div className="relative">
             <button
               type="button"
               className={`icon-btn ${unreadCount > 0 ? 'notif-dot' : ''}`}
@@ -371,8 +366,7 @@ export function Header() {
               <Bell size={14} />
             </button>
             <NotificationPanel isOpen={showNotifications} onClose={() => setShowNotifications(false)} />
-          </div>
-        </>
+        </div>
       )}
 
       {!isAuthenticated && (

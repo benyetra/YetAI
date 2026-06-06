@@ -56,18 +56,21 @@ export interface UpdateScheduleRequest {
 }
 
 export interface UpdateScheduleResponse {
+  beat_key: string;
   task_name: string;
   hour: number;
   minute: number;
   enabled: boolean;
+  /** When a legacy Celery task_name maps to multiple beat slots. */
+  updated_keys?: string[];
 }
 
 export async function updatePipelineSchedule(
-  taskName: string,
+  scheduleId: string,
   body: UpdateScheduleRequest,
 ): Promise<UpdateScheduleResponse> {
   const res = await apiRequest(
-    `/api/admin/pipelines/${encodeURIComponent(taskName)}/schedule`,
+    `/api/admin/pipelines/${encodeURIComponent(scheduleId)}/schedule`,
     {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -81,10 +84,10 @@ export async function updatePipelineSchedule(
 }
 
 export async function resetPipelineSchedule(
-  taskName: string,
+  scheduleId: string,
 ): Promise<{ reset: boolean }> {
   const res = await apiRequest(
-    `/api/admin/pipelines/${encodeURIComponent(taskName)}/schedule/reset`,
+    `/api/admin/pipelines/${encodeURIComponent(scheduleId)}/schedule/reset`,
     { method: 'POST' },
   );
   if (!res.ok) {

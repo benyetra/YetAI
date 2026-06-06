@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
-import PageHeader from '@/components/yetai/PageHeader';
+import OwensCornerHero from '@/components/yetai/OwensCornerHero';
 import OwensBettingCornerView from '@/components/yetai/OwensBettingCornerView';
 import { useAuth } from '@/components/Auth';
 
@@ -19,11 +19,7 @@ export default function OwensBettingCornerPage() {
 
   return (
     <Layout requiresAuth fullWidth>
-      <PageHeader
-        eyebrow="Hand-picked picks"
-        title="Owen's Corner"
-        subtitle="Pending picks and historical results · success rate and units won"
-      />
+      <OwensCornerHero />
       <OwensBettingCornerView />
     </Layout>
   );

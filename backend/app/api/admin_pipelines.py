@@ -50,40 +50,42 @@ async def get_schedule(
     return body
 
 
-# task_name uses `:path` so dotted task names like
-# "app.tasks.etl_pipeline.run_nba_update_pipeline" come through intact.
-@router.patch("/{task_name:path}/schedule")
+# schedule_id: beat key (mlb-projections-daily) or legacy Celery task_name.
+@router.patch("/{schedule_id:path}/schedule")
 async def update_schedule(
-    task_name: str,
+    schedule_id: str,
     payload: UpdateScheduleRequest,
     admin: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    row = ovr.upsert(
+    rows = ovr.upsert_schedule_id(
         db,
-        task_name=task_name,
+        schedule_id=schedule_id,
         hour=payload.hour,
         minute=payload.minute,
         enabled=payload.enabled,
         user_id=admin.get("id") or admin.get("user_id"),
     )
+    row = rows[-1]
     return {
+        "beat_key": row.beat_key,
         "task_name": row.task_name,
         "hour": row.hour,
         "minute": row.minute,
         "enabled": row.enabled,
+        "updated_keys": [r.beat_key for r in rows],
     }
 
 
-@router.post("/{task_name:path}/schedule/reset")
+@router.post("/{schedule_id:path}/schedule/reset")
 async def reset_schedule(
-    task_name: str,
+    schedule_id: str,
     _: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    if not ovr.is_editable(task_name):
-        raise HTTPException(
-            status_code=400, detail=f"task_name not editable: {task_name}"
-        )
-    deleted = ovr.delete(db, task_name)
+    try:
+        ovr.resolve_beat_keys(schedule_id)
+    except HTTPException:
+        raise
+    deleted = ovr.delete(db, schedule_id)
     return {"reset": deleted}
