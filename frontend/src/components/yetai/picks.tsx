@@ -116,7 +116,7 @@ export function HeroAIPick({
           {pick.league}
         </span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 28, position: 'relative', zIndex: 1 }}>
+      <div className="split-2-col" style={{ gap: 28, position: 'relative', zIndex: 1 }}>
         <div>
           {propLayout ? (
             <div style={{ marginBottom: 20 }}>

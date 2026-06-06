@@ -349,7 +349,7 @@ export function Header() {
       <WebSocketIndicator />
 
       {isAuthenticated && (
-        <button type="button" className="btn btn-primary btn-sm hidden sm:inline-flex" onClick={() => router.push('/bet')}>
+        <button type="button" className="btn btn-primary btn-sm topbar-hide-mobile" onClick={() => router.push('/bet')}>
           <Target size={14} />
           Place Bet
         </button>

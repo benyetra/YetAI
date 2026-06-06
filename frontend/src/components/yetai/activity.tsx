@@ -57,7 +57,7 @@ export function PerformanceChart({
           )}
         </div>
       </div>
-      <div className="pnl-chart-bars">
+      <div className={`pnl-chart-bars${history.length > 21 ? ' dense' : ''}`}>
         {history.map((v, i) => {
           const pct = Math.max(2, (Math.abs(v) / max) * 50);
           const barClass = v > 0 ? 'win above' : v < 0 ? 'loss below' : 'zero';

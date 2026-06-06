@@ -50,17 +50,19 @@ export default function DashboardScreen({
 
   return (
     <div data-screen-label="Dashboard">
-      <div style={{ display: 'flex', alignItems: 'end', justifyContent: 'space-between', marginBottom: 24, flexWrap: 'wrap', gap: 12 }}>
-        <div>
+      <div className="screen-header">
+        <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ color: 'var(--text-3)', fontSize: 12.5, letterSpacing: '.04em', textTransform: 'uppercase', marginBottom: 6 }}>
             {dateLabel} · {timeLabel}
           </div>
           <h1 className="type-page-title">
             {greetingLine(userName)}{' '}
-            <span style={{ color: 'var(--text-3)' }}>Your edge starts here.</span>
+            <span className="hide-mobile" style={{ color: 'var(--text-3)' }}>
+              Your edge starts here.
+            </span>
           </h1>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        <div className="screen-header-actions hide-mobile">
           <Link href="/bets" className="btn">
             <Clock size={14} /> History
           </Link>
@@ -151,7 +153,7 @@ export default function DashboardScreen({
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.4fr) minmax(0, 1fr)', gap: 'var(--gap-grid)' }}>
+      <div className="split-2-col">
         <PerformanceChart dailyPnl={dailyPnl} lifetimeProfit={bankroll} />
         <RecentActivity bets={recentBets} />
       </div>

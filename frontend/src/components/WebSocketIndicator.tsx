@@ -42,12 +42,13 @@ export const WebSocketIndicator: React.FC = () => {
   const { icon: Icon, text, className, iconClassName, title } = getIndicatorContent();
 
   return (
-    <div 
-      className={`flex items-center space-x-2 px-3 py-1 rounded-full border text-xs font-medium transition-all duration-200 ${className}`}
+    <div
+      className={`ws-indicator flex items-center space-x-2 px-3 py-1 rounded-full border text-xs font-medium transition-all duration-200 ${className}`}
       title={title}
+      aria-label={text}
     >
       <Icon className={`w-3 h-3 ${iconClassName}`} />
-      <span>{text}</span>
+      <span className="ws-indicator-label">{text}</span>
     </div>
   );
 };
