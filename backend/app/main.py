@@ -658,7 +658,10 @@ async def get_user_performance(
             net_profit = stats["net_profit"]
         else:
             stats = await analytics_service.get_user_stats(user_id)
-            net_profit = round(stats["total_winnings"] - stats["total_wagered"], 2)
+            net_profit = stats.get(
+                "net_profit",
+                round(stats["total_winnings"] - stats["total_wagered"], 2),
+            )
 
         # Get trend data from betting analytics
         from app.core.database import SessionLocal

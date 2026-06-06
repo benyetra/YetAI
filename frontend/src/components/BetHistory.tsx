@@ -404,11 +404,14 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
   const betProfit = (bet: Bet): number | null => {
     const st = bet.status.toLowerCase();
     if (st === 'won') {
-      if (bet.result_amount != null) return bet.result_amount;
+      if (bet.result_amount != null) return bet.result_amount - bet.amount;
       return bet.potential_win - bet.amount;
     }
     if (st === 'lost') {
-      return -(bet.result_amount ?? bet.amount);
+      return -bet.amount;
+    }
+    if (st === 'pushed') {
+      return 0;
     }
     return null;
   };
@@ -876,11 +879,19 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
                       <p className="text-sm text-gray-500">
                         Potential: ${bet.potential_win.toFixed(2)}
                       </p>
-                      {bet.result_amount !== null && (
+                      {bet.result_amount !== null && bet.status !== 'pending' && (
                         <p className={`text-sm font-medium ${
-                          bet.status === 'won' ? 'text-green-600' : 'text-red-600'
+                          bet.status === 'won'
+                            ? 'text-green-600'
+                            : bet.status === 'pushed'
+                              ? 'text-gray-500'
+                              : 'text-red-600'
                         }`}>
-                          {bet.status === 'won' ? '+' : '-'}${Math.abs(bet.result_amount || bet.amount).toFixed(2)}
+                          {bet.status === 'won'
+                            ? `+$${((bet.result_amount ?? 0) - bet.amount).toFixed(2)}`
+                            : bet.status === 'pushed'
+                              ? '$0.00'
+                              : `-$${bet.amount.toFixed(2)}`}
                         </p>
                       )}
                     </div>

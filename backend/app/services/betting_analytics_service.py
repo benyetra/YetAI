@@ -22,6 +22,21 @@ class BettingAnalyticsService:
     def __init__(self):
         pass
 
+    @staticmethod
+    def _bet_net_profit(bet) -> float:
+        """Realized P&L for a settled parent/straight bet (won/lost/pushed)."""
+        status = (getattr(bet, "status", None) or "").lower()
+        amount = float(getattr(bet, "amount", 0) or 0)
+        if status == "won":
+            if getattr(bet, "result_amount", None) is not None:
+                return float(bet.result_amount) - amount
+            return float(getattr(bet, "potential_win", 0) or 0)
+        if status == "lost":
+            return -amount
+        if status == "pushed":
+            return 0.0
+        return 0.0
+
     async def get_user_stats(self, user_id: int) -> Dict[str, Any]:
         """Get user betting statistics in the format expected by the frontend dashboard"""
         try:
@@ -81,14 +96,16 @@ class BettingAnalyticsService:
                 # Calculate totals ONLY from resolved bets (don't count pending)
                 total_wagered = sum(bet.amount for bet in resolved_bets_list)
                 total_winnings = sum(bet.result_amount or 0 for bet in won_bets)
+                net_profit = round(
+                    sum(self._bet_net_profit(bet) for bet in resolved_bets_list), 2
+                )
 
                 # Calculate win rate (only from resolved bets, excluding pushes)
                 settled_bets = len(won_bets) + len(lost_bets)
                 win_rate = (len(won_bets) / settled_bets) if settled_bets > 0 else 0.0
 
                 # Calculate ROI (profit / wagered for resolved bets only)
-                profit = total_winnings - sum(bet.amount for bet in won_bets)
-                roi = (profit / total_wagered) if total_wagered > 0 else 0.0
+                roi = (net_profit / total_wagered) if total_wagered > 0 else 0.0
 
                 # Calculate average odds (approximation from potential wins)
                 odds_sum = 0
@@ -137,6 +154,7 @@ class BettingAnalyticsService:
                     "total_pending_bets": total_pending_bets,
                     "total_wagered": round(total_wagered, 2),
                     "total_winnings": round(total_winnings, 2),
+                    "net_profit": net_profit,
                     "win_rate": round(win_rate, 3),  # 0.68 format
                     "roi": round(roi, 3),  # 0.10 format
                     "average_odds": average_odds,
@@ -221,7 +239,9 @@ class BettingAnalyticsService:
                 resolved_bets_list = won_bets + lost_bets + pushed_bets
                 total_wagered = sum(bet.amount for bet in resolved_bets_list)
                 total_winnings = sum(bet.result_amount or 0 for bet in won_bets)
-                net_profit = round(total_winnings - total_wagered, 2)
+                net_profit = round(
+                    sum(self._bet_net_profit(bet) for bet in resolved_bets_list), 2
+                )
 
                 settled_bets = len(won_bets) + len(lost_bets)
                 win_rate = (len(won_bets) / settled_bets) if settled_bets > 0 else 0.0
@@ -852,7 +872,7 @@ class BettingAnalyticsService:
                     and_(
                         SimpleUnifiedBet.user_id == user_id,
                         SimpleUnifiedBet.parent_bet_id.is_(None),
-                        SimpleUnifiedBet.status.in_(["won", "lost"]),
+                        SimpleUnifiedBet.status.in_(["won", "lost", "pushed"]),
                         settled_at >= start,
                         settled_at < end_exclusive,
                     )
@@ -875,6 +895,8 @@ class BettingAnalyticsService:
                             buckets[idx] += float(b.potential_win or 0) - amount
                     elif b.status == "lost":
                         buckets[idx] -= amount
+                    elif b.status == "pushed":
+                        pass
 
             return [round(v, 2) for v in buckets]
         except Exception as e:

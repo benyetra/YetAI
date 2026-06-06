@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Check, ChevronRight, Clock, X } from 'lucide-react';
+import { Check, ChevronRight, Clock, Minus, X } from 'lucide-react';
 import { fmtMoney, fmtMoneyShort, fmtOdds } from '@/lib/yetai-format';
 import type { ActivityBet } from './types';
 
@@ -102,11 +102,31 @@ export function RecentActivity({ bets, historyHref = '/bets' }: { bets: Activity
               <div
                 className="act-icon"
                 style={{
-                  background: b.status === 'won' ? 'var(--win-soft)' : b.status === 'lost' ? 'var(--loss-soft)' : 'rgba(255,255,255,0.05)',
-                  color: b.status === 'won' ? 'var(--win)' : b.status === 'lost' ? 'var(--loss)' : 'var(--text-2)',
+                  background:
+                    b.status === 'won'
+                      ? 'var(--win-soft)'
+                      : b.status === 'lost'
+                        ? 'var(--loss-soft)'
+                        : b.status === 'pushed'
+                          ? 'rgba(255,255,255,0.05)'
+                          : 'rgba(255,255,255,0.05)',
+                  color:
+                    b.status === 'won'
+                      ? 'var(--win)'
+                      : b.status === 'lost'
+                        ? 'var(--loss)'
+                        : 'var(--text-2)',
                 }}
               >
-                {b.status === 'won' ? <Check size={14} /> : b.status === 'lost' ? <X size={14} /> : <Clock size={13} />}
+                {b.status === 'won' ? (
+                  <Check size={14} />
+                ) : b.status === 'lost' ? (
+                  <X size={14} />
+                ) : b.status === 'pushed' ? (
+                  <Minus size={13} />
+                ) : (
+                  <Clock size={13} />
+                )}
               </div>
               <div className="act-text">
                 <div className="act-title">
@@ -117,16 +137,31 @@ export function RecentActivity({ bets, historyHref = '/bets' }: { bets: Activity
                   {b.date ? ` · ${new Date(b.date).toLocaleDateString()}` : ''} · {b.source}
                 </div>
               </div>
-              <span className={`badge badge-${b.status === 'won' ? 'win' : b.status === 'lost' ? 'loss' : 'pending'}`}>{b.status}</span>
+              <span
+                className={`badge badge-${b.status === 'won' ? 'win' : b.status === 'lost' ? 'loss' : b.status === 'pushed' ? 'pending' : 'pending'}`}
+              >
+                {b.status}
+              </span>
               <span
                 className="act-amt mono"
-                style={{ color: b.status === 'won' ? 'var(--win)' : b.status === 'lost' ? 'var(--loss)' : 'var(--text-2)' }}
+                style={{
+                  color:
+                    b.status === 'won'
+                      ? 'var(--win)'
+                      : b.status === 'lost'
+                        ? 'var(--loss)'
+                        : b.status === 'pushed'
+                          ? 'var(--text-3)'
+                          : 'var(--text-2)',
+                }}
               >
                 {b.status === 'pending'
                   ? fmtMoneyShort(b.stake ?? 0)
                   : b.status === 'won'
                     ? `+${fmtMoneyShort((b.payout ?? 0) - (b.stake ?? 0))}`
-                    : `-${fmtMoneyShort(b.stake ?? 0)}`}
+                    : b.status === 'pushed'
+                      ? fmtMoney(0, { signed: true })
+                      : `-${fmtMoneyShort(b.stake ?? 0)}`}
               </span>
             </div>
           ))

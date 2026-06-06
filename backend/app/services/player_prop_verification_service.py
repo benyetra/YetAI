@@ -365,6 +365,7 @@ class PlayerPropVerificationService:
                     prop_details["stat_type"],
                     candidate_date,
                     bet=bet,
+                    is_pitching=prop_details.get("is_pitching", False),
                 )
                 if stats is not None:
                     break
@@ -748,7 +749,10 @@ class PlayerPropVerificationService:
 
                 # Fetch player stats from MLB API
                 stats = self._fetch_mlb_player_stats(
-                    prop_details["player_name"], prop_details["stat_type"], game_date
+                    prop_details["player_name"],
+                    prop_details["stat_type"],
+                    game_date,
+                    is_pitching=prop_details.get("is_pitching", False),
                 )
 
                 if stats is None:
@@ -799,6 +803,9 @@ class PlayerPropVerificationService:
         over_under = match.group(2).lower()
         line_value = float(match.group(3))
         stat_type = match.group(4).strip()
+        stat_lower = stat_type.lower()
+        pitching_labels = {"pitcher outs", "hits allowed", "earned runs"}
+        is_pitching = stat_lower in pitching_labels or stat_lower == "strikeouts"
 
         # Map stat types to MLB API fields
         stat_mapping = {
@@ -813,13 +820,14 @@ class PlayerPropVerificationService:
             "home runs": "homeRuns",
         }
 
-        stat_key = stat_mapping.get(stat_type.lower(), stat_type.lower())
+        stat_key = stat_mapping.get(stat_lower, stat_lower)
 
         return {
             "player_name": player_name,
             "stat_type": stat_key,
             "line_value": line_value,
             "is_over": over_under == "over",
+            "is_pitching": is_pitching,
         }
 
     def _resolve_mlb_game_pk(self, bet: SimpleUnifiedBet, game_date) -> Optional[int]:
@@ -866,15 +874,16 @@ class PlayerPropVerificationService:
         player_name: str,
         stat_type: str,
         game_date,
+        *,
+        is_pitching: bool = False,
     ) -> Optional[Dict]:
         """Box score fallback when game logs miss a start (common in prod)."""
         game_pk = self._resolve_mlb_game_pk(bet, game_date)
         if not game_pk:
             return None
-        pitching_stats = stat_type.lower() in (
+        pitching_stats = is_pitching or stat_type.lower() in (
             "outs",
             "strikeouts",
-            "hits",
             "earnedruns",
         )
         try:
@@ -925,6 +934,7 @@ class PlayerPropVerificationService:
         game_date,
         *,
         bet: Optional[SimpleUnifiedBet] = None,
+        is_pitching: bool = False,
     ) -> Optional[Dict]:
         """Fetch MLB player stats from MLB Stats API (game log, then boxscore)."""
         try:
@@ -941,16 +951,19 @@ class PlayerPropVerificationService:
                 )
                 if bet:
                     return self._fetch_mlb_player_stats_from_boxscore(
-                        bet, player_name, stat_type, game_date
+                        bet,
+                        player_name,
+                        stat_type,
+                        game_date,
+                        is_pitching=is_pitching,
                     )
                 return None
 
             player_id = search_data["people"][0]["id"]
 
-            pitching_stats = stat_type.lower() in [
+            pitching_stats = is_pitching or stat_type.lower() in [
                 "outs",
                 "strikeouts",
-                "hits",
                 "earnedruns",
             ]
             target_str = game_date.strftime("%Y-%m-%d")
@@ -990,7 +1003,11 @@ class PlayerPropVerificationService:
 
             if bet:
                 return self._fetch_mlb_player_stats_from_boxscore(
-                    bet, player_name, stat_type, game_date
+                    bet,
+                    player_name,
+                    stat_type,
+                    game_date,
+                    is_pitching=is_pitching,
                 )
             return None
 
@@ -998,7 +1015,11 @@ class PlayerPropVerificationService:
             logger.error(f"Error fetching MLB stats for {player_name}: {e}")
             if bet:
                 return self._fetch_mlb_player_stats_from_boxscore(
-                    bet, player_name, stat_type, game_date
+                    bet,
+                    player_name,
+                    stat_type,
+                    game_date,
+                    is_pitching=is_pitching,
                 )
             return None
 
@@ -1459,6 +1480,7 @@ class PlayerPropVerificationService:
                 prop_details["player_name"],
                 prop_details["stat_type"],
                 candidate_date,
+                is_pitching=prop_details.get("is_pitching", False),
             )
             if stats is not None:
                 break

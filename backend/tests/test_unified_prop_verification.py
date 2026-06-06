@@ -297,9 +297,56 @@ def test_mlb_boxscore_fallback_when_gamelog_empty():
             "strikeouts",
             game_date,
             bet=bet,
+            is_pitching=True,
         )
 
     assert service._extract_stat_value(stats, "strikeouts") == 4
+
+
+def test_mlb_batter_hits_uses_hitting_gamelog_not_pitching():
+    service = PlayerPropVerificationService()
+    game_date = datetime(2026, 6, 5).date()
+    parsed = service._parse_mlb_prop("Julio Rodríguez OVER 0.5 hits")
+    assert parsed is not None
+    assert parsed["is_pitching"] is False
+
+    search_response = MagicMock()
+    search_response.raise_for_status.return_value = None
+    search_response.json.return_value = {"people": [{"id": 677594}]}
+
+    stats_response = MagicMock()
+    stats_response.raise_for_status.return_value = None
+    stats_response.json.return_value = {
+        "people": [
+            {
+                "stats": [
+                    {
+                        "type": {"displayName": "gameLog"},
+                        "splits": [
+                            {
+                                "date": "2026-06-05",
+                                "stat": {"hits": 2},
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+    with patch(
+        "app.services.player_prop_verification_service.requests.get",
+        side_effect=[search_response, stats_response],
+    ) as mock_get:
+        stats = service._fetch_mlb_player_stats(
+            parsed["player_name"],
+            parsed["stat_type"],
+            game_date,
+            is_pitching=parsed["is_pitching"],
+        )
+
+    assert service._extract_stat_value(stats, "hits") == 2
+    assert "group=[hitting]" in mock_get.call_args_list[1].args[0]
 
 
 def test_mlb_fetch_tries_prior_season_when_calendar_year_differs():
