@@ -7,7 +7,7 @@ export default function OwensCornerHero() {
     <header className="owens-corner-hero" aria-labelledby="owens-corner-title">
       <img
         src={HERO_SRC}
-        alt=""
+        alt="Illustration of Owen and his dog celebrating a winning bet slip with confetti"
         className="owens-corner-hero__img"
         decoding="async"
         fetchPriority="high"
