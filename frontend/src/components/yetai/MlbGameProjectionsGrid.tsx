@@ -2,6 +2,13 @@
 
 import { formatNumber, formatString } from '@/components/PredictionsTable';
 import { teamAbbr } from '@/lib/yetai-format';
+import type { GameProjectionsVariant } from '@/lib/gameProjectionsTypes';
+import {
+  displaySpreadMargin,
+  displayTeamScores,
+  projectedTotal as projectedTotalFromRow,
+  spreadMarketEdge,
+} from '@/lib/spreadTotalsProjectionDisplay';
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
 import { TeamGlyph } from './primitives';
 
@@ -19,7 +26,7 @@ type PrimaryPick = {
   detail?: string;
 };
 
-export type GameProjectionsVariant = 'mlb' | 'nba' | 'wnba' | 'nfl' | 'nhl';
+export type { GameProjectionsVariant } from '@/lib/gameProjectionsTypes';
 
 export type GameProjectionSlipPick = {
   team: string;
@@ -183,26 +190,6 @@ function formatSpreadLine(side: Side, marketSpreadHome: number): string {
   return `${sign}${line.toFixed(1)}`;
 }
 
-function projectedTotal(proj: GameRow): number | null {
-  const total = num(proj.projected_total);
-  if (total != null) return total;
-  const away = num(proj.away_projected_runs);
-  const home = num(proj.home_projected_runs);
-  if (away != null && home != null) return away + home;
-  return null;
-}
-
-function projectedMargin(proj: GameRow, favSide: Side): number | null {
-  const away = num(proj.away_projected_runs);
-  const home = num(proj.home_projected_runs);
-  if (away != null && home != null) return Math.abs(away - home);
-  const runLine = num(proj.run_line);
-  if (runLine != null) return Math.abs(runLine);
-  const favProb = favSide === 'HOME' ? num(proj.home_win_prob) : num(proj.away_win_prob);
-  if (favProb != null) return Math.abs((favProb - 0.5) * 10);
-  return null;
-}
-
 function pickGrade(proj: GameRow, kind: PickKind): boolean | null {
   if (kind === 'ml') return typeof proj.ml_correct === 'boolean' ? proj.ml_correct : null;
   if (kind === 'total') return typeof proj.total_correct === 'boolean' ? proj.total_correct : null;
@@ -324,17 +311,17 @@ function GameCard({
   const awayWp = num(proj.away_win_prob) ?? 0;
   const homeWp = num(proj.home_win_prob) ?? 0;
   const homeFav = homeWp >= awayWp;
-  const favSide: Side = homeFav ? 'HOME' : 'AWAY';
   const favAbbr = homeFav ? homeAbbr : awayAbbr;
   const valueRating = formatString(proj.value_rating);
   const isStrong = valueRating === 'Strong';
   const pick = primaryPick(proj, variant);
   const hasPick = pick != null;
-  const awayRuns = num(proj.away_projected_runs);
-  const homeRuns = num(proj.home_projected_runs);
-  const leanPts = Math.abs(homeWp - awayWp) * 100;
-  const margin = projectedMargin(proj, favSide);
-  const total = projectedTotal(proj);
+  const scores = displayTeamScores(proj, variant);
+  const awayRuns = scores.away;
+  const homeRuns = scores.home;
+  const marginInfo = displaySpreadMargin(proj, variant, homeAbbr, awayAbbr);
+  const total = projectedTotalFromRow(proj);
+  const spreadEdge = spreadMarketEdge(proj);
 
   return (
     <article className={`proj-card${isStrong ? ' is-strong' : ''}`}>
@@ -411,11 +398,14 @@ function GameCard({
         pick={pick}
         pickProbPct={(pick?.side === 'HOME' ? homeWp : pick?.side === 'AWAY' ? awayWp : homeFav ? homeWp : awayWp) * 100}
         favAbbr={favAbbr}
-        leanPts={leanPts}
         projectedTotal={total}
         marketTotal={num(proj.market_total)}
         totalEdge={num(proj.edge_vs_market_total)}
+        spreadMarginAbs={marginInfo.marginAbs}
+        spreadEdge={spreadEdge}
+        marketSpread={num(proj.market_spread)}
         edgeUnit={cfg.edgeUnit}
+        marginUnit={cfg.marginUnit}
         scoreUnit={cfg.scoreUnit}
         showResults={showResults}
         grade={pick && showResults ? pickGrade(proj, pick.kind) : null}
@@ -458,12 +448,23 @@ function GameCard({
           }
         />
         <KVStat
-          label="Proj margin"
-          value={margin != null ? `${favAbbr} by ${margin.toFixed(1)}` : '—'}
+          label={marginInfo.spreadHomeMargin != null ? 'Spread margin' : 'Proj margin'}
+          value={
+            marginInfo.marginAbs != null && marginInfo.favAbbr
+              ? `${marginInfo.favAbbr} by ${marginInfo.marginAbs.toFixed(1)}`
+              : '—'
+          }
           sub={
             showResults && hasFinalScore(proj)
               ? `Final ${formatNumber(proj.actual_away_score, 0)}–${formatNumber(proj.actual_home_score, 0)}`
-              : undefined
+              : marginInfo.spreadHomeMargin != null &&
+                  marginInfo.totalsMargin != null &&
+                  marginInfo.marginAbs != null &&
+                  Math.abs(marginInfo.totalsMargin - marginInfo.marginAbs) >= 0.5
+                ? `Pace split ${marginInfo.totalsMargin.toFixed(1)} ${cfg.marginUnit}`
+                : scores.alignedWithSpread
+                  ? 'From spread + total models'
+                  : undefined
           }
         />
         <KVStat label="Model confidence" value={formatModelConfidence(proj.model_confidence)} />
@@ -542,11 +543,14 @@ function ModelPickModule({
   pick,
   pickProbPct,
   favAbbr,
-  leanPts,
   projectedTotal,
   marketTotal,
   totalEdge,
+  spreadMarginAbs,
+  spreadEdge,
+  marketSpread,
   edgeUnit,
+  marginUnit,
   scoreUnit,
   showResults,
   grade,
@@ -556,11 +560,14 @@ function ModelPickModule({
   pick: PrimaryPick | null;
   pickProbPct: number;
   favAbbr: string;
-  leanPts: number;
   projectedTotal: number | null;
   marketTotal: number | null;
   totalEdge: number | null;
+  spreadMarginAbs: number | null;
+  spreadEdge: number | null;
+  marketSpread: number | null;
   edgeUnit: string;
+  marginUnit: string;
   scoreUnit: string;
   showResults: boolean;
   grade: boolean | null;
@@ -579,6 +586,10 @@ function ModelPickModule({
   }
 
   const teamShort = pick.team.split(' ').slice(-1)[0] ?? pick.team;
+  const marketLine =
+    pick.kind === 'spread' && pick.side && marketSpread != null
+      ? formatSpreadLine(pick.side, marketSpread)
+      : pick.detail;
   const whyCopy =
     pick.kind === 'total' ? (
       <>
@@ -594,10 +605,26 @@ function ModelPickModule({
           '.'
         )}
       </>
+    ) : pick.kind === 'spread' ? (
+      <>
+        Spread model projects {teamShort} by{' '}
+        <b className="mono">
+          {spreadMarginAbs != null ? spreadMarginAbs.toFixed(1) : '—'} {marginUnit}
+        </b>{' '}
+        (<b className="mono">{pickProbPct.toFixed(1)}%</b> win prob).
+        {marketLine && spreadEdge != null ? (
+          <>
+            {' '}
+            Market line <b className="mono">{marketLine}</b> —{' '}
+            <b className="mono">{Math.abs(spreadEdge).toFixed(1)}-{edgeUnit}</b> edge vs our margin.
+          </>
+        ) : (
+          '.'
+        )}
+      </>
     ) : (
       <>
-        Model gives {teamShort} a <b className="mono">{pickProbPct.toFixed(1)}%</b> win probability — a{' '}
-        <b className="mono">{leanPts.toFixed(1)}-pt</b> edge over a coin flip.
+        Model gives {teamShort} a <b className="mono">{pickProbPct.toFixed(1)}%</b> win probability.
       </>
     );
 
@@ -615,9 +642,9 @@ function ModelPickModule({
               {pick.team} <b>{pick.betLabel}</b>
             </>
           )}
-          {pick.detail ? (
+          {marketLine ? (
             <span className="mono dim" style={{ marginLeft: 8, fontSize: 13 }}>
-              {pick.detail}
+              Line {marketLine}
             </span>
           ) : null}
         </span>

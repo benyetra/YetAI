@@ -65,6 +65,7 @@ function mergeRow(spread?: Row, total?: Row): Row {
     projected_margin: spread?.projected_margin,
     run_line: spread?.projected_margin,
     market_spread: spread?.market_spread_home,
+    spread_edge: spreadEdge,
     spread_recommendation: spreadSide,
     projected_total: total?.projected_total,
     home_projected_runs: total?.home_projected_score,
