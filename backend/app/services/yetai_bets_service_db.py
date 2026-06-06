@@ -23,6 +23,17 @@ from app.services.yetai_bets_display import subscriber_game_label
 
 logger = logging.getLogger(__name__)
 
+
+def _utc_iso(dt: Optional[datetime]) -> Optional[str]:
+    """Serialize naive UTC datetimes with Z so browsers parse correctly."""
+    if dt is None:
+        return None
+    iso = dt.isoformat()
+    if iso.endswith("Z") or "+" in iso[-6:]:
+        return iso
+    return f"{iso}Z"
+
+
 # Admin UI sport label → (Odds API sport_key, games.sport_title)
 _ADMIN_SPORT_TO_GAME_META: dict[str, tuple[str, str]] = {
     "NFL": ("americanfootball_nfl", "NFL"),
@@ -508,6 +519,7 @@ class YetAIBetsServiceDB:
         *,
         since: Optional[datetime] = None,
         limit: Optional[int] = None,
+        order_by: str = "settled",
     ) -> List[YetAIBet]:
         allowed_tiers = self._allowed_tiers_for_user(user_tier)
         query = (
@@ -516,13 +528,11 @@ class YetAIBetsServiceDB:
             .filter(YetAIBet.tier_requirement.in_(allowed_tiers))
         )
         if since is not None:
-            query = query.filter(
-                or_(
-                    YetAIBet.settled_at >= since,
-                    and_(YetAIBet.settled_at.is_(None), YetAIBet.created_at >= since),
-                )
-            )
-        query = query.order_by(desc(YetAIBet.settled_at), desc(YetAIBet.created_at))
+            query = query.filter(YetAIBet.created_at >= since)
+        if order_by == "created":
+            query = query.order_by(desc(YetAIBet.created_at))
+        else:
+            query = query.order_by(desc(YetAIBet.settled_at), desc(YetAIBet.created_at))
         if limit is not None:
             query = query.limit(limit)
         rows = query.all()
@@ -808,7 +818,7 @@ class YetAIBetsServiceDB:
         days: int = 90,
         limit: int = 100,
     ) -> tuple[List[Dict], Dict[str, float | int]]:
-        """Settled promoted picks with aggregate track record."""
+        """Promoted picks in the window (newest first), with stats for settled only."""
         self._repair_unified_for_evaluation_yetai_picks(db)
         self._retry_historical_error_losses(db)
         self.sync_yetai_picks_from_linked_unified_bets(db)
@@ -816,13 +826,16 @@ class YetAIBetsServiceDB:
         rows = self._query_yetai_bets_for_user(
             user_tier,
             db,
-            self.YETAI_HISTORY_STATUSES,
+            tuple(self.SUBSCRIBER_VISIBLE_STATUSES),
             since=since,
             limit=limit,
+            order_by="created",
         )
         bets = [self._yetai_bet_to_dict(bet) for bet in rows]
-        stats = self.compute_history_stats(bets, period_days=days)
+        settled = [b for b in bets if b.get("status") in self.YETAI_HISTORY_STATUSES]
+        stats = self.compute_history_stats(settled, period_days=days)
         stats["returned"] = len(bets)
+        stats["settled"] = len(settled)
         return bets, stats
 
     async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
@@ -1059,9 +1072,7 @@ class YetAIBetsServiceDB:
             "game_id": bet.game_id,  # Odds API event ID for verification
             "home_team": bet.home_team,  # Required for bet placement
             "away_team": bet.away_team,  # Required for bet placement
-            "commence_time": (
-                bet.commence_time.isoformat() if bet.commence_time else None
-            ),  # ISO format for API
+            "commence_time": _utc_iso(bet.commence_time),
             "bet_type": bet.bet_type,
             "pick": clean_pick,
             "odds": f"+{int(bet.odds)}" if bet.odds > 0 else str(int(bet.odds)),
@@ -1075,8 +1086,8 @@ class YetAIBetsServiceDB:
                 else "straight"
             ),
             "status": bet.status,
-            "created_at": bet.created_at.isoformat() if bet.created_at else None,
-            "settled_at": bet.settled_at.isoformat() if bet.settled_at else None,
+            "created_at": _utc_iso(bet.created_at),
+            "settled_at": _utc_iso(bet.settled_at),
             "created_by_admin": 1,  # Default admin user
             "result": bet.result,
         }

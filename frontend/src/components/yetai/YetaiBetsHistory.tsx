@@ -4,6 +4,7 @@ import React from 'react';
 import { Check, Clock, Minus, X } from 'lucide-react';
 import { apiBetToDesignPick } from '@/lib/yetai-mappers';
 import { fmtOdds } from '@/lib/yetai-format';
+import { formatLocalDate, parseApiTimestamp } from '@/lib/formatting';
 import type { DesignPick } from './types';
 
 export interface YetaiHistoryStats {
@@ -14,6 +15,7 @@ export interface YetaiHistoryStats {
   pushed: number;
   win_rate: number;
   units: number;
+  settled?: number;
 }
 
 export interface YetaiHistoryBet {
@@ -28,6 +30,7 @@ export interface YetaiHistoryBet {
   confidence: number;
   reasoning?: string;
   game_time?: string;
+  commence_time?: string | null;
   status?: string;
   is_premium?: boolean;
   settled_at?: string | null;
@@ -45,20 +48,26 @@ function statusIcon(status: string) {
 function statusStyle(status: string): { background: string; color: string } {
   if (status === 'won') return { background: 'var(--win-soft)', color: 'var(--win)' };
   if (status === 'lost') return { background: 'var(--loss-soft)', color: 'var(--loss)' };
+  if (status === 'pushed') return { background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)' };
+  if (status === 'active' || status === 'pending') {
+    return { background: 'rgba(124, 92, 255, 0.12)', color: 'var(--accent)' };
+  }
   return { background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)' };
 }
 
-function formatSettledDate(iso?: string | null): string {
-  if (!iso) return '';
-  try {
-    return new Date(iso).toLocaleDateString(undefined, {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
-  } catch {
-    return '';
-  }
+function formatGameDate(bet: YetaiHistoryBet): string {
+  const raw = bet.commence_time || bet.created_at;
+  if (!raw) return '';
+  const parsed = parseApiTimestamp(raw);
+  if (!parsed) return '';
+  return formatLocalDate(parsed.toISOString());
+}
+
+function formatAddedDate(bet: YetaiHistoryBet): string {
+  if (!bet.created_at) return '';
+  const parsed = parseApiTimestamp(bet.created_at);
+  if (!parsed) return '';
+  return formatLocalDate(parsed.toISOString());
 }
 
 export default function YetaiBetsHistory({
@@ -126,8 +135,8 @@ export default function YetaiBetsHistory({
         </div>
       ) : (
         <div className="card" style={{ padding: 24, marginBottom: 18, color: 'var(--text-3)' }}>
-          No settled YetAI picks in this window yet. Results appear here after games finish and
-          picks are graded.
+          No YetAI picks in this window yet. New promoted bets appear here as soon as they&apos;re
+          posted; graded results stay in the list after settlement.
         </div>
       )}
 
@@ -138,8 +147,8 @@ export default function YetaiBetsHistory({
               <div className="section-title">Pick history</div>
               <div className="section-sub">
                 {stats && stats.total > 0
-                  ? `${bets.length} graded pick${bets.length !== 1 ? 's' : ''} · last ${stats.period_days} days`
-                  : 'Graded YetAI promoted bets'}
+                  ? `${bets.length} pick${bets.length !== 1 ? 's' : ''} · ${stats.settled ?? stats.total} graded · newest first`
+                  : `${bets.length} pick${bets.length !== 1 ? 's' : ''} · newest first`}
               </div>
             </div>
           </div>
@@ -173,9 +182,8 @@ export default function YetaiBetsHistory({
                     <div className="act-sub">
                       {pick.matchup}
                       {pick.league ? ` · ${pick.league}` : ''}
-                      {formatSettledDate(bet.settled_at || bet.created_at)
-                        ? ` · ${formatSettledDate(bet.settled_at || bet.created_at)}`
-                        : ''}
+                      {formatGameDate(bet) ? ` · Game ${formatGameDate(bet)}` : ''}
+                      {formatAddedDate(bet) ? ` · Added ${formatAddedDate(bet)}` : ''}
                     </div>
                     {bet.result ? (
                       <div
@@ -196,7 +204,9 @@ export default function YetaiBetsHistory({
                         ? 'win'
                         : status === 'lost'
                           ? 'loss'
-                          : 'pending'
+                          : status === 'pushed'
+                            ? 'pending'
+                            : 'pending'
                     }`}
                   >
                     {status}

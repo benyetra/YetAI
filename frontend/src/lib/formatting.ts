@@ -41,8 +41,13 @@ export function formatLocalDateTime(dateString: string): string {
  * Format a date to local date only
  */
 export function formatLocalDate(dateString: string): string {
-  const date = new Date(dateString);
-  return date.toLocaleDateString();
+  const date = parseApiTimestamp(dateString);
+  if (!date) return '';
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+  });
 }
 
 /**
