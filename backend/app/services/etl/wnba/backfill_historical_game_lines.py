@@ -36,7 +36,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Refetch dates that already have rows in pred_wnba_game_lines",
+        help="Refetch all snapshot dates (ignores fetch log and line coverage skip)",
     )
     parser.add_argument(
         "--delay",

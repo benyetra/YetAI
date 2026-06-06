@@ -8,7 +8,11 @@ import time
 from datetime import date, datetime, timedelta
 
 from app.core.database import SessionLocal
-from app.models.predictions_models import WNBAGameLines, WNBASpreadActuals
+from app.models.predictions_models import (
+    WNBAGameLines,
+    WNBAGameLinesFetchLog,
+    WNBASpreadActuals,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._game_lines_odds import game_line_rows_from_events
 
@@ -128,27 +132,110 @@ def _line_exists_for_actual(
     )
 
 
-def dates_missing_game_lines(dates: list[date]) -> list[date]:
+def _spread_actuals_for_date(db, game_date: date) -> list[tuple[str, str]]:
+    return (
+        db.query(
+            WNBASpreadActuals.home_team_name,
+            WNBASpreadActuals.away_team_name,
+        )
+        .filter(WNBASpreadActuals.game_date == game_date)
+        .all()
+    )
+
+
+def _fetch_date_is_logged(db, game_date: date) -> bool:
+    return (
+        db.query(WNBAGameLinesFetchLog.fetch_date)
+        .filter(WNBAGameLinesFetchLog.fetch_date == game_date)
+        .first()
+        is not None
+    )
+
+
+def record_fetch_date(
+    game_date: date,
+    *,
+    events_count: int,
+    rows_written: int,
+    source: str = "api",
+) -> None:
+    """Persist that the Odds API historical snapshot for this date was fetched."""
+    db = SessionLocal()
+    try:
+        row = (
+            db.query(WNBAGameLinesFetchLog)
+            .filter(WNBAGameLinesFetchLog.fetch_date == game_date)
+            .one_or_none()
+        )
+        if row is None:
+            row = WNBAGameLinesFetchLog(
+                fetch_date=game_date,
+                events_count=events_count,
+                rows_written=rows_written,
+                source=source,
+                fetched_at=datetime.utcnow(),
+            )
+            db.add(row)
+        else:
+            row.events_count = events_count
+            row.rows_written = rows_written
+            row.source = source
+            row.fetched_at = datetime.utcnow()
+        db.commit()
+    finally:
+        db.close()
+
+
+def _should_skip_fetch_date(
+    db,
+    game_date: date,
+    *,
+    seed_partial: bool = True,
+) -> bool:
+    """Return True when no Odds API call is needed for this snapshot date."""
+    if _fetch_date_is_logged(db, game_date):
+        return True
+
+    actuals = _spread_actuals_for_date(db, game_date)
+    if not actuals:
+        return True
+
+    matched = sum(
+        1
+        for home, away in actuals
+        if _line_exists_for_actual(db, game_date, home, away)
+    )
+    if matched == len(actuals):
+        return True
+
+    if seed_partial and matched > 0:
+        record_fetch_date(
+            game_date,
+            events_count=0,
+            rows_written=0,
+            source="seed_partial",
+        )
+        logger.info(
+            "seed fetch log for %s (%d/%d games had lines; skip re-fetch)",
+            game_date,
+            matched,
+            len(actuals),
+        )
+        return True
+
+    return False
+
+
+def dates_missing_game_lines(
+    dates: list[date],
+) -> list[date]:
     if not dates:
         return []
     db = SessionLocal()
     try:
         missing: list[date] = []
         for game_date in dates:
-            actuals = (
-                db.query(
-                    WNBASpreadActuals.home_team_name,
-                    WNBASpreadActuals.away_team_name,
-                )
-                .filter(WNBASpreadActuals.game_date == game_date)
-                .all()
-            )
-            if not actuals:
-                continue
-            if any(
-                not _line_exists_for_actual(db, game_date, home, away)
-                for home, away in actuals
-            ):
+            if not _should_skip_fetch_date(db, game_date):
                 missing.append(game_date)
         return missing
     finally:
@@ -214,7 +301,14 @@ def backfill_dates(
                 time.sleep(delay_seconds)
             continue
         rows = game_line_rows_from_events(events)
-        rows_written += upsert_rows(rows)
+        row_count = upsert_rows(rows)
+        rows_written += row_count
+        record_fetch_date(
+            game_date,
+            events_count=len(events),
+            rows_written=len(rows),
+            source="api",
+        )
         fetched += 1
         logger.info(
             "backfill %s: %d events → %d rows (running total rows=%d)",

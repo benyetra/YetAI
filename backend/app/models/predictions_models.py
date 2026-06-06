@@ -3028,6 +3028,17 @@ class WNBAGameLines(Base):
     )
 
 
+class WNBAGameLinesFetchLog(Base):
+    """Odds API historical snapshot dates already fetched (fetch-once guard)."""
+
+    __tablename__ = "pred_wnba_game_lines_fetch_log"
+    fetch_date = Column(Date, primary_key=True)
+    events_count = Column(Integer, nullable=False, default=0)
+    rows_written = Column(Integer, nullable=False, default=0)
+    source = Column(String(20), nullable=False, default="api")
+    fetched_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+
 class WNBATotalsProjections(Base):
     __tablename__ = "pred_wnba_totals_projections"
     id = Column(Integer, primary_key=True)

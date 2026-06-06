@@ -11,9 +11,11 @@ from app.services.etl.wnba._game_lines_odds import (
 from app.services.etl.wnba.historical_game_lines import (
     CREDITS_PER_DATE,
     _line_exists_for_actual,
+    _should_skip_fetch_date,
     backfill_dates,
     backfill_from_actuals_window,
     fetch_historical_events,
+    record_fetch_date,
 )
 
 
@@ -188,6 +190,10 @@ def test_backfill_dates_max_dates_applies_after_skip_existing(monkeypatch):
         "app.services.etl.wnba.historical_game_lines.upsert_rows",
         lambda rows: 0,
     )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.record_fetch_date",
+        lambda *args, **kwargs: None,
+    )
 
     result = backfill_dates(all_dates, skip_existing=True, max_dates=1)
 
@@ -242,6 +248,74 @@ def test_line_exists_for_actual_allows_adjacent_eastern_game_date():
     assert any(
         hasattr(clause, "compare") or "game_date" in str(clause) for clause in filters
     )
+
+
+def test_should_skip_fetch_date_when_logged(monkeypatch):
+    mock_db = MagicMock(name="Session")
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines._fetch_date_is_logged",
+        lambda _db, _date: True,
+    )
+
+    assert _should_skip_fetch_date(mock_db, date(2024, 5, 3)) is True
+
+
+def test_should_skip_fetch_date_seeds_partial_coverage(monkeypatch):
+    mock_db = MagicMock(name="Session")
+    actuals = [("New York Liberty", "Las Vegas Aces"), ("Chicago Sky", "Indiana Fever")]
+    recorded: dict = {}
+
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines._fetch_date_is_logged",
+        lambda _db, _date: False,
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines._spread_actuals_for_date",
+        lambda _db, _date: actuals,
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines._line_exists_for_actual",
+        lambda _db, _date, home, away: home == "New York Liberty",
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.record_fetch_date",
+        lambda game_date, **kwargs: recorded.update({"date": game_date, **kwargs}),
+    )
+
+    assert _should_skip_fetch_date(mock_db, date(2024, 5, 3)) is True
+    assert recorded["date"] == date(2024, 5, 3)
+    assert recorded["source"] == "seed_partial"
+
+
+def test_backfill_records_fetch_date_after_api_call(monkeypatch):
+    recorded: dict = {}
+
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.dates_missing_game_lines",
+        lambda dates: dates,
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.resolve_odds_api_key",
+        lambda: "test-key",
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.fetch_historical_events",
+        lambda game_date: [{"id": "evt1", "home_team": "A", "away_team": "B"}],
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.upsert_rows",
+        lambda rows: len(rows),
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.historical_game_lines.record_fetch_date",
+        lambda game_date, **kwargs: recorded.update({"date": game_date, **kwargs}),
+    )
+
+    result = backfill_dates([date(2024, 7, 14)], skip_existing=True)
+
+    assert result["dates_fetched"] == 1
+    assert recorded["date"] == date(2024, 7, 14)
+    assert recorded["source"] == "api"
 
 
 def test_game_line_row_skips_missing_teams():

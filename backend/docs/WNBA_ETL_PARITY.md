@@ -200,6 +200,14 @@ T19 smoke against staging (2026-05-21):
     --start 2021-05-01 --end 2025-10-01 --dry-run
   cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
     --start 2021-05-01 --end 2025-10-01 --max-dates 25
+  ```
+
+  Historical backfill uses `pred_wnba_game_lines_fetch_log` (fetch-once per snapshot
+  date). Run `alembic upgrade head` once before the first backfill on a fresh DB.
+  Dates with partial line coverage from earlier runs are auto-seeded into the log so
+  unfillable Odds API gaps are not re-fetched every batch.
+
+  ```bash
   cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.update_game_lines
   cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \\
     --start 2021-05-01 --end 2025-12-31 --upload
