@@ -1,13 +1,22 @@
+from datetime import date
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.services.etl.wnba import update_game_lines as ugl
+from app.services.etl.wnba._game_lines_odds import (
+    game_line_row_from_event,
+    game_line_rows_from_events,
+)
+from app.services.etl.wnba.historical_game_lines import (
+    CREDITS_PER_DATE,
+    backfill_dates,
+    fetch_historical_events,
+)
 
 
 @pytest.fixture
 def fake_odds_payload():
-    """Three books, one game. Consensus = simple average."""
     return [
         {
             "id": "evt1",
@@ -73,6 +82,15 @@ def fake_odds_payload():
     ]
 
 
+def test_game_line_rows_from_events_consensus(fake_odds_payload):
+    row = game_line_rows_from_events(fake_odds_payload)[0]
+    assert row["spread_home"] == pytest.approx(-2.75)
+    assert row["total"] == pytest.approx(162.5)
+    assert row["moneyline_home"] == -130
+    assert row["bookmaker"] == "consensus"
+    assert row["home_team_name"] == "New York Liberty"
+
+
 def test_consensus_averages_across_books(fake_odds_payload, monkeypatch):
     captured = {}
     mock_db = MagicMock(name="Session")
@@ -96,11 +114,8 @@ def test_consensus_averages_across_books(fake_odds_payload, monkeypatch):
         og.return_value = fake_odds_payload
         result = ugl.run()
 
-    # Consensus spread = avg(-2.5, -3.0) = -2.75
     assert captured["spread_home"] == pytest.approx(-2.75)
-    # Consensus total = avg(162.0, 163.0) = 162.5
     assert captured["total"] == pytest.approx(162.5)
-    # Moneyline present only at pinnacle → consensus = single book value
     assert captured["moneyline_home"] == -130
     assert captured["bookmaker"] == "consensus"
     assert result == {"status": "ok", "games": 1}
@@ -122,3 +137,36 @@ def test_no_data_returns_no_data(monkeypatch):
 
     assert result == {"status": "no_data", "games": 0}
     um.assert_not_called()
+
+
+def test_fetch_historical_events_parses_data_wrapper(monkeypatch, fake_odds_payload):
+    class FakeResp:
+        status_code = 200
+        text = ""
+        headers = {"x-requests-last": "30", "x-requests-remaining": "470"}
+
+        def json(self):
+            return {"data": fake_odds_payload}
+
+    monkeypatch.setenv("ODDS_API_KEY", "test-key")
+    with patch(
+        "app.services.odds_api_sync.sync_odds_get",
+        return_value=FakeResp(),
+    ):
+        events = fetch_historical_events(date(2024, 6, 1))
+    assert events == fake_odds_payload
+
+
+def test_backfill_dates_dry_run():
+    result = backfill_dates(
+        [date(2024, 6, 1), date(2024, 6, 2)],
+        dry_run=True,
+        skip_existing=False,
+    )
+    assert result["status"] == "dry_run"
+    assert result["dates_to_fetch"] == 2
+    assert result["estimated_credits"] == 2 * CREDITS_PER_DATE
+
+
+def test_game_line_row_skips_missing_teams():
+    assert game_line_row_from_event({"home_team": "", "away_team": "X"}) is None

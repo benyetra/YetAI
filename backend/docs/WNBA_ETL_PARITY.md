@@ -18,6 +18,7 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | `update_team_defense_stats.py` | `wnba/update_team_defense_stats.py` | ✅ done |
 | `update_injury_status.py` | `wnba/update_injury_status.py` (ESPN feed) | ✅ done |
 | `update_game_lines.py` | `wnba/update_game_lines.py` (consensus-only) | ✅ done |
+| *(historical odds)* | `wnba/historical_game_lines.py` + `scripts/backfill_wnba_historical_game_lines.py` | ✅ done |
 | `totals_projector.py` | `wnba/totals_projector.py` | ✅ done |
 | *(none — beyond NBA parity)* | `wnba/spread_projector.py` (ML when S3 `xgb_spread`, else Elo+pace) | ✅ done |
 | `store_actuals.py` | `wnba/store_actuals.py` (totals + spread) | ✅ done |
@@ -192,6 +193,17 @@ T19 smoke against staging (2026-05-21):
 ## Configuration
 
 - `ODDS_API_KEY` env var must be set for `update_game_lines` to populate.
+- Historical consensus lines (spread ML + prop Vegas features): ~30 Odds API credits/date.
+
+  ```bash
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
+    --start 2021-05-01 --end 2025-10-01 --dry-run
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
+    --start 2021-05-01 --end 2025-10-01 --max-dates 25
+  cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.update_game_lines
+  cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \\
+    --start 2021-05-01 --end 2025-12-31 --upload
+  ```
 - `LeagueDashTeamStats` and `LeagueDashPlayerStats` in nba_api use the
   `league_id_nullable` kwarg (not `league_id`). Pinned to `"10"` for WNBA in
   `wnba/_wnba_stats.py`.
