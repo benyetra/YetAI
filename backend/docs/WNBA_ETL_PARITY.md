@@ -29,9 +29,12 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | NBA file | WNBA equivalent | Status |
 |---|---|---|
 | `update_recent_games.py` | `wnba/update_recent_games.py` | ✅ done |
-| `update_expected_minutes.py` | `wnba/update_expected_minutes.py` | ✅ done |
+| *(shared)* | `wnba/_boxscore_fetch.py` | ✅ traditional + BoxScoreAdvancedV2 merge |
+| *(one-shot)* | `scripts/backfill_wnba_shooting_columns.py` | ✅ SQL eFG/TS backfill on historical rows |
+| `update_expected_minutes.py` | `wnba/update_expected_minutes.py` | ✅ done (NBA-weighted recency + B2B/home + teammate-out boost) |
+| *(shared)* | `wnba/_expected_minutes.py` | ✅ `calc_metrics` + context adjustments (live + training) |
 | `today_active_players.py` | `wnba/today_active_players.py` | ✅ done |
-| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ✅ done |
+| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ✅ done (historical `expected_minutes` via `_expected_minutes`; no teammate-out in training) |
 | `_ml_predict.py` | `wnba/_ml_predict.py` | ✅ done |
 | `generate_points_predictions.py` | `wnba/generate_points_predictions.py` | ✅ done |
 | `generate_assists_predictions.py` | `wnba/generate_assists_predictions.py` | ✅ done |
@@ -52,6 +55,22 @@ to `s3://yetibets/wnba/ml_models/xgb_{points,assists,rebounds}.pkl`:
 | Points | **4.261** | 4.5 | ✅ pass |
 | Assists | **1.266** | 1.5 | ✅ pass |
 | Rebounds | **1.829** | 2.0 | ✅ pass |
+
+**Retrain (2026-06):** Prop feature set expanded (volatility, trend, matchup,
+advanced stats, Vegas context). Training replays `historical_expected_minutes()`
+per `(player_id, game_date)` using only prior games (recency + B2B/home; live
+teammate-out boost remains inference-only). Retrain + S3 upload:
+
+```bash
+# Holdout eval (needs DATABASE_URL)
+cd backend && PYTHONPATH=. .venv/bin/python \\
+  -m app.services.etl.wnba.ml_training.prop_model_eval \\
+  --stat points --train-start 2024-05-01 --holdout-start 2025-05-01 --holdout-end 2025-12-31
+
+# Train + upload (GitHub Actions: WNBA Train Prop Models, or locally)
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training \\
+  --stat points --start 2024-05-01 --end 2025-12-31 --upload
+```
 
 Training logs in [`backend/docs/wnba_training_logs/`](./wnba_training_logs/).
 

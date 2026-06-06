@@ -20,10 +20,12 @@ import time
 from dataclasses import dataclass
 from typing import Any, Callable, TypeVar
 
+from nba_api.library.http import NBAHTTP  # type: ignore
 from nba_api.stats.endpoints import (  # type: ignore
     commonteamroster,
     leaguedashplayerstats,
     leaguedashteamstats,
+    leaguegamefinder,
     playercareerstats,
     playergamelog,
     scoreboardv2,
@@ -50,6 +52,11 @@ class _FetchProfile:
 _PROFILES: dict[str, _FetchProfile] = {
     "default": _FetchProfile(max_attempts=4, timeout=(15, 90), backoff_seconds=20.0),
     "fast": _FetchProfile(max_attempts=2, timeout=(15, 45), backoff_seconds=5.0),
+    # Historical backfill: longer read timeout, slower backoff, polite pacing.
+    "backfill": _FetchProfile(max_attempts=5, timeout=(20, 120), backoff_seconds=45.0),
+    "backfill_advanced": _FetchProfile(
+        max_attempts=3, timeout=(20, 90), backoff_seconds=30.0
+    ),
 }
 
 # Back-compat for tests and callers that read the default timeout tuple.
@@ -58,6 +65,17 @@ STATS_HTTP_TIMEOUT = _PROFILES["default"].timeout
 
 def _resolve_profile(profile: str) -> _FetchProfile:
     return _PROFILES.get(profile, _PROFILES["default"])
+
+
+def _clear_nba_http_session() -> None:
+    """Reset nba_api's shared requests session between retries (see nba_api#633)."""
+    if hasattr(NBAHTTP, "clear_session"):
+        NBAHTTP.clear_session()
+        return
+    session = getattr(NBAHTTP, "_session", None)
+    if session is not None:
+        session.close()
+        NBAHTTP._session = None
 
 
 def _retry(callable_: Callable[[], T], label: str, *, profile: str = "default") -> T:
@@ -77,11 +95,33 @@ def _retry(callable_: Callable[[], T], label: str, *, profile: str = "default") 
                 exc,
             )
             if attempt < cfg.max_attempts:
+                _clear_nba_http_session()
                 time.sleep(cfg.backoff_seconds)
     assert last_exc is not None
     raise StatsNbaUnavailable(
         f"{label} failed after {cfg.max_attempts} attempts: {last_exc}"
     ) from last_exc
+
+
+def fetch_games_for_season(
+    season: str,
+    *,
+    season_type: str = "Regular Season",
+    profile: str = "default",
+) -> list[dict[str, Any]]:
+    """League-wide game list (two rows per game — one per team)."""
+    cfg = _resolve_profile(profile)
+
+    def call():
+        obj = leaguegamefinder.LeagueGameFinder(
+            league_id_nullable=LEAGUE_ID,
+            season_nullable=season,
+            season_type_nullable=season_type,
+            timeout=cfg.timeout,
+        )
+        return obj.get_normalized_dict()["LeagueGameFinderResults"]
+
+    return _retry(call, f"LeagueGameFinder({season})", profile=profile)
 
 
 def fetch_team_dashboard(

@@ -13,7 +13,10 @@ from app.models.predictions_models import (
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
-from app.services.etl.wnba._feature_engineering import build_features
+from app.services.etl.wnba._feature_engineering import (
+    apply_expected_minutes,
+    build_features,
+)
 from app.services.etl.wnba._ml_predict import predict
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
@@ -59,6 +62,7 @@ def run() -> dict:
             if feats is None:
                 skipped_thin += 1
                 continue
+            feats = apply_expected_minutes(feats, p.expected_minutes)
             try:
                 projected = predict(STAT, feats)
             except Exception as exc:

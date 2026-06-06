@@ -17,11 +17,8 @@ from app.models.predictions_models import WNBASpreadActuals, WNBATotalsActuals
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import fetch_games
 from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME, normalize_team_name
-from app.services.etl.wnba._wnba_stats import _retry
-from app.services.etl.wnba.backfill_wnba_history import (
-    DEFAULT_SEASONS,
-    _fetch_games_for_season,
-)
+from app.services.etl.wnba._wnba_stats import fetch_games_for_season
+from app.services.etl.wnba.backfill_wnba_history import DEFAULT_SEASONS
 
 logger = logging.getLogger(__name__)
 
@@ -166,10 +163,7 @@ def run_nba_api(
     try:
         for season in seasons:
             logger.info("backfill_spread_actuals: season %s", season)
-            games = _retry(
-                lambda s=season: _fetch_games_for_season(s),
-                f"leaguegamefinder({season})",
-            )
+            games = fetch_games_for_season(season, profile="backfill")
             by_game: dict[str, list[dict]] = {}
             for g in games:
                 by_game.setdefault(g["GAME_ID"], []).append(g)

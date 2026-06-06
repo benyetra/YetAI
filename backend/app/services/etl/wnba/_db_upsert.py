@@ -12,6 +12,16 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 
+def _normalize_row_keys(rows: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Ensure every row has the same keys (None fill) for multiparam INSERT."""
+    if not rows:
+        return []
+    all_keys: set[str] = set()
+    for row in rows:
+        all_keys.update(row.keys())
+    return [{key: row.get(key) for key in all_keys} for row in rows]
+
+
 def upsert_many(
     session: Session,
     model: type,
@@ -24,12 +34,13 @@ def upsert_many(
     if not rows:
         return 0
 
+    normalized = _normalize_row_keys(rows)
     table = model.__table__
     if update_keys is None:
         skip = set(conflict_keys) | {"id"}
-        update_keys = [key for key in rows[0] if key not in skip]
+        update_keys = [key for key in normalized[0] if key not in skip]
 
-    stmt = insert(table).values(list(rows))
+    stmt = insert(table).values(normalized)
     if not update_keys:
         stmt = stmt.on_conflict_do_nothing(index_elements=list(conflict_keys))
     else:

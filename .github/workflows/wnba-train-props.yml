@@ -1,0 +1,81 @@
+name: WNBA Train Prop Models
+
+# Full train + S3 upload requires secrets:
+#   RAILWAY_TOKEN, POSTGRES_SERVICE_ID (prod DATABASE_URL)
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_REGION (or AWS_DEFAULT_REGION)
+# PR/offline validation: ml-model-quality.yml runs tests/test_wnba_ml_training.py (mocked).
+
+on:
+  workflow_dispatch:
+    inputs:
+      stat:
+        description: Prop stat to train
+        required: true
+        type: choice
+        options:
+          - points
+          - rebounds
+          - assists
+        default: points
+      start:
+        description: Training window start (YYYY-MM-DD)
+        required: true
+        default: "2024-05-01"
+      end:
+        description: Training window end (YYYY-MM-DD)
+        required: true
+        default: "2025-12-31"
+      upload:
+        description: Upload artifacts to S3 after MAE gate passes
+        required: true
+        type: boolean
+        default: false
+      dry_run:
+        description: Dataset row count only (no train/upload)
+        required: true
+        type: boolean
+        default: false
+
+jobs:
+  train:
+    name: Train WNBA ${{ inputs.stat }} (${{ inputs.start }} – ${{ inputs.end }})
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Train prop model
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          ARGS=(--stat "${{ inputs.stat }}" --start "${{ inputs.start }}" --end "${{ inputs.end }}")
+          if [ "${{ inputs.upload }}" = "true" ]; then
+            ARGS+=(--upload)
+          fi
+          if [ "${{ inputs.dry_run }}" = "true" ]; then
+            ARGS+=(--dry-run)
+          fi
+          python3 -m app.services.etl.wnba.ml_training "${ARGS[@]}"

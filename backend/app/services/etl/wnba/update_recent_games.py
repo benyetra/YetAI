@@ -13,13 +13,15 @@ from nba_api.stats.endpoints import leaguegamefinder  # type: ignore
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import WNBARecentGames
+from app.services.etl.wnba._boxscore_fetch import (
+    advanced_by_player_id,
+    fetch_advanced_boxscore,
+    player_game_row_from_boxscore,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
-from app.services.etl.wnba._wnba_stats import _retry
-from app.services.etl.wnba.backfill_wnba_history import (
-    _fetch_boxscore,
-    _minutes_to_float,
-)
+from app.services.etl.wnba.backfill_wnba_history import _fetch_boxscore
+from app.services.etl.wnba._wnba_stats import StatsNbaUnavailable
 
 logger = logging.getLogger(__name__)
 
@@ -47,10 +49,8 @@ def _process_day(db, target_date: date) -> int:
         if len(teams) != 2:
             # Fallback: derive opponent map from boxscore rows
             try:
-                boxscore_rows = _retry(
-                    lambda: _fetch_boxscore(game_id), f"boxscore({game_id})"
-                )
-            except Exception as exc:
+                boxscore_rows = _fetch_boxscore(game_id, profile="default")
+            except StatsNbaUnavailable as exc:
                 logger.warning(
                     "boxscore fetch failed for %s after retries: %s", game_id, exc
                 )
@@ -80,14 +80,19 @@ def _process_day(db, target_date: date) -> int:
                 home_team_id = int(t["TEAM_ID"])
 
         try:
-            boxscore_rows = _retry(
-                lambda: _fetch_boxscore(game_id), f"boxscore({game_id})"
-            )
-        except Exception as exc:
+            boxscore_rows = _fetch_boxscore(game_id, profile="default")
+        except StatsNbaUnavailable as exc:
             logger.warning(
                 "boxscore fetch failed for %s after retries: %s", game_id, exc
             )
             continue
+
+        try:
+            adv_rows = fetch_advanced_boxscore(game_id, profile="default")
+        except StatsNbaUnavailable as exc:
+            logger.warning("advanced boxscore fetch failed for %s: %s", game_id, exc)
+            adv_rows = []
+        adv_map = advanced_by_player_id(adv_rows)
 
         for row in boxscore_rows:
             player_id = row.get("PLAYER_ID")
@@ -98,32 +103,13 @@ def _process_day(db, target_date: date) -> int:
             if opp_id is None:
                 continue
             upsert_rows.append(
-                {
-                    "player_id": int(player_id),
-                    "game_date": target_date,
-                    "opponent_team_id": opp_id,
-                    "points": row.get("PTS"),
-                    "fg_attempts": row.get("FGA"),
-                    "fg_percentage": row.get("FG_PCT"),
-                    "three_pt_attempts": row.get("FG3A"),
-                    "three_pt_percentage": row.get("FG3_PCT"),
-                    "three_pt_made": row.get("FG3M"),
-                    "ft_attempts": row.get("FTA"),
-                    "ft_percentage": row.get("FT_PCT"),
-                    "minutes": _minutes_to_float(row.get("MIN")),
-                    "field_goals_made": row.get("FGM"),
-                    "free_throws_made": row.get("FTM"),
-                    "offensive_rebounds": row.get("OREB"),
-                    "defensive_rebounds": row.get("DREB"),
-                    "rebounds": row.get("REB"),
-                    "assists": row.get("AST"),
-                    "turnovers": row.get("TOV"),
-                    "steals": row.get("STL"),
-                    "blocks": row.get("BLK"),
-                    "personal_fouls": row.get("PF"),
-                    "home_game": (home_team_id == team_id) if home_team_id else None,
-                    "plus_minus": row.get("PLUS_MINUS"),
-                }
+                player_game_row_from_boxscore(
+                    row,
+                    game_date=target_date,
+                    opponent_team_id=opp_id,
+                    home_game=(home_team_id == team_id) if home_team_id else None,
+                    adv_row=adv_map.get(int(player_id)),
+                )
             )
     if upsert_rows:
         upsert_many(

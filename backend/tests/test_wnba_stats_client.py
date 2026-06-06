@@ -68,3 +68,24 @@ def test_fast_profile_raises_stats_nba_unavailable_after_two_attempts(monkeypatc
 
     assert cls.call_count == 2
     assert len(sleeps) == 1
+
+
+def test_fetch_games_for_season_passes_backfill_timeout():
+    with patch(
+        "app.services.etl.wnba._wnba_stats.leaguegamefinder.LeagueGameFinder"
+    ) as cls:
+        instance = MagicMock()
+        instance.get_normalized_dict.return_value = {
+            "LeagueGameFinderResults": [{"GAME_ID": "1022200001"}]
+        }
+        cls.return_value = instance
+
+        rows = ws.fetch_games_for_season("2022", profile="backfill")
+
+    cls.assert_called_once_with(
+        league_id_nullable="10",
+        season_nullable="2022",
+        season_type_nullable="Regular Season",
+        timeout=(20, 120),
+    )
+    assert rows[0]["GAME_ID"] == "1022200001"

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from app.services.etl.wnba import update_team_defense_stats as uds
 
 
-def test_run_joins_three_dashboards(monkeypatch):
+def test_run_joins_opponent_base_and_advanced_dashboards(monkeypatch):
     mock_db = MagicMock(name="Session")
     monkeypatch.setattr(
         "app.services.etl.wnba.update_team_defense_stats.SessionLocal", lambda: mock_db

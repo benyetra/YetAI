@@ -74,9 +74,12 @@ def test_backfill_one_season_writes_one_row_per_player_game(monkeypatch):
 
     with (
         patch(
-            "app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season"
+            "app.services.etl.wnba.backfill_wnba_history.fetch_games_for_season"
         ) as gf,
         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf,
+        patch(
+            "app.services.etl.wnba.backfill_wnba_history.fetch_advanced_boxscore"
+        ) as af,
         patch(
             "app.services.etl.wnba.backfill_wnba_history.upsert_many",
             side_effect=lambda _db, _model, rows, **kwargs: len(rows),
@@ -84,6 +87,16 @@ def test_backfill_one_season_writes_one_row_per_player_game(monkeypatch):
     ):
         gf.return_value = games_payload
         bf.return_value = boxscore_payload
+        af.return_value = [
+            {
+                "PLAYER_ID": 100,
+                "USG_PCT": 0.28,
+                "AST_PCT": 0.2,
+                "OFF_RATING": 105.0,
+                "DEF_RATING": 100.0,
+                "PACE": 98.0,
+            }
+        ]
         result = bw.run(seasons=["2025"])
 
     assert result["status"] == "ok"
@@ -97,9 +110,13 @@ def test_backfill_skips_games_with_no_boxscore(monkeypatch):
     )
     with (
         patch(
-            "app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season"
+            "app.services.etl.wnba.backfill_wnba_history.fetch_games_for_season"
         ) as gf,
         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf,
+        patch(
+            "app.services.etl.wnba.backfill_wnba_history.fetch_advanced_boxscore",
+            return_value=[],
+        ),
     ):
         gf.return_value = [
             {
@@ -165,9 +182,13 @@ def test_backfill_idempotent_on_rerun(monkeypatch):
     ]
     with (
         patch(
-            "app.services.etl.wnba.backfill_wnba_history._fetch_games_for_season"
+            "app.services.etl.wnba.backfill_wnba_history.fetch_games_for_season"
         ) as gf,
         patch("app.services.etl.wnba.backfill_wnba_history._fetch_boxscore") as bf,
+        patch(
+            "app.services.etl.wnba.backfill_wnba_history.fetch_advanced_boxscore",
+            return_value=[],
+        ),
         patch(
             "app.services.etl.wnba.backfill_wnba_history.upsert_many",
             side_effect=lambda _db, _model, rows, **kwargs: len(rows),

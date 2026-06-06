@@ -1,7 +1,8 @@
 """Refresh pred_wnba_team_defense_stats from stats.wnba.com.
 
-Joins Base + Defense + Advanced dashboards on TEAM_ID and upserts to
-pred_wnba_team_defense_stats. Mirrors NBA update_team_defense_stats.
+Joins Base + Opponent + Advanced dashboards on TEAM_ID and upserts to
+pred_wnba_team_defense_stats. WNBA Opponent measure holds OPP_PTS/AST/REB;
+the Defense measure only has paint/FB breakdown fields.
 """
 
 from __future__ import annotations
@@ -28,8 +29,8 @@ def run(season: str | None = None, *, profile: str = "default") -> dict:
         base = _wnba_stats.fetch_team_dashboard(
             season=season, measure_type="Base", profile=profile
         )
-        defense = _wnba_stats.fetch_team_dashboard(
-            season=season, measure_type="Defense", profile=profile
+        opponent = _wnba_stats.fetch_team_dashboard(
+            season=season, measure_type="Opponent", profile=profile
         )
         advanced = _wnba_stats.fetch_team_dashboard(
             season=season, measure_type="Advanced", profile=profile
@@ -47,7 +48,7 @@ def run(season: str | None = None, *, profile: str = "default") -> dict:
     advanced_by_id = {row["TEAM_ID"]: row for row in advanced}
 
     upsert_rows = []
-    for row in defense:
+    for row in opponent:
         team_id = int(row["TEAM_ID"])
         b = base_by_id.get(team_id, {})
         adv = advanced_by_id.get(team_id, {})
@@ -79,7 +80,7 @@ def run(season: str | None = None, *, profile: str = "default") -> dict:
     try:
         upsert_many(db, WNBATeamDefenseStats, upsert_rows, conflict_keys=["team_id"])
         db.commit()
-        return {"status": "ok", "season": season, "teams": len(defense)}
+        return {"status": "ok", "season": season, "teams": len(opponent)}
     finally:
         db.close()
 
