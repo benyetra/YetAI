@@ -19,6 +19,7 @@ import logging
 from datetime import date
 from typing import Any
 
+import pandas as pd
 from sportsdataverse.wnba import load_wnba_player_boxscore
 
 from app.core.database import SessionLocal
@@ -37,6 +38,20 @@ logger = logging.getLogger(__name__)
 REGULAR_SEASON_TYPE = 2
 
 
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except (TypeError, ValueError):
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _row_to_upsert(
     row: Any,
     *,
@@ -51,63 +66,29 @@ def _row_to_upsert(
         "player_id": player_id,
         "game_date": game_date,
         "opponent_team_id": opponent_team_id,
-        "points": float(row["points"]) if row.get("points") is not None else None,
-        "fg_attempts": (
-            float(row["field_goals_attempted"])
-            if row.get("field_goals_attempted") is not None
-            else None
-        ),
+        "points": _optional_float(row.get("points")),
+        "fg_attempts": _optional_float(row.get("field_goals_attempted")),
         "fg_percentage": None,
-        "three_pt_attempts": (
-            float(row["three_point_field_goals_attempted"])
-            if row.get("three_point_field_goals_attempted") is not None
-            else None
+        "three_pt_attempts": _optional_float(
+            row.get("three_point_field_goals_attempted")
         ),
         "three_pt_percentage": None,
-        "three_pt_made": (
-            float(row["three_point_field_goals_made"])
-            if row.get("three_point_field_goals_made") is not None
-            else None
-        ),
-        "ft_attempts": (
-            float(row["free_throws_attempted"])
-            if row.get("free_throws_attempted") is not None
-            else None
-        ),
+        "three_pt_made": _optional_float(row.get("three_point_field_goals_made")),
+        "ft_attempts": _optional_float(row.get("free_throws_attempted")),
         "ft_percentage": None,
-        "minutes": float(row["minutes"]) if row.get("minutes") is not None else None,
-        "field_goals_made": (
-            float(row["field_goals_made"])
-            if row.get("field_goals_made") is not None
-            else None
-        ),
-        "free_throws_made": (
-            float(row["free_throws_made"])
-            if row.get("free_throws_made") is not None
-            else None
-        ),
-        "offensive_rebounds": (
-            float(row["offensive_rebounds"])
-            if row.get("offensive_rebounds") is not None
-            else None
-        ),
-        "defensive_rebounds": (
-            float(row["defensive_rebounds"])
-            if row.get("defensive_rebounds") is not None
-            else None
-        ),
-        "rebounds": float(row["rebounds"]) if row.get("rebounds") is not None else None,
-        "assists": float(row["assists"]) if row.get("assists") is not None else None,
-        "turnovers": (
-            float(row["turnovers"]) if row.get("turnovers") is not None else None
-        ),
-        "steals": float(row["steals"]) if row.get("steals") is not None else None,
-        "blocks": float(row["blocks"]) if row.get("blocks") is not None else None,
-        "personal_fouls": float(row["fouls"]) if row.get("fouls") is not None else None,
+        "minutes": _optional_float(row.get("minutes")),
+        "field_goals_made": _optional_float(row.get("field_goals_made")),
+        "free_throws_made": _optional_float(row.get("free_throws_made")),
+        "offensive_rebounds": _optional_float(row.get("offensive_rebounds")),
+        "defensive_rebounds": _optional_float(row.get("defensive_rebounds")),
+        "rebounds": _optional_float(row.get("rebounds")),
+        "assists": _optional_float(row.get("assists")),
+        "turnovers": _optional_float(row.get("turnovers")),
+        "steals": _optional_float(row.get("steals")),
+        "blocks": _optional_float(row.get("blocks")),
+        "personal_fouls": _optional_float(row.get("fouls")),
         "home_game": home_game,
-        "plus_minus": (
-            float(row["plus_minus"]) if row.get("plus_minus") is not None else None
-        ),
+        "plus_minus": _optional_float(row.get("plus_minus")),
     }
     return enrich_boxscore_row(base)
 

@@ -25,6 +25,7 @@ from app.services.etl.wnba._expected_minutes import (
     is_home_bool,
 )
 from app.services.etl.wnba._shooting_metrics import shooting_from_row
+from app.services.etl.wnba._training_context import TrainingContext
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,31 @@ def _player_team_name(db, player_id: int) -> str:
     return team_stats.team_name if team_stats else ""
 
 
+def _game_line_values(
+    game_line: WNBAGameLines | None,
+    *,
+    opponent_team_id: int,
+    team_name: str,
+) -> tuple[float, float, float, float]:
+    """Return (market_total, market_spread, is_home, is_favorite)."""
+    if not game_line:
+        return 0.0, 0.0, 0.0, 0.0
+
+    is_home = 0.0
+    if team_name and game_line.home_team_name:
+        is_home = 1.0 if team_name.lower() in game_line.home_team_name.lower() else 0.0
+    elif game_line.away_team_id == opponent_team_id:
+        is_home = 1.0
+    elif game_line.home_team_id == opponent_team_id:
+        is_home = 0.0
+
+    spread = game_line.spread_home if is_home else game_line.spread_away
+    spread_val = float(spread or 0.0)
+    total_val = float(game_line.total or 0.0)
+    is_favorite = 1.0 if spread_val < 0 else 0.0
+    return total_val, spread_val, is_home, is_favorite
+
+
 def _game_line_context(
     db,
     *,
@@ -96,22 +122,9 @@ def _game_line_context(
         )
         .first()
     )
-    if not game_line:
-        return 0.0, 0.0, 0.0, 0.0
-
-    is_home = 0.0
-    if team_name and game_line.home_team_name:
-        is_home = 1.0 if team_name.lower() in game_line.home_team_name.lower() else 0.0
-    elif game_line.away_team_id == opponent_team_id:
-        is_home = 1.0
-    elif game_line.home_team_id == opponent_team_id:
-        is_home = 0.0
-
-    spread = game_line.spread_home if is_home else game_line.spread_away
-    spread_val = float(spread or 0.0)
-    total_val = float(game_line.total or 0.0)
-    is_favorite = 1.0 if spread_val < 0 else 0.0
-    return total_val, spread_val, is_home, is_favorite
+    return _game_line_values(
+        game_line, opponent_team_id=opponent_team_id, team_name=team_name
+    )
 
 
 def build_features(
@@ -121,21 +134,25 @@ def build_features(
     player_id: int,
     game_date: date,
     opponent_team_id: int,
+    ctx: TrainingContext | None = None,
 ) -> dict[str, float] | None:
     """Return feature dict, or None if the player has too thin a history."""
     if stat_col not in SUPPORTED_STATS:
         raise ValueError(f"unsupported stat: {stat_col}")
 
-    recent = (
-        db.query(WNBARecentGames)
-        .filter(
-            WNBARecentGames.player_id == player_id,
-            WNBARecentGames.game_date < game_date,
+    if ctx is not None:
+        recent = ctx.recent_games_before(player_id, game_date)
+    else:
+        recent = (
+            db.query(WNBARecentGames)
+            .filter(
+                WNBARecentGames.player_id == player_id,
+                WNBARecentGames.game_date < game_date,
+            )
+            .order_by(WNBARecentGames.game_date.desc())
+            .limit(LOOKBACK_GAMES)
+            .all()
         )
-        .order_by(WNBARecentGames.game_date.desc())
-        .limit(LOOKBACK_GAMES)
-        .all()
-    )
     if len(recent) < MIN_GAMES_REQUIRED:
         return None
 
@@ -238,13 +255,20 @@ def build_features(
         features[f"{stat_col}_matchup_mult"] = 1.0
 
     # Minutes / role — historical replay of weighted expected minutes
-    team_name = _player_team_name(db, player_id)
-    market_total, market_spread, is_home, is_favorite = _game_line_context(
-        db,
-        game_date=game_date,
-        opponent_team_id=opponent_team_id,
-        team_name=team_name,
-    )
+    if ctx is not None:
+        team_name = ctx.player_team_name(player_id)
+        game_line = ctx.game_line_for_team(game_date, opponent_team_id, team_name)
+        market_total, market_spread, is_home, is_favorite = _game_line_values(
+            game_line, opponent_team_id=opponent_team_id, team_name=team_name
+        )
+    else:
+        team_name = _player_team_name(db, player_id)
+        market_total, market_spread, is_home, is_favorite = _game_line_context(
+            db,
+            game_date=game_date,
+            opponent_team_id=opponent_team_id,
+            team_name=team_name,
+        )
     home_game = is_home_bool(is_home, team_name=team_name)
     expected = historical_expected_minutes(
         recent, game_date=game_date, home_game=home_game
@@ -264,16 +288,20 @@ def build_features(
         features[f"{col}_avg"] = _avg_or_none(vals) or 0.0
 
     # Opponent defense / pace
-    opp_def = (
-        db.query(WNBATeamDefenseStats)
-        .filter(WNBATeamDefenseStats.team_id == opponent_team_id)
-        .first()
-    )
-    opp_off = (
-        db.query(WNBATeamOffenseStats)
-        .filter(WNBATeamOffenseStats.team_id == opponent_team_id)
-        .first()
-    )
+    if ctx is not None:
+        opp_def = ctx.opponent_defense(opponent_team_id)
+        opp_off = ctx.opponent_offense(opponent_team_id)
+    else:
+        opp_def = (
+            db.query(WNBATeamDefenseStats)
+            .filter(WNBATeamDefenseStats.team_id == opponent_team_id)
+            .first()
+        )
+        opp_off = (
+            db.query(WNBATeamOffenseStats)
+            .filter(WNBATeamOffenseStats.team_id == opponent_team_id)
+            .first()
+        )
     opp_col = _OPP_STAT_ALLOWED_COL[stat_col]
     features[f"opp_{opp_col}"] = (
         (getattr(opp_def, opp_col, None) or 0.0) if opp_def else 0.0

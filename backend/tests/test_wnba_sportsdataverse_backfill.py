@@ -32,6 +32,28 @@ def test_run_requires_player_id_cache_by_default():
     assert result["reason"] == "missing_player_id_cache"
 
 
+def test_row_to_upsert_handles_pandas_na():
+    import pandas as pd
+
+    row = {
+        "game_date": date(2024, 5, 16),
+        "points": pd.NA,
+        "field_goals_attempted": None,
+        "minutes": 12.0,
+        "assists": 1,
+        "rebounds": 2,
+    }
+    out = sdv._row_to_upsert(
+        row,
+        player_id=100,
+        opponent_team_id=200,
+        home_game=False,
+    )
+    assert out["points"] is None
+    assert out["fg_attempts"] is None
+    assert out["minutes"] == 12.0
+
+
 def test_row_to_upsert_derives_shooting():
     row = {
         "game_date": date(2024, 5, 16),
