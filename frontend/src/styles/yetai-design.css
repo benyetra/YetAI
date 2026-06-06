@@ -239,7 +239,7 @@ input { font: inherit; }
 .notif-dot::after { content: ''; position: absolute; top: 7px; right: 7px; width: 6px; height: 6px; background: var(--live); border-radius: 50%; box-shadow: 0 0 0 2px var(--surface); }
 
 /* ────── Content area ────── */
-.content { padding: 28px; max-width: 1500px; width: 100%; }
+.content { padding: 28px; max-width: 1280px; width: 100%; margin: 0 auto; }
 .content.with-rail { display: grid; grid-template-columns: 1fr 340px; gap: 24px; }
 .content.with-rail .col-main { min-width: 0; }
 .content.with-rail .col-rail { display: flex; flex-direction: column; gap: 14px; }
@@ -1505,16 +1505,38 @@ input { font: inherit; }
 /* Two-column dashboard / detail splits — stack on tablet & mobile */
 .split-2-col {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, 1fr);
   gap: var(--gap-grid);
 }
 .split-2-col > * {
   min-width: 0;
 }
+@media (min-width: 1100px) {
+  .split-2-col {
+    grid-template-columns: minmax(0, 1fr) minmax(340px, 1fr);
+  }
+}
 @media (max-width: 900px) {
   .split-2-col {
     grid-template-columns: 1fr;
   }
+}
+
+.dashboard-empty-picks {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 18px;
+  margin-bottom: 28px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: left;
+}
+.dashboard-empty-picks a {
+  color: var(--accent);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 /* Screen page header (greeting + actions) */
@@ -1617,9 +1639,9 @@ input { font: inherit; }
     margin-bottom: 18px;
     gap: 10px;
   }
-  .screen-header-actions {
-    width: 100%;
-    justify-content: flex-start;
+  .dashboard-empty-picks {
+    flex-direction: column;
+    align-items: flex-start;
   }
   .type-page-title {
     font-size: clamp(1.35rem, 5.5vw, 1.65rem);

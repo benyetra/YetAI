@@ -34,7 +34,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <Layout requiresAuth fullWidth>
+    <Layout requiresAuth>
       <Dashboard />
     </Layout>
   );

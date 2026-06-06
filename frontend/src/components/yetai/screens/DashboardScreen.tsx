@@ -2,7 +2,7 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Clock, DollarSign, Flame, Plus, Sparkles, Target } from 'lucide-react';
+import { Clock, DollarSign, Flame, Sparkles, Target } from 'lucide-react';
 import { PerformanceChart, RecentActivity } from '../activity';
 import { PickCard } from '../picks';
 import { StatTile } from '../primitives';
@@ -65,9 +65,6 @@ export default function DashboardScreen({
         <div className="screen-header-actions hide-mobile">
           <Link href="/bets" className="btn">
             <Clock size={14} /> History
-          </Link>
-          <Link href="/bet" className="btn btn-primary">
-            <Plus size={14} /> Place Bet
           </Link>
         </div>
       </div>
@@ -148,8 +145,9 @@ export default function DashboardScreen({
           ))}
         </div>
       ) : (
-        <div className="card" style={{ padding: 24, marginBottom: 28, textAlign: 'center', color: 'var(--text-3)' }}>
-          No AI picks published yet. Check back soon or visit YetAI Bets.
+        <div className="card dashboard-empty-picks">
+          <span>No AI picks published yet. Check back soon.</span>
+          <Link href="/predictions">Visit YetAI Bets →</Link>
         </div>
       )}
 
