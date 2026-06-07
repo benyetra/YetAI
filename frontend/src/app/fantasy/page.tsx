@@ -68,7 +68,7 @@ interface FantasyLeague {
   };
 }
 
-interface Player {
+interface SearchResultPlayer {
   player_id: string;
   name: string;
   position: string;
@@ -594,6 +594,10 @@ export default function FantasyPage() {
       console.log('About to call fantasyAPI.searchPlayers...');
       const response = await fantasyAPI.searchPlayers({
         ...searchFilters,
+        age_min: searchFilters.age_min ?? undefined,
+        age_max: searchFilters.age_max ?? undefined,
+        experience_min: searchFilters.experience_min ?? undefined,
+        experience_max: searchFilters.experience_max ?? undefined,
         limit: 50,
         offset: 0
       });
@@ -669,11 +673,17 @@ export default function FantasyPage() {
       console.log('Compare response:', response);
       
       if (response.status === 'success') {
-        console.log('Loading advanced analytics for comparison...');
-        
-        // Load analytics data for each player
-        const playersWithAnalytics = await Promise.all(
-          response.comparison.players.map(async (player: any) => {
+        const players = response.comparison.players ?? [];
+        const hasServerAnalytics = players.some(
+          (p: { analytics?: Record<string, unknown> }) =>
+            p.analytics && Object.keys(p.analytics).length > 0
+        );
+
+        let playersWithAnalytics = players;
+        if (!hasServerAnalytics) {
+          console.log('Loading advanced analytics for comparison (client fallback)...');
+          playersWithAnalytics = await Promise.all(
+            players.map(async (player: any) => {
             try {
               // Load recent 5 weeks of analytics and trends
               const [analyticsResponse, trendsResponse, efficiencyResponse] = await Promise.all([
@@ -751,6 +761,7 @@ export default function FantasyPage() {
             }
           })
         );
+        }
 
         setComparisonData({
           ...response.comparison,
@@ -3052,8 +3063,8 @@ isMax ? 'bg-green-500' :
                           return { player: p, score };
                         });
                         
-                        const winner = scores.reduce((prev, curr) => curr.score > prev.score ? curr : prev);
-                        const loser = scores.find(s => s.player.player_id !== winner.player.player_id);
+                        const winner = scores.reduce((prev: { player: any; score: number }, curr: { player: any; score: number }) => curr.score > prev.score ? curr : prev);
+                        const loser = scores.find((s: { player: any; score: number }) => s.player.player_id !== winner.player.player_id);
                         
                         return (
                           <>

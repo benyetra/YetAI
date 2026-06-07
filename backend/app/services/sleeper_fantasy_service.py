@@ -665,3 +665,16 @@ class SleeperFantasyService(FantasyPlatformInterface):
         except Exception as e:
             logger.error(f"Failed to get transactions for league {league_id}: {str(e)}")
             return []
+
+    async def get_league_traded_picks(self, league_id: str) -> List[Dict[str, Any]]:
+        """Fetch traded/future draft picks for a league (Sleeper dynasty/redraft)."""
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    f"{self.base_url}/league/{league_id}/traded_picks"
+                )
+                response.raise_for_status()
+                return response.json() or []
+        except Exception as e:
+            logger.warning("Failed to get traded picks for league %s: %s", league_id, e)
+            return []

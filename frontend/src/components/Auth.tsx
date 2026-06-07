@@ -688,11 +688,12 @@ export function UserMenu() {
 }
 
 // Auth Modal Component
-export function AuthModal({ isOpen, onClose }: {
+export function AuthModal({ isOpen, onClose, initialMode = 'login' }: {
   isOpen: boolean,
-  onClose: () => void
+  onClose: () => void,
+  initialMode?: 'login' | 'signup',
 }) {
-  const [mode, setMode] = useState('login'); // 'login' or 'signup'
+  const [mode, setMode] = useState(initialMode);
 
   if (!isOpen) return null;
 

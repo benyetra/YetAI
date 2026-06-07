@@ -171,7 +171,7 @@ export default function BettingDashboard() {
   };
   
   // Send chat message
-  const sendMessage = async (messageText = null) => {
+  const sendMessage = async (messageText: string | null = null) => {
     const messageToSend = messageText || currentMessage.trim();
     if (!messageToSend) return;
     
@@ -192,7 +192,7 @@ export default function BettingDashboard() {
       });
       
       if (response && response.message) {
-        const aiMessage = {
+        const aiMessage: Message = {
           role: 'assistant',
           content: response.message,
           timestamp: response.timestamp || new Date().toISOString(),
@@ -202,7 +202,7 @@ export default function BettingDashboard() {
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      const errorMessage = {
+      const errorMessage: Message = {
         role: 'assistant',
         content: "I'm sorry, I'm having trouble processing that request right now. Please try again.",
         timestamp: new Date().toISOString(),

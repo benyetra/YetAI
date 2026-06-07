@@ -845,7 +845,7 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
                       )}
                       
                       <div className="flex items-center space-x-4 text-sm text-gray-600">
-                        <span>Odds: {formatOdds(bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay' ? bet.total_odds : bet.odds)}</span>
+                        <span>Odds: {formatOdds((bet.bet_type === 'parlay' || bet.bet_type === 'live_parlay' ? bet.total_odds : bet.odds) ?? 0)}</span>
                         <span>•</span>
                         <span>{formatLocalDateTime(bet.placed_at)}</span>
                         {bet.game_id && !bet.home_team && !bet.away_team && (
@@ -931,7 +931,7 @@ const BetHistory: React.FC<BetHistoryProps> = ({ embedded = false }) => {
                       selection: `Parlay (${selectedParlay.leg_count} legs)`,
                       odds: selectedParlay.total_odds,
                       legs: selectedParlay.legs
-                    })}
+                    } as Bet)}
                     className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                     title="Share this parlay"
                   >

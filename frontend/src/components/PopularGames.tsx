@@ -80,6 +80,7 @@ export function PopularGames({
   const [showPropsModal, setShowPropsModal] = useState(false);
   const [selectedProp, setSelectedProp] = useState<any>(null);
   const [showPropBetModal, setShowPropBetModal] = useState(false);
+  const [loadingLink, setLoadingLink] = useState<string | null>(null);
 
   const fetchPopularGames = useCallback(async (showLoader: boolean = true) => {
     try {
@@ -181,11 +182,11 @@ export function PopularGames({
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center space-x-2 text-sm text-gray-500">
           <Calendar className="w-4 h-4" />
-          <span>{formatFriendlyDate(game.commence_time || game.start_time)}</span>
+          <span>{formatFriendlyDate(game.commence_time || game.start_time || '')}</span>
         </div>
         <div className="flex items-center space-x-2 text-sm font-medium text-gray-700">
           <Clock className="w-4 h-4" />
-          <span>{formatLocalTime(game.commence_time || game.start_time)}</span>
+          <span>{formatLocalTime(game.commence_time || game.start_time || '')}</span>
         </div>
       </div>
 
@@ -205,11 +206,11 @@ export function PopularGames({
           <div className="flex items-center flex-wrap gap-2">
             <Tv className="w-4 h-4" />
             {/* Show networks array (new format) */}
-            {game.broadcast.networks && game.broadcast.networks.length > 0 ? (
+            {game.broadcast?.networks && game.broadcast.networks.length > 0 ? (
               game.broadcast.networks.map((network, idx) => (
                 <span key={idx}>
                   {getNetworkIcon(network)}
-                  {idx < game.broadcast.networks!.length - 1 && (
+                  {idx < (game.broadcast?.networks?.length ?? 0) - 1 && (
                     <span className="mx-1 text-gray-400">•</span>
                   )}
                 </span>

@@ -356,7 +356,7 @@ export default function TradeAnalyzer({
           }));
 
           setTeams(realTeams);
-          console.log('Loaded real teams from API:', realTeams.map(t => ({ id: t.id, name: t.name })));
+          console.log('Loaded real teams from API:', realTeams.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name })));
           return;
         }
       } else {
@@ -473,7 +473,7 @@ export default function TradeAnalyzer({
           console.log('Looking for roster for selected team:', selectedTeam.name, 'owner:', selectedTeam.owner_name);
           
           // Find the user that matches the selected team owner
-          const matchingUser = users.find(user => 
+          const matchingUser = users.find((user: any) => 
             user.display_name === selectedTeam.owner_name || 
             user.metadata?.team_name === selectedTeam.name ||
             user.display_name.toLowerCase() === selectedTeam.owner_name.toLowerCase()
@@ -481,9 +481,9 @@ export default function TradeAnalyzer({
           
           if (!matchingUser) {
             console.warn('No matching user found for selected team:', selectedTeam.name, 'owner:', selectedTeam.owner_name);
-            console.log('Available users:', users.map(u => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
+            console.log('Available users:', users.map((u: any) => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
             // Fallback to roster index mapping
-            const availableRosters = rosters.filter(r => r.players && r.players.length > 0);
+            const availableRosters = rosters.filter((r: any) => r.players && r.players.length > 0);
             const rosterIndex = ((teamId - 1) % availableRosters.length);
             const selectedRoster = availableRosters[rosterIndex];
             console.log('Fallback: Using roster at index:', rosterIndex, 'roster_id:', selectedRoster?.roster_id);
@@ -500,7 +500,7 @@ export default function TradeAnalyzer({
           }
           
           // Find the roster that belongs to this user
-          const selectedRoster = rosters.find(roster => roster.owner_id === matchingUser.user_id);
+          const selectedRoster = rosters.find((roster: any) => roster.owner_id === matchingUser.user_id);
           if (!selectedRoster) {
             console.error('No roster found for user:', matchingUser.display_name);
             setSelectedTeamPlayers([]);
@@ -612,7 +612,7 @@ export default function TradeAnalyzer({
         console.log('Looking for roster for team:', targetTeam.name, 'owner:', targetTeam.owner_name);
         
         // Find the user that matches the target team owner
-        const matchingUser = users.find(user => 
+        const matchingUser = users.find((user: any) => 
           user.display_name === targetTeam.owner_name || 
           user.metadata?.team_name === targetTeam.name ||
           user.display_name.toLowerCase() === targetTeam.owner_name.toLowerCase()
@@ -620,9 +620,9 @@ export default function TradeAnalyzer({
         
         if (!matchingUser) {
           console.warn('No matching user found for team:', targetTeam.name, 'owner:', targetTeam.owner_name);
-          console.log('Available users:', users.map(u => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
+          console.log('Available users:', users.map((u: any) => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
           // Fallback to roster index mapping
-          const availableRosters = rosters.filter(r => r.players && r.players.length > 0);
+          const availableRosters = rosters.filter((r: any) => r.players && r.players.length > 0);
           const rosterIndex = (teamId + 1) % availableRosters.length;
           const targetRoster = availableRosters[rosterIndex];
           console.log('Using fallback roster at index:', rosterIndex, 'roster_id:', targetRoster?.roster_id);
@@ -636,7 +636,7 @@ export default function TradeAnalyzer({
         }
         
         // Find the roster that belongs to this user
-        const targetRoster = rosters.find(roster => roster.owner_id === matchingUser.user_id);
+        const targetRoster = rosters.find((roster: any) => roster.owner_id === matchingUser.user_id);
         if (!targetRoster) {
           console.error('No roster found for user:', matchingUser.display_name);
           setTargetTeamPlayers([]);
@@ -830,11 +830,7 @@ export default function TradeAnalyzer({
               ...p,
               trade_value: p.trade_value || calculateTradeValue(p, leagueRules)
             })),
-            tradeable_picks: [
-              { pick_id: 1, season: 2025, round: 1, description: '2025 1st Round Pick', trade_value: 35 },
-              { pick_id: 2, season: 2025, round: 2, description: '2025 2nd Round Pick', trade_value: 18 },
-              { pick_id: 3, season: 2025, round: 3, description: '2025 3rd Round Pick', trade_value: 8 }
-            ]
+            tradeable_picks: [],
           },
           trade_strategy: {
             competitive_analysis: {},

@@ -174,7 +174,7 @@ export default function YetaiBetsView() {
           setShowModal(false);
           setSelectedBet(null);
         }}
-        bet={selectedBet}
+        bet={selectedBet as React.ComponentProps<typeof YetAIBetModal>['bet']}
         onBetPlaced={() => {
           setShowModal(false);
           setSelectedBet(null);

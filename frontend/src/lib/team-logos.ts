@@ -45,8 +45,6 @@ const NFL_SLUG_BY_ABBR: Record<string, string> = {
 const MLB_NAME_ALIASES: Record<string, string> = {
   athletics: 'athletics',
   'oakland athletics': 'athletics',
-  'oakland a\'s': 'athletics',
-  "oakland a's": 'athletics',
   'cleveland indians': 'cleveland_guardians',
 };
 
