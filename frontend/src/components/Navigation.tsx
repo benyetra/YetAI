@@ -24,6 +24,7 @@ import {
   LineChart,
 } from 'lucide-react';
 import { useAuth } from './Auth';
+import { Avatar } from './Avatar';
 import { useNotifications } from './NotificationProvider';
 import { WebSocketIndicator } from './WebSocketIndicator';
 import { NotificationPanel } from './NotificationPanel';
@@ -84,16 +85,6 @@ function getRouteLabel(pathname: string): string {
     }
   }
   return 'Dashboard';
-}
-
-function getUserInitials(user: { first_name?: string; last_name?: string; username?: string }): string {
-  if (user.first_name && user.last_name) {
-    return `${user.first_name[0]}${user.last_name[0]}`.toUpperCase();
-  }
-  if (user.first_name) {
-    return user.first_name.slice(0, 2).toUpperCase();
-  }
-  return (user.username || 'U').slice(0, 2).toUpperCase();
 }
 
 type MobileNavContextValue = {
@@ -273,7 +264,17 @@ export function Sidebar() {
 
           {isAuthenticated && user ? (
             <div className="user-card">
-              <div className="user-avatar">{getUserInitials(user)}</div>
+              <Avatar
+                user={{
+                  id: user.id,
+                  email: user.email,
+                  username: user.username,
+                  first_name: user.first_name,
+                  last_name: user.last_name,
+                  avatar_url: user.avatar_url,
+                }}
+                size="sidebar"
+              />
               <div className="user-meta">
                 <div className="user-name">{user.first_name || user.username}</div>
                 <div className="user-tier">

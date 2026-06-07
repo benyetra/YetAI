@@ -11,8 +11,9 @@ interface AvatarProps {
     username?: string;
     first_name?: string;
     last_name?: string;
+    avatar_url?: string;
   };
-  size?: 'sm' | 'md' | 'lg' | 'xl';
+  size?: 'sidebar' | 'sm' | 'md' | 'lg' | 'xl';
   className?: string;
   showFallback?: boolean;
 }
@@ -38,10 +39,19 @@ export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
 
   // Size mappings
   const sizeClasses = {
+    sidebar: 'w-[30px] h-[30px]',
     sm: 'w-8 h-8',
     md: 'w-10 h-10',
     lg: 'w-16 h-16',
-    xl: 'w-24 h-24'
+    xl: 'w-24 h-24',
+  };
+
+  const radiusClasses = {
+    sidebar: 'rounded-[8px]',
+    sm: 'rounded-full',
+    md: 'rounded-full',
+    lg: 'rounded-full',
+    xl: 'rounded-full',
   };
 
   // Filter out width and height classes from className to prevent conflicts
@@ -52,10 +62,11 @@ export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
     .join(' ');
 
   const iconSizes = {
+    sidebar: 'w-4 h-4',
     sm: 'w-4 h-4',
     md: 'w-5 h-5',
     lg: 'w-8 h-8',
-    xl: 'w-12 h-12'
+    xl: 'w-12 h-12',
   };
 
   const textSizes = {
@@ -73,7 +84,17 @@ export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
 
   const loadAvatar = async () => {
     if (!user?.id) return;
-    
+
+    if (user.avatar_url) {
+      let url = user.avatar_url;
+      if (url.includes('/uploads/')) {
+        url += `?t=${Date.now()}`;
+      }
+      setAvatarUrl(url);
+      setError(false);
+      return;
+    }
+
     setLoading(true);
     try {
       const response = await apiClient.get(`/api/auth/avatar/${user.id}`);
@@ -117,12 +138,13 @@ export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
     const hash = user.email.split('').reduce((a, b) => a + b.charCodeAt(0), 0);
     const color = colors[hash % colors.length];
 
-    const svgSize = size === 'sm' ? 32 : size === 'md' ? 40 : size === 'lg' ? 64 : 96;
-    const fontSize = size === 'sm' ? 12 : size === 'md' ? 16 : size === 'lg' ? 24 : 36;
+    const svgSize = size === 'sidebar' ? 30 : size === 'sm' ? 32 : size === 'md' ? 40 : size === 'lg' ? 64 : 96;
+    const fontSize = size === 'sidebar' ? 12 : size === 'sm' ? 12 : size === 'md' ? 16 : size === 'lg' ? 24 : 36;
+    const cornerRadius = size === 'sidebar' ? 8 : svgSize / 2;
 
     return `data:image/svg+xml;base64,${btoa(`
       <svg width="${svgSize}" height="${svgSize}" xmlns="http://www.w3.org/2000/svg">
-        <rect width="${svgSize}" height="${svgSize}" fill="${color}" rx="${svgSize / 2}"/>
+        <rect width="${svgSize}" height="${svgSize}" fill="${color}" rx="${cornerRadius}"/>
         <text x="${svgSize / 2}" y="${svgSize / 2}" font-family="Arial, sans-serif" font-size="${fontSize}" 
               fill="white" text-anchor="middle" dominant-baseline="central">
           ${initials}
@@ -135,40 +157,38 @@ export const Avatar = forwardRef<AvatarRef, AvatarProps>(function Avatar(
     setError(true);
   };
 
-  // Show loading state
+  const shapeClass = radiusClasses[size];
+
   if (loading) {
     return (
-      <div className={`${sizeClasses[size]} ${filteredClassName} rounded-full bg-gray-200 animate-pulse`} />
+      <div className={`${sizeClasses[size]} ${shapeClass} ${filteredClassName} bg-gray-200 animate-pulse`} />
     );
   }
 
-  // Show avatar image or fallback
   if (avatarUrl && !error) {
     return (
       <img
         src={avatarUrl}
         alt={`${user?.first_name || user?.username || 'User'} avatar`}
-        className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
+        className={`${sizeClasses[size]} ${shapeClass} ${filteredClassName} object-cover`}
         onError={handleImageError}
       />
     );
   }
 
-  // Show generated default avatar
   if (user?.email) {
     return (
       <img
         src={generateDefaultAvatar()}
         alt={`${user.first_name || user.username || user.email} avatar`}
-        className={`${sizeClasses[size]} ${filteredClassName} rounded-full object-cover`}
+        className={`${sizeClasses[size]} ${shapeClass} ${filteredClassName} object-cover`}
       />
     );
   }
 
-  // Show fallback icon if no user data
   if (showFallback) {
     return (
-      <div className={`${sizeClasses[size]} ${filteredClassName} rounded-full bg-gray-300 flex items-center justify-center`}>
+      <div className={`${sizeClasses[size]} ${shapeClass} ${filteredClassName} bg-gray-300 flex items-center justify-center`}>
         <User className={`${iconSizes[size]} text-gray-600`} />
       </div>
     );
