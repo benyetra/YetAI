@@ -82,3 +82,43 @@ async def test_sync_player_analytics_upserts_rows():
     assert result["season"] == 2024
     db.bulk_insert_mappings.assert_called_once()
     db.commit.assert_called_once()
+
+
+def test_load_weekly_frame_falls_back_to_stats_player_release():
+    from urllib.error import HTTPError
+
+    from app.services.etl.fantasy.sync_player_analytics import _load_weekly_frame
+
+    legacy_error = HTTPError(
+        "https://example.com/player_stats_2025.parquet", 404, "Not Found", {}, None
+    )
+    fallback_df = pd.DataFrame(
+        [
+            {
+                "player_id": "00-0031234",
+                "week": 1,
+                "fantasy_points_ppr": 12.0,
+                "passing_interceptions": 0,
+                "team": "KC",
+                "opponent_team": "BAL",
+            }
+        ]
+    )
+
+    with (
+        patch(
+            "nfl_data_py.import_weekly_data",
+            side_effect=legacy_error,
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics.pd.read_parquet",
+            return_value=fallback_df,
+        ) as read_parquet,
+    ):
+        weekly = _load_weekly_frame(2025)
+
+    assert len(weekly) == 1
+    assert weekly.iloc[0]["interceptions"] == 0
+    assert weekly.iloc[0]["recent_team"] == "KC"
+    read_parquet.assert_called_once()
+    assert "stats_player_week_2025.parquet" in read_parquet.call_args[0][0]

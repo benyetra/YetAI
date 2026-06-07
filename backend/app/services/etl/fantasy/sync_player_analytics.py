@@ -118,6 +118,29 @@ async def _build_gsis_to_fantasy_player_map(db: Session) -> Dict[str, int]:
     return gsis_to_fantasy
 
 
+def _normalize_weekly_frame(weekly: pd.DataFrame) -> pd.DataFrame:
+    """Align nflverse schema differences across releases."""
+    weekly = weekly.copy()
+    if (
+        "passing_interceptions" in weekly.columns
+        and "interceptions" not in weekly.columns
+    ):
+        weekly["interceptions"] = weekly["passing_interceptions"]
+    if "team" in weekly.columns and "recent_team" not in weekly.columns:
+        weekly["recent_team"] = weekly["team"]
+    weekly["player_id"] = weekly["player_id"].astype(str)
+    return weekly
+
+
+def _is_remote_not_found(exc: BaseException) -> bool:
+    from urllib.error import HTTPError
+
+    if isinstance(exc, HTTPError) and exc.code == 404:
+        return True
+    cause = getattr(exc, "__cause__", None)
+    return isinstance(cause, HTTPError) and cause.code == 404
+
+
 def _load_weekly_frame(season: int) -> pd.DataFrame:
     try:
         import nfl_data_py as nfl
@@ -127,12 +150,36 @@ def _load_weekly_frame(season: int) -> pd.DataFrame:
             "Install with: cd backend && .venv/bin/pip install nfl-data-py==0.3.3 --no-deps && .venv/bin/pip install appdirs fastparquet"
         ) from exc
 
-    weekly = nfl.import_weekly_data([season])
+    try:
+        weekly = nfl.import_weekly_data([season])
+        if weekly is not None and not weekly.empty:
+            return _normalize_weekly_frame(weekly)
+    except Exception as exc:
+        if not _is_remote_not_found(exc):
+            raise
+        logger.warning(
+            "nfl_data_py player_stats_%s.parquet unavailable (%s); "
+            "trying stats_player_week release",
+            season,
+            exc,
+        )
+
+    # nflverse moved weekly player stats to stats_player releases (2025+).
+    stats_player_url = (
+        "https://github.com/nflverse/nflverse-data/releases/download/"
+        f"stats_player/stats_player_week_{season}.parquet"
+    )
+    try:
+        weekly = pd.read_parquet(stats_player_url)
+    except Exception as exc:
+        if _is_remote_not_found(exc):
+            logger.warning("No nflverse weekly data for season %s", season)
+            return pd.DataFrame()
+        raise
+
     if weekly is None or weekly.empty:
         return pd.DataFrame()
-    weekly = weekly.copy()
-    weekly["player_id"] = weekly["player_id"].astype(str)
-    return weekly
+    return _normalize_weekly_frame(weekly)
 
 
 def _load_existing_rows(

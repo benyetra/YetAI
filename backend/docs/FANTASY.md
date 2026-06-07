@@ -47,6 +47,10 @@ Docker image installs the same set (see `backend/Dockerfile`).
 
 ### Manual ETL (fast path — analytics only)
 
+Uses nflverse weekly player stats. Seasons through 2024 load via `nfl-data-py`
+(`player_stats_{season}.parquet`). **2025+** fall back to
+`stats_player_week_{season}.parquet` when the legacy URL 404s.
+
 ```bash
 cd backend
 PYTHONPATH=. .venv/bin/python -c "
@@ -182,6 +186,7 @@ Full gate before push: `PYTHONPATH=. .venv/bin/python -m pytest -q`.
 | `ModuleNotFoundError: nfl_data_py` | Install nfl-data-py (see above) |
 | `503 Fantasy pipeline service unavailable` | Service loader / `fantasy_pipeline` registration |
 | Empty start/sit | `player_analytics` backfill; GSIS mapping in `fantasy_players` |
+| `HTTP Error 404` on season 2025+ ETL | Legacy nfl-data-py URL; upgrade to latest code with `stats_player_week` fallback |
 | Slow manual ETL (~15 min) | Default `sync_fantasy_players=False`; use `True` only when catalog stale |
 | `Unknown PG numeric type` on analytics | `PlayerAnalytics.game_script` must be `Float`; run Alembic if schema drift |
 
