@@ -96,7 +96,7 @@ def _load_weekly_frame(season: int) -> pd.DataFrame:
     except ImportError as exc:
         raise ImportError(
             "nfl_data_py is required for player_analytics ETL. "
-            "Install with: pip install nfl-data-py==0.3.3 --no-deps && pip install appdirs fastparquet"
+            "Install with: cd backend && .venv/bin/pip install nfl-data-py==0.3.3 --no-deps && .venv/bin/pip install appdirs fastparquet"
         ) from exc
 
     weekly = nfl.import_weekly_data([season])

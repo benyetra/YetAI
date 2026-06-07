@@ -17,7 +17,7 @@ requests==2.32.4
 
 # Sports Stats APIs (for player prop verification)
 # nfl-data-py metadata pins numpy<2; install with --no-deps (see Dockerfile). Local:
-#   pip install nfl-data-py==0.3.3 --no-deps && pip install appdirs fastparquet
+#   cd backend && .venv/bin/pip install nfl-data-py==0.3.3 --no-deps && .venv/bin/pip install appdirs fastparquet
 nba-api==1.11.4
 MLB-StatsAPI==1.9.0
 pybaseball>=2.2.7
