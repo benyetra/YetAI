@@ -26,6 +26,13 @@ from app.models.fantasy_models import (
     PlayerTrends,
     TradeStatus,
     TradeGrade,
+    FantasyPlatform,
+)
+
+from app.services.fantasy_draft_picks import (
+    lookup_pick_trade_value,
+    pick_owned_by_roster,
+    build_league_pick_registry,
 )
 
 logger = logging.getLogger(__name__)
@@ -81,7 +88,7 @@ class TradeAnalyzerService:
 
             # Validate trade assets
             validation_result = self._validate_trade_assets(
-                proposing_team_id, target_team_id, team1_gives, team2_gives
+                league_id, proposing_team_id, target_team_id, team1_gives, team2_gives
             )
 
             if not validation_result["valid"]:
@@ -164,16 +171,21 @@ class TradeAnalyzerService:
             return {"success": False, "error": str(e)}
 
     def _validate_trade_assets(
-        self, team1_id: int, team2_id: int, team1_gives: Dict, team2_gives: Dict
+        self,
+        league_id: int,
+        team1_id: int,
+        team2_id: int,
+        team1_gives: Dict,
+        team2_gives: Dict,
     ) -> Dict[str, Any]:
         """Validate that all trade assets are valid and owned by correct teams"""
         try:
-            # Validate team1 assets
-            if not self._validate_team_assets(team1_id, team1_gives):
+            pick_registry = self._load_pick_registry_for_league(league_id)
+
+            if not self._validate_team_assets(team1_id, team1_gives, pick_registry):
                 return {"valid": False, "error": "Team 1 doesn't own specified assets"}
 
-            # Validate team2 assets
-            if not self._validate_team_assets(team2_id, team2_gives):
+            if not self._validate_team_assets(team2_id, team2_gives, pick_registry):
                 return {"valid": False, "error": "Team 2 doesn't own specified assets"}
 
             # Ensure both sides are giving something
@@ -197,8 +209,18 @@ class TradeAnalyzerService:
             logger.error(f"Asset validation error: {str(e)}")
             return {"valid": False, "error": "Validation failed"}
 
-    def _validate_team_assets(self, team_id: int, assets: Dict) -> bool:
+    def _validate_team_assets(
+        self,
+        team_id: int,
+        assets: Dict,
+        pick_registry: Optional[Dict[int, Dict[str, Any]]] = None,
+    ) -> bool:
         """Validate team owns the specified assets"""
+        team = self.db.query(FantasyTeam).filter(FantasyTeam.id == team_id).first()
+        roster_id = (
+            int(team.platform_team_id) if team and team.platform_team_id else team_id
+        )
+
         # Validate players
         if assets.get("players"):
             roster_player_ids = (
@@ -219,22 +241,62 @@ class TradeAnalyzerService:
             if owned_players != len(assets["players"]):
                 return False
 
-        # Validate draft picks
+        # Validate draft picks (Sleeper registry first, DB fallback)
         if assets.get("picks"):
-            owned_picks = (
-                self.db.query(DraftPick.id)
-                .filter(
-                    DraftPick.id.in_(assets["picks"]),
-                    DraftPick.current_owner_team_id == team_id,
-                    DraftPick.is_tradeable == True,
+            if pick_registry:
+                for pick_id in assets["picks"]:
+                    if not pick_owned_by_roster(int(pick_id), roster_id, pick_registry):
+                        return False
+            else:
+                owned_picks = (
+                    self.db.query(DraftPick.id)
+                    .filter(
+                        DraftPick.id.in_(assets["picks"]),
+                        DraftPick.current_owner_team_id == team_id,
+                        DraftPick.is_tradeable == True,
+                    )
+                    .count()
                 )
-                .count()
-            )
 
-            if owned_picks != len(assets["picks"]):
-                return False
+                if owned_picks != len(assets["picks"]):
+                    return False
 
         return True
+
+    def _load_pick_registry_for_league(
+        self, league_id: int
+    ) -> Dict[int, Dict[str, Any]]:
+        """Build Sleeper pick registry when league is linked on Sleeper."""
+        league = (
+            self.db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+        )
+        if not league or league.platform != FantasyPlatform.SLEEPER:
+            return {}
+
+        platform_league_id = league.platform_league_id
+        if not platform_league_id:
+            return {}
+
+        try:
+            import httpx
+
+            with httpx.Client(timeout=10.0) as client:
+                league_resp = client.get(
+                    f"https://api.sleeper.app/v1/league/{platform_league_id}"
+                )
+                picks_resp = client.get(
+                    f"https://api.sleeper.app/v1/league/{platform_league_id}/traded_picks"
+                )
+                if league_resp.status_code != 200:
+                    return {}
+                league_doc = league_resp.json() or {}
+                traded_picks = (
+                    picks_resp.json() if picks_resp.status_code == 200 else []
+                )
+                return build_league_pick_registry(league_doc, traded_picks or [])
+        except Exception as exc:
+            logger.warning("Could not load Sleeper pick registry: %s", exc)
+            return {}
 
     # ============================================================================
     # COMPREHENSIVE TRADE EVALUATION ENGINE
@@ -360,6 +422,8 @@ class TradeAnalyzerService:
             "playoff_race": playoff_race,
             "is_dynasty": league.league_type == "dynasty",
             "playoff_teams": playoff_spots,
+            "pick_registry": self._load_pick_registry_for_league(league_id),
+            "season": league.season or datetime.now().year,
         }
 
     def _get_team_context(self, team_id: int, league_context: Dict) -> Dict[str, Any]:
@@ -800,30 +864,31 @@ class TradeAnalyzerService:
         return factors
 
     def _get_draft_pick_value(self, pick_id: int, league_context: Dict) -> float:
-        """Calculate draft pick trade value"""
+        """Calculate draft pick trade value."""
+        pick_registry = league_context.get("pick_registry") or {}
+        if pick_registry:
+            return lookup_pick_trade_value(int(pick_id), pick_registry)
+
         pick = self.db.query(DraftPick).filter(DraftPick.id == pick_id).first()
 
         if not pick:
             return 0.0
 
-        # Base values by round
         base_values = {
-            1: 25.0,  # 1st round
-            2: 15.0,  # 2nd round
-            3: 8.0,  # 3rd round
-            4: 4.0,  # 4th round
+            1: 25.0,
+            2: 15.0,
+            3: 8.0,
+            4: 4.0,
         }
 
         base_value = base_values.get(pick.round_number, 2.0)
 
-        # Adjust for dynasty vs redraft
         if league_context["is_dynasty"]:
-            base_value *= 1.3  # Pick premium in dynasty
+            base_value *= 1.3
 
-        # Time-based adjustments
         years_out = pick.season - league_context.get("season", 2025)
         if years_out > 0:
-            base_value *= 0.9**years_out  # Future picks worth less
+            base_value *= 0.9**years_out
 
         return base_value
 
@@ -1310,7 +1375,9 @@ class TradeAnalyzerService:
 
         # Draft pick risk
         if gives.get("picks"):
-            future_picks = [p for p in gives["picks"] if self._is_future_pick(p)]
+            future_picks = [
+                p for p in gives["picks"] if self._is_future_pick(p, league_context)
+            ]
             if future_picks:
                 risks.append("Giving up future draft capital")
                 risk_score += len(future_picks) * 0.15
@@ -1353,8 +1420,15 @@ class TradeAnalyzerService:
 
         return {"old_players": old_players}
 
-    def _is_future_pick(self, pick_id: int) -> bool:
-        """Check if draft pick is for future season"""
+    def _is_future_pick(
+        self, pick_id: int, league_context: Optional[Dict] = None
+    ) -> bool:
+        """Check if draft pick is for a future season."""
+        pick_registry = (league_context or {}).get("pick_registry") or {}
+        meta = pick_registry.get(int(pick_id))
+        if meta:
+            return int(meta.get("season") or 0) > datetime.now().year
+
         pick = self.db.query(DraftPick).filter(DraftPick.id == pick_id).first()
         current_year = datetime.now().year
         return pick and pick.season > current_year

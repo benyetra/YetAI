@@ -9,6 +9,7 @@ from app.services.fantasy_player_compare import (
     _derive_trends,
     generate_compare_insights,
     enrich_players_with_analytics,
+    scoring_type_from_sleeper_league,
 )
 
 
@@ -55,9 +56,34 @@ def test_generate_compare_insights_picks_scoring_leader():
     assert any("Alpha" in i and "scoring" in i for i in insights)
 
 
+def test_scoring_type_from_sleeper_league():
+    assert scoring_type_from_sleeper_league({"scoring_settings": {"rec": 1}}) == "ppr"
+    assert (
+        scoring_type_from_sleeper_league({"scoring_settings": {"rec": 0.5}})
+        == "half_ppr"
+    )
+    assert (
+        scoring_type_from_sleeper_league({"scoring_settings": {"rec": 0}}) == "standard"
+    )
+
+
+def test_aggregate_analytics_uses_scoring_field():
+    rows = [
+        {"ppr_points": 20, "standard_points": 15, "carries": 10, "targets": 5},
+        {"ppr_points": 10, "standard_points": 8, "carries": 8, "targets": 3},
+    ]
+    standard = _aggregate_analytics(rows, points_field="standard_points")
+    assert standard["points_per_touch"] == pytest.approx(23 / 26)
+
+
 def test_format_roster_traded_picks():
     from app.api.fantasy.trade_value import format_roster_traded_picks
 
+    league = {
+        "season": "2025",
+        "total_rosters": 3,
+        "settings": {"type": 2, "draft_rounds": 3},
+    }
     raw = [
         {
             "season": "2025",
@@ -74,7 +100,7 @@ def test_format_roster_traded_picks():
             "previous_owner_id": 3,
         },
     ]
-    picks = format_roster_traded_picks(raw, roster_id=2)
+    picks = format_roster_traded_picks(league, raw, roster_id=2)
     assert len(picks) == 1
     assert picks[0]["season"] == 2025
     assert picks[0]["round"] == 1

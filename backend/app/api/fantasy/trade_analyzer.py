@@ -15,14 +15,16 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
-from app.core.service_loader import get_service, is_service_available
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["fantasy"])
 
 from app.api.fantasy.trade_value import (
+    calculate_faab_trade_value,
     calculate_realistic_trade_value,
+    load_league_pick_context,
+    lookup_pick_trade_value,
     format_roster_traded_picks,
 )
 from app.services.fantasy_trade_value import select_trade_partner, stable_unit
@@ -162,13 +164,17 @@ async def get_simple_team_analysis(
 
         tradeable_picks: list = []
         try:
-            traded_picks = await sleeper_service.get_league_traded_picks(str(league_id))
-            tradeable_picks = format_roster_traded_picks(traded_picks, int(team_id))
+            pick_ctx = await load_league_pick_context(sleeper_service, str(league_id))
+            tradeable_picks = format_roster_traded_picks(
+                pick_ctx["league"], pick_ctx["traded_picks"], int(team_id)
+            )
             logger.info(
-                "Found %s traded picks for roster %s", len(tradeable_picks), team_id
+                "Found %s tradeable picks for roster %s",
+                len(tradeable_picks),
+                team_id,
             )
         except Exception as pick_error:
-            logger.warning("Could not load traded picks: %s", pick_error)
+            logger.warning("Could not load tradeable picks: %s", pick_error)
 
         # Build comprehensive team analysis response
         logger.info(
@@ -287,21 +293,7 @@ async def generate_trade_recommendations(
     if not league_id:
         raise HTTPException(status_code=400, detail="league_id is required")
 
-    service_available = is_service_available("fantasy_pipeline")
-    logger.info(f"🔍 FANTASY_PIPELINE SERVICE AVAILABLE: {service_available}")
-
-    if not service_available:
-        logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(
-            status_code=503, detail="Fantasy pipeline service unavailable"
-        )
-
     try:
-        fantasy_service = get_service("fantasy_pipeline")
-
-        # Get the specified team's roster directly from Sleeper API
-        logger.info(f"🔍 GETTING ROSTER for team {team_id} in league {league_id}")
-
         from app.services.sleeper_fantasy_service import SleeperFantasyService
 
         sleeper_service = SleeperFantasyService()
@@ -792,44 +784,66 @@ async def quick_trade_analysis(
 
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
+        pick_ctx = await load_league_pick_context(
+            sleeper_service, str(request.league_id)
+        )
+        pick_registry = pick_ctx["pick_registry"]
 
-        # Helper function to analyze trade side
-        def analyze_trade_side(players_list, side_name):
-            total_value = 0
-            side_analysis = {
+        def analyze_trade_side(assets: Dict[str, Any], side_name: str):
+            total_value = 0.0
+            side_analysis: Dict[str, Any] = {
                 "players": [],
+                "picks": [],
+                "faab": assets.get("faab", 0) or 0,
                 "total_value": 0,
                 "positions": {},
                 "avg_age": 0,
             }
 
-            ages = []
-            for player_id in players_list:
-                if str(player_id) in all_players:
-                    player_data = all_players[str(player_id)]
-                    name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
-                    position = player_data.get("position", "UNKNOWN")
-                    age = player_data.get("age", 27)
-                    trade_value = calculate_realistic_trade_value(player_data)
+            ages: List[float] = []
+            for player_id in assets.get("players") or []:
+                if str(player_id) not in all_players:
+                    continue
+                player_data = all_players[str(player_id)]
+                name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
+                position = player_data.get("position", "UNKNOWN")
+                age = player_data.get("age", 27)
+                trade_value = calculate_realistic_trade_value(player_data)
 
-                    player_info = {
-                        "player_id": player_id,
-                        "name": name,
-                        "position": position,
-                        "team": player_data.get("team", "FA"),
-                        "age": age,
-                        "trade_value": round(trade_value, 1),
-                    }
+                player_info = {
+                    "player_id": player_id,
+                    "name": name,
+                    "position": position,
+                    "team": player_data.get("team", "FA"),
+                    "age": age,
+                    "trade_value": round(trade_value, 1),
+                }
 
-                    side_analysis["players"].append(player_info)
-                    total_value += trade_value
-                    ages.append(age)
+                side_analysis["players"].append(player_info)
+                total_value += trade_value
+                ages.append(float(age))
+                side_analysis["positions"][position] = (
+                    side_analysis["positions"].get(position, 0) + 1
+                )
 
-                    # Track positions
-                    if position in side_analysis["positions"]:
-                        side_analysis["positions"][position] += 1
-                    else:
-                        side_analysis["positions"][position] = 1
+            for pick_id in assets.get("picks") or []:
+                pick_value = lookup_pick_trade_value(int(pick_id), pick_registry)
+                meta = pick_registry.get(int(pick_id), {})
+                pick_info = {
+                    "pick_id": int(pick_id),
+                    "description": meta.get("description", f"Pick {pick_id}"),
+                    "season": meta.get("season"),
+                    "round": meta.get("round"),
+                    "trade_value": round(pick_value, 1),
+                }
+                side_analysis["picks"].append(pick_info)
+                total_value += pick_value
+
+            faab_amount = int(assets.get("faab") or 0)
+            if faab_amount > 0:
+                faab_value = calculate_faab_trade_value(faab_amount)
+                side_analysis["faab_value"] = round(faab_value, 1)
+                total_value += faab_value
 
             side_analysis["total_value"] = round(total_value, 1)
             side_analysis["avg_age"] = round(sum(ages) / len(ages) if ages else 0, 1)
@@ -837,12 +851,8 @@ async def quick_trade_analysis(
             return side_analysis
 
         # Analyze both sides
-        team1_gives = analyze_trade_side(
-            request.team1_gives.get("players", []), "Team 1 Gives"
-        )
-        team2_gives = analyze_trade_side(
-            request.team2_gives.get("players", []), "Team 2 Gives"
-        )
+        team1_gives = analyze_trade_side(request.team1_gives, "Team 1 Gives")
+        team2_gives = analyze_trade_side(request.team2_gives, "Team 2 Gives")
 
         # Calculate trade fairness
         value_diff = abs(team1_gives["total_value"] - team2_gives["total_value"])
@@ -867,6 +877,16 @@ async def quick_trade_analysis(
 
         # Generate comprehensive key factors/insights
         insights = []
+
+        # Pick / FAAB analysis
+        if team1_gives.get("picks") or team2_gives.get("picks"):
+            insights.append(
+                "Draft picks included — future value affects dynasty/redraft balance"
+            )
+        if (team1_gives.get("faab") or 0) > 0 or (team2_gives.get("faab") or 0) > 0:
+            insights.append(
+                "FAAB included — budget value discounted vs in-season waiver spend"
+            )
 
         # Age analysis
         if team1_gives["avg_age"] > team2_gives["avg_age"] + 3:
