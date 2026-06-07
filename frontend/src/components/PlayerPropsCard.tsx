@@ -140,7 +140,7 @@ export default function PlayerPropsCard({
       const response = await sportsAPI.getPlayerProps(sportKey, eventId, undefined, token);
 
       if (response.status === 'success' && response.data) {
-        setPropsData(response.data);
+        setPropsData(response.data as PlayerPropsData);
 
         // Auto-expand first market
         const firstMarket = Object.keys(response.data.markets)[0];

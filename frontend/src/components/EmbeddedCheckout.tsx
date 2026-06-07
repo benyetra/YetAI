@@ -66,7 +66,7 @@ export default function EmbeddedCheckout({
         console.log('Checkout object:', checkout);
         console.log('Checkout type:', typeof checkout);
         console.log('Has mount method:', typeof checkout?.mount === 'function');
-        console.log('Has on method:', typeof checkout?.on === 'function');
+        console.log('Has on method:', typeof (checkout as { on?: unknown }).on === 'function');
 
         if (!checkout || typeof checkout.mount !== 'function') {
           const error = 'Invalid checkout object returned from Stripe';
@@ -80,9 +80,9 @@ export default function EmbeddedCheckout({
         setIsLoading(false);
         checkoutInstance = checkout;
 
-        // Handle completion
-        if (typeof checkout.on === 'function') {
-          checkout.on('complete', () => {
+        const checkoutEvents = checkout as { on?: (event: string, cb: () => void) => void };
+        if (typeof checkoutEvents.on === 'function') {
+          checkoutEvents.on('complete', () => {
             console.log('Checkout completed!');
             onComplete?.();
           });

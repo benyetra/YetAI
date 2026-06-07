@@ -4,6 +4,16 @@ import { handleUnauthorizedResponse } from './auth-session';
 
 const API_BASE_URL = apiConfig.baseURL;
 
+export function resolveAuthToken(token?: string | null): string | undefined {
+  if (token) {
+    return token;
+  }
+  if (typeof window !== 'undefined') {
+    return localStorage.getItem('auth_token') ?? undefined;
+  }
+  return undefined;
+}
+
 export const api = axios.create({
   baseURL: API_BASE_URL,
   headers: {
@@ -220,11 +230,12 @@ function oddsResponseHasPickMarkets(data: unknown): boolean {
   if (!data || typeof data !== 'object') return false;
   const games = (data as { games?: unknown[] }).games;
   if (!Array.isArray(games) || games.length === 0) return false;
-  return games.some((game) =>
-    (game.bookmakers || []).some((bm: { markets?: { outcomes?: unknown[] }[] }) =>
+  return games.some((game) => {
+    const row = game as { bookmakers?: { markets?: { outcomes?: unknown[] }[] }[] };
+    return (row.bookmakers || []).some((bm: { markets?: { outcomes?: unknown[] }[] }) =>
       (bm.markets || []).some((m) => (m.outcomes || []).length > 0)
-    )
-  );
+    );
+  });
 }
 
 // Enhanced API client with error handling
@@ -503,7 +514,7 @@ export const sportsAPI = {
 
   // Get user performance analytics
   getUserPerformance: async (days: number = 30, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     
     const fallbackData = {
       status: 'success',
@@ -541,7 +552,7 @@ export const sportsAPI = {
 
   // Get player props for an event
   getPlayerProps: async (sportKey: string, eventId: string, markets?: string[], token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
 
     const params = new URLSearchParams();
     if (markets && markets.length > 0) {
@@ -574,7 +585,7 @@ export const sportsAPI = {
 
   // Get available player prop markets for a sport
   getPlayerPropMarkets: async (sportKey: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
 
     const fallbackData = {
       status: 'error',
@@ -743,13 +754,13 @@ export const oddsUtils = {
 export const fantasyAPI = {
   // Connect a fantasy platform account
   connectAccount: async (platform: string, credentials: any, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/fantasy/connect', { platform, credentials }, authToken);
   },
 
   // Get connected fantasy accounts
   getAccounts: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get('/api/fantasy/accounts', authToken);
     } catch (error) {
@@ -759,7 +770,7 @@ export const fantasyAPI = {
 
   // Get fantasy leagues
   getLeagues: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get('/api/fantasy/leagues', authToken);
     } catch (error) {
@@ -769,13 +780,13 @@ export const fantasyAPI = {
 
   // Sync a specific league
   syncLeague: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.post(`/api/fantasy/sync-league/${leagueId}`, {}, authToken);
   },
 
   // Get roster for a specific league
   getRoster: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(`/api/fantasy/roster/${leagueId}`, authToken);
     } catch (error) {
@@ -785,13 +796,13 @@ export const fantasyAPI = {
 
   // Disconnect fantasy account
   disconnectAccount: async (accountId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.delete(`/api/fantasy/disconnect/${accountId}`, authToken);
   },
 
   // Disconnect and erase a specific league
   disconnectLeague: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.delete(`/api/fantasy/leagues/${leagueId}`, authToken);
   },
 
@@ -801,7 +812,7 @@ export const fantasyAPI = {
     leagueId?: string,
     token?: string
   ) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = leagueId ? `?league_id=${encodeURIComponent(leagueId)}` : '';
       return await apiClient.get(
@@ -815,7 +826,7 @@ export const fantasyAPI = {
 
   // Get waiver wire recommendations
   getWaiverWireRecommendations: async (week: number = 1, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(`/api/fantasy/recommendations/waiver-wire/${week}`, authToken);
     } catch (error) {
@@ -825,7 +836,7 @@ export const fantasyAPI = {
 
   // Test Sleeper integration
   testSleeper: async (username: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(`/api/fantasy/test/sleeper/${username}`, authToken);
     } catch (error) {
@@ -835,7 +846,7 @@ export const fantasyAPI = {
 
   // Get trending players
   getTrendingPlayers: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get('/api/fantasy/trending?trend_type=add&limit=25', authToken);
     } catch (error) {
@@ -845,7 +856,7 @@ export const fantasyAPI = {
 
   // Get league standings
   getLeagueStandings: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const response = await apiClient.get(`/api/v1/fantasy/standings/${leagueId}`, authToken);
       
@@ -869,7 +880,7 @@ export const fantasyAPI = {
 
   // Get league matchups for a specific week
   getLeagueMatchups: async (leagueId: string, week: number, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(`/api/fantasy/matchups/${leagueId}/${week}`, authToken);
     } catch (error) {
@@ -879,7 +890,7 @@ export const fantasyAPI = {
 
   // Get detailed league rules and settings
   getLeagueRules: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     
     // Try the legacy fantasy endpoint first (since most leagues are still using the old system)
     try {
@@ -920,7 +931,7 @@ export const fantasyAPI = {
     limit?: number;
     offset?: number;
   }, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = new URLSearchParams();
       Object.entries(filters).forEach(([key, value]) => {
@@ -938,7 +949,7 @@ export const fantasyAPI = {
 
   // Compare players
   comparePlayers: async (playerIds: string[], leagueId?: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const payload = {
         player_ids: playerIds,
@@ -952,7 +963,7 @@ export const fantasyAPI = {
 
   // Player Analytics
   getPlayerAnalytics: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = new URLSearchParams();
       if (weeks) params.append('weeks', weeks);
@@ -965,7 +976,7 @@ export const fantasyAPI = {
   },
 
   getPlayerTrends: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = new URLSearchParams();
       if (weeks) {
@@ -980,7 +991,7 @@ export const fantasyAPI = {
   },
 
   getPlayerEfficiency: async (playerId: number, weeks?: string, season: number = 2025, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = new URLSearchParams();
       if (weeks) {
@@ -995,7 +1006,7 @@ export const fantasyAPI = {
   },
 
   getBreakoutCandidates: async (position: string, season: number = 2025, minWeeks: number = 3, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       const params = new URLSearchParams();
       params.append('season', season.toString());
@@ -1011,7 +1022,7 @@ export const fantasyAPI = {
   },
 
   getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2025, week: number = 1, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(
         `/api/v1/fantasy/analytics/player/${playerId}/matchup?opponent=${encodeURIComponent(opponent)}&week=${week}`,
@@ -1027,49 +1038,37 @@ export const fantasyAPI = {
 export const sleeperAPI = {
   // Connect Sleeper account
   connectAccount: async (sleeperUsername: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/sleeper/connect', { sleeper_username: sleeperUsername }, authToken);
   },
 
   // Sync all leagues
   syncLeagues: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/sleeper/sync/leagues', {}, authToken);
   },
 
   // Sync all rosters
   syncRosters: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/sleeper/sync/rosters', {}, authToken);
   },
 
   // Sync NFL players (admin only)
   syncPlayers: async (token?: string) => {
-    const authToken =
-      token ??
-      (typeof window !== 'undefined'
-        ? localStorage.getItem('auth_token') ?? undefined
-        : undefined);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/sleeper/sync/players', {}, authToken);
   },
 
   // Full sync workflow
   fullSync: async (sleeperUsername: string, token?: string) => {
-    const authToken =
-      token ??
-      (typeof window !== 'undefined'
-        ? localStorage.getItem('auth_token') ?? undefined
-        : undefined);
+    const authToken = resolveAuthToken(token);
     return apiClient.post('/api/sleeper/sync/full', { sleeper_username: sleeperUsername }, authToken);
   },
 
   // Get sync status
   getStatus: async (token?: string) => {
-    const authToken =
-      token ??
-      (typeof window !== 'undefined'
-        ? localStorage.getItem('auth_token') ?? undefined
-        : undefined);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get('/api/sleeper/status', authToken);
     } catch (error) {
@@ -1079,11 +1078,7 @@ export const sleeperAPI = {
 
   // Get Sleeper leagues
   getLeagues: async (token?: string) => {
-    const authToken =
-      token ??
-      (typeof window !== 'undefined'
-        ? localStorage.getItem('auth_token') ?? undefined
-        : undefined);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get('/api/sleeper/leagues', authToken);
     } catch (error) {
@@ -1093,11 +1088,7 @@ export const sleeperAPI = {
 
   // Get league rosters
   getLeagueRosters: async (leagueId: string, token?: string) => {
-    const authToken =
-      token ??
-      (typeof window !== 'undefined'
-        ? localStorage.getItem('auth_token') ?? undefined
-        : undefined);
+    const authToken = resolveAuthToken(token);
     try {
       return await apiClient.get(`/api/sleeper/leagues/${leagueId}/rosters`, authToken);
     } catch (error) {

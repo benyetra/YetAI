@@ -102,6 +102,24 @@ print(run(season=2025))
 "
 ```
 
+**One-off backfill from your Mac (via Railway public Postgres URL):**
+
+Railway’s internal `postgres.railway.internal` hostname is not reachable from a local machine. Use `DATABASE_PUBLIC_URL` from the **Postgres** service (proxy host, e.g. `shuttle.proxy.rlwy.net`):
+
+```bash
+cd backend
+PUBLIC_URL=$(railway variables --service Postgres --json \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['DATABASE_PUBLIC_URL'])")
+
+DATABASE_URL="$PUBLIC_URL" DATABASE_PUBLIC_URL="$PUBLIC_URL" \
+PYTHONPATH=. .venv/bin/python -c "
+from app.services.etl.fantasy.sync_player_analytics import run
+print(run(season=2025, sync_fantasy_players=True))
+"
+```
+
+Pass criteria: `rows_upserted` > 0 on first run after mapping fixes; `fantasy_players_mapped` ≈ 2000+; re-run shows mostly `rows_unchanged`. API service name on Railway is **YetAI** (not `api`).
+
 Expected first run: `rows_upserted` ~1400+, `fantasy_players_sync` set if Celery path (`sync_fantasy_players=True`). Re-run should show `rows_unchanged` with `rows_upserted: 0` in ~5–10s.
 
 **Verify Celery task manually:**

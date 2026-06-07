@@ -2,9 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
-import { apiClient } from '@/lib/api';
+import { apiClient, resolveAuthToken } from '@/lib/api';
 import { formatOdds, americanToDecimal } from '@/lib/formatting';
 import { X, Plus, Calculator, Trash2, AlertCircle, TrendingUp } from 'lucide-react';
+
+type OddsOutcome = { name?: string; price?: number; point?: number };
 
 interface ParlayLeg {
   gameId: string;
@@ -139,9 +141,9 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
           (existingGameLeg.betType === 'moneyline' || existingGameLeg.betType === 'spread')) {
         
         // Extract team from current selection
-        const currentTeam = teams.find(team => selection.includes(team));
+        const currentTeam = teams.find((team: string) => selection.includes(team));
         // Extract team from existing selection
-        const existingTeam = teams.find(team => existingGameLeg.selection.includes(team));
+        const existingTeam = teams.find((team: string) => existingGameLeg.selection.includes(team));
         
         if (currentTeam && existingTeam && currentTeam === existingTeam) {
           return true; // Disable if same team already has a bet
@@ -160,7 +162,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
     
     if (gameFilter) {
       const searchTerm = gameFilter.toLowerCase();
-      return game.teams.some(team => team.toLowerCase().includes(searchTerm)) ||
+      return game.teams.some((team: string) => team.toLowerCase().includes(searchTerm)) ||
              game.sport.toLowerCase().includes(searchTerm);
     }
     
@@ -203,9 +205,9 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
           (existingGameLeg.betType === 'moneyline' || existingGameLeg.betType === 'spread')) {
         
         // Extract team from current selection
-        const currentTeam = teams.find(team => selection.includes(team));
+        const currentTeam = teams.find((team: string) => selection.includes(team));
         // Extract team from existing selection
-        const existingTeam = teams.find(team => existingGameLeg.selection.includes(team));
+        const existingTeam = teams.find((team: string) => existingGameLeg.selection.includes(team));
         
         if (currentTeam && existingTeam && currentTeam === existingTeam) {
           // Remove the lower odds bet and replace with higher odds
@@ -264,7 +266,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
       const sportKey = sportMap[game.sport] || game.sport;
       const response = await apiClient.get(
         `/api/player-props/${sportKey}/${game.id}`,
-        localStorage.getItem('auth_token')
+        resolveAuthToken()
       );
 
       if (response.status === 'success' && response.data) {
@@ -383,7 +385,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
       };
 
       // Use apiClient like the working BetModal
-      const response = await apiClient.post('/api/bets/parlay', parlayData, localStorage.getItem('auth_token'));
+      const response = await apiClient.post('/api/bets/parlay', parlayData, resolveAuthToken());
 
       if (response.status === 'success') {
         // Reset form
@@ -480,7 +482,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                           <button
                             onClick={() => {
                               const awayOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[0] : 
-                                (game.raw_moneyline?.find(o => o.name === game.teams[0])?.price || 0);
+                                (game.raw_moneyline?.find((o: OddsOutcome) => o.name === game.teams[0])?.price || 0);
                               addLeg(
                                 game.id,
                                 'moneyline',
@@ -498,14 +500,14 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                           >
                             {(() => {
                               const awayOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[0] : 
-                                (game.raw_moneyline?.find(o => o.name === game.teams[0])?.price || 0);
+                                (game.raw_moneyline?.find((o: OddsOutcome) => o.name === game.teams[0])?.price || 0);
                               return `${game.teams[0]} ${awayOdds > 0 ? '+' : ''}${awayOdds}`;
                             })()}
                           </button>
                           <button
                             onClick={() => {
                               const homeOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[1] : 
-                                (game.raw_moneyline?.find(o => o.name === game.teams[1])?.price || 0);
+                                (game.raw_moneyline?.find((o: OddsOutcome) => o.name === game.teams[1])?.price || 0);
                               addLeg(
                                 game.id,
                                 'moneyline',
@@ -523,7 +525,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                           >
                             {(() => {
                               const homeOdds = Array.isArray(game.odds.moneyline) ? game.odds.moneyline[1] : 
-                                (game.raw_moneyline?.find(o => o.name === game.teams[1])?.price || 0);
+                                (game.raw_moneyline?.find((o: OddsOutcome) => o.name === game.teams[1])?.price || 0);
                               return `${game.teams[1]} ${homeOdds > 0 ? '+' : ''}${homeOdds}`;
                             })()}
                           </button>
@@ -536,7 +538,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              const awaySpreadData = game.raw_spread?.find(o => o.name === game.teams[0]);
+                              const awaySpreadData = game.raw_spread?.find((o: OddsOutcome) => o.name === game.teams[0]);
                               const awaySpread = Array.isArray(game.odds.spread) ? game.odds.spread[0] : 
                                 `${awaySpreadData?.point >= 0 ? '+' : ''}${awaySpreadData?.point || 0} (${awaySpreadData?.price || -110})`;
                               const awayOdds = awaySpreadData?.price || -110;
@@ -556,14 +558,14 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                             }`}
                           >
                             {(() => {
-                              const awaySpreadData = game.raw_spread?.find(o => o.name === game.teams[0]);
+                              const awaySpreadData = game.raw_spread?.find((o: OddsOutcome) => o.name === game.teams[0]);
                               const spreadLine = `${awaySpreadData?.point >= 0 ? '+' : ''}${awaySpreadData?.point || 0}`;
                               return `${game.teams[0]} ${spreadLine}`;
                             })()}
                           </button>
                           <button
                             onClick={() => {
-                              const homeSpreadData = game.raw_spread?.find(o => o.name === game.teams[1]);
+                              const homeSpreadData = game.raw_spread?.find((o: OddsOutcome) => o.name === game.teams[1]);
                               const homeSpread = Array.isArray(game.odds.spread) ? game.odds.spread[1] : 
                                 `${homeSpreadData?.point >= 0 ? '+' : ''}${homeSpreadData?.point || 0} (${homeSpreadData?.price || -110})`;
                               const homeOdds = homeSpreadData?.price || -110;
@@ -583,7 +585,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                             }`}
                           >
                             {(() => {
-                              const homeSpreadData = game.raw_spread?.find(o => o.name === game.teams[1]);
+                              const homeSpreadData = game.raw_spread?.find((o: OddsOutcome) => o.name === game.teams[1]);
                               const spreadLine = `${homeSpreadData?.point >= 0 ? '+' : ''}${homeSpreadData?.point || 0}`;
                               return `${game.teams[1]} ${spreadLine}`;
                             })()}
@@ -597,7 +599,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                         <div className="flex gap-2">
                           <button
                             onClick={() => {
-                              const overData = game.raw_total?.find(o => o.name === 'Over');
+                              const overData = game.raw_total?.find((o: OddsOutcome) => o.name === 'Over');
                               const overSelection = Array.isArray(game.odds.total) ? game.odds.total[0] : 
                                 `O ${overData?.point || 0} (${overData?.price || -110})`;
                               const overOdds = overData?.price || -110;
@@ -617,13 +619,13 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                             }`}
                           >
                             {(() => {
-                              const overData = game.raw_total?.find(o => o.name === 'Over');
+                              const overData = game.raw_total?.find((o: OddsOutcome) => o.name === 'Over');
                               return `O ${overData?.point || 0} (${overData?.price || -110})`;
                             })()}
                           </button>
                           <button
                             onClick={() => {
-                              const underData = game.raw_total?.find(o => o.name === 'Under');
+                              const underData = game.raw_total?.find((o: OddsOutcome) => o.name === 'Under');
                               const underSelection = Array.isArray(game.odds.total) ? game.odds.total[1] : 
                                 `U ${underData?.point || 0} (${underData?.price || -115})`;
                               const underOdds = underData?.price || -115;
@@ -643,7 +645,7 @@ export default function ParlayBuilder({ isOpen, onClose, onParlayCreated, availa
                             }`}
                           >
                             {(() => {
-                              const underData = game.raw_total?.find(o => o.name === 'Under');
+                              const underData = game.raw_total?.find((o: OddsOutcome) => o.name === 'Under');
                               return `U ${underData?.point || 0} (${underData?.price || -115})`;
                             })()}
                           </button>

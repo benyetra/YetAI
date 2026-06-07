@@ -13,12 +13,27 @@ import { StatTile } from '@/components/yetai/primitives';
 import { sportsAPI } from '@/lib/api';
 import { Layers, TrendingUp, DollarSign, Plus } from 'lucide-react';
 
+type ParlayAvailableGame = {
+  id: string;
+  sport: string;
+  teams: string[];
+  gameTime: string;
+  odds: {
+    moneyline: number[];
+    spread: string[];
+    total: string[];
+  };
+  raw_moneyline: unknown[];
+  raw_spread: unknown[];
+  raw_total: unknown[];
+};
+
 export default function ParlaysPage() {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
   const [showParlayBuilder, setShowParlayBuilder] = useState(false);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
-  const [availableGames, setAvailableGames] = useState([]);
+  const [availableGames, setAvailableGames] = useState<ParlayAvailableGame[]>([]);
   const [gamesLoading, setGamesLoading] = useState(false);
   const [stats, setStats] = useState({
     activeParlays: 0,
@@ -89,7 +104,7 @@ export default function ParlaysPage() {
     }
   };
 
-  const transformApiGamesToParlayFormat = (apiGames: any[]) => {
+  const transformApiGamesToParlayFormat = (apiGames: any[]): ParlayAvailableGame[] => {
     return apiGames.map((game: any) => {
       // Find the best bookmaker (FanDuel, DraftKings, BetMGM are preferred)
       const preferredBookmakers = ['fanduel', 'draftkings', 'betmgm'];
@@ -105,10 +120,10 @@ export default function ParlaysPage() {
       const spreadMarket = bestBookmaker.markets?.find((m: any) => m.key === 'spreads');
       const totalMarket = bestBookmaker.markets?.find((m: any) => m.key === 'totals');
 
-      const odds = {
-        moneyline: [],
-        spread: [],
-        total: []
+      const odds: ParlayAvailableGame['odds'] = {
+        moneyline: [] as number[],
+        spread: [] as string[],
+        total: [] as string[],
       };
 
       // Parse moneyline odds - store as array matching team order [away, home]
@@ -152,7 +167,7 @@ export default function ParlaysPage() {
         raw_spread: spreadMarket?.outcomes || [],
         raw_total: totalMarket?.outcomes || []
       };
-    }).filter(Boolean);
+    }).filter((game): game is NonNullable<typeof game> => game !== null) as ParlayAvailableGame[];
   };
 
   const handleParlayCreated = () => {

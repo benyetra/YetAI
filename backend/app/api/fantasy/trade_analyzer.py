@@ -21,7 +21,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["fantasy"])
 
-from app.api.fantasy.trade_value import calculate_realistic_trade_value
+from app.api.fantasy.trade_value import (
+    calculate_realistic_trade_value,
+    format_roster_traded_picks,
+)
 from app.services.fantasy_trade_value import select_trade_partner, stable_unit
 
 
@@ -157,6 +160,16 @@ async def get_simple_team_analysis(
             logger.error(f"Error fetching roster: {roster_error}")
             roster_data = []
 
+        tradeable_picks: list = []
+        try:
+            traded_picks = await sleeper_service.get_league_traded_picks(str(league_id))
+            tradeable_picks = format_roster_traded_picks(traded_picks, int(team_id))
+            logger.info(
+                "Found %s traded picks for roster %s", len(tradeable_picks), team_id
+            )
+        except Exception as pick_error:
+            logger.warning("Could not load traded picks: %s", pick_error)
+
         # Build comprehensive team analysis response
         logger.info(
             f"🔍 TEAM ANALYSIS COMPLETE: {len(roster_data)} players for team {team_data.get('name', f'Team {team_id}')}"
@@ -233,7 +246,7 @@ async def get_simple_team_analysis(
                 "surplus_players": surplus_players,
                 "expendable_players": expendable_players,
                 "valuable_players": valuable_players,
-                "tradeable_picks": [],
+                "tradeable_picks": tradeable_picks,
             },
             "trade_strategy": {
                 "competitive_analysis": {},

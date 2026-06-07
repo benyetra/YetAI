@@ -223,7 +223,7 @@ export default function GameDetailsWithProps({ game }: GameDetailsWithPropsProps
       <BetModal
         isOpen={showGameBetModal}
         onClose={() => setShowGameBetModal(false)}
-        game={game}
+        game={game as React.ComponentProps<typeof BetModal>['game']}
       />
 
       <PlayerPropBetModal

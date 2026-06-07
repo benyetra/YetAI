@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
@@ -107,10 +108,18 @@ async def search_fantasy_players(
 
 @router.post("/api/fantasy/players/compare")
 async def compare_players(
-    request: ComparePlayersRequest, current_user: dict = Depends(get_current_user)
+    request: ComparePlayersRequest,
+    season: int = Query(2025, ge=2021, le=2030),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
 ):
     """Compare multiple players side-by-side with analytics"""
     try:
+        from app.services.fantasy_player_compare import (
+            enrich_players_with_analytics,
+            generate_compare_insights,
+        )
+
         player_ids = request.player_ids
         league_id = request.league_id
 
@@ -184,12 +193,18 @@ async def compare_players(
 
             compared_players.append(comparison_data)
 
+        players_with_analytics = await enrich_players_with_analytics(
+            db, compared_players, season=season
+        )
+        insights = generate_compare_insights(players_with_analytics)
+
         return {
             "status": "success",
             "comparison": {
-                "players": compared_players,
-                "insights": [],  # Can add insights later
+                "players": players_with_analytics,
+                "insights": insights,
                 "league_context": league_id,
+                "season": season,
                 "comparison_date": datetime.utcnow().isoformat(),
             },
         }

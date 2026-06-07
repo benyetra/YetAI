@@ -29,8 +29,8 @@ export function useWebSocket() {
   const [isConnected, setIsConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
   const [gameUpdates, setGameUpdates] = useState<Record<string, GameUpdate>>({});
-  const reconnectTimeout = useRef<NodeJS.Timeout>();
-  const pingInterval = useRef<NodeJS.Timeout>();
+  const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const pingInterval = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
   const reconnectAttempts = useRef(0);
   const maxReconnectAttempts = 5;
 
@@ -42,86 +42,6 @@ export function useWebSocket() {
 
     // Temporarily disable WebSocket connections to resolve admin page loading issues
     console.log('WebSocket: Connection temporarily disabled');
-    return;
-
-    try {
-      // WebSocket URL using centralized configuration
-      const wsUrl = getWsUrl(`/ws/${user.id}`);
-      console.log('WebSocket: Attempting to connect to', wsUrl);
-      ws.current = new WebSocket(wsUrl);
-
-      ws.current.onopen = () => {
-        console.log('WebSocket connected');
-        setIsConnected(true);
-        reconnectAttempts.current = 0;
-        
-        // Start ping interval to keep connection alive
-        pingInterval.current = setInterval(() => {
-          sendMessage({ type: 'ping' });
-        }, 30000);
-      };
-
-      ws.current.onmessage = (event) => {
-        try {
-          const message = JSON.parse(event.data);
-          setLastMessage(message);
-          
-          // Handle different message types
-          switch (message.type) {
-            case 'game_update':
-              handleGameUpdate(message);
-              break;
-            case 'bet_notification':
-              handleBetNotification(message);
-              break;
-            case 'connection':
-              console.log('WebSocket connection confirmed:', message.status);
-              break;
-            case 'subscription':
-              console.log(`Game subscription ${message.status}:`, message.game_id);
-              break;
-            case 'pong':
-              // Ping response received - connection is alive
-              break;
-            default:
-              console.log('Unknown message type:', message.type);
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      ws.current.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
-        setIsConnected(false);
-        
-        // Clear ping interval
-        if (pingInterval.current) {
-          clearInterval(pingInterval.current);
-        }
-        
-        // Attempt to reconnect if not manually closed
-        if (event.code !== 1000 && reconnectAttempts.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts.current), 30000);
-          console.log(`Attempting to reconnect in ${delay}ms...`);
-          
-          reconnectTimeout.current = setTimeout(() => {
-            reconnectAttempts.current++;
-            connect();
-          }, delay);
-        } else if (reconnectAttempts.current >= maxReconnectAttempts) {
-          console.error('Max reconnection attempts reached');
-        }
-      };
-
-      ws.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        console.error('WebSocket readyState:', ws.current?.readyState);
-        console.error('User ID:', user?.id);
-      };
-    } catch (error) {
-      console.error('Failed to connect WebSocket:', error);
-    }
   }, [user?.id]);
 
   const disconnect = useCallback(() => {

@@ -4,9 +4,12 @@ import React, { useState, useEffect } from 'react';
 import { TrendingUp, Target, Award, BarChart3, Clock, CheckCircle } from 'lucide-react';
 import { apiRequest } from '@/lib/api-config';
 
+type PerformanceMetrics = Record<string, any>;
+type BestPredictionRow = Record<string, any>;
+
 // API client
 const api = {
-  async get(endpoint) {
+  async get(endpoint: string) {
     try {
       const response = await apiRequest(endpoint, { method: 'GET' });
       return await response.json();
@@ -16,7 +19,7 @@ const api = {
     }
   },
   
-  async post(endpoint, data = {}) {
+  async post(endpoint: string, data: Record<string, unknown> = {}) {
     try {
       const response = await apiRequest(endpoint, {
         method: 'POST',
@@ -31,10 +34,10 @@ const api = {
 };
 
 export default function PerformanceDashboard() {
-  const [metrics, setMetrics] = useState(null);
-  const [bestPredictions, setBestPredictions] = useState([]);
+  const [metrics, setMetrics] = useState<PerformanceMetrics | null>(null);
+  const [bestPredictions, setBestPredictions] = useState<BestPredictionRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [lastUpdated, setLastUpdated] = useState(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   useEffect(() => {
     const fetchPerformanceData = async () => {
