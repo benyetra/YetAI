@@ -1,5 +1,6 @@
 """Tests for player_analytics ETL (YetAI-ojg.4)."""
 
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
@@ -105,11 +106,11 @@ def test_load_weekly_frame_falls_back_to_stats_player_release():
         ]
     )
 
+    mock_nfl = MagicMock()
+    mock_nfl.import_weekly_data.side_effect = legacy_error
+
     with (
-        patch(
-            "nfl_data_py.import_weekly_data",
-            side_effect=legacy_error,
-        ),
+        patch.dict(sys.modules, {"nfl_data_py": mock_nfl}),
         patch(
             "app.services.etl.fantasy.sync_player_analytics.pd.read_parquet",
             return_value=fallback_df,
@@ -120,5 +121,6 @@ def test_load_weekly_frame_falls_back_to_stats_player_release():
     assert len(weekly) == 1
     assert weekly.iloc[0]["interceptions"] == 0
     assert weekly.iloc[0]["recent_team"] == "KC"
+    mock_nfl.import_weekly_data.assert_called_once_with([2025])
     read_parquet.assert_called_once()
     assert "stats_player_week_2025.parquet" in read_parquet.call_args[0][0]
