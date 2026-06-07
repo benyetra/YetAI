@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './fixtures/fantasy-auth.fixture';
 
 test.describe('Start/Sit Recommendations', () => {
   test.beforeEach(async ({ page }) => {

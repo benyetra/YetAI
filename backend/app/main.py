@@ -408,6 +408,7 @@ from app.api.admin_notifications import router as admin_notifications_router
 from app.api.admin_pipelines import router as admin_pipelines_router
 from app.api.admin_yetai_picks import router as admin_yetai_picks_router
 from app.api.fantasy_analytics import router as fantasy_analytics_router
+from app.api.fantasy_routes import router as fantasy_routes_router
 from app.api.v1.sleeper_sync import router as sleeper_sync_router
 
 app.include_router(predictions_router)
@@ -422,6 +423,7 @@ app.include_router(
     prefix="/api/v1/fantasy/analytics",
     tags=["fantasy-analytics"],
 )
+app.include_router(fantasy_routes_router)
 app.include_router(sleeper_sync_router, prefix="/api")
 
 
@@ -4725,7 +4727,9 @@ async def get_fantasy_roster(
 
 
 @app.get("/api/fantasy/projections")
-async def get_fantasy_projections(current_user: dict = Depends(get_current_user)):
+async def get_fantasy_projections(
+    current_user: dict = Depends(get_current_user), db=Depends(get_db)
+):
     """Get fantasy projections - REAL DATA ONLY"""
     logger.info(f"🔍 PROJECTIONS CALLED - User: {current_user['user_id']}")
 
@@ -4741,21 +4745,19 @@ async def get_fantasy_projections(current_user: dict = Depends(get_current_user)
     try:
         fantasy_service = get_service("fantasy_pipeline")
 
-        # Get real NFL players and generate projections
+        # Get real NFL players and generate projections from analytics/baselines
         players = await fantasy_service.get_nfl_players(limit=50)
 
         if not players:
             logger.error("🚨 NO PLAYER DATA AVAILABLE")
             raise HTTPException(status_code=404, detail="No player data available")
 
-        # Get mock games data for projections (this would normally come from a games service)
-        mock_games = [
-            {"home_team": "BUF", "away_team": "MIA"},
-            {"home_team": "SF", "away_team": "LAR"},
-            {"home_team": "PHI", "away_team": "DAL"},
-        ]
+        from datetime import datetime
 
-        projections = fantasy_service.generate_fantasy_projections(players, mock_games)
+        season = datetime.now().year
+        projections = fantasy_service.generate_fantasy_projections(
+            players, games=[], db=db, season=season
+        )
 
         logger.info(f"🔍 GENERATED {len(projections)} PROJECTIONS")
 

@@ -782,8 +782,10 @@ class FantasyAnalyticsService:
                 if not player or (position and player.position != position):
                     continue
 
-                # Check ownership (simplified - would need real ownership data)
-                ownership_pct = np.random.uniform(5, 60)  # Placeholder
+                # Check ownership (estimate from usage — deterministic)
+                from app.services.fantasy_projections import estimate_ownership_pct
+
+                ownership_pct = estimate_ownership_pct(player_id, avg_snaps or 0)
 
                 if ownership_pct < 50:  # Available in most leagues
                     # Calculate opportunity score

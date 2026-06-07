@@ -837,7 +837,7 @@ export const fantasyAPI = {
   getTrendingPlayers: async (token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
-      return await apiClient.get('/api/fantasy/test/sleeper-trending', authToken);
+      return await apiClient.get('/api/fantasy/trending?trend_type=add&limit=25', authToken);
     } catch (error) {
       return { status: 'error', trending: [], message: 'Failed to fetch trending players' };
     }
@@ -1000,20 +1000,23 @@ export const fantasyAPI = {
       const params = new URLSearchParams();
       params.append('season', season.toString());
       params.append('min_weeks', minWeeks.toString());
-      
-      return await apiClient.get(`/api/fantasy/analytics/breakout-candidates/${position}?${params.toString()}`, authToken);
+      params.append('limit', '10');
+      return await apiClient.get(
+        `/api/v1/fantasy/analytics/breakout-candidates?position=${encodeURIComponent(position)}&${params.toString()}`,
+        authToken
+      );
     } catch (error) {
       return { status: 'error', candidates: [], message: 'Failed to get breakout candidates' };
     }
   },
 
-  getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2025, token?: string) => {
+  getMatchupAnalytics: async (playerId: number, opponent: string, season: number = 2025, week: number = 1, token?: string) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
-      const params = new URLSearchParams();
-      params.append('season', season.toString());
-      
-      return await apiClient.get(`/api/fantasy/analytics/${playerId}/matchup/${opponent}?${params.toString()}`, authToken);
+      return await apiClient.get(
+        `/api/v1/fantasy/analytics/player/${playerId}/matchup?opponent=${encodeURIComponent(opponent)}&week=${week}`,
+        authToken
+      );
     } catch (error) {
       return { status: 'error', matchup_analysis: {}, message: 'Failed to get matchup analytics' };
     }

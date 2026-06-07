@@ -546,7 +546,7 @@ class PlayerAnalytics(Base):
     team_pass_attempts = Column(Integer)
     team_rush_attempts = Column(Integer)
     team_red_zone_attempts = Column(Integer)
-    game_script = Column(Float)  # Positive = favorable, negative = unfavorable
+    game_script = Column(String(20))  # positive / negative / neutral (DB varchar)
     time_of_possession = Column(Float)  # Team's TOP in minutes
 
     # Advanced Efficiency Metrics

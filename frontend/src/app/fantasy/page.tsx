@@ -314,8 +314,28 @@ export default function FantasyPage() {
         loadLeagueForAnalysis(currentLeagues[0].league_id);
       }
       
-      // Mock trending players
-      setTrendingPlayers([]);
+      // Load trending adds when leagues are connected
+      try {
+        const trendingResponse = await fantasyAPI.getTrendingPlayers();
+        if (trendingResponse.status === 'success') {
+          const rows = trendingResponse.trending || [];
+          setTrendingPlayers(
+            rows.map((player: any) => {
+              const [firstName, ...rest] = String(player.name || '').split(' ');
+              return {
+                ...player,
+                first_name: player.first_name || firstName || player.name,
+                last_name: player.last_name || rest.join(' '),
+                count: player.trend_count ?? player.count ?? 0,
+              };
+            })
+          );
+        } else {
+          setTrendingPlayers([]);
+        }
+      } catch {
+        setTrendingPlayers([]);
+      }
     } catch (err) {
       setError('Failed to load fantasy data. Please try again.');
       console.error('Load fantasy data error:', err);
@@ -403,6 +423,36 @@ export default function FantasyPage() {
       setStartSitRecommendations([]);
     } finally {
       setIsLoadingStartSit(false);
+    }
+  };
+
+  const handleViewMatchups = async (leagueId: string) => {
+    setIsLoadingMatchups(true);
+    setShowMatchups(true);
+    setShowStandings(false);
+    setShowWaiverRecommendations(false);
+    setShowStartSitRecommendations(false);
+    setShowPlayerSearch(false);
+    setShowComparison(false);
+    setShowTradeAnalyzer(false);
+    setShowLeagueRules(false);
+    setSelectedLeague(leagueId);
+    setError(null);
+
+    try {
+      const response = await fantasyAPI.getLeagueMatchups(leagueId, selectedWeek);
+      if (response.status === 'success') {
+        setMatchups(response.matchups || []);
+      } else {
+        setError(response.message || 'Failed to load league matchups');
+        setMatchups([]);
+      }
+    } catch (err) {
+      setError('Failed to load league matchups. Please try again.');
+      console.error('Load matchups error:', err);
+      setMatchups([]);
+    } finally {
+      setIsLoadingMatchups(false);
     }
   };
 
@@ -980,6 +1030,18 @@ export default function FantasyPage() {
                       )}
                       <div className="flex gap-2">
                         <button
+                          onClick={() => handleViewMatchups(league.league_id)}
+                          disabled={isLoadingMatchups}
+                          className="px-3 py-1 bg-indigo-600 text-white text-sm rounded hover:bg-indigo-700 disabled:opacity-50 flex items-center gap-1"
+                        >
+                          {isLoadingMatchups && selectedLeague === league.league_id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Users className="w-3 h-3" />
+                          )}
+                          Matchups
+                        </button>
+                        <button
                           onClick={() => handleViewStandings(league.league_id)}
                           disabled={isLoadingStandings}
                           className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50 flex items-center gap-1"
@@ -1191,6 +1253,65 @@ rec.recommendation === 'START' ? 'text-green-600' : 'text-red-600'
                         </div>
                         <div className="mt-3 p-3 card card-tight">
                           <p className="text-sm muted">{rec.reasoning}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* League Matchups View */}
+            {showMatchups && (
+              <div className="card">
+                <div className="flex items-center justify-between mb-4">
+                  <h2 className="text-xl font-semibold">Week {selectedWeek} Matchups</h2>
+                  <button
+                    onClick={() => {
+                      setShowMatchups(false);
+                      setMatchups([]);
+                      setSelectedLeague(null);
+                    }}
+                    className="dim hover:muted"
+                  >
+                    ✕
+                  </button>
+                </div>
+
+                {isLoadingMatchups ? (
+                  <div className="text-center py-8">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto mb-4 text-indigo-600" />
+                    <p className="muted">Loading matchups...</p>
+                  </div>
+                ) : matchups.length === 0 ? (
+                  <div className="text-center py-8 dim">
+                    <Users className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+                    <p>No matchups available for week {selectedWeek}</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {matchups.map((matchup) => (
+                      <div
+                        key={matchup.matchup_id}
+                        className={`border border-[var(--border)] rounded-lg p-4 ${
+                          matchup.user_involved ? 'bg-blue-50' : ''
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <div className="font-medium">{matchup.team1.name}</div>
+                            <div className="text-sm dim">{matchup.team1.owner_name}</div>
+                          </div>
+                          <div className="text-center px-4">
+                            <div className="text-lg font-semibold">
+                              {matchup.team1.score.toFixed(1)} - {matchup.team2.score.toFixed(1)}
+                            </div>
+                            <div className="text-xs dim capitalize">{matchup.status}</div>
+                          </div>
+                          <div className="flex-1 text-right">
+                            <div className="font-medium">{matchup.team2.name}</div>
+                            <div className="text-sm dim">{matchup.team2.owner_name}</div>
+                          </div>
                         </div>
                       </div>
                     ))}

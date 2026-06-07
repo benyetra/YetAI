@@ -5,10 +5,13 @@ Basic fantasy football projections and player data
 
 import asyncio
 import aiohttp
-import random
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 import logging
+
+from sqlalchemy.orm import Session
+
+from app.services.fantasy_projections import generate_deterministic_projections
 
 logger = logging.getLogger(__name__)
 
@@ -84,63 +87,22 @@ class FantasyPipeline:
             return []
 
     def generate_fantasy_projections(
-        self, players: List[Dict], games: List[Dict]
+        self,
+        players: List[Dict],
+        games: Optional[List[Dict]] = None,
+        *,
+        db: Optional[Session] = None,
+        season: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
-        """Generate fantasy projections for players"""
-        projections = []
-
-        for player in players[:50]:  # Limit to top 50
-            position = player.get("position", "RB")
-            team = player.get("team", "FA")
-
-            # Find opponent
-            opponent = "TBD"
-            for game in games:
-                if game.get("home_team") == team:
-                    opponent = game.get("away_team", "TBD")
-                    break
-                elif game.get("away_team") == team:
-                    opponent = game.get("home_team", "TBD")
-                    break
-
-            # Generate projection based on position
-            if position == "QB":
-                projected_points = random.uniform(15, 28)
-                floor = projected_points - random.uniform(3, 7)
-                ceiling = projected_points + random.uniform(5, 12)
-            elif position == "RB":
-                projected_points = random.uniform(8, 25)
-                floor = projected_points - random.uniform(2, 6)
-                ceiling = projected_points + random.uniform(4, 10)
-            elif position in ["WR", "TE"]:
-                projected_points = random.uniform(6, 22)
-                floor = projected_points - random.uniform(2, 5)
-                ceiling = projected_points + random.uniform(3, 8)
-            else:  # K
-                projected_points = random.uniform(5, 15)
-                floor = projected_points - random.uniform(1, 3)
-                ceiling = projected_points + random.uniform(2, 5)
-
-            projections.append(
-                {
-                    "player_id": player["id"],
-                    "player_name": player["name"],
-                    "position": position,
-                    "team": team,
-                    "opponent": opponent,
-                    "projected_points": round(projected_points, 1),
-                    "floor": round(max(0, floor), 1),
-                    "ceiling": round(ceiling, 1),
-                    "snap_percentage": random.randint(60, 100),
-                    "injury_status": random.choice(
-                        ["Healthy", "Questionable", "Probable"]
-                    ),
-                }
+        """Generate deterministic projections from analytics or position baselines."""
+        season = season or datetime.now().year
+        if db is not None:
+            return generate_deterministic_projections(
+                db, players, games or [], season=season, limit=50
             )
-
-        # Sort by projected points
-        projections.sort(key=lambda x: x["projected_points"], reverse=True)
-        return projections
+        return generate_deterministic_projections(
+            None, players, games or [], season=season, limit=50
+        )
 
     async def get_league_roster(
         self, league_id: str, user_id: int

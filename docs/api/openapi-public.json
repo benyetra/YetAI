@@ -2638,6 +2638,593 @@
         "x-audience": "public"
       }
     },
+    "/api/fantasy/matchups/{league_id}/{week}": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Fantasy Matchups",
+        "description": "Weekly head-to-head matchups for a Sleeper league.",
+        "operationId": "get_fantasy_matchups_api_fantasy_matchups__league_id___week__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "League Id"
+            }
+          },
+          {
+            "name": "week",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Week"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
+    "/api/fantasy/trending": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Fantasy Trending",
+        "description": "Sleeper trending adds/drops for waiver wire context.",
+        "operationId": "get_fantasy_trending_api_fantasy_trending_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "trend_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^(add|drop)$",
+              "default": "add",
+              "title": "Trend Type"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
+    "/api/fantasy/test/sleeper-trending": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Fantasy Trending Legacy",
+        "description": "Legacy alias for frontend ``getTrendingPlayers``.",
+        "operationId": "get_fantasy_trending_legacy_api_fantasy_test_sleeper_trending_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-audience": "public"
+      }
+    },
+    "/api/fantasy/test/sleeper/{username}": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Test Sleeper Username",
+        "description": "Validate a Sleeper username resolves before connect.",
+        "operationId": "test_sleeper_username_api_fantasy_test_sleeper__username__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "username",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Username"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
+    "/api/fantasy/analytics/breakout-candidates/{position}": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Breakout Candidates Legacy",
+        "description": "Legacy shim for frontend breakout analytics.",
+        "operationId": "get_breakout_candidates_legacy_api_fantasy_analytics_breakout_candidates__position__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "position",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Position"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "default": 2025,
+              "title": "Season"
+            }
+          },
+          {
+            "name": "min_weeks",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 16,
+              "minimum": 1,
+              "default": 3,
+              "title": "Min Weeks"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
+    "/api/fantasy/analytics/{player_id}/matchup/{opponent}": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Matchup Analytics Legacy",
+        "description": "Legacy shim for frontend matchup analytics.",
+        "operationId": "get_matchup_analytics_legacy_api_fantasy_analytics__player_id__matchup__opponent__get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "player_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Player Id"
+            }
+          },
+          {
+            "name": "opponent",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Opponent"
+            }
+          },
+          {
+            "name": "season",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 2100,
+              "minimum": 2000,
+              "default": 2025,
+              "title": "Season"
+            }
+          },
+          {
+            "name": "week",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 22,
+              "minimum": 1,
+              "default": 1,
+              "title": "Week"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
     "/api/sleeper/connect": {
       "post": {
         "tags": [

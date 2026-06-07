@@ -91,7 +91,13 @@ async def _build_gsis_to_fantasy_player_map(db: Session) -> Dict[str, int]:
 
 
 def _load_weekly_frame(season: int) -> pd.DataFrame:
-    import nfl_data_py as nfl
+    try:
+        import nfl_data_py as nfl
+    except ImportError as exc:
+        raise ImportError(
+            "nfl_data_py is required for player_analytics ETL. "
+            "Install with: pip install nfl-data-py==0.3.3 --no-deps && pip install appdirs fastparquet"
+        ) from exc
 
     weekly = nfl.import_weekly_data([season])
     if weekly is None or weekly.empty:
