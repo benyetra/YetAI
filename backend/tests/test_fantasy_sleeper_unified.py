@@ -141,3 +141,53 @@ async def test_sync_fantasy_players_sanitizes_empty_numeric_fields():
     assert inserted["experience"] is None
     assert inserted["height"] == "72"
     db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_get_user_leagues_includes_prior_season_when_current_is_empty():
+    from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+    service = SleeperFantasyService()
+
+    async def fake_get(url: str):
+        request = MagicMock()
+        response = MagicMock()
+        response.raise_for_status = MagicMock()
+        if url.endswith("/leagues/nfl/2026"):
+            response.json.return_value = []
+        elif url.endswith("/leagues/nfl/2025"):
+            response.json.return_value = [
+                {
+                    "league_id": "1257417114529054720",
+                    "name": "Mike's Hard Fantasy Football",
+                    "total_rosters": 12,
+                    "scoring_settings": {"rec": 1},
+                    "roster_positions": ["QB", "RB"],
+                }
+            ]
+        else:
+            response.json.return_value = []
+        return response
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=fake_get)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch.object(service, "_league_seasons_to_fetch", return_value=[2026, 2025]),
+        patch(
+            "app.services.sleeper_fantasy_service.httpx.AsyncClient",
+            return_value=mock_client,
+        ),
+        patch.object(
+            service,
+            "get_league_details",
+            AsyncMock(return_value={"teams": [], "league_data": {}}),
+        ),
+    ):
+        leagues = await service.get_user_leagues("644638080736759808")
+
+    assert len(leagues) == 1
+    assert leagues[0]["league_id"] == "1257417114529054720"
+    assert leagues[0]["season"] == 2025

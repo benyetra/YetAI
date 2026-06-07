@@ -115,6 +115,41 @@ print(fantasy_sync_player_analytics.delay(season=2025))
 
 Monitor worker logs for completion and no `HTTP Error 404` on weekly parquet (2025+ requires `stats_player_week` fallback from commit `0f3db7b7` onward).
 
+**Automated prod verify script (Railway shell or local with `DATABASE_URL`):**
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_fantasy.py --season 2025
+```
+
+Optional API smoke after deploy (requires a user JWT):
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_fantasy.py \
+  --season 2025 \
+  --api-url https://api.yetai.app \
+  --token "$AUTH_TOKEN" \
+  --week 1
+```
+
+Pass criteria: beat schedule registered, `fantasy_players_mapped` ≥ 1000, `player_analytics_rows` > 0 for the season, optional start/sit HTTP 200.
+
+**Mapping health audit (no DB writes):**
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python -c "
+import asyncio
+from app.core.database import SessionLocal
+from app.services.etl.fantasy.sync_player_analytics import audit_player_analytics_mapping
+db = SessionLocal()
+print(asyncio.run(audit_player_analytics_mapping(db, season=2025)))
+db.close()
+"
+```
+
+High `skip_rate_pct` (~90%) is normal: most nflverse rows lack a GSIS↔Sleeper map. Focus on `fantasy_players_mapped` and `player_analytics_rows`.
+
 Manual enqueue:
 
 ```bash
@@ -222,7 +257,7 @@ Full gate before push: `PYTHONPATH=. .venv/bin/python -m pytest -q`.
 | `503 Fantasy pipeline service unavailable` | Service loader / `fantasy_pipeline` registration |
 | Empty start/sit | `player_analytics` backfill; GSIS mapping in `fantasy_players` |
 | `HTTP Error 404` on season 2025+ ETL | Legacy nfl-data-py URL; upgrade to latest code with `stats_player_week` fallback |
-| Slow manual ETL (~15 min) | Default `sync_fantasy_players=False`; use `True` only when catalog stale |
+| Empty leagues after connect | Sleeper API is **season-scoped** (`/leagues/nfl/{year}`). Offseason, current calendar year may have 0 leagues — API fetches current + prior season. Verify with `curl https://api.sleeper.app/v1/user/{sleeper_id}/leagues/nfl/2025` |
 | `Unknown PG numeric type` on analytics | `PlayerAnalytics.game_script` must be `Float`; run Alembic if schema drift |
 
 ## Related issues

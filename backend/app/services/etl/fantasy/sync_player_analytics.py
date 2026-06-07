@@ -346,6 +346,53 @@ async def sync_player_analytics(
     }
 
 
+async def audit_player_analytics_mapping(
+    db: Session,
+    *,
+    season: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Report GSIS mapping coverage vs nflverse weekly rows (no DB writes)."""
+    season = season or datetime.now().year
+    gsis_to_fantasy = await _build_gsis_to_fantasy_player_map(db)
+    sleeper_catalog = len(await fantasy_sleeper_unified.sleeper._get_all_players())
+    db_players = (
+        db.query(FantasyPlayer.id)
+        .filter(FantasyPlayer.platform == FantasyPlatform.SLEEPER)
+        .count()
+    )
+    analytics_rows = (
+        db.query(PlayerAnalytics.id).filter(PlayerAnalytics.season == season).count()
+    )
+
+    weekly = _load_weekly_frame(season)
+    total_weekly = len(weekly)
+    mappable = 0
+    skipped_unmapped = 0
+    if not weekly.empty:
+        for _, row in weekly.iterrows():
+            gsis_id = str(row.get("player_id", ""))
+            if gsis_to_fantasy.get(gsis_id) is None:
+                skipped_unmapped += 1
+            else:
+                mappable += 1
+
+    skip_rate_pct = (
+        round(100.0 * skipped_unmapped / total_weekly, 1) if total_weekly else 0.0
+    )
+    return {
+        "season": season,
+        "fantasy_players_db": db_players,
+        "sleeper_catalog_players": sleeper_catalog,
+        "fantasy_players_mapped": len(gsis_to_fantasy),
+        "player_analytics_rows": analytics_rows,
+        "nflverse_weekly_rows": total_weekly,
+        "rows_mappable": mappable,
+        "rows_skipped_unmapped": skipped_unmapped,
+        "skip_rate_pct": skip_rate_pct,
+        "healthy": len(gsis_to_fantasy) >= 1000 and analytics_rows > 0,
+    }
+
+
 def run(
     *,
     season: Optional[int] = None,

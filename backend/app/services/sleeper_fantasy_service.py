@@ -57,41 +57,49 @@ class SleeperFantasyService(FantasyPlatformInterface):
             logger.error(f"Sleeper authentication error: {str(e)}")
             raise ValueError(f"Authentication failed: {str(e)}")
 
+    def _league_seasons_to_fetch(self) -> List[int]:
+        """Sleeper leagues are keyed by NFL season; include prior year for offseason."""
+        current = datetime.now().year
+        return [current, current - 1]
+
     async def get_user_leagues(self, platform_user_id: str) -> List[Dict[str, Any]]:
-        """Get all leagues for a user for current season"""
-        current_season = datetime.now().year
+        """Get leagues for current and prior NFL seasons."""
+        seasons = self._league_seasons_to_fetch()
+        seen_league_ids: set[str] = set()
+        leagues: List[Dict[str, Any]] = []
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(
-                    f"{self.base_url}/user/{platform_user_id}/leagues/nfl/{current_season}"
-                )
-                response.raise_for_status()
-
-                leagues_data = response.json()
-
-                leagues = []
-                for league in leagues_data:
-                    # Get additional league details
-                    league_details = await self.get_league_details(league["league_id"])
-
-                    # Determine waiver settings from league details
-                    waiver_settings = self._determine_waiver_settings(
-                        league_details.get("league_data", {})
+                for season in seasons:
+                    response = await client.get(
+                        f"{self.base_url}/user/{platform_user_id}/leagues/nfl/{season}"
                     )
+                    response.raise_for_status()
+                    leagues_data = response.json()
 
-                    leagues.append(
-                        {
-                            "league_id": league["league_id"],
-                            "name": league["name"],
-                            "season": current_season,
-                            "team_count": league["total_rosters"],
-                            "scoring_type": self._determine_scoring_type(league),
-                            "roster_positions": league.get("roster_positions", []),
-                            "teams": league_details.get("teams", []),
-                            "waiver_settings": waiver_settings,
-                        }
-                    )
+                    for league in leagues_data:
+                        league_id = str(league["league_id"])
+                        if league_id in seen_league_ids:
+                            continue
+                        seen_league_ids.add(league_id)
+
+                        league_details = await self.get_league_details(league_id)
+                        waiver_settings = self._determine_waiver_settings(
+                            league_details.get("league_data", {})
+                        )
+
+                        leagues.append(
+                            {
+                                "league_id": league_id,
+                                "name": league["name"],
+                                "season": season,
+                                "team_count": league["total_rosters"],
+                                "scoring_type": self._determine_scoring_type(league),
+                                "roster_positions": league.get("roster_positions", []),
+                                "teams": league_details.get("teams", []),
+                                "waiver_settings": waiver_settings,
+                            }
+                        )
 
                 return leagues
 

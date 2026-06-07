@@ -193,12 +193,21 @@ async def get_league_rules(
 async def delete_fantasy_league(
     league_id: str, current_user: dict = Depends(get_current_user)
 ):
-    """Delete/leave a fantasy league"""
+    """Remove a fantasy league from the user's YetAI account."""
     try:
-        return {
-            "status": "success",
-            "message": "Fantasy league deletion endpoint - implementation in progress",
-        }
+        from app.services.fantasy_sleeper_unified import fantasy_sleeper_unified
+
+        result = await fantasy_sleeper_unified.disconnect_league(
+            current_user["user_id"], league_id
+        )
+        if result.get("status") != "success":
+            raise HTTPException(
+                status_code=404,
+                detail=result.get("message", "Failed to delete fantasy league"),
+            )
+        return result
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error deleting league {league_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to delete fantasy league")

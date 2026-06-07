@@ -158,3 +158,28 @@ def test_breakout_candidates_legacy_shim(mock_service_cls, client, auth_headers)
     body = response.json()
     assert body["status"] == "success"
     assert body["candidates"][0]["player_name"] == "Breakout WR"
+
+
+@patch(
+    "app.services.fantasy_sleeper_unified.fantasy_sleeper_unified.disconnect_league",
+    new_callable=AsyncMock,
+)
+def test_delete_fantasy_league_route(mock_disconnect, client, auth_headers):
+    mock_disconnect.return_value = {
+        "status": "success",
+        "message": "League league-abc removed from your YetAI account",
+    }
+
+    response = client.delete("/api/fantasy/leagues/league-abc", headers=auth_headers)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "success"
+    mock_disconnect.assert_awaited_once_with(1, "league-abc")
+
+
+def test_prod_verify_fantasy_beat_schedule_registered():
+    from scripts.prod_verify_fantasy import _beat_schedule_ok
+
+    result = _beat_schedule_ok()
+    assert result["ok"] is True

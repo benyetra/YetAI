@@ -122,19 +122,25 @@ interface Matchup {
 }
 
 interface WaiverRecommendation {
-  league_id: number;
-  league_name: string;
+  league_id?: number | string;
+  league_name?: string;
   player_id: string;
   player_name: string;
+  name?: string;
   position: string;
   team: string;
   priority_score: number;
   trend_count: number;
-  reason: string;
-  suggested_fab_percentage: number;
+  reason?: string;
+  suggested_fab_percentage?: number;
   age?: number;
   experience?: number;
-  fantasy_positions: string[];
+  fantasy_positions?: string[];
+  waiver_suggestion?: {
+    suggestion_type?: string;
+    faab_percentage?: number;
+    claim_advice?: string;
+  };
 }
 
 interface StartSitRecommendation {
@@ -1440,7 +1446,9 @@ team.is_user_team ? 'text-blue-700' : ''
                           <div className="flex items-center space-x-3">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="font-semibold">{rec.name}</span>
+                                <span className="font-semibold">
+                                  {rec.player_name || rec.name}
+                                </span>
                                 <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded">
                                   {rec.position}
                                 </span>

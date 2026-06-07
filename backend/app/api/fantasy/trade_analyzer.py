@@ -233,29 +233,7 @@ async def get_simple_team_analysis(
                 "surplus_players": surplus_players,
                 "expendable_players": expendable_players,
                 "valuable_players": valuable_players,
-                "tradeable_picks": [
-                    {
-                        "pick_id": 1,
-                        "season": 2025,
-                        "round": 1,
-                        "description": "2025 1st Round Pick",
-                        "trade_value": 35,
-                    },
-                    {
-                        "pick_id": 2,
-                        "season": 2025,
-                        "round": 2,
-                        "description": "2025 2nd Round Pick",
-                        "trade_value": 18,
-                    },
-                    {
-                        "pick_id": 3,
-                        "season": 2025,
-                        "round": 3,
-                        "description": "2025 3rd Round Pick",
-                        "trade_value": 8,
-                    },
-                ],
+                "tradeable_picks": [],
             },
             "trade_strategy": {
                 "competitive_analysis": {},
@@ -597,7 +575,7 @@ async def generate_trade_recommendations(
                     },
                     "we_get": {
                         "players": target_qb_players,
-                        "picks": ["2025 Late Round Pick"],
+                        "picks": [],
                     },
                     "confidence": 75,
                     "estimated_likelihood": 0.75,
@@ -667,11 +645,11 @@ async def generate_trade_recommendations(
                     "target_team_id": trade_partner["team_id"],
                     "we_give": {
                         "players": add_trade_values(format_players(te_players)),
-                        "picks": ["Mid Round Pick"] if not te_players else [],
+                        "picks": [],
                     },
                     "we_get": {
                         "players": target_wr_players,
-                        "picks": ["2026 Late Pick"],
+                        "picks": [],
                     },
                     "confidence": 70,
                     "estimated_likelihood": 0.70,
