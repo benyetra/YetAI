@@ -19,6 +19,34 @@ from app.services.fantasy_sleeper_unified import fantasy_sleeper_unified
 
 logger = logging.getLogger(__name__)
 
+_ANALYTICS_COMPARE_KEYS = (
+    "ppr_points",
+    "half_ppr_points",
+    "standard_points",
+    "targets",
+    "carries",
+    "receptions",
+    "receiving_yards",
+    "rushing_yards",
+    "opponent",
+    "target_share",
+    "snap_percentage",
+    "points_per_target",
+)
+
+
+def _values_equal(left: Any, right: Any) -> bool:
+    if left is None and right is None:
+        return True
+    if left is None or right is None:
+        return False
+    if isinstance(left, float) or isinstance(right, float):
+        try:
+            return abs(float(left) - float(right)) < 1e-6
+        except (TypeError, ValueError):
+            return False
+    return left == right
+
 
 def _safe_float(value: Any) -> Optional[float]:
     if value is None or (isinstance(value, float) and pd.isna(value)):
@@ -107,20 +135,51 @@ def _load_weekly_frame(season: int) -> pd.DataFrame:
     return weekly
 
 
-def _load_existing_row_ids(db: Session, season: int) -> Dict[Tuple[int, int], int]:
-    """Map (player_id, week) → row id for one season (lowest id wins duplicates)."""
+def _load_existing_rows(
+    db: Session, season: int
+) -> Dict[Tuple[int, int], Dict[str, Any]]:
+    """Map (player_id, week) → existing row snapshot for one season."""
     rows = (
-        db.query(PlayerAnalytics.player_id, PlayerAnalytics.week, PlayerAnalytics.id)
+        db.query(
+            PlayerAnalytics.id,
+            PlayerAnalytics.player_id,
+            PlayerAnalytics.week,
+            PlayerAnalytics.ppr_points,
+            PlayerAnalytics.half_ppr_points,
+            PlayerAnalytics.standard_points,
+            PlayerAnalytics.targets,
+            PlayerAnalytics.carries,
+            PlayerAnalytics.receptions,
+            PlayerAnalytics.receiving_yards,
+            PlayerAnalytics.rushing_yards,
+            PlayerAnalytics.opponent,
+            PlayerAnalytics.target_share,
+            PlayerAnalytics.snap_percentage,
+            PlayerAnalytics.points_per_target,
+        )
         .filter(PlayerAnalytics.season == season)
         .order_by(PlayerAnalytics.id)
         .all()
     )
-    existing: Dict[Tuple[int, int], int] = {}
-    for player_id, week, row_id in rows:
-        key = (player_id, week)
-        if key not in existing:
-            existing[key] = row_id
+    existing: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    for row in rows:
+        key = (row.player_id, row.week)
+        if key in existing:
+            continue
+        existing[key] = {
+            "id": row.id,
+            **{field: getattr(row, field) for field in _ANALYTICS_COMPARE_KEYS},
+        }
     return existing
+
+
+def _analytics_payload_changed(
+    existing: Dict[str, Any], payload: Dict[str, Any]
+) -> bool:
+    return any(
+        not _values_equal(existing.get(key), payload.get(key))
+        for key in _ANALYTICS_COMPARE_KEYS
+    )
 
 
 def _row_payload(
@@ -160,10 +219,13 @@ async def sync_player_analytics(
     *,
     season: Optional[int] = None,
     max_week: Optional[int] = None,
+    sync_fantasy_players: bool = False,
 ) -> Dict[str, Any]:
     """Upsert weekly analytics rows for the given season."""
     season = season or datetime.now().year
-    await fantasy_sleeper_unified.sync_fantasy_players(db)
+    player_sync_result: Optional[Dict[str, Any]] = None
+    if sync_fantasy_players:
+        player_sync_result = await fantasy_sleeper_unified.sync_fantasy_players(db)
     gsis_to_fantasy = await _build_gsis_to_fantasy_player_map(db)
 
     weekly = _load_weekly_frame(season)
@@ -178,11 +240,12 @@ async def sync_player_analytics(
     if max_week is not None:
         weekly = weekly[weekly["week"] <= max_week]
 
-    existing_ids = _load_existing_row_ids(db, season)
+    existing_rows = _load_existing_rows(db, season)
     to_insert: List[Dict[str, Any]] = []
     to_update: List[Dict[str, Any]] = []
     upserted = 0
     skipped = 0
+    unchanged = 0
     now = datetime.utcnow()
 
     for _, row in weekly.iterrows():
@@ -203,13 +266,15 @@ async def sync_player_analytics(
             week=week,
             season=season,
         )
-        existing_id = existing_ids.get((fantasy_player_id, week))
-        if existing_id is None:
+        existing = existing_rows.get((fantasy_player_id, week))
+        if existing is None:
             to_insert.append({**payload, "created_at": now})
+            upserted += 1
+        elif _analytics_payload_changed(existing, payload):
+            to_update.append({"id": existing["id"], **payload})
+            upserted += 1
         else:
-            to_update.append({"id": existing_id, **payload})
-
-        upserted += 1
+            unchanged += 1
 
     if to_insert:
         db.bulk_insert_mappings(PlayerAnalytics, to_insert)
@@ -226,14 +291,19 @@ async def sync_player_analytics(
     return {
         "season": season,
         "rows_upserted": upserted,
+        "rows_unchanged": unchanged,
         "rows_skipped": skipped,
         "fantasy_players_mapped": len(gsis_to_fantasy),
+        "fantasy_players_sync": player_sync_result,
         "message": f"Upserted {upserted} player_analytics rows for {season}",
     }
 
 
 def run(
-    *, season: Optional[int] = None, max_week: Optional[int] = None
+    *,
+    season: Optional[int] = None,
+    max_week: Optional[int] = None,
+    sync_fantasy_players: bool = False,
 ) -> Dict[str, Any]:
     """Synchronous entrypoint for Celery tasks."""
     import asyncio
@@ -242,6 +312,13 @@ def run(
 
     db = SessionLocal()
     try:
-        return asyncio.run(sync_player_analytics(db, season=season, max_week=max_week))
+        return asyncio.run(
+            sync_player_analytics(
+                db,
+                season=season,
+                max_week=max_week,
+                sync_fantasy_players=sync_fantasy_players,
+            )
+        )
     finally:
         db.close()

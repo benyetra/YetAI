@@ -325,8 +325,46 @@ class FantasySleeperUnifiedService:
     async def sync_fantasy_players(self, db: Session) -> Dict[str, Any]:
         """Upsert ``fantasy_players`` rows from Sleeper's player catalog."""
         players_data = await self.sleeper._get_all_players()
+        existing_rows = (
+            db.query(
+                FantasyPlayer.id,
+                FantasyPlayer.platform_player_id,
+                FantasyPlayer.name,
+                FantasyPlayer.position,
+                FantasyPlayer.team,
+                FantasyPlayer.age,
+                FantasyPlayer.height,
+                FantasyPlayer.weight,
+                FantasyPlayer.college,
+                FantasyPlayer.experience,
+                FantasyPlayer.status,
+                FantasyPlayer.injury_description,
+            )
+            .filter(FantasyPlayer.platform == FantasyPlatform.SLEEPER)
+            .all()
+        )
+        existing_by_sleeper_id: Dict[str, Dict[str, Any]] = {}
+        for row in existing_rows:
+            existing_by_sleeper_id[str(row.platform_player_id)] = {
+                "id": row.id,
+                "name": row.name,
+                "position": row.position,
+                "team": row.team,
+                "age": row.age,
+                "height": row.height,
+                "weight": row.weight,
+                "college": row.college,
+                "experience": row.experience,
+                "status": row.status,
+                "injury_description": row.injury_description,
+            }
+
         created = 0
         updated = 0
+        skipped = 0
+        to_insert: List[Dict[str, Any]] = []
+        to_update: List[Dict[str, Any]] = []
+        now = datetime.now(timezone.utc)
 
         for sleeper_id, player_data in players_data.items():
             position = player_data.get("position")
@@ -341,14 +379,6 @@ class FantasySleeperUnifiedService:
             if not name:
                 continue
 
-            existing = (
-                db.query(FantasyPlayer)
-                .filter(
-                    FantasyPlayer.platform == FantasyPlatform.SLEEPER,
-                    FantasyPlayer.platform_player_id == str(sleeper_id),
-                )
-                .first()
-            )
             payload = {
                 "name": name,
                 "position": _parse_fantasy_position(position),
@@ -362,27 +392,36 @@ class FantasySleeperUnifiedService:
                 "injury_description": _optional_str(
                     player_data.get("injury_body_part")
                 ),
-                "updated_at": datetime.now(timezone.utc),
             }
 
+            existing = existing_by_sleeper_id.get(str(sleeper_id))
             if existing is None:
-                db.add(
-                    FantasyPlayer(
-                        platform=FantasyPlatform.SLEEPER,
-                        platform_player_id=str(sleeper_id),
+                to_insert.append(
+                    {
+                        "platform": FantasyPlatform.SLEEPER,
+                        "platform_player_id": str(sleeper_id),
                         **payload,
-                    )
+                        "created_at": now,
+                        "updated_at": now,
+                    }
                 )
                 created += 1
-            else:
-                for key, value in payload.items():
-                    setattr(existing, key, value)
+            elif any(existing.get(key) != payload.get(key) for key in payload):
+                to_update.append({"id": existing["id"], **payload, "updated_at": now})
                 updated += 1
+            else:
+                skipped += 1
+
+        if to_insert:
+            db.bulk_insert_mappings(FantasyPlayer, to_insert)
+        if to_update:
+            db.bulk_update_mappings(FantasyPlayer, to_update)
 
         db.commit()
         return {
             "created": created,
             "updated": updated,
+            "skipped_unchanged": skipped,
             "total_processed": created + updated,
         }
 

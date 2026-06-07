@@ -681,7 +681,7 @@ def fantasy_sync_player_analytics(season: int | None = None):
     """Backfill ``player_analytics`` from nflverse weekly data for start/sit."""
     from app.services.etl.fantasy.sync_player_analytics import run
 
-    return run(season=season)
+    return run(season=season, sync_fantasy_players=True)
 
 
 # --- NHL sub-tasks (ported from YetiBets scripts/nhl → app/services/etl/nhl) ----

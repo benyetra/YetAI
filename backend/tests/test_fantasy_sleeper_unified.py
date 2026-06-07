@@ -108,7 +108,7 @@ def test_safe_int_coerces_empty_strings_to_none():
 async def test_sync_fantasy_players_sanitizes_empty_numeric_fields():
     service = FantasySleeperUnifiedService()
     db = MagicMock()
-    db.query.return_value.filter.return_value.first.return_value = None
+    db.query.return_value.filter.return_value.all.return_value = []
 
     with patch.object(
         service.sleeper,
@@ -135,9 +135,9 @@ async def test_sync_fantasy_players_sanitizes_empty_numeric_fields():
         result = await service.sync_fantasy_players(db)
 
     assert result["created"] == 1
-    added_player = db.add.call_args[0][0]
-    assert added_player.age is None
-    assert added_player.weight is None
-    assert added_player.experience is None
-    assert added_player.height == "72"
+    inserted = db.bulk_insert_mappings.call_args[0][1][0]
+    assert inserted["age"] is None
+    assert inserted["weight"] is None
+    assert inserted["experience"] is None
+    assert inserted["height"] == "72"
     db.commit.assert_called_once()
