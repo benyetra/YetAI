@@ -609,6 +609,8 @@ async def generate_trade_recommendations(
             rec_id += 1
 
         if len(positions.get("RB", [])) > 4:
+            rb_players = positions.get("RB", [])
+            give_players = rb_players[-2:]
             trade_partner = get_trade_partner(f"{team_id}:RB_surplus")
 
             # Get real players from target team
@@ -645,6 +647,9 @@ async def generate_trade_recommendations(
             rec_id += 1
 
         if len(positions.get("WR", [])) < 4:
+            te_players = (
+                positions.get("TE", [])[:1] if len(positions.get("TE", [])) > 1 else []
+            )
             trade_partner = get_trade_partner(f"{team_id}:WR_depth")
 
             # Get real WR from target team
