@@ -244,6 +244,8 @@ export default function TradeAnalyzer({
   const [activeTab, setActiveTab] = useState<'analyzer' | 'recommendations' | 'builder'>('analyzer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [teamsLoading, setTeamsLoading] = useState(false);
+  const [teamsError, setTeamsError] = useState<string | null>(null);
   const [rosterLoading, setRosterLoading] = useState(false);
   const [rosterLoaded, setRosterLoaded] = useState(false);
 
@@ -326,64 +328,76 @@ export default function TradeAnalyzer({
 
   // Helper function to load teams from API when standings data is not available
   const loadTeamsFromAPI = async (leagueKey: string) => {
+    setTeamsLoading(true);
+    setTeamsError(null);
+
     try {
       const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
-        console.error('League not found for teams loading:', leagueKey);
+        setTeams([]);
+        setTeamsError('League not found. Select a connected league and try again.');
         return;
       }
 
       const platformLeagueId = league.platform_league_id || league.league_id;
       if (!platformLeagueId) {
-        console.error('No platform league ID found for league:', league);
+        setTeams([]);
+        setTeamsError('Missing Sleeper league ID for this league.');
         return;
       }
 
       console.log('Loading teams directly from Sleeper for league:', platformLeagueId);
 
-      // Get users data from Sleeper API to get real team names
-      const usersResponse = await fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`);
+      const [usersResponse, rostersResponse] = await Promise.all([
+        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`),
+        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/rosters`),
+      ]);
 
-      if (usersResponse.ok) {
-        const users = await usersResponse.json();
-        console.log('Successfully loaded', users?.length, 'users from Sleeper API');
-
-        if (users && users.length > 0) {
-          const realTeams = users.map((user: any, index: number) => ({
-            id: index + 1, // Use index-based ID for consistency
-            name: user.metadata?.team_name || user.display_name || `Team ${index + 1}`,
-            owner_name: user.display_name || `Owner ${index + 1}`
-          }));
-
-          setTeams(realTeams);
-          console.log('Loaded real teams from API:', realTeams.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name })));
-          return;
-        }
-      } else {
-        console.error('Failed to fetch users from Sleeper API:', usersResponse.status);
+      if (!usersResponse.ok || !rostersResponse.ok) {
+        setTeams([]);
+        setTeamsError(
+          `Could not load league teams (Sleeper ${usersResponse.status}/${rostersResponse.status}). Try again.`
+        );
+        return;
       }
-    } catch (error) {
-      console.error('Failed to load teams from API:', error);
-    }
 
-    // Only create mock teams as absolute fallback
-    console.log('Creating mock teams as fallback');
-    const mockTeams = [
-      { id: 1, name: "Team Alpha", owner_name: "Owner 1" },
-      { id: 2, name: "Team Beta", owner_name: "Owner 2" },
-      { id: 3, name: "Team Gamma", owner_name: "Owner 3" },
-      { id: 4, name: "Team Delta", owner_name: "Owner 4" },
-      { id: 5, name: "Team Epsilon", owner_name: "Owner 5" },
-      { id: 6, name: "Team Zeta", owner_name: "Owner 6" },
-      { id: 7, name: "Team Eta", owner_name: "Owner 7" },
-      { id: 8, name: "Team Theta", owner_name: "Owner 8" },
-      { id: 9, name: "Team Iota", owner_name: "Owner 9" },
-      { id: 10, name: "Team Kappa", owner_name: "Owner 10" },
-      { id: 11, name: "Team Lambda", owner_name: "Owner 11" },
-      { id: 12, name: "Team Mu", owner_name: "Owner 12" }
-    ];
-    setTeams(mockTeams);
-    console.log('Created mock teams as final fallback:', mockTeams.map(t => ({ id: t.id, name: t.name })));
+      const users = await usersResponse.json();
+      const rosters = await rostersResponse.json();
+
+      if (!Array.isArray(rosters) || rosters.length === 0) {
+        setTeams([]);
+        setTeamsError('No teams found for this league.');
+        return;
+      }
+
+      const userById = Object.fromEntries(
+        (users || []).map((user: { user_id: string }) => [user.user_id, user])
+      );
+
+      const realTeams = rosters.map((roster: { roster_id: number; owner_id: string }) => {
+        const user = userById[roster.owner_id];
+        return {
+          id: roster.roster_id,
+          name:
+            user?.metadata?.team_name ||
+            user?.display_name ||
+            `Team ${roster.roster_id}`,
+          owner_name: user?.display_name || `Owner ${roster.roster_id}`,
+        };
+      });
+
+      setTeams(realTeams);
+      console.log(
+        'Loaded real teams from Sleeper:',
+        realTeams.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name }))
+      );
+    } catch (loadError) {
+      console.error('Failed to load teams from API:', loadError);
+      setTeams([]);
+      setTeamsError('Failed to load league teams. Check your connection and retry.');
+    } finally {
+      setTeamsLoading(false);
+    }
   };
 
   // API calls
@@ -1693,6 +1707,32 @@ export default function TradeAnalyzer({
 
             {/* Tab Content */}
             <div>
+              {teamsLoading && (
+                <div className="flex items-center justify-center py-6 text-sm text-gray-600">
+                  Loading league teams…
+                </div>
+              )}
+
+              {teamsError && (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center space-x-2">
+                      <AlertCircle className="h-5 w-5 text-amber-600" />
+                      <span className="text-amber-800">{teamsError}</span>
+                    </div>
+                    {selectedLeague && (
+                      <button
+                        type="button"
+                        onClick={() => loadTeamsFromAPI(selectedLeague)}
+                        className="text-sm font-medium text-amber-900 underline"
+                      >
+                        Retry
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {loading && (
                 <div className="flex items-center justify-center py-12">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>

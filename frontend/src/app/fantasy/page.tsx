@@ -35,6 +35,12 @@ import {
   X
 } from 'lucide-react';
 
+function comparisonScoringLabel(scoringType?: string): string {
+  if (scoringType === 'half_ppr') return 'Half PPR';
+  if (scoringType === 'standard') return 'Standard';
+  return 'PPR';
+}
+
 // Interfaces
 interface FantasyAccount {
   id: string;
@@ -673,102 +679,9 @@ export default function FantasyPage() {
       console.log('Compare response:', response);
       
       if (response.status === 'success') {
-        const players = response.comparison.players ?? [];
-        const hasServerAnalytics = players.some(
-          (p: { analytics?: Record<string, unknown> }) =>
-            p.analytics && Object.keys(p.analytics).length > 0
-        );
-
-        let playersWithAnalytics = players;
-        if (!hasServerAnalytics) {
-          console.log('Loading advanced analytics for comparison (client fallback)...');
-          playersWithAnalytics = await Promise.all(
-            players.map(async (player: any) => {
-            try {
-              // Load recent 5 weeks of analytics and trends
-              const [analyticsResponse, trendsResponse, efficiencyResponse] = await Promise.all([
-                fantasyAPI.getPlayerAnalytics(parseInt(player.player_id)),
-                fantasyAPI.getPlayerTrends(parseInt(player.player_id)),
-                fantasyAPI.getPlayerEfficiency(parseInt(player.player_id))
-              ]);
-
-              // Calculate average analytics from recent weeks
-              let avgAnalytics = {};
-              let seasonStats = {};
-              if (analyticsResponse.status === 'success' && analyticsResponse.analytics && analyticsResponse.analytics.length > 0) {
-                const analytics = analyticsResponse.analytics;
-                const validAnalytics = analytics.filter((a: any) => a !== null && a !== undefined);
-
-                if (validAnalytics.length > 0) {
-                  // Calculate per-game averages and totals
-                  const gamesPlayed = validAnalytics.length;
-                  const totalPPR = validAnalytics.reduce((sum: number, a: any) => sum + (a.ppr_points || 0), 0);
-                  const totalCarries = validAnalytics.reduce((sum: number, a: any) => sum + (a.carries || 0), 0);
-                  const totalTargets = validAnalytics.reduce((sum: number, a: any) => sum + (a.targets || 0), 0);
-                  const totalRushYards = validAnalytics.reduce((sum: number, a: any) => sum + (a.rushing_yards || 0), 0);
-                  const totalTouches = totalCarries + totalTargets;
-
-                  // Calculate variance for consistency score
-                  const pprValues = validAnalytics.map((a: any) => a.ppr_points || 0);
-                  const meanPPR = totalPPR / gamesPlayed;
-                  const variance = pprValues.reduce((sum: number, val: number) => sum + Math.pow(val - meanPPR, 2), 0) / gamesPlayed;
-                  const consistencyScore = meanPPR > 0 ? Math.max(0, 1 - (Math.sqrt(variance) / meanPPR)) : 0;
-
-                  avgAnalytics = {
-                    snap_percentage: validAnalytics.reduce((sum: number, a: any) => sum + (a.snap_percentage || 0), 0) / validAnalytics.length,
-                    target_share: validAnalytics.reduce((sum: number, a: any) => sum + (a.target_share || 0), 0) / validAnalytics.length,
-                    red_zone_share: validAnalytics.reduce((sum: number, a: any) => sum + (a.red_zone_share || 0), 0) / validAnalytics.length,
-                    points_per_snap: validAnalytics.reduce((sum: number, a: any) => sum + (a.points_per_snap || 0), 0) / validAnalytics.length,
-                    points_per_target: validAnalytics.reduce((sum: number, a: any) => sum + (a.points_per_target || 0), 0) / validAnalytics.length,
-                    boom_rate: validAnalytics.reduce((sum: number, a: any) => sum + (a.boom_rate || 0), 0) / validAnalytics.length,
-                    bust_rate: validAnalytics.reduce((sum: number, a: any) => sum + (a.bust_rate || 0), 0) / validAnalytics.length,
-                    weekly_variance: validAnalytics.reduce((sum: number, a: any) => sum + (a.weekly_variance || 0), 0) / validAnalytics.length,
-                    floor_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.floor_score || 0), 0) / validAnalytics.length,
-                    ceiling_score: validAnalytics.reduce((sum: number, a: any) => sum + (a.ceiling_score || 0), 0) / validAnalytics.length,
-                    // Add missing calculated fields
-                    points_per_touch: totalTouches > 0 ? totalPPR / totalTouches : 0,
-                    touches_per_game: totalTouches / gamesPlayed,
-                    rush_yards_per_game: totalRushYards / gamesPlayed,
-                    yards_per_carry: totalCarries > 0 ? totalRushYards / totalCarries : 0,
-                    consistency_score: consistencyScore
-                  };
-
-                  seasonStats = {
-                    points_per_game: totalPPR / gamesPlayed,
-                    games_played: gamesPlayed,
-                    total_points: totalPPR
-                  };
-                }
-              }
-
-              return {
-                ...player,
-                analytics: avgAnalytics,
-                season_stats: seasonStats,
-                trends: trendsResponse.status === 'success' ? trendsResponse.trends : {},
-                efficiency: efficiencyResponse.status === 'success' ? efficiencyResponse.efficiency_metrics : {}
-              };
-            } catch (error) {
-              console.warn(`Failed to load analytics for player ${player.player_id}:`, error);
-              // Return player with empty analytics if loading fails
-              return {
-                ...player,
-                analytics: {},
-                season_stats: {},
-                trends: {},
-                efficiency: {}
-              };
-            }
-          })
-        );
-        }
-
-        setComparisonData({
-          ...response.comparison,
-          players: playersWithAnalytics
-        });
+        setComparisonData(response.comparison);
         setShowComparison(true);
-        console.log('Comparison data set with advanced analytics, showing comparison');
+        console.log('Comparison data set, showing comparison');
       } else {
         setError(response.message || 'Failed to compare players');
         console.error('Compare failed:', response.message);
@@ -2111,7 +2024,20 @@ player.trending_status === 'hot'
             {showComparison && comparisonData && (
               <div className="mt-8 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-semibold">Player Comparison</h3>
+                  <div>
+                    <h3 className="text-xl font-semibold">Player Comparison</h3>
+                    {comparisonData.scoring_type && (
+                      <p className="text-sm muted mt-1">
+                        {comparisonScoringLabel(comparisonData.scoring_type)} scoring
+                        {comparisonData.league_context?.league_id
+                          ? ` · league ${comparisonData.league_context.league_id}`
+                          : ''}
+                      </p>
+                    )}
+                    {!comparisonData.scoring_type && searchFilters.league_id && (
+                      <p className="text-sm muted mt-1">Using default PPR scoring</p>
+                    )}
+                  </div>
                   <button
                     onClick={() => {
                       setShowComparison(false);
@@ -2335,7 +2261,7 @@ player.trending.type === 'hot'
                             </h5>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               <div><span className="font-medium">Games:</span> {player.season_stats.games_played}</div>
-                              <div><span className="font-medium">PPG:</span> <span className="text-purple-600 font-semibold">{player.season_stats.points_per_game?.toFixed(1)}</span></div>
+                              <div><span className="font-medium">PPG ({comparisonScoringLabel(comparisonData.scoring_type)}):</span> <span className="text-purple-600 font-semibold">{player.season_stats.points_per_game?.toFixed(1)}</span></div>
                               
                               {/* Position-specific stats */}
                               {['WR', 'TE'].includes(player.position) && player.analytics && (
@@ -2934,7 +2860,7 @@ isMax ? 'bg-green-500' :
                             </td>
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 muted font-medium">PPG</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">{comparisonScoringLabel(comparisonData.scoring_type)} PPG</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.season_stats?.points_per_game ? 
@@ -3183,7 +3109,7 @@ isMax ? 'bg-green-500' :
                   <li>• Search by name, position, or team</li>
                   <li>• Filter by age, experience, injury status</li>
                   <li>• Select multiple players to compare</li>
-                  <li>• Get league-specific insights</li>
+                  <li>• Select a league to compare using that league&apos;s scoring (PPR, half, or standard)</li>
                 </ul>
               </div>
             )}

@@ -189,23 +189,13 @@ async def get_player_efficiency_alt(
         efficiency = {}
         if analytics:
             total_points = sum(g.get("ppr_points", 0) for g in analytics)
-            total_snaps = sum(
-                g.get("snap_percentage", 0)
-                for g in analytics
-                if g.get("snap_percentage")
-            )
-            total_targets = sum(
-                g.get("target_share", 0) for g in analytics if g.get("target_share")
-            )
+            total_snaps = sum(g.get("snaps") or 0 for g in analytics)
+            total_targets = sum(g.get("targets") or 0 for g in analytics)
 
             if total_snaps > 0:
-                efficiency["points_per_snap"] = round(
-                    total_points / total_snaps * 100, 2
-                )
+                efficiency["points_per_snap"] = round(total_points / total_snaps, 2)
             if total_targets > 0:
-                efficiency["points_per_target"] = round(
-                    total_points / total_targets * 100, 2
-                )
+                efficiency["points_per_target"] = round(total_points / total_targets, 2)
 
             efficiency["games_played"] = len(analytics)
             efficiency["total_points"] = round(total_points, 1)

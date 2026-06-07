@@ -15,7 +15,6 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
-from app.core.service_loader import get_service, is_service_available
 
 logger = logging.getLogger(__name__)
 
@@ -138,43 +137,32 @@ async def get_fantasy_roster(
     league_id: str, current_user: dict = Depends(get_current_user)
 ):
     """Get fantasy roster for a specific league - REAL DATA ONLY"""
-    logger.info(
-        f"🔍 ROSTER ENDPOINT CALLED - League: {league_id}, User: {current_user['user_id']}"
-    )
-
-    service_available = is_service_available("fantasy_pipeline")
-    logger.info(f"🔍 FANTASY_PIPELINE SERVICE AVAILABLE: {service_available}")
-
-    if not service_available:
-        logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(
-            status_code=503, detail="Fantasy pipeline service unavailable"
-        )
+    user_id = current_user.get("id") or current_user.get("user_id")
+    logger.info("ROSTER ENDPOINT CALLED - League: %s, User: %s", league_id, user_id)
 
     try:
-        fantasy_service = get_service("fantasy_pipeline")
-        logger.info(
-            f"🔍 CALLING get_league_roster with league_id={league_id}, user_id={current_user['user_id']}"
-        )
-        roster = await fantasy_service.get_league_roster(
-            league_id, current_user.get("id") or current_user.get("user_id")
-        )
-        logger.info(f"🔍 ROSTER RETRIEVED: {len(roster)} players")
+        from app.services.fantasy_pipeline import FantasyPipeline
+
+        pipeline = FantasyPipeline()
+        roster = await pipeline.get_league_roster(league_id, user_id)
+        logger.info("ROSTER RETRIEVED: %s players", len(roster))
 
         if not roster:
             logger.error(
-                f"🚨 NO ROSTER DATA FOUND for league {league_id}, user {current_user['user_id']}"
+                "NO ROSTER DATA FOUND for league %s, user %s", league_id, user_id
             )
             raise HTTPException(
                 status_code=404, detail="No roster data found for this league and user"
             )
 
         return {"status": "success", "roster": roster}
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"🚨 ERROR fetching roster for league {league_id}: {e}")
+        logger.error("ERROR fetching roster for league %s: %s", league_id, e)
         import traceback
 
-        logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
+        logger.error("TRACEBACK: %s", traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to fetch roster: {str(e)}")
 
 
@@ -183,43 +171,34 @@ async def get_fantasy_projections(
     current_user: dict = Depends(get_current_user), db=Depends(get_db)
 ):
     """Get fantasy projections - REAL DATA ONLY"""
-    logger.info(f"🔍 PROJECTIONS CALLED - User: {current_user['user_id']}")
-
-    service_available = is_service_available("fantasy_pipeline")
-    logger.info(f"🔍 FANTASY_PIPELINE SERVICE AVAILABLE: {service_available}")
-
-    if not service_available:
-        logger.error("🚨 FANTASY_PIPELINE SERVICE NOT AVAILABLE")
-        raise HTTPException(
-            status_code=503, detail="Fantasy pipeline service unavailable"
-        )
+    logger.info("PROJECTIONS CALLED - User: %s", current_user["user_id"])
 
     try:
-        fantasy_service = get_service("fantasy_pipeline")
+        from app.services.fantasy_pipeline import FantasyPipeline
 
-        # Get real NFL players and generate projections from analytics/baselines
-        players = await fantasy_service.get_nfl_players(limit=50)
+        pipeline = FantasyPipeline()
+        players = await pipeline.get_nfl_players(limit=50)
 
         if not players:
-            logger.error("🚨 NO PLAYER DATA AVAILABLE")
+            logger.error("NO PLAYER DATA AVAILABLE")
             raise HTTPException(status_code=404, detail="No player data available")
 
-        from datetime import datetime
-
         season = datetime.now().year
-        projections = fantasy_service.generate_fantasy_projections(
+        projections = pipeline.generate_fantasy_projections(
             players, games=[], db=db, season=season
         )
 
-        logger.info(f"🔍 GENERATED {len(projections)} PROJECTIONS")
+        logger.info("GENERATED %s PROJECTIONS", len(projections))
 
         return {"status": "success", "projections": projections}
 
+    except HTTPException:
+        raise
     except Exception as e:
-        logger.error(f"🚨 ERROR fetching fantasy projections: {e}")
+        logger.error("ERROR fetching fantasy projections: %s", e)
         import traceback
 
-        logger.error(f"🚨 TRACEBACK: {traceback.format_exc()}")
+        logger.error("TRACEBACK: %s", traceback.format_exc())
         raise HTTPException(
             status_code=500, detail=f"Failed to fetch projections: {str(e)}"
         )

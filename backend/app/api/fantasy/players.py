@@ -118,6 +118,7 @@ async def compare_players(
         from app.services.fantasy_player_compare import (
             enrich_players_with_analytics,
             generate_compare_insights,
+            scoring_type_from_sleeper_league,
         )
 
         player_ids = request.player_ids
@@ -135,6 +136,17 @@ async def compare_players(
 
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
+
+        scoring_type = "ppr"
+        league_context: Optional[Dict[str, Any]] = None
+        if league_id:
+            league_doc = await sleeper_service.get_league(str(league_id))
+            scoring_type = scoring_type_from_sleeper_league(league_doc)
+            league_context = {
+                "league_id": str(league_id),
+                "scoring_type": scoring_type,
+                "scoring_label": scoring_type.replace("_", " ").upper(),
+            }
 
         # Get trending data
         trending_adds = await sleeper_service.get_trending_players("add")
@@ -194,16 +206,19 @@ async def compare_players(
             compared_players.append(comparison_data)
 
         players_with_analytics = await enrich_players_with_analytics(
-            db, compared_players, season=season
+            db, compared_players, season=season, scoring_type=scoring_type
         )
-        insights = generate_compare_insights(players_with_analytics)
+        insights = generate_compare_insights(
+            players_with_analytics, scoring_type=scoring_type
+        )
 
         return {
             "status": "success",
             "comparison": {
                 "players": players_with_analytics,
                 "insights": insights,
-                "league_context": league_id,
+                "league_context": league_context,
+                "scoring_type": scoring_type,
                 "season": season,
                 "comparison_date": datetime.utcnow().isoformat(),
             },
