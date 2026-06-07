@@ -152,15 +152,17 @@ async def sync_player_analytics(
         receiving_yards = _safe_int(row.get("receiving_yards")) or 0
         rushing_yards = _safe_int(row.get("rushing_yards")) or 0
 
-        existing = (
-            db.query(PlayerAnalytics)
+        existing_row = (
+            db.query(PlayerAnalytics.id)
             .filter(
                 PlayerAnalytics.player_id == fantasy_player_id,
                 PlayerAnalytics.week == week,
                 PlayerAnalytics.season == season,
             )
+            .order_by(PlayerAnalytics.id)
             .first()
         )
+        existing_id = existing_row[0] if existing_row else None
 
         payload = {
             "ppr_points": ppr_points,
@@ -177,7 +179,7 @@ async def sync_player_analytics(
             "points_per_target": (ppr_points / targets if targets > 0 else None),
         }
 
-        if existing is None:
+        if existing_id is None:
             db.add(
                 PlayerAnalytics(
                     player_id=fantasy_player_id,
@@ -187,8 +189,9 @@ async def sync_player_analytics(
                 )
             )
         else:
-            for key, value in payload.items():
-                setattr(existing, key, value)
+            db.query(PlayerAnalytics).filter(PlayerAnalytics.id == existing_id).update(
+                payload, synchronize_session=False
+            )
 
         upserted += 1
 

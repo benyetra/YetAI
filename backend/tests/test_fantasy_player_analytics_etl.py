@@ -40,7 +40,7 @@ def test_compute_ppr_points_uses_nflverse_column_when_present():
 async def test_sync_player_analytics_upserts_rows():
     db = MagicMock()
     existing_query = MagicMock()
-    existing_query.filter.return_value.first.return_value = None
+    existing_query.filter.return_value.order_by.return_value.first.return_value = None
     db.query.return_value = existing_query
 
     weekly = pd.DataFrame(
