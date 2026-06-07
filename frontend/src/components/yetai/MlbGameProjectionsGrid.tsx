@@ -1,6 +1,7 @@
 'use client';
 
 import { formatNumber, formatString } from '@/components/PredictionsTable';
+import { formatGameProjectionTime } from '@/lib/gameProjectionSchedule';
 import { teamAbbr } from '@/lib/yetai-format';
 import type { GameProjectionsVariant } from '@/lib/gameProjectionsTypes';
 import {
@@ -322,12 +323,18 @@ function GameCard({
   const marginInfo = displaySpreadMargin(proj, variant, homeAbbr, awayAbbr);
   const total = projectedTotalFromRow(proj);
   const spreadEdge = spreadMarketEdge(proj);
+  const gameTimeLabel = formatGameProjectionTime(proj);
 
   return (
     <article className={`proj-card${isStrong ? ' is-strong' : ''}`}>
       <div className="proj-head">
         <div className="proj-head-title">
-          {away} <span className="proj-at">@</span> {home}
+          <div>
+            {away} <span className="proj-at">@</span> {home}
+          </div>
+          {gameTimeLabel ? (
+            <div className="proj-head-time mono">{gameTimeLabel}</div>
+          ) : null}
         </div>
         <span className={verdictClass(valueRating, hasPick)}>{verdictLabel(valueRating, hasPick)}</span>
       </div>

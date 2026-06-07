@@ -27,6 +27,7 @@ from app.models.predictions_models import (
     GameProjections,
     Homer,
     KickerPredictions,
+    NBAGameLines,
     NBASpreadProjections,
     NBATotalsProjections,
     NHLGoaliePredictions,
@@ -44,6 +45,7 @@ from app.models.predictions_models import (
     StrikeoutProjections,
     ThreePointProjections,
     WNBAAssistsProjections,
+    WNBAGameLines,
     WNBAPointsProjections,
     WNBAReboundsProjections,
     WNBASpreadProjections,
@@ -368,14 +370,20 @@ def nba_predictions(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     """Recent NBA props: game totals O/U plus points, assists, rebounds, etc."""
+    from app.services.game_projection_schedule import attach_game_times_from_lines
+
     tz = _safe_tz(tz)
+    spreads = _query_recent(
+        db, NBASpreadProjections, "game_date", target_date, limit, tz=tz
+    )
+    totals = _query_recent(
+        db, NBATotalsProjections, "game_date", target_date, limit, tz=tz
+    )
+    spreads = attach_game_times_from_lines(db, spreads, NBAGameLines)
+    totals = attach_game_times_from_lines(db, totals, NBAGameLines)
     return {
-        "totals": _query_recent(
-            db, NBATotalsProjections, "game_date", target_date, limit, tz=tz
-        ),
-        "spreads": _query_recent(
-            db, NBASpreadProjections, "game_date", target_date, limit, tz=tz
-        ),
+        "totals": totals,
+        "spreads": spreads,
         "points": _query_recent(
             db, PointsProjections, "date", target_date, limit, tz=tz
         ),
@@ -509,6 +517,7 @@ def wnba_predictions(
     pred_wnba_*_actuals exist for the requested date (same pattern as MLB games).
     """
     from app.services.wnba_game_picks import enrich_wnba_game_predictions
+    from app.services.game_projection_schedule import attach_game_times_from_lines
 
     tz = _safe_tz(tz)
     spreads = _query_recent(
@@ -517,6 +526,8 @@ def wnba_predictions(
     totals = _query_recent(
         db, WNBATotalsProjections, "game_date", target_date, limit, tz=tz
     )
+    spreads = attach_game_times_from_lines(db, spreads, WNBAGameLines)
+    totals = attach_game_times_from_lines(db, totals, WNBAGameLines)
     spreads, totals = enrich_wnba_game_predictions(
         db, spreads, totals, target_date=target_date
     )

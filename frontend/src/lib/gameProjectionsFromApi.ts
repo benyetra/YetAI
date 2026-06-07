@@ -1,4 +1,5 @@
 import type { GameProjectionsVariant } from '@/components/yetai/MlbGameProjectionsGrid';
+import { sortGameProjectionRows } from './gameProjectionSchedule';
 import { mapNhlTeamTotalsRows } from './mapNhlGameProjections';
 import { mergeSpreadTotalsGameProjections } from './mergeSpreadTotalsGameProjections';
 
@@ -8,20 +9,27 @@ type ApiData = Record<string, Array<Record<string, unknown>>> | null;
 export function gameProjectionRows(variant: GameProjectionsVariant, data: ApiData): Row[] {
   if (!data) return [];
 
+  let rows: Row[];
   switch (variant) {
     case 'mlb':
-      return (data.game_projections as Row[]) ?? [];
+      rows = (data.game_projections as Row[]) ?? [];
+      break;
     case 'nba':
     case 'wnba':
-      return mergeSpreadTotalsGameProjections(
+      rows = mergeSpreadTotalsGameProjections(
         (data.spreads as Row[]) ?? [],
         (data.totals as Row[]) ?? [],
       );
+      break;
     case 'nhl':
-      return mapNhlTeamTotalsRows((data.team_totals as Row[]) ?? []);
+      rows = mapNhlTeamTotalsRows((data.team_totals as Row[]) ?? []);
+      break;
     case 'nfl':
-      return [];
+      rows = [];
+      break;
     default:
-      return [];
+      rows = [];
   }
+
+  return sortGameProjectionRows(rows);
 }

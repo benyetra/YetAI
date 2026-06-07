@@ -85,6 +85,7 @@ function mergeRow(spread?: Row, total?: Row): Row {
     spread_correct: spread?.spread_correct,
     total_correct: total?.total_correct,
     ml_correct: spread?.ml_correct,
+    game_time: spread?.game_time ?? total?.game_time,
   };
 }
 

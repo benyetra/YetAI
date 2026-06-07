@@ -54,6 +54,7 @@ export function mapNhlTeamTotalsRows(totals: Row[]): Row[] {
       actual_away_score: total.actual_away_score,
       actual_total_runs: total.actual_total_goals,
       total_correct: total.recommendation_correct,
+      game_time: total.game_time_et ?? total.game_time,
     };
   });
 }
