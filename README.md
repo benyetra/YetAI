@@ -17,7 +17,7 @@ Committed OpenAPI specs for agents and integrations: [docs/api/](docs/api/) (`op
 - **Predictions** — Daily and in-season models for MLB, NBA, NHL, NFL, and WNBA (player props, spreads, totals, strikeouts, and related markets). See [backend/docs/](backend/docs/) for per-sport ETL parity notes.
 - **Betting** — Place and track bets, parlays, bet sharing, leaderboard, and performance views.
 - **AI assistant** — In-app chat backed by OpenAI (when configured).
-- **Fantasy** — Sleeper integration and fantasy analytics APIs.
+- **Fantasy** — Sleeper integration and fantasy analytics APIs. Runbook: [backend/docs/FANTASY.md](backend/docs/FANTASY.md).
 - **Subscriptions** — Stripe checkout for upgrades (frontend + backend).
 - **Admin** — Pipeline scheduling, Celery health, ETL enqueue/verify, Owens betting corner, user admin, and optional [automated YetAI picks](docs/runbooks/auto-yetai-picks.md) with approval workflow.
 

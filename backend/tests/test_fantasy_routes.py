@@ -45,7 +45,7 @@ def test_generate_deterministic_projections_without_db():
     assert first[0]["projected_points"] >= first[1]["projected_points"]
 
 
-@patch("app.api.fantasy_routes.SleeperFantasyService")
+@patch("app.api.fantasy.matchups.SleeperFantasyService")
 def test_trending_route_returns_players(mock_service_cls, client, auth_headers):
     mock_service = mock_service_cls.return_value
     mock_service.get_trending_players = AsyncMock(
@@ -70,8 +70,8 @@ def test_trending_route_returns_players(mock_service_cls, client, auth_headers):
     assert body["trending"][0]["trend_count"] == 500
 
 
-@patch("app.api.fantasy_routes.SleeperFantasyService")
-@patch("app.api.fantasy_routes._resolve_user_platform_id", new_callable=AsyncMock)
+@patch("app.api.fantasy.matchups.SleeperFantasyService")
+@patch("app.api.fantasy.matchups._resolve_user_platform_id", new_callable=AsyncMock)
 def test_matchups_route_builds_head_to_head(
     mock_platform_user, mock_service_cls, client, auth_headers
 ):
@@ -117,7 +117,7 @@ def test_matchups_route_builds_head_to_head(
     assert body["matchups"][0]["user_involved"] is True
 
 
-@patch("app.api.fantasy_routes.SleeperFantasyService")
+@patch("app.api.fantasy.matchups.SleeperFantasyService")
 def test_test_sleeper_username_route(mock_service_cls, client, auth_headers):
     mock_service = mock_service_cls.return_value
     mock_service.authenticate_user = AsyncMock(
@@ -134,7 +134,7 @@ def test_test_sleeper_username_route(mock_service_cls, client, auth_headers):
     assert response.json()["sleeper_user_id"] == "999"
 
 
-@patch("app.api.fantasy_routes.FantasyAnalyticsService")
+@patch("app.api.fantasy.matchups.FantasyAnalyticsService")
 def test_breakout_candidates_legacy_shim(mock_service_cls, client, auth_headers):
     mock_service_cls.return_value.get_breakout_candidates.return_value = [
         {
