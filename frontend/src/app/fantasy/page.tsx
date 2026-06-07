@@ -8,6 +8,11 @@ import PageHeader from '@/components/yetai/PageHeader';
 import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { fantasyAPI } from '@/lib/api';
+import {
+  getMockLeagueRules,
+  normalizeLeagueRules,
+  type LeagueRules,
+} from '@/lib/fantasy-league-rules';
 import TradeAnalyzer from '@/components/TradeAnalyzer';
 import { 
   Trophy, 
@@ -148,57 +153,6 @@ interface StartSitRecommendation {
   week: number;
   is_questionable: boolean;
   opponent?: string;
-}
-
-interface LeagueRules {
-  league_id: string;
-  league_name: string;
-  platform: string;
-  season: number;
-  league_type: string;
-  team_count: number;
-  roster_settings: {
-    total_spots: number;
-    starting_spots: number;
-    bench_spots: number;
-    positions: Record<string, number>;
-    position_requirements: string[];
-  };
-  scoring_settings: {
-    type: string;
-    passing: {
-      touchdowns: number;
-      yards_per_point: number;
-      interceptions: number;
-    };
-    rushing: {
-      touchdowns: number;
-      yards_per_point: number;
-      fumbles: number;
-    };
-    receiving: {
-      touchdowns: number;
-      yards_per_point: number;
-      receptions: number;
-    };
-    special_scoring: string[];
-    raw_settings: Record<string, any>;
-  };
-  features: {
-    trades_enabled: boolean;
-    waivers_enabled: boolean;
-    playoffs: {
-      teams: number;
-      weeks: number;
-    };
-  };
-  ai_context: {
-    prioritize_volume: boolean;
-    rb_premium: boolean;
-    flex_strategy: boolean;
-    superflex: boolean;
-    position_scarcity: Record<string, number>;
-  };
 }
 
 interface Player {
@@ -426,11 +380,16 @@ export default function FantasyPage() {
     setShowWaiverRecommendations(false);
     setShowStandings(false);
     setShowMatchups(false);
-    setSelectedLeague(null);
     setError(null);
 
     try {
-      const response = await fantasyAPI.getStartSitRecommendations(selectedWeek);
+      const leagueFilter =
+        selectedLeague ||
+        (leagues.length === 1 ? leagues[0].league_id : undefined);
+      const response = await fantasyAPI.getStartSitRecommendations(
+        selectedWeek,
+        leagueFilter
+      );
       
       if (response.status === 'success') {
         setStartSitRecommendations(response.recommendations || []);
@@ -528,7 +487,7 @@ export default function FantasyPage() {
       const response = await fantasyAPI.getLeagueRules(leagueId);
       
       if (response.status === 'success') {
-        setLeagueRules(response.rules || null);
+        setLeagueRules(normalizeLeagueRules(leagueId, response.rules || {}));
       } else {
         setError(response.message || 'Failed to load league rules');
         setLeagueRules(null);
@@ -545,24 +504,28 @@ export default function FantasyPage() {
   // Helper function to load league rules for team fit analysis
   const loadLeagueForAnalysis = async (leagueId: string) => {
     setSelectedLeague(leagueId);
-    console.log('League selected for Trade Analyzer:', leagueId);
-    
-    // For now, skip the API calls since backend endpoints aren't ready
-    // The TradeAnalyzer component will handle loading its own data
+    setIsLoadingRules(true);
+    setError(null);
+
     try {
-      // Set mock league rules to allow the TradeAnalyzer to work
-      setLeagueRules({
-        league_id: leagueId,
-        name: 'Test Fantasy League',
-        scoring_settings: {},
-        roster_settings: {},
-        waiver_settings: {},
-        trade_settings: {}
-      });
-      
-      console.log('Mock league rules set for TradeAnalyzer');
+      if (process.env.NEXT_PUBLIC_FANTASY_MOCK_RULES === '1') {
+        setLeagueRules(getMockLeagueRules(leagueId));
+        return;
+      }
+
+      const response = await fantasyAPI.getLeagueRules(leagueId);
+      if (response.status === 'success' && response.rules) {
+        setLeagueRules(normalizeLeagueRules(leagueId, response.rules));
+      } else {
+        setError(response.message || 'Failed to load league rules for trade analysis');
+        setLeagueRules(null);
+      }
     } catch (err) {
+      setError('Failed to load league rules for trade analysis. Please try again.');
       console.error('Failed to load league for analysis:', err);
+      setLeagueRules(null);
+    } finally {
+      setIsLoadingRules(false);
     }
   };
 
@@ -972,10 +935,15 @@ export default function FantasyPage() {
                       setShowWaiverRecommendations(false);
                       setShowStartSitRecommendations(false);
                       setShowLeagueRules(false);
-                      
-                      // Auto-load standings data for TradeAnalyzer
-                      if (selectedLeague) {
-                        await loadStandingsData(selectedLeague);
+
+                      const leagueId =
+                        selectedLeague ||
+                        (leagues.length === 1 ? leagues[0].league_id : null);
+                      if (leagueId) {
+                        await Promise.all([
+                          loadStandingsData(leagueId),
+                          loadLeagueForAnalysis(leagueId),
+                        ]);
                       }
                     }}
                     className="fantasy-tool-btn"
@@ -3096,8 +3064,11 @@ isMax ? 'bg-green-500' :
             </div>
             <TradeAnalyzer 
               leagues={leagues}
-              initialLeagueId={selectedLeague}
+              initialLeagueId={selectedLeague || undefined}
               teams={standings}
+              leagueRules={leagueRules}
+              isLoadingRules={isLoadingRules}
+              onLeagueChange={loadLeagueForAnalysis}
             />
           </div>
         )}

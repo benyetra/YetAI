@@ -18,11 +18,12 @@ def sync_odds_get(
     params: Optional[dict] = None,
     headers: Optional[dict] = None,
     caller: str = "sync",
+    estimated_cost: int = 1,
     timeout: int = 30,
     raise_for_status: bool = True,
 ) -> Optional[requests.Response]:
     """GET with daily budget guard and usage accounting."""
-    if not guard_sync(caller):
+    if not guard_sync(caller, estimated_cost=estimated_cost):
         return None
     try:
         resp = requests.get(url, params=params, headers=headers or {}, timeout=timeout)

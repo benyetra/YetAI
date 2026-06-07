@@ -4933,7 +4933,6 @@
           "sleeper"
         ],
         "summary": "Connect Sleeper Account",
-        "description": "Connect a Sleeper account by username\nThis gets the SleeperUserID and saves it to the user record",
         "operationId": "connect_sleeper_account_api_sleeper_connect_post",
         "requestBody": {
           "content": {
@@ -5020,7 +5019,6 @@
           "sleeper"
         ],
         "summary": "Sync League History",
-        "description": "Sync all league history from 2020-2025\nRequires user to have connected Sleeper account first",
         "operationId": "sync_league_history_api_sleeper_sync_leagues_post",
         "responses": {
           "200": {
@@ -5087,7 +5085,7 @@
           "sleeper"
         ],
         "summary": "Sync All Rosters",
-        "description": "Sync all rosters for all user's leagues",
+        "description": "League metadata sync (rosters fetched live from Sleeper during reads).",
         "operationId": "sync_all_rosters_api_sleeper_sync_rosters_post",
         "responses": {
           "200": {
@@ -5154,7 +5152,6 @@
           "sleeper"
         ],
         "summary": "Sync Nfl Players",
-        "description": "Sync all NFL player data\nNote: This syncs players for the entire system, not just one user",
         "operationId": "sync_nfl_players_api_sleeper_sync_players_post",
         "responses": {
           "200": {
@@ -5221,7 +5218,6 @@
           "sleeper"
         ],
         "summary": "Full Sleeper Sync",
-        "description": "Complete workflow: Connect account -> Sync leagues -> Sync rosters -> Sync players",
         "operationId": "full_sleeper_sync_api_sleeper_sync_full_post",
         "requestBody": {
           "content": {
@@ -5308,7 +5304,6 @@
           "sleeper"
         ],
         "summary": "Get Sleeper Sync Status",
-        "description": "Get current Sleeper sync status for the user",
         "operationId": "get_sleeper_sync_status_api_sleeper_status_get",
         "responses": {
           "200": {
@@ -5377,7 +5372,6 @@
           "sleeper"
         ],
         "summary": "Get User Leagues",
-        "description": "Get all synced leagues for the current user",
         "operationId": "get_user_leagues_api_sleeper_leagues_get",
         "responses": {
           "200": {
@@ -5449,7 +5443,6 @@
           "sleeper"
         ],
         "summary": "Get League Rosters",
-        "description": "Get all rosters for a specific league",
         "operationId": "get_league_rosters_api_sleeper_leagues__league_id__rosters_get",
         "security": [
           {
@@ -5462,7 +5455,7 @@
             "in": "path",
             "required": true,
             "schema": {
-              "type": "integer",
+              "type": "string",
               "title": "League Id"
             }
           }
@@ -5480,6 +5473,92 @@
                   },
                   "title": "Response Get League Rosters Api Sleeper Leagues  League Id  Rosters Get"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
+    "/api/sleeper/leagues/{league_id}/rules": {
+      "get": {
+        "tags": [
+          "sleeper"
+        ],
+        "summary": "Get League Rules Compat",
+        "description": "Compatibility shim for frontend fallback to ``/api/sleeper/leagues/{id}/rules``.",
+        "operationId": "get_league_rules_compat_api_sleeper_leagues__league_id__rules_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -9496,7 +9575,7 @@
     "/api/admin/bets/manual-verify": {
       "post": {
         "summary": "Manual Verify Bet",
-        "description": "Manually verify and settle a specific bet (Admin only)",
+        "description": "Manually verify and settle a specific unified bet (Admin only)",
         "operationId": "manual_verify_bet_api_admin_bets_manual_verify_post",
         "requestBody": {
           "content": {
@@ -11757,6 +11836,111 @@
         "x-audience": "public"
       }
     },
+    "/api/fantasy/sync-league/{league_id}": {
+      "options": {
+        "summary": "Options Fantasy Sync League",
+        "description": "Handle CORS preflight for fantasy league sync",
+        "operationId": "options_fantasy_sync_league_api_fantasy_sync_league__league_id__options",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "tags": [
+          "fantasy"
+        ],
+        "x-audience": "public"
+      },
+      "post": {
+        "summary": "Sync Fantasy League",
+        "description": "Sync a Sleeper league into FantasyLeague metadata.",
+        "operationId": "sync_fantasy_league_api_fantasy_sync_league__league_id__post",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "fantasy"
+        ],
+        "x-audience": "public"
+      }
+    },
     "/api/fantasy/roster/{league_id}": {
       "options": {
         "summary": "Options Fantasy Roster",
@@ -12223,6 +12407,24 @@
               "type": "integer",
               "title": "Week"
             }
+          },
+          {
+            "name": "league_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Sleeper league id; omit for all connected leagues",
+              "title": "League Id"
+            },
+            "description": "Optional Sleeper league id; omit for all connected leagues"
           }
         ],
         "responses": {
@@ -12700,7 +12902,7 @@
     "/api/odds/basketball_nba": {
       "get": {
         "summary": "Get Nba Odds",
-        "description": "Get NBA odds (cache-first).",
+        "description": "Get NBA odds (cache-first, with pred_nba_game_lines fallback).",
         "operationId": "get_nba_odds_api_odds_basketball_nba_get",
         "responses": {
           "200": {
@@ -12784,7 +12986,7 @@
     "/api/odds/basketball_wnba": {
       "get": {
         "summary": "Get Wnba Odds",
-        "description": "Get WNBA odds (cache-first).",
+        "description": "Get WNBA odds (cache-first, with pred_wnba_game_lines fallback).",
         "operationId": "get_wnba_odds_api_odds_basketball_wnba_get",
         "responses": {
           "200": {
@@ -12868,7 +13070,7 @@
     "/api/odds/baseball_mlb": {
       "get": {
         "summary": "Get Mlb Odds",
-        "description": "Get MLB odds (cache-first).",
+        "description": "Get MLB odds (cache-first, with pred_game_projections fallback).",
         "operationId": "get_mlb_odds_api_odds_baseball_mlb_get",
         "responses": {
           "200": {

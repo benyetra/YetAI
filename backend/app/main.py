@@ -4648,6 +4648,31 @@ async def connect_fantasy_platform(
         )
 
 
+@app.options("/api/fantasy/sync-league/{league_id}")
+async def options_fantasy_sync_league():
+    """Handle CORS preflight for fantasy league sync"""
+    return {}
+
+
+@app.post("/api/fantasy/sync-league/{league_id}")
+async def sync_fantasy_league(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Sync a Sleeper league into FantasyLeague metadata."""
+    try:
+        from app.services.fantasy_connection_service import fantasy_connection_service
+
+        return await fantasy_connection_service.sync_league(
+            user_id=current_user.get("id") or current_user.get("user_id"),
+            league_id=league_id,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error syncing fantasy league {league_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to sync fantasy league")
+
+
 @app.options("/api/fantasy/roster/{league_id}")
 async def options_fantasy_roster():
     """Handle CORS preflight for fantasy roster"""
@@ -4891,13 +4916,23 @@ async def search_fantasy_players(
 
 @app.get("/api/fantasy/recommendations/start-sit/{week}")
 async def get_start_sit_recommendations(
-    week: int, current_user: dict = Depends(get_current_user), db=Depends(get_db)
+    week: int,
+    league_id: Optional[str] = Query(
+        None, description="Optional Sleeper league id; omit for all connected leagues"
+    ),
+    current_user: dict = Depends(get_current_user),
+    db=Depends(get_db),
 ):
     """Get start/sit recommendations for a given week based on user's actual roster"""
     try:
         from app.services.fantasy_connection_service import fantasy_connection_service
         from app.services.sleeper_fantasy_service import SleeperFantasyService
         from app.services.player_analytics_service import PlayerAnalyticsService
+        from app.services.start_sit_service import (
+            filter_leagues_for_start_sit,
+            find_user_team_in_standings,
+            resolve_platform_user_id,
+        )
         from sqlalchemy import text
 
         sleeper_service = SleeperFantasyService()
@@ -4968,54 +5003,57 @@ async def get_start_sit_recommendations(
             }
 
         recommendations = []
+        leagues_to_process = filter_leagues_for_start_sit(
+            user_leagues["leagues"], league_id
+        )
 
-        # Process each league
-        for league in user_leagues["leagues"][:1]:  # Focus on first league for now
+        if league_id and not leagues_to_process:
+            return {
+                "status": "success",
+                "recommendations": [],
+                "message": f"League {league_id} not found among connected leagues",
+            }
+
+        # Process each connected league (or the one requested via league_id)
+        for league in leagues_to_process:
             try:
-                league_id = league.get("league_id") or league.get("id")
+                current_league_id = league.get("league_id") or league.get("id")
                 logger.info(
-                    f"Processing league: {league_id}, name: {league.get('name')}"
+                    f"Processing league: {current_league_id}, name: {league.get('name')}"
                 )
-                if not league_id:
+                if not current_league_id:
                     logger.warning("No league_id found, skipping league")
                     continue
 
-                # Get league standings to find user's team
-                league_standings = await sleeper_service.get_league_standings(league_id)
-                logger.info(f"League standings: {len(league_standings)} teams")
-                user_team = None
-
-                # Find user's team by matching owner info
-                for team in league_standings:
-                    logger.info(
-                        f"Checking team: {team.get('name')} - Owner: {team.get('owner_name')}"
+                platform_user_id = resolve_platform_user_id(league)
+                if not platform_user_id:
+                    logger.warning(
+                        "No platform_user_id on league %s, skipping",
+                        current_league_id,
                     )
-                    # Try to match by owner name or other identifiers
-                    if (
-                        team.get("owner_name")
-                        and "byetz" in team.get("owner_name", "").lower()
-                    ):
-                        user_team = team
-                        logger.info(f"Found user team by name match: {user_team}")
-                        break
+                    continue
 
-                if not user_team:
-                    # If we can't find by name, take the first team as fallback
-                    if league_standings:
-                        user_team = league_standings[0]
-                        logger.info(
-                            f"Using first team as fallback: {user_team.get('name')}"
-                        )
+                league_standings = await sleeper_service.get_league_standings(
+                    current_league_id
+                )
+                logger.info(f"League standings: {len(league_standings)} teams")
 
+                user_team = find_user_team_in_standings(
+                    league_standings, platform_user_id
+                )
                 if not user_team:
-                    logger.warning("No user team found")
+                    logger.warning(
+                        "No roster found for Sleeper user %s in league %s",
+                        platform_user_id,
+                        current_league_id,
+                    )
                     continue
 
                 # Get user's roster using owner_id
                 owner_id = user_team.get("owner_id")
                 logger.info(f"Getting roster for owner_id: {owner_id}")
                 team_roster_ids = await sleeper_service.get_roster_by_owner(
-                    league_id, owner_id
+                    current_league_id, owner_id
                 )
                 logger.info(f"Team roster player IDs: {team_roster_ids}")
 
@@ -5054,7 +5092,7 @@ async def get_start_sit_recommendations(
 
                 sleeper_service_temp = SleeperFantasyService()
                 league_details = await sleeper_service_temp.get_league_details(
-                    league_id
+                    current_league_id
                 )
                 roster_positions = league_details.get("roster_positions", [])
                 starting_positions = [
@@ -5202,7 +5240,7 @@ async def get_start_sit_recommendations(
                             ),
                             "league_name": league.get("name", "Unknown League"),
                             "league_context": {
-                                "league_id": league_id,
+                                "league_id": current_league_id,
                                 "league_name": league.get("name", "Unknown League"),
                                 "team_name": user_team.get("name", "Your Team"),
                             },

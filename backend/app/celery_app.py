@@ -139,6 +139,12 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
         "schedule": crontab(hour=5, minute=0),
     },
+    # Fantasy player analytics — Tuesday morning after MNF (Sep–Jan)
+    "fantasy-player-analytics-weekly": {
+        "task": "app.tasks.etl_pipeline.fantasy.sync_player_analytics",
+        "schedule": crontab(hour=6, minute=30, day_of_week=2),
+        "options": {"expires": 86400},
+    },
 }
 
 

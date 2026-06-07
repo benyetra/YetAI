@@ -1,6 +1,9 @@
 """WNBA ML training config (delegates to shared ``app.services.ml``)."""
 
 from app.models.predictions_models import WNBARecentGames
+
+# Holdout residual MAE gate for totals GBM upload (time-based split).
+TOTALS_RESIDUAL_MAE_GATE = 1.0
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.ml.config import LeagueMLConfig
 

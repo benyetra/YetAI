@@ -64,6 +64,7 @@ def fetch_historical_events(
             "date": f"{game_date.isoformat()}T17:00:00Z",
         },
         caller="etl.wnba.historical_game_lines",
+        estimated_cost=CREDITS_PER_DATE,
         timeout=30,
         raise_for_status=False,
     )
@@ -290,13 +291,19 @@ def backfill_dates(
     if not resolve_odds_api_key():
         return {"status": "error", "error": "ODDS_API_KEY not set"}
 
+    from app.services.odds_api_budget import DAILY_CREDIT_BUDGET, get_daily_usage_sync
+
     fetched = 0
     rows_written = 0
     errors = 0
+    budget_blocked = 0
     for game_date in target_dates:
         events = fetch_historical_events(game_date)
         if events is None:
-            errors += 1
+            if get_daily_usage_sync() + CREDITS_PER_DATE > DAILY_CREDIT_BUDGET:
+                budget_blocked += 1
+            else:
+                errors += 1
             if delay_seconds:
                 time.sleep(delay_seconds)
             continue
@@ -327,6 +334,8 @@ def backfill_dates(
         "dates_fetched": fetched,
         "rows_written": rows_written,
         "errors": errors,
+        "budget_blocked": budget_blocked,
+        "daily_credit_budget": DAILY_CREDIT_BUDGET,
     }
 
 

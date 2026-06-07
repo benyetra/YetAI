@@ -47,6 +47,45 @@ def _home_team_id(teams: list[dict]) -> int | None:
     return None
 
 
+def run_from_spread(
+    *,
+    season_start: date | None = None,
+    season_end: date | None = None,
+) -> dict:
+    """Copy completed scores from pred_wnba_spread_actuals into totals actuals."""
+    db = SessionLocal()
+    rows: list[dict] = []
+    try:
+        q = db.query(WNBASpreadActuals)
+        if season_start:
+            q = q.filter(WNBASpreadActuals.game_date >= season_start)
+        if season_end:
+            q = q.filter(WNBASpreadActuals.game_date <= season_end)
+        for actual in q.all():
+            rows.append(
+                {
+                    "game_date": actual.game_date,
+                    "home_team_name": actual.home_team_name,
+                    "away_team_name": actual.away_team_name,
+                    "home_score": actual.home_score,
+                    "away_score": actual.away_score,
+                    "actual_total": actual.home_score + actual.away_score,
+                    "created_at": datetime.utcnow(),
+                }
+            )
+        if rows:
+            upsert_many(
+                db,
+                WNBATotalsActuals,
+                rows,
+                conflict_keys=["game_date", "home_team_name", "away_team_name"],
+            )
+        db.commit()
+        return {"status": "ok", "source": "spread", "rows_written": len(rows)}
+    finally:
+        db.close()
+
+
 def run_from_totals(
     *,
     season_start: date | None = None,
@@ -257,6 +296,8 @@ def run(
     season_end: date | None = None,
     seasons: list[str] | None = None,
 ) -> dict:
+    if source == "spread":
+        return run_from_spread(season_start=season_start, season_end=season_end)
     if source == "totals":
         return run_from_totals(season_start=season_start, season_end=season_end)
     if source == "espn":
@@ -274,7 +315,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Backfill WNBA spread actuals")
     parser.add_argument(
         "--source",
-        choices=("totals", "espn", "nba_api"),
+        choices=("spread", "totals", "espn", "nba_api"),
         default="nba_api",
     )
     parser.add_argument(

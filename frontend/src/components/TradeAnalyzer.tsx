@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getApiUrl, apiRequest } from '@/lib/api-config';
+import type { LeagueRules } from '@/lib/fantasy-league-rules';
 import { 
   Users, 
   TrendingUp, 
@@ -121,47 +122,72 @@ interface LeagueTeam {
 }
 
 interface League {
-  id: number;
+  id: string | number;
   name: string;
   platform: string;
   platform_league_id?: string;
-  league_id?: string; // Alternative field name that might be used
+  league_id?: string;
 }
 
 interface StandingsTeam {
   team_id: number;
-  platform_team_id: string;
+  platform_team_id?: string;
   name: string;
+  team_name?: string;
   owner_name: string;
-  is_user_team: boolean;
+  is_user_team?: boolean;
   wins: number;
   losses: number;
-  ties: number;
-  win_percentage: number;
+  ties?: number;
+  win_percentage?: number;
   points_for: number;
-  points_against: number;
-  points_per_game: number;
-  points_against_per_game: number;
-  point_differential: number;
-  waiver_position: number;
-  rank: number;
+  points_against?: number;
+  points_per_game?: number;
+  points_against_per_game?: number;
+  point_differential?: number;
+  waiver_position?: number;
+  rank?: number;
 }
 
 interface TradeAnalyzerProps {
   leagues: League[];
-  initialLeagueId?: number;
+  initialLeagueId?: string | number;
   teams: StandingsTeam[];
+  leagueRules?: LeagueRules | null;
+  isLoadingRules?: boolean;
+  onLeagueChange?: (leagueId: string) => void;
+}
+
+function resolveLeagueKey(league: League): string {
+  return String(league.league_id || league.id);
+}
+
+function findLeagueByKey(leagues: League[] | undefined, leagueKey: string | number | null) {
+  if (!leagues || leagueKey == null) {
+    return undefined;
+  }
+  const target = String(leagueKey);
+  return leagues.find(
+    (league) =>
+      resolveLeagueKey(league) === target ||
+      String(league.id) === target ||
+      String(league.league_id) === target
+  );
 }
 
 // Helper function to calculate realistic trade value on frontend
-const calculateFrontendTradeValue = (position: string, age: number = 27) => {
-  const baseValues = {
-    "QB": [20, 45],
-    "RB": [15, 40],
-    "WR": [12, 38],
-    "TE": [8, 25],
-    "K": [2, 6],
-    "DEF": [3, 8]
+const calculateFrontendTradeValue = (
+  position: string,
+  age: number = 27,
+  leagueRules?: LeagueRules | null
+) => {
+  const baseValues: Record<string, [number, number]> = {
+    QB: [20, 45],
+    RB: [15, 40],
+    WR: [12, 38],
+    TE: [8, 25],
+    K: [2, 6],
+    DEF: [3, 8],
   };
 
   const [min, max] = baseValues[position] || [8, 15];
@@ -172,30 +198,83 @@ const calculateFrontendTradeValue = (position: string, age: number = 27) => {
   else if (age <= 30) ageMultiplier = 0.95;
   else ageMultiplier = 0.8;
 
+  const scoringType =
+    leagueRules?.scoring_type || leagueRules?.scoring_settings?.type || 'standard';
+  let scoringMultiplier = 1;
+  if (position === 'WR' || position === 'TE') {
+    if (scoringType === 'ppr') scoringMultiplier = 1.15;
+    else if (scoringType === 'half_ppr') scoringMultiplier = 1.08;
+  } else if (position === 'RB' && scoringType === 'standard') {
+    scoringMultiplier = 1.1;
+  }
+
   const baseValue = min + Math.random() * (max - min);
-  return Math.round(baseValue * ageMultiplier * 10) / 10;
+  return Math.round(baseValue * ageMultiplier * scoringMultiplier * 10) / 10;
 };
 
-// Helper function for Sleeper player data
-const calculateTradeValue = (player: any) => {
+const calculateTradeValue = (player: any, leagueRules?: LeagueRules | null) => {
   const position = player.position || 'UNKNOWN';
   const age = player.age || 27;
-  return calculateFrontendTradeValue(position, age);
+  return calculateFrontendTradeValue(position, age, leagueRules);
 };
 
-export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standingsTeams }: TradeAnalyzerProps) {
-  // State management - validate initialLeagueId exists in leagues
-  const getValidInitialLeague = () => {
-    if (!initialLeagueId || !leagues) return null;
-    const isValidLeague = leagues.some(l => l.id === initialLeagueId);
-    if (isValidLeague) {
-      return initialLeagueId;
+function buildPositionNeedsFromRules(
+  leagueRules: LeagueRules | null | undefined,
+  positionCounts: Record<string, number>
+): Record<string, number> {
+  const required = leagueRules?.roster_settings?.positions;
+  if (!required || Object.keys(required).length === 0) {
+    return {
+      QB: positionCounts.QB < 2 ? 3 : 1,
+      RB: positionCounts.RB < 3 ? 3 : 1,
+      WR: positionCounts.WR < 4 ? 3 : 1,
+      TE: positionCounts.TE < 2 ? 3 : 1,
+      K: positionCounts.K < 1 ? 3 : 1,
+      DEF: positionCounts.DEF < 1 ? 3 : 1,
+    };
+  }
+
+  const needs: Record<string, number> = {};
+  for (const [position, requiredCount] of Object.entries(required)) {
+    const have = positionCounts[position] || 0;
+    needs[position] = have < requiredCount ? 3 : have === requiredCount ? 2 : 1;
+  }
+  return needs;
+}
+
+function formatScoringLabel(leagueRules?: LeagueRules | null): string | null {
+  if (!leagueRules) {
+    return null;
+  }
+  const scoringType =
+    leagueRules.scoring_type || leagueRules.scoring_settings?.type || 'standard';
+  if (scoringType === 'ppr') return 'Full PPR';
+  if (scoringType === 'half_ppr') return 'Half PPR';
+  return 'Standard';
+}
+
+export default function TradeAnalyzer({
+  leagues,
+  initialLeagueId,
+  teams: standingsTeams,
+  leagueRules,
+  isLoadingRules = false,
+  onLeagueChange,
+}: TradeAnalyzerProps) {
+  const getValidInitialLeague = (): string | null => {
+    if (!initialLeagueId || !leagues?.length) {
+      return null;
     }
-    // If invalid, use first available league
-    return leagues.length > 0 ? leagues[0].id : null;
+    const match = findLeagueByKey(leagues, initialLeagueId);
+    if (match) {
+      return resolveLeagueKey(match);
+    }
+    return resolveLeagueKey(leagues[0]);
   };
-  
-  const [selectedLeague, setSelectedLeague] = useState<number | null>(() => getValidInitialLeague());
+
+  const [selectedLeague, setSelectedLeague] = useState<string | null>(() =>
+    getValidInitialLeague()
+  );
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
   const [teams, setTeams] = useState<LeagueTeam[]>([]);
   const [teamAnalysis, setTeamAnalysis] = useState<TeamAnalysis | null>(null);
@@ -216,6 +295,15 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Player[]>([]);
   const [targetTeamPlayers, setTargetTeamPlayers] = useState<Player[]>([]);
   const [expandedRecommendation, setExpandedRecommendation] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialLeagueId && leagues?.length) {
+      const match = findLeagueByKey(leagues, initialLeagueId);
+      if (match) {
+        setSelectedLeague(resolveLeagueKey(match));
+      }
+    }
+  }, [initialLeagueId, leagues]);
 
   useEffect(() => {
     if (selectedLeague && standingsTeams && standingsTeams.length > 0) {
@@ -241,12 +329,15 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   // Update selectedLeague when leagues change or if current selection is invalid
   useEffect(() => {
     if (leagues && leagues.length > 0) {
-      if (!selectedLeague || !leagues.some(l => l.id === selectedLeague)) {
+      if (
+        !selectedLeague ||
+        !leagues.some((l) => resolveLeagueKey(l) === selectedLeague)
+      ) {
         console.log('Current league selection invalid, switching to first available league');
-        setSelectedLeague(leagues[0].id);
+        setSelectedLeague(resolveLeagueKey(leagues[0]));
       }
     }
-  }, [leagues]);
+  }, [leagues, selectedLeague]);
 
   useEffect(() => {
     if (selectedTeam && selectedLeague && leagues && teams && teams.length > 0) {
@@ -272,11 +363,11 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   }, [selectedLeague, standingsTeams]);
 
   // Helper function to load teams from API when standings data is not available
-  const loadTeamsFromAPI = async (leagueId: number) => {
+  const loadTeamsFromAPI = async (leagueKey: string) => {
     try {
-      const league = leagues?.find(l => l.id === leagueId);
+      const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
-        console.error('League not found for teams loading:', leagueId);
+        console.error('League not found for teams loading:', leagueKey);
         return;
       }
 
@@ -334,7 +425,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
   };
 
   // API calls
-  const loadTeamRoster = async (teamId: number, leagueId: number) => {
+  const loadTeamRoster = async (teamId: number, leagueKey: string) => {
     try {
       setRosterLoading(true);
       setRosterLoaded(false);
@@ -344,14 +435,14 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       }
       
       // Find the league by internal ID
-      const league = leagues.find(l => l.id === leagueId);
+      const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
-        console.error('League not found:', leagueId);
+        console.error('League not found:', leagueKey);
         console.log('Available leagues:', leagues.map(l => ({ id: l.id, name: l.name })));
         // Reset to first available league if current selection is invalid
         if (leagues.length > 0) {
           console.log('Switching to first available league:', leagues[0].id);
-          setSelectedLeague(leagues[0].id);
+          setSelectedLeague(resolveLeagueKey(leagues[0]));
         }
         return;
       }
@@ -369,10 +460,10 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       await loadTeamRosterFallback(platformLeagueId, teamId);
     } catch (error) {
       console.error('Failed to load team roster:', error);
-      // Try fallback if main approach fails
-      const league = leagues?.find(l => l.id === leagueId);
-      if (league?.platform_league_id) {
-        await loadTeamRosterFallback(league.platform_league_id, teamId);
+      const league = findLeagueByKey(leagues, leagueKey);
+      const platformLeagueId = league?.platform_league_id || league?.league_id;
+      if (platformLeagueId) {
+        await loadTeamRosterFallback(platformLeagueId, teamId);
       }
     } finally {
       setRosterLoading(false);
@@ -472,7 +563,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           setRosterLoaded(true);
         }
       } else {
-        console.error('Fallback: Failed to fetch rosters:', response.status);
+        console.error('Fallback: Failed to fetch rosters:', rostersResponse.status);
         setSelectedTeamPlayers([]);
         setRosterLoaded(true);
       }
@@ -483,24 +574,22 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     }
   };
 
-  const loadTargetTeamRoster = async (teamId: number, leagueId: number) => {
+  const loadTargetTeamRoster = async (teamId: number, leagueKey: string) => {
     try {
-      console.log(`Loading target team roster for team ID: ${teamId}, league ID: ${leagueId}`);
+      console.log(`Loading target team roster for team ID: ${teamId}, league ID: ${leagueKey}`);
       
       if (!leagues || !teams) {
         console.log('Missing leagues or teams data');
         return;
       }
       
-      // Find the league by internal ID
-      const league = leagues.find(l => l.id === leagueId);
+      const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
-        console.error('Target team: League not found:', leagueId);
+        console.error('Target team: League not found:', leagueKey);
         console.log('Available leagues:', leagues.map(l => ({ id: l.id, name: l.name })));
         return;
       }
 
-      // Use the platform league ID for the backend API call
       const platformLeagueId = league.platform_league_id || league.league_id;
       if (!platformLeagueId) {
         console.error('Target team: No platform league ID found for league:', league);
@@ -508,16 +597,14 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
       }
       
       console.log('Loading target roster for team', teamId, 'in league', platformLeagueId);
-      
-      // For target team, we'll use the fallback approach since we need different roster logic
-      // The backend roster endpoint returns the current user's roster, but we need a different team's roster
       await loadTargetTeamRosterFallback(platformLeagueId, teamId);
       
     } catch (error) {
       console.error('Failed to load target team roster:', error);
-      const league = leagues?.find(l => l.id === leagueId);
-      if (league?.platform_league_id) {
-        await loadTargetTeamRosterFallback(league.platform_league_id, teamId);
+      const league = findLeagueByKey(leagues, leagueKey);
+      const platformLeagueId = league?.platform_league_id || league?.league_id;
+      if (platformLeagueId) {
+        await loadTargetTeamRosterFallback(platformLeagueId, teamId);
       }
     }
   };
@@ -656,7 +743,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           
           if (player) {
             const playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
-            const trade_value = tradeValues[playerName] || calculateTradeValue(player); // Use API value or calculate realistic value
+            const trade_value = tradeValues[playerName] || calculateTradeValue(player, leagueRules);
             
             return {
               id: numericId,
@@ -688,28 +775,30 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     return [];
   };
 
-  const loadTeamAnalysis = async (teamId: number, leagueId: number) => {
+  const loadTeamAnalysis = async (teamId: number, leagueKey: string) => {
     try {
       setLoading(true);
       
-      // Get the league from leagues data
-      const league = leagues?.find(l => l.id === leagueId);
+      const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
         console.log('League not found for team analysis');
         setError('League not found');
         return;
       }
 
-      // Use the real platform league ID
-      const platformLeagueId = league.platform_league_id || '1257417114529054720';
+      const platformLeagueId = league.platform_league_id || league.league_id;
+      if (!platformLeagueId) {
+        setError('League is missing a platform ID');
+        return;
+      }
       
       console.log(`Loading team analysis for team ${teamId} in league ${platformLeagueId}`);
       
-      // Try backend API first, fall back to direct calculation if needed
       try {
         const token = localStorage.getItem('auth_token');
-        // Use internal league ID for backend API call and correct URL structure
-        const response = await apiRequest(`/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${leagueId}`, {
+        const response = await apiRequest(
+          `/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${encodeURIComponent(leagueKey)}`,
+          {
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -761,14 +850,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
               K: positionCounts.K * 10,
               DEF: positionCounts.DEF * 16
             },
-            position_needs: {
-              QB: positionCounts.QB < 2 ? 3 : 1,
-              RB: positionCounts.RB < 3 ? 3 : 1,
-              WR: positionCounts.WR < 4 ? 3 : 1,
-              TE: positionCounts.TE < 2 ? 3 : 1,
-              K: positionCounts.K < 1 ? 3 : 1,
-              DEF: positionCounts.DEF < 1 ? 3 : 1
-            },
+            position_needs: buildPositionNeedsFromRules(leagueRules, positionCounts),
             surplus_positions: Object.entries(positionCounts)
               .filter(([pos, count]) => count > (pos === 'WR' ? 4 : pos === 'RB' ? 3 : 2))
               .map(([pos]) => pos)
@@ -784,7 +866,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
             })),
             valuable_players: selectedTeamPlayers.slice(0, 3).map(p => ({
               ...p,
-              trade_value: p.trade_value || calculateFrontendTradeValue(p.position, p.age)
+              trade_value: p.trade_value || calculateFrontendTradeValue(p.position, p.age, leagueRules)
             })),
             tradeable_picks: [
               { pick_id: 1, season: 2025, round: 1, description: '2025 1st Round Pick', trade_value: 35 },
@@ -815,25 +897,28 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
     }
   };
 
-  const loadTradeRecommendations = async (teamId: number, leagueId: number) => {
-    console.log('loadTradeRecommendations called with teamId:', teamId, 'leagueId:', leagueId);
+  const loadTradeRecommendations = async (teamId: number, leagueKey: string) => {
+    console.log('loadTradeRecommendations called with teamId:', teamId, 'leagueId:', leagueKey);
     try {
-      // Get the league from leagues data
-      const league = leagues?.find(l => l.id === leagueId);
+      const league = findLeagueByKey(leagues, leagueKey);
       if (!league) {
-        console.log('League not found for trade recommendations, available leagues:', leagues?.map(l => l.id));
+        console.log(
+          'League not found for trade recommendations, available leagues:',
+          leagues?.map((l) => resolveLeagueKey(l))
+        );
         return;
       }
 
-      // Use the real platform league ID
-      const platformLeagueId = league.platform_league_id || '1257417114529054720';
+      const platformLeagueId = league.platform_league_id || league.league_id;
+      if (!platformLeagueId) {
+        console.log('League missing platform ID for trade recommendations');
+        return;
+      }
       
       console.log(`Loading trade recommendations for team ${teamId} in league ${platformLeagueId}`);
       
-      // Try backend API first
       try {
         const token = localStorage.getItem('auth_token');
-        // Use internal league ID for backend API call and correct URL structure
         const response = await apiRequest(`/api/v1/fantasy/trade-analyzer/recommendations`, {
           method: 'POST',
           headers: {
@@ -842,7 +927,7 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           },
           body: JSON.stringify({
             team_id: teamId,
-            league_id: leagueId,
+            league_id: leagueKey,
             recommendation_type: 'all',
             max_recommendations: 10
           })
@@ -917,6 +1002,9 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
         console.log('Quick analysis response:', data);
 
         if (data.success && data.analysis) {
+          const team1Total = data.analysis.team1_gives?.total_value || 0;
+          const team2Total = data.analysis.team2_gives?.total_value || 0;
+          const scoringLabel = formatScoringLabel(leagueRules);
           setTradeEvaluation({
             trade_id: data.analysis.trade_id || 0,
             grades: {
@@ -924,17 +1012,28 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
               team2_grade: data.analysis.fairness?.verdict || 'N/A'
             },
             values: {
-              team1_total: data.analysis.team1_gives?.total_value || 0,
-              team2_total: data.analysis.team2_gives?.total_value || 0,
-              difference: data.analysis.fairness?.value_difference || 0
+              team1_value_given: team1Total,
+              team1_value_received: team2Total,
+              team2_value_given: team2Total,
+              team2_value_received: team1Total,
             },
             analysis: {
               team1_analysis: data.analysis.team1_gives || {},
               team2_analysis: data.analysis.team2_gives || {}
             },
             fairness_score: data.analysis.fairness?.percentage || 0,
-            ai_summary: `Trade Analysis: ${data.analysis.fairness?.verdict || 'Unknown'}`,
-            key_factors: data.analysis.insights || [],
+            ai_summary: scoringLabel
+              ? `Trade Analysis (${scoringLabel}): ${data.analysis.fairness?.verdict || 'Unknown'}`
+              : `Trade Analysis: ${data.analysis.fairness?.verdict || 'Unknown'}`,
+            key_factors: (data.analysis.insights || []).map((insight: string | { category?: string; description?: string; impact?: string }) =>
+              typeof insight === 'string'
+                ? { category: 'insight', description: insight, impact: 'medium' }
+                : {
+                    category: insight.category || 'insight',
+                    description: insight.description || '',
+                    impact: insight.impact || 'medium',
+                  }
+            ),
             confidence: data.analysis.fairness?.percentage || 0
           });
         } else {
@@ -1443,6 +1542,11 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center space-x-2">
             <Brain className="h-5 w-5 text-blue-500" />
             <span>AI Trade Analysis</span>
+            {formatScoringLabel(leagueRules) && (
+              <span className="text-xs font-normal text-gray-500">
+                ({formatScoringLabel(leagueRules)} roster context)
+              </span>
+            )}
           </h3>
 
           <div className="grid grid-cols-3 gap-6 mb-6">
@@ -1528,6 +1632,34 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
           <p className="text-gray-600">
             AI-powered fantasy trade analysis and recommendations
           </p>
+          {isLoadingRules && (
+            <p className="mt-2 text-sm text-blue-600">Loading league scoring and roster rules…</p>
+          )}
+          {!isLoadingRules && leagueRules && (
+            <div className="mt-3 flex flex-wrap gap-2 text-sm">
+              <span className="rounded-full bg-blue-50 px-3 py-1 text-blue-800">
+                {formatScoringLabel(leagueRules)} scoring
+              </span>
+              <span className="rounded-full bg-gray-100 px-3 py-1 text-gray-700">
+                {leagueRules.roster_settings.starting_spots} starters
+              </span>
+              {leagueRules.ai_context.superflex && (
+                <span className="rounded-full bg-purple-50 px-3 py-1 text-purple-800">
+                  Superflex
+                </span>
+              )}
+              {!leagueRules.features.trades_enabled && (
+                <span className="rounded-full bg-red-50 px-3 py-1 text-red-700">
+                  Trades disabled
+                </span>
+              )}
+            </div>
+          )}
+          {!isLoadingRules && selectedLeague && !leagueRules && (
+            <p className="mt-2 text-sm text-amber-700">
+              League rules unavailable — analysis may use generic roster assumptions.
+            </p>
+          )}
         </div>
 
         {/* League and Team Selection */}
@@ -1537,12 +1669,20 @@ export default function TradeAnalyzer({ leagues, initialLeagueId, teams: standin
               <label className="block text-sm font-medium text-gray-700 mb-2">League</label>
               <select
                 value={selectedLeague || ''}
-                onChange={(e) => setSelectedLeague(e.target.value ? parseInt(e.target.value) : null)}
+                onChange={(e) => {
+                  const leagueKey = e.target.value || null;
+                  setSelectedLeague(leagueKey);
+                  if (leagueKey && onLeagueChange) {
+                    onLeagueChange(leagueKey);
+                  }
+                }}
                 className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
               >
                 <option value="">Select league</option>
-                {leagues.map(league => (
-                  <option key={league.id} value={league.id}>{league.name}</option>
+                {leagues.map((league) => (
+                  <option key={resolveLeagueKey(league)} value={resolveLeagueKey(league)}>
+                    {league.name}
+                  </option>
                 ))}
               </select>
             </div>

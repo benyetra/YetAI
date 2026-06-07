@@ -796,10 +796,18 @@ export const fantasyAPI = {
   },
 
   // Get start/sit recommendations
-  getStartSitRecommendations: async (week: number = 1, token?: string) => {
+  getStartSitRecommendations: async (
+    week: number = 1,
+    leagueId?: string,
+    token?: string
+  ) => {
     const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
     try {
-      return await apiClient.get(`/api/fantasy/recommendations/start-sit/${week}`, authToken);
+      const params = leagueId ? `?league_id=${encodeURIComponent(leagueId)}` : '';
+      return await apiClient.get(
+        `/api/fantasy/recommendations/start-sit/${week}${params}`,
+        authToken
+      );
     } catch (error) {
       return { status: 'error', recommendations: [], message: 'Failed to fetch start/sit recommendations' };
     }
@@ -1034,19 +1042,31 @@ export const sleeperAPI = {
 
   // Sync NFL players (admin only)
   syncPlayers: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken =
+      token ??
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('auth_token') ?? undefined
+        : undefined);
     return apiClient.post('/api/sleeper/sync/players', {}, authToken);
   },
 
   // Full sync workflow
   fullSync: async (sleeperUsername: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken =
+      token ??
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('auth_token') ?? undefined
+        : undefined);
     return apiClient.post('/api/sleeper/sync/full', { sleeper_username: sleeperUsername }, authToken);
   },
 
   // Get sync status
   getStatus: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken =
+      token ??
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('auth_token') ?? undefined
+        : undefined);
     try {
       return await apiClient.get('/api/sleeper/status', authToken);
     } catch (error) {
@@ -1056,7 +1076,11 @@ export const sleeperAPI = {
 
   // Get Sleeper leagues
   getLeagues: async (token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken =
+      token ??
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('auth_token') ?? undefined
+        : undefined);
     try {
       return await apiClient.get('/api/sleeper/leagues', authToken);
     } catch (error) {
@@ -1066,7 +1090,11 @@ export const sleeperAPI = {
 
   // Get league rosters
   getLeagueRosters: async (leagueId: string, token?: string) => {
-    const authToken = token || (typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null);
+    const authToken =
+      token ??
+      (typeof window !== 'undefined'
+        ? localStorage.getItem('auth_token') ?? undefined
+        : undefined);
     try {
       return await apiClient.get(`/api/sleeper/leagues/${leagueId}/rosters`, authToken);
     } catch (error) {

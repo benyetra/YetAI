@@ -20,6 +20,8 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | `update_game_lines.py` | `wnba/update_game_lines.py` (consensus-only) | ✅ done |
 | *(historical odds)* | `wnba/historical_game_lines.py` + `scripts/backfill_wnba_historical_game_lines.py` | ✅ done |
 | `totals_projector.py` | `wnba/totals_projector.py` | ✅ done |
+| *(NBA parity)* | `wnba/totals_ml.py` (residual GBM shadow; `WNBA_TOTALS_ML_ENABLED=1` promotes) | ✅ done |
+| *(NBA parity)* | `wnba/ml_training/train_totals_model.py` + `build_totals_dataset.py` | ✅ done |
 | *(none — beyond NBA parity)* | `wnba/spread_projector.py` (ML when S3 `xgb_spread`, else Elo+pace) | ✅ done |
 | `store_actuals.py` | `wnba/store_actuals.py` (totals + spread) | ✅ done |
 | `totals_accuracy_tracker.py` | `wnba/totals_accuracy_tracker.py` | ✅ done |
@@ -128,6 +130,50 @@ training rows, or regularization — tracked informally alongside **YetAI-q9z**
 cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \
   --start 2021-05-01 --end 2025-12-31 --upload
 ```
+
+## Totals ML model quality
+
+Totals residual model: `s3://yetibets/wnba/ml_models/gbm_totals_residual.pkl`. Trained via
+`train_totals_model` on games with `pred_wnba_totals_actuals` (or spread-derived actuals)
+and heuristic features from stored projections or point-in-time pace/efficiency replay.
+
+**MAE gate:** holdout **residual** MAE ≤ **1.0** on a time-based split (last 20% of game
+dates). `--upload` is blocked when the gate fails (`status: gate_failed`). Ops override:
+`--skip-gate`. Metadata also reports heuristic vs ML **full-total** holdout MAE and
+**segmented** holdout metrics under ``holdout.segments``:
+``with_market_total`` vs ``without_market_total`` (split on stored ``market_total`` feature).
+
+**Production behavior:** `totals_projector.py` always runs the heuristic baseline, then
+`totals_ml.enrich_projection()` attaches `ml_shadow` in `factors`. Production
+`projected_total` stays heuristic unless `WNBA_TOTALS_ML_ENABLED=1` and S3 load
+succeeds.
+
+Before training, sync totals actuals, historical game lines, stored projections, and
+attach market lines to projections (train/serve alignment):
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.backfill_spread_actuals \
+  --source spread --start 2021-05-01 --end 2025-12-31
+# Historical odds (~30 credits/date); skip dates already in fetch log
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.backfill_historical_game_lines \
+  --start 2021-05-01 --end 2025-12-31
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.backfill_totals_projections \
+  --start 2021-05-01 --end 2025-12-31
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.backfill_totals_projections \
+  --start 2021-05-01 --end 2025-12-31 --sync-markets-only
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_totals_model \
+  --start 2021-05-01 --end 2025-12-31 --upload
+```
+
+After adding game lines without replaying pace/form, run ``--sync-markets-only`` only.
+After changing team-stats lookback or projection logic, re-run full backfill with ``--force``.
+
+Train output includes ``dataset_stats`` with ``stored_projections`` vs ``fast_replay`` counts.
+Prefer **stored_projections ≈ rows** before trusting holdout MAE; high ``fast_replay`` means
+train/serve skew remains.
+
+GitHub Actions: **WNBA Train Totals Model** (`workflow_dispatch`). Upload step fails if
+the MAE gate is not met.
 
 ## Production go-live checklist (2026-06-06)
 
@@ -277,7 +323,12 @@ T19 smoke against staging (2026-05-21):
   cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.update_game_lines
   cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \\
     --start 2021-05-01 --end 2025-12-31 --upload
+  cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_totals_model \\
+    --start 2024-05-01 --end 2025-12-31 --upload
   ```
+- Totals ML shadow is always attached when the model loads; set `WNBA_TOTALS_ML_ENABLED=1`
+  on the API/worker to promote `ml_total` to production `projected_total`. Local override:
+  `WNBA_TOTALS_MODEL_LOCAL=/path/to/dir` (expects `gbm_totals_residual.pkl` + metadata).
 - `LeagueDashTeamStats` and `LeagueDashPlayerStats` in nba_api use the
   `league_id_nullable` kwarg (not `league_id`). Pinned to `"10"` for WNBA in
   `wnba/_wnba_stats.py`.

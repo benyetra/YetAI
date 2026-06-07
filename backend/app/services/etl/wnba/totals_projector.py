@@ -21,6 +21,7 @@ from app.models.predictions_models import (
     WNBATotalsProjections,
 )
 from app.services.etl.wnba._espn import now_eastern
+from app.services.etl.wnba.totals_ml import enrich_projection
 
 logger = logging.getLogger(__name__)
 
@@ -438,6 +439,50 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
     return total_deviation
 
 
+def calculate_team_form_as_of(
+    team_name: str, as_of: date, num_recent_games: int = 5
+) -> float:
+    """Like ``calculate_team_form`` but only uses games strictly before ``as_of``."""
+    team_id = get_team_id_from_name(team_name)
+    if not team_id:
+        return 0.0
+
+    roster = db.query(WNBATeamRoster).filter_by(team_id=team_id).all()
+    if not roster:
+        return 0.0
+
+    total_deviation = 0.0
+
+    for player in roster:
+        all_games = (
+            db.query(WNBARecentGames)
+            .filter(
+                WNBARecentGames.player_id == player.player_id,
+                WNBARecentGames.game_date < as_of,
+            )
+            .all()
+        )
+        season_points = _points_values(all_games)
+        if len(season_points) < 5:
+            continue
+
+        season_avg_ppg = sum(season_points) / len(season_points)
+        if season_avg_ppg < 5.0:
+            continue
+
+        recent_games = sorted(all_games, key=lambda x: x.game_date, reverse=True)[
+            :num_recent_games
+        ]
+        recent_points = _points_values(recent_games)
+        if not recent_points:
+            continue
+
+        recent_avg_ppg = sum(recent_points) / len(recent_points)
+        total_deviation += recent_avg_ppg - season_avg_ppg
+
+    return max(-8.0, min(total_deviation, 8.0))
+
+
 def calculate_form_adjustment(home_team: str, away_team: str) -> float:
     """
     Calculate adjustment based on recent form (last 5 games).
@@ -456,6 +501,16 @@ def calculate_form_adjustment(home_team: str, away_team: str) -> float:
     total_form = max(-10.0, min(total_form, 10.0))
 
     return total_form
+
+
+def calculate_form_adjustment_as_of(
+    home_team: str, away_team: str, game_date: date
+) -> float:
+    """Form adjustment using only games before ``game_date``."""
+    home_form = calculate_team_form_as_of(home_team, game_date)
+    away_form = calculate_team_form_as_of(away_team, game_date)
+    total_form = home_form + away_form
+    return max(-10.0, min(total_form, 10.0))
 
 
 def generate_projection(
@@ -772,6 +827,7 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
             game_date=game_date,
             market_total=game["market_total"],
         )
+        enrich_projection(projection)
 
         # Save to database
         save_projection(projection)

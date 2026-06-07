@@ -675,6 +675,15 @@ def run_nfl_update_pipeline(self) -> dict:
     return _run_phases("nfl", NFL_PHASES)
 
 
+# --- Fantasy sub-tasks -------------------------------------------------------
+@celery_app.task(name="app.tasks.etl_pipeline.fantasy.sync_player_analytics")
+def fantasy_sync_player_analytics(season: int | None = None):
+    """Backfill ``player_analytics`` from nflverse weekly data for start/sit."""
+    from app.services.etl.fantasy.sync_player_analytics import run
+
+    return run(season=season)
+
+
 # --- NHL sub-tasks (ported from YetiBets scripts/nhl → app/services/etl/nhl) ----
 @celery_app.task(name="app.tasks.etl_pipeline.nhl.collect_ingest")
 def nhl_collect_ingest():

@@ -1,9 +1,8 @@
 """
-Simplified Sleeper Fantasy Sports Integration
-Focused on the specific workflow requested:
-1. Connect username -> get SleeperUserID
-2. Get all league history (2020-2025)
-3. Sync rosters and player data
+DEPRECATED: use ``app.services.fantasy_sleeper_unified`` instead.
+
+This module remains for historical imports only. New code must call
+``fantasy_connection_service`` or ``fantasy_sleeper_unified``.
 """
 
 import httpx

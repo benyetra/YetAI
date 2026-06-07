@@ -11,6 +11,7 @@ on:
       - "backend/app/services/ml_model_version.py"
       - "backend/app/services/etl/mlb/**"
       - "backend/app/services/etl/wnba/ml_training/**"
+      - "backend/app/services/etl/wnba/totals_ml.py"
       - "backend/app/services/etl/nba/**"
       - "backend/app/services/etl/nhl/**"
       - "backend/app/services/etl/nfl/**"
@@ -26,6 +27,10 @@ on:
       - "backend/tests/test_meta_learner_eval.py"
       - "backend/tests/fixtures/mlb_backtest_quick_baseline.json"
       - "backend/tests/test_wnba_ml_training.py"
+      - "backend/tests/test_wnba_totals_ml.py"
+      - "backend/tests/test_wnba_build_totals_dataset.py"
+      - "backend/tests/test_wnba_team_stats_as_of.py"
+      - "backend/tests/test_wnba_totals_training_eval.py"
       - "backend/tests/test_nba_ml_training.py"
       - "backend/tests/test_nba_ml_predict_metadata.py"
       - "backend/tests/test_ml_model_version.py"
@@ -70,6 +75,12 @@ jobs:
           pytest tests/test_ml_training_shared.py \
             tests/test_ml_model_version.py \
             tests/test_wnba_ml_training.py \
+            tests/test_wnba_totals_ml.py \
+            tests/test_wnba_build_totals_dataset.py \
+            tests/test_wnba_team_stats_as_of.py \
+            tests/test_wnba_totals_training_eval.py \
+            tests/test_wnba_backfill_totals_projections.py \
+            tests/test_wnba_totals_backfill_context.py \
             tests/test_mlb_deferred_features.py \
             tests/test_mlb_backtest_regression.py \
             tests/test_nhl_backtest_regression.py \

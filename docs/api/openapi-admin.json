@@ -3872,7 +3872,7 @@
     "/api/admin/bets/manual-verify": {
       "post": {
         "summary": "Manual Verify Bet",
-        "description": "Manually verify and settle a specific bet (Admin only)",
+        "description": "Manually verify and settle a specific unified bet (Admin only)",
         "operationId": "manual_verify_bet_api_admin_bets_manual_verify_post",
         "requestBody": {
           "content": {
