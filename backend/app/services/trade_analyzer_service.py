@@ -988,46 +988,19 @@ class TradeAnalyzerService:
         return position_defaults.get("Unknown", 12.0)
 
     def _calculate_sleeper_player_value(self, sleeper_player) -> float:
-        """Calculate realistic player value based on Sleeper data"""
-        position = sleeper_player.position
-        age = sleeper_player.age or 27
+        """Calculate stable player value based on Sleeper metadata."""
+        from app.services.fantasy_trade_value import calculate_deterministic_trade_value
 
-        # Base values by position (more realistic ranges)
-        base_values = {
-            "QB": (20.0, 45.0),  # QB range 20-45
-            "RB": (15.0, 40.0),  # RB range 15-40
-            "WR": (12.0, 38.0),  # WR range 12-38
-            "TE": (8.0, 25.0),  # TE range 8-25
-            "K": (2.0, 6.0),  # K range 2-6
-            "DEF": (3.0, 8.0),  # DEF range 3-8
-        }
-
-        min_val, max_val = base_values.get(position, (8.0, 15.0))
-
-        # Age-based value adjustment
-        if age <= 24:
-            age_multiplier = 1.1  # Young player bonus
-        elif age <= 27:
-            age_multiplier = 1.0  # Prime years
-        elif age <= 30:
-            age_multiplier = 0.95  # Slight decline
-        else:
-            age_multiplier = 0.8  # Aging player discount
-
-        # Team quality impact (simplified based on team name)
-        team_multiplier = 1.0
-        if sleeper_player.team in ["KC", "BUF", "DAL", "SF", "PHI", "MIA", "LAR"]:
-            team_multiplier = 1.05  # Good offense teams
-        elif sleeper_player.team in ["WAS", "CHI", "NYG", "CAR"]:
-            team_multiplier = 0.95  # Weaker offense teams
-
-        # Calculate final value with some variance
-        import random
-
-        base_value = random.uniform(min_val, max_val)
-        final_value = base_value * age_multiplier * team_multiplier
-
-        return round(final_value, 1)
+        return calculate_deterministic_trade_value(
+            {
+                "position": sleeper_player.position,
+                "age": sleeper_player.age or 27,
+                "team": sleeper_player.team or "",
+                "id": getattr(sleeper_player, "player_id", None)
+                or getattr(sleeper_player, "id", None),
+                "name": getattr(sleeper_player, "name", None),
+            }
+        )
 
     def _categorize_positional_impact(self, net_change: float) -> str:
         """Categorize the level of positional impact"""

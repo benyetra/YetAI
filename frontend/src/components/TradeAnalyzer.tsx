@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getApiUrl, apiRequest } from '@/lib/api-config';
 import type { LeagueRules } from '@/lib/fantasy-league-rules';
+import { calculateDeterministicTradeValue } from '@/lib/fantasy-trade-value';
 import { 
   Users, 
   TrendingUp, 
@@ -175,48 +176,9 @@ function findLeagueByKey(leagues: League[] | undefined, leagueKey: string | numb
   );
 }
 
-// Helper function to calculate realistic trade value on frontend
-const calculateFrontendTradeValue = (
-  position: string,
-  age: number = 27,
-  leagueRules?: LeagueRules | null
-) => {
-  const baseValues: Record<string, [number, number]> = {
-    QB: [20, 45],
-    RB: [15, 40],
-    WR: [12, 38],
-    TE: [8, 25],
-    K: [2, 6],
-    DEF: [3, 8],
-  };
-
-  const [min, max] = baseValues[position] || [8, 15];
-  let ageMultiplier = 1.0;
-
-  if (age <= 24) ageMultiplier = 1.1;
-  else if (age <= 27) ageMultiplier = 1.0;
-  else if (age <= 30) ageMultiplier = 0.95;
-  else ageMultiplier = 0.8;
-
-  const scoringType =
-    leagueRules?.scoring_type || leagueRules?.scoring_settings?.type || 'standard';
-  let scoringMultiplier = 1;
-  if (position === 'WR' || position === 'TE') {
-    if (scoringType === 'ppr') scoringMultiplier = 1.15;
-    else if (scoringType === 'half_ppr') scoringMultiplier = 1.08;
-  } else if (position === 'RB' && scoringType === 'standard') {
-    scoringMultiplier = 1.1;
-  }
-
-  const baseValue = min + Math.random() * (max - min);
-  return Math.round(baseValue * ageMultiplier * scoringMultiplier * 10) / 10;
-};
-
-const calculateTradeValue = (player: any, leagueRules?: LeagueRules | null) => {
-  const position = player.position || 'UNKNOWN';
-  const age = player.age || 27;
-  return calculateFrontendTradeValue(position, age, leagueRules);
-};
+function calculateTradeValue(player: Player, leagueRules?: LeagueRules | null) {
+  return calculateDeterministicTradeValue(player, leagueRules);
+}
 
 function buildPositionNeedsFromRules(
   leagueRules: LeagueRules | null | undefined,
@@ -866,7 +828,7 @@ export default function TradeAnalyzer({
             })),
             valuable_players: selectedTeamPlayers.slice(0, 3).map(p => ({
               ...p,
-              trade_value: p.trade_value || calculateFrontendTradeValue(p.position, p.age, leagueRules)
+              trade_value: p.trade_value || calculateTradeValue(p, leagueRules)
             })),
             tradeable_picks: [
               { pick_id: 1, season: 2025, round: 1, description: '2025 1st Round Pick', trade_value: 35 },

@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["fantasy"])
 
 from app.api.fantasy.trade_value import calculate_realistic_trade_value
+from app.services.fantasy_trade_value import select_trade_partner, stable_unit
 
 
 # Trade Analyzer Endpoints
@@ -445,20 +446,18 @@ async def generate_trade_recommendations(
             return players
 
         # Helper function to get realistic trade partner
-        def get_trade_partner():
-            """Get a realistic trade partner from league teams"""
-            if other_teams:
-                import random
-
-                partner = random.choice(other_teams)
-                return {
-                    "name": partner.get(
-                        "name", f"Team {partner.get('team_id', 'Unknown')}"
-                    ),
-                    "team_id": partner.get("team_id"),
-                    "full_data": partner,
-                }
-            return {"name": "League Team", "team_id": None, "full_data": None}
+        def get_trade_partner(seed: str = ""):
+            """Get a stable trade partner from league teams."""
+            partner = select_trade_partner(other_teams, seed=seed)
+            if not partner:
+                return {"name": "League Team", "team_id": None, "full_data": None}
+            return {
+                "name": partner.get(
+                    "name", f"Team {partner.get('team_id', 'Unknown')}"
+                ),
+                "team_id": partner.get("team_id"),
+                "full_data": partner,
+            }
 
         # Helper function to get real players from target team
         async def get_target_team_players(target_team_id, position_needed):
@@ -577,7 +576,7 @@ async def generate_trade_recommendations(
         # Check for position weaknesses
         if len(positions.get("QB", [])) < 2:
             rb_players = positions.get("RB", [])[:1]
-            trade_partner = get_trade_partner()
+            trade_partner = get_trade_partner(f"{team_id}:QB_depth")
 
             # Get real QB from target team
             target_qb_players = await get_target_team_players(
@@ -610,11 +609,7 @@ async def generate_trade_recommendations(
             rec_id += 1
 
         if len(positions.get("RB", [])) > 4:
-            rb_players = positions.get("RB", [])
-            give_players = rb_players[
-                -2:
-            ]  # Trade least important RBs (actual player objects)
-            trade_partner = get_trade_partner()
+            trade_partner = get_trade_partner(f"{team_id}:RB_surplus")
 
             # Get real players from target team
             target_wr_players = await get_target_team_players(
@@ -650,10 +645,7 @@ async def generate_trade_recommendations(
             rec_id += 1
 
         if len(positions.get("WR", [])) < 4:
-            te_players = (
-                positions.get("TE", [])[:1] if len(positions.get("TE", [])) > 1 else []
-            )
-            trade_partner = get_trade_partner()
+            trade_partner = get_trade_partner(f"{team_id}:WR_depth")
 
             # Get real WR from target team
             target_wr_players = await get_target_team_players(
@@ -993,10 +985,16 @@ async def quick_trade_analysis(
         # Convert insights to structured format
         structured_insights = [format_insight(insight) for insight in insights]
 
+        trade_seed = (
+            f"{request.league_id}:{request.team1_id}:{request.team2_id}:"
+            f"{request.team1_gives}:{request.team2_gives}"
+        )
+        trade_suffix = int(stable_unit(trade_seed) * 1_000_000_000)
+
         return {
             "success": True,
             "analysis": {
-                "trade_id": f"{request.team1_id}_{request.team2_id}_{int(time.time())}",
+                "trade_id": f"{request.team1_id}_{request.team2_id}_{trade_suffix}",
                 "team1_gives": team1_gives,
                 "team2_gives": team2_gives,
                 "fairness": {

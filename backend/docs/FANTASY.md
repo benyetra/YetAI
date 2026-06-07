@@ -80,6 +80,41 @@ Use after Sleeper roster changes or first-time setup.
 
 Celery task calls `run(..., sync_fantasy_players=True)` so production refreshes the Sleeper catalog weekly.
 
+### Production verification checklist
+
+Run after each backend deploy that touches fantasy ETL or Celery (`backend/**`, `railway.json`, worker image).
+
+| Step | How | Pass criteria |
+|------|-----|---------------|
+| 1. Deploy | GitHub **Railway Production Deploy** (or push to `main` with backend changes) | API + `celery-worker` services on latest commit |
+| 2. Beat schedule | Railway → worker logs or admin Celery UI | `fantasy-player-analytics-weekly` registered (Tue 06:30 UTC) |
+| 3. Current-season backfill | Railway shell or one-off task (see below) | `rows_upserted` > 0 on first run, then `rows_unchanged` ≈ prior count |
+| 4. Mapping health | Check task result fields | `fantasy_players_mapped` ≈ 1000+; high `rows_skipped` is normal (~90% nflverse rows lack GSIS map) |
+| 5. UI smoke | Logged-in user on `/fantasy` | Connect → league card → start/sit returns recommendations for current week |
+
+**One-off 2025 backfill (production shell):**
+
+```bash
+cd backend
+PYTHONPATH=. python -c "
+from app.services.etl.fantasy.sync_player_analytics import run
+print(run(season=2025))
+"
+```
+
+Expected first run: `rows_upserted` ~1400+, `fantasy_players_sync` set if Celery path (`sync_fantasy_players=True`). Re-run should show `rows_unchanged` with `rows_upserted: 0` in ~5–10s.
+
+**Verify Celery task manually:**
+
+```bash
+PYTHONPATH=. python -c "
+from app.tasks.etl_pipeline import fantasy_sync_player_analytics
+print(fantasy_sync_player_analytics.delay(season=2025))
+"
+```
+
+Monitor worker logs for completion and no `HTTP Error 404` on weekly parquet (2025+ requires `stats_player_week` fallback from commit `0f3db7b7` onward).
+
 Manual enqueue:
 
 ```bash
@@ -160,11 +195,11 @@ If start/sit returns empty recommendations, run analytics ETL for the season and
 
 ## Automated E2E (Playwright, stubbed)
 
-No real Sleeper or DB required — routes are mocked in the fixture.
+No real Sleeper or DB required — routes are mocked in the fixture. **CI:** `.github/workflows/frontend-ci-cd.yml` runs `npm run test:ci` (fantasy happy path only) after installing Chromium.
 
 ```bash
 cd frontend
-npm run test:ci -- tests/fantasy-happy-path.spec.ts
+npm run test:ci
 ```
 
 Covers: league card, trending, start/sit button, waiver button, matchups, trade analyzer shell.
@@ -192,4 +227,5 @@ Full gate before push: `PYTHONPATH=. .venv/bin/python -m pytest -q`.
 
 ## Related issues
 
-Beads epic **YetAI-ojg** — fantasy feature completion (routes, ETL, docs, Playwright).
+Beads epic **YetAI-ojg** — fantasy MVP (routes, ETL, docs, Playwright).  
+Phase 2: prod checklist (this doc), Playwright in CI, deterministic trade analyzer.

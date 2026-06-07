@@ -49,6 +49,9 @@ jobs:
       run: npm run type-check
       continue-on-error: true
 
+    - name: Install Playwright browsers
+      run: npx playwright install --with-deps chromium
+
     - name: Run tests
       run: npm run test:ci
       env:
