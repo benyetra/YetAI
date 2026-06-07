@@ -40,7 +40,7 @@ def test_compute_ppr_points_uses_nflverse_column_when_present():
 async def test_sync_player_analytics_upserts_rows():
     db = MagicMock()
     existing_query = MagicMock()
-    existing_query.filter.return_value.order_by.return_value.first.return_value = None
+    existing_query.filter.return_value.order_by.return_value.all.return_value = []
     db.query.return_value = existing_query
 
     weekly = pd.DataFrame(
@@ -80,5 +80,5 @@ async def test_sync_player_analytics_upserts_rows():
 
     assert result["rows_upserted"] == 1
     assert result["season"] == 2024
-    db.add.assert_called_once()
+    db.bulk_insert_mappings.assert_called_once()
     db.commit.assert_called_once()

@@ -8,8 +8,8 @@ weekly fantasy scoring rows used by start/sit and trade analytics.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 import pandas as pd
 from sqlalchemy.orm import Session
@@ -107,6 +107,54 @@ def _load_weekly_frame(season: int) -> pd.DataFrame:
     return weekly
 
 
+def _load_existing_row_ids(db: Session, season: int) -> Dict[Tuple[int, int], int]:
+    """Map (player_id, week) → row id for one season (lowest id wins duplicates)."""
+    rows = (
+        db.query(PlayerAnalytics.player_id, PlayerAnalytics.week, PlayerAnalytics.id)
+        .filter(PlayerAnalytics.season == season)
+        .order_by(PlayerAnalytics.id)
+        .all()
+    )
+    existing: Dict[Tuple[int, int], int] = {}
+    for player_id, week, row_id in rows:
+        key = (player_id, week)
+        if key not in existing:
+            existing[key] = row_id
+    return existing
+
+
+def _row_payload(
+    *,
+    row: pd.Series,
+    fantasy_player_id: int,
+    week: int,
+    season: int,
+) -> Dict[str, Any]:
+    ppr_points = _compute_ppr_points(row)
+    targets = _safe_int(row.get("targets")) or 0
+    carries = _safe_int(row.get("carries")) or 0
+    receptions = _safe_int(row.get("receptions")) or 0
+    receiving_yards = _safe_int(row.get("receiving_yards")) or 0
+    rushing_yards = _safe_int(row.get("rushing_yards")) or 0
+    return {
+        "player_id": fantasy_player_id,
+        "week": week,
+        "season": season,
+        "ppr_points": ppr_points,
+        "half_ppr_points": ppr_points - (receptions * 0.5),
+        "standard_points": ppr_points - receptions,
+        "targets": targets,
+        "carries": carries,
+        "receptions": receptions,
+        "receiving_yards": receiving_yards,
+        "rushing_yards": rushing_yards,
+        "opponent": row.get("opponent_team"),
+        "target_share": _safe_float(row.get("target_share")),
+        "snap_percentage": _safe_float(row.get("offense_pct")),
+        "points_per_target": (ppr_points / targets if targets > 0 else None),
+    }
+
+
 async def sync_player_analytics(
     db: Session,
     *,
@@ -130,8 +178,12 @@ async def sync_player_analytics(
     if max_week is not None:
         weekly = weekly[weekly["week"] <= max_week]
 
+    existing_ids = _load_existing_row_ids(db, season)
+    to_insert: List[Dict[str, Any]] = []
+    to_update: List[Dict[str, Any]] = []
     upserted = 0
     skipped = 0
+    now = datetime.utcnow()
 
     for _, row in weekly.iterrows():
         gsis_id = str(row.get("player_id", ""))
@@ -145,55 +197,24 @@ async def sync_player_analytics(
             skipped += 1
             continue
 
-        ppr_points = _compute_ppr_points(row)
-        targets = _safe_int(row.get("targets")) or 0
-        carries = _safe_int(row.get("carries")) or 0
-        receptions = _safe_int(row.get("receptions")) or 0
-        receiving_yards = _safe_int(row.get("receiving_yards")) or 0
-        rushing_yards = _safe_int(row.get("rushing_yards")) or 0
-
-        existing_row = (
-            db.query(PlayerAnalytics.id)
-            .filter(
-                PlayerAnalytics.player_id == fantasy_player_id,
-                PlayerAnalytics.week == week,
-                PlayerAnalytics.season == season,
-            )
-            .order_by(PlayerAnalytics.id)
-            .first()
+        payload = _row_payload(
+            row=row,
+            fantasy_player_id=fantasy_player_id,
+            week=week,
+            season=season,
         )
-        existing_id = existing_row[0] if existing_row else None
-
-        payload = {
-            "ppr_points": ppr_points,
-            "half_ppr_points": ppr_points - (receptions * 0.5),
-            "standard_points": ppr_points - receptions,
-            "targets": targets,
-            "carries": carries,
-            "receptions": receptions,
-            "receiving_yards": receiving_yards,
-            "rushing_yards": rushing_yards,
-            "opponent": row.get("opponent_team"),
-            "target_share": _safe_float(row.get("target_share")),
-            "snap_percentage": _safe_float(row.get("offense_pct")),
-            "points_per_target": (ppr_points / targets if targets > 0 else None),
-        }
-
+        existing_id = existing_ids.get((fantasy_player_id, week))
         if existing_id is None:
-            db.add(
-                PlayerAnalytics(
-                    player_id=fantasy_player_id,
-                    week=week,
-                    season=season,
-                    **payload,
-                )
-            )
+            to_insert.append({**payload, "created_at": now})
         else:
-            db.query(PlayerAnalytics).filter(PlayerAnalytics.id == existing_id).update(
-                payload, synchronize_session=False
-            )
+            to_update.append({"id": existing_id, **payload})
 
         upserted += 1
+
+    if to_insert:
+        db.bulk_insert_mappings(PlayerAnalytics, to_insert)
+    if to_update:
+        db.bulk_update_mappings(PlayerAnalytics, to_update)
 
     db.commit()
     logger.info(
