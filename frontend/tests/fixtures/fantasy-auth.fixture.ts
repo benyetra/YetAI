@@ -4,12 +4,41 @@ type FantasyFixtures = {
   fantasyPageReady: void;
 };
 
+/** JWT-shaped token so auth-session accepts it in the browser (requires exp claim). */
+function buildPlaywrightAuthToken(): string {
+  const encode = (value: Record<string, unknown>) =>
+    Buffer.from(JSON.stringify(value))
+      .toString('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+  const header = encode({ alg: 'HS256', typ: 'JWT' });
+  const payload = encode({
+    sub: '1',
+    exp: Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 365,
+  });
+  return `${header}.${payload}.playwright-test-signature`;
+}
+
 export const test = base.extend<FantasyFixtures>({
   fantasyPageReady: [
     async ({ page }, use) => {
-      await page.addInitScript(() => {
-        localStorage.setItem('auth_token', 'playwright-test-token');
-      });
+      const authToken = buildPlaywrightAuthToken();
+      const userData = {
+        id: 1,
+        email: 'fantasy@test.com',
+        username: 'testuser',
+        is_verified: true,
+      };
+
+      await page.addInitScript(
+        ({ token, user }) => {
+          localStorage.setItem('auth_token', token);
+          localStorage.setItem('user_data', JSON.stringify(user));
+        },
+        { token: authToken, user: userData },
+      );
 
       await page.route('**/api/auth/me', async (route) => {
         await route.fulfill({
@@ -17,11 +46,18 @@ export const test = base.extend<FantasyFixtures>({
           contentType: 'application/json',
           body: JSON.stringify({
             status: 'success',
-            user: {
-              id: 1,
-              email: 'fantasy@test.com',
-              username: 'testuser',
-            },
+            user: userData,
+          }),
+        });
+      });
+
+      await page.route('**/api/auth/avatar/**', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            status: 'success',
+            avatar_url: '',
           }),
         });
       });
@@ -125,11 +161,14 @@ export const test = base.extend<FantasyFixtures>({
                 league_name: 'Test League',
                 player_id: 'p2',
                 player_name: 'Waiver Target',
+                name: 'Waiver Target',
                 position: 'RB',
                 team: 'BUF',
                 priority_score: 88,
                 trend_count: 900,
                 reason: 'Trending add',
+                suggested_fab_percentage: 12,
+                fantasy_positions: ['RB'],
               },
             ],
           }),
