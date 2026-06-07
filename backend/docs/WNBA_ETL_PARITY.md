@@ -41,55 +41,111 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | `generate_assists_predictions.py` | `wnba/generate_assists_predictions.py` | ✅ done |
 | `generate_rebounds_predictions.py` | `wnba/generate_rebounds_predictions.py` | ✅ done |
 | `calculate_prediction_accuracy.py` | `wnba/calculate_prediction_accuracy.py` | ✅ done |
-| *(none — one-shot script)* | `wnba/backfill_wnba_history.py` | ✅ done |
+| *(one-shot)* | `wnba/backfill_wnba_history.py` | ✅ done |
+| *(one-shot)* | `wnba/backfill_wnba_sportsdataverse.py` + `cache_wnba_player_ids.py` | ✅ done (ESPN parquet; player-id cache in `app/data/wnba_player_id_cache/`) |
+| *(training)* | `wnba/_training_context.py` + optimized `ml_training/build_training_dataset.py` | ✅ done (bulk preload; ~3s vs ~90min per stat over Railway) |
 
 Phase 2 schema tables (7) were created up-front in the Plan A migration so Plan B
 needs no schema changes.
 
-## Phase 2 model MAE gates
+## Historical data (2026-06-06, prod)
 
-All three XGBoost models passed their training-time MAE gates and were uploaded
-to `s3://yetibets/wnba/ml_models/xgb_{points,assists,rebounds}.pkl`:
+One-shot backfills completed on production DB:
 
-| Model | Test-set MAE | Gate | Status |
+| Table | Source | Coverage |
+|---|---|---|
+| `pred_wnba_recent_games` | SportsDataverse ESPN parquet (`backfill_wnba_sportsdataverse`) | **~25.5k** player-games, 2021-05-14 → 2026-06-05 |
+| `pred_wnba_game_lines` | Odds API historical + live (`historical_game_lines` + `update_game_lines`) | **231** snapshot dates; fetch-once log (`pred_wnba_game_lines_fetch_log`) — dry-run shows **0** dates left to fetch |
+
+Prop training window 2024-05-01 → 2025-12-31 yields **~9k** feature rows per stat after lookback filtering.
+
+## Phase 2 prop model MAE gates
+
+All three XGBoost prop models passed training-time MAE gates and were uploaded to
+`s3://yetibets/wnba/ml_models/xgb_{points,assists,rebounds}.pkl`.
+
+**Prior baseline (2026-05, 42-feature set, no Vegas):**
+
+| Model | Validation MAE | Gate | Status |
 |---|---|---|---|
 | Points | **4.261** | 4.5 | ✅ pass |
 | Assists | **1.266** | 1.5 | ✅ pass |
 | Rebounds | **1.829** | 2.0 | ✅ pass |
 
-**Retrain (2026-06):** Prop feature set expanded (volatility, trend, matchup,
-advanced stats, Vegas context). Training replays `historical_expected_minutes()`
-per `(player_id, game_date)` using only prior games (recency + B2B/home; live
-teammate-out boost remains inference-only). Retrain + S3 upload:
+**Retrain (2026-06-06, expanded features + Vegas context + historical box scores):**
+Training window `2024-05-01` → `2025-12-31`. Feature set adds volatility, trend,
+matchup, shooting volume, expected-minutes replay, and Vegas fields
+(`market_total`, `market_spread`, `is_home`, `is_favorite`). Dataset build uses
+`_training_context` bulk preload (~3s/stat vs ~90min N+1 over Railway).
+
+| Model | Rows | Validation MAE | Gate | Test MAE | Status |
+|---|---|---|---|---|---|
+| Points | 9,129 | **2.94** | 4.5 | 4.17 | ✅ pass |
+| Assists | 9,035 | **0.87** | 1.5 | 1.28 | ✅ pass |
+| Rebounds | 9,035 | **1.28** | 2.0 | 1.80 | ✅ pass |
+
+Retrain commands:
 
 ```bash
 # Holdout eval (needs DATABASE_URL)
-cd backend && PYTHONPATH=. .venv/bin/python \\
-  -m app.services.etl.wnba.ml_training.prop_model_eval \\
+cd backend && PYTHONPATH=. .venv/bin/python \
+  -m app.services.etl.wnba.ml_training.prop_model_eval \
   --stat points --train-start 2024-05-01 --holdout-start 2025-05-01 --holdout-end 2025-12-31
 
 # Train + upload (GitHub Actions: WNBA Train Prop Models, or locally)
-cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training \\
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training \
   --stat points --start 2024-05-01 --end 2025-12-31 --upload
+# Repeat for assists, rebounds
 ```
 
-Training logs in [`backend/docs/wnba_training_logs/`](./wnba_training_logs/).
+## Spread ML model quality
 
-## Production go-live checklist (2026-05-22)
+Spread margin model: `s3://yetibets/wnba/ml_models/xgb_spread.pkl`. Trained via
+`train_spread_model` on games with both `pred_wnba_spread_actuals` and matching
+`pred_wnba_game_lines` (includes `market_spread_home`, `market_total`).
+
+**Unlike prop models, spread training has no MAE gate** — `--upload` always pushes
+to S3 when training succeeds.
+
+| Run | Rows | Train MAE | Test MAE | Notes |
+|---|---|---|---|---|
+| 2026-06-06 (post lines backfill) | **602** | **1.68** | **11.42** | Uploaded; large train/test gap |
+| 2026-06-06 (first upload, partial lines) | 602 | 2.04 | 11.21 | Superseded |
+
+**Production behavior:** `spread_projector.py` uses the S3 model when loadable
+(`projection_method = "ml"`); otherwise falls back to **Elo + pace** overlay
+(`elo_pace`). There is no runtime MAE check — the model is used whenever S3 load
+succeeds.
+
+**Quality assessment:** Test MAE ~**11.4 points** vs train ~**1.7** indicates
+severe overfitting and/or a difficult temporal split (only **602** games have
+full feature rows). Monitor spread picks via `wnba-spreads-accuracy-morning` before
+trusting ML over the Elo fallback. Future work: add a spread MAE gate, more
+training rows, or regularization — tracked informally alongside **YetAI-q9z**
+(NBA spread backport).
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \
+  --start 2021-05-01 --end 2025-12-31 --upload
+```
+
+## Production go-live checklist (2026-06-06)
 
 | Check | Status |
 |---|---|
-| Prod DB `alembic_version` = `f8a2c91e04bd` | ✅ migrated via GitHub Actions |
+| Prod DB migrations through `20260606_wnba_fetch_log` | ✅ applied |
+| Historical box scores (`pred_wnba_recent_games`) | ✅ ~25.5k rows (2021–2026) |
+| Historical game lines (`pred_wnba_game_lines`) | ✅ backfill complete (231 dates, 0 pending) |
 | `GET https://api.yetai.app/health` — DB + scheduler + `ODDS_API_KEY` | ✅ verified |
 | `GET https://yetai.app/predictions/wnba` | ✅ 200 (page shell) |
 | `/api/v1/predictions/wnba` | Requires paid auth — verify logged-in in app |
-| Celery Beat — 7 WNBA entries in `celery_app.py` | ✅ code present; confirm worker+beat deployed on Railway |
-| S3 models `s3://yetibets/wnba/ml_models/*.pkl` | Required for prop generators (worker IAM) |
+| Celery Beat — **8** WNBA entries in `celery_app.py` | ✅ verified via `verify_wnba_prod_go_live.py` |
+| S3 models `s3://yetibets/wnba/ml_models/*.pkl` | ✅ props + spread uploaded (2026-06-06) |
 
 Local verifier:
 
 ```bash
-cd backend && python scripts/verify_wnba_prod_go_live.py
+cd backend && python3 scripts/verify_wnba_prod_go_live.py
 ```
 
 ## Phase 2 live smoke (2026-05-22)
@@ -144,10 +200,10 @@ issues:
 1. **`spread_projector.py` — spread/win-probability model.** Uses XGBoost margin
    model (`s3://yetibets/wnba/ml_models/xgb_spread.pkl`) when uploaded; falls back
    to Elo+pace. Train: `python -m app.services.etl.wnba.ml_training.train_spread_model
-   --start YYYY-MM-DD --end YYYY-MM-DD [--upload]`. Elo rating per
-   team replayed from `pred_wnba_spread_actuals`, plus pace/efficiency overlay,
-   plus WNBA HCA = 2.5. NBA currently has only `totals_projector`. Backport
-   tracked as **YetAI-q9z**.
+   --start YYYY-MM-DD --end YYYY-MM-DD [--upload]`. See **Spread ML model quality**
+   above — current test MAE ~11.4 with no upload gate. Elo rating per team replayed
+   from `pred_wnba_spread_actuals`, plus pace/efficiency overlay, plus WNBA HCA =
+   2.5. NBA currently has only `totals_projector`. Backport tracked as **YetAI-q9z**.
 
 2. **Consensus-average market line storage in `pred_wnba_game_lines`** (vs NBA's
    per-book rows in `pred_nba_game_lines`). Plan A stores a single row per game
@@ -165,6 +221,7 @@ DB or any external API.
 | `wnba-update-pipeline-daily` | 03:00 ET daily (no Odds API lines; uses `pred_wnba_game_lines`) |
 | `wnba-update-game-lines-thrice-daily` | 06:10 / 14:10 / 22:10 ET (Odds API cap) |
 | `wnba-update-injuries-every-2h` | every 2 h |
+| `wnba-update-team-stats-daily` | daily (team offense/defense dashboards) |
 | `wnba-projectors-pregame-hourly` | hourly 09:00–22:00 ET (same orchestrator; no Odds line refresh) |
 | `wnba-store-actuals-morning` | 04:00 ET daily |
 | `wnba-totals-accuracy-morning` | 05:00 ET daily |
@@ -194,11 +251,20 @@ T19 smoke against staging (2026-05-21):
 
 - `ODDS_API_KEY` env var must be set for `update_game_lines` to populate.
 - Historical consensus lines (spread ML + prop Vegas features): ~30 Odds API credits/date.
+- Historical player box scores: run `cache_wnba_player_ids` once per season, then
+  `backfill_wnba_sportsdataverse` (no per-game stats.nba.com calls).
 
   ```bash
-  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
+  cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.cache_wnba_player_ids \
+    --seasons 2021,2022,2023,2024,2025
+  cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.backfill_wnba_sportsdataverse \
+    --seasons 2021,2022,2023,2024,2025
+  ```
+
+  ```bash
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \
     --start 2021-05-01 --end 2025-10-01 --dry-run
-  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \\
+  cd backend && PYTHONPATH=. .venv/bin/python scripts/backfill_wnba_historical_game_lines.py \
     --start 2021-05-01 --end 2025-10-01 --max-dates 25
   ```
 
