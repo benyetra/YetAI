@@ -96,14 +96,52 @@ def _compute_ppr_points(row: pd.Series) -> float:
     )
 
 
+def _load_nflverse_sleeper_to_gsis() -> Dict[str, str]:
+    """Map Sleeper IDs to GSIS via nflverse ``import_ids`` crosswalk."""
+    try:
+        import nfl_data_py as nfl
+    except ImportError:
+        return {}
+
+    try:
+        ids_df = nfl.import_ids()
+    except Exception as exc:
+        logger.warning("nflverse import_ids unavailable: %s", exc)
+        return {}
+
+    if ids_df is None or ids_df.empty:
+        return {}
+
+    mapping: Dict[str, str] = {}
+    for _, row in ids_df.iterrows():
+        gsis_id = row.get("gsis_id")
+        sleeper_id = row.get("sleeper_id")
+        if gsis_id is None or sleeper_id is None:
+            continue
+        if isinstance(gsis_id, float) and pd.isna(gsis_id):
+            continue
+        if isinstance(sleeper_id, float) and pd.isna(sleeper_id):
+            continue
+        gsis_str = str(gsis_id).strip()
+        sleeper_str = str(int(float(sleeper_id)))
+        if gsis_str and sleeper_str:
+            mapping[sleeper_str] = gsis_str
+    return mapping
+
+
 async def _build_gsis_to_fantasy_player_map(db: Session) -> Dict[str, int]:
-    """Map GSIS IDs to ``fantasy_players.id`` via Sleeper metadata."""
+    """Map GSIS IDs to ``fantasy_players.id`` via Sleeper + nflverse metadata."""
     sleeper_players = await fantasy_sleeper_unified.sleeper._get_all_players()
     sleeper_to_gsis: Dict[str, str] = {}
     for sleeper_id, pdata in sleeper_players.items():
         gsis_id = pdata.get("gsis_id")
         if gsis_id:
             sleeper_to_gsis[str(sleeper_id)] = str(gsis_id)
+
+    # Sleeper omits gsis_id for many active players (e.g. Jahmyr Gibbs / 9221).
+    nflverse_sleeper_to_gsis = _load_nflverse_sleeper_to_gsis()
+    for sleeper_id, gsis_id in nflverse_sleeper_to_gsis.items():
+        sleeper_to_gsis.setdefault(sleeper_id, gsis_id)
 
     fantasy_rows = (
         db.query(FantasyPlayer.id, FantasyPlayer.platform_player_id)

@@ -43,7 +43,7 @@ Docker image installs the same set (see `backend/Dockerfile`).
 ### What gets synced
 
 1. **`fantasy_players`** — Sleeper player catalog (GSIS ↔ Sleeper ID mapping). Heavy (~6 min first run); optional on manual ETL.
-2. **`player_analytics`** — Weekly nflverse stats mapped to internal player IDs; powers start/sit, projections, trade context.
+2. **`player_analytics`** — Weekly nflverse stats mapped to internal player IDs; powers start/sit, projections, trade context. GSIS mapping uses Sleeper `gsis_id` when present, then falls back to nflverse `import_ids()` (covers players like Jahmyr Gibbs where Sleeper omits `gsis_id`).
 
 ### Manual ETL (fast path — analytics only)
 
@@ -255,7 +255,7 @@ Full gate before push: `PYTHONPATH=. .venv/bin/python -m pytest -q`.
 |---------|--------|
 | `ModuleNotFoundError: nfl_data_py` | Install nfl-data-py (see above) |
 | `503 Fantasy pipeline service unavailable` | Service loader / `fantasy_pipeline` registration |
-| Empty start/sit | `player_analytics` backfill; GSIS mapping in `fantasy_players` |
+| Empty start/sit | `player_analytics` backfill; GSIS mapping in `fantasy_players` (re-run sync after mapping fixes) |
 | `HTTP Error 404` on season 2025+ ETL | Legacy nfl-data-py URL; upgrade to latest code with `stats_player_week` fallback |
 | Empty leagues after connect | Sleeper API is **season-scoped** (`/leagues/nfl/{year}`). Offseason, current calendar year may have 0 leagues — API fetches current + prior season. Verify with `curl https://api.sleeper.app/v1/user/{sleeper_id}/leagues/nfl/2025` |
 | `Unknown PG numeric type` on analytics | `PlayerAnalytics.game_script` must be `Float`; run Alembic if schema drift |
