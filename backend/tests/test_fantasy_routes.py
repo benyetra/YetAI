@@ -183,3 +183,46 @@ def test_prod_verify_fantasy_beat_schedule_registered():
 
     result = _beat_schedule_ok()
     assert result["ok"] is True
+
+
+@patch("app.services.fantasy_pipeline.FantasyPipeline")
+def test_roster_route_does_not_require_service_loader(
+    mock_pipeline_cls, client, auth_headers
+):
+    mock_pipeline = mock_pipeline_cls.return_value
+    mock_pipeline.get_league_roster = AsyncMock(
+        return_value=[
+            {
+                "player_id": "123",
+                "name": "Test Player",
+                "position": "WR",
+                "team": "KC",
+            }
+        ]
+    )
+
+    response = client.get("/api/fantasy/roster/league-abc", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert len(response.json()["roster"]) == 1
+    mock_pipeline.get_league_roster.assert_awaited_once_with("league-abc", 1)
+
+
+@patch("app.services.fantasy_pipeline.FantasyPipeline")
+def test_projections_route_does_not_require_service_loader(
+    mock_pipeline_cls, client, auth_headers
+):
+    mock_pipeline = mock_pipeline_cls.return_value
+    mock_pipeline.get_nfl_players = AsyncMock(
+        return_value=[{"id": "1", "name": "Player One", "position": "RB", "team": "KC"}]
+    )
+    mock_pipeline.generate_fantasy_projections.return_value = [
+        {"player_id": "1", "projected_points": 12.5}
+    ]
+
+    response = client.get("/api/fantasy/projections", headers=auth_headers)
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "success"
+    assert len(response.json()["projections"]) == 1

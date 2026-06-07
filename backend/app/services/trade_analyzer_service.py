@@ -182,10 +182,14 @@ class TradeAnalyzerService:
         try:
             pick_registry = self._load_pick_registry_for_league(league_id)
 
-            if not self._validate_team_assets(team1_id, team1_gives, pick_registry):
+            if not self._validate_team_assets(
+                team1_id, team1_gives, pick_registry, league_id=league_id
+            ):
                 return {"valid": False, "error": "Team 1 doesn't own specified assets"}
 
-            if not self._validate_team_assets(team2_id, team2_gives, pick_registry):
+            if not self._validate_team_assets(
+                team2_id, team2_gives, pick_registry, league_id=league_id
+            ):
                 return {"valid": False, "error": "Team 2 doesn't own specified assets"}
 
             # Ensure both sides are giving something
@@ -214,6 +218,8 @@ class TradeAnalyzerService:
         team_id: int,
         assets: Dict,
         pick_registry: Optional[Dict[int, Dict[str, Any]]] = None,
+        *,
+        league_id: Optional[int] = None,
     ) -> bool:
         """Validate team owns the specified assets"""
         team = self.db.query(FantasyTeam).filter(FantasyTeam.id == team_id).first()
@@ -221,25 +227,35 @@ class TradeAnalyzerService:
             int(team.platform_team_id) if team and team.platform_team_id else team_id
         )
 
-        # Validate players
+        # Validate players (Sleeper roster first, DB fallback)
         if assets.get("players"):
-            roster_player_ids = (
-                self.db.query(FantasyRosterSpot.player_id)
-                .filter(FantasyRosterSpot.team_id == team_id)
-                .subquery()
+            sleeper_roster_ids = (
+                self._load_sleeper_roster_player_ids(league_id, roster_id)
+                if league_id is not None
+                else set()
             )
-
-            owned_players = (
-                self.db.query(FantasyPlayer.id)
-                .filter(
-                    FantasyPlayer.id.in_(assets["players"]),
-                    FantasyPlayer.id.in_(roster_player_ids),
+            if sleeper_roster_ids:
+                for player_id in assets["players"]:
+                    if str(player_id) not in sleeper_roster_ids:
+                        return False
+            else:
+                roster_player_ids = (
+                    self.db.query(FantasyRosterSpot.player_id)
+                    .filter(FantasyRosterSpot.team_id == team_id)
+                    .subquery()
                 )
-                .count()
-            )
 
-            if owned_players != len(assets["players"]):
-                return False
+                owned_players = (
+                    self.db.query(FantasyPlayer.id)
+                    .filter(
+                        FantasyPlayer.id.in_(assets["players"]),
+                        FantasyPlayer.id.in_(roster_player_ids),
+                    )
+                    .count()
+                )
+
+                if owned_players != len(assets["players"]):
+                    return False
 
         # Validate draft picks (Sleeper registry first, DB fallback)
         if assets.get("picks"):
@@ -297,6 +313,44 @@ class TradeAnalyzerService:
         except Exception as exc:
             logger.warning("Could not load Sleeper pick registry: %s", exc)
             return {}
+
+    def _load_sleeper_roster_player_ids(
+        self, league_id: Optional[int], roster_id: int
+    ) -> set[str]:
+        """Return Sleeper player IDs on a roster slot (empty when unavailable)."""
+        if league_id is None:
+            return set()
+
+        league = (
+            self.db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
+        )
+        if not league or league.platform != FantasyPlatform.SLEEPER:
+            return {}
+
+        platform_league_id = league.platform_league_id
+        if not platform_league_id:
+            return set()
+
+        try:
+            import httpx
+
+            with httpx.Client(timeout=10.0) as client:
+                response = client.get(
+                    f"https://api.sleeper.app/v1/league/{platform_league_id}/rosters"
+                )
+                if response.status_code != 200:
+                    return set()
+                for roster in response.json() or []:
+                    if int(roster.get("roster_id") or 0) == int(roster_id):
+                        return {
+                            str(player_id)
+                            for player_id in (roster.get("players") or [])
+                            if player_id
+                        }
+                return set()
+        except Exception as exc:
+            logger.warning("Could not load Sleeper roster players: %s", exc)
+            return set()
 
     # ============================================================================
     # COMPREHENSIVE TRADE EVALUATION ENGINE

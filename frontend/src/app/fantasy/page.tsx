@@ -35,6 +35,12 @@ import {
   X
 } from 'lucide-react';
 
+function comparisonScoringLabel(scoringType?: string): string {
+  if (scoringType === 'half_ppr') return 'Half PPR';
+  if (scoringType === 'standard') return 'Standard';
+  return 'PPR';
+}
+
 // Interfaces
 interface FantasyAccount {
   id: string;
@@ -2018,7 +2024,20 @@ player.trending_status === 'hot'
             {showComparison && comparisonData && (
               <div className="mt-8 space-y-6">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-semibold">Player Comparison</h3>
+                  <div>
+                    <h3 className="text-xl font-semibold">Player Comparison</h3>
+                    {comparisonData.scoring_type && (
+                      <p className="text-sm muted mt-1">
+                        {comparisonScoringLabel(comparisonData.scoring_type)} scoring
+                        {comparisonData.league_context?.league_id
+                          ? ` · league ${comparisonData.league_context.league_id}`
+                          : ''}
+                      </p>
+                    )}
+                    {!comparisonData.scoring_type && searchFilters.league_id && (
+                      <p className="text-sm muted mt-1">Using default PPR scoring</p>
+                    )}
+                  </div>
                   <button
                     onClick={() => {
                       setShowComparison(false);
@@ -2242,7 +2261,7 @@ player.trending.type === 'hot'
                             </h5>
                             <div className="grid grid-cols-2 gap-2 text-xs">
                               <div><span className="font-medium">Games:</span> {player.season_stats.games_played}</div>
-                              <div><span className="font-medium">PPG:</span> <span className="text-purple-600 font-semibold">{player.season_stats.points_per_game?.toFixed(1)}</span></div>
+                              <div><span className="font-medium">PPG ({comparisonScoringLabel(comparisonData.scoring_type)}):</span> <span className="text-purple-600 font-semibold">{player.season_stats.points_per_game?.toFixed(1)}</span></div>
                               
                               {/* Position-specific stats */}
                               {['WR', 'TE'].includes(player.position) && player.analytics && (
@@ -2841,7 +2860,7 @@ isMax ? 'bg-green-500' :
                             </td>
                           </tr>
                           <tr>
-                            <td className="p-2 border border-blue-200 muted font-medium">PPG</td>
+                            <td className="p-2 border border-blue-200 muted font-medium">{comparisonScoringLabel(comparisonData.scoring_type)} PPG</td>
                             {comparisonData.players.map((player: any) => (
                               <td key={player.player_id} className="text-center p-2 border border-blue-200">
                                 {player.season_stats?.points_per_game ? 
@@ -3090,7 +3109,7 @@ isMax ? 'bg-green-500' :
                   <li>• Search by name, position, or team</li>
                   <li>• Filter by age, experience, injury status</li>
                   <li>• Select multiple players to compare</li>
-                  <li>• Get league-specific insights</li>
+                  <li>• Select a league to compare using that league&apos;s scoring (PPR, half, or standard)</li>
                 </ul>
               </div>
             )}
