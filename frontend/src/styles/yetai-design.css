@@ -552,6 +552,35 @@ input { font: inherit; }
   margin: 0 4px;
   font-family: var(--mono);
 }
+.proj-team-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  vertical-align: middle;
+  max-width: 100%;
+}
+.proj-team-inline-name {
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--text);
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.proj-team-inline-emphasis .proj-team-inline-name {
+  color: var(--text);
+}
+.proj-margin-value {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.proj-pick-bet .proj-team-inline,
+.proj-pick-why .proj-team-inline {
+  margin: 0 2px;
+}
 .proj-verdict {
   font-size: 10px;
   font-weight: 600;

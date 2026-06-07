@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { formatNumber, formatString } from '@/components/PredictionsTable';
 import { formatGameProjectionTime } from '@/lib/gameProjectionSchedule';
 import { teamAbbr } from '@/lib/yetai-format';
@@ -312,6 +313,7 @@ function GameCard({
   const awayWp = num(proj.away_win_prob) ?? 0;
   const homeWp = num(proj.home_win_prob) ?? 0;
   const homeFav = homeWp >= awayWp;
+  const favName = homeFav ? home : away;
   const favAbbr = homeFav ? homeAbbr : awayAbbr;
   const valueRating = formatString(proj.value_rating);
   const isStrong = valueRating === 'Strong';
@@ -404,7 +406,9 @@ function GameCard({
       <ModelPickModule
         pick={pick}
         pickProbPct={(pick?.side === 'HOME' ? homeWp : pick?.side === 'AWAY' ? awayWp : homeFav ? homeWp : awayWp) * 100}
-        favAbbr={favAbbr}
+        favTeam={{ name: favName, abbr: favAbbr }}
+        logoLeague={cfg.logoLeague}
+        sportKey={cfg.sportKey}
         projectedTotal={total}
         marketTotal={num(proj.market_total)}
         totalEdge={num(proj.edge_vs_market_total)}
@@ -457,10 +461,22 @@ function GameCard({
         <KVStat
           label={marginInfo.spreadHomeMargin != null ? 'Spread margin' : 'Proj margin'}
           value={
-            marginInfo.marginAbs != null && marginInfo.favAbbr
-              ? `${marginInfo.favAbbr} by ${marginInfo.marginAbs.toFixed(1)}`
-              : '—'
+            marginInfo.marginAbs != null ? (
+              <span className="proj-margin-value">
+                <ProjTeamInline
+                  name={favName}
+                  abbr={favAbbr}
+                  league={cfg.logoLeague}
+                  sportKey={cfg.sportKey}
+                  size={16}
+                />
+                <span className="mono">by {marginInfo.marginAbs.toFixed(1)}</span>
+              </span>
+            ) : (
+              '—'
+            )
           }
+          valueClassName=""
           sub={
             showResults && hasFinalScore(proj)
               ? `Final ${formatNumber(proj.actual_away_score, 0)}–${formatNumber(proj.actual_home_score, 0)}`
@@ -477,6 +493,31 @@ function GameCard({
         <KVStat label="Model confidence" value={formatModelConfidence(proj.model_confidence)} />
       </div>
     </article>
+  );
+}
+
+type TeamInlineProps = {
+  name: string;
+  abbr: string;
+  league: string;
+  sportKey: string;
+  size?: number;
+  className?: string;
+};
+
+function ProjTeamInline({
+  name,
+  abbr,
+  league,
+  sportKey,
+  size = 18,
+  className,
+}: TeamInlineProps) {
+  return (
+    <span className={`proj-team-inline${className ? ` ${className}` : ''}`}>
+      <TeamGlyph abbr={abbr} name={name} league={league} sportKey={sportKey} size={size} />
+      <span className="proj-team-inline-name">{name}</span>
+    </span>
   );
 }
 
@@ -549,7 +590,9 @@ function ProjTeamLine({
 function ModelPickModule({
   pick,
   pickProbPct,
-  favAbbr,
+  favTeam,
+  logoLeague,
+  sportKey,
   projectedTotal,
   marketTotal,
   totalEdge,
@@ -566,7 +609,9 @@ function ModelPickModule({
 }: {
   pick: PrimaryPick | null;
   pickProbPct: number;
-  favAbbr: string;
+  favTeam: { name: string; abbr: string };
+  logoLeague: string;
+  sportKey: string;
   projectedTotal: number | null;
   marketTotal: number | null;
   totalEdge: number | null;
@@ -586,13 +631,34 @@ function ModelPickModule({
       <div className="proj-pick is-none">
         <div className="proj-pick-main">
           <span className="proj-pick-kicker">No play</span>
-          <span className="proj-pick-bet dim">Model leans {favAbbr}, below betting threshold</span>
+          <span className="proj-pick-bet dim">
+            Model leans{' '}
+            <ProjTeamInline
+              name={favTeam.name}
+              abbr={favTeam.abbr}
+              league={logoLeague}
+              sportKey={sportKey}
+              size={16}
+              className="proj-team-inline-emphasis"
+            />
+            , below betting threshold
+          </span>
         </div>
       </div>
     );
   }
 
-  const teamShort = pick.team.split(' ').slice(-1)[0] ?? pick.team;
+  const pickAbbr = teamAbbr(pick.team);
+  const pickTeamInline = (
+    <ProjTeamInline
+      name={pick.team}
+      abbr={pickAbbr}
+      league={logoLeague}
+      sportKey={sportKey}
+      size={16}
+      className="proj-team-inline-emphasis"
+    />
+  );
   const marketLine =
     pick.kind === 'spread' && pick.side && marketSpread != null
       ? formatSpreadLine(pick.side, marketSpread)
@@ -614,7 +680,7 @@ function ModelPickModule({
       </>
     ) : pick.kind === 'spread' ? (
       <>
-        Spread model projects {teamShort} by{' '}
+        Spread model projects {pickTeamInline} by{' '}
         <b className="mono">
           {spreadMarginAbs != null ? spreadMarginAbs.toFixed(1) : '—'} {marginUnit}
         </b>{' '}
@@ -631,7 +697,7 @@ function ModelPickModule({
       </>
     ) : (
       <>
-        Model gives {teamShort} a <b className="mono">{pickProbPct.toFixed(1)}%</b> win probability.
+        Model gives {pickTeamInline} a <b className="mono">{pickProbPct.toFixed(1)}%</b> win probability.
       </>
     );
 
@@ -646,7 +712,7 @@ function ModelPickModule({
             </>
           ) : (
             <>
-              {pick.team} <b>{pick.betLabel}</b>
+              {pickTeamInline} <b>{pick.betLabel}</b>
             </>
           )}
           {marketLine ? (
@@ -675,13 +741,26 @@ function ModelPickModule({
   );
 }
 
-function KVStat({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function KVStat({
+  label,
+  value,
+  sub,
+  valueClassName = 'mono',
+}: {
+  label: string;
+  value: ReactNode;
+  sub?: string;
+  valueClassName?: string;
+}) {
   return (
     <div>
       <div className="field-label" style={{ marginBottom: 3 }}>
         {label}
       </div>
-      <div className="mono" style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
+      <div
+        className={valueClassName}
+        style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}
+      >
         {value}
       </div>
       {sub ? (
