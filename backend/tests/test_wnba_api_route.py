@@ -24,7 +24,14 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
     def fake_enrich(db, spreads, totals, *, target_date=None):
         return spreads, totals
 
+    def fake_attach_game_times(db, rows, _lines_model, **_kwargs):
+        return rows
+
     monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        "app.services.game_projection_schedule.attach_game_times_from_lines",
+        fake_attach_game_times,
+    )
     monkeypatch.setattr(
         "app.services.wnba_game_picks.enrich_wnba_game_predictions",
         fake_enrich,
@@ -72,7 +79,14 @@ def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
         enriched[0]["spread_correct"] = True
         return enriched, totals
 
+    def fake_attach_game_times(db, rows, _lines_model, **_kwargs):
+        return rows
+
     monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        "app.services.game_projection_schedule.attach_game_times_from_lines",
+        fake_attach_game_times,
+    )
     monkeypatch.setattr(
         "app.services.wnba_game_picks.enrich_wnba_game_predictions",
         fake_enrich,
