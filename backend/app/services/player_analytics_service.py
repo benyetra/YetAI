@@ -13,6 +13,7 @@ from app.models.fantasy_models import (
     PlayerTrends,
     PlayerProjection,
 )
+from app.services.etl.fantasy.sync_player_analytics import _normalize_snap_percentage
 
 
 class PlayerAnalyticsService:
@@ -67,7 +68,7 @@ class PlayerAnalyticsService:
                         "week": row[0],
                         "season": row[1],
                         "ppr_points": row[2],
-                        "snap_percentage": row[3],
+                        "snap_percentage": _normalize_snap_percentage(row[3]),
                         "target_share": row[4],
                         "red_zone_share": row[5],
                         "points_per_snap": row[6],
@@ -325,7 +326,7 @@ class PlayerAnalyticsService:
             "opponent": analytics.opponent,
             # Snap Count Data
             "total_snaps": analytics.total_snaps,
-            "snap_percentage": analytics.snap_percentage,
+            "snap_percentage": _normalize_snap_percentage(analytics.snap_percentage),
             "snap_share_rank": analytics.snap_share_rank,
             # Target Share Data
             "targets": analytics.targets,

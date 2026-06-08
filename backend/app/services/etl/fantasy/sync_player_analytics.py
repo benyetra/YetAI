@@ -66,6 +66,16 @@ def _safe_int(value: Any) -> Optional[int]:
         return None
 
 
+def _normalize_snap_percentage(value: Any) -> Optional[float]:
+    """Store snap share on 0-100 scale for UI; nflverse uses 0-1 fractions."""
+    snap = _safe_float(value)
+    if snap is None:
+        return None
+    if snap <= 1.0:
+        return snap * 100.0
+    return snap
+
+
 def _compute_ppr_points(row: pd.Series) -> float:
     for column in ("fantasy_points_ppr", "fantasy_points"):
         val = _safe_float(row.get(column))
@@ -94,6 +104,39 @@ def _compute_ppr_points(row: pd.Series) -> float:
         + receiving_tds * 6
         - fumbles_lost * 2
     )
+
+
+def _load_pfr_to_gsis_map() -> Dict[str, str]:
+    """Map PFR player IDs to GSIS via nflverse ``import_ids`` crosswalk."""
+    try:
+        import nfl_data_py as nfl
+    except ImportError:
+        return {}
+
+    try:
+        ids_df = nfl.import_ids()
+    except Exception as exc:
+        logger.warning("nflverse import_ids unavailable for snap merge: %s", exc)
+        return {}
+
+    if ids_df is None or ids_df.empty or "pfr_id" not in ids_df.columns:
+        return {}
+
+    mapping: Dict[str, str] = {}
+    for _, row in ids_df.iterrows():
+        pfr_id = row.get("pfr_id")
+        gsis_id = row.get("gsis_id")
+        if pfr_id is None or gsis_id is None:
+            continue
+        if isinstance(pfr_id, float) and pd.isna(pfr_id):
+            continue
+        if isinstance(gsis_id, float) and pd.isna(gsis_id):
+            continue
+        pfr_str = str(pfr_id).strip()
+        gsis_str = str(gsis_id).strip()
+        if pfr_str and gsis_str:
+            mapping[pfr_str] = gsis_str
+    return mapping
 
 
 def _load_nflverse_sleeper_to_gsis() -> Dict[str, str]:
@@ -220,6 +263,66 @@ def _load_weekly_frame(season: int) -> pd.DataFrame:
     return _normalize_weekly_frame(weekly)
 
 
+def _load_snap_counts_frame(season: int) -> pd.DataFrame:
+    """Load nflverse snap counts (offense_pct is 0-1 fraction)."""
+    snap_counts_url = (
+        "https://github.com/nflverse/nflverse-data/releases/download/"
+        f"snap_counts/snap_counts_{season}.parquet"
+    )
+    try:
+        snaps = pd.read_parquet(snap_counts_url)
+        if snaps is not None and not snaps.empty:
+            return snaps
+    except Exception as exc:
+        if not _is_remote_not_found(exc):
+            logger.warning(
+                "snap_counts_%s.parquet read failed (%s); trying import_snap_counts",
+                season,
+                exc,
+            )
+
+    try:
+        import nfl_data_py as nfl
+    except ImportError:
+        return pd.DataFrame()
+
+    try:
+        snaps = nfl.import_snap_counts([season])
+    except Exception as exc:
+        logger.warning(
+            "nflverse import_snap_counts unavailable for %s: %s", season, exc
+        )
+        return pd.DataFrame()
+
+    if snaps is None or snaps.empty:
+        return pd.DataFrame()
+    return snaps
+
+
+def _build_gsis_week_snap_lookup(season: int) -> Dict[Tuple[str, int], float]:
+    """Map (GSIS player_id, week) → offense_pct fraction from snap_counts."""
+    snaps = _load_snap_counts_frame(season)
+    if snaps.empty:
+        return {}
+
+    pfr_to_gsis = _load_pfr_to_gsis_map()
+    if not pfr_to_gsis:
+        return {}
+
+    lookup: Dict[Tuple[str, int], float] = {}
+    for _, snap_row in snaps.iterrows():
+        pfr_id = snap_row.get("pfr_player_id")
+        week = _safe_int(snap_row.get("week"))
+        offense_pct = _safe_float(snap_row.get("offense_pct"))
+        if pfr_id is None or week is None or offense_pct is None:
+            continue
+        gsis_id = pfr_to_gsis.get(str(pfr_id).strip())
+        if not gsis_id:
+            continue
+        lookup[(str(gsis_id).strip(), week)] = offense_pct
+    return lookup
+
+
 def _load_existing_rows(
     db: Session, season: int
 ) -> Dict[Tuple[int, int], Dict[str, Any]]:
@@ -273,6 +376,7 @@ def _row_payload(
     fantasy_player_id: int,
     week: int,
     season: int,
+    snap_lookup: Optional[Dict[Tuple[str, int], float]] = None,
 ) -> Dict[str, Any]:
     ppr_points = _compute_ppr_points(row)
     targets = _safe_int(row.get("targets")) or 0
@@ -280,6 +384,12 @@ def _row_payload(
     receptions = _safe_int(row.get("receptions")) or 0
     receiving_yards = _safe_int(row.get("receiving_yards")) or 0
     rushing_yards = _safe_int(row.get("rushing_yards")) or 0
+
+    offense_pct = _safe_float(row.get("offense_pct"))
+    if offense_pct is None and snap_lookup is not None:
+        gsis_id = str(row.get("player_id", "")).strip()
+        offense_pct = snap_lookup.get((gsis_id, week))
+
     return {
         "player_id": fantasy_player_id,
         "week": week,
@@ -294,7 +404,7 @@ def _row_payload(
         "rushing_yards": rushing_yards,
         "opponent": row.get("opponent_team"),
         "target_share": _safe_float(row.get("target_share")),
-        "snap_percentage": _safe_float(row.get("offense_pct")),
+        "snap_percentage": _normalize_snap_percentage(offense_pct),
         "points_per_target": (ppr_points / targets if targets > 0 else None),
     }
 
@@ -326,6 +436,7 @@ async def sync_player_analytics(
         weekly = weekly[weekly["week"] <= max_week]
 
     existing_rows = _load_existing_rows(db, season)
+    snap_lookup = _build_gsis_week_snap_lookup(season)
     to_insert: List[Dict[str, Any]] = []
     to_update: List[Dict[str, Any]] = []
     upserted = 0
@@ -350,6 +461,7 @@ async def sync_player_analytics(
             fantasy_player_id=fantasy_player_id,
             week=week,
             season=season,
+            snap_lookup=snap_lookup,
         )
         existing = existing_rows.get((fantasy_player_id, week))
         if existing is None:
