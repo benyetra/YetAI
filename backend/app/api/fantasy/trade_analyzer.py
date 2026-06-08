@@ -27,6 +27,7 @@ from app.api.fantasy.trade_value import (
     lookup_pick_trade_value,
     format_roster_traded_picks,
 )
+from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
 from app.services.fantasy_trade_value import select_trade_partner, stable_unit
 from app.services.fantasy_sleeper_roster import (
     fetch_team_players_by_position,
@@ -240,6 +241,8 @@ async def generate_trade_recommendations(
         from app.services.sleeper_fantasy_service import SleeperFantasyService
 
         sleeper_service = SleeperFantasyService()
+        league_doc = await sleeper_service.get_league(str(league_id))
+        scoring_type = scoring_type_from_sleeper_league(league_doc)
 
         # Get roster data for the specific team
         roster = await fetch_team_roster_players(
@@ -362,7 +365,9 @@ async def generate_trade_recommendations(
                         ),  # Use player's actual age or default
                         "team": player.get("team", "UNKNOWN"),
                     }
-                    player["trade_value"] = calculate_realistic_trade_value(mock_player)
+                    player["trade_value"] = calculate_realistic_trade_value(
+                        mock_player, scoring_type=scoring_type
+                    )
 
                 # Ensure age is present
                 if "age" not in player:
@@ -495,7 +500,9 @@ async def generate_trade_recommendations(
 
 @router.get("/api/v1/fantasy/trade-analyzer/player-values")
 async def get_player_values(
-    limit: int = 200, current_user: dict = Depends(get_current_user)
+    limit: int = 200,
+    league_id: Optional[str] = Query(None),
+    current_user: dict = Depends(get_current_user),
 ):
     """Get player trade values for all players"""
     try:
@@ -506,6 +513,10 @@ async def get_player_values(
 
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
+        scoring_type = "ppr"
+        if league_id:
+            league_doc = await sleeper_service.get_league(str(league_id))
+            scoring_type = scoring_type_from_sleeper_league(league_doc)
 
         # Get trending data for popularity boost
         trending_adds = await sleeper_service.get_trending_players("add")
@@ -528,7 +539,9 @@ async def get_player_values(
                 continue
 
             # Calculate trade value
-            trade_value = calculate_realistic_trade_value(player_data)
+            trade_value = calculate_realistic_trade_value(
+                player_data, scoring_type=scoring_type
+            )
 
             # Add trending boost
             trend_count = trending_lookup.get(player_id, 0)
@@ -595,6 +608,7 @@ async def quick_trade_analysis(
             sleeper_service, str(request.league_id)
         )
         pick_registry = pick_ctx["pick_registry"]
+        scoring_type = scoring_type_from_sleeper_league(pick_ctx["league"])
 
         def analyze_trade_side(assets: Dict[str, Any], side_name: str):
             total_value = 0.0
@@ -615,7 +629,9 @@ async def quick_trade_analysis(
                 name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
                 position = player_data.get("position", "UNKNOWN")
                 age = player_data.get("age", 27)
-                trade_value = calculate_realistic_trade_value(player_data)
+                trade_value = calculate_realistic_trade_value(
+                    player_data, scoring_type=scoring_type
+                )
 
                 player_info = {
                     "player_id": player_id,

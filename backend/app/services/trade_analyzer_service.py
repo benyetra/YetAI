@@ -30,6 +30,10 @@ from app.models.fantasy_models import (
 )
 
 from app.services.fantasy_league_context import build_season_context
+from app.services.fantasy_player_compare import (
+    game_points_for_scoring,
+    points_field_for_scoring,
+)
 from app.services.fantasy_draft_picks import (
     lookup_pick_trade_value,
     pick_owned_by_roster,
@@ -45,6 +49,14 @@ class TradeAnalyzerService:
 
     def __init__(self, db: Session):
         self.db = db
+
+    @staticmethod
+    def _analytics_game_points(
+        analytics_row: Dict[str, Any], scoring_type: str = "ppr"
+    ) -> Optional[float]:
+        """Extract league-scored fantasy points from a weekly analytics dict."""
+        points = game_points_for_scoring(analytics_row, scoring_type=scoring_type)
+        return points if points else None
 
     # ============================================================================
     # TRADE PROPOSAL AND MANAGEMENT
@@ -932,12 +944,15 @@ class TradeAnalyzerService:
                         factors.append(f"Short-area target ({ypr:.1f} YPR)")
 
             # Recent Performance Trends
-            if analytics.ppr_points:
-                if analytics.ppr_points > 20:
+            scoring_type = league_context.get("scoring_type") or "ppr"
+            points_field = points_field_for_scoring(scoring_type)
+            recent_points = getattr(analytics, points_field, None)
+            if recent_points:
+                if recent_points > 20:
                     factors.append("Elite recent game")
-                elif analytics.ppr_points > 15:
+                elif recent_points > 15:
                     factors.append("Strong recent game")
-                elif analytics.ppr_points < 5:
+                elif recent_points < 5:
                     factors.append("Poor recent game")
 
         if trends:
@@ -1887,7 +1902,7 @@ class TradeAnalyzerService:
     # ============================================================================
 
     async def get_comprehensive_team_analytics(
-        self, team_id: int, season: int = 2025
+        self, team_id: int, season: int = 2025, scoring_type: str = "ppr"
     ) -> Dict[str, Any]:
         """Get comprehensive analytics for team analysis"""
         try:
@@ -1901,17 +1916,23 @@ class TradeAnalyzerService:
             players = [spot.player for spot in roster_spots if spot.player]
 
             # Analyze position groups
-            position_analytics = await self._analyze_position_groups(players, season)
+            position_analytics = await self._analyze_position_groups(
+                players, season, scoring_type=scoring_type
+            )
 
             # Calculate team consistency scores
-            team_consistency = await self._calculate_team_consistency(players, season)
+            team_consistency = await self._calculate_team_consistency(
+                players, season, scoring_type=scoring_type
+            )
 
             # Analyze usage distribution
-            usage_distribution = await self._analyze_usage_distribution(players, season)
+            usage_distribution = await self._analyze_usage_distribution(
+                players, season, scoring_type=scoring_type
+            )
 
             # Calculate efficiency benchmarks
             efficiency_benchmarks = await self._calculate_efficiency_benchmarks(
-                players, season
+                players, season, scoring_type=scoring_type
             )
 
             # Identify team strengths and weaknesses
@@ -1938,7 +1959,7 @@ class TradeAnalyzerService:
             return {}
 
     async def _analyze_position_groups(
-        self, players: List[FantasyPlayer], season: int
+        self, players: List[FantasyPlayer], season: int, scoring_type: str = "ppr"
     ) -> Dict[str, Any]:
         """Analyze each position group's performance and depth"""
         from app.services.player_analytics_service import PlayerAnalyticsService
@@ -1980,7 +2001,11 @@ class TradeAnalyzerService:
 
                 if analytics:
                     # Calculate efficiency metrics
-                    points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+                    points = [
+                        p
+                        for a in analytics
+                        if (p := self._analytics_game_points(a, scoring_type))
+                    ]
                     if points:
                         avg_points = sum(points) / len(points)
                         efficiency_scores.append(avg_points)
@@ -2048,7 +2073,7 @@ class TradeAnalyzerService:
         return position_analytics
 
     async def _calculate_team_consistency(
-        self, players: List[FantasyPlayer], season: int
+        self, players: List[FantasyPlayer], season: int, scoring_type: str = "ppr"
     ) -> Dict[str, Any]:
         """Calculate overall team consistency metrics"""
         from app.services.player_analytics_service import PlayerAnalyticsService
@@ -2065,7 +2090,11 @@ class TradeAnalyzerService:
             )
 
             if analytics:
-                points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+                points = [
+                    p
+                    for a in analytics
+                    if (p := self._analytics_game_points(a, scoring_type))
+                ]
 
                 if points and len(points) > 1:
                     # Add to overall team variance calculation
@@ -2109,7 +2138,7 @@ class TradeAnalyzerService:
         }
 
     async def _analyze_usage_distribution(
-        self, players: List[FantasyPlayer], season: int
+        self, players: List[FantasyPlayer], season: int, scoring_type: str = "ppr"
     ) -> Dict[str, Any]:
         """Analyze how usage is distributed across the team"""
         from app.services.player_analytics_service import PlayerAnalyticsService
@@ -2126,7 +2155,11 @@ class TradeAnalyzerService:
             )
 
             if analytics:
-                points = [a["ppr_points"] for a in analytics if a["ppr_points"]]
+                points = [
+                    p
+                    for a in analytics
+                    if (p := self._analytics_game_points(a, scoring_type))
+                ]
                 snap_percentages = [
                     a["snap_percentage"] for a in analytics if a["snap_percentage"]
                 ]
@@ -2202,7 +2235,7 @@ class TradeAnalyzerService:
         }
 
     async def _calculate_efficiency_benchmarks(
-        self, players: List[FantasyPlayer], season: int
+        self, players: List[FantasyPlayer], season: int, scoring_type: str = "ppr"
     ) -> Dict[str, Any]:
         """Calculate efficiency benchmarks compared to league averages"""
         from app.services.player_analytics_service import PlayerAnalyticsService
@@ -2223,10 +2256,11 @@ class TradeAnalyzerService:
                     efficiency_metrics = []
 
                     for week_data in analytics:
-                        if week_data.get("ppr_points") and week_data.get(
-                            "snap_percentage"
-                        ):
-                            points_per_snap = week_data["ppr_points"] / (
+                        week_points = self._analytics_game_points(
+                            week_data, scoring_type
+                        )
+                        if week_points and week_data.get("snap_percentage"):
+                            points_per_snap = week_points / (
                                 week_data["snap_percentage"] / 100
                             )
                             efficiency_metrics.append(points_per_snap)

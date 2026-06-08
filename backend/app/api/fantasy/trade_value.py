@@ -15,9 +15,11 @@ from app.services.fantasy_trade_value import calculate_deterministic_trade_value
 format_roster_traded_picks = format_roster_tradeable_picks
 
 
-def calculate_realistic_trade_value(player: Dict[str, Any]) -> float:
+def calculate_realistic_trade_value(
+    player: Dict[str, Any], *, scoring_type: str = "ppr"
+) -> float:
     """Calculate stable player trade value based on Sleeper metadata."""
-    return calculate_deterministic_trade_value(player)
+    return calculate_deterministic_trade_value(player, scoring_type=scoring_type)
 
 
 async def load_league_pick_context(
