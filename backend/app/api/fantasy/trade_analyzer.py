@@ -36,7 +36,61 @@ from app.services.fantasy_trade_recommendations import (
 )
 
 
+def _map_league_teams_for_frontend(teams: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize Sleeper league teams for trade analyzer UI (id = roster_id)."""
+    mapped: List[Dict[str, Any]] = []
+    for team in teams:
+        try:
+            roster_id = int(team.get("team_id", 0))
+        except (TypeError, ValueError):
+            continue
+        if roster_id <= 0:
+            continue
+        mapped.append(
+            {
+                "id": roster_id,
+                "team_id": roster_id,
+                "name": team.get("name") or f"Team {roster_id}",
+                "owner_name": team.get("owner_name") or "Unknown",
+            }
+        )
+    return mapped
+
+
 # Trade Analyzer Endpoints
+@router.get("/api/v1/fantasy/trade-analyzer/leagues/{league_id}/teams")
+async def get_trade_analyzer_league_teams(
+    league_id: str, current_user: dict = Depends(get_current_user)
+):
+    """Get all teams in a Sleeper league for trade analyzer team pickers."""
+    logger.info(
+        "Trade analyzer teams called - League: %s, User: %s",
+        league_id,
+        current_user["user_id"],
+    )
+
+    try:
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+        teams = await sleeper_service.get_league_teams(league_id)
+        mapped_teams = _map_league_teams_for_frontend(teams)
+
+        return {
+            "success": True,
+            "league_id": league_id,
+            "teams": mapped_teams,
+            "total": len(mapped_teams),
+        }
+    except Exception as e:
+        logger.error(
+            "Error getting trade analyzer teams for league %s: %s", league_id, e
+        )
+        raise HTTPException(
+            status_code=500, detail=f"Failed to get league teams: {str(e)}"
+        )
+
+
 @router.get("/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}")
 async def get_simple_team_analysis(
     team_id: int, league_id: int = None, current_user: dict = Depends(get_current_user)

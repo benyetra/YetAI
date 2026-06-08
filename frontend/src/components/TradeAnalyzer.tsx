@@ -443,49 +443,40 @@ export default function TradeAnalyzer({
         return;
       }
 
-      console.log('Loading teams directly from Sleeper for league:', platformLeagueId);
+      console.log('Loading teams from backend for league:', platformLeagueId);
 
-      const [usersResponse, rostersResponse] = await Promise.all([
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`),
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/rosters`),
-      ]);
+      const response = await apiRequest(
+        `/api/v1/fantasy/trade-analyzer/leagues/${encodeURIComponent(platformLeagueId)}/teams`,
+        { method: 'GET' }
+      );
 
-      if (!usersResponse.ok || !rostersResponse.ok) {
+      if (!response.ok) {
         setTeams([]);
         setTeamsError(
-          `Could not load league teams (Sleeper ${usersResponse.status}/${rostersResponse.status}). Try again.`
+          `Could not load league teams (${response.status}). Try again.`
         );
         return;
       }
 
-      const users = await usersResponse.json();
-      const rosters = await rostersResponse.json();
+      const data = await response.json();
 
-      if (!Array.isArray(rosters) || rosters.length === 0) {
+      if (!data.success || !Array.isArray(data.teams) || data.teams.length === 0) {
         setTeams([]);
         setTeamsError('No teams found for this league.');
         return;
       }
 
-      const userById = Object.fromEntries(
-        (users || []).map((user: { user_id: string }) => [user.user_id, user])
+      const realTeams = data.teams.map(
+        (team: { id: number; name: string; owner_name: string }) => ({
+          id: team.id,
+          name: team.name,
+          owner_name: team.owner_name,
+        })
       );
-
-      const realTeams = rosters.map((roster: { roster_id: number; owner_id: string }) => {
-        const user = userById[roster.owner_id];
-        return {
-          id: roster.roster_id,
-          name:
-            user?.metadata?.team_name ||
-            user?.display_name ||
-            `Team ${roster.roster_id}`,
-          owner_name: user?.display_name || `Owner ${roster.roster_id}`,
-        };
-      });
 
       setTeams(realTeams);
       console.log(
-        'Loaded real teams from Sleeper:',
+        'Loaded teams from backend:',
         realTeams.map((t: { id: number; name: string }) => ({ id: t.id, name: t.name }))
       );
     } catch (loadError) {

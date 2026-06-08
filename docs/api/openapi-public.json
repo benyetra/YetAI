@@ -4496,6 +4496,92 @@
         "x-audience": "public"
       }
     },
+    "/api/v1/fantasy/trade-analyzer/leagues/{league_id}/teams": {
+      "get": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Get Trade Analyzer League Teams",
+        "description": "Get all teams in a Sleeper league for trade analyzer team pickers.",
+        "operationId": "get_trade_analyzer_league_teams_api_v1_fantasy_trade_analyzer_leagues__league_id__teams_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "league_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "League Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public"
+      }
+    },
     "/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}": {
       "get": {
         "tags": [
