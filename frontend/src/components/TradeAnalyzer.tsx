@@ -1767,6 +1767,16 @@ export default function TradeAnalyzer({
                   Superflex
                 </span>
               )}
+              {leagueRules.is_dynasty && (
+                <span className="rounded-full bg-amber-50 px-3 py-1 text-amber-900">
+                  Dynasty
+                </span>
+              )}
+              {leagueRules.is_keeper && !leagueRules.is_dynasty && (
+                <span className="rounded-full bg-teal-50 px-3 py-1 text-teal-800">
+                  Keeper
+                </span>
+              )}
               {!leagueRules.features.trades_enabled && (
                 <span className="rounded-full bg-red-50 px-3 py-1 text-red-700">
                   Trades disabled

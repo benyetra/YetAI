@@ -7,7 +7,14 @@ export interface LeagueRules {
   league_name: string;
   platform: string;
   season: number;
+  /** Roster size label, e.g. "12-Team League" */
   league_type: string;
+  /** redraft | keeper | dynasty */
+  format_type?: 'redraft' | 'keeper' | 'dynasty';
+  format_label?: string;
+  is_dynasty?: boolean;
+  is_keeper?: boolean;
+  is_redraft?: boolean;
   team_count: number;
   scoring_type?: string;
   roster_settings: {
@@ -52,6 +59,7 @@ export interface LeagueRules {
     rb_premium: boolean;
     flex_strategy: boolean;
     superflex: boolean;
+    dynasty: boolean;
     position_scarcity: Record<string, number>;
   };
 }
@@ -79,7 +87,11 @@ function inferScoringType(receptions: number): string {
 
 function buildAiContext(
   rosterPositions: string[],
-  scoringType: string
+  scoringType: string,
+  formatFlags: {
+    is_dynasty?: boolean;
+    is_keeper?: boolean;
+  }
 ): LeagueRules['ai_context'] {
   const hasFlex = rosterPositions.includes('FLEX');
   const hasSuperflex = rosterPositions.some(
@@ -88,10 +100,34 @@ function buildAiContext(
 
   return {
     prioritize_volume: scoringType === 'ppr' || scoringType === 'half_ppr',
-    rb_premium: scoringType === 'standard',
+    rb_premium: scoringType === 'standard' && !formatFlags.is_dynasty,
     flex_strategy: hasFlex,
     superflex: hasSuperflex,
+    dynasty: Boolean(formatFlags.is_dynasty),
     position_scarcity: {},
+  };
+}
+
+function inferFormatFromSettings(settings: Record<string, unknown> | undefined): {
+  format_type: 'redraft' | 'keeper' | 'dynasty';
+  is_dynasty: boolean;
+  is_keeper: boolean;
+  is_redraft: boolean;
+  format_label: string;
+} {
+  const rawType = Number(settings?.type ?? 0);
+  let format_type: 'redraft' | 'keeper' | 'dynasty' = 'redraft';
+  if (rawType === 2) {
+    format_type = 'dynasty';
+  } else if (rawType === 1) {
+    format_type = 'keeper';
+  }
+  return {
+    format_type,
+    is_dynasty: format_type === 'dynasty',
+    is_keeper: format_type === 'keeper',
+    is_redraft: format_type === 'redraft',
+    format_label: format_type.charAt(0).toUpperCase() + format_type.slice(1),
   };
 }
 
@@ -127,11 +163,17 @@ export function getMockLeagueRules(leagueId: string): LeagueRules {
       waiver_budget: 100,
       playoffs: { teams: 6, weeks: 3 },
     },
+    format_type: 'redraft',
+    format_label: 'Redraft',
+    is_dynasty: false,
+    is_keeper: false,
+    is_redraft: true,
     ai_context: {
       prioritize_volume: true,
       rb_premium: false,
       flex_strategy: true,
       superflex: false,
+      dynasty: false,
       position_scarcity: {},
     },
   };
@@ -157,6 +199,19 @@ export function normalizeLeagueRules(
   const playoffSettings = apiRules.playoff_settings || {};
   const waiverSettings = apiRules.waiver_settings || {};
   const leagueFeatures = apiRules.league_features || {};
+  const inferredFormat =
+    apiRules.format_type != null
+      ? {
+          format_type: apiRules.format_type as 'redraft' | 'keeper' | 'dynasty',
+          is_dynasty: Boolean(apiRules.is_dynasty),
+          is_keeper: Boolean(apiRules.is_keeper),
+          is_redraft: Boolean(apiRules.is_redraft ?? !apiRules.is_dynasty),
+          format_label:
+            apiRules.format_label ||
+            String(apiRules.format_type).charAt(0).toUpperCase() +
+              String(apiRules.format_type).slice(1),
+        }
+      : inferFormatFromSettings(apiRules.settings);
 
   return {
     league_id: leagueId,
@@ -164,6 +219,11 @@ export function normalizeLeagueRules(
     platform: (apiRules.platform || 'sleeper').toLowerCase(),
     season: Number(apiRules.season) || new Date().getFullYear(),
     league_type: apiRules.league_type || `${apiRules.total_rosters || 12}-Team League`,
+    format_type: inferredFormat.format_type,
+    format_label: inferredFormat.format_label,
+    is_dynasty: inferredFormat.is_dynasty,
+    is_keeper: inferredFormat.is_keeper,
+    is_redraft: inferredFormat.is_redraft,
     team_count: Number(apiRules.total_rosters || apiRules.teams_count || 12),
     scoring_type: normalizedScoringType,
     roster_settings: {
@@ -209,6 +269,9 @@ export function normalizeLeagueRules(
         weeks: Number(playoffSettings.playoff_rounds ?? 2),
       },
     },
-    ai_context: buildAiContext(rosterPositions, normalizedScoringType),
+    ai_context: buildAiContext(rosterPositions, normalizedScoringType, {
+      is_dynasty: inferredFormat.is_dynasty,
+      is_keeper: inferredFormat.is_keeper,
+    }),
   };
 }

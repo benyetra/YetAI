@@ -1571,7 +1571,18 @@ team.is_user_team ? 'text-blue-700' : ''
                   <h3 className="text-lg font-medium mb-3">League Overview</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                     <div>
-                      <span className="dim">League Type:</span>
+                      <span className="dim">Format:</span>
+                      <div className="font-medium">
+                        {leagueRules.format_label ??
+                          (leagueRules.is_dynasty
+                            ? 'Dynasty'
+                            : leagueRules.is_keeper
+                              ? 'Keeper'
+                              : 'Redraft')}
+                      </div>
+                    </div>
+                    <div>
+                      <span className="dim">League Size:</span>
                       <div className="font-medium">{leagueRules.league_type}</div>
                     </div>
                     <div>

@@ -13,6 +13,7 @@ from app.services.fantasy_draft_picks import (
     lookup_pick_trade_value,
     pick_owned_by_roster,
 )
+from app.services.fantasy_league_context import build_season_context
 from app.services.fantasy_league_format import league_format_from_sleeper
 from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
 from app.services.fantasy_sleeper_roster import (
@@ -34,12 +35,16 @@ async def load_league_pick_context(
     league = await sleeper_service.get_league(league_id)
     traded_picks = await sleeper_service.get_league_traded_picks(league_id)
     registry = build_league_pick_registry(league, traded_picks)
+    league_format = league_format_from_sleeper(league)
+    is_dynasty = bool(league_format.get("is_dynasty"))
+    season = int(league.get("season") or 0) or None
     return {
         "league": league,
         "traded_picks": traded_picks,
         "pick_registry": registry,
-        "is_dynasty": int((league.get("settings") or {}).get("type", 0)) == 2,
-        "league_format": league_format_from_sleeper(league),
+        "is_dynasty": is_dynasty,
+        "league_format": league_format,
+        "season_context": build_season_context(season, is_dynasty=is_dynasty),
     }
 
 
@@ -245,15 +250,29 @@ def _format_insight(insight_text: str) -> Dict[str, str]:
 
 
 def _generate_trade_insights(
-    team1_gives: Dict[str, Any], team2_gives: Dict[str, Any], fairness_pct: float
+    team1_gives: Dict[str, Any],
+    team2_gives: Dict[str, Any],
+    fairness_pct: float,
+    *,
+    is_dynasty: bool = False,
 ) -> List[Dict[str, str]]:
     insights: List[str] = []
     value_diff = abs(team1_gives["total_value"] - team2_gives["total_value"])
 
-    if team1_gives.get("picks") or team2_gives.get("picks"):
+    if is_dynasty:
         insights.append(
-            "Draft picks included — future value affects dynasty/redraft balance"
+            "Dynasty league — player ages and draft picks weighted toward long-term upside"
         )
+
+    if team1_gives.get("picks") or team2_gives.get("picks"):
+        if is_dynasty:
+            insights.append(
+                "Draft picks included — future seasons are core dynasty trade currency"
+            )
+        else:
+            insights.append(
+                "Draft picks included — future value affects dynasty/redraft balance"
+            )
     if (team1_gives.get("faab") or 0) > 0 or (team2_gives.get("faab") or 0) > 0:
         insights.append(
             "FAAB included — budget value discounted vs in-season waiver spend"
@@ -316,9 +335,19 @@ def _generate_trade_insights(
     team2_young = [p for p in team2_gives["players"] if p["age"] <= 24]
 
     if team1_young and not team2_young:
-        insights.append("Team 1 trading young talent for immediate production")
+        if is_dynasty:
+            insights.append(
+                "Team 1 trading youth — typical dynasty rebuild or pick accumulation"
+            )
+        else:
+            insights.append("Team 1 trading young talent for immediate production")
     elif team2_young and not team1_young:
-        insights.append("Team 2 trading young talent for immediate production")
+        if is_dynasty:
+            insights.append(
+                "Team 2 trading youth — typical dynasty rebuild or pick accumulation"
+            )
+        else:
+            insights.append("Team 2 trading young talent for immediate production")
 
     if not insights:
         if fairness_pct >= 85:
@@ -356,6 +385,7 @@ def build_sleeper_trade_evaluation(
     pick_registry: Dict[int, Dict[str, Any]],
     scoring_type: str,
     league_format: Optional[Dict[str, Any]] = None,
+    season_context: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build quick-analysis evaluation payload from Sleeper trade assets."""
     team1_gives = _analyze_trade_side(
@@ -379,8 +409,10 @@ def build_sleeper_trade_evaluation(
         max(0, 100 - (value_diff / total_value * 100)) if total_value > 0 else 0
     )
     verdict, verdict_color = _fairness_verdict(fairness_pct)
+    fmt = league_format or {}
+    is_dynasty = bool(fmt.get("is_dynasty"))
     structured_insights = _generate_trade_insights(
-        team1_gives, team2_gives, fairness_pct
+        team1_gives, team2_gives, fairness_pct, is_dynasty=is_dynasty
     )
 
     trade_seed = (
@@ -401,6 +433,13 @@ def build_sleeper_trade_evaluation(
         },
         "insights": structured_insights,
         "recommendation": verdict,
+        "trade_context": {
+            "format_type": fmt.get("format_type", "redraft"),
+            "is_dynasty": is_dynasty,
+            "is_keeper": bool(fmt.get("is_keeper")),
+            "scoring_type": scoring_type,
+            **(season_context or {}),
+        },
     }
 
 
@@ -417,6 +456,7 @@ async def evaluate_sleeper_trade(
     league_format: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Evaluate a Sleeper trade using the same shape as quick-analysis."""
+    season_context: Optional[Dict[str, Any]] = None
     if pick_registry is None or scoring_type is None or league_format is None:
         pick_ctx = await load_league_pick_context(sleeper_service, platform_league_id)
         pick_registry = pick_registry or pick_ctx["pick_registry"]
@@ -424,8 +464,18 @@ async def evaluate_sleeper_trade(
             pick_ctx["league"]
         )
         league_format = league_format or pick_ctx["league_format"]
+        season_context = pick_ctx.get("season_context")
 
     all_players = await sleeper_service._get_all_players()
+
+    if season_context is None:
+        league_season = None
+        if league_format:
+            league_season = league_format.get("season")
+        season_context = build_season_context(
+            league_season,
+            is_dynasty=bool((league_format or {}).get("is_dynasty")),
+        )
 
     return build_sleeper_trade_evaluation(
         platform_league_id=platform_league_id,
@@ -437,6 +487,7 @@ async def evaluate_sleeper_trade(
         pick_registry=pick_registry,
         scoring_type=scoring_type,
         league_format=league_format,
+        season_context=season_context,
     )
 
 

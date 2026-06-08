@@ -28,6 +28,7 @@ async def get_league_rules(
 ):
     """Get fantasy league rules and settings"""
     try:
+        from app.services.fantasy_league_format import league_format_flags_from_sleeper
         from app.services.sleeper_fantasy_service import SleeperFantasyService
 
         sleeper_service = SleeperFantasyService()
@@ -112,9 +113,21 @@ async def get_league_rules(
 
         # Use the calculated teams count
         total_rosters = teams_count
-        league_type = (
+        roster_size_label = (
             f"{total_rosters}-Team League" if total_rosters > 0 else "Standard League"
         )
+
+        sleeper_league_doc = {
+            "settings": league_details.get("settings")
+            or (league_details.get("league_data") or {}).get("settings")
+            or {},
+            "roster_positions": roster_positions,
+            "scoring_settings": raw_scoring,
+            "total_rosters": total_rosters,
+        }
+        format_flags = league_format_flags_from_sleeper(sleeper_league_doc)
+        format_type = format_flags["format_type"]
+        format_label = format_type.replace("_", " ").title()
 
         # Count position requirements
         position_counts = {}
@@ -132,7 +145,12 @@ async def get_league_rules(
         # Extract rules and settings from league details
         rules = {
             "league_name": league_details.get("name", "Unknown League"),
-            "league_type": league_type,
+            "league_type": roster_size_label,
+            "format_type": format_type,
+            "format_label": format_label,
+            "is_dynasty": format_flags["is_dynasty"],
+            "is_keeper": format_flags["is_keeper"],
+            "is_redraft": format_flags["is_redraft"],
             "total_rosters": total_rosters,
             "teams_count": total_rosters,
             "platform": "Sleeper",
@@ -174,7 +192,10 @@ async def get_league_rules(
                 "reserve_slots": league_details.get("reserve_slots", 0),
                 "waiver_type": league_details.get("waiver_type", "waiver_priority"),
                 "daily_waivers": league_details.get("daily_waivers", False),
+                "dynasty": format_flags["is_dynasty"],
+                "keeper": format_flags["is_keeper"],
             },
+            "settings": sleeper_league_doc.get("settings") or {},
             "season": league_details.get("season", "2024"),
             "status": league_details.get("status", "pre_draft"),
         }

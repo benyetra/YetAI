@@ -471,7 +471,10 @@ class TradeAnalyzerService:
             self.db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
         )
 
-        is_dynasty = bool(league and league.league_type == "dynasty")
+        is_dynasty = bool(
+            league
+            and getattr(league.league_type, "value", league.league_type) == "dynasty"
+        )
         season_ctx = build_season_context(
             league.season if league else None,
             is_dynasty=is_dynasty,
@@ -678,6 +681,7 @@ class TradeAnalyzerService:
                     "team": resolved.team,
                 },
                 scoring_type=scoring_type,
+                league_format={"is_dynasty": league_context.get("is_dynasty", False)},
             )
 
         contextual_multiplier = self._calculate_contextual_multiplier(
@@ -1151,6 +1155,7 @@ class TradeAnalyzerService:
                 "team": resolved.team,
             },
             scoring_type=scoring_type,
+            league_format={"is_dynasty": False},
         )
 
     def _calculate_sleeper_player_value(self, sleeper_player) -> float:

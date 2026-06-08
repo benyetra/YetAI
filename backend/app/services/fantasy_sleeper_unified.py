@@ -24,6 +24,10 @@ from app.models.fantasy_models import (
     FantasyUser,
     PlayerStatus,
 )
+from app.services.fantasy_league_format import (
+    format_type_from_sleeper_type,
+    sleeper_settings_type,
+)
 from app.services.sleeper_fantasy_service import SleeperFantasyService
 
 logger = logging.getLogger(__name__)
@@ -296,6 +300,10 @@ class FantasySleeperUnifiedService:
                 "total_rosters"
             ) or league_details.get("team_count")
             existing.scoring_type = league_details.get("scoring_type")
+            format_type = format_type_from_sleeper_type(
+                sleeper_settings_type(league_data)
+            )
+            existing.league_type = FantasyLeagueType(format_type)
             existing.roster_positions = league_details.get("roster_positions")
             existing.last_sync = datetime.now(timezone.utc)
             existing.is_synced = True

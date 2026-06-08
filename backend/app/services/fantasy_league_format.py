@@ -10,8 +10,72 @@ QB_PREMIUM_2QB = 1.25
 TE_SCARCITY_LARGE_LEAGUE = 1.05
 TE_SCARCITY_LARGE_WITH_PREMIUM = 1.08
 
+# Sleeper league settings.type: 0=redraft, 1=keeper, 2=dynasty
+SLEEPER_REDRAFT_TYPE = 0
+SLEEPER_KEEPER_TYPE = 1
+SLEEPER_DYNASTY_TYPE = 2
+
 _BENCH_SLOTS = frozenset({"BN", "IR"})
 _SUPERFLEX_SLOTS = frozenset({"SUPER_FLEX", "SUPERFLEX"})
+
+
+def sleeper_settings_type(league: Optional[Dict[str, Any]]) -> int:
+    """Return Sleeper ``settings.type`` (0 redraft, 1 keeper, 2 dynasty)."""
+    if not league:
+        return SLEEPER_REDRAFT_TYPE
+    settings = league.get("settings") or {}
+    try:
+        return int(settings.get("type", SLEEPER_REDRAFT_TYPE))
+    except (TypeError, ValueError):
+        return SLEEPER_REDRAFT_TYPE
+
+
+def format_type_from_sleeper_type(settings_type: int) -> str:
+    if settings_type == SLEEPER_DYNASTY_TYPE:
+        return "dynasty"
+    if settings_type == SLEEPER_KEEPER_TYPE:
+        return "keeper"
+    return "redraft"
+
+
+def league_format_flags_from_sleeper(
+    league: Optional[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Dynasty / keeper / redraft flags from a Sleeper league document."""
+    settings_type = sleeper_settings_type(league)
+    format_type = format_type_from_sleeper_type(settings_type)
+    return {
+        "format_type": format_type,
+        "is_dynasty": format_type == "dynasty",
+        "is_keeper": format_type == "keeper",
+        "is_redraft": format_type == "redraft",
+        "sleeper_settings_type": settings_type,
+    }
+
+
+def is_dynasty_league(league: Optional[Dict[str, Any]]) -> bool:
+    return league_format_flags_from_sleeper(league)["is_dynasty"]
+
+
+def age_multiplier_for_format(age: int, *, is_dynasty: bool = False) -> float:
+    """Age curve for trade values — steeper youth premium in dynasty."""
+    if is_dynasty:
+        if age <= 22:
+            return 1.25
+        if age <= 24:
+            return 1.15
+        if age <= 27:
+            return 1.0
+        if age <= 30:
+            return 0.9
+        return 0.65
+    if age <= 24:
+        return 1.1
+    if age <= 27:
+        return 1.0
+    if age <= 30:
+        return 0.95
+    return 0.8
 
 
 def _starter_positions(league: Dict[str, Any]) -> list[str]:
@@ -44,6 +108,7 @@ def league_format_from_sleeper(league: Optional[Dict[str, Any]]) -> Dict[str, An
             "te_premium": 0.0,
             "team_count": 12,
             "te_scarcity_multiplier": 1.0,
+            **league_format_flags_from_sleeper(None),
         }
 
     starters = _starter_positions(league)
@@ -76,6 +141,8 @@ def league_format_from_sleeper(league: Optional[Dict[str, Any]]) -> Dict[str, An
     else:
         te_scarcity_multiplier = 1.0
 
+    format_flags = league_format_flags_from_sleeper(league)
+
     return {
         "has_superflex": has_superflex,
         "is_2qb": is_2qb,
@@ -83,6 +150,7 @@ def league_format_from_sleeper(league: Optional[Dict[str, Any]]) -> Dict[str, An
         "te_premium": te_premium,
         "team_count": team_count,
         "te_scarcity_multiplier": te_scarcity_multiplier,
+        **format_flags,
     }
 
 

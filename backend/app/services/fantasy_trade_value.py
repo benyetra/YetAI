@@ -9,7 +9,10 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional
 
-from app.services.fantasy_league_format import format_multiplier
+from app.services.fantasy_league_format import (
+    age_multiplier_for_format,
+    format_multiplier,
+)
 
 _POSITION_RANGES: Dict[str, tuple[float, float]] = {
     "QB": (20.0, 45.0),
@@ -28,16 +31,6 @@ def stable_unit(seed: str) -> float:
     """Map *seed* to a stable float in [0, 1)."""
     digest = hashlib.sha256(seed.encode("utf-8")).hexdigest()
     return int(digest[:8], 16) / 0xFFFFFFFF
-
-
-def _age_multiplier(age: int) -> float:
-    if age <= 24:
-        return 1.1
-    if age <= 27:
-        return 1.0
-    if age <= 30:
-        return 0.95
-    return 0.8
 
 
 def _team_multiplier(team: str) -> float:
@@ -83,6 +76,9 @@ def calculate_deterministic_trade_value(
         or "unknown"
     )
 
+    fmt = league_format or {}
+    is_dynasty = bool(fmt.get("is_dynasty"))
+
     min_val, max_val = _POSITION_RANGES.get(position, (8.0, 15.0))
     seed = f"{player_key}:{position}:{age}:{team}:{scoring_type}"
     unit = stable_unit(seed)
@@ -90,10 +86,10 @@ def calculate_deterministic_trade_value(
 
     value = (
         base_value
-        * _age_multiplier(age)
+        * age_multiplier_for_format(age, is_dynasty=is_dynasty)
         * _team_multiplier(team)
         * _scoring_multiplier(position, scoring_type)
-        * format_multiplier(position, league_format or {})
+        * format_multiplier(position, fmt)
     )
     return round(value, 1)
 

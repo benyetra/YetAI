@@ -5,8 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-# Sleeper league settings.type: 0=redraft, 1=keeper, 2=dynasty
-_DYNASTY_TYPE = 2
+from app.services.fantasy_league_format import is_dynasty_league
 
 
 def stable_pick_id(season: int, round_number: int, pick_slot_roster_id: int) -> int:
@@ -37,11 +36,6 @@ def calculate_faab_trade_value(faab_amount: int) -> float:
     if faab_amount <= 0:
         return 0.0
     return round(faab_amount * 0.7, 1)
-
-
-def _league_is_dynasty(league: Dict[str, Any]) -> bool:
-    settings = league.get("settings") or {}
-    return int(settings.get("type", 0)) == _DYNASTY_TYPE
 
 
 def _pick_slot_id(pick: Dict[str, Any]) -> int:
@@ -79,7 +73,7 @@ def merge_traded_and_default_picks(
     league: Dict[str, Any],
     traded_picks: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    if _league_is_dynasty(league):
+    if is_dynasty_league(league):
         return list(traded_picks or [])
 
     merged: Dict[Tuple[int, int, int], Dict[str, Any]] = {}
@@ -128,7 +122,7 @@ def format_roster_tradeable_picks(
     traded_picks: List[Dict[str, Any]],
     roster_id: int,
 ) -> List[Dict[str, Any]]:
-    is_dynasty = _league_is_dynasty(league)
+    is_dynasty = is_dynasty_league(league)
     all_picks = merge_traded_and_default_picks(league, traded_picks)
     formatted: List[Dict[str, Any]] = []
 
@@ -145,7 +139,7 @@ def build_league_pick_registry(
     league: Dict[str, Any],
     traded_picks: List[Dict[str, Any]],
 ) -> Dict[int, Dict[str, Any]]:
-    is_dynasty = _league_is_dynasty(league)
+    is_dynasty = is_dynasty_league(league)
     registry: Dict[int, Dict[str, Any]] = {}
     for pick in merge_traded_and_default_picks(league, traded_picks):
         record = format_pick_record(pick, is_dynasty=is_dynasty)

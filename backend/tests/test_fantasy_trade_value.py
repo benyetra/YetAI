@@ -166,6 +166,17 @@ def test_quick_analysis_uses_half_ppr_league_scoring(
     assert half_ppr_value != round(ppr_value, 1)
 
 
+def test_dynasty_boosts_young_player_trade_value():
+    player = {"id": "rb-young", "position": "RB", "age": 23, "team": "ATL"}
+    redraft = calculate_deterministic_trade_value(player, scoring_type="ppr")
+    dynasty = calculate_deterministic_trade_value(
+        player,
+        scoring_type="ppr",
+        league_format={"is_dynasty": True},
+    )
+    assert dynasty > redraft
+
+
 def test_select_trade_partner_is_stable():
     teams = [
         {"team_id": 2, "name": "Beta"},

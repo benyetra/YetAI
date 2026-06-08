@@ -219,6 +219,9 @@ class SleeperFantasyService(FantasyPlatformInterface):
                     "status": league_data["status"],
                     "scoring_settings": league_data.get("scoring_settings", {}),
                     "roster_positions": league_data.get("roster_positions", []),
+                    "settings": league_data.get("settings", {}),
+                    "total_rosters": league_data.get("total_rosters"),
+                    "league_data": league_data,
                     "waiver_settings": waiver_settings,
                     "teams": teams,
                 }

@@ -44,8 +44,19 @@ const standardRules: LeagueRules = {
     rb_premium: false,
     flex_strategy: true,
     superflex: false,
+    dynasty: false,
     position_scarcity: {},
   },
+};
+
+const dynastyRules: LeagueRules = {
+  ...standardRules,
+  format_type: 'dynasty',
+  format_label: 'Dynasty',
+  is_dynasty: true,
+  is_keeper: false,
+  is_redraft: false,
+  ai_context: { ...standardRules.ai_context, dynasty: true },
 };
 
 describe('fantasy-trade-value', () => {
@@ -57,6 +68,13 @@ describe('fantasy-trade-value', () => {
     });
     expect(superflex).toBeGreaterThan(standard);
     expect(superflex).toBe(Math.round(standard * QB_PREMIUM_SUPERFLEX * 10) / 10);
+  });
+
+  it('boosts young player value in dynasty leagues', () => {
+    const young = { ...basePlayer, id: 'wr-young', position: 'WR', age: 22 };
+    const redraft = calculateDeterministicTradeValue(young, standardRules);
+    const dynasty = calculateDeterministicTradeValue(young, dynastyRules);
+    expect(dynasty).toBeGreaterThan(redraft);
   });
 
   it('boosts TE value in large leagues without explicit premium', () => {

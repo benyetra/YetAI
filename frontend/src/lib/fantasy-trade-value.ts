@@ -28,7 +28,15 @@ export function stableUnit(seed: string): number {
   return (hash >>> 0) / 0xffffffff;
 }
 
-function ageMultiplier(age: number): number {
+/** Keep in sync with backend/app/services/fantasy_league_format.py */
+function ageMultiplier(age: number, isDynasty: boolean): number {
+  if (isDynasty) {
+    if (age <= 22) return 1.25;
+    if (age <= 24) return 1.15;
+    if (age <= 27) return 1.0;
+    if (age <= 30) return 0.9;
+    return 0.65;
+  }
   if (age <= 24) return 1.1;
   if (age <= 27) return 1.0;
   if (age <= 30) return 0.95;
@@ -122,9 +130,11 @@ export function calculateDeterministicTradeValue(
   const unit = stableUnit(seed);
   const baseValue = min + unit * (max - min);
 
+  const isDynasty = Boolean(leagueRules?.is_dynasty ?? leagueRules?.ai_context?.dynasty);
+
   const value =
     baseValue *
-    ageMultiplier(age) *
+    ageMultiplier(age, isDynasty) *
     teamMultiplier(team) *
     scoringMultiplier(position, scoringType) *
     formatMultiplier(position, leagueRules);
