@@ -32,6 +32,10 @@ from app.services.fantasy_sleeper_trade_proposal import (
     evaluate_sleeper_trade,
     propose_sleeper_trade,
 )
+from app.services.fantasy_trade_history import (
+    get_trade_proposal,
+    list_trade_proposals,
+)
 from app.services.fantasy_trade_recommendations import (
     generate_sleeper_trade_recommendations,
 )
@@ -489,6 +493,40 @@ async def quick_trade_analysis(
         raise HTTPException(
             status_code=500, detail=f"Failed to analyze trade: {str(e)}"
         )
+
+
+@router.get("/api/v1/fantasy/trade-analyzer/proposals")
+async def list_saved_trade_proposals(
+    league_id: str = Query(..., description="Sleeper platform league id"),
+    limit: int = Query(50, ge=1, le=100),
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """List trade proposals persisted for a Sleeper league."""
+    user_id = current_user.get("user_id") or current_user.get("id")
+    result = list_trade_proposals(
+        db,
+        user_id=int(user_id),
+        platform_league_id=league_id,
+        limit=limit,
+    )
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Not found"))
+    return result
+
+
+@router.get("/api/v1/fantasy/trade-analyzer/proposals/{trade_id}")
+async def get_saved_trade_proposal(
+    trade_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Fetch one persisted trade proposal with evaluation detail."""
+    user_id = current_user.get("user_id") or current_user.get("id")
+    result = get_trade_proposal(db, user_id=int(user_id), trade_id=trade_id)
+    if not result.get("success"):
+        raise HTTPException(status_code=404, detail=result.get("error", "Not found"))
+    return result
 
 
 @router.post("/api/v1/fantasy/trade-analyzer/propose")

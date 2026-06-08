@@ -10,7 +10,10 @@ import { calculateDeterministicTradeValue } from '@/lib/fantasy-trade-value';
 import {
   buildTradeAssetsFromBuilder,
   buildTradeAssetsFromRecommendation,
+  getSavedTradeProposal,
+  listSavedTradeProposals,
   proposeTrade,
+  type SavedTradeProposal,
 } from '@/lib/fantasy-trade-proposal';
 import { 
   Users, 
@@ -357,7 +360,9 @@ export default function TradeAnalyzer({
   const [teamAnalysis, setTeamAnalysis] = useState<TeamAnalysis | null>(null);
   const [targetTeamAnalysis, setTargetTeamAnalysis] = useState<TeamAnalysis | null>(null);
   const [recommendations, setRecommendations] = useState<TradeRecommendation[]>([]);
-  const [activeTab, setActiveTab] = useState<'analyzer' | 'recommendations' | 'builder'>('analyzer');
+  const [activeTab, setActiveTab] = useState<
+    'analyzer' | 'recommendations' | 'builder' | 'history'
+  >('analyzer');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [teamsLoading, setTeamsLoading] = useState(false);
@@ -385,6 +390,63 @@ export default function TradeAnalyzer({
     text: string;
   } | null>(null);
   const [saveProposalToLeague, setSaveProposalToLeague] = useState(false);
+  const [savedProposals, setSavedProposals] = useState<SavedTradeProposal[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [expandedProposalId, setExpandedProposalId] = useState<number | null>(null);
+  const [proposalDetail, setProposalDetail] = useState<SavedTradeProposal | null>(null);
+
+  const loadSavedProposals = async () => {
+    if (!selectedLeague || !leagues) {
+      setSavedProposals([]);
+      return;
+    }
+
+    const league = findLeagueByKey(leagues, selectedLeague);
+    const platformLeagueId = getPlatformLeagueId(league);
+    if (!platformLeagueId) {
+      setHistoryError('League is missing a platform ID');
+      setSavedProposals([]);
+      return;
+    }
+
+    setHistoryLoading(true);
+    setHistoryError(null);
+    try {
+      const result = await listSavedTradeProposals(platformLeagueId);
+      if (!result.ok) {
+        setHistoryError(result.message);
+        setSavedProposals([]);
+        return;
+      }
+      setSavedProposals(result.data.proposals);
+    } catch (err) {
+      console.error('Failed to load saved proposals:', err);
+      setHistoryError('Failed to load saved proposals');
+      setSavedProposals([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const loadProposalDetail = async (tradeId: number) => {
+    if (expandedProposalId === tradeId) {
+      setExpandedProposalId(null);
+      setProposalDetail(null);
+      return;
+    }
+
+    setExpandedProposalId(tradeId);
+    setProposalDetail(null);
+    try {
+      const result = await getSavedTradeProposal(tradeId);
+      if (result.ok) {
+        setProposalDetail(result.data);
+      }
+    } catch (err) {
+      console.error('Failed to load proposal detail:', err);
+    }
+  };
 
   useEffect(() => {
     if (initialLeagueId && leagues?.length) {
@@ -394,6 +456,12 @@ export default function TradeAnalyzer({
       }
     }
   }, [initialLeagueId, leagues]);
+
+  useEffect(() => {
+    if (activeTab === 'history') {
+      void loadSavedProposals();
+    }
+  }, [activeTab, selectedLeague, leagues]);
 
   useEffect(() => {
     if (selectedLeague && standingsTeams && standingsTeams.length > 0) {
@@ -755,11 +823,16 @@ export default function TradeAnalyzer({
         ...prev,
         [recKey]: {
           type: 'success',
-          text: result.data.validated
-            ? 'Trade validated successfully'
-            : 'Trade proposed successfully',
+          text: result.data.persisted
+            ? 'Trade saved to league history'
+            : result.data.validated
+              ? 'Trade validated successfully'
+              : 'Trade proposed successfully',
         },
       }));
+      if (result.data.persisted) {
+        void loadSavedProposals();
+      }
     } catch (err) {
       console.error('Failed to propose trade from recommendation:', err);
       setRecProposeMessages((prev) => ({
@@ -816,10 +889,15 @@ export default function TradeAnalyzer({
 
       setEvalProposeMessage({
         type: 'success',
-        text: result.data.validated
-          ? 'Trade validated and ready to send'
-          : 'Trade proposed successfully',
+        text: result.data.persisted
+          ? 'Trade saved to league history'
+          : result.data.validated
+            ? 'Trade validated and ready to send'
+            : 'Trade proposed successfully',
       });
+      if (result.data.persisted) {
+        void loadSavedProposals();
+      }
     } catch (err) {
       console.error('Failed to propose trade from evaluation:', err);
       setEvalProposeMessage({ type: 'error', text: 'Failed to propose trade' });
@@ -1563,6 +1641,107 @@ export default function TradeAnalyzer({
     );
   };
 
+  const formatAssetsLine = (teamName: string, assets: SavedTradeProposal['team1_gives']) => {
+    const parts: string[] = [];
+    if (assets.player_count > 0) {
+      parts.push(`${assets.player_count} player${assets.player_count === 1 ? '' : 's'}`);
+    }
+    if (assets.pick_count > 0) {
+      parts.push(`${assets.pick_count} pick${assets.pick_count === 1 ? '' : 's'}`);
+    }
+    if (assets.faab > 0) {
+      parts.push(`$${assets.faab} FAAB`);
+    }
+    return `${teamName}: ${parts.length ? parts.join(', ') : 'nothing'}`;
+  };
+
+  const renderSavedProposals = () => (
+    <div className="bg-white rounded-lg border p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-semibold text-gray-900">Saved Proposals</h2>
+        <button
+          type="button"
+          onClick={() => void loadSavedProposals()}
+          className="text-sm font-medium text-blue-600 hover:text-blue-800"
+        >
+          Refresh
+        </button>
+      </div>
+
+      {historyLoading && (
+        <p className="text-sm text-gray-600">Loading saved proposals…</p>
+      )}
+
+      {historyError && (
+        <div className="mb-4 rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {historyError}
+        </div>
+      )}
+
+      {!historyLoading && !historyError && savedProposals.length === 0 && (
+        <p className="text-sm text-gray-600">
+          No saved proposals yet. Enable &quot;Save proposal to league&quot; when proposing a trade.
+        </p>
+      )}
+
+      <div className="space-y-3">
+        {savedProposals.map((proposal) => {
+          const isExpanded = expandedProposalId === proposal.trade_id;
+          const detail =
+            isExpanded && proposalDetail?.trade_id === proposal.trade_id
+              ? proposalDetail
+              : proposal;
+          return (
+            <div key={proposal.trade_id} className="rounded-lg border border-gray-200 p-4">
+              <button
+                type="button"
+                className="w-full text-left"
+                onClick={() => void loadProposalDetail(proposal.trade_id)}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-gray-900">
+                      {proposal.team1.name} ↔ {proposal.team2.name}
+                    </p>
+                    <p className="text-xs text-gray-500">
+                      {proposal.proposed_at
+                        ? new Date(proposal.proposed_at).toLocaleString()
+                        : 'Unknown date'}
+                      {proposal.status ? ` · ${proposal.status}` : ''}
+                    </p>
+                  </div>
+                  {proposal.evaluation?.fairness_score != null && (
+                    <span className="rounded-full bg-blue-50 px-3 py-1 text-sm text-blue-800">
+                      Fairness {proposal.evaluation.fairness_score.toFixed(0)}
+                    </span>
+                  )}
+                </div>
+              </button>
+
+              {isExpanded && (
+                <div className="mt-3 space-y-2 border-t pt-3 text-sm text-gray-700">
+                  <p>{formatAssetsLine(detail.team1.name, detail.team1_gives)}</p>
+                  <p>{formatAssetsLine(detail.team2.name, detail.team2_gives)}</p>
+                  {detail.trade_reason && (
+                    <p className="text-gray-600">Reason: {detail.trade_reason}</p>
+                  )}
+                  {detail.evaluation?.ai_summary && (
+                    <p className="text-gray-600">{detail.evaluation.ai_summary}</p>
+                  )}
+                  {detail.evaluation_detail && (
+                    <pre className="overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-600">
+                      {JSON.stringify(detail.evaluation_detail, null, 2)}
+                    </pre>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="max-w-7xl mx-auto">
@@ -1661,7 +1840,8 @@ export default function TradeAnalyzer({
                 {[
                   { id: 'analyzer', label: 'Team Analysis', icon: BarChart3 },
                   { id: 'recommendations', label: 'Trade Recommendations', icon: Lightbulb },
-                  { id: 'builder', label: 'Trade Builder', icon: Shuffle }
+                  { id: 'builder', label: 'Trade Builder', icon: Shuffle },
+                  { id: 'history', label: 'Saved Proposals', icon: Clock },
                 ].map((tab) => {
                   const Icon = tab.icon;
                   return (
@@ -1725,13 +1905,15 @@ export default function TradeAnalyzer({
                 </div>
               )}
 
-              {!loading && !error && (
+              {!loading && !error && activeTab !== 'history' && (
                 <>
                   {activeTab === 'analyzer' && renderTeamAnalysis()}
                   {activeTab === 'recommendations' && renderRecommendations()}
                   {activeTab === 'builder' && renderTradeBuilder()}
                 </>
               )}
+
+              {activeTab === 'history' && renderSavedProposals()}
             </div>
           </>
         )}

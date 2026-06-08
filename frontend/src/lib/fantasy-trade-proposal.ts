@@ -119,3 +119,115 @@ export async function proposeTrade(
   const data = (await response.json()) as ProposeTradeResponse;
   return { ok: true, data };
 }
+
+export interface TradeProposalTeamSummary {
+  id: number | null;
+  roster_id: number | string | null;
+  name: string;
+  owner_name?: string | null;
+}
+
+export interface TradeProposalAssetsSummary {
+  player_count: number;
+  pick_count: number;
+  faab: number;
+  players: string[];
+  picks: number[];
+}
+
+export interface TradeProposalEvaluationSummary {
+  fairness_score?: number | null;
+  team1_grade?: string | null;
+  team2_grade?: string | null;
+  ai_summary?: string | null;
+  confidence?: number | null;
+}
+
+export interface SavedTradeProposal {
+  trade_id: number;
+  status: string | null;
+  proposed_at: string | null;
+  expires_at?: string | null;
+  trade_reason?: string | null;
+  team1: TradeProposalTeamSummary;
+  team2: TradeProposalTeamSummary;
+  team1_gives: TradeProposalAssetsSummary;
+  team2_gives: TradeProposalAssetsSummary;
+  evaluation?: TradeProposalEvaluationSummary | null;
+  evaluation_detail?: Record<string, unknown>;
+  league_id?: string;
+}
+
+export interface ListTradeProposalsResponse {
+  success: boolean;
+  league_id: string;
+  proposals: SavedTradeProposal[];
+  total: number;
+}
+
+export async function listSavedTradeProposals(
+  leagueId: string,
+  limit = 50
+): Promise<
+  | { ok: true; data: ListTradeProposalsResponse }
+  | { ok: false; status: number; message: string }
+> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const response = await apiRequest(
+    `/api/v1/fantasy/trade-analyzer/proposals?league_id=${encodeURIComponent(leagueId)}&limit=${limit}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    let message = 'Failed to load saved proposals';
+    try {
+      const errBody = await response.json();
+      if (typeof errBody.detail === 'string') {
+        message = errBody.detail;
+      }
+    } catch {
+      // keep default
+    }
+    return { ok: false, status: response.status, message };
+  }
+
+  const data = (await response.json()) as ListTradeProposalsResponse;
+  return { ok: true, data };
+}
+
+export async function getSavedTradeProposal(
+  tradeId: number
+): Promise<
+  | { ok: true; data: SavedTradeProposal }
+  | { ok: false; status: number; message: string }
+> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null;
+  const response = await apiRequest(
+    `/api/v1/fantasy/trade-analyzer/proposals/${tradeId}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    }
+  );
+
+  if (!response.ok) {
+    let message = 'Failed to load trade proposal';
+    try {
+      const errBody = await response.json();
+      if (typeof errBody.detail === 'string') {
+        message = errBody.detail;
+      }
+    } catch {
+      // keep default
+    }
+    return { ok: false, status: response.status, message };
+  }
+
+  const data = (await response.json()) as SavedTradeProposal;
+  return { ok: true, data };
+}

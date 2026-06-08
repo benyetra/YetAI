@@ -255,6 +255,8 @@ Trade suggestions and proposals are **Sleeper-first**: live roster data from the
 | GET | `/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}` | `?league_id=` required |
 | POST | `/api/v1/fantasy/trade-analyzer/recommendations` | Sleeper trade suggestions (`generate_sleeper_trade_recommendations`) |
 | POST | `/api/v1/fantasy/trade-analyzer/propose` | Evaluate/persist a proposed trade (`propose_sleeper_trade`) |
+| GET | `/api/v1/fantasy/trade-analyzer/proposals` | `?league_id=` — list saved proposals for a Sleeper league |
+| GET | `/api/v1/fantasy/trade-analyzer/proposals/{trade_id}` | One saved proposal + evaluation detail |
 | GET | `/api/v1/fantasy/trade-analyzer/player-values` | Value board |
 | POST | `/api/v1/fantasy/trade-analyzer/quick-analysis` | Lightweight trade check |
 | * | `/api/v1/fantasy/analytics/*` | Rich analytics (`fantasy_analytics.py`) |
