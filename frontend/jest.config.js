@@ -14,7 +14,7 @@ const customJestConfig = {
     '<rootDir>/**/__tests__/**/*.(ts|tsx|js)',
     '<rootDir>/**/?(*.)(spec|test).(ts|tsx|js)'
   ],
-  moduleNameMapping: {
+  moduleNameMapper: {
     // Handle module aliases
     '^@/components/(.*)$': '<rootDir>/src/components/$1',
     '^@/pages/(.*)$': '<rootDir>/src/pages/$1',
@@ -57,10 +57,6 @@ const customJestConfig = {
   transformIgnorePatterns: [
     '/node_modules/',
     '^.+\\.module\\.(css|sass|scss)$',
-  ],
-  watchPlugins: [
-    'jest-watch-typeahead/filename',
-    'jest-watch-typeahead/testname',
   ],
 }
 

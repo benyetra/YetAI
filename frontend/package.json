@@ -9,6 +9,7 @@
     "lint": "next lint --max-warnings=50",
     "type-check": "tsc --noEmit",
     "test": "playwright test",
+    "test:unit": "jest",
     "test:ci": "playwright test tests/fantasy-happy-path.spec.ts --project=chromium",
     "test:e2e": "playwright test --ui"
   },
@@ -32,11 +33,17 @@
     "@eslint/eslintrc": "^3",
     "@playwright/test": "^1.55.0",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "babel-jest": "^30.4.1",
     "eslint": "^0.2.0",
     "eslint-config-next": "^0.2.4",
+    "jest": "^30.4.2",
+    "jest-environment-jsdom": "^30.4.1",
+    "jest-environment-node": "^30.4.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

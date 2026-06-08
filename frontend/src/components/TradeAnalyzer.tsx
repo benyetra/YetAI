@@ -7,6 +7,11 @@ import { useState, useEffect } from 'react';
 import { apiRequest } from '@/lib/api-config';
 import type { LeagueRules } from '@/lib/fantasy-league-rules';
 import { calculateDeterministicTradeValue } from '@/lib/fantasy-trade-value';
+import {
+  buildTradeAssetsFromBuilder,
+  buildTradeAssetsFromRecommendation,
+  proposeTrade,
+} from '@/lib/fantasy-trade-proposal';
 import { 
   Users, 
   TrendingUp, 
@@ -83,6 +88,7 @@ interface TradeRecommendation {
   we_get: RecommendationTradeAssets;
   we_give: RecommendationTradeAssets;
   recommendation_type: string;
+  title?: string;
   trade_rationale?: string;
   reasoning?: string;
   priority_score: number;
@@ -256,6 +262,48 @@ function formatScoringLabel(leagueRules?: LeagueRules | null): string | null {
   return 'Standard';
 }
 
+function mapAnalysisResponseToTradeEvaluation(
+  analysis: Record<string, any>,
+  leagueRules?: LeagueRules | null
+): TradeEvaluation {
+  const team1Total = analysis.team1_gives?.total_value || 0;
+  const team2Total = analysis.team2_gives?.total_value || 0;
+  const scoringLabel = formatScoringLabel(leagueRules);
+
+  return {
+    trade_id: analysis.trade_id || 0,
+    grades: {
+      team1_grade: analysis.fairness?.verdict || 'N/A',
+      team2_grade: analysis.fairness?.verdict || 'N/A',
+    },
+    values: {
+      team1_value_given: team1Total,
+      team1_value_received: team2Total,
+      team2_value_given: team2Total,
+      team2_value_received: team1Total,
+    },
+    analysis: {
+      team1_analysis: analysis.team1_gives || {},
+      team2_analysis: analysis.team2_gives || {},
+    },
+    fairness_score: analysis.fairness?.percentage || 0,
+    ai_summary: scoringLabel
+      ? `Trade Analysis (${scoringLabel}): ${analysis.fairness?.verdict || 'Unknown'}`
+      : `Trade Analysis: ${analysis.fairness?.verdict || 'Unknown'}`,
+    key_factors: (analysis.insights || []).map(
+      (insight: string | { category?: string; description?: string; impact?: string }) =>
+        typeof insight === 'string'
+          ? { category: 'insight', description: insight, impact: 'medium' }
+          : {
+              category: insight.category || 'insight',
+              description: insight.description || '',
+              impact: insight.impact || 'medium',
+            }
+    ),
+    confidence: analysis.fairness?.percentage || 0,
+  };
+}
+
 export default function TradeAnalyzer({
   leagues,
   initialLeagueId,
@@ -300,6 +348,15 @@ export default function TradeAnalyzer({
   const [selectedTeamPlayers, setSelectedTeamPlayers] = useState<Player[]>([]);
   const [targetTeamPlayers, setTargetTeamPlayers] = useState<Player[]>([]);
   const [expandedRecommendation, setExpandedRecommendation] = useState<string | null>(null);
+  const [proposingRecId, setProposingRecId] = useState<string | null>(null);
+  const [recProposeMessages, setRecProposeMessages] = useState<
+    Record<string, { type: 'success' | 'error'; text: string }>
+  >({});
+  const [proposingEvaluation, setProposingEvaluation] = useState(false);
+  const [evalProposeMessage, setEvalProposeMessage] = useState<{
+    type: 'success' | 'error';
+    text: string;
+  } | null>(null);
 
   useEffect(() => {
     if (initialLeagueId && leagues?.length) {
@@ -590,40 +647,7 @@ export default function TradeAnalyzer({
         console.log('Quick analysis response:', data);
 
         if (data.success && data.analysis) {
-          const team1Total = data.analysis.team1_gives?.total_value || 0;
-          const team2Total = data.analysis.team2_gives?.total_value || 0;
-          const scoringLabel = formatScoringLabel(leagueRules);
-          setTradeEvaluation({
-            trade_id: data.analysis.trade_id || 0,
-            grades: {
-              team1_grade: data.analysis.fairness?.verdict || 'N/A',
-              team2_grade: data.analysis.fairness?.verdict || 'N/A'
-            },
-            values: {
-              team1_value_given: team1Total,
-              team1_value_received: team2Total,
-              team2_value_given: team2Total,
-              team2_value_received: team1Total,
-            },
-            analysis: {
-              team1_analysis: data.analysis.team1_gives || {},
-              team2_analysis: data.analysis.team2_gives || {}
-            },
-            fairness_score: data.analysis.fairness?.percentage || 0,
-            ai_summary: scoringLabel
-              ? `Trade Analysis (${scoringLabel}): ${data.analysis.fairness?.verdict || 'Unknown'}`
-              : `Trade Analysis: ${data.analysis.fairness?.verdict || 'Unknown'}`,
-            key_factors: (data.analysis.insights || []).map((insight: string | { category?: string; description?: string; impact?: string }) =>
-              typeof insight === 'string'
-                ? { category: 'insight', description: insight, impact: 'medium' }
-                : {
-                    category: insight.category || 'insight',
-                    description: insight.description || '',
-                    impact: insight.impact || 'medium',
-                  }
-            ),
-            confidence: data.analysis.fairness?.percentage || 0
-          });
+          setTradeEvaluation(mapAnalysisResponseToTradeEvaluation(data.analysis, leagueRules));
         } else {
           console.error('Invalid API response:', data);
           setError('Invalid trade analysis response');
@@ -634,6 +658,131 @@ export default function TradeAnalyzer({
       setError('Failed to analyze trade');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleProposeFromRecommendation = async (
+    rec: TradeRecommendation,
+    recKey: string
+  ) => {
+    if (!selectedLeague || !selectedTeam || !leagues) {
+      setRecProposeMessages((prev) => ({
+        ...prev,
+        [recKey]: { type: 'error', text: 'Select your team and league first' },
+      }));
+      return;
+    }
+
+    const league = findLeagueByKey(leagues, selectedLeague);
+    const platformLeagueId = getPlatformLeagueId(league);
+    if (!platformLeagueId) {
+      setRecProposeMessages((prev) => ({
+        ...prev,
+        [recKey]: { type: 'error', text: 'League is missing a platform ID' },
+      }));
+      return;
+    }
+
+    setProposingRecId(recKey);
+    setRecProposeMessages((prev) => {
+      const next = { ...prev };
+      delete next[recKey];
+      return next;
+    });
+
+    try {
+      const result = await proposeTrade({
+        league_id: platformLeagueId,
+        team1_id: selectedTeam,
+        team2_id: rec.target_team_id,
+        team1_gives: buildTradeAssetsFromRecommendation(rec.we_give),
+        team2_gives: buildTradeAssetsFromRecommendation(rec.we_get),
+        trade_reason: rec.title || rec.recommendation_type,
+        persist: false,
+      });
+
+      if (!result.ok) {
+        setRecProposeMessages((prev) => ({
+          ...prev,
+          [recKey]: { type: 'error', text: result.message },
+        }));
+        return;
+      }
+
+      setRecProposeMessages((prev) => ({
+        ...prev,
+        [recKey]: {
+          type: 'success',
+          text: result.data.validated
+            ? 'Trade validated successfully'
+            : 'Trade proposed successfully',
+        },
+      }));
+    } catch (err) {
+      console.error('Failed to propose trade from recommendation:', err);
+      setRecProposeMessages((prev) => ({
+        ...prev,
+        [recKey]: { type: 'error', text: 'Failed to propose trade' },
+      }));
+    } finally {
+      setProposingRecId(null);
+    }
+  };
+
+  const handleProposeFromEvaluation = async () => {
+    if (!selectedLeague || !selectedTeam || !targetTeam || !leagues) {
+      setEvalProposeMessage({
+        type: 'error',
+        text: 'Select both teams and a league before proposing',
+      });
+      return;
+    }
+
+    const league = findLeagueByKey(leagues, selectedLeague);
+    const platformLeagueId = getPlatformLeagueId(league);
+    if (!platformLeagueId) {
+      setEvalProposeMessage({ type: 'error', text: 'League is missing a platform ID' });
+      return;
+    }
+
+    setProposingEvaluation(true);
+    setEvalProposeMessage(null);
+
+    try {
+      const result = await proposeTrade({
+        league_id: platformLeagueId,
+        team1_id: selectedTeam,
+        team2_id: targetTeam,
+        team1_gives: buildTradeAssetsFromBuilder(team1Gives),
+        team2_gives: buildTradeAssetsFromBuilder(team2Gives),
+        persist: false,
+      });
+
+      if (!result.ok) {
+        setEvalProposeMessage({ type: 'error', text: result.message });
+        return;
+      }
+
+      if (result.data.evaluation) {
+        setTradeEvaluation(
+          mapAnalysisResponseToTradeEvaluation(
+            result.data.evaluation as Record<string, any>,
+            leagueRules
+          )
+        );
+      }
+
+      setEvalProposeMessage({
+        type: 'success',
+        text: result.data.validated
+          ? 'Trade validated and ready to send'
+          : 'Trade proposed successfully',
+      });
+    } catch (err) {
+      console.error('Failed to propose trade from evaluation:', err);
+      setEvalProposeMessage({ type: 'error', text: 'Failed to propose trade' });
+    } finally {
+      setProposingEvaluation(false);
     }
   };
 
@@ -916,7 +1065,7 @@ export default function TradeAnalyzer({
 
                     <p className="text-sm text-gray-600 mb-3">{rec.reasoning || rec.trade_rationale}</p>
 
-                    <div className="flex items-center justify-between">
+                    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <button 
                         className="text-blue-600 hover:text-blue-700 text-sm font-medium"
                         onClick={() => {
@@ -926,9 +1075,26 @@ export default function TradeAnalyzer({
                       >
                         {expandedRecommendation === `${type}-${index}` ? 'Hide Details' : 'View Details'}
                       </button>
-                      <button className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">
-                        Propose Trade
-                      </button>
+                      <div className="flex flex-col items-end gap-1">
+                        <button
+                          className="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                          disabled={!selectedTeam || proposingRecId === `${type}-${index}`}
+                          onClick={() => handleProposeFromRecommendation(rec, `${type}-${index}`)}
+                        >
+                          {proposingRecId === `${type}-${index}` ? 'Proposing...' : 'Propose Trade'}
+                        </button>
+                        {recProposeMessages[`${type}-${index}`] && (
+                          <span
+                            className={`text-xs ${
+                              recProposeMessages[`${type}-${index}`].type === 'success'
+                                ? 'text-green-700'
+                                : 'text-red-700'
+                            }`}
+                          >
+                            {recProposeMessages[`${type}-${index}`].text}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     
                     {expandedRecommendation === `${type}-${index}` && (
@@ -1195,16 +1361,31 @@ export default function TradeAnalyzer({
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-4 border-t">
+          <div className="flex flex-col gap-2 pt-4 border-t sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-600">Confidence:</span>
               <span className="text-sm font-medium text-gray-900">
                 {tradeEvaluation.confidence.toFixed(0)}%
               </span>
             </div>
-            <button className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700">
-              Propose Trade
-            </button>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                className="bg-green-600 text-white px-4 py-2 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                disabled={proposingEvaluation || !selectedTeam || !targetTeam}
+                onClick={handleProposeFromEvaluation}
+              >
+                {proposingEvaluation ? 'Proposing...' : 'Propose Trade'}
+              </button>
+              {evalProposeMessage && (
+                <span
+                  className={`text-xs ${
+                    evalProposeMessage.type === 'success' ? 'text-green-700' : 'text-red-700'
+                  }`}
+                >
+                  {evalProposeMessage.text}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
