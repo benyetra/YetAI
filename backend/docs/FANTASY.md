@@ -26,6 +26,32 @@ End-to-end guide for fantasy features without chat context. **Platform:** Sleepe
 
 No Sleeper API key — Sleeper’s public REST API is unauthenticated.
 
+## Post-deploy fantasy checklist
+
+Run after any backend deploy that touches fantasy ETL, Celery, or trade/recommendation routes (`backend/**`, worker image, `railway.json`).
+
+**Quality depends on data:** start/sit, waiver, projections, and trade value all read `player_analytics` joined through GSIS ↔ Sleeper mapping in `fantasy_players`. Empty or stale analytics → empty recommendations and weak trade scores.
+
+| Step | Command / action | Pass |
+|------|------------------|------|
+| 1. Health | Railway API + `celery-worker` on latest commit | Services healthy |
+| 2. Prod verify | `PYTHONPATH=. .venv/bin/python scripts/prod_verify_fantasy.py --season 2025` | Exit 0; beat registered; mapping audit line present |
+| 3. Backfill (if needed) | `./scripts/run_fantasy_analytics_backfill.sh` or one-off below | `rows_upserted` > 0 first run; re-run mostly `rows_unchanged` |
+| 4. Celery smoke | `fantasy_sync_player_analytics.delay(season=2025)` | Worker completes; no 404 on 2025+ parquet |
+| 5. UI smoke | Logged-in `/fantasy` | Connect → league → start/sit returns rows; trade modal loads |
+
+Optional API smoke (JWT required):
+
+```bash
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_fantasy.py \
+  --season 2025 \
+  --api-url https://api.yetai.app \
+  --token "$AUTH_TOKEN" \
+  --week 1
+```
+
+Verify exits **non-zero** when analytics are empty for the season or the weekly beat task is missing; row-count / mapping warnings print but do not fail the run unless analytics are completely empty.
+
 ### Local Python deps (analytics ETL)
 
 `nfl-data-py` is required for `sync_player_analytics` (not installed as a normal pip dep because of version pins):
@@ -92,7 +118,14 @@ Run after each backend deploy that touches fantasy ETL or Celery (`backend/**`, 
 | 4. Mapping health | Check task result fields | `fantasy_players_mapped` ≈ 1000+; high `rows_skipped` is normal (~90% nflverse rows lack GSIS map) |
 | 5. UI smoke | Logged-in user on `/fantasy` | Connect → league card → start/sit returns recommendations for current week |
 
-**One-off 2025 backfill (production shell):**
+**One-off 2025 backfill (production shell or wrapper):**
+
+```bash
+cd backend
+SEASON=2025 SYNC_PLAYERS=1 ./scripts/run_fantasy_analytics_backfill.sh
+```
+
+Equivalent inline:
 
 ```bash
 cd backend
@@ -150,7 +183,7 @@ PYTHONPATH=. .venv/bin/python scripts/prod_verify_fantasy.py \
   --week 1
 ```
 
-Pass criteria: beat schedule registered, `fantasy_players_mapped` ≥ 1000, `player_analytics_rows` > 0 for the season, optional start/sit HTTP 200.
+Pass criteria: exit 0; beat schedule registered; `mapping_audit` line shows `player_analytics_rows` ≥ 1000 for season ≥ 2024 (warning if lower but non-zero); `fantasy_players_mapped` ≥ 1000; optional start/sit HTTP 200. Exit 1 if analytics empty or beat task missing.
 
 **Mapping health audit (no DB writes):**
 
@@ -210,7 +243,8 @@ print(fantasy_sync_player_analytics.delay(season=2024))
 |--------|------|-------|
 | GET | `/api/v1/fantasy/standings/{league_id}` | Sorted standings |
 | GET | `/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}` | `?league_id=` required |
-| POST | `/api/v1/fantasy/trade-analyzer/recommendations` | Trade suggestions |
+| POST | `/api/v1/fantasy/trade-analyzer/recommendations` | Sleeper trade suggestions (`fantasy_trade_recommendations`) |
+| POST | `/api/v1/fantasy/trade-analyzer/propose` | Evaluate/persist a proposed trade (`propose_sleeper_trade`) |
 | GET | `/api/v1/fantasy/trade-analyzer/player-values` | Value board |
 | POST | `/api/v1/fantasy/trade-analyzer/quick-analysis` | Lightweight trade check |
 | * | `/api/v1/fantasy/analytics/*` | Rich analytics (`fantasy_analytics.py`) |
