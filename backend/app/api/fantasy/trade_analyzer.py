@@ -28,10 +28,10 @@ from app.api.fantasy.trade_value import (
     format_roster_traded_picks,
 )
 from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
-from app.services.fantasy_trade_value import select_trade_partner, stable_unit
-from app.services.fantasy_sleeper_roster import (
-    fetch_team_players_by_position,
-    fetch_team_roster_players,
+from app.services.fantasy_trade_value import stable_unit
+from app.services.fantasy_sleeper_roster import fetch_team_roster_players
+from app.services.fantasy_trade_recommendations import (
+    generate_sleeper_trade_recommendations,
 )
 
 
@@ -249,244 +249,31 @@ async def generate_trade_recommendations(
         league_doc = await sleeper_service.get_league(str(league_id))
         scoring_type = scoring_type_from_sleeper_league(league_doc)
 
-        # Get roster data for the specific team
-        roster = await fetch_team_roster_players(
-            sleeper_service,
-            str(league_id),
-            int(team_id),
+        recommendations = await generate_sleeper_trade_recommendations(
+            sleeper_service=sleeper_service,
+            league_id=str(league_id),
+            team_id=int(team_id),
             scoring_type=scoring_type,
         )
-        logger.info("🔍 FOUND %s players for team %s", len(roster), team_id)
-
-        if not roster:
-            logger.error(
-                f"🚨 NO ROSTER DATA FOUND for team {team_id} in league {league_id}"
-            )
-            raise HTTPException(
-                status_code=404, detail=f"No roster data found for team {team_id}"
-            )
-
-        # Get league teams to suggest real trade partners
-        try:
-            league_teams = await sleeper_service.get_league_teams(str(league_id))
-
-            # Filter out the selected team (not current user's team)
-            other_teams = []
-            for team in league_teams:
-                if str(team.get("team_id")) != str(team_id):
-                    other_teams.append(team)
-
-            logger.info(
-                f"🔍 FOUND {len(other_teams)} OTHER TEAMS in league for trade suggestions"
-            )
-
-        except Exception as teams_error:
-            logger.warning(f"Could not get league teams: {teams_error}")
-            other_teams = []
-
-        # Generate real recommendations based on the roster
-        recommendations = []
-
-        # Analyze roster by position
-        positions = {}
-        for player in roster:
-            pos = player.get("position", "UNKNOWN")
-            if pos not in positions:
-                positions[pos] = []
-            positions[pos].append(player)
-
-        logger.info(
-            f"🔍 ROSTER ANALYSIS: {[(pos, len(players)) for pos, players in positions.items()]}"
-        )
-
-        # Generate recommendations based on roster composition
-        rec_id = 1
-
-        # Helper function to format players for frontend
-        def format_players(player_data_list):
-            """Convert player data to the format expected by frontend"""
-            players = []
-            for player_data in player_data_list:
-                if isinstance(player_data, dict):
-                    # Real player from roster
-                    players.append(
-                        {
-                            "id": player_data.get(
-                                "player_id",
-                                f"player_{player_data['name'].replace(' ', '_')}",
-                            ),
-                            "name": player_data["name"],
-                            "position": player_data.get("position", "UNKNOWN"),
-                            "team": player_data.get("team", "UNKNOWN"),
-                            "age": player_data.get("age", 27),
-                        }
-                    )
-                else:
-                    # Generic player name (string)
-                    players.append(
-                        {
-                            "id": f"player_{player_data.replace(' ', '_')}",
-                            "name": player_data,
-                            "position": "UNKNOWN",
-                            "team": "UNKNOWN",
-                            "age": 26,
-                        }
-                    )
-            return players
-
-        # Helper function to get realistic trade partner
-        def get_trade_partner(seed: str = ""):
-            """Get a stable trade partner from league teams."""
-            partner = select_trade_partner(other_teams, seed=seed)
-            if not partner:
-                return {"name": "League Team", "team_id": None, "full_data": None}
-            return {
-                "name": partner.get(
-                    "name", f"Team {partner.get('team_id', 'Unknown')}"
-                ),
-                "team_id": partner.get("team_id"),
-                "full_data": partner,
-            }
-
-        # Helper function to get real players from target team (no synthetic placeholders)
-        async def get_target_team_players(target_team_id, position_needed):
-            if not target_team_id:
-                return []
-            return await fetch_team_players_by_position(
+        if not recommendations:
+            user_roster = await fetch_team_roster_players(
                 sleeper_service,
                 str(league_id),
-                int(target_team_id),
-                position_needed,
-                limit=1,
+                int(team_id),
                 scoring_type=scoring_type,
             )
-
-        # Helper function to add trade values to existing players
-        def add_trade_values(players_list):
-            """Add trade_value field to players that don't have it"""
-            for player in players_list:
-                if "trade_value" not in player:
-                    # Create mock player data for trade value calculation
-                    mock_player = {
-                        "position": player.get("position", "UNKNOWN"),
-                        "age": player.get(
-                            "age", 27
-                        ),  # Use player's actual age or default
-                        "team": player.get("team", "UNKNOWN"),
-                    }
-                    player["trade_value"] = calculate_realistic_trade_value(
-                        mock_player, scoring_type=scoring_type
-                    )
-
-                # Ensure age is present
-                if "age" not in player:
-                    player["age"] = 27  # Default age if not provided
-            return players_list
-
-        # Check for position weaknesses — skip recommendations without real target players
-        if len(positions.get("QB", [])) < 2:
-            rb_players = positions.get("RB", [])[:1]
-            trade_partner = get_trade_partner(f"{team_id}:QB_depth")
-            target_qb_players = await get_target_team_players(
-                trade_partner["team_id"], "QB"
-            )
-            if target_qb_players:
-                recommendations.append(
-                    {
-                        "id": rec_id,
-                        "recommendation_type": "QB Depth Needed",
-                        "type": "depth_addition",
-                        "title": "Add QB Depth",
-                        "description": f"Consider trading for a backup quarterback from {trade_partner['name']}",
-                        "target_team_id": trade_partner["team_id"],
-                        "we_give": {
-                            "players": add_trade_values(format_players(rb_players)),
-                            "picks": [],
-                        },
-                        "we_get": {
-                            "players": target_qb_players,
-                            "picks": [],
-                        },
-                        "confidence": 75,
-                        "estimated_likelihood": 0.75,
-                        "priority_score": 60,
-                        "reasoning": f"Limited QB depth could be problematic if starter gets injured. {trade_partner['name']} may have QB depth to spare.",
-                        "trade_partner": trade_partner["name"],
-                    }
+            if not user_roster:
+                logger.error(
+                    "No roster data found for team %s in league %s",
+                    team_id,
+                    league_id,
                 )
-                rec_id += 1
-
-        if len(positions.get("RB", [])) > 4:
-            rb_players = positions.get("RB", [])
-            give_players = rb_players[-2:]
-            trade_partner = get_trade_partner(f"{team_id}:RB_surplus")
-            target_wr_players = await get_target_team_players(
-                trade_partner["team_id"], "WR"
-            )
-            target_te_players = await get_target_team_players(
-                trade_partner["team_id"], "TE"
-            )
-            if target_wr_players or target_te_players:
-                recommendations.append(
-                    {
-                        "id": rec_id,
-                        "recommendation_type": "RB Surplus Trade",
-                        "type": "position_balance",
-                        "title": "Trade Excess RB Depth",
-                        "description": f"Trade surplus running backs to {trade_partner['name']} for position upgrades",
-                        "target_team_id": trade_partner["team_id"],
-                        "we_give": {
-                            "players": add_trade_values(format_players(give_players)),
-                            "picks": [],
-                        },
-                        "we_get": {
-                            "players": target_wr_players + target_te_players,
-                            "picks": [],
-                        },
-                        "confidence": 80,
-                        "estimated_likelihood": 0.80,
-                        "priority_score": 70,
-                        "reasoning": f"With {len(rb_players)} RBs, you can afford to trade depth for upgrades at other positions. {trade_partner['name']} may need RB help.",
-                        "trade_partner": trade_partner["name"],
-                    }
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"No roster data found for team {team_id}",
                 )
-                rec_id += 1
 
-        if len(positions.get("WR", [])) < 4:
-            te_players = (
-                positions.get("TE", [])[:1] if len(positions.get("TE", [])) > 1 else []
-            )
-            trade_partner = get_trade_partner(f"{team_id}:WR_depth")
-            target_wr_players = await get_target_team_players(
-                trade_partner["team_id"], "WR"
-            )
-            if target_wr_players:
-                recommendations.append(
-                    {
-                        "id": rec_id,
-                        "recommendation_type": "WR Depth Needed",
-                        "type": "depth_addition",
-                        "title": "Add WR Depth",
-                        "description": f"Target wide receiver depth from {trade_partner['name']} for better matchup flexibility",
-                        "target_team_id": trade_partner["team_id"],
-                        "we_give": {
-                            "players": add_trade_values(format_players(te_players)),
-                            "picks": [],
-                        },
-                        "we_get": {
-                            "players": target_wr_players,
-                            "picks": [],
-                        },
-                        "confidence": 70,
-                        "estimated_likelihood": 0.70,
-                        "priority_score": 55,
-                        "reasoning": f"More WR depth provides better weekly lineup flexibility. {trade_partner['name']} may have WR depth to trade.",
-                        "trade_partner": trade_partner["name"],
-                    }
-                )
-                rec_id += 1
-
-        logger.info(f"🔍 GENERATED {len(recommendations)} RECOMMENDATIONS")
+        logger.info("Generated %s trade recommendations", len(recommendations))
 
         return {
             "success": True,
