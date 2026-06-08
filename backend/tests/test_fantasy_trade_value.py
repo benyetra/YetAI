@@ -63,7 +63,7 @@ def test_analytics_game_points_respects_scoring_type():
 
 
 @patch(
-    "app.api.fantasy.trade_analyzer.load_league_pick_context",
+    "app.services.fantasy_sleeper_trade_proposal.load_league_pick_context",
     new_callable=AsyncMock,
 )
 @patch("app.services.sleeper_fantasy_service.SleeperFantasyService")

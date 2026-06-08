@@ -6261,6 +6261,57 @@
         ],
         "title": "PlayerTrendResponse"
       },
+      "ProposeTradeRequest": {
+        "properties": {
+          "league_id": {
+            "type": "string",
+            "title": "League Id"
+          },
+          "team1_id": {
+            "type": "integer",
+            "title": "Team1 Id"
+          },
+          "team2_id": {
+            "type": "integer",
+            "title": "Team2 Id"
+          },
+          "team1_gives": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Team1 Gives"
+          },
+          "team2_gives": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Team2 Gives"
+          },
+          "trade_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Reason"
+          },
+          "persist": {
+            "type": "boolean",
+            "title": "Persist",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "league_id",
+          "team1_id",
+          "team2_id",
+          "team1_gives",
+          "team2_gives"
+        ],
+        "title": "ProposeTradeRequest"
+      },
       "QuickAnalysisRequest": {
         "properties": {
           "league_id": {

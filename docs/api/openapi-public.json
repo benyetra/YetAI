@@ -4866,6 +4866,91 @@
         "x-audience": "public"
       }
     },
+    "/api/v1/fantasy/trade-analyzer/propose": {
+      "post": {
+        "tags": [
+          "fantasy"
+        ],
+        "summary": "Propose Trade",
+        "description": "Validate and evaluate a Sleeper trade proposal (optional DB persist).",
+        "operationId": "propose_trade_api_v1_fantasy_trade_analyzer_propose_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProposeTradeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "x-audience": "public"
+      }
+    },
     "/api/fantasy/matchups/{league_id}/{week}": {
       "get": {
         "tags": [
@@ -12921,6 +13006,57 @@
           "recent_games"
         ],
         "title": "PlayerTrendResponse"
+      },
+      "ProposeTradeRequest": {
+        "properties": {
+          "league_id": {
+            "type": "string",
+            "title": "League Id"
+          },
+          "team1_id": {
+            "type": "integer",
+            "title": "Team1 Id"
+          },
+          "team2_id": {
+            "type": "integer",
+            "title": "Team2 Id"
+          },
+          "team1_gives": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Team1 Gives"
+          },
+          "team2_gives": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Team2 Gives"
+          },
+          "trade_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trade Reason"
+          },
+          "persist": {
+            "type": "boolean",
+            "title": "Persist",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "league_id",
+          "team1_id",
+          "team2_id",
+          "team1_gives",
+          "team2_gives"
+        ],
+        "title": "ProposeTradeRequest"
       },
       "QuickAnalysisRequest": {
         "properties": {

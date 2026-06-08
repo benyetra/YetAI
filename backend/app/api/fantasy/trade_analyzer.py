@@ -21,15 +21,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["fantasy"])
 
 from app.api.fantasy.trade_value import (
-    calculate_faab_trade_value,
     calculate_realistic_trade_value,
     load_league_pick_context,
-    lookup_pick_trade_value,
     format_roster_traded_picks,
 )
 from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
-from app.services.fantasy_trade_value import stable_unit
 from app.services.fantasy_sleeper_roster import fetch_team_roster_players
+from app.services.fantasy_sleeper_trade_proposal import (
+    evaluate_sleeper_trade,
+    propose_sleeper_trade,
+)
 from app.services.fantasy_trade_recommendations import (
     generate_sleeper_trade_recommendations,
 )
@@ -385,6 +386,16 @@ class QuickAnalysisRequest(BaseModel):
     team2_gives: Dict[str, Any]
 
 
+class ProposeTradeRequest(BaseModel):
+    league_id: str
+    team1_id: int
+    team2_id: int
+    team1_gives: Dict[str, Any]
+    team2_gives: Dict[str, Any]
+    trade_reason: Optional[str] = None
+    persist: bool = False
+
+
 @router.post("/api/v1/fantasy/trade-analyzer/quick-analysis")
 async def quick_trade_analysis(
     request: QuickAnalysisRequest, current_user: dict = Depends(get_current_user)
@@ -395,256 +406,69 @@ async def quick_trade_analysis(
             f"Quick trade analysis called: {request.team1_id} vs {request.team2_id}"
         )
 
-        # Get Sleeper service for player data
         from app.services.sleeper_fantasy_service import SleeperFantasyService
 
         sleeper_service = SleeperFantasyService()
-        all_players = await sleeper_service._get_all_players()
-        pick_ctx = await load_league_pick_context(
-            sleeper_service, str(request.league_id)
-        )
-        pick_registry = pick_ctx["pick_registry"]
-        scoring_type = scoring_type_from_sleeper_league(pick_ctx["league"])
-
-        def analyze_trade_side(assets: Dict[str, Any], side_name: str):
-            total_value = 0.0
-            side_analysis: Dict[str, Any] = {
-                "players": [],
-                "picks": [],
-                "faab": assets.get("faab", 0) or 0,
-                "total_value": 0,
-                "positions": {},
-                "avg_age": 0,
-            }
-
-            ages: List[float] = []
-            for player_id in assets.get("players") or []:
-                if str(player_id) not in all_players:
-                    continue
-                player_data = all_players[str(player_id)]
-                name = f"{player_data.get('first_name', '')} {player_data.get('last_name', '')}".strip()
-                position = player_data.get("position", "UNKNOWN")
-                age = player_data.get("age", 27)
-                trade_value = calculate_realistic_trade_value(
-                    player_data, scoring_type=scoring_type
-                )
-
-                player_info = {
-                    "player_id": player_id,
-                    "name": name,
-                    "position": position,
-                    "team": player_data.get("team", "FA"),
-                    "age": age,
-                    "trade_value": round(trade_value, 1),
-                }
-
-                side_analysis["players"].append(player_info)
-                total_value += trade_value
-                ages.append(float(age))
-                side_analysis["positions"][position] = (
-                    side_analysis["positions"].get(position, 0) + 1
-                )
-
-            for pick_id in assets.get("picks") or []:
-                pick_value = lookup_pick_trade_value(int(pick_id), pick_registry)
-                meta = pick_registry.get(int(pick_id), {})
-                pick_info = {
-                    "pick_id": int(pick_id),
-                    "description": meta.get("description", f"Pick {pick_id}"),
-                    "season": meta.get("season"),
-                    "round": meta.get("round"),
-                    "trade_value": round(pick_value, 1),
-                }
-                side_analysis["picks"].append(pick_info)
-                total_value += pick_value
-
-            faab_amount = int(assets.get("faab") or 0)
-            if faab_amount > 0:
-                faab_value = calculate_faab_trade_value(faab_amount)
-                side_analysis["faab_value"] = round(faab_value, 1)
-                total_value += faab_value
-
-            side_analysis["total_value"] = round(total_value, 1)
-            side_analysis["avg_age"] = round(sum(ages) / len(ages) if ages else 0, 1)
-
-            return side_analysis
-
-        # Analyze both sides
-        team1_gives = analyze_trade_side(request.team1_gives, "Team 1 Gives")
-        team2_gives = analyze_trade_side(request.team2_gives, "Team 2 Gives")
-
-        # Calculate trade fairness
-        value_diff = abs(team1_gives["total_value"] - team2_gives["total_value"])
-        total_value = team1_gives["total_value"] + team2_gives["total_value"]
-        fairness_pct = (
-            max(0, 100 - (value_diff / total_value * 100)) if total_value > 0 else 0
+        analysis = await evaluate_sleeper_trade(
+            sleeper_service=sleeper_service,
+            platform_league_id=str(request.league_id),
+            team1_roster_id=request.team1_id,
+            team2_roster_id=request.team2_id,
+            team1_gives=request.team1_gives,
+            team2_gives=request.team2_gives,
         )
 
-        # Determine trade verdict
-        if fairness_pct >= 90:
-            verdict = "Fair Trade"
-            verdict_color = "green"
-        elif fairness_pct >= 75:
-            verdict = "Slightly Uneven"
-            verdict_color = "yellow"
-        elif fairness_pct >= 60:
-            verdict = "Uneven Trade"
-            verdict_color = "orange"
-        else:
-            verdict = "Very Uneven"
-            verdict_color = "red"
-
-        # Generate comprehensive key factors/insights
-        insights = []
-
-        # Pick / FAAB analysis
-        if team1_gives.get("picks") or team2_gives.get("picks"):
-            insights.append(
-                "Draft picks included — future value affects dynasty/redraft balance"
-            )
-        if (team1_gives.get("faab") or 0) > 0 or (team2_gives.get("faab") or 0) > 0:
-            insights.append(
-                "FAAB included — budget value discounted vs in-season waiver spend"
-            )
-
-        # Age analysis
-        if team1_gives["avg_age"] > team2_gives["avg_age"] + 3:
-            insights.append(
-                f"Team 1 trading older players (avg age {team1_gives['avg_age']:.1f} vs {team2_gives['avg_age']:.1f})"
-            )
-        elif team2_gives["avg_age"] > team1_gives["avg_age"] + 3:
-            insights.append(
-                f"Team 2 trading older players (avg age {team2_gives['avg_age']:.1f} vs {team1_gives['avg_age']:.1f})"
-            )
-
-        # Value differential analysis
-        if value_diff > 10:
-            if team1_gives["total_value"] > team2_gives["total_value"]:
-                insights.append(
-                    f"Team 1 giving up {value_diff:.1f} more value - may need compensation"
-                )
-            else:
-                insights.append(
-                    f"Team 2 giving up {value_diff:.1f} more value - may need compensation"
-                )
-
-        # Player quantity analysis
-        if len(team1_gives["players"]) > len(team2_gives["players"]) + 1:
-            insights.append(
-                "Team 1 trading multiple players for fewer elite players (talent consolidation)"
-            )
-        elif len(team2_gives["players"]) > len(team1_gives["players"]) + 1:
-            insights.append(
-                "Team 2 trading multiple players for fewer elite players (talent consolidation)"
-            )
-
-        # Position balance analysis
-        team1_positions = list(team1_gives["positions"].keys())
-        team2_positions = list(team2_gives["positions"].keys())
-
-        if "QB" in team1_positions or "QB" in team2_positions:
-            insights.append("QB involved - high-impact position trade")
-
-        if "RB" in team1_positions and "WR" in team2_positions:
-            insights.append("RB for WR swap - different positional strategies")
-        elif "WR" in team1_positions and "RB" in team2_positions:
-            insights.append("WR for RB swap - different positional strategies")
-
-        # High-value player analysis
-        team1_high_value = [p for p in team1_gives["players"] if p["trade_value"] > 25]
-        team2_high_value = [p for p in team2_gives["players"] if p["trade_value"] > 25]
-
-        if team1_high_value and not team2_high_value:
-            insights.append(
-                f"Team 1 trading elite player ({team1_high_value[0]['name']}) for depth"
-            )
-        elif team2_high_value and not team1_high_value:
-            insights.append(
-                f"Team 2 trading elite player ({team2_high_value[0]['name']}) for depth"
-            )
-        elif team1_high_value and team2_high_value:
-            insights.append("Elite players on both sides - star-for-star trade")
-
-        # Rookie/young player analysis
-        team1_young = [p for p in team1_gives["players"] if p["age"] <= 24]
-        team2_young = [p for p in team2_gives["players"] if p["age"] <= 24]
-
-        if team1_young and not team2_young:
-            insights.append("Team 1 trading young talent for immediate production")
-        elif team2_young and not team1_young:
-            insights.append("Team 2 trading young talent for immediate production")
-
-        # Ensure we have at least some insights
-        if not insights:
-            if fairness_pct >= 85:
-                insights.append("Values are well-matched - good trade balance")
-            elif team1_gives["total_value"] > team2_gives["total_value"]:
-                insights.append(
-                    "Team 1 giving up more value - consider additional compensation"
-                )
-            else:
-                insights.append(
-                    "Team 2 giving up more value - consider additional compensation"
-                )
-
-        # Helper function to convert insight strings to structured objects
-        def format_insight(insight_text):
-            # Determine impact level and category based on content
-            impact = "medium"  # default
-            category = "general"  # default
-
-            if "more value" in insight_text or "compensation" in insight_text:
-                impact = "high"
-                category = "value_analysis"
-            elif "older players" in insight_text or "young talent" in insight_text:
-                impact = "medium"
-                category = "age_analysis"
-            elif "QB" in insight_text:
-                impact = "high"
-                category = "position_strategy"
-            elif "elite player" in insight_text or "star-for-star" in insight_text:
-                impact = "high"
-                category = "player_value"
-            elif "consolidation" in insight_text or "multiple players" in insight_text:
-                impact = "medium"
-                category = "roster_construction"
-            elif "well-matched" in insight_text or "good trade balance" in insight_text:
-                impact = "low"
-                category = "trade_balance"
-            elif "swap" in insight_text or "strategies" in insight_text:
-                impact = "medium"
-                category = "position_strategy"
-
-            return {"category": category, "description": insight_text, "impact": impact}
-
-        # Convert insights to structured format
-        structured_insights = [format_insight(insight) for insight in insights]
-
-        trade_seed = (
-            f"{request.league_id}:{request.team1_id}:{request.team2_id}:"
-            f"{request.team1_gives}:{request.team2_gives}"
-        )
-        trade_suffix = int(stable_unit(trade_seed) * 1_000_000_000)
-
-        return {
-            "success": True,
-            "analysis": {
-                "trade_id": f"{request.team1_id}_{request.team2_id}_{trade_suffix}",
-                "team1_gives": team1_gives,
-                "team2_gives": team2_gives,
-                "fairness": {
-                    "percentage": round(fairness_pct, 1),
-                    "verdict": verdict,
-                    "verdict_color": verdict_color,
-                    "value_difference": round(value_diff, 1),
-                },
-                "insights": structured_insights,
-                "recommendation": verdict,
-            },
-        }
+        return {"success": True, "analysis": analysis}
 
     except Exception as e:
         logger.error(f"Error in quick trade analysis: {e}")
         raise HTTPException(
             status_code=500, detail=f"Failed to analyze trade: {str(e)}"
+        )
+
+
+@router.post("/api/v1/fantasy/trade-analyzer/propose")
+async def propose_trade(
+    request: ProposeTradeRequest,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Validate and evaluate a Sleeper trade proposal (optional DB persist)."""
+    try:
+        logger.info(
+            "Propose trade called: league=%s team1=%s team2=%s user=%s",
+            request.league_id,
+            request.team1_id,
+            request.team2_id,
+            current_user["user_id"],
+        )
+
+        from app.services.sleeper_fantasy_service import SleeperFantasyService
+
+        sleeper_service = SleeperFantasyService()
+        result = await propose_sleeper_trade(
+            sleeper_service=sleeper_service,
+            platform_league_id=str(request.league_id),
+            team1_roster_id=request.team1_id,
+            team2_roster_id=request.team2_id,
+            team1_gives=request.team1_gives,
+            team2_gives=request.team2_gives,
+            trade_reason=request.trade_reason,
+            persist=request.persist,
+            db=db if request.persist else None,
+        )
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=400, detail=result.get("error", "Invalid trade")
+            )
+
+        return result
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error proposing trade: {e}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to propose trade: {str(e)}"
         )
