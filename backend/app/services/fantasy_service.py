@@ -2315,8 +2315,9 @@ class FantasyService:
             trade_analyzer = TradeAnalyzerService(self.db)
 
             # Get analytics for user's team
+            league_scoring = league.scoring_type or "ppr"
             user_team_analytics = await trade_analyzer.get_comprehensive_team_analytics(
-                user_team.id, season
+                user_team.id, season, scoring_type=league_scoring
             )
 
             # Get analytics for all other teams in the league
@@ -2329,7 +2330,7 @@ class FantasyService:
             league_analytics = []
             for team in all_teams:
                 team_analytics = await trade_analyzer.get_comprehensive_team_analytics(
-                    team.id, season
+                    team.id, season, scoring_type=league_scoring
                 )
 
                 # Add team info

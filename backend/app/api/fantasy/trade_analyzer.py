@@ -52,6 +52,8 @@ async def get_simple_team_analysis(
         from app.services.sleeper_fantasy_service import SleeperFantasyService
 
         sleeper_service = SleeperFantasyService()
+        league_doc = await sleeper_service.get_league(str(league_id))
+        scoring_type = scoring_type_from_sleeper_league(league_doc)
 
         # Get teams and standings data from Sleeper API
         logger.info(f"🔍 GETTING LEAGUE DATA from Sleeper API for league {league_id}")
@@ -102,7 +104,10 @@ async def get_simple_team_analysis(
         # Get roster data for this team from Sleeper API
         logger.info("🔍 GETTING ROSTER DATA from Sleeper API")
         roster_data = await fetch_team_roster_players(
-            sleeper_service, str(league_id), int(team_id)
+            sleeper_service,
+            str(league_id),
+            int(team_id),
+            scoring_type=scoring_type,
         )
         logger.info("🔍 FOUND %s players for team %s", len(roster_data), team_id)
 
@@ -246,7 +251,10 @@ async def generate_trade_recommendations(
 
         # Get roster data for the specific team
         roster = await fetch_team_roster_players(
-            sleeper_service, str(league_id), int(team_id)
+            sleeper_service,
+            str(league_id),
+            int(team_id),
+            scoring_type=scoring_type,
         )
         logger.info("🔍 FOUND %s players for team %s", len(roster), team_id)
 
@@ -350,6 +358,7 @@ async def generate_trade_recommendations(
                 int(target_team_id),
                 position_needed,
                 limit=1,
+                scoring_type=scoring_type,
             )
 
         # Helper function to add trade values to existing players

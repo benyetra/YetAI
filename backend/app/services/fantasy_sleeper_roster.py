@@ -18,9 +18,14 @@ def _numeric_player_id(player_id: str) -> int:
     return hash(player_id) % 2147483647
 
 
-def format_sleeper_player_row(player_id: str, player: Dict[str, Any]) -> Dict[str, Any]:
+def format_sleeper_player_row(
+    player_id: str,
+    player: Dict[str, Any],
+    *,
+    scoring_type: str = "ppr",
+) -> Dict[str, Any]:
     """Normalize a Sleeper player dict for trade analyzer responses."""
-    trade_value = calculate_deterministic_trade_value(player)
+    trade_value = calculate_deterministic_trade_value(player, scoring_type=scoring_type)
     return {
         "id": _numeric_player_id(player_id),
         "player_id": player_id,
@@ -64,6 +69,8 @@ async def fetch_team_roster_players(
     sleeper_service: Any,
     league_id: str,
     team_id: int,
+    *,
+    scoring_type: str = "ppr",
 ) -> List[Dict[str, Any]]:
     """Load normalized player rows for one Sleeper roster."""
     rosters = await fetch_league_rosters(league_id)
@@ -76,7 +83,9 @@ async def fetch_team_roster_players(
     for player_id in target_roster["players"]:
         player = all_players.get(player_id)
         if player:
-            roster_data.append(format_sleeper_player_row(player_id, player))
+            roster_data.append(
+                format_sleeper_player_row(player_id, player, scoring_type=scoring_type)
+            )
     return roster_data
 
 
@@ -87,9 +96,12 @@ async def fetch_team_players_by_position(
     position: str,
     *,
     limit: int = 1,
+    scoring_type: str = "ppr",
 ) -> List[Dict[str, Any]]:
     """Return the highest-value real players at a position on a roster."""
-    roster = await fetch_team_roster_players(sleeper_service, league_id, team_id)
+    roster = await fetch_team_roster_players(
+        sleeper_service, league_id, team_id, scoring_type=scoring_type
+    )
     matches = [p for p in roster if p.get("position") == position]
     if not matches:
         return []
