@@ -2,7 +2,7 @@
 Trade Analyzer Service - Comprehensive fantasy trade evaluation and recommendation system
 """
 
-from typing import List, Optional, Dict, Any, Tuple
+from typing import List, Optional, Dict, Any, Tuple, Union
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from datetime import datetime, timedelta
@@ -34,6 +34,7 @@ from app.services.fantasy_draft_picks import (
     pick_owned_by_roster,
     build_league_pick_registry,
 )
+from app.services.fantasy_trade_players import ResolvedTradePlayer, resolve_trade_player
 
 logger = logging.getLogger(__name__)
 
@@ -244,8 +245,7 @@ class TradeAnalyzerService:
                     .filter(FantasyRosterSpot.team_id == team_id)
                     .subquery()
                 )
-
-                owned_players = (
+                owned_by_id = (
                     self.db.query(FantasyPlayer.id)
                     .filter(
                         FantasyPlayer.id.in_(assets["players"]),
@@ -253,8 +253,20 @@ class TradeAnalyzerService:
                     )
                     .count()
                 )
-
-                if owned_players != len(assets["players"]):
+                owned_by_platform = (
+                    self.db.query(FantasyPlayer.id)
+                    .filter(
+                        FantasyPlayer.platform == FantasyPlatform.SLEEPER,
+                        FantasyPlayer.platform_player_id.in_(
+                            [str(p) for p in assets["players"]]
+                        ),
+                        FantasyPlayer.id.in_(roster_player_ids),
+                    )
+                    .count()
+                )
+                if owned_by_id != len(assets["players"]) and owned_by_platform != len(
+                    assets["players"]
+                ):
                     return False
 
         # Validate draft picks (Sleeper registry first, DB fallback)
@@ -572,78 +584,101 @@ class TradeAnalyzerService:
             "breakdown": breakdown,
         }
 
+    def _position_key(self, player: Any) -> str:
+        if isinstance(player, ResolvedTradePlayer):
+            return player.position_key
+        position = getattr(player, "position", None)
+        if position is None:
+            return "UNKNOWN"
+        return str(getattr(position, "value", position))
+
     def _get_player_trade_value(
         self, player_id: int, league_context: Dict, team_context: Dict
     ) -> Dict[str, Any]:
-        """Get comprehensive player trade value"""
-        player = (
-            self.db.query(FantasyPlayer).filter(FantasyPlayer.id == player_id).first()
-        )
-
-        if not player:
+        """Get comprehensive player trade value (Sleeper or internal id)."""
+        resolved = resolve_trade_player(self.db, player_id)
+        if not resolved:
             return {"total_value": 0, "error": "Player not found"}
 
-        # Get recent player value record
-        player_value = (
-            self.db.query(PlayerValue)
-            .filter(
-                and_(
-                    PlayerValue.player_id == player_id,
-                    PlayerValue.league_id == league_context["league_id"],
-                    PlayerValue.week <= league_context["current_week"],
-                )
-            )
-            .order_by(desc(PlayerValue.week))
-            .first()
-        )
+        internal_id = resolved.internal_id
+        scoring_type = league_context.get("scoring_type") or "ppr"
 
-        # Get player analytics
-        analytics = (
-            self.db.query(PlayerAnalytics)
-            .filter(
-                and_(
-                    PlayerAnalytics.player_id == player_id,
-                    PlayerAnalytics.week <= league_context["current_week"],
+        player_value = None
+        analytics = None
+        trends = None
+        if internal_id is not None:
+            player_value = (
+                self.db.query(PlayerValue)
+                .filter(
+                    and_(
+                        PlayerValue.player_id == internal_id,
+                        PlayerValue.league_id == league_context["league_id"],
+                        PlayerValue.week <= league_context["current_week"],
+                    )
                 )
+                .order_by(desc(PlayerValue.week))
+                .first()
             )
-            .order_by(desc(PlayerAnalytics.week))
-            .first()
-        )
-
-        # Get player trends
-        trends = (
-            self.db.query(PlayerTrends)
-            .filter(
-                and_(
-                    PlayerTrends.player_id == player_id,
-                    PlayerTrends.season == league_context.get("season", 2025),
+            analytics = (
+                self.db.query(PlayerAnalytics)
+                .filter(
+                    and_(
+                        PlayerAnalytics.player_id == internal_id,
+                        PlayerAnalytics.week <= league_context["current_week"],
+                    )
                 )
+                .order_by(desc(PlayerAnalytics.week))
+                .first()
             )
-            .first()
-        )
+            trends = (
+                self.db.query(PlayerTrends)
+                .filter(
+                    and_(
+                        PlayerTrends.player_id == internal_id,
+                        PlayerTrends.season == league_context.get("season", 2025),
+                    )
+                )
+                .first()
+            )
 
-        # Base value calculation
         if player_value:
             base_value = self._select_appropriate_value(player_value, league_context)
+        elif resolved.fantasy_player:
+            base_value = self._estimate_player_value(
+                resolved.fantasy_player, league_context
+            )
         else:
-            base_value = self._estimate_player_value(player, league_context)
+            from app.services.fantasy_trade_value import (
+                calculate_deterministic_trade_value,
+            )
 
-        # Apply contextual adjustments
+            base_value = calculate_deterministic_trade_value(
+                {
+                    "id": resolved.sleeper_id,
+                    "player_id": resolved.sleeper_id,
+                    "name": resolved.name,
+                    "position": resolved.position,
+                    "age": resolved.age or 27,
+                    "team": resolved.team,
+                },
+                scoring_type=scoring_type,
+            )
+
         contextual_multiplier = self._calculate_contextual_multiplier(
-            player, league_context, team_context, analytics, trends
+            resolved, league_context, team_context, analytics, trends
         )
-
         adjusted_value = base_value * contextual_multiplier
+        value_player = resolved.fantasy_player or resolved
 
         return {
-            "player_name": player.name,
-            "position": player.position,
-            "team": player.team,
+            "player_name": resolved.name,
+            "position": resolved.position,
+            "team": resolved.team,
             "base_value": round(base_value, 2),
             "contextual_multiplier": round(contextual_multiplier, 2),
             "total_value": round(adjusted_value, 2),
             "value_factors": self._get_value_factors(
-                player, analytics, trends, league_context
+                value_player, analytics, trends, league_context
             ),
             "buy_low_indicator": trends.buy_low_indicator if trends else False,
             "sell_high_indicator": trends.sell_high_indicator if trends else False,
@@ -687,7 +722,7 @@ class TradeAnalyzerService:
 
     def _calculate_contextual_multiplier(
         self,
-        player: FantasyPlayer,
+        player: Any,
         league_context: Dict,
         team_context: Dict,
         analytics: PlayerAnalytics,
@@ -695,16 +730,18 @@ class TradeAnalyzerService:
     ) -> float:
         """Calculate contextual value multiplier"""
         multiplier = 1.0
+        position = self._position_key(player)
+        player_age = getattr(player, "age", None)
 
         # Age-based adjustments
-        if player.age:
+        if player_age:
             if league_context["is_dynasty"]:
-                if player.age < 25:
+                if player_age < 25:
                     multiplier *= 1.2  # Youth premium in dynasty
-                elif player.age > 30:
+                elif player_age > 30:
                     multiplier *= 0.85  # Age discount in dynasty
             else:
-                if player.age > 32:
+                if player_age > 32:
                     multiplier *= 0.95  # Slight age discount in redraft
 
         # Analytics-based performance adjustments
@@ -734,10 +771,10 @@ class TradeAnalyzerService:
                 multiplier *= 1.04  # Red zone usage premium
 
             # Position-specific analytics adjustments
-            if player.position.value == "RB":
+            if position == "RB":
                 # Workload sustainability
                 if analytics.carries and analytics.carries > 20:
-                    if player.age and player.age > 28:
+                    if player_age and player_age > 28:
                         multiplier *= 0.95  # High usage + age concern
                     else:
                         multiplier *= 1.03  # High usage premium for young RBs
@@ -754,7 +791,7 @@ class TradeAnalyzerService:
                     elif ypc < 3.5:
                         multiplier *= 0.98  # Inefficient runner
 
-            elif player.position.value in ["WR", "TE"]:
+            elif position in ["WR", "TE"]:
                 # Target efficiency
                 if analytics.targets and analytics.receptions and analytics.targets > 3:
                     catch_rate = analytics.receptions / analytics.targets
@@ -802,13 +839,14 @@ class TradeAnalyzerService:
 
     def _get_value_factors(
         self,
-        player: FantasyPlayer,
+        player: Any,
         analytics: PlayerAnalytics,
         trends: PlayerTrends,
         league_context: Dict,
     ) -> List[str]:
         """Get comprehensive list of factors affecting player value"""
         factors = []
+        position = self._position_key(player)
 
         if analytics:
             # Usage Metrics
@@ -820,7 +858,7 @@ class TradeAnalyzerService:
                 factors.append("Limited snap share (<50%)")
 
             # Target Share Analysis (for pass catchers)
-            if player.position.value in ["WR", "TE", "RB"]:
+            if position in ["WR", "TE", "RB"]:
                 if analytics.target_share and analytics.target_share > 0.25:
                     factors.append(f"Elite target share ({analytics.target_share:.1%})")
                 elif analytics.target_share and analytics.target_share > 0.18:
@@ -856,7 +894,7 @@ class TradeAnalyzerService:
                 factors.append("Consistent performer")
 
             # RB-Specific Metrics
-            if player.position.value == "RB":
+            if position == "RB":
                 if analytics.carries and analytics.carries > 18:
                     factors.append("High volume runner")
                 elif analytics.carries and analytics.carries < 8:
@@ -870,7 +908,7 @@ class TradeAnalyzerService:
                         factors.append(f"Low YPC ({ypc:.1f})")
 
             # WR/TE Specific Metrics
-            if player.position.value in ["WR", "TE"]:
+            if position in ["WR", "TE"]:
                 if analytics.targets and analytics.receptions:
                     catch_rate = analytics.receptions / analytics.targets
                     if catch_rate > 0.75:
@@ -966,7 +1004,9 @@ class TradeAnalyzerService:
         """Comprehensive analysis of trade impact on team"""
 
         # Positional impact analysis
-        positional_impact = self._analyze_positional_impact(team_id, gives, receives)
+        positional_impact = self._analyze_positional_impact(
+            team_id, gives, receives, league_context
+        )
 
         # Roster construction impact
         roster_impact = self._analyze_roster_construction_impact(
@@ -998,48 +1038,35 @@ class TradeAnalyzerService:
         }
 
     def _analyze_positional_impact(
-        self, team_id: int, gives: Dict, receives: Dict
+        self, team_id: int, gives: Dict, receives: Dict, league_context: Dict
     ) -> Dict[str, Any]:
         """Analyze how trade affects team's positional strength"""
         position_changes = {}
+        scoring_type = league_context.get("scoring_type") or "ppr"
 
-        # Analyze players given away
+        def _record_player(player_id: int, bucket: str) -> None:
+            resolved = resolve_trade_player(self.db, player_id)
+            if not resolved:
+                return
+            pos = self._position_key(resolved)
+            if pos not in position_changes:
+                position_changes[pos] = {"lost": [], "gained": []}
+            position_changes[pos][bucket].append(
+                {
+                    "name": resolved.name,
+                    "value": self._get_simple_player_value(
+                        player_id, scoring_type=scoring_type
+                    ),
+                }
+            )
+
         if gives.get("players"):
             for player_id in gives["players"]:
-                player = (
-                    self.db.query(FantasyPlayer)
-                    .filter(FantasyPlayer.id == player_id)
-                    .first()
-                )
-                if player:
-                    pos = player.position
-                    if pos not in position_changes:
-                        position_changes[pos] = {"lost": [], "gained": []}
-                    position_changes[pos]["lost"].append(
-                        {
-                            "name": player.name,
-                            "value": self._get_simple_player_value(player_id),
-                        }
-                    )
+                _record_player(player_id, "lost")
 
-        # Analyze players received
         if receives.get("players"):
             for player_id in receives["players"]:
-                player = (
-                    self.db.query(FantasyPlayer)
-                    .filter(FantasyPlayer.id == player_id)
-                    .first()
-                )
-                if player:
-                    pos = player.position
-                    if pos not in position_changes:
-                        position_changes[pos] = {"lost": [], "gained": []}
-                    position_changes[pos]["gained"].append(
-                        {
-                            "name": player.name,
-                            "value": self._get_simple_player_value(player_id),
-                        }
-                    )
+                _record_player(player_id, "gained")
 
         # Calculate net impact by position
         position_summary = {}
@@ -1070,41 +1097,42 @@ class TradeAnalyzerService:
             ),
         }
 
-    def _get_simple_player_value(self, player_id: int) -> float:
-        """Get simplified player value for quick calculations using Sleeper data"""
-        # Check PlayerValue table first
-        player_value = (
-            self.db.query(PlayerValue)
-            .filter(PlayerValue.player_id == player_id)
-            .order_by(desc(PlayerValue.week))
-            .first()
+    def _get_simple_player_value(
+        self, player_id: Union[int, str], scoring_type: str = "ppr"
+    ) -> float:
+        """Get simplified player value for quick calculations (Sleeper or internal id)."""
+        resolved = resolve_trade_player(self.db, player_id)
+        if not resolved:
+            return 12.0
+
+        if resolved.internal_id is not None:
+            player_value = (
+                self.db.query(PlayerValue)
+                .filter(PlayerValue.player_id == resolved.internal_id)
+                .order_by(desc(PlayerValue.week))
+                .first()
+            )
+            if player_value and player_value.rest_of_season_value:
+                return player_value.rest_of_season_value
+
+        if resolved.fantasy_player:
+            return self._estimate_player_value(
+                resolved.fantasy_player, {"scoring_type": scoring_type}
+            )
+
+        from app.services.fantasy_trade_value import calculate_deterministic_trade_value
+
+        return calculate_deterministic_trade_value(
+            {
+                "id": resolved.sleeper_id,
+                "player_id": resolved.sleeper_id,
+                "name": resolved.name,
+                "position": resolved.position,
+                "age": resolved.age or 27,
+                "team": resolved.team,
+            },
+            scoring_type=scoring_type,
         )
-
-        if player_value and player_value.rest_of_season_value:
-            return player_value.rest_of_season_value
-
-        # Fallback to Sleeper player data for realistic values
-        from app.models.database_models import SleeperPlayer
-
-        sleeper_player = (
-            self.db.query(SleeperPlayer)
-            .filter(SleeperPlayer.sleeper_player_id == str(player_id))
-            .first()
-        )
-
-        if sleeper_player:
-            return self._calculate_sleeper_player_value(sleeper_player)
-
-        # Final fallback to position defaults
-        position_defaults = {
-            "QB": 25.0,
-            "RB": 22.0,
-            "WR": 20.0,
-            "TE": 15.0,
-            "K": 3.0,
-            "DEF": 5.0,
-        }
-        return position_defaults.get("Unknown", 12.0)
 
     def _calculate_sleeper_player_value(self, sleeper_player) -> float:
         """Calculate stable player value based on Sleeper metadata."""
@@ -1191,28 +1219,18 @@ class TradeAnalyzerService:
         age_change = 0.0
         players_analyzed = 0
 
-        # Players given away (subtract their ages)
         if gives.get("players"):
             for player_id in gives["players"]:
-                player = (
-                    self.db.query(FantasyPlayer)
-                    .filter(FantasyPlayer.id == player_id)
-                    .first()
-                )
-                if player and player.age:
-                    age_change -= player.age
+                resolved = resolve_trade_player(self.db, player_id)
+                if resolved and resolved.age:
+                    age_change -= resolved.age
                     players_analyzed += 1
 
-        # Players received (add their ages)
         if receives.get("players"):
             for player_id in receives["players"]:
-                player = (
-                    self.db.query(FantasyPlayer)
-                    .filter(FantasyPlayer.id == player_id)
-                    .first()
-                )
-                if player and player.age:
-                    age_change += player.age
+                resolved = resolve_trade_player(self.db, player_id)
+                if resolved and resolved.age:
+                    age_change += resolved.age
                     players_analyzed += 1
 
         avg_age_change = age_change / players_analyzed if players_analyzed > 0 else 0
@@ -1446,15 +1464,24 @@ class TradeAnalyzerService:
     def _assess_injury_risk(self, player_ids: List[int]) -> Dict[str, int]:
         """Assess injury risk for players being acquired"""
         high_risk_count = 0
+        risky_statuses = {"injured", "out", "doubtful", "questionable"}
+        risky_injury = {"out", "ir", "pup", "suspended", "doubtful"}
 
         for player_id in player_ids:
-            # Check player's injury history and current status
-            player = (
-                self.db.query(FantasyPlayer)
-                .filter(FantasyPlayer.id == player_id)
-                .first()
-            )
-            if player and player.status in ["injured", "out", "doubtful"]:
+            resolved = resolve_trade_player(self.db, player_id)
+            if not resolved:
+                continue
+            if resolved.fantasy_player:
+                status = getattr(resolved.fantasy_player.status, "value", None) or str(
+                    resolved.fantasy_player.status or ""
+                )
+                if status.lower() in risky_statuses:
+                    high_risk_count += 1
+                    continue
+            if (
+                resolved.injury_status
+                and resolved.injury_status.lower() in risky_injury
+            ):
                 high_risk_count += 1
 
         return {"high_risk_players": high_risk_count}
@@ -1464,12 +1491,8 @@ class TradeAnalyzerService:
         old_players = 0
 
         for player_id in player_ids:
-            player = (
-                self.db.query(FantasyPlayer)
-                .filter(FantasyPlayer.id == player_id)
-                .first()
-            )
-            if player and player.age and player.age >= 30:
+            resolved = resolve_trade_player(self.db, player_id)
+            if resolved and resolved.age and resolved.age >= 30:
                 old_players += 1
 
         return {"old_players": old_players}
