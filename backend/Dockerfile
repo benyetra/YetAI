@@ -9,6 +9,8 @@ FROM python:3.11-slim
 # which broke `celery -A app.celery_app` until this was set.
 WORKDIR /app
 ENV PYTHONPATH=/app
+# pybaseball imports matplotlib.pyplot at import time; headless Railway images need Agg.
+ENV MPLBACKEND=Agg
 
 # Minimal apt footprint (Railway builders can run out of /var/cache/apt/archives space).
 # gcc + libpq-dev for psycopg2; curl for HEALTHCHECK. No g++ (wheels are prebuilt).
@@ -31,7 +33,7 @@ RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir appdirs fastparquet \
     && pip install --no-cache-dir boto3==1.35.0 botocore \
     && pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 \
-    && python -c "import boto3, google.auth, statsapi, pybaseball"
+    && python -c "import boto3, google.auth, statsapi, pybaseball, pyarrow"
 
 # Copy application code
 COPY . .

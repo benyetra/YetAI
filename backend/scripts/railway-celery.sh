@@ -17,6 +17,7 @@ fi
 
 cd "$APP_ROOT"
 export PYTHONPATH="$APP_ROOT"
+export MPLBACKEND="${MPLBACKEND:-Agg}"
 echo "railway-celery: APP_ROOT=$APP_ROOT PYTHONPATH=$PYTHONPATH" >&2
 
 # Fail fast with a clear message if Redis is unreachable (common Railway misconfig).
