@@ -25,6 +25,7 @@ from app.api.fantasy.trade_value import (
     load_league_pick_context,
     format_roster_traded_picks,
 )
+from app.services.fantasy_league_format import league_format_from_sleeper
 from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
 from app.services.fantasy_sleeper_roster import fetch_team_roster_players
 from app.services.fantasy_sleeper_trade_proposal import (
@@ -109,6 +110,7 @@ async def get_simple_team_analysis(
         sleeper_service = SleeperFantasyService()
         league_doc = await sleeper_service.get_league(str(league_id))
         scoring_type = scoring_type_from_sleeper_league(league_doc)
+        league_format = league_format_from_sleeper(league_doc)
 
         # Get teams and standings data from Sleeper API
         logger.info(f"🔍 GETTING LEAGUE DATA from Sleeper API for league {league_id}")
@@ -163,6 +165,7 @@ async def get_simple_team_analysis(
             str(league_id),
             int(team_id),
             scoring_type=scoring_type,
+            league_format=league_format,
         )
         logger.info("🔍 FOUND %s players for team %s", len(roster_data), team_id)
 
@@ -303,12 +306,14 @@ async def generate_trade_recommendations(
         sleeper_service = SleeperFantasyService()
         league_doc = await sleeper_service.get_league(str(league_id))
         scoring_type = scoring_type_from_sleeper_league(league_doc)
+        league_format = league_format_from_sleeper(league_doc)
 
         recommendations = await generate_sleeper_trade_recommendations(
             sleeper_service=sleeper_service,
             league_id=str(league_id),
             team_id=int(team_id),
             scoring_type=scoring_type,
+            league_format=league_format,
         )
         if not recommendations:
             user_roster = await fetch_team_roster_players(
@@ -316,6 +321,7 @@ async def generate_trade_recommendations(
                 str(league_id),
                 int(team_id),
                 scoring_type=scoring_type,
+                league_format=league_format,
             )
             if not user_roster:
                 logger.error(
@@ -365,9 +371,11 @@ async def get_player_values(
         sleeper_service = SleeperFantasyService()
         all_players = await sleeper_service._get_all_players()
         scoring_type = "ppr"
+        league_format = None
         if league_id:
             league_doc = await sleeper_service.get_league(str(league_id))
             scoring_type = scoring_type_from_sleeper_league(league_doc)
+            league_format = league_format_from_sleeper(league_doc)
 
         # Get trending data for popularity boost
         trending_adds = await sleeper_service.get_trending_players("add")
@@ -391,7 +399,9 @@ async def get_player_values(
 
             # Calculate trade value
             trade_value = calculate_realistic_trade_value(
-                player_data, scoring_type=scoring_type
+                player_data,
+                scoring_type=scoring_type,
+                league_format=league_format,
             )
 
             # Add trending boost

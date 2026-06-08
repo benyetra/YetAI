@@ -13,6 +13,7 @@ from app.services.fantasy_draft_picks import (
     lookup_pick_trade_value,
     pick_owned_by_roster,
 )
+from app.services.fantasy_league_format import league_format_from_sleeper
 from app.services.fantasy_player_compare import scoring_type_from_sleeper_league
 from app.services.fantasy_sleeper_roster import (
     fetch_league_rosters,
@@ -38,13 +39,21 @@ async def load_league_pick_context(
         "traded_picks": traded_picks,
         "pick_registry": registry,
         "is_dynasty": int((league.get("settings") or {}).get("type", 0)) == 2,
+        "league_format": league_format_from_sleeper(league),
     }
 
 
 def calculate_realistic_trade_value(
-    player: Dict[str, Any], *, scoring_type: str = "ppr"
+    player: Dict[str, Any],
+    *,
+    scoring_type: str = "ppr",
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> float:
-    return calculate_deterministic_trade_value(player, scoring_type=scoring_type)
+    return calculate_deterministic_trade_value(
+        player,
+        scoring_type=scoring_type,
+        league_format=league_format,
+    )
 
 
 def _side_gives_something(assets: Dict[str, Any]) -> bool:
@@ -137,6 +146,7 @@ def _analyze_trade_side(
     all_players: Dict[str, Any],
     pick_registry: Dict[int, Dict[str, Any]],
     scoring_type: str,
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     total_value = 0.0
     side_analysis: Dict[str, Any] = {
@@ -159,7 +169,9 @@ def _analyze_trade_side(
         position = player_data.get("position", "UNKNOWN")
         age = player_data.get("age", 27)
         trade_value = calculate_realistic_trade_value(
-            player_data, scoring_type=scoring_type
+            player_data,
+            scoring_type=scoring_type,
+            league_format=league_format,
         )
 
         player_info = {
@@ -343,6 +355,7 @@ def build_sleeper_trade_evaluation(
     all_players: Dict[str, Any],
     pick_registry: Dict[int, Dict[str, Any]],
     scoring_type: str,
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build quick-analysis evaluation payload from Sleeper trade assets."""
     team1_gives = _analyze_trade_side(
@@ -350,12 +363,14 @@ def build_sleeper_trade_evaluation(
         all_players=all_players,
         pick_registry=pick_registry,
         scoring_type=scoring_type,
+        league_format=league_format,
     )
     team2_gives = _analyze_trade_side(
         team2_gives_raw,
         all_players=all_players,
         pick_registry=pick_registry,
         scoring_type=scoring_type,
+        league_format=league_format,
     )
 
     value_diff = abs(team1_gives["total_value"] - team2_gives["total_value"])
@@ -399,14 +414,16 @@ async def evaluate_sleeper_trade(
     team2_gives: dict,
     pick_registry: Optional[dict] = None,
     scoring_type: Optional[str] = None,
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Evaluate a Sleeper trade using the same shape as quick-analysis."""
-    if pick_registry is None or scoring_type is None:
+    if pick_registry is None or scoring_type is None or league_format is None:
         pick_ctx = await load_league_pick_context(sleeper_service, platform_league_id)
         pick_registry = pick_registry or pick_ctx["pick_registry"]
         scoring_type = scoring_type or scoring_type_from_sleeper_league(
             pick_ctx["league"]
         )
+        league_format = league_format or pick_ctx["league_format"]
 
     all_players = await sleeper_service._get_all_players()
 
@@ -419,6 +436,7 @@ async def evaluate_sleeper_trade(
         all_players=all_players,
         pick_registry=pick_registry,
         scoring_type=scoring_type,
+        league_format=league_format,
     )
 
 
@@ -486,6 +504,7 @@ async def propose_sleeper_trade(
     team2_gives: dict,
     pick_registry: Optional[dict] = None,
     scoring_type: Optional[str] = None,
+    league_format: Optional[Dict[str, Any]] = None,
     trade_reason: Optional[str] = None,
     persist: bool = False,
     db: Optional[Session] = None,
@@ -494,6 +513,7 @@ async def propose_sleeper_trade(
     pick_ctx = await load_league_pick_context(sleeper_service, platform_league_id)
     pick_registry = pick_registry or pick_ctx["pick_registry"]
     scoring_type = scoring_type or scoring_type_from_sleeper_league(pick_ctx["league"])
+    league_format = league_format or pick_ctx["league_format"]
 
     validation = await validate_sleeper_trade_assets(
         sleeper_service=sleeper_service,
@@ -516,6 +536,7 @@ async def propose_sleeper_trade(
         team2_gives=team2_gives,
         pick_registry=pick_registry,
         scoring_type=scoring_type,
+        league_format=league_format,
     )
 
     response: Dict[str, Any] = {

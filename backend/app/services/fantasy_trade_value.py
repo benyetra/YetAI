@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Dict, List, Optional
 
+from app.services.fantasy_league_format import format_multiplier
+
 _POSITION_RANGES: Dict[str, tuple[float, float]] = {
     "QB": (20.0, 45.0),
     "RB": (15.0, 40.0),
@@ -62,8 +64,14 @@ def calculate_deterministic_trade_value(
     player: Dict[str, Any],
     *,
     scoring_type: str = "standard",
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> float:
-    """Stable trade value from Sleeper-style player metadata."""
+    """Stable trade value from Sleeper-style player metadata.
+
+    The stable seed uses player identity and scoring type only; league-format
+    multipliers (superflex / TE premium) are applied afterward so the same
+    player stays deterministic within a given league format.
+    """
     position = str(player.get("position") or "UNKNOWN").upper()
     age = int(player.get("age") or 27)
     team = str(player.get("team") or "")
@@ -85,6 +93,7 @@ def calculate_deterministic_trade_value(
         * _age_multiplier(age)
         * _team_multiplier(team)
         * _scoring_multiplier(position, scoring_type)
+        * format_multiplier(position, league_format or {})
     )
     return round(value, 1)
 

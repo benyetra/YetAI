@@ -12,6 +12,12 @@ const POSITION_RANGES: Record<string, [number, number]> = {
 const STRONG_OFFENSES = new Set(['KC', 'BUF', 'DAL', 'SF', 'PHI', 'MIA', 'LAR']);
 const WEAK_OFFENSES = new Set(['WAS', 'CHI', 'NYG', 'CAR']);
 
+/** Keep in sync with backend/app/services/fantasy_league_format.py */
+export const QB_PREMIUM_SUPERFLEX = 1.4;
+export const QB_PREMIUM_2QB = 1.25;
+export const TE_SCARCITY_LARGE_LEAGUE = 1.05;
+export const TE_SCARCITY_LARGE_WITH_PREMIUM = 1.08;
+
 /** FNV-1a 32-bit — stable in browser without crypto async. */
 export function stableUnit(seed: string): number {
   let hash = 2166136261;
@@ -45,6 +51,52 @@ function scoringMultiplier(position: string, scoringType: string): number {
   return 1.0;
 }
 
+function tePremiumFromRules(leagueRules?: LeagueRules | null): number {
+  if (!leagueRules) return 0;
+  const raw = leagueRules.scoring_settings?.raw_settings ?? {};
+  for (const key of ['bonus_rec_te', 'rec_te']) {
+    const value = Number((raw as Record<string, unknown>)[key]);
+    if (Number.isFinite(value) && value > 0) {
+      return value;
+    }
+  }
+  const special = leagueRules.scoring_settings?.special_scoring ?? [];
+  if (special.some((entry) => /te/i.test(entry) && /premium/i.test(entry))) {
+    return 0.5;
+  }
+  return 0;
+}
+
+function formatMultiplier(position: string, leagueRules?: LeagueRules | null): number {
+  if (!leagueRules) return 1;
+
+  const pos = position.toUpperCase();
+  const teamCount = leagueRules.team_count ?? 12;
+  const qbStarters = leagueRules.roster_settings?.positions?.QB ?? 0;
+  const hasSuperflex = Boolean(leagueRules.ai_context?.superflex);
+  const is2qb = !hasSuperflex && qbStarters >= 2;
+
+  if (pos === 'QB') {
+    if (hasSuperflex) return QB_PREMIUM_SUPERFLEX;
+    if (is2qb) return QB_PREMIUM_2QB;
+    return 1;
+  }
+
+  if (pos === 'TE') {
+    const tePremium = tePremiumFromRules(leagueRules);
+    let mult = 1;
+    if (teamCount >= 12) {
+      mult = tePremium > 0 ? TE_SCARCITY_LARGE_WITH_PREMIUM : TE_SCARCITY_LARGE_LEAGUE;
+    }
+    if (tePremium > 0) {
+      mult += tePremium;
+    }
+    return mult;
+  }
+
+  return 1;
+}
+
 export function calculateDeterministicTradeValue(
   player: {
     id?: string | number;
@@ -74,7 +126,8 @@ export function calculateDeterministicTradeValue(
     baseValue *
     ageMultiplier(age) *
     teamMultiplier(team) *
-    scoringMultiplier(position, scoringType);
+    scoringMultiplier(position, scoringType) *
+    formatMultiplier(position, leagueRules);
 
   return Math.round(value * 10) / 10;
 }

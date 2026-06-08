@@ -23,9 +23,14 @@ def format_sleeper_player_row(
     player: Dict[str, Any],
     *,
     scoring_type: str = "ppr",
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Normalize a Sleeper player dict for trade analyzer responses."""
-    trade_value = calculate_deterministic_trade_value(player, scoring_type=scoring_type)
+    trade_value = calculate_deterministic_trade_value(
+        player,
+        scoring_type=scoring_type,
+        league_format=league_format,
+    )
     return {
         "id": _numeric_player_id(player_id),
         "player_id": player_id,
@@ -71,6 +76,7 @@ async def fetch_team_roster_players(
     team_id: int,
     *,
     scoring_type: str = "ppr",
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Load normalized player rows for one Sleeper roster."""
     rosters = await fetch_league_rosters(league_id)
@@ -84,7 +90,12 @@ async def fetch_team_roster_players(
         player = all_players.get(player_id)
         if player:
             roster_data.append(
-                format_sleeper_player_row(player_id, player, scoring_type=scoring_type)
+                format_sleeper_player_row(
+                    player_id,
+                    player,
+                    scoring_type=scoring_type,
+                    league_format=league_format,
+                )
             )
     return roster_data
 
@@ -97,10 +108,15 @@ async def fetch_team_players_by_position(
     *,
     limit: int = 1,
     scoring_type: str = "ppr",
+    league_format: Optional[Dict[str, Any]] = None,
 ) -> List[Dict[str, Any]]:
     """Return the highest-value real players at a position on a roster."""
     roster = await fetch_team_roster_players(
-        sleeper_service, league_id, team_id, scoring_type=scoring_type
+        sleeper_service,
+        league_id,
+        team_id,
+        scoring_type=scoring_type,
+        league_format=league_format,
     )
     matches = [p for p in roster if p.get("position") == position]
     if not matches:

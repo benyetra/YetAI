@@ -48,6 +48,24 @@ def test_trade_value_differs_by_scoring_type():
     assert ppr != standard
 
 
+def test_qb_trade_value_higher_in_superflex_league():
+    player = {"id": "qb-sf", "position": "QB", "age": 27, "team": "BUF"}
+    standard = calculate_deterministic_trade_value(player, scoring_type="ppr")
+    superflex = calculate_deterministic_trade_value(
+        player,
+        scoring_type="ppr",
+        league_format={
+            "has_superflex": True,
+            "is_2qb": False,
+            "qb_premium_multiplier": 1.4,
+            "te_premium": 0,
+            "team_count": 12,
+            "te_scarcity_multiplier": 1.05,
+        },
+    )
+    assert superflex > standard
+
+
 def test_realistic_trade_value_wr_ppr_gt_standard():
     player = {"id": "wr-42", "position": "WR", "age": 26, "team": "KC"}
     ppr = calculate_realistic_trade_value(player, scoring_type="ppr")
@@ -95,6 +113,14 @@ def test_quick_analysis_uses_half_ppr_league_scoring(
         "traded_picks": [],
         "pick_registry": {},
         "is_dynasty": False,
+        "league_format": {
+            "has_superflex": False,
+            "is_2qb": False,
+            "qb_premium_multiplier": 1.0,
+            "te_premium": 0,
+            "team_count": 12,
+            "te_scarcity_multiplier": 1.05,
+        },
     }
 
     payload = {

@@ -236,6 +236,7 @@ async def generate_sleeper_trade_recommendations(
     league_id: str,
     team_id: int,
     scoring_type: str,
+    league_format: Optional[Dict[str, Any]] = None,
     max_recommendations: int = 10,
 ) -> List[Dict[str, Any]]:
     """Generate Sleeper-only trade recommendations for one team."""
@@ -244,6 +245,7 @@ async def generate_sleeper_trade_recommendations(
         league_id,
         int(team_id),
         scoring_type=scoring_type,
+        league_format=league_format,
     )
     if not user_roster:
         return []
@@ -263,6 +265,7 @@ async def generate_sleeper_trade_recommendations(
             league_id,
             int(partner_id),
             scoring_type=scoring_type,
+            league_format=league_format,
         )
 
     user_counts = count_positions(user_roster)
@@ -299,6 +302,7 @@ async def generate_sleeper_trade_recommendations(
                     pos,
                     limit=1,
                     scoring_type=scoring_type,
+                    league_format=league_format,
                 )
                 we_get = [_format_player(p) for p in we_get]
             if not we_get:
@@ -344,6 +348,7 @@ async def generate_sleeper_trade_recommendations(
                     target_positions[0],
                     limit=1,
                     scoring_type=scoring_type,
+                    league_format=league_format,
                 )
                 we_get = [_format_player(p) for p in we_get]
             if not we_get:
