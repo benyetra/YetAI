@@ -28,6 +28,10 @@ from app.api.fantasy.trade_value import (
     format_roster_traded_picks,
 )
 from app.services.fantasy_trade_value import select_trade_partner, stable_unit
+from app.services.fantasy_sleeper_roster import (
+    fetch_team_players_by_position,
+    fetch_team_roster_players,
+)
 
 
 # Trade Analyzer Endpoints
@@ -95,72 +99,11 @@ async def get_simple_team_analysis(
             standings_team_data = {}
 
         # Get roster data for this team from Sleeper API
-        logger.info(f"🔍 GETTING ROSTER DATA from Sleeper API")
-        roster_data = []
-        try:
-            # Use direct HTTP call to get rosters like the roster endpoint does
-            import aiohttp
-
-            async with aiohttp.ClientSession() as session:
-                roster_url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
-                async with session.get(roster_url) as response:
-                    if response.status == 200:
-                        rosters = await response.json()
-
-                        # Find the roster for this team
-                        target_roster = None
-                        for roster in rosters:
-                            if roster.get("roster_id") == team_id or str(
-                                roster.get("roster_id")
-                            ) == str(team_id):
-                                target_roster = roster
-                                break
-
-                        if target_roster and target_roster.get("players"):
-                            # Get player details
-                            player_ids = target_roster["players"]
-                            all_players = await sleeper_service._get_all_players()
-
-                            for player_id in player_ids:
-                                if player_id in all_players:
-                                    player = all_players[player_id]
-                                    # Convert player_id to integer for frontend compatibility
-                                    numeric_id = (
-                                        int(player_id)
-                                        if player_id.isdigit()
-                                        else hash(player_id) % 2147483647
-                                    )
-
-                                    # Calculate realistic trade value based on player data
-                                    trade_value = calculate_realistic_trade_value(
-                                        player
-                                    )
-
-                                    roster_data.append(
-                                        {
-                                            "id": numeric_id,  # Frontend expects 'id' field
-                                            "player_id": player_id,  # Keep original for reference
-                                            "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                            "position": player.get(
-                                                "position", "UNKNOWN"
-                                            ),
-                                            "team": player.get("team", "UNKNOWN"),
-                                            "age": player.get("age", 0),
-                                            "trade_value": trade_value,
-                                        }
-                                    )
-
-                            logger.info(
-                                f"🔍 FOUND {len(roster_data)} players for team {team_id}"
-                            )
-                        else:
-                            logger.warning(f"No roster found for team {team_id}")
-                    else:
-                        logger.error(f"Failed to fetch rosters: {response.status}")
-
-        except Exception as roster_error:
-            logger.error(f"Error fetching roster: {roster_error}")
-            roster_data = []
+        logger.info("🔍 GETTING ROSTER DATA from Sleeper API")
+        roster_data = await fetch_team_roster_players(
+            sleeper_service, str(league_id), int(team_id)
+        )
+        logger.info("🔍 FOUND %s players for team %s", len(roster_data), team_id)
 
         tradeable_picks: list = []
         try:
@@ -299,58 +242,10 @@ async def generate_trade_recommendations(
         sleeper_service = SleeperFantasyService()
 
         # Get roster data for the specific team
-        roster = []
-        try:
-            import aiohttp
-
-            async with aiohttp.ClientSession() as session:
-                roster_url = f"https://api.sleeper.app/v1/league/{league_id}/rosters"
-                async with session.get(roster_url) as response:
-                    if response.status == 200:
-                        rosters = await response.json()
-
-                        # Find the roster for the specified team
-                        target_roster = None
-                        for roster_data in rosters:
-                            if roster_data.get("roster_id") == team_id or str(
-                                roster_data.get("roster_id")
-                            ) == str(team_id):
-                                target_roster = roster_data
-                                break
-
-                        if target_roster and target_roster.get("players"):
-                            all_players = await sleeper_service._get_all_players()
-
-                            for player_id in target_roster["players"]:
-                                if player_id in all_players:
-                                    player = all_players[player_id]
-                                    # Calculate realistic trade value for this player
-                                    trade_value = calculate_realistic_trade_value(
-                                        player
-                                    )
-
-                                    roster.append(
-                                        {
-                                            "player_id": player_id,
-                                            "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                            "position": player.get(
-                                                "position", "UNKNOWN"
-                                            ),
-                                            "team": player.get("team", "UNKNOWN"),
-                                            "age": player.get("age", 27),
-                                            "trade_value": trade_value,
-                                        }
-                                    )
-
-                            logger.info(
-                                f"🔍 FOUND {len(roster)} players for team {team_id}"
-                            )
-                        else:
-                            logger.warning(f"No roster found for team {team_id}")
-                    else:
-                        logger.error(f"Failed to fetch rosters: {response.status}")
-        except Exception as roster_error:
-            logger.error(f"Error fetching roster for team {team_id}: {roster_error}")
+        roster = await fetch_team_roster_players(
+            sleeper_service, str(league_id), int(team_id)
+        )
+        logger.info("🔍 FOUND %s players for team %s", len(roster), team_id)
 
         if not roster:
             logger.error(
@@ -442,99 +337,17 @@ async def generate_trade_recommendations(
                 "full_data": partner,
             }
 
-        # Helper function to get real players from target team
+        # Helper function to get real players from target team (no synthetic placeholders)
         async def get_target_team_players(target_team_id, position_needed):
-            """Get real players from target team for the specified position"""
             if not target_team_id:
-                return [
-                    {
-                        "id": "generic_player",
-                        "name": f"Generic {position_needed}",
-                        "position": position_needed,
-                        "team": "UNK",
-                        "age": 27,
-                        "trade_value": 20.0,
-                    }
-                ]
-
-            try:
-                # Get roster for target team
-                import aiohttp
-
-                async with aiohttp.ClientSession() as session:
-                    roster_url = (
-                        f"https://api.sleeper.app/v1/league/{league_id}/rosters"
-                    )
-                    async with session.get(roster_url) as response:
-                        if response.status == 200:
-                            rosters = await response.json()
-
-                            # Find target team's roster
-                            target_roster = None
-                            for roster in rosters:
-                                if str(roster.get("roster_id")) == str(target_team_id):
-                                    target_roster = roster
-                                    break
-
-                            if target_roster and target_roster.get("players"):
-                                all_players = await sleeper_service._get_all_players()
-                                position_players = []
-
-                                for player_id in target_roster["players"]:
-                                    if player_id in all_players:
-                                        player = all_players[player_id]
-                                        if player.get("position") == position_needed:
-                                            trade_value = (
-                                                calculate_realistic_trade_value(player)
-                                            )
-                                            position_players.append(
-                                                {
-                                                    "id": player_id,
-                                                    "name": f"{player.get('first_name', '')} {player.get('last_name', '')}".strip(),
-                                                    "position": player.get(
-                                                        "position", position_needed
-                                                    ),
-                                                    "team": player.get(
-                                                        "team", "UNKNOWN"
-                                                    ),
-                                                    "age": player.get("age", 27),
-                                                    "trade_value": trade_value,
-                                                }
-                                            )
-
-                                if position_players:
-                                    # Return best player for that position
-                                    return [
-                                        max(
-                                            position_players,
-                                            key=lambda p: p["trade_value"],
-                                        )
-                                    ]
-
-                # Fallback if no players found
-                return [
-                    {
-                        "id": "backup_player",
-                        "name": f"Available {position_needed}",
-                        "position": position_needed,
-                        "team": "UNKNOWN",
-                        "age": 26,
-                        "trade_value": 15.0,
-                    }
-                ]
-
-            except Exception as e:
-                logger.warning(f"Could not get target team players: {e}")
-                return [
-                    {
-                        "id": "fallback_player",
-                        "name": f"Backup {position_needed}",
-                        "position": position_needed,
-                        "team": "UNKNOWN",
-                        "age": 25,
-                        "trade_value": 12.0,
-                    }
-                ]
+                return []
+            return await fetch_team_players_by_position(
+                sleeper_service,
+                str(league_id),
+                int(target_team_id),
+                position_needed,
+                limit=1,
+            )
 
         # Helper function to add trade values to existing players
         def add_trade_values(players_list):
@@ -556,114 +369,108 @@ async def generate_trade_recommendations(
                     player["age"] = 27  # Default age if not provided
             return players_list
 
-        # Check for position weaknesses
+        # Check for position weaknesses — skip recommendations without real target players
         if len(positions.get("QB", [])) < 2:
             rb_players = positions.get("RB", [])[:1]
             trade_partner = get_trade_partner(f"{team_id}:QB_depth")
-
-            # Get real QB from target team
             target_qb_players = await get_target_team_players(
                 trade_partner["team_id"], "QB"
             )
-
-            recommendations.append(
-                {
-                    "id": rec_id,
-                    "recommendation_type": "QB Depth Needed",
-                    "type": "depth_addition",
-                    "title": "Add QB Depth",
-                    "description": f"Consider trading for a backup quarterback from {trade_partner['name']}",
-                    "target_team_id": trade_partner["team_id"],
-                    "we_give": {
-                        "players": add_trade_values(format_players(rb_players)),
-                        "picks": [],
-                    },
-                    "we_get": {
-                        "players": target_qb_players,
-                        "picks": [],
-                    },
-                    "confidence": 75,
-                    "estimated_likelihood": 0.75,
-                    "priority_score": 60,
-                    "reasoning": f"Limited QB depth could be problematic if starter gets injured. {trade_partner['name']} may have QB depth to spare.",
-                    "trade_partner": trade_partner["name"],
-                }
-            )
-            rec_id += 1
+            if target_qb_players:
+                recommendations.append(
+                    {
+                        "id": rec_id,
+                        "recommendation_type": "QB Depth Needed",
+                        "type": "depth_addition",
+                        "title": "Add QB Depth",
+                        "description": f"Consider trading for a backup quarterback from {trade_partner['name']}",
+                        "target_team_id": trade_partner["team_id"],
+                        "we_give": {
+                            "players": add_trade_values(format_players(rb_players)),
+                            "picks": [],
+                        },
+                        "we_get": {
+                            "players": target_qb_players,
+                            "picks": [],
+                        },
+                        "confidence": 75,
+                        "estimated_likelihood": 0.75,
+                        "priority_score": 60,
+                        "reasoning": f"Limited QB depth could be problematic if starter gets injured. {trade_partner['name']} may have QB depth to spare.",
+                        "trade_partner": trade_partner["name"],
+                    }
+                )
+                rec_id += 1
 
         if len(positions.get("RB", [])) > 4:
             rb_players = positions.get("RB", [])
             give_players = rb_players[-2:]
             trade_partner = get_trade_partner(f"{team_id}:RB_surplus")
-
-            # Get real players from target team
             target_wr_players = await get_target_team_players(
                 trade_partner["team_id"], "WR"
             )
             target_te_players = await get_target_team_players(
                 trade_partner["team_id"], "TE"
             )
-
-            recommendations.append(
-                {
-                    "id": rec_id,
-                    "recommendation_type": "RB Surplus Trade",
-                    "type": "position_balance",
-                    "title": "Trade Excess RB Depth",
-                    "description": f"Trade surplus running backs to {trade_partner['name']} for position upgrades",
-                    "target_team_id": trade_partner["team_id"],
-                    "we_give": {
-                        "players": add_trade_values(format_players(give_players)),
-                        "picks": [],
-                    },
-                    "we_get": {
-                        "players": target_wr_players + target_te_players,
-                        "picks": [],
-                    },
-                    "confidence": 80,
-                    "estimated_likelihood": 0.80,
-                    "priority_score": 70,
-                    "reasoning": f"With {len(rb_players)} RBs, you can afford to trade depth for upgrades at other positions. {trade_partner['name']} may need RB help.",
-                    "trade_partner": trade_partner["name"],
-                }
-            )
-            rec_id += 1
+            if target_wr_players or target_te_players:
+                recommendations.append(
+                    {
+                        "id": rec_id,
+                        "recommendation_type": "RB Surplus Trade",
+                        "type": "position_balance",
+                        "title": "Trade Excess RB Depth",
+                        "description": f"Trade surplus running backs to {trade_partner['name']} for position upgrades",
+                        "target_team_id": trade_partner["team_id"],
+                        "we_give": {
+                            "players": add_trade_values(format_players(give_players)),
+                            "picks": [],
+                        },
+                        "we_get": {
+                            "players": target_wr_players + target_te_players,
+                            "picks": [],
+                        },
+                        "confidence": 80,
+                        "estimated_likelihood": 0.80,
+                        "priority_score": 70,
+                        "reasoning": f"With {len(rb_players)} RBs, you can afford to trade depth for upgrades at other positions. {trade_partner['name']} may need RB help.",
+                        "trade_partner": trade_partner["name"],
+                    }
+                )
+                rec_id += 1
 
         if len(positions.get("WR", [])) < 4:
             te_players = (
                 positions.get("TE", [])[:1] if len(positions.get("TE", [])) > 1 else []
             )
             trade_partner = get_trade_partner(f"{team_id}:WR_depth")
-
-            # Get real WR from target team
             target_wr_players = await get_target_team_players(
                 trade_partner["team_id"], "WR"
             )
-
-            recommendations.append(
-                {
-                    "id": rec_id,
-                    "recommendation_type": "WR Depth Needed",
-                    "type": "depth_addition",
-                    "title": "Add WR Depth",
-                    "description": f"Target wide receiver depth from {trade_partner['name']} for better matchup flexibility",
-                    "target_team_id": trade_partner["team_id"],
-                    "we_give": {
-                        "players": add_trade_values(format_players(te_players)),
-                        "picks": [],
-                    },
-                    "we_get": {
-                        "players": target_wr_players,
-                        "picks": [],
-                    },
-                    "confidence": 70,
-                    "estimated_likelihood": 0.70,
-                    "priority_score": 55,
-                    "reasoning": f"More WR depth provides better weekly lineup flexibility. {trade_partner['name']} may have WR depth to trade.",
-                    "trade_partner": trade_partner["name"],
-                }
-            )
-            rec_id += 1
+            if target_wr_players:
+                recommendations.append(
+                    {
+                        "id": rec_id,
+                        "recommendation_type": "WR Depth Needed",
+                        "type": "depth_addition",
+                        "title": "Add WR Depth",
+                        "description": f"Target wide receiver depth from {trade_partner['name']} for better matchup flexibility",
+                        "target_team_id": trade_partner["team_id"],
+                        "we_give": {
+                            "players": add_trade_values(format_players(te_players)),
+                            "picks": [],
+                        },
+                        "we_get": {
+                            "players": target_wr_players,
+                            "picks": [],
+                        },
+                        "confidence": 70,
+                        "estimated_likelihood": 0.70,
+                        "priority_score": 55,
+                        "reasoning": f"More WR depth provides better weekly lineup flexibility. {trade_partner['name']} may have WR depth to trade.",
+                        "trade_partner": trade_partner["name"],
+                    }
+                )
+                rec_id += 1
 
         logger.info(f"🔍 GENERATED {len(recommendations)} RECOMMENDATIONS")
 
