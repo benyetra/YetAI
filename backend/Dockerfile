@@ -27,13 +27,21 @@ RUN apt-get update \
 COPY requirements.txt .
 
 # Install Python dependencies (single layer; --no-cache-dir avoids doubling disk use).
+# MLB/Statcast stack is installed explicitly: pip 26 backtracking on boto3/s3fs can
+# drop pybaseball/pyarrow/sportsdataverse from -r requirements.txt without failing.
 RUN pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt \
+    && pip install --no-cache-dir \
+        "pybaseball>=2.2.7" \
+        "pyarrow>=17.0.0" \
+        "matplotlib>=3.7.0,<4.0" \
+        "lxml>=4.9.0" \
+        "sportsdataverse>=0.0.50" \
     && pip install --no-cache-dir nfl-data-py==0.3.3 --no-deps \
     && pip install --no-cache-dir appdirs fastparquet \
     && pip install --no-cache-dir boto3==1.35.0 botocore \
     && pip install --no-cache-dir google-auth==2.30.0 google-auth-oauthlib==1.2.0 \
-    && python -c "import boto3, google.auth, statsapi, pybaseball, pyarrow"
+    && python -c "import boto3, google.auth, statsapi, pybaseball, pyarrow, matplotlib, sportsdataverse"
 
 # Copy application code
 COPY . .
