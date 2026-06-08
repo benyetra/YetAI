@@ -262,6 +262,32 @@ function formatScoringLabel(leagueRules?: LeagueRules | null): string | null {
   return 'Standard';
 }
 
+function leagueHasFaab(leagueRules?: LeagueRules | null): boolean {
+  if (!leagueRules) {
+    return false;
+  }
+  const waiverType = leagueRules.features.waiver_type?.toUpperCase();
+  return waiverType === 'FAAB' || (leagueRules.features.waiver_budget ?? 0) > 0;
+}
+
+function emptyTradeAssets(): TradeAssets {
+  return { players: [], picks: [], faab: 0 };
+}
+
+function formatTradeSideSummary(gives: TradeAssets): string {
+  const parts: string[] = [];
+  if (gives.players.length > 0) {
+    parts.push(`${gives.players.length} player${gives.players.length === 1 ? '' : 's'}`);
+  }
+  if (gives.picks.length > 0) {
+    parts.push(`${gives.picks.length} pick${gives.picks.length === 1 ? '' : 's'}`);
+  }
+  if (gives.faab > 0) {
+    parts.push(`$${gives.faab} FAAB`);
+  }
+  return parts.length > 0 ? parts.join(', ') : 'Nothing selected';
+}
+
 function mapAnalysisResponseToTradeEvaluation(
   analysis: Record<string, any>,
   leagueRules?: LeagueRules | null
@@ -329,6 +355,7 @@ export default function TradeAnalyzer({
   const [selectedTeam, setSelectedTeam] = useState<number | null>(null);
   const [teams, setTeams] = useState<LeagueTeam[]>([]);
   const [teamAnalysis, setTeamAnalysis] = useState<TeamAnalysis | null>(null);
+  const [targetTeamAnalysis, setTargetTeamAnalysis] = useState<TeamAnalysis | null>(null);
   const [recommendations, setRecommendations] = useState<TradeRecommendation[]>([]);
   const [activeTab, setActiveTab] = useState<'analyzer' | 'recommendations' | 'builder'>('analyzer');
   const [loading, setLoading] = useState(false);
@@ -414,6 +441,27 @@ export default function TradeAnalyzer({
       loadTargetTeamRoster(targetTeam, selectedLeague);
     }
   }, [targetTeam, selectedLeague, leagues, teams]);
+
+  useEffect(() => {
+    setTeam1Gives(emptyTradeAssets());
+    setTeam2Gives(emptyTradeAssets());
+    setTargetTeam(null);
+    setTargetTeamAnalysis(null);
+    setTradeEvaluation(null);
+  }, [selectedLeague]);
+
+  useEffect(() => {
+    setTeam1Gives(emptyTradeAssets());
+    setTeam2Gives(emptyTradeAssets());
+    setTargetTeam(null);
+    setTargetTeamAnalysis(null);
+    setTradeEvaluation(null);
+  }, [selectedTeam]);
+
+  useEffect(() => {
+    setTeam2Gives(emptyTradeAssets());
+    setTargetTeamAnalysis(null);
+  }, [targetTeam]);
 
   // Load real teams from API if no standings teams are available
   useEffect(() => {
@@ -534,6 +582,7 @@ export default function TradeAnalyzer({
     try {
       const result = await fetchTeamAnalysisFromBackend(teamId, leagues, leagueKey);
       setTargetTeamPlayers(result?.roster ?? []);
+      setTargetTeamAnalysis(result?.team_analysis ?? null);
       console.log(
         'Loaded target team roster from backend:',
         result?.roster?.length ?? 0,
@@ -542,6 +591,7 @@ export default function TradeAnalyzer({
     } catch (loadError) {
       console.error('Failed to load target team roster:', loadError);
       setTargetTeamPlayers([]);
+      setTargetTeamAnalysis(null);
     }
   };
 
@@ -628,8 +678,8 @@ export default function TradeAnalyzer({
           league_id: platformLeagueId,
           team1_id: selectedTeam,
           team2_id: targetTeam,
-          team1_gives: team1Gives,
-          team2_gives: team2Gives
+          team1_gives: buildTradeAssetsFromBuilder(team1Gives),
+          team2_gives: buildTradeAssetsFromBuilder(team2Gives),
         })
       });
       
@@ -1140,7 +1190,97 @@ export default function TradeAnalyzer({
     );
   };
 
-  const renderTradeBuilder = () => (
+  const renderTradeBuilderPickSection = (
+    picks: DraftPick[],
+    selectedPickIds: number[],
+    onTogglePick: (pickId: number, checked: boolean) => void
+  ) => {
+    if (picks.length === 0) {
+      return null;
+    }
+
+    return (
+      <div className="border border-gray-300 rounded-lg p-4">
+        <h5 className="text-sm font-medium text-gray-700 mb-2">Draft Picks</h5>
+        <div className="space-y-2 max-h-40 overflow-y-auto">
+          {picks.map((pick) => (
+            <div
+              key={pick.pick_id}
+              className="flex items-center justify-between p-2 hover:bg-gray-50 rounded"
+            >
+              <div className="flex items-center space-x-3">
+                <input
+                  type="checkbox"
+                  checked={selectedPickIds.includes(pick.pick_id)}
+                  onChange={(e) => onTogglePick(pick.pick_id, e.target.checked)}
+                  className="rounded border-gray-300"
+                />
+                <div>
+                  <div className="font-medium text-sm">{pick.description}</div>
+                  <div className="text-xs text-gray-500">
+                    {pick.season} • Round {pick.round}
+                  </div>
+                </div>
+              </div>
+              <div className="text-sm text-purple-600">{pick.trade_value.toFixed(1)}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  };
+
+  const renderTradeBuilderFaabInput = (
+    faab: number,
+    onFaabChange: (value: number) => void
+  ) => {
+    if (!leagueHasFaab(leagueRules)) {
+      return null;
+    }
+
+    const maxBudget = leagueRules?.features?.waiver_budget;
+
+    return (
+      <div className="border border-gray-300 rounded-lg p-4">
+        <label className="block text-sm font-medium text-gray-700 mb-2">FAAB</label>
+        <div className="flex items-center space-x-2">
+          <span className="text-sm text-gray-500">$</span>
+          <input
+            type="number"
+            min={0}
+            max={maxBudget}
+            value={faab}
+            onChange={(e) => {
+              const parsed = parseInt(e.target.value, 10);
+              const nextValue = Number.isNaN(parsed) ? 0 : Math.max(0, parsed);
+              onFaabChange(
+                maxBudget != null && maxBudget > 0
+                  ? Math.min(nextValue, maxBudget)
+                  : nextValue
+              );
+            }}
+            className="w-full p-2 border border-gray-300 rounded-md focus:ring-blue-500 focus:border-blue-500"
+          />
+        </div>
+        {maxBudget != null && maxBudget > 0 && (
+          <p className="mt-1 text-xs text-gray-500">League budget: ${maxBudget}</p>
+        )}
+      </div>
+    );
+  };
+
+  const renderTradeBuilder = () => {
+    const yourTradeablePicks = teamAnalysis?.tradeable_assets.tradeable_picks ?? [];
+    const targetTradeablePicks = targetTeamAnalysis?.tradeable_assets.tradeable_picks ?? [];
+    const hasTradeSelections =
+      team1Gives.players.length > 0 ||
+      team1Gives.picks.length > 0 ||
+      team1Gives.faab > 0 ||
+      team2Gives.players.length > 0 ||
+      team2Gives.picks.length > 0 ||
+      team2Gives.faab > 0;
+
+    return (
     <div className="space-y-6">
       {/* Team Selection */}
       <div className="bg-white rounded-lg border p-6">
@@ -1221,6 +1361,17 @@ export default function TradeAnalyzer({
                   </div>
                 )}
               </div>
+              {renderTradeBuilderPickSection(yourTradeablePicks, team1Gives.picks, (pickId, checked) => {
+                setTeam1Gives((prev) => ({
+                  ...prev,
+                  picks: checked
+                    ? [...prev.picks, pickId]
+                    : prev.picks.filter((id) => id !== pickId),
+                }));
+              })}
+              {renderTradeBuilderFaabInput(team1Gives.faab, (value) => {
+                setTeam1Gives((prev) => ({ ...prev, faab: value }));
+              })}
             </div>
 
             <div className="space-y-4">
@@ -1265,6 +1416,33 @@ export default function TradeAnalyzer({
                     {targetTeam ? 'Loading roster...' : 'Select target team first'}
                   </div>
                 )}
+              </div>
+              {renderTradeBuilderPickSection(targetTradeablePicks, team2Gives.picks, (pickId, checked) => {
+                setTeam2Gives((prev) => ({
+                  ...prev,
+                  picks: checked
+                    ? [...prev.picks, pickId]
+                    : prev.picks.filter((id) => id !== pickId),
+                }));
+              })}
+              {renderTradeBuilderFaabInput(team2Gives.faab, (value) => {
+                setTeam2Gives((prev) => ({ ...prev, faab: value }));
+              })}
+            </div>
+          </div>
+        )}
+
+        {targetTeam && hasTradeSelections && (
+          <div className="mb-4 rounded-lg border border-gray-200 bg-gray-50 p-4">
+            <h4 className="text-sm font-medium text-gray-900 mb-2">Trade Summary</h4>
+            <div className="grid grid-cols-2 gap-4 text-sm text-gray-700">
+              <div>
+                <span className="font-medium text-gray-900">You give:</span>{' '}
+                {formatTradeSideSummary(team1Gives)}
+              </div>
+              <div>
+                <span className="font-medium text-gray-900">You get:</span>{' '}
+                {formatTradeSideSummary(team2Gives)}
               </div>
             </div>
           </div>
@@ -1381,7 +1559,8 @@ export default function TradeAnalyzer({
         </div>
       )}
     </div>
-  );
+    );
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 p-6">

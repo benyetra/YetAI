@@ -67,5 +67,19 @@ describe('fantasy-trade-proposal', () => {
         faab: 0,
       });
     });
+
+    it('preserves draft picks and FAAB from the manual builder', () => {
+      expect(
+        buildTradeAssetsFromBuilder({
+          players: [4046],
+          picks: [101, 202],
+          faab: 35,
+        })
+      ).toEqual({
+        players: ['4046'],
+        picks: [101, 202],
+        faab: 35,
+      });
+    });
   });
 });
