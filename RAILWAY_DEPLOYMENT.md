@@ -152,7 +152,7 @@ After deploy includes `scripts/railway-celery.sh`:
 **Immediate workaround** (repo-root context, no new deploy):
 
 ```text
-bash -c 'cd /app/backend && PYTHONPATH=/app/backend exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=1'
+bash -c 'cd /app/backend && PYTHONPATH=/app/backend exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2'
 ```
 
 Do not use bare `celery -A app.celery_app ...` without resolving `APP_ROOT` first.
@@ -242,7 +242,19 @@ curl -s -H "Authorization: Bearer $ADMIN_TOKEN" \
 
 **“Online · Queued”** on API/worker during a platform incident — wait for deploys to finish or trigger **Redeploy** after the incident clears.
 
-### 2. Enqueue a full pipeline (recommended)
+### 2. MLB pipeline enqueued but never starts
+
+**Symptoms:** Admin enqueue returns `task_id`, beat logs `Sending due task mlb-projections-daily`, but worker logs never show `MLB projections pipeline starting` or `Task ... run_mlb_update_pipeline ... received`.
+
+**Common causes:**
+
+1. **`mlb.rebuild_profiles` still running** (~3h). With `concurrency=1` (older deploys), the worker is busy until it finishes.
+2. **Redis visibility timeout (1h default)** — a task running longer than 1h is redelivered; the duplicate queues behind the in-flight copy and can block the worker for another full run after the first completes. Production sets `broker_transport_options.visibility_timeout=86400` (24h); redeploy celery-worker after pulling that change.
+3. **Admin schedule override** — `pipeline_schedules` may move `mlb-projections-daily` earlier (e.g. 11:00 ET) so it overlaps profile rebuild (was 10:00 ET; code default is now 05:00 ET for rebuild).
+
+**Recovery:** Redeploy celery-worker with current code, then enqueue again. Check worker logs for `rebuild_profiles` / `ForkPoolWorker` activity. Poll `GET /api/admin/celery/task-status/{task_id}` until `ready: true`.
+
+### 3. Enqueue a full pipeline (recommended)
 
 **Do not** run `celery call app.tasks.etl_pipeline.run_mlb_update_pipeline` over SSH — it blocks for the entire run and often hangs when Redis is slow.
 

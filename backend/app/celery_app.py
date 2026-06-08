@@ -38,6 +38,11 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Redis redelivers unacked messages after visibility_timeout (default 1h).
+    # mlb.rebuild_profiles routinely runs 2–3h; without a higher timeout the
+    # same task_id is re-queued while still executing and blocks concurrency=1
+    # workers from picking up run_mlb_update_pipeline (manual or beat).
+    broker_transport_options={"visibility_timeout": 86400},
     broker_connection_retry_on_startup=True,
     broker_connection_timeout=15,
     redis_socket_connect_timeout=15,
@@ -113,9 +118,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.mlb.statcast_incremental",
         "schedule": crontab(hour=9, minute=30),
     },
+    # Overnight so ~3h rebuild finishes before morning statcast + projections.
     "mlb-profile-rebuild": {
         "task": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
-        "schedule": crontab(hour=10, minute=0),
+        "schedule": crontab(hour=5, minute=0),
+        "options": {"expires": 21600},
     },
     "mlb-projections-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
