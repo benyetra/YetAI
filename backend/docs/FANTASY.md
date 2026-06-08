@@ -11,10 +11,12 @@ End-to-end guide for fantasy features without chat context. **Platform:** Sleepe
 | Sleeper HTTP | `app/services/sleeper_fantasy_service.py`, `app/services/fantasy_sleeper_unified.py` |
 | Projections | `app/services/fantasy_projections.py`, `app/services/fantasy_pipeline.py` |
 | Start/sit helpers | `app/services/start_sit_service.py`, `app/services/player_analytics_service.py` |
+| Trade recommendations | `app/services/fantasy_trade_recommendations.py` (Sleeper-first; roster-aware suggestions) |
+| Trade proposal / evaluation | `app/services/fantasy_sleeper_trade_proposal.py` (`propose_sleeper_trade`, `evaluate_sleeper_trade`) |
 | ETL (nflverse → DB) | `app/services/etl/fantasy/sync_player_analytics.py` |
 | Frontend | `frontend/src/pages/FantasyPage.tsx` (or equivalent route `/fantasy`) |
 | E2E (stubbed API) | `frontend/tests/fantasy-happy-path.spec.ts`, `frontend/tests/fixtures/fantasy-auth.fixture.ts` |
-| Backend tests | `backend/tests/test_fantasy_routes.py`, `test_fantasy_projections.py`, `test_fantasy_player_analytics_etl.py`, `test_fantasy_sleeper_unified.py` |
+| Backend tests | `backend/tests/test_fantasy_routes.py`, `test_fantasy_projections.py`, `test_fantasy_player_analytics_etl.py`, `test_fantasy_sleeper_unified.py`, `test_fantasy_trade_recommendations.py`, `test_fantasy_sleeper_trade_proposal.py` |
 
 ## Environment
 
@@ -239,11 +241,14 @@ print(fantasy_sync_player_analytics.delay(season=2024))
 
 ### Versioned `/api/v1/fantasy/*`
 
+Trade suggestions and proposals are **Sleeper-first**: live roster data from the Sleeper API, scored via `fantasy_trade_recommendations` and `fantasy_sleeper_trade_proposal`. The legacy `TradeRecommendationEngine` (`trade_recommendation_engine.py`) was removed — it was unused dead code superseded by this stack. DB models/tables for `trade_recommendations` remain for migrations; no tables were dropped.
+
 | Method | Path | Notes |
 |--------|------|-------|
 | GET | `/api/v1/fantasy/standings/{league_id}` | Sorted standings |
+| GET | `/api/v1/fantasy/trade-analyzer/leagues/{league_id}/teams` | League teams for trade analyzer pickers (`roster_id` as `id`) |
 | GET | `/api/v1/fantasy/trade-analyzer/team-analysis/{team_id}` | `?league_id=` required |
-| POST | `/api/v1/fantasy/trade-analyzer/recommendations` | Sleeper trade suggestions (`fantasy_trade_recommendations`) |
+| POST | `/api/v1/fantasy/trade-analyzer/recommendations` | Sleeper trade suggestions (`generate_sleeper_trade_recommendations`) |
 | POST | `/api/v1/fantasy/trade-analyzer/propose` | Evaluate/persist a proposed trade (`propose_sleeper_trade`) |
 | GET | `/api/v1/fantasy/trade-analyzer/player-values` | Value board |
 | POST | `/api/v1/fantasy/trade-analyzer/quick-analysis` | Lightweight trade check |
