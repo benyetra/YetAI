@@ -424,16 +424,20 @@ def _normalize_injury_designation(status: Any) -> Optional[str]:
         return None
     lowered = text.lower()
     if lowered in {"full participation", "active", "healthy"}:
-        return "Healthy"
-    if "participation" in lowered and "did not" not in lowered:
-        return "Healthy"
-    if "out" in lowered:
-        return "Out"
-    if "doubt" in lowered:
-        return "Doubtful"
-    if "question" in lowered:
-        return "Questionable"
-    return text.title()
+        designation = "Healthy"
+    elif "participation" in lowered and "did not" not in lowered:
+        designation = "Healthy"
+    elif "out" in lowered:
+        designation = "Out"
+    elif "doubt" in lowered:
+        designation = "Doubtful"
+    elif "question" in lowered:
+        designation = "Questionable"
+    else:
+        designation = text.title()
+    if len(designation) > 20:
+        return designation[:20]
+    return designation
 
 
 def _build_gsis_week_injury_lookup(season: int) -> Dict[Tuple[str, int], str]:

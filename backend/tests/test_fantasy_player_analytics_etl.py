@@ -144,6 +144,10 @@ def test_apply_season_consistency_metrics_cumulative_through_week():
 def test_normalize_injury_designation_maps_common_statuses():
     assert _normalize_injury_designation("Full Participation in Practice") == "Healthy"
     assert _normalize_injury_designation("Out") == "Out"
+    assert (
+        len(_normalize_injury_designation("Some Very Long Custom Status Label Here"))
+        <= 20
+    )
 
 
 def test_build_team_week_game_script_lookup():
