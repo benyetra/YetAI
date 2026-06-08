@@ -71,7 +71,12 @@ Docker image installs the same set (see `backend/Dockerfile`).
 ### What gets synced
 
 1. **`fantasy_players`** — Sleeper player catalog (GSIS ↔ Sleeper ID mapping). Heavy (~6 min first run); optional on manual ETL.
-2. **`player_analytics`** — Weekly nflverse stats mapped to internal player IDs; powers start/sit, projections, trade context. GSIS mapping uses Sleeper `gsis_id` when present, then falls back to nflverse `import_ids()` (covers players like Jahmyr Gibbs where Sleeper omits `gsis_id`).
+2. **`player_analytics`** — Weekly nflverse stats mapped to internal player IDs; powers start/sit, projections, trade context. GSIS mapping uses Sleeper `gsis_id` when present, then falls back to nflverse `import_ids()` (covers players like Jahmyr Gibbs where Sleeper omits `gsis_id`). Advanced fields merged per sync:
+   - **Snaps:** `snap_counts_{season}.parquet` → `snap_percentage`, `offensive_snaps`, `points_per_snap`
+   - **Red zone:** PBP `play_by_play_{season}.parquet` (yardline ≤ 20) → `red_zone_*`, `red_zone_share`
+   - **Game script:** `schedules/games.parquet` final margin → `game_script`
+   - **Injury:** `injuries_{season}.parquet` → `injury_designation` (when report exists for that week)
+   - **Consistency:** cumulative through each week → `boom_rate`, `bust_rate`, `floor_score`, `ceiling_score`
 
 ### Manual ETL (fast path — analytics only)
 

@@ -7,7 +7,10 @@ import pandas as pd
 import pytest
 
 from app.services.etl.fantasy.sync_player_analytics import (
+    _apply_season_consistency_metrics,
+    _build_team_week_game_script_lookup,
     _compute_ppr_points,
+    _normalize_injury_designation,
     _normalize_snap_percentage,
     _row_payload,
     sync_player_analytics,
@@ -82,6 +85,90 @@ def test_row_payload_merges_snap_lookup_when_weekly_lacks_offense_pct():
     assert payload["snap_percentage"] == pytest.approx(68.0)
 
 
+def test_row_payload_computes_points_per_snap_and_red_zone_share():
+    row = pd.Series(
+        {
+            "player_id": "00-0031234",
+            "week": 1,
+            "recent_team": "DET",
+            "fantasy_points_ppr": 20.0,
+            "targets": 5,
+            "carries": 10,
+            "receptions": 4,
+            "receiving_yards": 30,
+            "rushing_yards": 40,
+            "opponent_team": "KC",
+        }
+    )
+    payload = _row_payload(
+        row=row,
+        fantasy_player_id=42,
+        week=1,
+        season=2025,
+        snap_details_lookup={
+            ("00-0031234", 1): {"offense_pct": 0.5, "offense_snaps": 40.0}
+        },
+        red_zone_lookup={
+            ("00-0031234", 1): {
+                "red_zone_targets": 2,
+                "red_zone_carries": 1,
+                "red_zone_touches": 3,
+                "red_zone_share": 0.15,
+            }
+        },
+        game_script_lookup={("DET", 1): 7.0},
+        injury_lookup={("00-0031234", 1): "Questionable"},
+    )
+    assert payload["points_per_snap"] == pytest.approx(0.5)
+    assert payload["offensive_snaps"] == 40
+    assert payload["red_zone_share"] == pytest.approx(0.15)
+    assert payload["red_zone_touches"] == 3
+    assert payload["game_script"] == pytest.approx(7.0)
+    assert payload["injury_designation"] == "Questionable"
+
+
+def test_apply_season_consistency_metrics_cumulative_through_week():
+    payloads = [
+        {"player_id": 1, "week": 1, "ppr_points": 24.0},
+        {"player_id": 1, "week": 2, "ppr_points": 3.0},
+        {"player_id": 1, "week": 3, "ppr_points": 22.0},
+    ]
+    _apply_season_consistency_metrics(payloads)
+    assert payloads[0]["boom_rate"] == pytest.approx(100.0)
+    assert payloads[1]["bust_rate"] == pytest.approx(50.0)
+    assert payloads[2]["boom_rate"] == pytest.approx(66.67, rel=0.01)
+    assert payloads[2]["floor_score"] is not None
+    assert payloads[2]["ceiling_score"] is not None
+
+
+def test_normalize_injury_designation_maps_common_statuses():
+    assert _normalize_injury_designation("Full Participation in Practice") == "Healthy"
+    assert _normalize_injury_designation("Out") == "Out"
+
+
+def test_build_team_week_game_script_lookup():
+    schedules = pd.DataFrame(
+        [
+            {
+                "season": 2024,
+                "game_type": "REG",
+                "week": 1,
+                "home_team": "DET",
+                "away_team": "LAR",
+                "home_score": 24.0,
+                "away_score": 20.0,
+            }
+        ]
+    )
+    with patch(
+        "app.services.etl.fantasy.sync_player_analytics._load_schedules_frame",
+        return_value=schedules,
+    ):
+        lookup = _build_team_week_game_script_lookup(2024)
+    assert lookup[("DET", 1)] == pytest.approx(4.0)
+    assert lookup[("LAR", 1)] == pytest.approx(-4.0)
+
+
 @pytest.mark.asyncio
 async def test_sync_player_analytics_upserts_rows():
     db = MagicMock()
@@ -122,7 +209,21 @@ async def test_sync_player_analytics_upserts_rows():
             return_value=weekly,
         ),
         patch(
-            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_snap_lookup",
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_snap_details_lookup",
+            return_value={
+                ("00-0031234", 1): {"offense_pct": 0.72, "offense_snaps": 50.0}
+            },
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_red_zone_lookup",
+            return_value={},
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_team_week_game_script_lookup",
+            return_value={},
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_injury_lookup",
             return_value={},
         ),
     ):
@@ -133,6 +234,7 @@ async def test_sync_player_analytics_upserts_rows():
     db.bulk_insert_mappings.assert_called_once()
     inserted = db.bulk_insert_mappings.call_args[0][1][0]
     assert inserted["snap_percentage"] == pytest.approx(72.0)
+    assert inserted["points_per_snap"] == pytest.approx(15.2 / 50.0)
     db.commit.assert_called_once()
 
 
@@ -171,8 +273,22 @@ async def test_sync_player_analytics_merges_snap_counts_when_offense_pct_missing
             return_value=weekly,
         ),
         patch(
-            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_snap_lookup",
-            return_value={("00-0031234", 1): 0.81},
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_snap_details_lookup",
+            return_value={
+                ("00-0031234", 1): {"offense_pct": 0.81, "offense_snaps": 35.0}
+            },
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_red_zone_lookup",
+            return_value={},
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_team_week_game_script_lookup",
+            return_value={},
+        ),
+        patch(
+            "app.services.etl.fantasy.sync_player_analytics._build_gsis_week_injury_lookup",
+            return_value={},
         ),
     ):
         result = await sync_player_analytics(db, season=2025)
