@@ -1483,6 +1483,7 @@ input { font: inherit; }
   display: flex;
   align-items: center;
   gap: 4px;
+  width: 100%;
   height: 160px;
   position: relative;
   padding-top: 8px;
@@ -1496,13 +1497,21 @@ input { font: inherit; }
   border-top: 1px dashed var(--border);
 }
 .pnl-chart-bars.dense {
-  overflow-x: auto;
   gap: 2px;
-  padding-bottom: 4px;
 }
 .pnl-chart-bars.dense .chart-bar-col {
-  flex: 0 0 6px;
-  min-width: 6px;
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 767px) {
+  .pnl-chart-bars.dense {
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .pnl-chart-bars.dense .chart-bar-col {
+    flex: 0 0 6px;
+    min-width: 6px;
+  }
 }
 .pnl-chart-bars .chart-bar-col {
   flex: 1;
