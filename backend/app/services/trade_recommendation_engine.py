@@ -25,6 +25,7 @@ from app.models.fantasy_models import (
 )
 from app.models.database_models import SleeperRoster, SleeperPlayer, SleeperLeague
 from app.services.trade_analyzer_service import TradeAnalyzerService
+from app.services.fantasy_league_context import build_season_context
 
 logger = logging.getLogger(__name__)
 
@@ -334,17 +335,22 @@ class TradeRecommendationEngine:
             self.db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
         )
 
-        current_week = 8  # Would get from NFL schedule service
-        trade_deadline_weeks = max(0, 10 - current_week)
+        is_dynasty = bool(league and league.league_type == "dynasty")
+        season_ctx = build_season_context(
+            league.season if league else None,
+            is_dynasty=is_dynasty,
+        )
 
         return {
             "league_id": league_id,
-            "scoring_type": league.scoring_type or "ppr",
-            "team_count": league.team_count or 12,
-            "current_week": current_week,
-            "trade_deadline_weeks": trade_deadline_weeks,
-            "is_dynasty": league.league_type == "dynasty",
-            "playoff_teams": league.playoff_teams or 6,
+            "scoring_type": (league.scoring_type if league else None) or "ppr",
+            "team_count": (league.team_count if league else None) or 12,
+            "current_week": season_ctx["current_week"],
+            "trade_deadline_weeks": season_ctx["trade_deadline_weeks"],
+            "trade_deadline_passed": season_ctx["trade_deadline_passed"],
+            "is_dynasty": is_dynasty,
+            "playoff_teams": (league.playoff_teams if league else None) or 6,
+            "season": season_ctx["season"],
         }
 
     def _calculate_position_strengths(

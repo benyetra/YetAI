@@ -29,6 +29,7 @@ from app.models.fantasy_models import (
     FantasyPlatform,
 )
 
+from app.services.fantasy_league_context import build_season_context
 from app.services.fantasy_draft_picks import (
     lookup_pick_trade_value,
     pick_owned_by_roster,
@@ -458,11 +459,13 @@ class TradeAnalyzerService:
             self.db.query(FantasyLeague).filter(FantasyLeague.id == league_id).first()
         )
 
-        # Determine current week (simplified - would integrate with real NFL week)
-        current_week = 8  # This would come from NFL schedule service
-
-        # Calculate weeks until trade deadline
-        trade_deadline_weeks = max(0, 10 - current_week)  # Assuming week 10 deadline
+        is_dynasty = bool(league and league.league_type == "dynasty")
+        season_ctx = build_season_context(
+            league.season if league else None,
+            is_dynasty=is_dynasty,
+        )
+        current_week = season_ctx["current_week"]
+        trade_deadline_weeks = season_ctx["trade_deadline_weeks"]
 
         # Get playoff race context
         teams = (
@@ -470,7 +473,7 @@ class TradeAnalyzerService:
         )
         sorted_teams = sorted(teams, key=lambda t: (-t.wins, -t.points_for))
 
-        playoff_spots = league.playoff_teams or 6
+        playoff_spots = (league.playoff_teams if league else None) or 6
         playoff_race = {
             "in_playoffs": len([t for t in sorted_teams[:playoff_spots]]),
             "bubble_teams": len(
@@ -481,15 +484,16 @@ class TradeAnalyzerService:
 
         return {
             "league_id": league_id,
-            "scoring_type": league.scoring_type or "ppr",
-            "team_count": league.team_count or 12,
+            "scoring_type": (league.scoring_type if league else None) or "ppr",
+            "team_count": (league.team_count if league else None) or 12,
             "current_week": current_week,
             "trade_deadline_weeks": trade_deadline_weeks,
+            "trade_deadline_passed": season_ctx["trade_deadline_passed"],
             "playoff_race": playoff_race,
-            "is_dynasty": league.league_type == "dynasty",
+            "is_dynasty": is_dynasty,
             "playoff_teams": playoff_spots,
             "pick_registry": self._load_pick_registry_for_league(league_id),
-            "season": league.season or datetime.now().year,
+            "season": season_ctx["season"],
         }
 
     def _get_team_context(self, team_id: int, league_context: Dict) -> Dict[str, Any]:

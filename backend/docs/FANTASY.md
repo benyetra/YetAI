@@ -189,8 +189,8 @@ print(fantasy_sync_player_analytics.delay(season=2024))
 | POST | `/api/fantasy/connect` | Body: `{ platform, credentials }` — Sleeper: `{ username }` |
 | DELETE | `/api/fantasy/disconnect/{fantasy_user_id}` | Remove connection |
 | POST | `/api/fantasy/sync-league/{league_id}` | Persist league metadata |
-| GET | `/api/fantasy/roster/{league_id}` | User roster via `fantasy_pipeline` |
-| GET | `/api/fantasy/projections` | Top-N projections from analytics |
+| GET | `/api/fantasy/roster/{league_id}` | User roster via `FantasyPipeline()` (direct import) |
+| GET | `/api/fantasy/projections` | Top-N projections via `FantasyPipeline()` + analytics |
 | GET | `/api/fantasy/players/search?q=` | Sleeper name search (min 2 chars) |
 | GET | `/api/fantasy/recommendations/start-sit/{week}` | Optional `?league_id=` |
 | GET | `/api/fantasy/recommendations/waiver-wire/{week}` | Trending adds/drops |
@@ -201,7 +201,7 @@ print(fantasy_sync_player_analytics.delay(season=2024))
 | GET | `/api/fantasy/analytics/{player_id}/trends` | Weekly trend series |
 | GET | `/api/fantasy/analytics/{player_id}/efficiency` | Efficiency metrics |
 | POST | `/api/fantasy/players/compare` | 2–4 Sleeper player IDs |
-| GET | `/api/fantasy/players/{player_id}/analytics/{season}` | Season rollup |
+| GET | `/api/fantasy/players/{player_id}/analytics/{season}` | Season rollup (Sleeper id → GSIS map) |
 | GET | `/api/fantasy/test/sleeper/{username}` | Pre-connect validation |
 
 ### Versioned `/api/v1/fantasy/*`
@@ -272,8 +272,9 @@ Full gate before push: `PYTHONPATH=. .venv/bin/python -m pytest -q`.
 | Symptom | Check |
 |---------|--------|
 | `ModuleNotFoundError: nfl_data_py` | Install nfl-data-py (see above) |
-| `503 Fantasy pipeline service unavailable` | Service loader / `fantasy_pipeline` registration |
+| Empty roster / projections | Sleeper username + league sync; `FantasyPipeline` logs in API (not `service_loader`) |
 | Empty start/sit | `player_analytics` backfill; GSIS mapping in `fantasy_players` (re-run sync after mapping fixes) |
+| Player analytics empty for Sleeper id | `fantasy_players.platform_player_id` mapping; GSIS bridge via nflverse `import_ids()` |
 | `HTTP Error 404` on season 2025+ ETL | Legacy nfl-data-py URL; upgrade to latest code with `stats_player_week` fallback |
 | Empty leagues after connect | Sleeper API is **season-scoped** (`/leagues/nfl/{year}`). Offseason, current calendar year may have 0 leagues — API fetches current + prior season. Verify with `curl https://api.sleeper.app/v1/user/{sleeper_id}/leagues/nfl/2025` |
 | `Unknown PG numeric type` on analytics | `PlayerAnalytics.game_script` must be `Float`; run Alembic if schema drift |

@@ -6146,6 +6146,21 @@ async def get_todays_insights():
 
 
 # Comprehensive endpoint health check
+
+
+def _fantasy_sports_operational() -> bool:
+    """Fantasy routes use FantasyPipeline + Sleeper directly (not service_loader gate)."""
+    try:
+        from app.services.fantasy_pipeline import FantasyPipeline  # noqa: F401
+        from app.services.sleeper_fantasy_service import (  # noqa: F401
+            SleeperFantasyService,
+        )
+
+        return True
+    except Exception:
+        return False
+
+
 @app.get("/api/endpoints/health")
 async def endpoint_health_check():
     """Comprehensive health check for all API endpoints"""
@@ -6183,9 +6198,10 @@ async def endpoint_health_check():
                 "/api/fantasy/accounts",
                 "/api/fantasy/leagues",
                 "/api/fantasy/connect",
+                "/api/fantasy/roster/{league_id}",
                 "/api/fantasy/projections",
             ],
-            "operational": is_service_available("fantasy_pipeline"),
+            "operational": _fantasy_sports_operational(),
         },
         "Odds & Markets": {
             "endpoints": [

@@ -118,12 +118,9 @@ def _derive_trends(
     }
 
 
-def _lookup_internal_player_id(db: Session, sleeper_id: str) -> Optional[int]:
-    row = db.execute(
-        text("SELECT id FROM fantasy_players WHERE platform_player_id = :sleeper_id"),
-        {"sleeper_id": str(sleeper_id)},
-    ).fetchone()
-    return int(row[0]) if row else None
+from app.services.fantasy_player_lookup import (
+    resolve_internal_player_id as _lookup_internal_player_id,
+)
 
 
 def generate_compare_insights(

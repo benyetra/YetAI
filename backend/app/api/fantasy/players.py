@@ -12,10 +12,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import text
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import Session
 
 from app.core.auth import get_current_user
 from app.core.database import get_db
+from app.services.fantasy_player_lookup import resolve_internal_player_id
 from app.core.service_loader import get_service, is_service_available
 
 logger = logging.getLogger(__name__)
@@ -242,33 +242,20 @@ async def get_player_analytics(
 
         analytics_service = PlayerAnalyticsService(db)
 
-        # Convert string player_id to int if needed
-        try:
-            player_id_int = int(player_id)
-        except ValueError:
-            # If it's a sleeper ID, we would need to map it
-            # For now, return a mock response
+        internal_player_id = resolve_internal_player_id(db, player_id)
+        if internal_player_id is None:
             return {
                 "status": "success",
                 "player_id": player_id,
                 "season": season,
-                "analytics": {
-                    "total_points": 0,
-                    "avg_points_per_game": 0,
-                    "games_played": 0,
-                    "consistency_rating": "N/A",
-                    "target_share": 0,
-                    "red_zone_usage": 0,
-                    "snap_percentage": 0,
-                },
+                "analytics": [],
                 "message": "Player analytics data not available",
             }
 
-        # Get week list for the season (weeks 1-17 typically)
         week_list = list(range(1, 18))
 
         analytics = await analytics_service.get_player_analytics(
-            player_id_int, week_list, season
+            internal_player_id, week_list, season
         )
 
         return {
@@ -302,25 +289,19 @@ async def get_player_trends(
 
         analytics_service = PlayerAnalyticsService(db)
 
-        try:
-            player_id_int = int(player_id)
-        except ValueError:
+        internal_player_id = resolve_internal_player_id(db, player_id)
+        if internal_player_id is None:
             return {
                 "status": "success",
                 "player_id": player_id,
                 "season": season,
-                "trends": {
-                    "scoring_trend": "stable",
-                    "usage_trend": "stable",
-                    "efficiency_trend": "stable",
-                    "recent_form": "average",
-                },
+                "trends": {},
                 "message": "Player trends data not available",
             }
 
         week_list = list(range(1, 18))
         trends = await analytics_service.calculate_usage_trends(
-            player_id_int, week_list, season
+            internal_player_id, week_list, season
         )
 
         return {
@@ -354,26 +335,19 @@ async def get_player_efficiency(
 
         analytics_service = PlayerAnalyticsService(db)
 
-        try:
-            player_id_int = int(player_id)
-        except ValueError:
+        internal_player_id = resolve_internal_player_id(db, player_id)
+        if internal_player_id is None:
             return {
                 "status": "success",
                 "player_id": player_id,
                 "season": season,
-                "efficiency": {
-                    "yards_per_target": 0,
-                    "yards_per_carry": 0,
-                    "red_zone_efficiency": 0,
-                    "target_efficiency": 0,
-                    "snap_efficiency": 0,
-                },
+                "efficiency": {},
                 "message": "Player efficiency data not available",
             }
 
         week_list = list(range(1, 18))
         efficiency = await analytics_service.calculate_efficiency_metrics(
-            player_id_int, week_list, season
+            internal_player_id, week_list, season
         )
 
         return {
