@@ -209,6 +209,30 @@ interface SearchFilters {
   league_id: string;
 }
 
+async function syncLeagueToDatabase(leagueId: string): Promise<boolean> {
+  try {
+    const response = await fantasyAPI.syncLeague(leagueId);
+    if (response.status === 'success') {
+      return true;
+    }
+    console.error(
+      `Failed to sync league ${leagueId}:`,
+      response.message || response.detail
+    );
+    return false;
+  } catch (err) {
+    console.error(`Failed to sync league ${leagueId}:`, err);
+    return false;
+  }
+}
+
+async function syncLeaguesToDatabase(leagueList: FantasyLeague[]): Promise<number> {
+  const results = await Promise.all(
+    leagueList.map((league) => syncLeagueToDatabase(league.league_id))
+  );
+  return results.filter(Boolean).length;
+}
+
 export default function FantasyPage() {
   const { isAuthenticated, loading } = useAuth();
   const router = useRouter();
@@ -223,7 +247,9 @@ export default function FantasyPage() {
   const [connectPlatform, setConnectPlatform] = useState('sleeper');
   const [username, setUsername] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
-  const [isSyncing, setIsSyncing] = useState<string | null>(null);
+  const [syncingLeagueId, setSyncingLeagueId] = useState<string | null>(null);
+  const [leagueSyncSuccess, setLeagueSyncSuccess] = useState<Record<string, boolean>>({});
+  const [syncToast, setSyncToast] = useState<string | null>(null);
   const [selectedLeague, setSelectedLeague] = useState<string | null>(null);
   const [roster, setRoster] = useState<Player[]>([]);
   const [isLoadingRoster, setIsLoadingRoster] = useState(false);
@@ -291,9 +317,10 @@ export default function FantasyPage() {
     }
   }, [isAuthenticated]);
 
-  const loadFantasyData = async () => {
+  const loadFantasyData = async (): Promise<FantasyLeague[]> => {
     setIsLoading(true);
     setError(null);
+    let loadedLeagues: FantasyLeague[] = [];
     
     try {
       // Get real fantasy accounts from the API
@@ -313,7 +340,8 @@ export default function FantasyPage() {
       console.log('Leagues API response:', leaguesResponse);
       
       if (leaguesResponse.status === 'success') {
-        setLeagues(leaguesResponse.leagues || []);
+        loadedLeagues = leaguesResponse.leagues || [];
+        setLeagues(loadedLeagues);
       } else {
         // Fallback to empty leagues if API fails
         console.warn('Failed to load leagues:', leaguesResponse.message);
@@ -321,7 +349,7 @@ export default function FantasyPage() {
       }
       
       // Auto-select first league for testing if available
-      const currentLeagues = leaguesResponse.status === 'success' ? (leaguesResponse.leagues || []) : [];
+      const currentLeagues = loadedLeagues;
       if (currentLeagues.length === 1 && !selectedLeague) {
         loadLeagueForAnalysis(currentLeagues[0].league_id);
       }
@@ -354,6 +382,43 @@ export default function FantasyPage() {
     } finally {
       setIsLoading(false);
     }
+
+    return loadedLeagues;
+  };
+
+  const showSyncToast = (message: string) => {
+    setSyncToast(message);
+    window.setTimeout(() => setSyncToast(null), 5000);
+  };
+
+  const handleSyncLeague = async (leagueId: string) => {
+    setSyncingLeagueId(leagueId);
+    setLeagueSyncSuccess((prev) => {
+      const next = { ...prev };
+      delete next[leagueId];
+      return next;
+    });
+
+    try {
+      const ok = await syncLeagueToDatabase(leagueId);
+      if (ok) {
+        setLeagueSyncSuccess((prev) => ({ ...prev, [leagueId]: true }));
+        window.setTimeout(() => {
+          setLeagueSyncSuccess((prev) => {
+            const next = { ...prev };
+            delete next[leagueId];
+            return next;
+          });
+        }, 3000);
+      } else {
+        setError('Failed to sync league to YetAI database');
+      }
+    } catch (err) {
+      setError('Failed to sync league to YetAI database');
+      console.error('Sync league error:', err);
+    } finally {
+      setSyncingLeagueId(null);
+    }
   };
 
   const handleConnectAccount = async (e: React.FormEvent) => {
@@ -367,7 +432,16 @@ export default function FantasyPage() {
       if (response.status === 'success') {
         setShowConnectModal(false);
         setUsername('');
-        await loadFantasyData();
+        const loadedLeagues = await loadFantasyData();
+        if (loadedLeagues.length > 0) {
+          void syncLeaguesToDatabase(loadedLeagues).then((successCount) => {
+            if (successCount > 0) {
+              showSyncToast(
+                `Synced ${successCount} league${successCount === 1 ? '' : 's'}`
+              );
+            }
+          });
+        }
       } else {
         setError(response.message || 'Failed to connect account');
       }
@@ -794,6 +868,24 @@ export default function FantasyPage() {
         </div>
       )}
 
+      {syncToast && (
+        <div
+          className="alert"
+          style={{
+            marginBottom: 16,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            background: 'var(--success-bg, #ecfdf5)',
+            color: 'var(--success-text, #047857)',
+            border: '1px solid var(--success-border, #a7f3d0)',
+          }}
+        >
+          <CheckCircle className="w-5 h-5" />
+          <span>{syncToast}</span>
+        </div>
+      )}
+
       <div className="stat-grid">
         <StatTile label="Accounts" value={String(accounts.length)} icon={<Users size={16} />} />
         <StatTile label="Leagues" value={String(leagues.length)} icon={<Trophy size={16} />} />
@@ -951,14 +1043,34 @@ export default function FantasyPage() {
                           <p className="text-sm dim">{league.platform} • {league.season}</p>
                           <p className="text-sm dim">{league.total_teams} teams</p>
                         </div>
-                        <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Synced</span>
+                        {leagueSyncSuccess[league.league_id] ? (
+                          <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded flex items-center gap-1">
+                            <CheckCircle className="w-3 h-3" />
+                            Synced to YetAI
+                          </span>
+                        ) : (
+                          <span className="px-2 py-1 bg-gray-100 text-gray-600 text-xs rounded">Connected</span>
+                        )}
                       </div>
                       {league.user_team && (
                         <div className="text-sm muted mb-3">
                           <strong>{league.user_team.name}</strong> • {league.user_team.wins}-{league.user_team.losses} • {league.user_team.points_for} pts
                         </div>
                       )}
-                      <div className="flex gap-2">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => handleSyncLeague(league.league_id)}
+                          disabled={syncingLeagueId === league.league_id}
+                          className="px-3 py-1 bg-emerald-600 text-white text-sm rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
+                          title="Persist league and teams to YetAI database"
+                        >
+                          {syncingLeagueId === league.league_id ? (
+                            <RefreshCw className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="w-3 h-3" />
+                          )}
+                          {syncingLeagueId === league.league_id ? 'Syncing…' : 'Sync to YetAI'}
+                        </button>
                         <button
                           onClick={() => handleViewMatchups(league.league_id)}
                           disabled={isLoadingMatchups}

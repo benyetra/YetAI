@@ -384,6 +384,7 @@ export default function TradeAnalyzer({
     type: 'success' | 'error';
     text: string;
   } | null>(null);
+  const [saveProposalToLeague, setSaveProposalToLeague] = useState(false);
 
   useEffect(() => {
     if (initialLeagueId && leagues?.length) {
@@ -739,7 +740,7 @@ export default function TradeAnalyzer({
         team1_gives: buildTradeAssetsFromRecommendation(rec.we_give),
         team2_gives: buildTradeAssetsFromRecommendation(rec.we_get),
         trade_reason: rec.title || rec.recommendation_type,
-        persist: false,
+        persist: saveProposalToLeague,
       });
 
       if (!result.ok) {
@@ -796,7 +797,7 @@ export default function TradeAnalyzer({
         team2_id: targetTeam,
         team1_gives: buildTradeAssetsFromBuilder(team1Gives),
         team2_gives: buildTradeAssetsFromBuilder(team2Gives),
-        persist: false,
+        persist: saveProposalToLeague,
       });
 
       if (!result.ok) {
@@ -1599,6 +1600,15 @@ export default function TradeAnalyzer({
               League rules unavailable — analysis may use generic roster assumptions.
             </p>
           )}
+          <label className="mt-4 flex items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={saveProposalToLeague}
+              onChange={(e) => setSaveProposalToLeague(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            Save proposal to league
+          </label>
         </div>
 
         {/* League and Team Selection */}
