@@ -3,8 +3,8 @@
  */
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { getApiUrl, apiRequest } from '@/lib/api-config';
+import { useState, useEffect } from 'react';
+import { apiRequest } from '@/lib/api-config';
 import type { LeagueRules } from '@/lib/fantasy-league-rules';
 import { calculateDeterministicTradeValue } from '@/lib/fantasy-trade-value';
 import { 
@@ -83,7 +83,8 @@ interface TradeRecommendation {
   we_get: RecommendationTradeAssets;
   we_give: RecommendationTradeAssets;
   recommendation_type: string;
-  trade_rationale: string;
+  trade_rationale?: string;
+  reasoning?: string;
   priority_score: number;
   estimated_likelihood: number;
   target_player_info?: any;
@@ -176,32 +177,72 @@ function findLeagueByKey(leagues: League[] | undefined, leagueKey: string | numb
   );
 }
 
-function calculateTradeValue(player: Player, leagueRules?: LeagueRules | null) {
-  return calculateDeterministicTradeValue(player, leagueRules);
+function getPlatformLeagueId(league: League | undefined): string | null {
+  if (!league) {
+    return null;
+  }
+  return league.platform_league_id || league.league_id || null;
 }
 
-function buildPositionNeedsFromRules(
-  leagueRules: LeagueRules | null | undefined,
-  positionCounts: Record<string, number>
-): Record<string, number> {
-  const required = leagueRules?.roster_settings?.positions;
-  if (!required || Object.keys(required).length === 0) {
-    return {
-      QB: positionCounts.QB < 2 ? 3 : 1,
-      RB: positionCounts.RB < 3 ? 3 : 1,
-      WR: positionCounts.WR < 4 ? 3 : 1,
-      TE: positionCounts.TE < 2 ? 3 : 1,
-      K: positionCounts.K < 1 ? 3 : 1,
-      DEF: positionCounts.DEF < 1 ? 3 : 1,
-    };
+type ApiRosterPlayer = {
+  id: number;
+  player_id?: string;
+  name: string;
+  position: string;
+  team: string;
+  age?: number;
+  trade_value?: number;
+};
+
+function mapApiRosterToPlayers(roster: ApiRosterPlayer[] | undefined): Player[] {
+  return (roster ?? [])
+    .filter((player) => player?.name)
+    .map((player) => ({
+      id:
+        typeof player.id === 'number' && !Number.isNaN(player.id)
+          ? player.id
+          : parseInt(String(player.player_id ?? ''), 10) || 0,
+      name: player.name,
+      position: player.position || 'UNKNOWN',
+      team: player.team || 'UNKNOWN',
+      age: player.age,
+      trade_value: player.trade_value,
+    }))
+    .filter((player) => player.id > 0);
+}
+
+async function fetchTeamAnalysisFromBackend(
+  teamId: number,
+  leagues: League[],
+  leagueKey: string
+): Promise<{ team_analysis: TeamAnalysis; roster: Player[] } | null> {
+  const league = findLeagueByKey(leagues, leagueKey);
+  const platformLeagueId = getPlatformLeagueId(league);
+  if (!platformLeagueId) {
+    return null;
   }
 
-  const needs: Record<string, number> = {};
-  for (const [position, requiredCount] of Object.entries(required)) {
-    const have = positionCounts[position] || 0;
-    needs[position] = have < requiredCount ? 3 : have === requiredCount ? 2 : 1;
+  const response = await apiRequest(
+    `/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${encodeURIComponent(platformLeagueId)}`,
+    { method: 'GET' }
+  );
+  if (!response.ok) {
+    return null;
   }
-  return needs;
+
+  const data = await response.json();
+  if (!data.success || !data.team_analysis) {
+    return null;
+  }
+
+  return {
+    team_analysis: data.team_analysis,
+    roster: mapApiRosterToPlayers(data.roster),
+  };
+}
+
+function calculateTradeValue(player: Player, leagueRules?: LeagueRules | null) {
+  return calculateDeterministicTradeValue(player, leagueRules);
 }
 
 function formatScoringLabel(leagueRules?: LeagueRules | null): string | null {
@@ -282,10 +323,9 @@ export default function TradeAnalyzer({
     }
   }, [selectedLeague, standingsTeams]);
 
-  // Trigger team analysis and recommendations only after roster is loaded
+  // Load recommendations after selected team roster + analysis are loaded
   useEffect(() => {
     if (selectedTeam && selectedLeague && rosterLoaded) {
-      loadTeamAnalysis(selectedTeam, selectedLeague);
       loadTradeRecommendations(selectedTeam, selectedLeague);
     }
   }, [selectedTeam, selectedLeague, rosterLoaded]);
@@ -400,472 +440,60 @@ export default function TradeAnalyzer({
     }
   };
 
-  // API calls
   const loadTeamRoster = async (teamId: number, leagueKey: string) => {
+    if (!leagues) {
+      return;
+    }
+
+    setRosterLoading(true);
+    setRosterLoaded(false);
+    setError(null);
+
     try {
-      setRosterLoading(true);
-      setRosterLoaded(false);
-      if (!leagues || !teams) {
-        console.log('Missing leagues or teams data');
-        return;
-      }
-      
-      // Find the league by internal ID
-      const league = findLeagueByKey(leagues, leagueKey);
-      if (!league) {
-        console.error('League not found:', leagueKey);
-        console.log('Available leagues:', leagues.map(l => ({ id: l.id, name: l.name })));
-        // Reset to first available league if current selection is invalid
-        if (leagues.length > 0) {
-          console.log('Switching to first available league:', leagues[0].id);
-          setSelectedLeague(resolveLeagueKey(leagues[0]));
-        }
+      const result = await fetchTeamAnalysisFromBackend(teamId, leagues, leagueKey);
+      if (result) {
+        setSelectedTeamPlayers(result.roster);
+        setTeamAnalysis(result.team_analysis);
+        setRosterLoaded(true);
+        console.log(
+          'Loaded team roster and analysis from backend:',
+          result.roster.length,
+          'players'
+        );
         return;
       }
 
-      // Use the platform league ID for the backend API call
-      const platformLeagueId = league.platform_league_id || league.league_id;
-      if (!platformLeagueId) {
-        console.error('No platform league ID found for league:', league);
-        return;
-      }
-      
-      console.log('Loading roster for team', teamId, 'in league', platformLeagueId);
-
-      // Use fallback approach directly since we need to load any team's roster, not just current user's
-      await loadTeamRosterFallback(platformLeagueId, teamId);
-    } catch (error) {
-      console.error('Failed to load team roster:', error);
-      const league = findLeagueByKey(leagues, leagueKey);
-      const platformLeagueId = league?.platform_league_id || league?.league_id;
-      if (platformLeagueId) {
-        await loadTeamRosterFallback(platformLeagueId, teamId);
-      }
+      setSelectedTeamPlayers([]);
+      setTeamAnalysis(null);
+      setError('Failed to load team roster from server');
+      setRosterLoaded(true);
+    } catch (loadError) {
+      console.error('Failed to load team roster:', loadError);
+      setSelectedTeamPlayers([]);
+      setTeamAnalysis(null);
+      setError('Failed to load team roster from server');
+      setRosterLoaded(true);
     } finally {
       setRosterLoading(false);
     }
   };
 
-  // Fallback function to load roster directly from Sleeper API
-  const loadTeamRosterFallback = async (platformLeagueId: string, teamId?: number) => {
-    try {
-      console.log('Using fallback roster loading for league:', platformLeagueId, 'team:', teamId);
-      
-      // Get both rosters and users data to do proper matching
-      const [rostersResponse, usersResponse] = await Promise.all([
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/rosters`),
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`)
-      ]);
-      
-      if (rostersResponse.ok && usersResponse.ok) {
-        const rosters = await rostersResponse.json();
-        const users = await usersResponse.json();
-        console.log('Fallback: Successfully loaded', rosters?.length, 'rosters and', users?.length, 'users');
-        
-        if (teamId) {
-          // Find the team name based on teamId - handle all type conversions
-          console.log('Looking for selected team with ID:', teamId, 'type:', typeof teamId);
-
-          const selectedTeam = teams.find(t => {
-            // Try exact match first
-            if (t.id === teamId) return true;
-            // Try number conversion
-            if (typeof teamId === 'string' && t.id === parseInt(teamId)) return true;
-            if (typeof t.id === 'string' && parseInt(t.id) === teamId) return true;
-            // Try string conversion
-            if (t.id.toString() === teamId.toString()) return true;
-            return false;
-          });
-
-          if (!selectedTeam) {
-            console.error('Selected team not found with ID:', teamId, 'type:', typeof teamId);
-            console.error('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
-            setSelectedTeamPlayers([]);
-            return;
-          }
-          
-          console.log('Looking for roster for selected team:', selectedTeam.name, 'owner:', selectedTeam.owner_name);
-          
-          // Find the user that matches the selected team owner
-          const matchingUser = users.find((user: any) => 
-            user.display_name === selectedTeam.owner_name || 
-            user.metadata?.team_name === selectedTeam.name ||
-            user.display_name.toLowerCase() === selectedTeam.owner_name.toLowerCase()
-          );
-          
-          if (!matchingUser) {
-            console.warn('No matching user found for selected team:', selectedTeam.name, 'owner:', selectedTeam.owner_name);
-            console.log('Available users:', users.map((u: any) => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
-            // Fallback to roster index mapping
-            const availableRosters = rosters.filter((r: any) => r.players && r.players.length > 0);
-            const rosterIndex = ((teamId - 1) % availableRosters.length);
-            const selectedRoster = availableRosters[rosterIndex];
-            console.log('Fallback: Using roster at index:', rosterIndex, 'roster_id:', selectedRoster?.roster_id);
-            
-            if (selectedRoster && selectedRoster.players && selectedRoster.players.length > 0) {
-              const playersData = await fetchPlayerDetails(selectedRoster.players);
-              setSelectedTeamPlayers(playersData);
-              setRosterLoaded(true);
-              console.log('Fallback: Loaded', playersData?.length, 'players via fallback');
-            } else {
-              setRosterLoaded(true);
-            }
-            return;
-          }
-          
-          // Find the roster that belongs to this user
-          const selectedRoster = rosters.find((roster: any) => roster.owner_id === matchingUser.user_id);
-          if (!selectedRoster) {
-            console.error('No roster found for user:', matchingUser.display_name);
-            setSelectedTeamPlayers([]);
-            return;
-          }
-          
-          console.log('Found matching roster:', selectedRoster.roster_id, 'for user:', matchingUser.display_name);
-          
-          if (selectedRoster && selectedRoster.players && selectedRoster.players.length > 0) {
-            const playersData = await fetchPlayerDetails(selectedRoster.players);
-            setSelectedTeamPlayers(playersData);
-            setRosterLoaded(true);
-            console.log('Fallback: Loaded', playersData?.length, 'players');
-          } else {
-            console.log('Fallback: Selected roster has no players');
-            setSelectedTeamPlayers([]);
-            setRosterLoaded(true);
-          }
-        } else {
-          console.log('Fallback: No rosters found in API response');
-          setSelectedTeamPlayers([]);
-          setRosterLoaded(true);
-        }
-      } else {
-        console.error('Fallback: Failed to fetch rosters:', rostersResponse.status);
-        setSelectedTeamPlayers([]);
-        setRosterLoaded(true);
-      }
-    } catch (error) {
-      console.error('Fallback: Failed to load team roster:', error);
-      setSelectedTeamPlayers([]);
-      setRosterLoaded(true);
-    }
-  };
-
   const loadTargetTeamRoster = async (teamId: number, leagueKey: string) => {
-    try {
-      console.log(`Loading target team roster for team ID: ${teamId}, league ID: ${leagueKey}`);
-      
-      if (!leagues || !teams) {
-        console.log('Missing leagues or teams data');
-        return;
-      }
-      
-      const league = findLeagueByKey(leagues, leagueKey);
-      if (!league) {
-        console.error('Target team: League not found:', leagueKey);
-        console.log('Available leagues:', leagues.map(l => ({ id: l.id, name: l.name })));
-        return;
-      }
-
-      const platformLeagueId = league.platform_league_id || league.league_id;
-      if (!platformLeagueId) {
-        console.error('Target team: No platform league ID found for league:', league);
-        return;
-      }
-      
-      console.log('Loading target roster for team', teamId, 'in league', platformLeagueId);
-      await loadTargetTeamRosterFallback(platformLeagueId, teamId);
-      
-    } catch (error) {
-      console.error('Failed to load target team roster:', error);
-      const league = findLeagueByKey(leagues, leagueKey);
-      const platformLeagueId = league?.platform_league_id || league?.league_id;
-      if (platformLeagueId) {
-        await loadTargetTeamRosterFallback(platformLeagueId, teamId);
-      }
+    if (!leagues) {
+      return;
     }
-  };
 
-  // Fallback function to load target team roster directly from Sleeper API
-  const loadTargetTeamRosterFallback = async (platformLeagueId: string, teamId: number) => {
     try {
-      console.log('Loading target team roster from Sleeper for league:', platformLeagueId, 'team:', teamId);
-      
-      // Get both rosters and users data to do proper matching
-      const [rostersResponse, usersResponse] = await Promise.all([
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/rosters`),
-        fetch(`https://api.sleeper.app/v1/league/${platformLeagueId}/users`)
-      ]);
-      
-      if (rostersResponse.ok && usersResponse.ok) {
-        const rosters = await rostersResponse.json();
-        const users = await usersResponse.json();
-        console.log('Successfully loaded', rosters?.length, 'rosters and', users?.length, 'users');
-        
-        // Find the team name based on teamId - handle all type conversions
-        console.log('Looking for target team with ID:', teamId, 'type:', typeof teamId);
-        console.log('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
-
-        const targetTeam = teams.find(t => {
-          // Try exact match first
-          if (t.id === teamId) return true;
-          // Try number conversion
-          if (typeof teamId === 'string' && t.id === parseInt(teamId)) return true;
-          if (typeof t.id === 'string' && parseInt(t.id) === teamId) return true;
-          // Try string conversion
-          if (t.id.toString() === teamId.toString()) return true;
-          return false;
-        });
-
-        if (!targetTeam) {
-          console.error('Target team not found with ID:', teamId, 'type:', typeof teamId);
-          console.error('Available teams:', teams.map(t => ({ id: t.id, name: t.name, type: typeof t.id })));
-          setTargetTeamPlayers([]);
-          return;
-        }
-        
-        console.log('Looking for roster for team:', targetTeam.name, 'owner:', targetTeam.owner_name);
-        
-        // Find the user that matches the target team owner
-        const matchingUser = users.find((user: any) => 
-          user.display_name === targetTeam.owner_name || 
-          user.metadata?.team_name === targetTeam.name ||
-          user.display_name.toLowerCase() === targetTeam.owner_name.toLowerCase()
-        );
-        
-        if (!matchingUser) {
-          console.warn('No matching user found for team:', targetTeam.name, 'owner:', targetTeam.owner_name);
-          console.log('Available users:', users.map((u: any) => ({ display_name: u.display_name, team_name: u.metadata?.team_name })));
-          // Fallback to roster index mapping
-          const availableRosters = rosters.filter((r: any) => r.players && r.players.length > 0);
-          const rosterIndex = (teamId + 1) % availableRosters.length;
-          const targetRoster = availableRosters[rosterIndex];
-          console.log('Using fallback roster at index:', rosterIndex, 'roster_id:', targetRoster?.roster_id);
-          
-          if (targetRoster && targetRoster.players && targetRoster.players.length > 0) {
-            const playersData = await fetchPlayerDetails(targetRoster.players);
-            setTargetTeamPlayers(playersData);
-            console.log('Loaded', playersData?.length, 'target players via fallback');
-          }
-          return;
-        }
-        
-        // Find the roster that belongs to this user
-        const targetRoster = rosters.find((roster: any) => roster.owner_id === matchingUser.user_id);
-        if (!targetRoster) {
-          console.error('No roster found for user:', matchingUser.display_name);
-          setTargetTeamPlayers([]);
-          return;
-        }
-        
-        console.log('Found matching roster:', targetRoster.roster_id, 'for user:', matchingUser.display_name);
-        
-        if (targetRoster && targetRoster.players && targetRoster.players.length > 0) {
-          const playersData = await fetchPlayerDetails(targetRoster.players);
-          setTargetTeamPlayers(playersData);
-          console.log('Loaded', playersData?.length, 'target players');
-        } else {
-          console.log('Target roster has no players');
-          setTargetTeamPlayers([]);
-        }
-      } else {
-        console.log('No target rosters found in API response');
-        setTargetTeamPlayers([]);
-      }
-    } catch (error) {
-      console.error('Failed to load target team roster:', error);
+      const result = await fetchTeamAnalysisFromBackend(teamId, leagues, leagueKey);
+      setTargetTeamPlayers(result?.roster ?? []);
+      console.log(
+        'Loaded target team roster from backend:',
+        result?.roster?.length ?? 0,
+        'players'
+      );
+    } catch (loadError) {
+      console.error('Failed to load target team roster:', loadError);
       setTargetTeamPlayers([]);
-    }
-  };
-
-  const fetchPlayerDetails = async (playerIds: string[]): Promise<Player[]> => {
-    try {
-      console.log('Fetching player details for IDs:', playerIds);
-      
-      // Get all NFL players from Sleeper API
-      const response = await fetch('https://api.sleeper.app/v1/players/nfl');
-      if (response.ok) {
-        const allPlayers = await response.json();
-        console.log('Got player database, processing', playerIds.length, 'players');
-        
-        // Get trade values for all players at once
-        const playerNames = playerIds.map(playerId => {
-          const player = allPlayers[playerId];
-          return player ? `${player.first_name || ''} ${player.last_name || ''}`.trim() : '';
-        }).filter(name => name);
-        
-        let tradeValues: { [key: string]: number } = {};
-        try {
-          const valueResponse = await apiRequest(`/api/v1/fantasy/trade-analyzer/player-values?limit=200`, { method: 'GET' });
-          if (valueResponse.ok) {
-            const valueData = await valueResponse.json();
-            if (valueData.success) {
-              // Create lookup map by player name
-              valueData.players.forEach((p: any) => {
-                tradeValues[p.name] = p.trade_value;
-              });
-            }
-          }
-        } catch (e) {
-          console.log('Failed to fetch trade values, using fallbacks');
-        }
-        
-        // Filter and format players
-        const formattedPlayers = playerIds.map((playerId, index) => {
-          const player = allPlayers[playerId];
-          // Create a safe numeric ID - use playerId hash or index as fallback
-          const numericId = playerId && !isNaN(parseInt(playerId)) ? parseInt(playerId) : 
-                          playerId ? playerId.split('').reduce((a, b) => a + b.charCodeAt(0), 0) : 
-                          1000000 + index; // Ensure unique fallback ID
-          
-          if (player) {
-            const playerName = `${player.first_name || ''} ${player.last_name || ''}`.trim();
-            const trade_value = tradeValues[playerName] || calculateTradeValue(player, leagueRules);
-            
-            return {
-              id: numericId,
-              name: playerName,
-              position: player.position || 'Unknown',
-              team: player.team || 'Unknown',
-              age: player.age || 0,
-              trade_value: trade_value
-            };
-          }
-          return {
-            id: numericId,
-            name: `Player ${playerId || 'Unknown'}`,
-            position: 'Unknown',
-            team: 'Unknown',
-            age: 0,
-            trade_value: 5
-          };
-        }).filter(p => p.name !== `Player ${p.id}` && p.name !== 'Player Unknown'); // Filter out unknown players
-        
-        console.log('Formatted players:', formattedPlayers);
-        return formattedPlayers;
-      } else {
-        console.error('Failed to fetch players API:', response.status);
-      }
-    } catch (error) {
-      console.error('Failed to fetch player details:', error);
-    }
-    return [];
-  };
-
-  const loadTeamAnalysis = async (teamId: number, leagueKey: string) => {
-    try {
-      setLoading(true);
-      
-      const league = findLeagueByKey(leagues, leagueKey);
-      if (!league) {
-        console.log('League not found for team analysis');
-        setError('League not found');
-        return;
-      }
-
-      const platformLeagueId = league.platform_league_id || league.league_id;
-      if (!platformLeagueId) {
-        setError('League is missing a platform ID');
-        return;
-      }
-      
-      console.log(`Loading team analysis for team ${teamId} in league ${platformLeagueId}`);
-      
-      try {
-        const token = localStorage.getItem('auth_token');
-        const response = await apiRequest(
-          `/api/v1/fantasy/trade-analyzer/team-analysis/${teamId}?league_id=${encodeURIComponent(leagueKey)}`,
-          {
-          method: 'GET',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-        
-        if (response.ok) {
-          const data = await response.json();
-          if (data.success && data.team_analysis) {
-            setTeamAnalysis(data.team_analysis);
-            setError(null);
-            console.log('Successfully loaded team analysis from backend');
-            return;
-          }
-        } else {
-          console.log('Backend team analysis API failed with status:', response.status);
-        }
-      } catch (apiError) {
-        console.log('Backend API failed, generating analysis from roster data:', apiError);
-      }
-
-      // Fallback: Generate analysis from current roster data
-      if (selectedTeamPlayers && selectedTeamPlayers.length > 0) {
-        const teamName = teams?.find(t => t.id === teamId)?.name || `Team ${teamId}`;
-        
-        // Calculate position strengths based on roster
-        const positionCounts = { QB: 0, RB: 0, WR: 0, TE: 0, K: 0, DEF: 0 };
-        selectedTeamPlayers.forEach(player => {
-          if (player.position && Object.prototype.hasOwnProperty.call(positionCounts, player.position)) {
-            (positionCounts as any)[player.position]++;
-          }
-        });
-
-        const generatedAnalysis = {
-          team_info: {
-            team_name: teamName,
-            record: { wins: 0, losses: 0 }, // Would need standings data
-            points_for: 0, // Would need scoring data
-            team_rank: 0,
-            competitive_tier: 'unknown'
-          },
-          roster_analysis: {
-            position_strengths: {
-              QB: positionCounts.QB * 20,
-              RB: positionCounts.RB * 15,
-              WR: positionCounts.WR * 12,
-              TE: positionCounts.TE * 18,
-              K: positionCounts.K * 10,
-              DEF: positionCounts.DEF * 16
-            },
-            position_needs: buildPositionNeedsFromRules(leagueRules, positionCounts),
-            surplus_positions: Object.entries(positionCounts)
-              .filter(([pos, count]) => count > (pos === 'WR' ? 4 : pos === 'RB' ? 3 : 2))
-              .map(([pos]) => pos)
-          },
-          tradeable_assets: {
-            surplus_players: selectedTeamPlayers.slice(0, 5).map(p => ({
-              ...p,
-              trade_value: p.trade_value || 15
-            })),
-            expendable_players: selectedTeamPlayers.slice(5, 8).map(p => ({
-              ...p,
-              trade_value: p.trade_value || 8
-            })),
-            valuable_players: selectedTeamPlayers.slice(0, 3).map(p => ({
-              ...p,
-              trade_value: p.trade_value || calculateTradeValue(p, leagueRules)
-            })),
-            tradeable_picks: [],
-          },
-          trade_strategy: {
-            competitive_analysis: {},
-            trade_preferences: {},
-            recommended_approach: 'Analysis based on current roster composition. Consider strengthening weak positions.'
-          }
-        };
-
-        setTeamAnalysis(generatedAnalysis);
-        setError(null);
-        console.log('Generated team analysis from roster data');
-      } else {
-        setError('No roster data available for analysis');
-        console.log('No roster data available for team analysis');
-      }
-      
-    } catch (error) {
-      console.error('Failed to load team analysis:', error);
-      setError('Failed to load team analysis');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -899,7 +527,7 @@ export default function TradeAnalyzer({
           },
           body: JSON.stringify({
             team_id: teamId,
-            league_id: leagueKey,
+            league_id: platformLeagueId,
             recommendation_type: 'all',
             max_recommendations: 10
           })
@@ -912,36 +540,17 @@ export default function TradeAnalyzer({
             setRecommendations(data.recommendations);
             console.log('Successfully loaded', data.recommendations.length, 'trade recommendations from backend');
             return;
-          } else {
-            console.log('API succeeded but no recommendations in response:', data);
           }
+          console.log('API succeeded but no recommendations in response:', data);
         } else {
           const errorText = await response.text();
           console.log('Backend recommendations API failed with status:', response.status, 'error:', errorText);
         }
       } catch (apiError) {
-        console.log('Backend API failed, generating basic recommendations:', apiError);
+        console.log('Backend recommendations API failed:', apiError);
       }
 
-      // Fallback: Generate basic recommendations based on available teams
-      if (teams && teams.length > 1) {
-        const availableTeams = teams.filter(t => t.id !== teamId);
-        const basicRecommendations = availableTeams.slice(0, 3).map((team, index) => ({
-          target_team_id: team.id,
-          we_get: { players: [], picks: [], faab: 0 },
-          we_give: { players: [], picks: [], faab: 0 },
-          recommendation_type: ['position_need', 'consolidation', 'buy_low'][index] || 'general',
-          trade_rationale: `Consider trading with ${team.name} to address roster needs and strengthen playoff positioning.`,
-          priority_score: 75 - (index * 5),
-          estimated_likelihood: 0.6 - (index * 0.1)
-        }));
-        
-        setRecommendations(basicRecommendations);
-        console.log('Generated basic trade recommendations');
-      } else {
-        console.log('No teams available for recommendations');
-        setRecommendations([]);
-      }
+      setRecommendations([]);
     } catch (error) {
       console.error('Failed to load recommendations:', error);
       setRecommendations([]);
@@ -949,10 +558,17 @@ export default function TradeAnalyzer({
   };
 
   const analyzeQuickTrade = async () => {
-    if (!selectedLeague || !selectedTeam || !targetTeam) return;
+    if (!selectedLeague || !selectedTeam || !targetTeam || !leagues) return;
     
     try {
       setLoading(true);
+      const league = findLeagueByKey(leagues, selectedLeague);
+      const platformLeagueId = getPlatformLeagueId(league);
+      if (!platformLeagueId) {
+        setError('League is missing a platform ID');
+        return;
+      }
+
       const token = localStorage.getItem('auth_token');
       const response = await apiRequest('/api/v1/fantasy/trade-analyzer/quick-analysis', {
         method: 'POST',
@@ -961,7 +577,7 @@ export default function TradeAnalyzer({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          league_id: selectedLeague,
+          league_id: platformLeagueId,
           team1_id: selectedTeam,
           team2_id: targetTeam,
           team1_gives: team1Gives,
@@ -1298,7 +914,7 @@ export default function TradeAnalyzer({
                       </div>
                     </div>
 
-                    <p className="text-sm text-gray-600 mb-3">{rec.trade_rationale}</p>
+                    <p className="text-sm text-gray-600 mb-3">{rec.reasoning || rec.trade_rationale}</p>
 
                     <div className="flex items-center justify-between">
                       <button 
