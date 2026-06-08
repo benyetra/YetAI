@@ -31,6 +31,19 @@ def _points_field_for_scoring(scoring_type: str) -> str:
     return "ppr_points"
 
 
+def points_field_for_scoring(scoring_type: str) -> str:
+    """Public alias for analytics row point column selection."""
+    return _points_field_for_scoring(scoring_type)
+
+
+def game_points_for_scoring(
+    game: Dict[str, Any], *, scoring_type: str = "ppr"
+) -> float:
+    """Extract fantasy points from a weekly analytics row for the league format."""
+    field = _points_field_for_scoring(scoring_type)
+    return float(game.get(field) or game.get("ppr_points") or 0)
+
+
 def _scoring_label(scoring_type: str) -> str:
     normalized = (scoring_type or "ppr").lower().replace("-", "_")
     if normalized in {"half_ppr", "half"}:

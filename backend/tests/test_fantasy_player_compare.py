@@ -67,6 +67,15 @@ def test_scoring_type_from_sleeper_league():
     )
 
 
+def test_game_points_for_scoring_respects_league():
+    from app.services.fantasy_player_compare import game_points_for_scoring
+
+    game = {"ppr_points": 20.0, "half_ppr_points": 17.5, "standard_points": 15.0}
+    assert game_points_for_scoring(game, scoring_type="ppr") == 20.0
+    assert game_points_for_scoring(game, scoring_type="half_ppr") == 17.5
+    assert game_points_for_scoring(game, scoring_type="standard") == 15.0
+
+
 def test_aggregate_analytics_uses_scoring_field():
     rows = [
         {"ppr_points": 20, "standard_points": 15, "carries": 10, "targets": 5},

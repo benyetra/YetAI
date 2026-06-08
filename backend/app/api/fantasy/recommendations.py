@@ -41,8 +41,13 @@ async def get_start_sit_recommendations(
             find_user_team_in_standings,
             resolve_platform_user_id,
         )
+        from app.services.fantasy_player_compare import (
+            game_points_for_scoring,
+            scoring_type_from_sleeper_league,
+        )
         from sqlalchemy import text
 
+        current_season = datetime.now().year
         sleeper_service = SleeperFantasyService()
         analytics_service = PlayerAnalyticsService(db)
 
@@ -196,10 +201,9 @@ async def get_start_sit_recommendations(
                     continue
 
                 # Get league roster rules for proper START/SIT decisions
-                from app.services.sleeper_fantasy_service import SleeperFantasyService
-
-                sleeper_service_temp = SleeperFantasyService()
-                league_details = await sleeper_service_temp.get_league_details(
+                league_doc = await sleeper_service.get_league(str(current_league_id))
+                scoring_type = scoring_type_from_sleeper_league(league_doc)
+                league_details = await sleeper_service.get_league_details(
                     current_league_id
                 )
                 roster_positions = league_details.get("roster_positions", [])
@@ -249,7 +253,7 @@ async def get_start_sit_recommendations(
                                 # Now get analytics using the correct ID
                                 analytics = (
                                     await analytics_service.get_player_analytics(
-                                        fantasy_player_id, season=2024
+                                        fantasy_player_id, season=current_season
                                     )
                                 )
                                 logger.info(
@@ -273,7 +277,8 @@ async def get_start_sit_recommendations(
                             # Use average of last 3 games
                             recent_games = analytics[:3]
                             game_points = [
-                                game.get("ppr_points", 0) for game in recent_games
+                                game_points_for_scoring(game, scoring_type=scoring_type)
+                                for game in recent_games
                             ]
                             total_points = sum(game_points)
                             projected_points = (
@@ -342,15 +347,17 @@ async def get_start_sit_recommendations(
                             "status": status,
                             "is_injured": is_injured,
                             "reason": (
-                                f"Based on recent performance averaging {projected_points:.1f} pts{injury_reason}"
+                                f"Based on recent {scoring_type.replace('_', ' ')} performance averaging {projected_points:.1f} pts{injury_reason}"
                                 if analytics
                                 else f"Projected {projected_points:.1f} pts (no recent data){injury_reason}"
                             ),
                             "league_name": league.get("name", "Unknown League"),
+                            "scoring_type": scoring_type,
                             "league_context": {
                                 "league_id": current_league_id,
                                 "league_name": league.get("name", "Unknown League"),
                                 "team_name": user_team.get("name", "Your Team"),
+                                "scoring_type": scoring_type,
                             },
                         }
                         player_projections.append(player_data)
