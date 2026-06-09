@@ -10,6 +10,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from app.models.database_models import AutoPickRunStatus
 
 
+def test_build_providers_includes_wnba_sources():
+    from app.tasks.auto_pick import _build_providers
+
+    db = MagicMock()
+    providers = _build_providers(db)
+    assert len(providers) == 12
+
+
 def test_celery_task_invokes_orchestrator():
     fake_result = MagicMock(id=42, pick_count=2, status=AutoPickRunStatus.SUCCESS)
     with (

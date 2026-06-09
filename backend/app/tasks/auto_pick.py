@@ -32,6 +32,9 @@ from app.services.auto_pick.sources.nfl_qb_passing_source import NFLQBPassingSou
 from app.services.auto_pick.sources.nhl_goalie_saves_source import NHLGoalieSavesSource
 from app.services.auto_pick.sources.nhl_totals_source import NHLTotalsSource
 from app.services.auto_pick.sources.player_prop_source import PlayerPropSource
+from app.services.auto_pick.sources.wnba_player_prop_source import WNBAPlayerPropSource
+from app.services.auto_pick.sources.wnba_spread_source import WNBASpreadSource
+from app.services.auto_pick.sources.wnba_totals_source import WNBATotalsSource
 
 log = logging.getLogger(__name__)
 
@@ -51,6 +54,10 @@ def _build_providers(db):
         TotalsCandidateProvider(source=NHLTotalsSource(db)),
         # NFL
         PlayerPropCandidateProvider(source=NFLQBPassingSource(db)),
+        # WNBA
+        PlayerPropCandidateProvider(source=WNBAPlayerPropSource(db)),
+        SpreadCandidateProvider(source=WNBASpreadSource(db)),
+        TotalsCandidateProvider(source=WNBATotalsSource(db)),
     ]
 
 

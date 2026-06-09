@@ -9,11 +9,15 @@ from sqlalchemy.orm import Session
 
 from app.models.database_models import AutoPickRun, ScoringConfig
 from app.models.predictions_models import (
+    Hitter,
     NBASpreadProjections,
     NBATotalsProjections,
     PointsProjections,
     StealsProjections,
     StrikeoutProjections,
+    WNBAPointsProjections,
+    WNBASpreadProjections,
+    WNBATotalsProjections,
 )
 
 
@@ -43,6 +47,24 @@ def projection_counts_for_day(db: Session, day: date) -> dict[str, int]:
             StrikeoutProjections.date == day,
             StrikeoutProjections.fanduel_line.isnot(None),
             StrikeoutProjections.fanduel_line > 0,
+        )
+        .count(),
+        "mlb_hits_today": db.query(Hitter)
+        .filter(
+            Hitter.game_time >= datetime.combine(day, datetime.min.time()),
+            Hitter.game_time <= datetime.combine(day, datetime.max.time()),
+        )
+        .count(),
+        "wnba_totals_projections": db.query(WNBATotalsProjections)
+        .filter(WNBATotalsProjections.game_date == day)
+        .count(),
+        "wnba_spread_projections": db.query(WNBASpreadProjections)
+        .filter(WNBASpreadProjections.game_date == day)
+        .count(),
+        "wnba_points_props_with_line": db.query(WNBAPointsProjections)
+        .filter(
+            WNBAPointsProjections.date == day,
+            WNBAPointsProjections.market_line.isnot(None),
         )
         .count(),
     }

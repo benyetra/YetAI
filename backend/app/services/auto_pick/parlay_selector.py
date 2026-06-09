@@ -23,10 +23,10 @@ class ScoredParlayPick:
 def filter_parlay_eligible(
     scored: list[ScoredCandidate], config: SelectorConfig
 ) -> list[ScoredCandidate]:
-    """Same quality bar as straight picks: threshold + odds bounds."""
+    """Parlay legs use a lower score floor than straight picks; same odds bounds."""
     eligible: list[ScoredCandidate] = []
     for sc in scored:
-        if sc.score.total < config.threshold:
+        if sc.score.total < config.parlay_leg_threshold:
             continue
         odds = sc.candidate.market_odds
         if odds < config.odds_min or odds > config.odds_max:
@@ -89,5 +89,7 @@ class ParlaySelector:
                     best = candidate
 
         if best is not None:
+            if best.score.total < self.config.parlay_score_threshold:
+                return None
             best.tier = SubscriptionTier.PRO
         return best

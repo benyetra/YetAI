@@ -2,6 +2,7 @@ from datetime import date, datetime
 
 from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext
+from app.services.mlb_hit_pick import hit_confidence_pct
 from app.services.mlb_strikeout_pick import signed_edge_for_side
 
 EDGE_NORMALIZERS = {
@@ -13,6 +14,15 @@ EDGE_NORMALIZERS = {
 
 
 def edge_sub_score(candidate: BetCandidate) -> float:
+    if candidate.projection_metadata.get("stat") == "hits":
+        combined = candidate.projection_metadata.get("combined_score")
+        if combined is not None:
+            # Hits board combined_score maps to 0–100; boost so board 2.5+ clears pick threshold.
+            return max(
+                0.0,
+                min(100.0, hit_confidence_pct(float(combined)) * 1.18),
+            )
+
     side = (candidate.projection_metadata.get("side") or "").lower()
     if candidate.market_type == MarketType.PLAYER_PROP and side in ("over", "under"):
         delta = signed_edge_for_side(

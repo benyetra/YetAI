@@ -150,6 +150,8 @@ class AutoPickOrchestrator:
             odds_min=cfg.odds_min,
             odds_max=cfg.odds_max,
             max_picks=cfg.max_picks,
+            parlay_leg_threshold=cfg.parlay_leg_threshold,
+            parlay_score_threshold=cfg.parlay_score_threshold,
         )
         selector = BetSelector(selector_config)
         parlay_selector = ParlaySelector(selector_config)

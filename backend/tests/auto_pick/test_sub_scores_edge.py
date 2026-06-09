@@ -51,3 +51,11 @@ def test_edge_normalized_per_market_type():
     prop = edge_sub_score(_cand(MarketType.PLAYER_PROP, 5.5, 8.5))
     spread = edge_sub_score(_cand(MarketType.SPREAD, -3.5, -6.5))
     assert prop != spread
+
+
+def test_edge_mlb_hits_uses_combined_score_board_confidence():
+    c = _cand(MarketType.PLAYER_PROP, 0.5, 0.575, side="over")
+    c.projection_metadata["stat"] = "hits"
+    c.projection_metadata["combined_score"] = 2.5
+    # Line-edge alone would be ~37.5; board confidence at 2.5 is 58.75 (+12% boost in scorer).
+    assert edge_sub_score(c) == pytest.approx(58.75 * 1.18, abs=0.2)

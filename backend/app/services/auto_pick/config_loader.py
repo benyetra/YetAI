@@ -13,6 +13,8 @@ class LoadedScoringConfig:
     odds_min: int
     odds_max: int
     max_picks: int
+    parlay_leg_threshold: float = 55.0
+    parlay_score_threshold: float = 55.0
 
 
 def load_scoring_config(db: Session) -> LoadedScoringConfig:
@@ -24,6 +26,8 @@ def load_scoring_config(db: Session) -> LoadedScoringConfig:
             odds_min=-300,
             odds_max=400,
             max_picks=4,
+            parlay_leg_threshold=55.0,
+            parlay_score_threshold=55.0,
         )
     return LoadedScoringConfig(
         weights=ScoringWeights(

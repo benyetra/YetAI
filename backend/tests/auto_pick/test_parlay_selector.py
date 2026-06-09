@@ -135,3 +135,32 @@ def test_filter_parlay_eligible_respects_odds_bounds():
     ok = _leg("g3", 80, odds=-110)
     eligible = filter_parlay_eligible([low, high, ok], config)
     assert [sc.candidate.event_id for sc in eligible] == ["g3"]
+
+
+def test_parlay_accepts_legs_below_straight_pick_threshold():
+    """Legs scoring 55–64 qualify for parlay pool but not straight picks."""
+    config = SelectorConfig(
+        threshold=65.0, parlay_leg_threshold=55.0, parlay_score_threshold=55.0
+    )
+    pick = ParlaySelector(config).select_parlay(
+        [
+            _leg("g1", 60, selection="Judge OVER 0.5 hits"),
+            _leg("g2", 58, selection="Soto OVER 0.5 hits"),
+        ]
+    )
+    assert pick is not None
+    assert pick.combined_odds > -125
+
+
+def test_parlay_rejects_when_combined_confidence_below_floor():
+    config = SelectorConfig(
+        threshold=65.0, parlay_leg_threshold=55.0, parlay_score_threshold=55.0
+    )
+    # Parlay confidence = min(56, 56*0.95) = 53.2
+    pick = ParlaySelector(config).select_parlay(
+        [
+            _leg("g1", 56, selection="Leg A"),
+            _leg("g2", 56, selection="Leg B"),
+        ]
+    )
+    assert pick is None

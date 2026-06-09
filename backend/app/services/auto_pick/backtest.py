@@ -38,6 +38,8 @@ def run_backtest(start: date, end: date, db: Session) -> dict:
             odds_min=cfg.odds_min,
             odds_max=cfg.odds_max,
             max_picks=cfg.max_picks,
+            parlay_leg_threshold=cfg.parlay_leg_threshold,
+            parlay_score_threshold=cfg.parlay_score_threshold,
         )
     )
 

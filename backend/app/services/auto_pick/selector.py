@@ -20,6 +20,9 @@ class SelectorConfig:
     odds_min: int = -300
     odds_max: int = 400
     max_picks: int = 4
+    # Parlay legs may qualify below straight-pick threshold; parlay score has its own floor.
+    parlay_leg_threshold: float = 55.0
+    parlay_score_threshold: float = 55.0
 
 
 _TIER_BY_RANK = [
