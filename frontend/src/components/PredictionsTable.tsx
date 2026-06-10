@@ -54,6 +54,8 @@ type PredictionsTableProps = {
   /** Controlled expand/collapse; omit for internal state only. */
   expanded?: boolean;
   onExpandedChange?: (expanded: boolean) => void;
+  /** Optional per-row class for highlighting value plays. */
+  rowClassName?: (row: Record<string, unknown>) => string | undefined;
 };
 
 function cellSortValue(value: unknown): number | string {
@@ -101,6 +103,7 @@ export function PredictionsTable({
   emptyMessage = 'No predictions available for this date.',
   expanded: expandedProp,
   onExpandedChange,
+  rowClassName,
 }: PredictionsTableProps) {
   const [expandedInternal, setExpandedInternal] = useState(true);
   const [sort, setSort] = useState<SortState | null>(null);
@@ -189,7 +192,10 @@ export function PredictionsTable({
                 </thead>
                 <tbody>
                   {sortedRows.map((row, i) => (
-                    <tr key={(row.id as number | string) ?? i}>
+                    <tr
+                      key={(row.id as number | string) ?? i}
+                      className={rowClassName?.(row) ?? undefined}
+                    >
                       {columns.map((c) => {
                         const raw = row[c.key];
                         const content = c.format ? c.format(raw, row) : (raw as ReactNode);

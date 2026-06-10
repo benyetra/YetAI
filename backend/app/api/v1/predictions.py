@@ -53,6 +53,10 @@ from app.models.predictions_models import (
     WNBATotalsProjections,
 )
 from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
+from app.services.player_prop_projection_display import (
+    enrich_prop_rows,
+    enrich_strikeout_display_row,
+)
 
 router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
@@ -323,7 +327,7 @@ def mlb_predictions(
             prob_over=getattr(meta, "prob_over", None) if meta else None,
             pick_edge_pct=getattr(meta, "pick_edge_pct", None) if meta else None,
         )
-        cleaned_strikeouts.append(enriched)
+        cleaned_strikeouts.append(enrich_strikeout_display_row(enriched))
 
     # Merge actuals for the selected date. When target_date is None (today),
     # actuals likely don't exist yet — the lookup returns an empty dict and
@@ -440,25 +444,41 @@ def nba_predictions(
     return {
         "totals": totals,
         "spreads": spreads,
-        "points": _query_recent(
-            db, PointsProjections, "date", target_date, limit, tz=tz
+        "points": enrich_prop_rows(
+            _query_recent(db, PointsProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="points",
         ),
-        "assists": _query_recent(
-            db, AssistsProjections, "date", target_date, limit, tz=tz
+        "assists": enrich_prop_rows(
+            _query_recent(db, AssistsProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="assists",
         ),
-        "rebounds": _query_recent(
-            db, ReboundsProjections, "date", target_date, limit, tz=tz
+        "rebounds": enrich_prop_rows(
+            _query_recent(db, ReboundsProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="rebounds",
         ),
-        "three_point": _query_recent(
-            db, ThreePointProjections, "date", target_date, limit, tz=tz
+        "three_point": enrich_prop_rows(
+            _query_recent(db, ThreePointProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="three_pt_made",
         ),
-        "steals": _query_recent(
-            db, StealsProjections, "date", target_date, limit, tz=tz
+        "steals": enrich_prop_rows(
+            _query_recent(db, StealsProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="steals",
         ),
-        "blocks": _query_recent(
-            db, BlocksProjections, "date", target_date, limit, tz=tz
+        "blocks": enrich_prop_rows(
+            _query_recent(db, BlocksProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="blocks",
         ),
-        "pra": _query_recent(db, PRAProjections, "date", target_date, limit, tz=tz),
+        "pra": enrich_prop_rows(
+            _query_recent(db, PRAProjections, "date", target_date, limit, tz=tz),
+            sport="nba",
+            stat="pra",
+        ),
     }
 
 
@@ -473,8 +493,10 @@ def nfl_predictions(
     """Recent NFL props: QB passing/rushing + kicker FG predictions."""
     tz = _safe_tz(tz)
     return {
-        "qb_predictions": _query_recent(
-            db, QBPredictions, "game_date", target_date, limit, tz=tz
+        "qb_predictions": enrich_prop_rows(
+            _query_recent(db, QBPredictions, "game_date", target_date, limit, tz=tz),
+            sport="nfl",
+            stat="passing_yards",
         ),
         "kicker_predictions": _query_recent(
             db, KickerPredictions, "game_date", target_date, limit, tz=tz
@@ -517,23 +539,31 @@ def nhl_predictions(
     """Recent NHL props: goalie saves, player SOG, game totals O/U."""
     tz = _safe_tz(tz)
     return {
-        "goalie_predictions": _query_recent(
-            db,
-            NHLGoaliePredictions,
-            "game_date",
-            target_date,
-            limit,
-            tz=tz,
-            dedupe_keys=("goalie_id", "game_date"),
+        "goalie_predictions": enrich_prop_rows(
+            _query_recent(
+                db,
+                NHLGoaliePredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("goalie_id", "game_date"),
+            ),
+            sport="nhl",
+            stat="saves",
         ),
-        "player_shots": _query_recent(
-            db,
-            NHLPlayerShotsPredictions,
-            "game_date",
-            target_date,
-            limit,
-            tz=tz,
-            dedupe_keys=("player_id", "game_date"),
+        "player_shots": enrich_prop_rows(
+            _query_recent(
+                db,
+                NHLPlayerShotsPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("player_id", "game_date"),
+            ),
+            sport="nhl",
+            stat="shots",
         ),
         "team_totals": _query_recent(
             db,
@@ -599,14 +629,26 @@ def wnba_predictions(
     return {
         "totals": totals,
         "spreads": spreads,
-        "points": _query_wnba_props_by_season_minutes(
-            db, WNBAPointsProjections, target_date, prop_limit, tz=tz
+        "points": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAPointsProjections, target_date, prop_limit, tz=tz
+            ),
+            sport="wnba",
+            stat="points",
         ),
-        "assists": _query_wnba_props_by_season_minutes(
-            db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
+        "assists": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
+            ),
+            sport="wnba",
+            stat="assists",
         ),
-        "rebounds": _query_wnba_props_by_season_minutes(
-            db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
+        "rebounds": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
+            ),
+            sport="wnba",
+            stat="rebounds",
         ),
     }
 

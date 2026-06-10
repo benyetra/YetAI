@@ -3288,3 +3288,50 @@ WNBAAssistsProjections = _make_prop_projection("assists")
 WNBAAssistsActuals = _make_prop_actuals("assists")
 WNBAReboundsProjections = _make_prop_projection("rebounds")
 WNBAReboundsActuals = _make_prop_actuals("rebounds")
+
+
+class YetAIHits(Base):
+    """Tracked highlighted player-prop plays (strong/lean value_tier rows).
+
+    One row per (sport, stat_type, game_date, entity_id). Graded when actuals land.
+    """
+
+    __tablename__ = "pred_yetai_hits"
+
+    id = Column(Integer, primary_key=True)
+    sport = Column(String(16), nullable=False, index=True)
+    stat_type = Column(String(32), nullable=False, index=True)
+    game_date = Column(Date, nullable=False, index=True)
+    entity_id = Column(String(64), nullable=False)
+    entity_name = Column(String(120), nullable=False)
+    opponent_name = Column(String(120), nullable=True)
+    projected_value = Column(Float, nullable=False)
+    market_line = Column(Float, nullable=False)
+    edge = Column(Float, nullable=True)
+    pick = Column(String(16), nullable=False)  # OVER / UNDER
+    confidence_score = Column(Float, nullable=True)
+    value_tier = Column(String(16), nullable=False)  # strong / lean
+    projection_row_id = Column(Integer, nullable=True)
+    actual_value = Column(Float, nullable=True)
+    hit_result = Column(String(16), nullable=True)  # win / loss / push / pending
+    graded_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "sport",
+            "stat_type",
+            "game_date",
+            "entity_id",
+            name="unique_yetai_hit",
+        ),
+        Index("idx_yetai_hits_sport_date", "sport", "game_date"),
+        Index("idx_yetai_hits_result", "hit_result"),
+    )
+
+    def __repr__(self) -> str:
+        return (
+            f"<YetAIHits {self.sport} {self.stat_type} {self.entity_name} "
+            f"{self.game_date}: {self.pick} {self.market_line} ({self.value_tier})>"
+        )

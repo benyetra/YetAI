@@ -4,25 +4,29 @@ import AccuracySummary from '@/components/yetai/AccuracySummary';
 import GameProjectionsSection from '@/components/yetai/GameProjectionsSection';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
 import {
-  formatNumber,
-  formatString,
-  type ColumnDef,
-} from '@/components/PredictionsTable';
-
-function propColumns(propKey: string, propLabel: string): ColumnDef[] {
-  return [
-    { key: 'player_name', label: 'Player', format: (v) => formatString(v) },
-    { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
-    { key: propKey, label: propLabel, align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-    { key: 'market_line', label: 'Line', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-    { key: 'recommendation', label: 'Pick', format: (v) => formatString(v) },
-  ];
-}
+  propRowClassName,
+  WNBA_PROP_COLUMNS,
+} from '@/lib/propProjectionDisplay';
 
 const PROP_GROUPS = [
-  { title: 'Points', responseKey: 'points', columns: propColumns('projected_points', 'Proj Pts') },
-  { title: 'Assists', responseKey: 'assists', columns: propColumns('projected_assists', 'Proj Ast') },
-  { title: 'Rebounds', responseKey: 'rebounds', columns: propColumns('projected_rebounds', 'Proj Reb') },
+  {
+    title: 'Points',
+    responseKey: 'points',
+    columns: WNBA_PROP_COLUMNS.points,
+    rowClassName: propRowClassName,
+  },
+  {
+    title: 'Assists',
+    responseKey: 'assists',
+    columns: WNBA_PROP_COLUMNS.assists,
+    rowClassName: propRowClassName,
+  },
+  {
+    title: 'Rebounds',
+    responseKey: 'rebounds',
+    columns: WNBA_PROP_COLUMNS.rebounds,
+    rowClassName: propRowClassName,
+  },
 ];
 
 export default function WNBAPredictionsPage() {

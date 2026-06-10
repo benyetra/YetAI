@@ -8,15 +8,7 @@ import {
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
-
-const QB_COLUMNS: ColumnDef[] = [
-  { key: 'qb_player_name', label: 'QB', format: (v) => formatString(v) },
-  { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
-  { key: 'predicted_passing_yards', label: 'Pass Yds', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
-  { key: 'predicted_completions', label: 'Comp', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'predicted_touchdowns', label: 'TD', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
-  { key: 'betting_recommendation', label: 'Pick', format: (v) => formatString(v) },
-];
+import { NFL_QB_COLUMNS, propRowClassName } from '@/lib/propProjectionDisplay';
 
 const KICKER_COLUMNS: ColumnDef[] = [
   { key: 'kicker_player_name', label: 'Kicker', format: (v) => formatString(v) },
@@ -43,7 +35,12 @@ export default function NFLPredictionsPage() {
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="nfl" date={date} />}
       groups={[
-        { title: 'Quarterback Predictions', responseKey: 'qb_predictions', columns: QB_COLUMNS },
+        {
+          title: 'Quarterback Predictions',
+          responseKey: 'qb_predictions',
+          columns: NFL_QB_COLUMNS,
+          rowClassName: propRowClassName,
+        },
         { title: 'Kicker Predictions', responseKey: 'kicker_predictions', columns: KICKER_COLUMNS },
       ]}
     />

@@ -23,6 +23,7 @@ from app.services.etl.nba._fanduel_lines import (
     fetch_fanduel_prop_for_player,
     get_event_id_for_game,
 )
+from app.services.player_prop_projection_display import prop_confidence_pct
 
 WNBA_SPORT = "basketball_wnba"
 
@@ -141,4 +142,7 @@ def attach_prop_market_fields(
     row["market_line"] = line
     row["edge"] = edge
     row["recommendation"] = recommendation
+    row["confidence_score"] = (
+        prop_confidence_pct(abs(edge), stat) if recommendation != "NO_PLAY" else None
+    )
     return True

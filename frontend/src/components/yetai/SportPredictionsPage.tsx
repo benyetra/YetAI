@@ -13,12 +13,14 @@ import {
   type ColumnDef,
 } from '@/components/PredictionsTable';
 import { usePredictions, type PredictionSport } from '@/lib/usePredictions';
-import { Crown } from 'lucide-react';
+import { countTopPlays, isTopPlay } from '@/lib/propProjectionDisplay';
+import { Crown, Sparkles } from 'lucide-react';
 
 export type PropGroup = {
   title: string;
   responseKey: string;
   columns: ColumnDef[];
+  rowClassName?: (row: Record<string, unknown>) => string | undefined;
 };
 
 export type GroupsContext = {
@@ -73,6 +75,15 @@ export default function SportPredictionsPage({
   );
 
   const storageKey = `yetai-predictions-expanded:${sport}`;
+  const topPlaysStorageKey = `yetai-predictions-top-plays:${sport}`;
+  const [topPlaysOnly, setTopPlaysOnly] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem(topPlaysStorageKey) === '1';
+    } catch {
+      return false;
+    }
+  });
   const [expandedByKey, setExpandedByKey] = useState<Record<string, boolean>>(() => {
     const defaults = expandedMap(resolvedGroups, true);
     if (typeof window === 'undefined') return defaults;
@@ -99,6 +110,15 @@ export default function SportPredictionsPage({
       /* ignore quota errors */
     }
   }, [expandedByKey, storageKey]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    try {
+      window.localStorage.setItem(topPlaysStorageKey, topPlaysOnly ? '1' : '0');
+    } catch {
+      /* ignore quota errors */
+    }
+  }, [topPlaysOnly, topPlaysStorageKey]);
 
   useEffect(() => {
     setExpandedByKey((prev) => {
@@ -141,7 +161,21 @@ export default function SportPredictionsPage({
     />
   );
 
-  const showPropToolbar = resolvedGroups.length > 1;
+  const hasTopPlayGroups = useMemo(
+    () => resolvedGroups.some((g) => g.rowClassName != null),
+    [resolvedGroups]
+  );
+
+  const topPlayCount = useMemo(() => {
+    if (!data || !hasTopPlayGroups) return 0;
+    return resolvedGroups.reduce((sum, g) => {
+      if (!g.rowClassName) return sum;
+      const rows = (data[g.responseKey] as Array<Record<string, unknown>>) ?? [];
+      return sum + countTopPlays(rows);
+    }, 0);
+  }, [data, hasTopPlayGroups, resolvedGroups]);
+
+  const showPropToolbar = resolvedGroups.length > 1 || hasTopPlayGroups;
 
   return (
     <Layout requiresAuth fullWidth>
@@ -172,62 +206,105 @@ export default function SportPredictionsPage({
             : null}
 
           {showPropToolbar && (
-            <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table visibility">
+            <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table filters">
               <div className="predictions-toolbar-actions">
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setAllExpanded(true)}
-                  disabled={allExpanded}
-                >
-                  Show all
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={() => setAllExpanded(false)}
-                  disabled={allCollapsed}
-                >
-                  Hide all
-                </button>
-              </div>
-              <div className="predictions-toolbar-chips">
-                {resolvedGroups.map((g) => {
-                  const isOpen = expandedByKey[g.responseKey] !== false;
-                  return (
+                {hasTopPlayGroups && (
+                  <button
+                    type="button"
+                    className={`predictions-chip predictions-chip-featured ${topPlaysOnly ? 'is-active' : ''}`}
+                    aria-pressed={topPlaysOnly}
+                    onClick={() => setTopPlaysOnly((prev) => !prev)}
+                    disabled={loading}
+                  >
+                    <Sparkles size={13} aria-hidden />
+                    Top plays only
+                    {!loading && topPlayCount > 0 ? (
+                      <span className="predictions-chip-count">{topPlayCount}</span>
+                    ) : null}
+                  </button>
+                )}
+                {resolvedGroups.length > 1 && (
+                  <>
                     <button
-                      key={g.responseKey}
                       type="button"
-                      className={`predictions-chip ${isOpen ? 'is-active' : ''}`}
-                      aria-pressed={isOpen}
-                      onClick={() =>
-                        setExpandedByKey((prev) => ({
-                          ...prev,
-                          [g.responseKey]: !isOpen,
-                        }))
-                      }
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setAllExpanded(true)}
+                      disabled={allExpanded}
                     >
-                      {g.title}
+                      Show all
                     </button>
-                  );
-                })}
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      onClick={() => setAllExpanded(false)}
+                      disabled={allCollapsed}
+                    >
+                      Hide all
+                    </button>
+                  </>
+                )}
               </div>
+              {resolvedGroups.length > 1 && (
+                <div className="predictions-toolbar-chips">
+                  {resolvedGroups.map((g) => {
+                    const isOpen = expandedByKey[g.responseKey] !== false;
+                    return (
+                      <button
+                        key={g.responseKey}
+                        type="button"
+                        className={`predictions-chip ${isOpen ? 'is-active' : ''}`}
+                        aria-pressed={isOpen}
+                        onClick={() =>
+                          setExpandedByKey((prev) => ({
+                            ...prev,
+                            [g.responseKey]: !isOpen,
+                          }))
+                        }
+                      >
+                        {g.title}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
-          {resolvedGroups.map((g) => (
-            <PredictionsTable
-              key={g.responseKey}
-              title={g.title}
-              rows={(data?.[g.responseKey] as Array<Record<string, unknown>>) ?? []}
-              columns={g.columns}
-              loading={loading}
-              expanded={expandedByKey[g.responseKey] !== false}
-              onExpandedChange={(next) =>
-                setExpandedByKey((prev) => ({ ...prev, [g.responseKey]: next }))
-              }
-            />
-          ))}
+          {topPlaysOnly && !loading && topPlayCount === 0 && hasTopPlayGroups ? (
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <p className="dim" style={{ margin: 0, fontSize: 13 }}>
+                No top plays for this date. Try another slate or turn off the filter.
+              </p>
+            </div>
+          ) : null}
+
+          {resolvedGroups.map((g) => {
+            const allRows = (data?.[g.responseKey] as Array<Record<string, unknown>>) ?? [];
+            const rows =
+              topPlaysOnly && g.rowClassName ? allRows.filter(isTopPlay) : allRows;
+            if (topPlaysOnly && g.rowClassName && rows.length === 0) {
+              return null;
+            }
+            return (
+              <PredictionsTable
+                key={g.responseKey}
+                title={g.title}
+                rows={rows}
+                columns={g.columns}
+                loading={loading}
+                expanded={expandedByKey[g.responseKey] !== false}
+                onExpandedChange={(next) =>
+                  setExpandedByKey((prev) => ({ ...prev, [g.responseKey]: next }))
+                }
+                rowClassName={g.rowClassName}
+                emptyMessage={
+                  topPlaysOnly && g.rowClassName
+                    ? 'No top plays in this category for this date.'
+                    : undefined
+                }
+              />
+            );
+          })}
         </div>
       )}
     </Layout>

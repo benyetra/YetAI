@@ -1105,6 +1105,21 @@ input { font: inherit; }
 }
 .data-table td.mono { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .data-table tbody tr:hover td { background: color-mix(in oklab, var(--surface-2) 50%, transparent); }
+.data-table tbody tr.is-value-play td {
+  background: color-mix(in oklab, var(--win-soft) 55%, transparent);
+}
+.data-table tbody tr.is-strong-play td {
+  background: color-mix(in oklab, var(--win-soft) 80%, transparent);
+  box-shadow: inset 3px 0 0 var(--win);
+}
+.data-table tbody tr.is-value-play:hover td,
+.data-table tbody tr.is-strong-play:hover td {
+  background: color-mix(in oklab, var(--win-soft) 70%, var(--surface-2));
+}
+.data-table td.prop-edge-cell { color: var(--win); }
+.data-table td.prop-conf-cell { color: var(--text-2); }
+.data-table tr.is-strong-play td.prop-pick-cell,
+.data-table tr.is-strong-play td.prop-conf-cell { color: var(--win); font-weight: 500; }
 .data-table tbody tr:last-child td { border-bottom: 0; }
 .card-head {
   padding: 16px 20px; border-bottom: 1px solid var(--border);
@@ -1203,6 +1218,25 @@ input { font: inherit; }
   background: color-mix(in oklab, var(--accent) 14%, var(--bg-elev));
   border-color: color-mix(in oklab, var(--accent) 45%, var(--border));
   color: var(--text);
+}
+.predictions-chip-featured {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
+.predictions-chip-featured.is-active {
+  background: color-mix(in oklab, var(--win) 16%, var(--bg-elev));
+  border-color: color-mix(in oklab, var(--win) 45%, var(--border));
+  color: var(--win);
+}
+.predictions-chip-count {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--win) 20%, transparent);
+  color: var(--win);
 }
 .predictions-table-head { align-items: center; }
 .predictions-table-toggle {
