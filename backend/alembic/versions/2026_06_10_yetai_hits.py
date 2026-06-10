@@ -52,7 +52,9 @@ def upgrade() -> None:
             name="unique_yetai_hit",
         ),
     )
-    op.create_index("idx_yetai_hits_sport_date", "pred_yetai_hits", ["sport", "game_date"])
+    op.create_index(
+        "idx_yetai_hits_sport_date", "pred_yetai_hits", ["sport", "game_date"]
+    )
     op.create_index("idx_yetai_hits_result", "pred_yetai_hits", ["hit_result"])
 
 
