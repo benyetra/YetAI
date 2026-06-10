@@ -21,6 +21,10 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
         captured_models.append(model.__name__)
         return []
 
+    def fake_props_by_mpg(db, model, target_date, limit, *, tz="UTC"):
+        captured_models.append(model.__name__)
+        return []
+
     def fake_enrich(db, spreads, totals, *, target_date=None):
         return spreads, totals
 
@@ -28,6 +32,11 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
         return rows
 
     monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        predictions_module,
+        "_query_wnba_props_by_season_minutes",
+        fake_props_by_mpg,
+    )
     monkeypatch.setattr(
         "app.services.game_projection_schedule.attach_game_times_from_lines",
         fake_attach_game_times,
@@ -41,6 +50,7 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
         target_date=date(2026, 5, 21),
         tz="UTC",
         limit=50,
+        prop_limit=75,
         _user={"subscription_tier": "pro"},
         db=None,
     )
@@ -72,6 +82,9 @@ def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
             return []
         return []
 
+    def fake_props_by_mpg(db, model, target_date, limit, *, tz="UTC"):
+        return []
+
     def fake_enrich(db, spreads, totals, *, target_date=None):
         enriched = [dict(spreads[0])]
         enriched[0]["actual_home_score"] = 90
@@ -83,6 +96,11 @@ def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
         return rows
 
     monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        predictions_module,
+        "_query_wnba_props_by_season_minutes",
+        fake_props_by_mpg,
+    )
     monkeypatch.setattr(
         "app.services.game_projection_schedule.attach_game_times_from_lines",
         fake_attach_game_times,
@@ -96,6 +114,7 @@ def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
         target_date=date(2026, 5, 21),
         tz="UTC",
         limit=50,
+        prop_limit=75,
         _user={"subscription_tier": "pro"},
         db=None,
     )

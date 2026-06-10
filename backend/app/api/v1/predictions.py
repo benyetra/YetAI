@@ -47,6 +47,7 @@ from app.models.predictions_models import (
     WNBAAssistsProjections,
     WNBAGameLines,
     WNBAPointsProjections,
+    WNBARecentGames,
     WNBAReboundsProjections,
     WNBASpreadProjections,
     WNBATotalsProjections,
@@ -57,6 +58,7 @@ router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
 ALLOWED_TIERS = {"pro", "elite", "PRO", "ELITE"}
 DEFAULT_LIMIT = 50
+WNBA_PROP_DEFAULT_LIMIT = 75
 MAX_LIMIT = 500
 
 
@@ -118,6 +120,60 @@ def _query_recent(
         if key not in latest:
             latest[key] = row
     return list(latest.values())[:limit]
+
+
+def _load_wnba_season_minutes_avg(
+    db: Session, player_ids: list[int], as_of: date_type
+) -> dict[int, float]:
+    """Season-to-date MPG from pred_wnba_recent_games (games strictly before as_of)."""
+    if not player_ids:
+        return {}
+    rows = (
+        db.query(
+            WNBARecentGames.player_id,
+            func.avg(WNBARecentGames.minutes).label("season_mpg"),
+        )
+        .filter(
+            WNBARecentGames.player_id.in_(player_ids),
+            WNBARecentGames.game_date < as_of,
+            WNBARecentGames.minutes.isnot(None),
+            WNBARecentGames.minutes > 0,
+        )
+        .group_by(WNBARecentGames.player_id)
+        .all()
+    )
+    return {int(r.player_id): float(r.season_mpg) for r in rows}
+
+
+def _query_wnba_props_by_season_minutes(
+    db: Session,
+    model: Any,
+    target_date: date_type | None,
+    limit: int,
+    *,
+    tz: str = "UTC",
+) -> list[dict[str, Any]]:
+    """Return prop projections for a slate, ranked by season MPG (not insert order)."""
+    if target_date is None:
+        return _query_recent(db, model, "date", None, limit, tz=tz)
+
+    rows = [
+        _row_to_dict(r) for r in db.query(model).filter(model.date == target_date).all()
+    ]
+    if not rows:
+        return []
+
+    player_ids = [int(r["player_id"]) for r in rows if r.get("player_id") is not None]
+    mpg_by_player = _load_wnba_season_minutes_avg(db, player_ids, target_date)
+    rows.sort(
+        key=lambda r: (
+            mpg_by_player.get(int(r["player_id"]), 0.0)
+            if r.get("player_id") is not None
+            else 0.0
+        ),
+        reverse=True,
+    )
+    return rows[:limit]
 
 
 @router.get("/health")
@@ -508,6 +564,12 @@ def wnba_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
     tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    prop_limit: int = Query(
+        default=WNBA_PROP_DEFAULT_LIMIT,
+        ge=1,
+        le=MAX_LIMIT,
+        description="Max player prop rows per stat; ranked by season minutes per game.",
+    ),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
@@ -515,6 +577,9 @@ def wnba_predictions(
 
     Spread and totals rows include final scores and ml/spread/total grading when
     pred_wnba_*_actuals exist for the requested date (same pattern as MLB games).
+
+    Player props (points/assists/rebounds) return up to ``prop_limit`` rows for the
+    requested date, ordered by season-to-date minutes per game (not database id).
     """
     from app.services.wnba_game_picks import enrich_wnba_game_predictions
     from app.services.game_projection_schedule import attach_game_times_from_lines
@@ -534,14 +599,14 @@ def wnba_predictions(
     return {
         "totals": totals,
         "spreads": spreads,
-        "points": _query_recent(
-            db, WNBAPointsProjections, "date", target_date, limit, tz=tz
+        "points": _query_wnba_props_by_season_minutes(
+            db, WNBAPointsProjections, target_date, prop_limit, tz=tz
         ),
-        "assists": _query_recent(
-            db, WNBAAssistsProjections, "date", target_date, limit, tz=tz
+        "assists": _query_wnba_props_by_season_minutes(
+            db, WNBAAssistsProjections, target_date, prop_limit, tz=tz
         ),
-        "rebounds": _query_recent(
-            db, WNBAReboundsProjections, "date", target_date, limit, tz=tz
+        "rebounds": _query_wnba_props_by_season_minutes(
+            db, WNBAReboundsProjections, target_date, prop_limit, tz=tz
         ),
     }
 

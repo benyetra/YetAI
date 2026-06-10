@@ -1271,7 +1271,7 @@
           "predictions"
         ],
         "summary": "Wnba Predictions",
-        "description": "WNBA: totals, spread/win-prob, and player props.\n\nSpread and totals rows include final scores and ml/spread/total grading when\npred_wnba_*_actuals exist for the requested date (same pattern as MLB games).",
+        "description": "WNBA: totals, spread/win-prob, and player props.\n\nSpread and totals rows include final scores and ml/spread/total grading when\npred_wnba_*_actuals exist for the requested date (same pattern as MLB games).\n\nPlayer props (points/assists/rebounds) return up to ``prop_limit`` rows for the\nrequested date, ordered by season-to-date minutes per game (not database id).",
         "operationId": "wnba_predictions_api_v1_predictions_wnba_get",
         "security": [
           {
@@ -1317,6 +1317,20 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "prop_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "description": "Max player prop rows per stat; ranked by season minutes per game.",
+              "default": 75,
+              "title": "Prop Limit"
+            },
+            "description": "Max player prop rows per stat; ranked by season minutes per game."
           }
         ],
         "responses": {
