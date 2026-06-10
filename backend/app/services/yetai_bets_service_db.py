@@ -24,6 +24,20 @@ from app.services.yetai_bets_display import subscriber_game_label
 logger = logging.getLogger(__name__)
 
 
+def coerce_subscription_tier(user_tier: object) -> str:
+    """Normalize JWT/ORM tier values to lowercase tier slug (free/pro/elite)."""
+    if isinstance(user_tier, SubscriptionTier):
+        return user_tier.value
+    if user_tier is None:
+        return "free"
+    text = str(user_tier).strip()
+    if not text:
+        return "free"
+    if text.startswith("SubscriptionTier."):
+        return text.rsplit(".", 1)[-1].lower()
+    return text.lower()
+
+
 def _utc_iso(dt: Optional[datetime]) -> Optional[str]:
     """Serialize naive UTC datetimes with Z so browsers parse correctly."""
     if dt is None:
@@ -503,9 +517,10 @@ class YetAIBetsServiceDB:
     YETAI_LIVE_STATUSES = ("active", "pending")
     YETAI_HISTORY_STATUSES = ("won", "lost", "pushed")
 
-    def _allowed_tiers_for_user(self, user_tier: str) -> List[SubscriptionTier]:
+    def _allowed_tiers_for_user(self, user_tier: object) -> List[SubscriptionTier]:
+        tier_slug = coerce_subscription_tier(user_tier)
         try:
-            tier_enum = SubscriptionTier(user_tier.lower())
+            tier_enum = SubscriptionTier(tier_slug)
         except (ValueError, AttributeError):
             tier_enum = SubscriptionTier.FREE
         user_rank = self.TIER_RANK[tier_enum]
@@ -800,15 +815,11 @@ class YetAIBetsServiceDB:
             logger.info("Synced %s YetAI pick(s) from linked placed bets", updated)
         return updated
 
-    def get_yetai_bets_for_user(self, user_tier: str, db: Session) -> List[Dict]:
+    def get_yetai_bets_for_user(self, user_tier: object, db: Session) -> List[Dict]:
         """Return open YetAI picks (active/pending) for the subscriber tier."""
-        rows = self._query_yetai_bets_for_user(user_tier, db, self.YETAI_LIVE_STATUSES)
-        live_rows = [
-            bet
-            for bet in rows
-            if yetai_bet_visible_as_live(bet) and not is_demo_yetai_bet(bet)
-        ]
-        return [self._yetai_bet_to_dict(bet) for bet in live_rows]
+        tier_slug = coerce_subscription_tier(user_tier)
+        rows = self._query_yetai_bets_for_user(tier_slug, db, self.YETAI_LIVE_STATUSES)
+        return [self._yetai_bet_to_dict(bet) for bet in rows]
 
     def get_yetai_bets_history_for_user(
         self,
@@ -838,20 +849,22 @@ class YetAIBetsServiceDB:
         stats["settled"] = len(settled)
         return bets, stats
 
-    async def get_active_bets(self, user_tier: str = "free") -> List[Dict]:
+    async def get_active_bets(self, user_tier: object = "free") -> List[Dict]:
         """Get active YetAI Bets based on user tier from database
 
         Returns bets that are:
         - Status "pending" or "active" (not yet settled, not pending_approval/rejected/expired)
-        - Have a commence_time in the future OR within last 4 hours (to show in-progress games)
         - Tier-gated: FREE sees FREE only, PRO sees FREE+PRO, ELITE sees all
+
+        Stale unsettled rows are removed by verify_pending_yetai_bets (status -> expired),
+        not by a separate live-window filter here.
         """
         try:
             db = SessionLocal()
             try:
-                # Normalise to enum; fall back to FREE for unknown values
+                tier_slug = coerce_subscription_tier(user_tier)
                 try:
-                    tier_enum = SubscriptionTier(user_tier.lower())
+                    tier_enum = SubscriptionTier(tier_slug)
                 except (ValueError, AttributeError):
                     tier_enum = SubscriptionTier.FREE
 
@@ -865,11 +878,7 @@ class YetAIBetsServiceDB:
                 )
 
                 active_bets = query.order_by(desc(YetAIBet.confidence)).all()
-                visible = [
-                    bet
-                    for bet in active_bets
-                    if not is_demo_yetai_bet(bet) and yetai_bet_visible_as_live(bet)
-                ]
+                visible = [bet for bet in active_bets if not is_demo_yetai_bet(bet)]
 
                 return [self._yetai_bet_to_dict(bet) for bet in visible]
 
@@ -1249,9 +1258,14 @@ class YetAIBetsServiceDB:
         stale_cutoff = now - timedelta(hours=24)
         rows = db.query(YetAIBet).filter(YetAIBet.status == "pending_approval").all()
         expired = []
+        grace = timedelta(hours=4)
         for row in rows:
-            if row.commence_time is not None and row.commence_time <= now:
-                expired.append(row)
+            if row.commence_time is not None:
+                tipoff = row.commence_time
+                if tipoff.tzinfo is not None:
+                    tipoff = tipoff.replace(tzinfo=None)
+                if tipoff + grace <= now:
+                    expired.append(row)
             elif (
                 row.commence_time is None
                 and row.created_at

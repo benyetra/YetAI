@@ -1967,7 +1967,9 @@ async def get_yetai_bets_history(
     """Settled YetAI promoted picks with win/loss track record."""
     from app.core.database import get_db as _get_db
 
-    user_tier = current_user.get("subscription_tier", "free")
+    from app.services.yetai_bets_service_db import coerce_subscription_tier
+
+    user_tier = coerce_subscription_tier(current_user.get("subscription_tier", "free"))
     days = max(1, min(days, 365))
     limit = max(1, min(limit, 200))
 
@@ -2013,8 +2015,9 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
     Settled history is on GET /api/yetai-bets/history.
     """
     from app.core.database import get_db as _get_db
+    from app.services.yetai_bets_service_db import coerce_subscription_tier
 
-    user_tier = current_user.get("subscription_tier", "free")
+    user_tier = coerce_subscription_tier(current_user.get("subscription_tier", "free"))
 
     if is_service_available("yetai_bets_service"):
         try:

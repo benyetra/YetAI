@@ -19,7 +19,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.models.database_models import SubscriptionTier, YetAIBet
-from app.services.yetai_bets_service_db import YetAIBetsServiceDB
+from datetime import datetime, timedelta
+
+from app.models.database_models import BetType
+from app.services.yetai_bets_service_db import (
+    YetAIBetsServiceDB,
+    coerce_subscription_tier,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -279,3 +285,22 @@ def test_unknown_tier_falls_back_to_free():
     # No error, and only FREE bets returned
     ids = [r["id"] for r in results]
     assert "pro-active" not in ids
+
+
+def test_active_bet_stays_visible_after_game_day_window():
+    """Approved active picks remain on the live board until settled/expired."""
+    service = YetAIBetsServiceDB()
+    bet = _make_bet("stale-active", "active", SubscriptionTier.ELITE)
+    bet.commence_time = None
+    bet.created_at = datetime.utcnow() - timedelta(days=1)
+    bet.bet_type = BetType.PROP
+    bet.prediction_factors = {"event_id": "nba-prop-2026-06-09-1-points"}
+    db = _make_db([bet])
+
+    results = service.get_yetai_bets_for_user("elite", db)
+    assert [r["id"] for r in results] == ["stale-active"]
+
+
+def test_coerce_subscription_tier_accepts_enum_and_repr():
+    assert coerce_subscription_tier(SubscriptionTier.ELITE) == "elite"
+    assert coerce_subscription_tier("SubscriptionTier.ELITE") == "elite"
