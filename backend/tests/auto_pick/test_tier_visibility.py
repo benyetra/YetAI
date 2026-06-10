@@ -25,6 +25,7 @@ from app.models.database_models import BetType
 from app.services.yetai_bets_service_db import (
     YetAIBetsServiceDB,
     coerce_subscription_tier,
+    yetai_bet_subscriber_live_visible,
 )
 
 
@@ -287,14 +288,15 @@ def test_unknown_tier_falls_back_to_free():
     assert "pro-active" not in ids
 
 
-def test_active_bet_stays_visible_after_game_day_window():
-    """Approved active picks remain on the live board until settled/expired."""
+def test_active_bet_stays_visible_within_slate_window():
+    """Recent slate-dated props stay live across the following calendar day."""
     service = YetAIBetsServiceDB()
     bet = _make_bet("stale-active", "active", SubscriptionTier.ELITE)
     bet.commence_time = None
-    bet.created_at = datetime.utcnow() - timedelta(days=1)
+    bet.created_at = datetime(2026, 6, 9, 17, 0)
     bet.bet_type = BetType.PROP
     bet.prediction_factors = {"event_id": "nba-prop-2026-06-09-1-points"}
+    assert yetai_bet_subscriber_live_visible(bet, now=datetime(2026, 6, 10, 17, 0))
     db = _make_db([bet])
 
     results = service.get_yetai_bets_for_user("elite", db)

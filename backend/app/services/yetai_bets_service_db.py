@@ -117,10 +117,23 @@ MLB_PROP_EVENT_DATE_RE = PROP_EVENT_DATE_RE
 YETAI_LIVE_POST_GAME_BUFFER = timedelta(hours=8)
 
 
+def _naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
+    if dt is None:
+        return None
+    return dt.replace(tzinfo=None) if dt.tzinfo else dt
+
+
+def _yetai_anchor_game_day(bet: YetAIBet) -> date:
+    """Best-effort calendar day for slate vs tipoff (projection date can trail game day)."""
+    game_day = game_date_for_yetai_bet(bet)
+    created_day = bet.created_at.date() if bet.created_at else game_day
+    return max(game_day, created_day)
+
+
 def game_date_for_yetai_bet(bet: YetAIBet) -> date:
     """Best-effort game date for prop/stat lookups."""
     if bet.commence_time:
-        return bet.commence_time.date()
+        return _naive_utc(bet.commence_time).date()
     factors = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
     event_id = str(factors.get("event_id") or "")
     match = PROP_EVENT_DATE_RE.search(event_id)
@@ -134,17 +147,49 @@ def game_date_for_yetai_bet(bet: YetAIBet) -> date:
 def yetai_bet_is_stale(bet: YetAIBet, cutoff: datetime) -> bool:
     """True when a pick should leave the live board and be expired if still unsettled."""
     now = datetime.utcnow()
-    if bet.commence_time is not None:
-        return bet.commence_time < cutoff
+    tipoff = _naive_utc(bet.commence_time)
+    if tipoff is not None:
+        return tipoff + timedelta(hours=8) < now
 
-    game_day = game_date_for_yetai_bet(bet)
-    game_deadline = datetime.combine(game_day, time.max) + timedelta(hours=12)
+    anchor = _yetai_anchor_game_day(bet)
+    game_deadline = datetime.combine(anchor, time.max) + timedelta(hours=36)
     if now > game_deadline:
         return True
 
     if bet.created_at is not None:
         return bet.created_at < cutoff
     return False
+
+
+def yetai_bet_subscriber_live_visible(
+    bet: YetAIBet, *, now: Optional[datetime] = None
+) -> bool:
+    """Whether an active/pending pick belongs on the subscriber live board."""
+    now = now or datetime.utcnow()
+    status = (bet.status or "").lower()
+    if status not in ("active", "pending"):
+        return False
+    if is_demo_yetai_bet(bet):
+        return False
+
+    tipoff = _naive_utc(bet.commence_time)
+    if tipoff is not None:
+        return tipoff - timedelta(hours=12) <= now <= tipoff + timedelta(hours=8)
+
+    anchor = _yetai_anchor_game_day(bet)
+    visibility_end = datetime.combine(anchor, time.max) + timedelta(hours=36)
+    return now <= visibility_end
+
+
+def yetai_pick_gradeable(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:
+    """True when the game window has likely finished and auto-grading is safe."""
+    now = now or datetime.utcnow()
+    tipoff = _naive_utc(bet.commence_time)
+    if tipoff is not None:
+        return now >= tipoff + timedelta(hours=3)
+
+    anchor = _yetai_anchor_game_day(bet)
+    return now >= datetime.combine(anchor, time.max) + timedelta(hours=6)
 
 
 def yetai_bet_visible_as_live(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:
@@ -819,7 +864,8 @@ class YetAIBetsServiceDB:
         """Return open YetAI picks (active/pending) for the subscriber tier."""
         tier_slug = coerce_subscription_tier(user_tier)
         rows = self._query_yetai_bets_for_user(tier_slug, db, self.YETAI_LIVE_STATUSES)
-        return [self._yetai_bet_to_dict(bet) for bet in rows]
+        live_rows = [bet for bet in rows if yetai_bet_subscriber_live_visible(bet)]
+        return [self._yetai_bet_to_dict(bet) for bet in live_rows]
 
     def get_yetai_bets_history_for_user(
         self,
@@ -856,8 +902,7 @@ class YetAIBetsServiceDB:
         - Status "pending" or "active" (not yet settled, not pending_approval/rejected/expired)
         - Tier-gated: FREE sees FREE only, PRO sees FREE+PRO, ELITE sees all
 
-        Stale unsettled rows are removed by verify_pending_yetai_bets (status -> expired),
-        not by a separate live-window filter here.
+        Stale unsettled rows are removed by verify_pending_yetai_bets (status -> expired).
         """
         try:
             db = SessionLocal()
@@ -878,7 +923,12 @@ class YetAIBetsServiceDB:
                 )
 
                 active_bets = query.order_by(desc(YetAIBet.confidence)).all()
-                visible = [bet for bet in active_bets if not is_demo_yetai_bet(bet)]
+                visible = [
+                    bet
+                    for bet in active_bets
+                    if not is_demo_yetai_bet(bet)
+                    and yetai_bet_subscriber_live_visible(bet)
+                ]
 
                 return [self._yetai_bet_to_dict(bet) for bet in visible]
 
@@ -1301,7 +1351,6 @@ class YetAIBetsServiceDB:
                     "Expired %s stale pending_approval YetAI picks", expired_approval
                 )
 
-            recent_regrade_cutoff = datetime.utcnow() - timedelta(days=7)
             from sqlalchemy import and_, or_
 
             candidates = (
@@ -1312,11 +1361,6 @@ class YetAIBetsServiceDB:
                         and_(
                             YetAIBet.status == "lost",
                             YetAIBet.result.ilike("Evaluation%"),
-                        ),
-                        and_(
-                            YetAIBet.status.in_(("won", "lost")),
-                            YetAIBet.settled_at.isnot(None),
-                            YetAIBet.settled_at >= recent_regrade_cutoff,
                         ),
                     )
                 )
@@ -1333,14 +1377,6 @@ class YetAIBetsServiceDB:
                         "Retrying previously errored YetAI pick %s: %s",
                         bet.id[:8],
                         (bet.result or "")[:80],
-                    )
-                    continue
-                if self._is_retryable_nba_prop_regrade(bet):
-                    unsettled.append(bet)
-                    logger.info(
-                        "Regrading recent NBA prop %s (was %s)",
-                        bet.id[:8],
-                        bet.status,
                     )
             logger.info(
                 "Found %s unsettled YetAI bets (statuses %s)",
@@ -1366,9 +1402,7 @@ class YetAIBetsServiceDB:
             for bet in unsettled:
                 settled = False
 
-                if self._is_retryable_error_loss(
-                    bet
-                ) or self._is_retryable_nba_prop_regrade(bet):
+                if self._is_retryable_error_loss(bet):
                     game_day = game_date_for_yetai_bet(bet)
                     outcome = None
                     if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
@@ -1390,6 +1424,9 @@ class YetAIBetsServiceDB:
                     continue
 
                 if bet.status not in YETAI_UNSETTLED_STATUSES:
+                    continue
+
+                if not yetai_pick_gradeable(bet):
                     continue
 
                 if self._is_parlay_bet(bet):

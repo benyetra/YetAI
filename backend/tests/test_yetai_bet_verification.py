@@ -11,7 +11,9 @@ from app.services.yetai_bets_service_db import (
     clamp_yetai_result,
     game_date_for_yetai_bet,
     yetai_bet_is_stale,
+    yetai_bet_subscriber_live_visible,
     yetai_bet_visible_as_live,
+    yetai_pick_gradeable,
 )
 
 
@@ -97,11 +99,16 @@ def test_stale_after_game_day_even_if_created_recently():
         selection="Luke Kornet OVER 1.5 points",
         odds=-110,
         confidence=80,
-        created_at=datetime.utcnow() - timedelta(hours=2),
+        created_at=datetime(2026, 5, 26, 17, 0),
         prediction_factors={"event_id": "nba-prop-2026-05-26-1-points"},
     )
-    cutoff = datetime.utcnow() - timedelta(hours=24)
-    assert yetai_bet_is_stale(bet, cutoff) is True
+    with (
+        patch("app.services.yetai_bets_service_db.datetime") as mock_dt,
+        patch("app.services.yetai_bets_service_db.timedelta", timedelta),
+    ):
+        mock_dt.utcnow.return_value = datetime(2026, 5, 28, 18, 0)
+        mock_dt.combine = datetime.combine
+        assert yetai_bet_is_stale(bet, datetime(2026, 5, 27, 0, 0)) is True
 
 
 def test_stale_uses_created_at_when_no_commence_time():
@@ -145,17 +152,20 @@ def test_is_parlay_bet_true_for_json_legs():
 def test_verify_queries_active_not_only_pending():
     service = YetAIBetsServiceDB()
     mock_db = MagicMock()
-    active_bet = MagicMock()
-    active_bet.id = "active-1"
-    active_bet.status = "active"
-    active_bet.bet_type = BetType.PROP
-    active_bet.sport = "MLB"
-    active_bet.game_id = None
-    active_bet.selection = "Christian Scott UNDER 4.5 strikeouts"
-    active_bet.title = "Mets @ Marlins"
-    active_bet.commence_time = None
-    active_bet.created_at = datetime.utcnow() - timedelta(hours=1)
-    active_bet.prediction_factors = {}
+    active_bet = YetAIBet(
+        id="active-1",
+        title="Mets @ Marlins",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Christian Scott UNDER 4.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        sport="MLB",
+        status="active",
+        commence_time=datetime.utcnow() - timedelta(hours=5),
+        created_at=datetime.utcnow() - timedelta(hours=6),
+        prediction_factors={},
+    )
 
     chain = mock_db.query.return_value.filter.return_value
     chain.all.return_value = [active_bet]
@@ -165,6 +175,7 @@ def test_verify_queries_active_not_only_pending():
             "app.services.yetai_bets_service_db.SessionLocal",
             return_value=mock_db,
         ),
+        patch.object(service, "_expire_stale_pending_approval", return_value=0),
         patch(
             "app.services.player_prop_verification_service.PlayerPropVerificationService"
         ) as mock_prop_cls,
@@ -260,6 +271,52 @@ def test_verify_regrades_lost_evaluation_error_mlb_prop():
     mock_prop.verify_yetai_mlb_prop.assert_called_once()
 
 
+def test_subscriber_live_hides_old_parlay_but_keeps_recent_slate_props():
+    old_parlay = YetAIBet(
+        id="old-parlay",
+        title="WNBA Freaky Friday",
+        description="d",
+        bet_type=BetType.PARLAY,
+        selection="2-Team Parlay",
+        odds=241,
+        confidence=84,
+        status="pending",
+        commence_time=datetime(2026, 6, 6, 2, 0),
+        created_at=datetime(2026, 6, 5, 21, 49),
+    )
+    recent_prop = YetAIBet(
+        id="recent-prop",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        status="active",
+        created_at=datetime(2026, 6, 9, 17, 0),
+        prediction_factors={"event_id": "nba-prop-2026-06-09-1-points"},
+    )
+    now = datetime(2026, 6, 10, 17, 0)
+    assert yetai_bet_subscriber_live_visible(old_parlay, now=now) is False
+    assert yetai_bet_subscriber_live_visible(recent_prop, now=now) is True
+
+
+def test_yetai_pick_not_gradeable_before_game_window():
+    bet = YetAIBet(
+        id="future",
+        title="MLB prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Gerrit Cole UNDER 5.5 strikeouts",
+        odds=-110,
+        confidence=80,
+        commence_time=datetime(2026, 6, 10, 23, 0),
+        created_at=datetime(2026, 6, 10, 17, 0),
+    )
+    assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 10, 18, 0)) is False
+    assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 11, 3, 0)) is True
+
+
 def test_verify_settles_nba_prop():
     service = YetAIBetsServiceDB()
     mock_db = MagicMock()
@@ -276,6 +333,7 @@ def test_verify_settles_nba_prop():
     nba_bet.prediction_factors = {"event_id": "nba-prop-2026-05-28-1-points"}
     nba_bet.home_team = None
     nba_bet.away_team = None
+    nba_bet.parlay_legs = None
 
     chain = mock_db.query.return_value.filter.return_value
     chain.all.return_value = [nba_bet]
@@ -420,7 +478,7 @@ def test_verify_yetai_nba_prop_prefers_api_over_db():
     ):
         outcome = service.verify_yetai_nba_prop(bet, date(2026, 5, 28))
     assert outcome[0] == "lost"
-    api.assert_called_once()
+    api.assert_called()
     db.assert_not_called()
 
 

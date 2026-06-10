@@ -284,7 +284,10 @@ class PlayerPropVerificationService:
         import re
 
         if yetai.commence_time:
-            return yetai.commence_time.date()
+            tipoff = yetai.commence_time
+            if tipoff.tzinfo is not None:
+                tipoff = tipoff.replace(tzinfo=None)
+            return tipoff.date()
 
         factors = (
             yetai.prediction_factors
@@ -300,6 +303,31 @@ class PlayerPropVerificationService:
         if yetai.created_at:
             return yetai.created_at.date()
         return datetime.utcnow().date()
+
+    def _game_date_candidates_for_yetai_pick(self, yetai: YetAIBet) -> List[date]:
+        """Dates to try when matching box scores (slate date can trail tipoff)."""
+        candidates: List[date] = []
+        if yetai.commence_time:
+            tipoff = yetai.commence_time
+            if tipoff.tzinfo is not None:
+                tipoff = tipoff.replace(tzinfo=None)
+            candidates.append(tipoff.date())
+        slate = self._game_date_for_yetai_pick(yetai)
+        candidates.append(slate)
+        if yetai.created_at:
+            created = yetai.created_at.date()
+            if created not in candidates:
+                candidates.append(created)
+        anchor = max(candidates) if candidates else datetime.utcnow().date()
+        for offset in (0, 1, -1):
+            candidate = anchor + timedelta(days=offset)
+            if candidate not in candidates:
+                candidates.append(candidate)
+        today = datetime.utcnow().date()
+        for candidate in (today, today - timedelta(days=1)):
+            if candidate not in candidates:
+                candidates.append(candidate)
+        return candidates
 
     def _game_date_for_unified_prop(self, bet: SimpleUnifiedBet):
         """Resolve stat lookup date for a placed prop (YetAI-linked or straight)."""
@@ -1475,7 +1503,10 @@ class PlayerPropVerificationService:
             return None
 
         stats = None
-        for candidate_date in [game_date, game_date - timedelta(days=1)]:
+        matched_date = None
+        for candidate_date in sorted(
+            self._game_date_candidates_for_yetai_pick(bet), reverse=True
+        ):
             stats = self._fetch_mlb_player_stats(
                 prop_details["player_name"],
                 prop_details["stat_type"],
@@ -1483,6 +1514,7 @@ class PlayerPropVerificationService:
                 is_pitching=prop_details.get("is_pitching", False),
             )
             if stats is not None:
+                matched_date = candidate_date
                 break
         if stats is None:
             return None
@@ -1502,16 +1534,17 @@ class PlayerPropVerificationService:
 
         won = self._check_prop_outcome(actual_value, line_value, is_over)
         direction = "Over" if is_over else "Under"
+        date_note = f" on {matched_date}" if matched_date else ""
         if won:
             return (
                 "won",
                 f"Won: {direction} {line_value} — actual {actual_value} "
-                f"({prop_details['player_name']})",
+                f"({prop_details['player_name']}{date_note})",
             )
         return (
             "lost",
             f"Lost: {direction} {line_value} — actual {actual_value} "
-            f"({prop_details['player_name']})",
+            f"({prop_details['player_name']}{date_note})",
         )
 
     def verify_yetai_nba_prop(
@@ -1530,13 +1563,23 @@ class PlayerPropVerificationService:
             return None
 
         # Prefer live box score (named columns); DB actuals can be stale or mis-keyed.
-        actual_value = self._fetch_nba_prop_actual_from_api(prop_details, game_date)
-        if actual_value is None:
-            actual_value = self._fetch_nba_prop_actual_from_db(
-                prop_details["player_name"],
-                prop_details.get("stat_label", ""),
-                game_date,
+        actual_value = None
+        matched_date = None
+        for candidate_date in sorted(
+            self._game_date_candidates_for_yetai_pick(bet), reverse=True
+        ):
+            actual_value = self._fetch_nba_prop_actual_from_api(
+                prop_details, candidate_date
             )
+            if actual_value is None:
+                actual_value = self._fetch_nba_prop_actual_from_db(
+                    prop_details["player_name"],
+                    prop_details.get("stat_label", ""),
+                    candidate_date,
+                )
+            if actual_value is not None:
+                matched_date = candidate_date
+                break
         if actual_value is None:
             return None
 
@@ -1551,16 +1594,17 @@ class PlayerPropVerificationService:
 
         won = self._check_prop_outcome(actual_value, line_value, is_over)
         direction = "Over" if is_over else "Under"
+        date_note = f" on {matched_date}" if matched_date else ""
         if won:
             return (
                 "won",
                 f"Won: {direction} {line_value} — actual {actual_value} "
-                f"({prop_details['player_name']})",
+                f"({prop_details['player_name']}{date_note})",
             )
         return (
             "lost",
             f"Lost: {direction} {line_value} — actual {actual_value} "
-            f"({prop_details['player_name']})",
+            f"({prop_details['player_name']}{date_note})",
         )
 
     def _fetch_nba_prop_actual_from_db(
