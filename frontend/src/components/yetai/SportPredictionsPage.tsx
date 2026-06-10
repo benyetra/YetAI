@@ -149,18 +149,6 @@ export default function SportPredictionsPage({
     }
   }, [authLoading, isAuthenticated, router]);
 
-  if (!isAuthenticated) return null;
-
-  const dateControl = (
-    <input
-      type="date"
-      className="input"
-      value={date}
-      onChange={(e) => setDate(e.target.value)}
-      style={{ width: 'auto' }}
-    />
-  );
-
   const hasTopPlayGroups = useMemo(
     () => resolvedGroups.some((g) => g.rowClassName != null),
     [resolvedGroups]
@@ -176,6 +164,18 @@ export default function SportPredictionsPage({
   }, [data, hasTopPlayGroups, resolvedGroups]);
 
   const showPropToolbar = resolvedGroups.length > 1 || hasTopPlayGroups;
+
+  if (!isAuthenticated) return null;
+
+  const dateControl = (
+    <input
+      type="date"
+      className="input"
+      value={date}
+      onChange={(e) => setDate(e.target.value)}
+      style={{ width: 'auto' }}
+    />
+  );
 
   return (
     <Layout requiresAuth fullWidth>
