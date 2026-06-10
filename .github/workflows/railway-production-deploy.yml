@@ -14,8 +14,48 @@ on:
       - '.github/workflows/railway-production-deploy.yml'
 
 jobs:
+  migrate:
+    name: Alembic upgrade (production)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run alembic upgrade head
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
+          echo "=== Before ==="
+          alembic current
+          python3 scripts/reconcile_wnba_alembic.py
+          echo "=== Upgrade ==="
+          alembic upgrade head
+          echo "=== After ==="
+          alembic current
+
   deploy-api:
     name: Deploy API to Railway
+    needs: migrate
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
