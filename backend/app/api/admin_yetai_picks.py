@@ -2,21 +2,27 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.database import get_db
 from app.core.auth import require_admin
 from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
 from app.services.auto_pick.diagnostics import get_run_diagnostics
+from app.services.yetai_bets_service_db import clamp_yetai_result
 
 router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
 
 PENDING_STATUS = "pending_approval"
 ACTIVE_STATUS = "active"
 REJECTED_STATUS = "rejected"
+EXPIRED_STATUS = "expired"
+REOPENABLE_STATUSES = frozenset({"won", "lost", "pushed", "expired"})
+EXPIRABLE_STATUSES = frozenset({"pending", "active", "pending_approval"})
 
 
 # ---------------------------------------------------------------------------
@@ -30,6 +36,18 @@ class EditPickRequest(BaseModel):
     selection: Optional[str] = None
     odds: Optional[float] = None
     title: Optional[str] = None
+
+
+def _clear_parlay_leg_results(legs: Any) -> Any:
+    if not isinstance(legs, list):
+        return legs
+    cleaned: list = []
+    for leg in legs:
+        if isinstance(leg, dict):
+            cleaned.append({k: v for k, v in leg.items() if k != "leg_result"})
+        else:
+            cleaned.append(leg)
+    return cleaned
 
 
 def _serialize(bet: YetAIBet) -> dict:
@@ -108,6 +126,52 @@ async def approve(
             detail=f"Cannot approve a bet in status '{bet.status}'",
         )
     bet.status = ACTIVE_STATUS
+    db.commit()
+    return _serialize(bet)
+
+
+@router.post("/{pick_id}/reopen")
+async def reopen(
+    pick_id: str,
+    _: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Return a settled pick to active (clears settlement) after bad auto-grading."""
+    bet = db.query(YetAIBet).filter(YetAIBet.id == pick_id).first()
+    if not bet:
+        raise HTTPException(status_code=404, detail="Pick not found")
+    if bet.status not in REOPENABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot reopen a bet in status '{bet.status}'",
+        )
+    bet.status = ACTIVE_STATUS
+    bet.settled_at = None
+    bet.result = None
+    if bet.parlay_legs:
+        bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
+    db.commit()
+    return _serialize(bet)
+
+
+@router.post("/{pick_id}/expire")
+async def expire_pick(
+    pick_id: str,
+    _: dict = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
+    """Expire a stale unsettled pick so it leaves the subscriber live board."""
+    bet = db.query(YetAIBet).filter(YetAIBet.id == pick_id).first()
+    if not bet:
+        raise HTTPException(status_code=404, detail="Pick not found")
+    if bet.status not in EXPIRABLE_STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot expire a bet in status '{bet.status}'",
+        )
+    bet.status = EXPIRED_STATUS
+    bet.settled_at = datetime.utcnow()
+    bet.result = clamp_yetai_result("Admin expired (stale pick)")
     db.commit()
     return _serialize(bet)
 

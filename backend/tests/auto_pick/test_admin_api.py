@@ -13,6 +13,7 @@ from fastapi import HTTPException
 
 from app.api.admin_yetai_picks import (
     ACTIVE_STATUS,
+    EXPIRED_STATUS,
     PENDING_STATUS,
     REJECTED_STATUS,
     EditPickRequest,
@@ -20,7 +21,9 @@ from app.api.admin_yetai_picks import (
     approve,
     approve_all,
     edit,
+    expire_pick,
     list_pending,
+    reopen,
     reject,
 )
 
@@ -153,6 +156,40 @@ async def test_approve_wrong_status_raises_400():
         await approve("b1", _={}, db=db)
     assert exc_info.value.status_code == 400
     db.commit.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# reopen / expire
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reopen_clears_settlement_and_returns_active():
+    bet = _bet("b1", status="won")
+    bet.settled_at = datetime(2026, 6, 10, 16, 56)
+    bet.result = "Won: Over 1.5 — actual 2.0 (Luke Kornet)"
+    db = _db_with_first(bet)
+
+    result = await reopen("b1", _={}, db=db)
+
+    assert bet.status == ACTIVE_STATUS
+    assert bet.settled_at is None
+    assert bet.result is None
+    db.commit.assert_called_once()
+    assert result["status"] == ACTIVE_STATUS
+
+
+@pytest.mark.asyncio
+async def test_expire_marks_stale_pending_as_expired():
+    bet = _bet("b1", status="pending")
+    db = _db_with_first(bet)
+
+    result = await expire_pick("b1", _={}, db=db)
+
+    assert bet.status == EXPIRED_STATUS
+    assert bet.settled_at is not None
+    assert bet.result == "Admin expired (stale pick)"
+    assert result["status"] == EXPIRED_STATUS
 
 
 # ---------------------------------------------------------------------------
