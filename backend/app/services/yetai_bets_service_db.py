@@ -144,6 +144,37 @@ def game_date_for_yetai_bet(bet: YetAIBet) -> date:
     return datetime.utcnow().date()
 
 
+AUTO_GRADE_HOLD_KEY = "auto_grade_hold"
+
+
+def yetai_auto_grade_held(bet: YetAIBet) -> bool:
+    """True when auto-settlement must stay off (e.g. after admin reopen)."""
+    factors = getattr(bet, "prediction_factors", None)
+    if not isinstance(factors, dict):
+        return False
+    return bool(factors.get(AUTO_GRADE_HOLD_KEY))
+
+
+def set_yetai_auto_grade_hold(bet: YetAIBet, *, held: bool = True) -> None:
+    factors = (
+        dict(bet.prediction_factors) if isinstance(bet.prediction_factors, dict) else {}
+    )
+    if held:
+        factors[AUTO_GRADE_HOLD_KEY] = True
+    else:
+        factors.pop(AUTO_GRADE_HOLD_KEY, None)
+    bet.prediction_factors = factors
+
+
+def _prop_without_tipoff(bet: YetAIBet) -> bool:
+    if bet.commence_time is not None:
+        return False
+    bt = bet.bet_type
+    if isinstance(bt, BetType):
+        return bt == BetType.PROP
+    return str(bt or "").lower() == "prop"
+
+
 def yetai_bet_is_stale(bet: YetAIBet, cutoff: datetime) -> bool:
     """True when a pick should leave the live board and be expired if still unsettled."""
     now = datetime.utcnow()
@@ -183,12 +214,18 @@ def yetai_bet_subscriber_live_visible(
 
 def yetai_pick_gradeable(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:
     """True when the game window has likely finished and auto-grading is safe."""
+    if yetai_auto_grade_held(bet):
+        return False
+
     now = now or datetime.utcnow()
     tipoff = _naive_utc(bet.commence_time)
     if tipoff is not None:
         return now >= tipoff + timedelta(hours=3)
 
     anchor = _yetai_anchor_game_day(bet)
+    # Auto-pick props without tipoff often use projection slate date; game is next day.
+    if _prop_without_tipoff(bet):
+        anchor = anchor + timedelta(days=1)
     return now >= datetime.combine(anchor, time.max) + timedelta(hours=6)
 
 
@@ -823,6 +860,8 @@ class YetAIBetsServiceDB:
             return False
         if yetai.status == target and yetai.settled_at is not None:
             return False
+        if yetai_auto_grade_held(yetai):
+            return False
 
         yetai.status = target
         yetai.settled_at = unified_bet.settled_at or datetime.utcnow()
@@ -1424,6 +1463,9 @@ class YetAIBetsServiceDB:
                     continue
 
                 if bet.status not in YETAI_UNSETTLED_STATUSES:
+                    continue
+
+                if yetai_auto_grade_held(bet):
                     continue
 
                 if not yetai_pick_gradeable(bet):

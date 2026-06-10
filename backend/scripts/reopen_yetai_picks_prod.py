@@ -28,7 +28,10 @@ ensure_database_url()
 
 from app.core.database import SessionLocal  # noqa: E402
 from app.models.database_models import YetAIBet  # noqa: E402
-from app.services.yetai_bets_service_db import clamp_yetai_result  # noqa: E402
+from app.services.yetai_bets_service_db import (
+    clamp_yetai_result,
+    set_yetai_auto_grade_hold,
+)  # noqa: E402
 
 # June 9 auto-pick batch — prematurely settled 2026-06-10 during bad regrade run.
 REOPEN_PICK_IDS = (
@@ -84,6 +87,7 @@ def main() -> int:
                 bet.status = "active"
                 bet.settled_at = None
                 bet.result = None
+                set_yetai_auto_grade_hold(bet, held=True)
                 if bet.parlay_legs:
                     bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
 

@@ -1565,9 +1565,15 @@ class PlayerPropVerificationService:
         # Prefer live box score (named columns); DB actuals can be stale or mis-keyed.
         actual_value = None
         matched_date = None
+        anchor = max(
+            self._game_date_for_yetai_pick(bet),
+            bet.created_at.date() if bet.created_at else date.min,
+        )
         for candidate_date in sorted(
             self._game_date_candidates_for_yetai_pick(bet), reverse=True
         ):
+            if candidate_date < anchor:
+                continue
             actual_value = self._fetch_nba_prop_actual_from_api(
                 prop_details, candidate_date
             )

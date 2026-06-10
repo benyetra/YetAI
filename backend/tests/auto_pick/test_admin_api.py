@@ -58,6 +58,8 @@ def _bet(
     bet.reasoning = reasoning
     bet.source = MagicMock(value="auto")
     bet.created_at = datetime(2026, 5, 22, 12, 0, 0)
+    bet.prediction_factors = {}
+    bet.parlay_legs = None
     return bet
 
 
@@ -175,6 +177,7 @@ async def test_reopen_clears_settlement_and_returns_active():
     assert bet.status == ACTIVE_STATUS
     assert bet.settled_at is None
     assert bet.result is None
+    assert bet.prediction_factors.get("auto_grade_hold") is True
     db.commit.assert_called_once()
     assert result["status"] == ACTIVE_STATUS
 

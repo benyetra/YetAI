@@ -317,6 +317,45 @@ def test_yetai_pick_not_gradeable_before_game_window():
     assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 11, 3, 0)) is True
 
 
+def test_yetai_pick_without_tipoff_waits_extra_calendar_day():
+    bet = YetAIBet(
+        id="nba-slate",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Keldon Johnson OVER 6.5 points",
+        odds=-110,
+        confidence=80,
+        commence_time=None,
+        created_at=datetime(2026, 6, 9, 17, 0),
+        prediction_factors={"event_id": "nba-prop-2026-06-09-1-points"},
+    )
+    assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 10, 17, 10)) is False
+    assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 11, 7, 0)) is True
+
+
+def test_yetai_auto_grade_hold_blocks_grading():
+    from app.services.yetai_bets_service_db import (
+        set_yetai_auto_grade_hold,
+        yetai_auto_grade_held,
+    )
+
+    bet = YetAIBet(
+        id="held",
+        title="NBA player prop",
+        description="d",
+        bet_type=BetType.PROP,
+        selection="Luke Kornet OVER 1.5 points",
+        odds=-110,
+        confidence=80,
+        commence_time=datetime(2026, 6, 9, 23, 0),
+        created_at=datetime(2026, 6, 9, 17, 0),
+    )
+    set_yetai_auto_grade_hold(bet, held=True)
+    assert yetai_auto_grade_held(bet)
+    assert yetai_pick_gradeable(bet, now=datetime(2026, 6, 10, 20, 0)) is False
+
+
 def test_verify_settles_nba_prop():
     service = YetAIBetsServiceDB()
     mock_db = MagicMock()
@@ -361,6 +400,44 @@ def test_verify_settles_nba_prop():
     assert result["settled"] == 1
     assert nba_bet.status == "won"
     mock_prop.verify_yetai_nba_prop.assert_called_once()
+
+
+def test_verify_skips_auto_grade_hold():
+    service = YetAIBetsServiceDB()
+    mock_db = MagicMock()
+    nba_bet = MagicMock()
+    nba_bet.id = "nba-prop-held"
+    nba_bet.status = "active"
+    nba_bet.bet_type = BetType.PROP
+    nba_bet.sport = "NBA"
+    nba_bet.game_id = None
+    nba_bet.selection = "Luke Kornet OVER 1.5 points"
+    nba_bet.commence_time = datetime(2026, 6, 9, 23, 0)
+    nba_bet.created_at = datetime(2026, 6, 9, 17, 0)
+    nba_bet.prediction_factors = {"auto_grade_hold": True}
+    nba_bet.parlay_legs = None
+    nba_bet.result = None
+
+    chain = mock_db.query.return_value.filter.return_value
+    chain.all.return_value = [nba_bet]
+
+    with (
+        patch(
+            "app.services.yetai_bets_service_db.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch.object(service, "_expire_stale_pending_approval", return_value=0),
+        patch(
+            "app.services.player_prop_verification_service.PlayerPropVerificationService"
+        ) as mock_prop_cls,
+    ):
+        mock_prop = mock_prop_cls.return_value
+        result = asyncio.run(service.verify_pending_yetai_bets())
+
+    assert result["success"] is True
+    assert result["settled"] == 0
+    assert nba_bet.status == "active"
+    mock_prop.verify_yetai_nba_prop.assert_not_called()
 
 
 def test_retryable_error_allows_evaluation_prefix_variants():

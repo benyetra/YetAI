@@ -13,7 +13,10 @@ from app.core.database import get_db
 from app.core.auth import require_admin
 from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
 from app.services.auto_pick.diagnostics import get_run_diagnostics
-from app.services.yetai_bets_service_db import clamp_yetai_result
+from app.services.yetai_bets_service_db import (
+    clamp_yetai_result,
+    set_yetai_auto_grade_hold,
+)
 
 router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
 
@@ -148,6 +151,7 @@ async def reopen(
     bet.status = ACTIVE_STATUS
     bet.settled_at = None
     bet.result = None
+    set_yetai_auto_grade_hold(bet, held=True)
     if bet.parlay_legs:
         bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
     db.commit()
