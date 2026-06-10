@@ -5,12 +5,14 @@ on:
     branches: [ main, develop ]
     paths:
       - 'backend/**'
+      - 'docs/api/**'
       - '.github/workflows/backend-ci-cd.yml'
       - 'railway.json'
   pull_request:
     branches: [ main ]
     paths:
       - 'backend/**'
+      - 'docs/api/**'
 
 env:
   PYTHON_VERSION: '3.11'
