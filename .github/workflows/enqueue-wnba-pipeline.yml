@@ -39,10 +39,22 @@ jobs:
             m=d
           else:
             m={i['name']:i['value'] for i in d}
-          print(m.get('REDIS_URL') or m.get('REDIS_PRIVATE_URL') or '')
+          print(
+            m.get('REDIS_PUBLIC_URL')
+            or m.get('REDIS_URL')
+            or m.get('REDIS_PRIVATE_URL')
+            or ''
+          )
           ")"
+          echo "Redis host: ${REDIS_URL#*@}"
           if [ -z "$REDIS_URL" ]; then
             echo "REDIS_URL not found on celery worker service"
             exit 1
           fi
-          PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
+          if [[ "$REDIS_URL" == *railway.internal* ]]; then
+            echo "Using railway run (internal Redis not reachable from GitHub Actions)"
+            railway run --service "$CELERY_SERVICE_ID" -- \
+              python3 scripts/enqueue_wnba_pipeline.py
+          else
+            PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
+          fi
