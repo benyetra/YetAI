@@ -30,31 +30,20 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+          API_SERVICE_ID: 9fe8f0dc-96ac-408f-9960-950768e6eb49
         run: |
           set -euo pipefail
-          export REDIS_URL="$(railway variable list --service "$CELERY_SERVICE_ID" --json | python3 -c "
-          import json,sys
-          d=json.load(sys.stdin)
-          if isinstance(d,dict):
-            m=d
-          else:
-            m={i['name']:i['value'] for i in d}
-          print(
-            m.get('REDIS_PUBLIC_URL')
-            or m.get('REDIS_URL')
-            or m.get('REDIS_PRIVATE_URL')
-            or ''
-          )
-          ")"
-          echo "Redis host: ${REDIS_URL#*@}"
-          if [ -z "$REDIS_URL" ]; then
-            echo "REDIS_URL not found on celery worker service"
-            exit 1
-          fi
-          if [[ "$REDIS_URL" == *railway.internal* ]]; then
-            echo "Using railway run (internal Redis not reachable from GitHub Actions)"
-            PYTHONPATH=. railway run --service "$CELERY_SERVICE_ID" -- \
-              python3 scripts/enqueue_wnba_pipeline.py
+          if REDIS_URL="$(python3 scripts/resolve_redis_public_url.py 2>/dev/null)"; then
+            export REDIS_URL
+            echo "Redis host: ${REDIS_URL#*@}"
           else
-            PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
+            echo "No public Redis URL; will try YetAI admin API"
           fi
+          export YETAI_ADMIN_EMAIL="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_EMAIL 2>/dev/null || true)"
+          export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
+          if [ -z "${YETAI_ADMIN_EMAIL:-}" ] || [ -z "${YETAI_ADMIN_PASSWORD:-}" ]; then
+            export RAILWAY_SERVICE_ID="$API_SERVICE_ID"
+            export YETAI_ADMIN_EMAIL="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_EMAIL 2>/dev/null || true)"
+            export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
+          fi
+          PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
