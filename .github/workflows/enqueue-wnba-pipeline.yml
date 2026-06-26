@@ -53,7 +53,7 @@ jobs:
           fi
           if [[ "$REDIS_URL" == *railway.internal* ]]; then
             echo "Using railway run (internal Redis not reachable from GitHub Actions)"
-            railway run --service "$CELERY_SERVICE_ID" -- \
+            PYTHONPATH=. railway run --service "$CELERY_SERVICE_ID" -- \
               python3 scripts/enqueue_wnba_pipeline.py
           else
             PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
