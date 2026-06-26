@@ -1,0 +1,48 @@
+name: Enqueue WNBA pipeline
+
+on:
+  workflow_dispatch:
+
+jobs:
+  enqueue:
+    name: Enqueue run_wnba_update_pipeline
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Enqueue WNBA daily pipeline
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+        run: |
+          set -euo pipefail
+          export REDIS_URL="$(railway variable list --service "$CELERY_SERVICE_ID" --json | python3 -c "
+          import json,sys
+          d=json.load(sys.stdin)
+          if isinstance(d,dict):
+            m=d
+          else:
+            m={i['name']:i['value'] for i in d}
+          print(m.get('REDIS_URL') or m.get('REDIS_PRIVATE_URL') or '')
+          ")"
+          if [ -z "$REDIS_URL" ]; then
+            echo "REDIS_URL not found on celery worker service"
+            exit 1
+          fi
+          PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py
