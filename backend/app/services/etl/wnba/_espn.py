@@ -91,12 +91,12 @@ def fetch_games(game_date: date) -> list[dict]:
     return out
 
 
-def fetch_injuries() -> list[dict]:
-    """Return current WNBA injury report rows from ESPN."""
+def fetch_injuries() -> tuple[list[dict], bool]:
+    """Return (injury rows, fetch_ok). ``fetch_ok`` is False when ESPN is unreachable."""
     r = requests.get(ESPN_INJURIES, timeout=15)
     if r.status_code != 200:
         logger.warning("ESPN WNBA injuries returned %s", r.status_code)
-        return []
+        return [], False
     payload = r.json()
     out: list[dict] = []
     for team in payload.get("injuries", []):
@@ -111,7 +111,7 @@ def fetch_injuries() -> list[dict]:
                     "injury_type": (inj.get("details") or {}).get("type"),
                 }
             )
-    return out
+    return out, True
 
 
 def build_matchups(games: list[dict]) -> tuple[set[int], list[dict]]:
