@@ -54,6 +54,20 @@ type BasketballPropColumnOptions = {
   confidenceKey?: string;
 };
 
+export function formatNewsString(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  return formatString(value);
+}
+
+export function newsImpactClassName(value: unknown): string | undefined {
+  const text = String(value ?? '');
+  if (text.includes('[unknown]')) return 'news-impact-unknown';
+  if (text.includes('↑') || text.includes('\u2191')) return 'news-impact-up';
+  if (text.includes('↓') || text.includes('\u2193')) return 'news-impact-down';
+  if (text.includes('[neutral]')) return 'news-impact-neutral';
+  return undefined;
+}
+
 export function buildBasketballPropColumns({
   projectedKey,
   projectedLabel,
@@ -102,6 +116,13 @@ export function buildBasketballPropColumns({
       format: (v, row) =>
         formatPickConfidence(v ?? row.confidence_score ?? row.confidence),
       className: 'prop-conf-cell',
+    },
+    {
+      key: 'news',
+      label: 'News',
+      format: (v) => formatNewsString(v),
+      className: 'prop-news-cell',
+      sortable: false,
     },
   ];
 }

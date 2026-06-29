@@ -10,6 +10,7 @@ _HOURLY_STEPS = [
     ("update_recent_games", ep._wnba_update_recent),
     ("today_active_players", ep._wnba_today_active),
     ("update_expected_minutes", ep._wnba_expected_minutes),
+    ("yetiwatch", ep._wnba_yetiwatch),
     ("totals_projector", ep._wnba_totals_projector),
     ("spread_projector", ep._wnba_spread_projector),
     ("generate_points", ep._wnba_gen_points),

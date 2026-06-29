@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: Optional[str] = None
     WEATHER_API_KEY: Optional[str] = None
 
+    # YetiWatch (WNBA news synthesis via Bedrock; heuristic fallback when disabled)
+    YETIWATCH_BEDROCK_ENABLED: bool = False
+    YETIWATCH_BEDROCK_MODEL_ID: str = "anthropic.claude-3-5-sonnet-20241022-v2:0"
+    YETIWATCH_BEDROCK_REGION: str = "us-east-1"
+
     # Authentication
     SECRET_KEY: str = "dev-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
