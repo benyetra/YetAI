@@ -1,0 +1,325 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://yetai.app/schemas/yetiwatch-signal-payload.json",
+  "title": "YetiWatch Signal Payload",
+  "description": "Per projection-row news synthesis emitted by the YetiWatch news job. The projection engine consumes this; the `news_string` is mirrored into the projections page `news` column. One object per (player, game) per pre-game run. All availability/production fields reflect an ORIGINAL synthesis across multiple sources — never redistributed source text.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id",
+    "as_of",
+    "player_id",
+    "game_id",
+    "status",
+    "impact",
+    "news_string",
+    "provenance"
+  ],
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "Identifier of the pre-game news run that produced this record. Lets the engine match the news run to the projection run it feeds."
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601 timestamp of when this synthesis was generated. Drives the timestamp shown in news_string and the freshness metric."
+    },
+    "player_id": {
+      "type": "string",
+      "description": "Canonical WNBA player id (join key to the projection row)."
+    },
+    "player_name": {
+      "type": "string",
+      "description": "Display name (for readability/debugging; not a join key)."
+    },
+    "team_id": {
+      "type": "string",
+      "description": "Canonical WNBA team id for the player."
+    },
+    "game_id": {
+      "type": "string",
+      "description": "Canonical game id (join key to the projection row)."
+    },
+    "opponent_id": {
+      "type": "string",
+      "description": "Canonical team id of the opponent."
+    },
+    "game_start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Scheduled tip-off, ISO 8601. Used for cadence/lock logic."
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "available",
+        "probable",
+        "questionable",
+        "doubtful",
+        "out",
+        "game_time_decision",
+        "not_reported"
+      ],
+      "description": "Synthesized availability designation, aligned to the WNBA official injury-report scale. 'not_reported' = no report yet / no material item found."
+    },
+    "availability_prob": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Synthesized probability the player suits up and plays a normal role. Lets the projection engine weight the row rather than treat status as binary. Null if genuinely unknown."
+    },
+    "minutes_outlook": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Expected minutes effect. cap_min and delta_min are independent: a return-from-injury cap sets cap_min; a softer expectation sets delta_min.",
+      "properties": {
+        "cap_min": {
+          "type": ["number", "null"],
+          "description": "Hard minutes ceiling if the player is on an explicit restriction (e.g., 22). Null if no cap."
+        },
+        "delta_min": {
+          "type": ["number", "null"],
+          "description": "Expected change in minutes vs baseline, in minutes (can be negative). Null if no expected change."
+        },
+        "note": {
+          "type": ["string", "null"],
+          "description": "Short original note on the minutes situation. Null if none."
+        }
+      }
+    },
+    "usage_delta": {
+      "type": "string",
+      "enum": [
+        "strong_decrease",
+        "decrease",
+        "neutral",
+        "increase",
+        "strong_increase"
+      ],
+      "description": "Expected change in this player's usage/role share, driven e.g. by teammate availability or role change."
+    },
+    "usage_delta_factor": {
+      "type": ["number", "null"],
+      "description": "Optional numeric multiplier on baseline usage (e.g., 1.15 = +15%). Null if expressed only categorically."
+    },
+    "role_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Lineup role transition, if any.",
+      "properties": {
+        "from": {
+          "type": "string",
+          "enum": ["starter", "bench", "out_of_rotation", "dnp", "unknown"]
+        },
+        "to": {
+          "type": "string",
+          "enum": ["starter", "bench", "out_of_rotation", "dnp", "unknown"]
+        }
+      },
+      "required": ["from", "to"]
+    },
+    "signal_types": {
+      "type": "array",
+      "description": "Taxonomy tags describing what kind(s) of news this is. Empty array = no material signal.",
+      "items": {
+        "type": "string",
+        "enum": [
+          "rest_load_management",
+          "injury_status_change",
+          "minutes_restriction",
+          "usage_increase",
+          "rotation_change",
+          "teammate_availability",
+          "national_team_overseas",
+          "blowout_pace_risk",
+          "foul_trouble_ejection",
+          "trade_roster_move",
+          "coaching_scheme_change"
+        ]
+      }
+    },
+    "impact": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Production-relative impact summary. Direction/magnitude are relative to the player's OWN expected output, not any bet side.",
+      "required": ["direction", "magnitude", "confidence"],
+      "properties": {
+        "direction": {
+          "type": "string",
+          "enum": ["up", "down", "neutral", "unknown"],
+          "description": "Expected effect on the player's projected production."
+        },
+        "magnitude": {
+          "type": "string",
+          "enum": ["low", "medium", "high"],
+          "description": "Size of the expected effect. Use 'low' when direction is neutral/unknown."
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "0-1, driven by cross-source corroboration x signal clarity. Multiple credible sources agreeing -> high; single low-tier or conflicting -> low."
+        },
+        "rationale": {
+          "type": ["string", "null"],
+          "description": "One-line original explanation. Null if neutral with nothing to say."
+        }
+      }
+    },
+    "related_subjects": {
+      "type": "array",
+      "description": "Other players whose situation drives THIS row (e.g., a teammate ruled out that raises this player's usage). Lets the engine trace cause.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["player_id", "relation"],
+        "properties": {
+          "player_id": { "type": "string" },
+          "relation": {
+            "type": "string",
+            "enum": [
+              "teammate_out_raises_usage",
+              "teammate_back_lowers_usage",
+              "competes_for_minutes",
+              "other"
+            ]
+          }
+        }
+      }
+    },
+    "news_string": {
+      "type": "string",
+      "description": "Original synthesized column string. Format: '<summary> [impact tag] <as-of time>'. Impact tag is '[prod \u2193 <mag>]' or '[prod \u2191 <mag>]' for up/down, else '[neutral]' or '[unknown]'. Explicit neutral state required (never blank). Original wording only \u2014 no source text.",
+      "maxLength": 160
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Synthesis metadata only \u2014 no raw source text is stored or republished.",
+      "required": ["source_count", "corroboration"],
+      "properties": {
+        "source_count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "How many distinct sources contributed to this synthesis."
+        },
+        "corroboration": {
+          "type": "string",
+          "enum": ["single", "corroborated", "conflicting"],
+          "description": "Whether sources agreed. Feeds impact.confidence."
+        },
+        "source_tiers": {
+          "type": "array",
+          "description": "Which trust tiers contributed (metadata only).",
+          "items": {
+            "type": "string",
+            "enum": ["official", "beat_writer", "aggregator", "community"]
+          }
+        },
+        "latest_source_ts": {
+          "type": ["string", "null"],
+          "format": "date-time",
+          "description": "Timestamp of the most recent contributing item, ISO 8601."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "run_id": "wnba-2026-06-28-r3",
+      "as_of": "2026-06-28T21:40:00Z",
+      "player_id": "wnba_player_00123",
+      "player_name": "Player A",
+      "team_id": "wnba_team_007",
+      "game_id": "wnba_game_2026_06_28_007_011",
+      "opponent_id": "wnba_team_011",
+      "game_start": "2026-06-28T23:00:00Z",
+      "status": "available",
+      "availability_prob": 0.95,
+      "minutes_outlook": { "cap_min": 22, "delta_min": -8, "note": "On a minutes cap returning from ankle." },
+      "usage_delta": "neutral",
+      "usage_delta_factor": null,
+      "role_change": { "from": "starter", "to": "starter" },
+      "signal_types": ["injury_status_change", "minutes_restriction"],
+      "impact": {
+        "direction": "down",
+        "magnitude": "medium",
+        "confidence": 0.82,
+        "rationale": "Minutes capped on return, usage unchanged, so counting stats project lower."
+      },
+      "related_subjects": [],
+      "news_string": "Min cap ~22 on return from ankle; usage steady. [prod \u2193 med] 5:40p ET",
+      "provenance": {
+        "source_count": 3,
+        "corroboration": "corroborated",
+        "source_tiers": ["official", "beat_writer"],
+        "latest_source_ts": "2026-06-28T21:36:00Z"
+      }
+    },
+    {
+      "run_id": "wnba-2026-06-28-r3",
+      "as_of": "2026-06-28T20:12:00Z",
+      "player_id": "wnba_player_00456",
+      "player_name": "Player B",
+      "team_id": "wnba_team_011",
+      "game_id": "wnba_game_2026_06_28_007_011",
+      "opponent_id": "wnba_team_007",
+      "game_start": "2026-06-28T23:00:00Z",
+      "status": "available",
+      "availability_prob": 0.97,
+      "minutes_outlook": { "cap_min": null, "delta_min": 4, "note": "Likely more on-ball reps with starter out." },
+      "usage_delta": "increase",
+      "usage_delta_factor": 1.15,
+      "role_change": { "from": "bench", "to": "bench" },
+      "signal_types": ["teammate_availability", "usage_increase"],
+      "impact": {
+        "direction": "up",
+        "magnitude": "medium",
+        "confidence": 0.78,
+        "rationale": "Primary scorer ruled out for rest; usage and minutes project up."
+      },
+      "related_subjects": [
+        { "player_id": "wnba_player_00457", "relation": "teammate_out_raises_usage" }
+      ],
+      "news_string": "Star teammate out (rest, B2B); usage projects up. [prod \u2191 med] 4:12p ET",
+      "provenance": {
+        "source_count": 2,
+        "corroboration": "corroborated",
+        "source_tiers": ["official", "beat_writer"],
+        "latest_source_ts": "2026-06-28T20:05:00Z"
+      }
+    },
+    {
+      "run_id": "wnba-2026-06-28-r2",
+      "as_of": "2026-06-28T19:00:00Z",
+      "player_id": "wnba_player_00789",
+      "player_name": "Player C",
+      "team_id": "wnba_team_007",
+      "game_id": "wnba_game_2026_06_28_007_011",
+      "opponent_id": "wnba_team_011",
+      "game_start": "2026-06-28T23:00:00Z",
+      "status": "available",
+      "availability_prob": 0.99,
+      "minutes_outlook": { "cap_min": null, "delta_min": null, "note": null },
+      "usage_delta": "neutral",
+      "usage_delta_factor": null,
+      "role_change": { "from": "starter", "to": "starter" },
+      "signal_types": [],
+      "impact": {
+        "direction": "neutral",
+        "magnitude": "low",
+        "confidence": 0.9,
+        "rationale": null
+      },
+      "related_subjects": [],
+      "news_string": "Full participant, no concern across reports. [neutral] 3:00p ET",
+      "provenance": {
+        "source_count": 2,
+        "corroboration": "corroborated",
+        "source_tiers": ["official", "aggregator"],
+        "latest_source_ts": "2026-06-28T18:50:00Z"
+      }
+    }
+  ]
+}

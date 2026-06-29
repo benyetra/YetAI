@@ -3235,6 +3235,30 @@ class WNBATodayActivePlayers(Base):
     )
 
 
+class WNBAYetiWatchSignal(Base):
+    """Latest YetiWatch synthesis per player per game date (upstream of projections)."""
+
+    __tablename__ = "pred_wnba_yetiwatch_signals"
+    id = Column(Integer, primary_key=True)
+    run_id = Column(String(64), nullable=False)
+    as_of = Column(DateTime, nullable=False)
+    player_id = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False, index=True)
+    game_id = Column(String(128), nullable=True)
+    team_id = Column(Integer, nullable=True)
+    opponent_id = Column(Integer, nullable=True)
+    payload_json = Column(JSON, nullable=False)
+    news_string = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint(
+            "player_id",
+            "game_date",
+            name="unique_wnba_yetiwatch_player_date",
+        ),
+    )
+
+
 # Phase 2 prop projection / actual tables.
 # Defined here so Phase 2 (Plan B) does not need new SQLAlchemy classes — only ETL code.
 
@@ -3254,6 +3278,7 @@ def _make_prop_projection(prop: str):
         "edge": Column(Float, nullable=True),
         "recommendation": Column(String(20), nullable=True),
         "confidence_score": Column(Float, nullable=True),
+        "news": Column(String(160), nullable=True),
         "created_at": Column(DateTime, nullable=False, default=datetime.utcnow),
         "__table_args__": (
             UniqueConstraint(

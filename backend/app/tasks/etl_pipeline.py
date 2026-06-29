@@ -872,6 +872,7 @@ from app.services.etl.wnba import (  # noqa: E402
     update_expected_minutes as _wnba_expected_minutes,
     update_recent_games as _wnba_update_recent,
 )
+from app.services.etl.wnba.yetiwatch import run as _wnba_yetiwatch
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.wnba.update_recent_games")
@@ -967,6 +968,7 @@ def run_wnba_update_pipeline(self) -> dict:
         ("update_recent_games", _wnba_update_recent),
         ("today_active_players", _wnba_today_active),
         ("update_expected_minutes", _wnba_expected_minutes),
+        ("yetiwatch", _wnba_yetiwatch),
         ("totals_projector", _wnba_totals_projector),
         ("spread_projector", _wnba_spread_projector),
         ("generate_points", _wnba_gen_points),

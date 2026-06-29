@@ -14,7 +14,7 @@ Rules under test:
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -296,10 +296,14 @@ def test_active_bet_stays_visible_within_slate_window():
     bet.created_at = datetime(2026, 6, 9, 17, 0)
     bet.bet_type = BetType.PROP
     bet.prediction_factors = {"event_id": "nba-prop-2026-06-09-1-points"}
-    assert yetai_bet_subscriber_live_visible(bet, now=datetime(2026, 6, 10, 17, 0))
+    fixed_now = datetime(2026, 6, 10, 17, 0)
+    assert yetai_bet_subscriber_live_visible(bet, now=fixed_now)
     db = _make_db([bet])
 
-    results = service.get_yetai_bets_for_user("elite", db)
+    with patch("app.services.yetai_bets_service_db.datetime") as mock_dt:
+        mock_dt.utcnow.return_value = fixed_now
+        mock_dt.combine = datetime.combine
+        results = service.get_yetai_bets_for_user("elite", db)
     assert [r["id"] for r in results] == ["stale-active"]
 
 
