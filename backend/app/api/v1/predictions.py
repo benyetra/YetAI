@@ -52,6 +52,7 @@ from app.models.predictions_models import (
     WNBASpreadProjections,
     WNBATotalsProjections,
 )
+from app.services.etl.yetiwatch.news import attach_news_to_rows
 from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
 from app.services.player_prop_projection_display import (
     enrich_prop_rows,
@@ -386,6 +387,14 @@ def mlb_predictions(
             enriched_games.append(enrich_game_projection_row(row))
         game_rows = enriched_games
 
+    cleaned_strikeouts = attach_news_to_rows(
+        db,
+        cleaned_strikeouts,
+        sport="mlb",
+        entity_key="pitcher_id",
+        date_key="date",
+    )
+
     return {
         "strikeout_projections": cleaned_strikeouts,
         "game_projections": game_rows,
@@ -448,36 +457,43 @@ def nba_predictions(
             _query_recent(db, PointsProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="points",
+            db=db,
         ),
         "assists": enrich_prop_rows(
             _query_recent(db, AssistsProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="assists",
+            db=db,
         ),
         "rebounds": enrich_prop_rows(
             _query_recent(db, ReboundsProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="rebounds",
+            db=db,
         ),
         "three_point": enrich_prop_rows(
             _query_recent(db, ThreePointProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="three_pt_made",
+            db=db,
         ),
         "steals": enrich_prop_rows(
             _query_recent(db, StealsProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="steals",
+            db=db,
         ),
         "blocks": enrich_prop_rows(
             _query_recent(db, BlocksProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="blocks",
+            db=db,
         ),
         "pra": enrich_prop_rows(
             _query_recent(db, PRAProjections, "date", target_date, limit, tz=tz),
             sport="nba",
             stat="pra",
+            db=db,
         ),
     }
 
@@ -497,6 +513,7 @@ def nfl_predictions(
             _query_recent(db, QBPredictions, "game_date", target_date, limit, tz=tz),
             sport="nfl",
             stat="passing_yards",
+            db=db,
         ),
         "kicker_predictions": _query_recent(
             db, KickerPredictions, "game_date", target_date, limit, tz=tz
@@ -551,6 +568,7 @@ def nhl_predictions(
             ),
             sport="nhl",
             stat="saves",
+            db=db,
         ),
         "player_shots": enrich_prop_rows(
             _query_recent(
@@ -564,6 +582,7 @@ def nhl_predictions(
             ),
             sport="nhl",
             stat="shots",
+            db=db,
         ),
         "team_totals": _query_recent(
             db,
@@ -635,6 +654,7 @@ def wnba_predictions(
             ),
             sport="wnba",
             stat="points",
+            db=db,
         ),
         "assists": enrich_prop_rows(
             _query_wnba_props_by_season_minutes(
@@ -642,6 +662,7 @@ def wnba_predictions(
             ),
             sport="wnba",
             stat="assists",
+            db=db,
         ),
         "rebounds": enrich_prop_rows(
             _query_wnba_props_by_season_minutes(
@@ -649,6 +670,7 @@ def wnba_predictions(
             ),
             sport="wnba",
             stat="rebounds",
+            db=db,
         ),
     }
 

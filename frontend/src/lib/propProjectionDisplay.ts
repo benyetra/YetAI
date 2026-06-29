@@ -68,6 +68,14 @@ export function newsImpactClassName(value: unknown): string | undefined {
   return undefined;
 }
 
+const NEWS_COLUMN: ColumnDef = {
+  key: 'news',
+  label: 'News',
+  format: (v) => formatNewsString(v),
+  className: 'prop-news-cell',
+  sortable: false,
+};
+
 export function buildBasketballPropColumns({
   projectedKey,
   projectedLabel,
@@ -190,6 +198,7 @@ export const NHL_GOALIE_COLUMNS: ColumnDef[] = [
     format: (v) => formatPickConfidence(v),
     className: 'prop-conf-cell',
   },
+  NEWS_COLUMN,
 ];
 
 export const NHL_SHOTS_COLUMNS: ColumnDef[] = [
@@ -231,6 +240,7 @@ export const NHL_SHOTS_COLUMNS: ColumnDef[] = [
     format: (v) => formatPickConfidence(v),
     className: 'prop-conf-cell',
   },
+  NEWS_COLUMN,
 ];
 
 export const MLB_STRIKEOUT_COLUMNS_BASE = [
@@ -279,6 +289,7 @@ export const MLB_STRIKEOUT_COLUMNS_BASE = [
     format: (v: unknown) => formatPickConfidence(v),
     className: 'prop-conf-cell',
   },
+  NEWS_COLUMN,
 ];
 
 export const NFL_QB_COLUMNS: ColumnDef[] = [
@@ -320,4 +331,5 @@ export const NFL_QB_COLUMNS: ColumnDef[] = [
     format: (v, row) => formatPickConfidence(v ?? row.confidence_score),
     className: 'prop-conf-cell',
   },
+  NEWS_COLUMN,
 ];

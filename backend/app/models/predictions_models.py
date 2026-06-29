@@ -3236,7 +3236,7 @@ class WNBATodayActivePlayers(Base):
 
 
 class WNBAYetiWatchSignal(Base):
-    """Latest YetiWatch synthesis per player per game date (upstream of projections)."""
+    """Legacy WNBA-only signals table (superseded by ``YetiWatchSignal``)."""
 
     __tablename__ = "pred_wnba_yetiwatch_signals"
     id = Column(Integer, primary_key=True)
@@ -3256,6 +3256,33 @@ class WNBAYetiWatchSignal(Base):
             "game_date",
             name="unique_wnba_yetiwatch_player_date",
         ),
+    )
+
+
+class YetiWatchSignal(Base):
+    """Latest YetiWatch synthesis per entity per game date (multi-sport)."""
+
+    __tablename__ = "pred_yetiwatch_signals"
+    id = Column(Integer, primary_key=True)
+    sport = Column(String(16), nullable=False, index=True)
+    run_id = Column(String(64), nullable=False)
+    as_of = Column(DateTime, nullable=False)
+    entity_id = Column(String(64), nullable=False)
+    game_date = Column(Date, nullable=False, index=True)
+    game_id = Column(String(128), nullable=True)
+    team_id = Column(String(64), nullable=True)
+    opponent_id = Column(String(64), nullable=True)
+    payload_json = Column(JSON, nullable=False)
+    news_string = Column(String(160), nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    __table_args__ = (
+        UniqueConstraint(
+            "sport",
+            "entity_id",
+            "game_date",
+            name="unique_yetiwatch_entity_date",
+        ),
+        Index("ix_pred_yetiwatch_signals_sport_date", "sport", "game_date"),
     )
 
 

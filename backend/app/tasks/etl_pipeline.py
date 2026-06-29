@@ -131,6 +131,34 @@ def nba_update_expected_minutes():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.yetiwatch.nba")
+def nba_yetiwatch():
+    from app.services.etl.yetiwatch.run import run_for_sport
+
+    return run_for_sport("nba")
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.yetiwatch.mlb")
+def mlb_yetiwatch():
+    from app.services.etl.yetiwatch.run import run_for_sport
+
+    return run_for_sport("mlb")
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.yetiwatch.nfl")
+def nfl_yetiwatch():
+    from app.services.etl.yetiwatch.run import run_for_sport
+
+    return run_for_sport("nfl")
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.yetiwatch.nhl")
+def nhl_yetiwatch():
+    from app.services.etl.yetiwatch.run import run_for_sport
+
+    return run_for_sport("nhl")
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nba.update_game_lines")
 def nba_update_game_lines():
     from app.services.etl.nba.update_game_lines import run
@@ -461,6 +489,7 @@ NBA_PHASES = [
         [
             nba_update_injury_status,
             nba_update_expected_minutes,
+            nba_yetiwatch,
             nba_update_game_lines,
         ],
     ),
@@ -500,7 +529,7 @@ def _mlb_projection_phases():
     enrichment.extend([mlb_blowouts, mlb_ev])
     return [
         ("sync", []),  # games cache runs on its own 3h beat; optional inline below
-        ("props", [mlb_strikeouts, mlb_hits]),
+        ("props", [mlb_yetiwatch, mlb_strikeouts, mlb_hits]),
         ("persist", persist),
         ("enrichment", enrichment),
     ]
@@ -657,6 +686,7 @@ NFL_PHASES = [
     (
         "predictions",
         [
+            nfl_yetiwatch,
             nfl_qb_weekly,
             nfl_kickers,
         ],
@@ -747,7 +777,7 @@ NHL_PHASES = [
             nhl_collect_team_totals_actuals,
         ],
     ),
-    ("automation", [nhl_daily_predictions]),
+    ("automation", [nhl_yetiwatch, nhl_daily_predictions]),
 ]
 
 
@@ -872,7 +902,15 @@ from app.services.etl.wnba import (  # noqa: E402
     update_expected_minutes as _wnba_expected_minutes,
     update_recent_games as _wnba_update_recent,
 )
-from app.services.etl.wnba.yetiwatch import run as _wnba_yetiwatch
+from app.services.etl.yetiwatch.run import run_for_sport as _yetiwatch_for_sport
+
+
+class _YetiWatchRunner:
+    def run(self):
+        return _yetiwatch_for_sport("wnba")
+
+
+_wnba_yetiwatch = _YetiWatchRunner()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.wnba.update_recent_games")

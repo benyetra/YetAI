@@ -8,6 +8,10 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from sqlalchemy.orm import Session
+
+from app.services.etl.yetiwatch.news import attach_news_to_rows
+
 ValueTier = Literal["strong", "lean"]
 
 # Minimum |projected - line| to emit a directional pick (stat-specific).
@@ -287,21 +291,53 @@ def enrich_nfl_qb_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_NEWS_ENTITY_KEYS: dict[tuple[str, str], tuple[str, str]] = {
+    ("nba", "points"): ("player_id", "date"),
+    ("nba", "assists"): ("player_id", "date"),
+    ("nba", "rebounds"): ("player_id", "date"),
+    ("nba", "three_pt_made"): ("player_id", "date"),
+    ("nba", "steals"): ("player_id", "date"),
+    ("nba", "blocks"): ("player_id", "date"),
+    ("nba", "pra"): ("player_id", "date"),
+    ("wnba", "points"): ("player_id", "date"),
+    ("wnba", "assists"): ("player_id", "date"),
+    ("wnba", "rebounds"): ("player_id", "date"),
+    ("mlb", "strikeouts"): ("pitcher_id", "date"),
+    ("nfl", "passing_yards"): ("qb_player_id", "game_date"),
+    ("nhl", "saves"): ("goalie_id", "game_date"),
+    ("nhl", "shots"): ("player_id", "game_date"),
+}
+
+
 def enrich_prop_rows(
     rows: list[dict[str, Any]],
     *,
     sport: str,
     stat: str,
+    db: Session | None = None,
 ) -> list[dict[str, Any]]:
     """Batch enrich for predictions API responses."""
     if sport == "nba":
-        return [enrich_nba_prop_row(r, stat) for r in rows]
-    if sport == "wnba":
-        return [enrich_wnba_prop_row(r, stat) for r in rows]
-    if sport == "nhl":
-        return [enrich_nhl_prop_row(r, stat) for r in rows]
-    if sport == "mlb" and stat == "strikeouts":
-        return [enrich_strikeout_display_row(r) for r in rows]
-    if sport == "nfl" and stat == "passing_yards":
-        return [enrich_nfl_qb_row(r) for r in rows]
-    return rows
+        enriched = [enrich_nba_prop_row(r, stat) for r in rows]
+    elif sport == "wnba":
+        enriched = [enrich_wnba_prop_row(r, stat) for r in rows]
+    elif sport == "nhl":
+        enriched = [enrich_nhl_prop_row(r, stat) for r in rows]
+    elif sport == "mlb" and stat == "strikeouts":
+        enriched = [enrich_strikeout_display_row(r) for r in rows]
+    elif sport == "nfl" and stat == "passing_yards":
+        enriched = [enrich_nfl_qb_row(r) for r in rows]
+    else:
+        enriched = rows
+
+    keys = _NEWS_ENTITY_KEYS.get((sport, stat))
+    if db and keys:
+        entity_key, date_key = keys
+        return attach_news_to_rows(
+            db,
+            enriched,
+            sport=sport,
+            entity_key=entity_key,
+            date_key=date_key,
+        )
+    return enriched

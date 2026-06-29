@@ -3,9 +3,9 @@
 from datetime import date, datetime
 from unittest.mock import MagicMock, patch
 
-from app.services.etl.wnba.yetiwatch.ingest import CandidateItem, SourceTier
-from app.services.etl.wnba.yetiwatch.models import PlayerStatus
-from app.services.etl.wnba.yetiwatch.heuristic import synthesize_heuristic
+from app.services.etl.yetiwatch.ingest import CandidateItem, SourceTier
+from app.services.etl.yetiwatch.models import PlayerStatus
+from app.services.etl.yetiwatch.heuristic import synthesize_heuristic
 
 
 def test_heuristic_out_player():
@@ -20,10 +20,11 @@ def test_heuristic_out_player():
         )
     ]
     payload = synthesize_heuristic(
+        sport="wnba",
         run_id="test-run",
         as_of=as_of,
-        player_id=1,
-        player_name="Test Player",
+        entity_id=1,
+        entity_name="Test Player",
         team_id=10,
         game_date=date.today(),
         opponent_id=20,
@@ -34,20 +35,22 @@ def test_heuristic_out_player():
     assert payload.news_string
 
 
-@patch("app.services.etl.wnba.yetiwatch.run.bedrock_enabled", return_value=False)
-@patch("app.services.etl.wnba.yetiwatch.run.fetch_candidate_items")
-@patch("app.services.etl.wnba.yetiwatch.run.SessionLocal")
-@patch("app.services.etl.wnba.yetiwatch.run.apply_signals_to_slate")
-@patch("app.services.etl.wnba.yetiwatch.run.upsert_many")
-def test_run_empty_slate(mock_upsert, mock_apply, mock_session, mock_fetch, _bedrock):
-    mock_fetch.return_value = ([], True)
-    db = MagicMock()
-    mock_session.return_value = db
-    db.query.return_value.filter.return_value.all.return_value = []
+@patch("app.services.etl.yetiwatch.run.bedrock_enabled", return_value=False)
+@patch("app.services.etl.yetiwatch.run.get_adapter")
+@patch("app.services.etl.yetiwatch.run.SessionLocal")
+@patch("app.services.etl.yetiwatch.run.upsert_signals")
+def test_run_empty_slate(mock_upsert, mock_session, mock_get_adapter, _bedrock):
+    adapter = MagicMock()
+    adapter.game_date.return_value = date.today()
+    adapter.fetch_candidate_items.return_value = ([], True)
+    adapter.load_slate.return_value = []
+    adapter.apply_signals.return_value = {"status": "ok", "adjusted": 0}
+    mock_get_adapter.return_value = adapter
+    mock_session.return_value = MagicMock()
 
-    from app.services.etl.wnba.yetiwatch.run import run
+    from app.services.etl.yetiwatch.run import run_for_sport
 
-    out = run()
+    out = run_for_sport("wnba")
     assert out["status"] == "ok"
-    assert out["players"] == 0
+    assert out["entities"] == 0
     mock_upsert.assert_not_called()

@@ -56,9 +56,10 @@ def test_example_payload_validates():
 def test_neutral_payload_has_explicit_news():
     as_of = datetime(2026, 6, 28, 19, 0, tzinfo=timezone.utc)
     payload = build_neutral_payload(
+        sport="wnba",
         run_id="wnba-2026-06-28-r2",
         as_of=as_of,
-        player_id=789,
+        entity_id=789,
         player_name="Player C",
         team_id=7,
         game_date=date(2026, 6, 28),
