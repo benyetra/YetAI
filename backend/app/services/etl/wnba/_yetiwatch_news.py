@@ -6,7 +6,7 @@ from datetime import date
 
 from sqlalchemy.orm import Session
 
-from app.services.etl.wnba.yetiwatch.apply_signals import news_for_player
+from app.services.etl.yetiwatch.apply_signals import news_for_entity
 
 
 def attach_yetiwatch_news(
@@ -16,6 +16,6 @@ def attach_yetiwatch_news(
     player_id: int,
     game_date: date,
 ) -> None:
-    news = news_for_player(db, player_id=player_id, game_date=game_date)
+    news = news_for_entity(db, sport="wnba", entity_id=player_id, game_date=game_date)
     if news:
         row["news"] = news
