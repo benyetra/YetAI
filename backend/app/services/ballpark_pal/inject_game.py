@@ -73,10 +73,20 @@ def maybe_apply_bpp_run_priors(
             return rates, None
 
         home_row = store.load_player_proj(
-            session, game.team_home_id, slate_date, "team"
+            session,
+            game.team_home_id,
+            slate_date,
+            "team",
+            game_pk=int(game_id),
+            bpp_game_id=game.bpp_game_id,
         )
         away_row = store.load_player_proj(
-            session, game.team_away_id, slate_date, "team"
+            session,
+            game.team_away_id,
+            slate_date,
+            "team",
+            game_pk=int(game_id),
+            bpp_game_id=game.bpp_game_id,
         )
         home_prior = _runs_average(home_row)
         away_prior = _runs_average(away_row)

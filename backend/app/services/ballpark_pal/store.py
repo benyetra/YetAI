@@ -213,14 +213,27 @@ def load_game_park_factor(
 
 
 def load_player_proj(
-    session: Session, player_id: int, slate_date: date, role: str
+    session: Session,
+    player_id: int,
+    slate_date: date,
+    role: str,
+    *,
+    game_pk: int | None = None,
+    bpp_game_id: int | None = None,
 ) -> BppPlayerProjSnapshot | None:
-    return (
-        session.query(BppPlayerProjSnapshot)
-        .filter_by(player_id=player_id, slate_date=slate_date, role=role)
-        .order_by(BppPlayerProjSnapshot.updated_at.desc())
-        .first()
+    """Load a player/team projection row.
+
+    When ``game_pk`` or ``bpp_game_id`` is provided, filter to that game
+    (doubleheader-safe). Otherwise return the newest row for the slate.
+    """
+    q = session.query(BppPlayerProjSnapshot).filter_by(
+        player_id=player_id, slate_date=slate_date, role=role
     )
+    if game_pk is not None:
+        q = q.filter_by(game_pk=int(game_pk))
+    elif bpp_game_id is not None:
+        q = q.filter_by(bpp_game_id=int(bpp_game_id))
+    return q.order_by(BppPlayerProjSnapshot.updated_at.desc()).first()
 
 
 def load_matchup(

@@ -9,7 +9,7 @@ def test_bpp_run_priors_replace_lambdas_and_apply_park_factor(monkeypatch):
     from app.services.ballpark_pal import inject_game
 
     session = MagicMock()
-    game = SimpleNamespace(team_home_id=136, team_away_id=108)
+    game = SimpleNamespace(team_home_id=136, team_away_id=108, bpp_game_id=776345)
     home = SimpleNamespace(averages_json={"runs": 5.2, "runsFirstFive": 2.8})
     away = SimpleNamespace(averages_json={"runs": 3.8, "runsFirstFive": 2.1})
     park = SimpleNamespace(factors_json={"runsPercent": 10})
@@ -20,7 +20,7 @@ def test_bpp_run_priors_replace_lambdas_and_apply_park_factor(monkeypatch):
     monkeypatch.setattr(
         inject_game.store,
         "load_player_proj",
-        lambda _session, team_id, _as_of, _role: (
+        lambda _session, team_id, _as_of, _role, **_kwargs: (
             home if team_id == game.team_home_id else away
         ),
     )

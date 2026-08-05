@@ -75,7 +75,8 @@ Soft-fail everywhere: auth/quota/5xx/partial mapping never aborts the MLB slate.
 
 ### Strikeouts
 
-- Prior toward BPP pitcher projected K; optional shrink from BvP `strikeoutProbability`.
+- Prior toward BPP pitcher projected K average only (blend via `blend_prop_mean`).
+- Starter matchup rows are synced/stored for future use; v1 does **not** shrink K with BvP `strikeoutProbability`.
 - When a K prior applies, `matchup_source` is set to **`ballpark_pal`** (evidence tag on `pred_pitcher` / `pred_strikeout_projections`).
 
 ### Hits / HR boards

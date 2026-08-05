@@ -110,6 +110,44 @@ def test_player_projection_upsert_loads_by_player_date_and_role(session):
     assert load_player_proj(session, 108, slate_date, "team") is not None
 
 
+def test_load_player_proj_filters_by_game_pk_for_doubleheader(session):
+    from app.services.ballpark_pal.store import load_player_proj, upsert_player_projs
+
+    slate_date = date(2026, 8, 5)
+    upsert_player_projs(
+        session,
+        slate_date,
+        776345,
+        [
+            {
+                "role": "batter",
+                "player_id": 42,
+                "team_id": 108,
+                "averages": {"hits": 1.1},
+            }
+        ],
+    )
+    upsert_player_projs(
+        session,
+        slate_date,
+        776999,
+        [
+            {
+                "role": "batter",
+                "player_id": 42,
+                "team_id": 108,
+                "averages": {"hits": 2.2},
+            }
+        ],
+    )
+    session.commit()
+
+    g1 = load_player_proj(session, 42, slate_date, "batter", game_pk=776345)
+    g2 = load_player_proj(session, 42, slate_date, "batter", bpp_game_id=776999)
+    assert g1 is not None and g1.averages_json == {"hits": 1.1}
+    assert g2 is not None and g2.averages_json == {"hits": 2.2}
+
+
 def test_park_factor_upsert_loads_hitter_with_optional_game_filter(session):
     from app.services.ballpark_pal.models import BppParkFactorSnapshot
     from app.services.ballpark_pal.store import (

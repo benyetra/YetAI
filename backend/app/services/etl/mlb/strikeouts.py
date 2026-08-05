@@ -649,7 +649,7 @@ def fetch_pitcher_data():
                     proj_k_final, matchup_source = maybe_apply_bpp_k_prior(
                         proj_k_final,
                         pitcher_id=pitcher_id,
-                        slate_date=datetime.today().date(),
+                        slate_date=now_eastern().date(),
                         matchup_source=matchup_source,
                         session=db_session,
                     )

@@ -23,6 +23,7 @@ from app.services.ballpark_pal.config import (
     bpp_hr_prior_weight,
 )
 from app.services.ballpark_pal.priors import shrink_with_matchup_rate
+from app.services.etl.nba._espn import now_eastern
 from sqlalchemy import text
 
 BPP_HITS_BASELINE = 1.0
@@ -588,7 +589,7 @@ def fetch_hitters_data():
                 homer_score,
                 batter_id=player_id,
                 pitcher_id=pitcher_id,
-                slate_date=datetime.today().date(),
+                slate_date=now_eastern().date(),
             )
 
             hitter_data = {
