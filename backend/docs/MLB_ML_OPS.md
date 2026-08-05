@@ -88,6 +88,20 @@ PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py
 
 Strikeout ETL **does not** require a loaded classifier: missing pickle logs a warning and skips the ML O/U blend while regression + negbin/line paths still run. Restore the artifact with the retrain commands above.
 
+Verify unpickle on the **celery-worker** runtime (same sklearn as ETL; pin
+``scikit-learn==1.5.0`` — newer versions often fail with ``No module named '_loss'``):
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/prod_verify_strikeout_classifier.py
+# Or with Railway AWS env (local interpreter must still be sklearn 1.5.x):
+# railway run --service celery-worker -- python scripts/prod_verify_strikeout_classifier.py
+```
+
+Verified 2026-08-05: S3 `strikeout_model.pkl` loads as `CalibratedClassifierCV` under sklearn **1.5.0** (fails under 1.9.0).
+
+Admin `ml-ops-status` includes `strikeout_classifier_load` (`ok`, `estimator_type`, `sklearn_version`, `error`).
+
 ## Hits board (heuristic + shadow ML)
 
 Production filtering uses `combined_score_heuristic` in `app/services/etl/mlb/hits.py` (`min_combined_score=2` on the daily board).

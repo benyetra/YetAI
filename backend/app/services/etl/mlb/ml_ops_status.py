@@ -67,6 +67,8 @@ def collect_ml_ops_status() -> dict[str, Any]:
 
 
 def _collect_ml_ops_status_inner(s3_bucket: str, s3_key: str) -> dict[str, Any]:
+    from app.services.etl.mlb.classification_model import probe_classifier_load
+
     counts = get_strikeout_table_counts()
     minimum = min_joined_rows()
     ready, retrain_reason = should_retrain_strikeout_classifier(counts)
@@ -88,6 +90,7 @@ def _collect_ml_ops_status_inner(s3_bucket: str, s3_key: str) -> dict[str, Any]:
             "strikeout_classifier": _s3_head(strikeout_s3),
             "hr_model": _s3_head(hr_s3),
         },
+        "strikeout_classifier_load": probe_classifier_load(),
         "last_strikeout_retrain": _read_retrain_metrics(),
         "backtest_runs": runs,
         "last_backtest_summary": (

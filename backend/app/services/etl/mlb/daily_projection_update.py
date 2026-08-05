@@ -102,6 +102,10 @@ def store_projections(date):
                 fanduel_line=fanduel_line,
             )
             attach_model_version(existing_projection, model_version)
+            if hasattr(existing_projection, "matchup_source"):
+                existing_projection.matchup_source = getattr(
+                    pitcher, "matchup_source", None
+                )
         else:
             new_projection = StrikeoutProjections(
                 date=date,
@@ -122,6 +126,8 @@ def store_projections(date):
                 fanduel_line=fanduel_line,
             )
             attach_model_version(new_projection, model_version)
+            if hasattr(new_projection, "matchup_source"):
+                new_projection.matchup_source = getattr(pitcher, "matchup_source", None)
             db_session.add(new_projection)
     db_session.commit()
 

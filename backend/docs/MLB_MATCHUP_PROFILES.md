@@ -38,7 +38,7 @@ Beat (ET): statcast incremental 09:30, profile rebuild 05:00 (finishes before pr
 
 ## Phase 3 — Strikeouts
 
-When `MLB_PROFILES_ENABLED=1`, `lineup_matchup_adjusted_strikeouts` reads `ProfileStore` instead of live `fetch_pitcher_data` / `fetch_batter_performance_vs_pitches`. Logs `matchup_source` (`observed | shrunk | archetype | league | legacy_api`).
+When `MLB_PROFILES_ENABLED=1`, `lineup_matchup_adjusted_strikeouts` reads `ProfileStore` instead of live `fetch_pitcher_data` / `fetch_batter_performance_vs_pitches`. Logs `matchup_source` (`observed | shrunk | archetype | league | legacy_api`). The same value is stored on `pred_pitcher.matchup_source` and copied to `pred_strikeout_projections.matchup_source` by `store_projections`.
 
 Backtest:
 

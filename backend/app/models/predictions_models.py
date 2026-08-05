@@ -69,6 +69,7 @@ class Pitcher(Base):
     game_id = Column(Integer, nullable=False)
     prob_over = Column(Float, nullable=True)
     pick_edge_pct = Column(Float, nullable=True)
+    matchup_source = Column(String(16), nullable=True)
 
 
 class Homer(Base):
@@ -380,6 +381,7 @@ class StrikeoutProjections(Base):
     pick_confidence = Column(Float, nullable=True)
     park_id = Column(String, nullable=True)
     model_version = Column(String(20), nullable=True)
+    matchup_source = Column(String(16), nullable=True)
 
 
 class StrikeoutActuals(Base):

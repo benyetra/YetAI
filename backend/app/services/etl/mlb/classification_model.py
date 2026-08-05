@@ -279,6 +279,58 @@ def load_classifier():
         return None
 
 
+def probe_classifier_load() -> dict:
+    """
+    Attempt to unpickle the strikeout classifier and report health.
+
+    Used by admin ml-ops status and ``scripts/prod_verify_strikeout_classifier.py``.
+    Does not train on miss.
+    """
+    import sklearn
+
+    result: dict = {
+        "ok": False,
+        "sklearn_version": getattr(sklearn, "__version__", None),
+        "estimator_type": None,
+        "error": None,
+        "source": None,
+    }
+    # Prefer explicit local vs S3 so the probe reports where it loaded from.
+    if os.path.exists(MODEL_LOCAL_PATH):
+        try:
+            clf = joblib.load(MODEL_LOCAL_PATH)
+            result["ok"] = clf is not None
+            result["estimator_type"] = type(clf).__name__ if clf is not None else None
+            result["source"] = "local"
+            if clf is None:
+                result["error"] = "local file loaded as None"
+            return result
+        except Exception as e:
+            result["error"] = f"local: {e}"
+            # fall through to S3
+
+    try:
+        s3 = boto3.client("s3")
+        obj = s3.get_object(Bucket=S3_BUCKET, Key=S3_KEY)
+        clf = joblib.load(BytesIO(obj["Body"].read()))
+        result["ok"] = clf is not None
+        result["estimator_type"] = type(clf).__name__ if clf is not None else None
+        result["source"] = "s3"
+        if clf is None:
+            result["error"] = "s3 object loaded as None"
+        elif result.get("error"):
+            # local failed but S3 worked
+            result["error"] = f"local_failed_s3_ok: {result['error']}"
+        else:
+            result["error"] = None
+        return result
+    except Exception as e:
+        prior = result.get("error")
+        result["error"] = f"{prior}; s3: {e}" if prior else f"s3: {e}"
+        result["ok"] = False
+        return result
+
+
 def get_classifier():
     """
     Public accessor used by callers; trains if missing.

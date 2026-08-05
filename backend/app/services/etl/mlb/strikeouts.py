@@ -586,10 +586,11 @@ def fetch_pitcher_data():
                         db=db_session,
                     )
                     matchup_factor = matchup_result.factor
+                    matchup_source = matchup_result.source
                     logger.info(
                         "K matchup pitcher=%s source=%s factor=%s",
                         pitcher_id,
-                        matchup_result.source,
+                        matchup_source,
                         matchup_factor,
                     )
 
@@ -707,6 +708,7 @@ def fetch_pitcher_data():
                             "games_played": games_played,
                             "venue_name": venue_name,
                             "game_id": game_id,
+                            "matchup_source": matchup_source,
                         }
                     )
                 except Exception as e:
@@ -809,6 +811,7 @@ def fetch_and_update_app_data():
                 game_id=pitcher_stats_data["game_id"],
                 prob_over=float(pitcher_stats_data.get("prob_over", 0) or 0),
                 pick_edge_pct=float(pitcher_stats_data.get("pick_edge_pct", 0) or 0),
+                matchup_source=pitcher_stats_data.get("matchup_source"),
             )
 
             db_session.add(pitcher)
