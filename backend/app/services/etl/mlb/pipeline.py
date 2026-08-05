@@ -20,6 +20,8 @@ def run_projections_phase(target_date: date | None = None) -> dict:
     today = target_date or now_eastern().date()
     results = {}
 
+    results["ballpark_pal"] = _run_ballpark_pal_sync(today)
+
     from app.services.etl.mlb.strikeouts import run as run_strikeouts
 
     results["strikeouts"] = run_strikeouts()
@@ -87,6 +89,16 @@ def run_actuals_phase(target_date: date | None = None) -> dict:
         "phase": "actuals",
         "results": results,
     }
+
+
+def _run_ballpark_pal_sync(today: date) -> dict:
+    try:
+        from app.services.ballpark_pal.sync import sync_ballpark_pal_slate
+
+        return sync_ballpark_pal_slate(today)
+    except Exception as exc:
+        logger.warning("Ballpark Pal sync failed: %s", exc)
+        return {"status": "error", "error": str(exc)}
 
 
 def _run_hr_predictions_optional() -> dict:

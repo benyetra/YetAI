@@ -64,6 +64,7 @@ class Settings(BaseSettings):
     ODDS_API_KEY: Optional[str] = Field(default=None, validation_alias="ODDS_API_KEY")
     OPENAI_API_KEY: Optional[str] = None
     WEATHER_API_KEY: Optional[str] = None
+    BALLPARK_PAL_API_KEY: Optional[str] = None
 
     # YetiWatch (WNBA news synthesis via Bedrock; heuristic fallback when disabled)
     YETIWATCH_BEDROCK_ENABLED: bool = False

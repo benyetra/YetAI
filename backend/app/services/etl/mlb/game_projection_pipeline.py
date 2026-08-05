@@ -206,6 +206,22 @@ def compute_edge_and_value(prediction, odds_data):
     return result
 
 
+def _tag_game_projection_model_version(model_version, predictions):
+    if not any(p.get("sim_distribution") for p in predictions):
+        return model_version
+
+    from app.services.ml_model_version import normalize_model_version
+
+    has_bpp = any(
+        ((p.get("sim_distribution") or {}).get("matchup_meta") or {}).get("bpp")
+        for p in predictions
+    )
+    suffix = "+mc+bpp" if has_bpp else "+mc"
+    base_len = 20 - len(suffix)
+    base = (model_version or "heuristic-v1")[:base_len]
+    return normalize_model_version(f"{base}{suffix}")
+
+
 def store_game_projections(predictions, target_date=None, *, model_version=None):
     """Upsert game projections into the database."""
     if target_date is None:
@@ -219,12 +235,7 @@ def store_game_projections(predictions, target_date=None, *, model_version=None)
             allow_network=os.getenv("ML_MODEL_VERSION_ALLOW_S3", "1") == "1",
         )
 
-    if any(p.get("sim_distribution") for p in predictions):
-        from app.services.ml_model_version import normalize_model_version
-
-        base = (model_version or "heuristic-v1")[:15]
-        tagged = f"{base}+mc"
-        model_version = normalize_model_version(tagged)
+    model_version = _tag_game_projection_model_version(model_version, predictions)
 
     stored = 0
     for pred in predictions:

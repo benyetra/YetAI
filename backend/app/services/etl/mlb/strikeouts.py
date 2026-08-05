@@ -15,10 +15,17 @@ from app.services.etl.mlb.offsets import apply_shrunk_offsets
 import numpy as np
 import requests
 import statsapi
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from app.services.etl.mlb._db import db_session
 from app.models.predictions_models import Pitcher
 from app.services.etl.mlb._mlb_utils import *
+from app.services.ballpark_pal import store as bpp_store
+from app.services.ballpark_pal.config import (
+    ballpark_pal_enabled,
+    bpp_k_prior_weight,
+)
+from app.services.ballpark_pal.priors import blend_prop_mean
+from app.services.etl.mlb.profiles.matchup_k import MatchupSource
 from app.services.etl.mlb.regression_analysis import (
     _at_bats_heuristic,
     calculate_performance_metrics,
@@ -58,6 +65,58 @@ from app.services.etl.mlb._enrichment_helpers import (
 from app.services.etl.nba._espn import now_eastern
 
 logger = logging.getLogger(__name__)
+
+
+def _bpp_strikeouts_average(row) -> float | None:
+    try:
+        value = (row.averages_json or {}).get("strikeouts")
+        return float(value) if value is not None else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def maybe_apply_bpp_k_prior(
+    projected_k: float,
+    *,
+    pitcher_id: int,
+    slate_date: date,
+    matchup_source: MatchupSource,
+    session=None,
+) -> tuple[float, MatchupSource]:
+    """Blend a stored Ballpark Pal pitcher K prior when integration is enabled."""
+    if not ballpark_pal_enabled():
+        return projected_k, matchup_source
+
+    owns_session = session is None
+    try:
+        if owns_session:
+            from app.services.etl.mlb import _db
+
+            session = _db.init_session()
+        row = bpp_store.load_player_proj(
+            session, pitcher_id, slate_date, role="pitcher"
+        )
+        blended_k, applied = blend_prop_mean(
+            projected_k,
+            _bpp_strikeouts_average(row),
+            bpp_k_prior_weight(),
+        )
+        if not applied:
+            return projected_k, matchup_source
+        return blended_k, "ballpark_pal"
+    except Exception as exc:
+        logger.warning(
+            "Ballpark Pal strikeout prior injection skipped for pitcher %s: %s",
+            pitcher_id,
+            exc,
+        )
+        return projected_k, matchup_source
+    finally:
+        if owns_session:
+            try:
+                _db.close_session()
+            except Exception:
+                pass
 
 
 def _get_over_under_classifier():
@@ -587,6 +646,13 @@ def fetch_pitcher_data():
                     )
                     matchup_factor = matchup_result.factor
                     matchup_source = matchup_result.source
+                    proj_k_final, matchup_source = maybe_apply_bpp_k_prior(
+                        proj_k_final,
+                        pitcher_id=pitcher_id,
+                        slate_date=now_eastern().date(),
+                        matchup_source=matchup_source,
+                        session=db_session,
+                    )
                     logger.info(
                         "K matchup pitcher=%s source=%s factor=%s",
                         pitcher_id,

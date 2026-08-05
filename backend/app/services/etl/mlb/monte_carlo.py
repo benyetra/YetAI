@@ -400,6 +400,16 @@ def apply_monte_carlo_to_prediction(
         )
 
         rates, matchup_meta = maybe_adjust_rates_from_lineups(features, rates, as_of)
+        from app.services.ballpark_pal.inject_game import maybe_apply_bpp_run_priors
+
+        rates, bpp_meta = maybe_apply_bpp_run_priors(
+            features,
+            rates,
+            as_of,
+            game_id=pred.get("game_id"),
+        )
+        if bpp_meta:
+            matchup_meta = {**(matchup_meta or {}), "bpp": bpp_meta}
 
     sim = simulate_game(
         rates,
