@@ -7,6 +7,7 @@ import PageHeader from '@/components/yetai/PageHeader';
 import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { MessageCircle, Send, Bot, User, Users } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function ChatPage() {
   const { isAuthenticated, loading } = useAuth();
@@ -15,7 +16,7 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

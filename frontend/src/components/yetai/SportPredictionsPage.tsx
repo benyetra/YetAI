@@ -15,6 +15,7 @@ import {
 import { usePredictions, type PredictionSport } from '@/lib/usePredictions';
 import { countTopPlays, isTopPlay } from '@/lib/propProjectionDisplay';
 import { Crown, Sparkles } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export type PropGroup = {
   title: string;
@@ -145,7 +146,7 @@ export default function SportPredictionsPage({
 
   useEffect(() => {
     if (!authLoading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [authLoading, isAuthenticated, router]);
 

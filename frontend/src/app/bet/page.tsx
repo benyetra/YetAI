@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import PlaceBetView from '@/components/yetai/views/PlaceBetView';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function BetPage() {
   const { isAuthenticated, loading } = useAuth();
@@ -12,7 +13,7 @@ export default function BetPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

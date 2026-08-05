@@ -28,6 +28,8 @@ import { Avatar } from './Avatar';
 import { useNotifications } from './NotificationProvider';
 import { WebSocketIndicator } from './WebSocketIndicator';
 import { NotificationPanel } from './NotificationPanel';
+import { buildLoginUrl } from '@/lib/auth-redirect';
+
 interface NavItem {
   name: string;
   href: string;
@@ -171,7 +173,7 @@ export function Sidebar() {
 
   const handleNavClick = (item: NavItem) => {
     if (item.requiresAuth && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
       return;
     }
     closeMobileNav();
@@ -372,7 +374,7 @@ export function Header() {
 
       {!isAuthenticated && (
         <div style={{ display: 'flex', gap: 8 }}>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => router.push('/?login=true')}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => router.push(buildLoginUrl())}>
             Sign In
           </button>
           <button type="button" className="btn btn-primary btn-sm" onClick={() => router.push('/?signup=true')}>
@@ -426,7 +428,7 @@ export function MobileBottomNav() {
               type="button"
               onClick={() => {
                 if (needsAuth && !isAuthenticated) {
-                  router.push('/?login=true');
+                  router.push(buildLoginUrl());
                 } else {
                   router.push(item.href);
                 }

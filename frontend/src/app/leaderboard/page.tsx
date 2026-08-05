@@ -8,6 +8,7 @@ import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { getApiUrl } from '@/lib/api-config';
 import { Trophy, Medal, Crown, TrendingUp, Users, Star } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 interface LeaderboardEntry {
   rank: number;
@@ -43,7 +44,7 @@ export default function LeaderboardPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 
