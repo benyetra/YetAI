@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "unauthorized",
+    "message": "Missing API key",
+    "requestId": "test"
+  }
+}
