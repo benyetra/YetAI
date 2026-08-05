@@ -73,12 +73,28 @@ Check `with_lineup_weighted_mc` for today's slate after `mlb.game_projections` r
 
 ## Phase 6 — Archetypes
 
+### Batters
+
 ```bash
 cd backend
 PYTHONPATH=. .venv/bin/python scripts/mlb_assign_archetypes.py --season 2025
 ```
 
 Table `mlb_player_archetypes` (migration `20260526_mlb_archetypes`). Batters with &lt;50 pitches in snapshot use archetype priors in `matchup_k`.
+
+### Pitchers
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/mlb_assign_pitcher_archetypes.py --season 2026
+PYTHONPATH=. .venv/bin/python scripts/mlb_assign_pitcher_archetypes.py --season 2026 --dry-run
+```
+
+Table `mlb_pitcher_archetypes` (migration `20260805_pitcher_arch`). Taxonomy matches `cluster_matchups.PITCHER_CLUSTERS` (`power_fastball`, `finesse_control`, `breaking_ball_heavy`, `changeup_specialist`, `sinker_groundball`, `mixed_arsenal`) plus `league_avg` prior.
+
+**Assign all** pitchers for the season from season-window snapshots (`usage` + `avg_fb_velo`). **Apply priors only when thin/missing**: `n_pitches` &lt; `PITCHER_ARCHETYPE_MIN_PITCHES` (200) or empty usage — used by `matchup_k` and `matchup_contact`. Thick samples keep observed mix.
+
+Pitcher snapshots (`mlb-profile-v2`) also store `velo_by_pitch` and `avg_fb_velo` from Statcast `release_speed`. `ProfileStore` falls back to `mlb-profile-v1` until rebuild completes.
 
 ## Phase 7 — PA sim pilot (non-production)
 
@@ -107,6 +123,7 @@ After enablement, confirm hits `profile_version`, MC `with_lineup_weighted_mc`, 
 |----------|---------|
 | `20260526_mlb_profiles` | Pitcher/batter snapshot tables |
 | `20260526_hitter_profile_meta` | Hits/HR `profile_version` columns |
-| `20260526_mlb_archetypes` | Season archetype assignments |
+| `20260526_mlb_archetypes` | Season batter archetype assignments |
+| `20260805_pitcher_arch` | Season pitcher archetype assignments |
 
-Apply via Database Migrations workflow before enabling `MLB_PROFILES_ENABLED=1`.
+Apply via Database Migrations workflow before enabling `MLB_PROFILES_ENABLED=1`. After pitcher archetype deploy: run migration, rebuild profiles (`mlb-profile-v2`), then `mlb_assign_pitcher_archetypes.py`.

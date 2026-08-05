@@ -25,6 +25,7 @@ from app.models.predictions_models import GameProjections, GameActuals
 
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb.odds_utils import american_to_break_even_prob
+from app.services.etl.mlb.meta_learner import mlb_meta_learner_enabled
 from app.services.ml_model_version import (
     attach_model_version,
     resolve_mlb_game_projection_model_version,
@@ -513,6 +514,23 @@ def run_game_projection_pipeline(target_date=None):
             pred["blowout_run_diff"] = blowouts.get(pred["game_id"])
     except Exception:
         pass
+
+    # Step 5b: Optional Layer-3 meta-learner (gated; needs trained artifact + flag)
+    if mlb_meta_learner_enabled():
+        try:
+            from app.services.etl.mlb.meta_learner import apply_meta_learner
+
+            predictions = apply_meta_learner(predictions)
+            for pred in predictions:
+                pred["model_confidence"] = round(
+                    abs(pred.get("home_win_prob", 0.5) - 0.5) * 2.0, 3
+                )
+                hw = float(pred.get("home_win_prob") or 0.5)
+                pred["ml_recommendation"] = (
+                    "HOME" if hw > 0.55 else ("AWAY" if hw < 0.45 else "NO_PLAY")
+                )
+        except Exception as e:
+            logger.warning("Meta-learner apply skipped: %s", e)
 
     # Step 6: Store projections
     logger.info("Step 6: Storing game projections...")

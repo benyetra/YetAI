@@ -69,6 +69,8 @@ def aggregate_pitcher(
     )
     usage: dict[str, float] = {}
     location: dict[str, dict[str, float]] = {}
+    velo_by_pitch: dict[str, float] = {}
+    has_velo = "release_speed" in sub.columns
     for pt, grp in sub.groupby("pitch_type_canon"):
         wsum = grp["_w"].sum()
         if wsum <= 0:
@@ -78,10 +80,33 @@ def aggregate_pitcher(
         for zone, zgrp in grp.groupby("zone_bucket"):
             loc[zone] = float(zgrp["_w"].sum() / wsum)
         location[pt] = loc
+        if has_velo:
+            speeds = grp["release_speed"].dropna()
+            if not speeds.empty:
+                # Weighted mean when decay weights present
+                if (grp["_w"] != 1.0).any():
+                    mask = grp["release_speed"].notna()
+                    ww = grp.loc[mask, "_w"]
+                    vv = grp.loc[mask, "release_speed"]
+                    if ww.sum() > 0:
+                        velo_by_pitch[pt] = float((vv * ww).sum() / ww.sum())
+                else:
+                    velo_by_pitch[pt] = float(speeds.mean())
+
+    fb_keys = ("FF", "SI", "FC")
+    fb_velos = [velo_by_pitch[k] for k in fb_keys if k in velo_by_pitch]
+    if fb_velos:
+        avg_fb_velo = float(sum(fb_velos) / len(fb_velos))
+    elif velo_by_pitch:
+        avg_fb_velo = float(sum(velo_by_pitch.values()) / len(velo_by_pitch))
+    else:
+        avg_fb_velo = None
 
     return {
         "usage": usage,
         "location": location,
+        "velo_by_pitch": velo_by_pitch,
+        "avg_fb_velo": avg_fb_velo,
         "n_pitches": n,
         "hand": hand,
     }
@@ -224,6 +249,8 @@ def build_snapshots_for_date(
                         profile={
                             "usage": prof["usage"],
                             "location": prof["location"],
+                            "velo_by_pitch": prof.get("velo_by_pitch") or {},
+                            "avg_fb_velo": prof.get("avg_fb_velo"),
                         },
                         created_at=datetime.utcnow(),
                     )
