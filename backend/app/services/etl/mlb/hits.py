@@ -16,7 +16,86 @@ from app.services.etl.mlb._mlb_utils import *
 from app.models.predictions_models import BlowoutChances, Hitter, Homer
 
 from app.services.etl.mlb.strikeouts import fetch_pitcher_data
+from app.services.ballpark_pal import store as bpp_store
+from app.services.ballpark_pal.config import (
+    ballpark_pal_enabled,
+    bpp_hits_prior_weight,
+    bpp_hr_prior_weight,
+)
+from app.services.ballpark_pal.priors import blend_prop_mean, shrink_with_matchup_rate
 from sqlalchemy import text
+
+
+def _bpp_json_float(row, attribute: str, key: str) -> float | None:
+    try:
+        value = (getattr(row, attribute) or {}).get(key)
+        return float(value) if value is not None else None
+    except (AttributeError, TypeError, ValueError):
+        return None
+
+
+def maybe_apply_bpp_hitter_priors(
+    combined_score: float,
+    homer_score: float,
+    *,
+    batter_id: int,
+    pitcher_id: int,
+    slate_date: date_type,
+    session=None,
+) -> tuple[float, float]:
+    """Blend stored BPP batter priors and HR context into board scores."""
+    if not ballpark_pal_enabled():
+        return combined_score, homer_score
+
+    owns_session = session is None
+    try:
+        if owns_session:
+            from app.services.etl.mlb import _db
+
+            session = _db.init_session()
+
+        projection = bpp_store.load_player_proj(
+            session, batter_id, slate_date, role="batter"
+        )
+        adjusted_hits, _ = blend_prop_mean(
+            combined_score,
+            _bpp_json_float(projection, "averages_json", "hits"),
+            bpp_hits_prior_weight(),
+        )
+        adjusted_hr, _ = blend_prop_mean(
+            homer_score,
+            _bpp_json_float(projection, "averages_json", "homeRuns"),
+            bpp_hr_prior_weight(),
+        )
+
+        matchup = bpp_store.load_matchup(session, batter_id, pitcher_id, slate_date)
+        adjusted_hr, _ = shrink_with_matchup_rate(
+            adjusted_hr,
+            _bpp_json_float(matchup, "probs_json", "homeRunProbability"),
+            weight=bpp_hr_prior_weight(),
+        )
+
+        park_factor = bpp_store.load_hitter_park_factor(
+            session,
+            batter_id,
+            slate_date,
+            getattr(projection, "bpp_game_id", None),
+        )
+        hr_park_scale = _bpp_json_float(park_factor, "factors_json", "homeRuns") or 1.0
+        return round(adjusted_hits, 2), round(adjusted_hr * hr_park_scale, 2)
+    except Exception as exc:
+        logger.warning(
+            "Ballpark Pal hitter prior injection skipped for batter %s: %s",
+            batter_id,
+            exc,
+        )
+        return combined_score, homer_score
+    finally:
+        if owns_session:
+            try:
+                _db.close_session()
+            except Exception:
+                pass
 
 
 def get_todays_games():
@@ -466,6 +545,14 @@ def fetch_hitters_data():
                 homer_score = round(homer_score + contact_delta * 0.5, 2)
             if profile_version is None and mlb_profiles_enabled():
                 profile_version = PROFILE_VERSION
+
+            combined_score, homer_score = maybe_apply_bpp_hitter_priors(
+                combined_score,
+                homer_score,
+                batter_id=player_id,
+                pitcher_id=pitcher_id,
+                slate_date=datetime.today().date(),
+            )
 
             hitter_data = {
                 "player_id": player_id,
