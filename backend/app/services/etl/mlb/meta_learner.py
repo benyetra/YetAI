@@ -49,6 +49,17 @@ S3_BUCKET = "yetibets"
 META_MODEL_S3_KEY = "mlb/meta_learner.pkl"
 META_MODEL_LOCAL = os.path.join(os.path.dirname(__file__), "meta_learner.pkl")
 
+
+def mlb_meta_learner_enabled() -> bool:
+    """Production gate for Layer-3 stacking (default off until ops enables)."""
+    return os.getenv("MLB_META_LEARNER_ENABLED", "0").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 # Stacking features: outputs from Layer 1 + Layer 2 models
 STACK_FEATURES = [
     "xgb_win_prob",  # Layer 2: XGBoost game model

@@ -34,6 +34,9 @@ venv/
 ENV/
 env/
 
+# Git worktrees (isolated feature branches)
+.worktrees/
+
 # Frontend
 node_modules/
 .next/

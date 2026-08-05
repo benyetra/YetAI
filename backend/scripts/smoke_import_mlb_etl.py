@@ -49,6 +49,7 @@ PIPELINE_MODULES = [
     "app.services.etl.mlb.lineup_utils",
     "app.services.etl.mlb.profiles.lineup_runs",
     "app.services.etl.mlb.profiles.archetypes",
+    "app.services.etl.mlb.profiles.pitcher_archetypes",
     "app.services.etl.mlb.profiles.pa_sim_pilot",
     "app.services.etl.mlb.profiles.monitoring",
     "app.services.etl.mlb.pitcher_game_logs",

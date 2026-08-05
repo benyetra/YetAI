@@ -1,6 +1,11 @@
 import os
 
-PROFILE_VERSION = "mlb-profile-v1"
+PROFILE_VERSION = "mlb-profile-v2"
+# Prior version kept for assign/read fallback until rebuild completes.
+PROFILE_VERSION_PREV = "mlb-profile-v1"
+
+# Pitcher cold-start: use archetype priors below this pitch count.
+PITCHER_ARCHETYPE_MIN_PITCHES = 200
 
 PITCH_TYPES = ("FF", "SI", "FC", "SL", "CH", "CU", "KC", "FS", "ST", "UNK")
 

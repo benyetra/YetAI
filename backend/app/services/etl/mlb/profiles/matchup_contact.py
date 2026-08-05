@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from app.services.etl.mlb.profiles.constants import PITCH_TYPES
+from app.services.etl.mlb.profiles.constants import PROFILE_VERSION
 from app.services.etl.mlb.profiles.profile_store import ProfileStore
 
 LEAGUE_XWOBA = 0.320
@@ -24,17 +24,26 @@ def contact_matchup_score(
     Batter contact quality vs pitcher usage mix.
     Returns (score_delta, profile_version) — delta applied to combined_score scale.
     """
+    from app.services.etl.mlb.profiles.pitcher_archetypes import (
+        resolve_pitcher_profile_for_matchup,
+    )
+
     batter = store.get_batter(batter_id, vs_hand, as_of_date, window=window)
     pitcher = store.get_pitcher(pitcher_id, as_of_date, window=window)
-    if not batter or not pitcher or not batter.profile or not pitcher.profile:
+    if not batter or not batter.profile:
         return 0.0, None
 
-    usage = pitcher.profile.get("usage") or {}
+    db = getattr(store, "db", None)
+    pitcher_profile, _pitcher_src = resolve_pitcher_profile_for_matchup(
+        db, pitcher_id, pitcher, as_of_date
+    )
+
+    usage = pitcher_profile.get("usage") or {}
     xwoba = batter.profile.get("xwoba_by_pitch") or {}
     iso = batter.profile.get("iso_by_pitch") or {}
     barrel = batter.profile.get("barrel_rate_by_pitch") or {}
 
-    version = getattr(batter, "profile_version", None)
+    version = getattr(batter, "profile_version", None) or PROFILE_VERSION
     if not usage:
         return 0.0, version
 

@@ -113,6 +113,8 @@ Backtest (`predict_hits` in `backtest/model_runner.py`) scores two paths:
 
 Hits ML stays **shadow/heuristic-only** in production until backtest `hit_metrics.methods` shows lift over the heuristic MAE / board baseline. Unit tests: `tests/test_mlb_hits_backtest.py`.
 
+**Promotion decision (2026-08-05):** skip. Quick backtest `76a545c2` (`n_games=20`, 40 hit preds): heuristic MAE **7.18**; shadow `ml_board` accuracy **0.0%** (0/40). Do **not** promote ML board until a larger window shows clear lift.
+
 ## Backtest run index
 
 ```bash
@@ -135,6 +137,10 @@ PYTHONPATH=. python scripts/mlb_retrain_strikeouts.py
 ```
 
 Writes `scripts/mlb_strikeout_retrain_metrics.json` on the worker after a successful run. Model: `s3://yetibets/mlb/strikeout_model.pkl`.
+
+**Retrain note:** training uses neutral `matchup_factor=1.0` (no opposing batter on historical joins). Do not call live matchup/StatsAPI per row during `load_training_data` — that stalls Celery for hours. Prefer sklearn **1.5.0** for upload so prod workers can unpickle.
+
+**Retrained 2026-08-05:** joined=6378, training_rows=6309, val accuracy ≈0.613, S3 artifact refreshed.
 
 ## dingerParlay HR rebuild
 
@@ -187,15 +193,24 @@ python scripts/mlb_hr_rebuild.py --stage train --season 2024 --holdout-date 2024
 | `MLB_HR_MODEL_S3` | HR model output path for `train` stage |
 | `MLB_STRIKEOUT_MIN_JOINED_ROWS` | Minimum joined rows before retrain (default 50) |
 | `MLB_STRIKEOUT_MODEL_S3` | Override strikeout model URI for status API |
+| `MLB_PROFILES_ENABLED` | ProfileStore matchup path (API + celery-worker; also set on GHA strikeout refresh) |
+| `MLB_META_LEARNER_ENABLED` | Apply Layer-3 stacking in `game_projection_pipeline` (default `0`) |
 
 ## Meta-learner (Layer 3)
 
 Module: `app/services/etl/mlb/meta_learner.py` (logistic stacking on `STACK_FEATURES`)  
 Evaluation: `app/services/etl/mlb/meta_learner_eval.py`  
-Tests: `tests/test_meta_learner_eval.py`
+Tests: `tests/test_meta_learner_eval.py`, `tests/test_mlb_meta_learner_pipeline.py`
 
-**Default recommendation: SKIP** wiring the meta-learner into `game_projection_pipeline.py` until offline holdout shows **Brier lift ≥ 0.005** (`META_BRIER_LIFT_MIN`) vs the calibrated game ensemble (`xgb_win_prob` / `home_win_prob`). The game model already ships a calibrated ensemble; Layer 3 must prove incremental value or stay off.
+**Gate:** offline/DB holdout must show **Brier lift ≥ 0.005** (`META_BRIER_LIFT_MIN`) vs the calibrated game ensemble. When `recommend_production_use` is true:
 
+1. Train + upload: `PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --train --lookback 60`
+2. Artifact: `s3://yetibets/mlb/meta_learner.pkl`
+3. Set `MLB_META_LEARNER_ENABLED=1` on **YetAI** + **celery-worker**
+
+Pipeline hook (after odds/edge + blowout, before store): `apply_meta_learner` when the flag is on; refreshes `ml_recommendation` / `model_confidence` from stacked `home_win_prob`. Missing artifact → no-op (base probs kept).
+
+**Status (2026-08-05):** holdout `--compare --lookback 60` → game Brier 0.2505, meta 0.2399, lift **0.0106**, `recommend=True`. Artifact uploaded; flag enabled on API + worker.
 | Gate | Threshold |
 |------|-----------|
 | Brier lift (game − meta) | ≥ `0.005` on temporal holdout |
@@ -236,13 +251,17 @@ PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --compare --lookback 60
 
 Without `DATABASE_URL`, `--compare` logs a skip and exits 0; use `--evaluate-offline` locally.
 
-Train artifact (optional, not production-gated alone):
+Train artifact:
 
 ```bash
-PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --train --lookback 30
+PYTHONPATH=. python -m app.services.etl.mlb.meta_learner --train --lookback 60
 ```
 
-Writes `app/services/etl/mlb/meta_learner.pkl` (+ S3 when configured). **Do not** call `apply_meta_learner` from the daily game pipeline until `recommend_production_use` is true on a real holdout run.
+Writes `app/services/etl/mlb/meta_learner.pkl` (+ S3). Production apply is gated by `MLB_META_LEARNER_ENABLED` (see above).
+
+## PA sim (Phase 7)
+
+Stays **pilot-only** — not wired into daily game MC until separate backtest sign-off (`MLB_MATCHUP_PROFILES.md` Phase 7).
 
 ## Related
 

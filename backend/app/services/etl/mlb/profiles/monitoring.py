@@ -8,12 +8,15 @@ from typing import Any
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models.mlb_archetype_models import MlbPlayerArchetype
+from app.models.mlb_archetype_models import MlbPlayerArchetype, MlbPitcherArchetype
 from app.models.mlb_profile_models import (
     MlbBatterProfileSnapshot,
     MlbPitcherProfileSnapshot,
 )
-from app.services.etl.mlb.profiles.constants import PROFILE_VERSION
+from app.services.etl.mlb.profiles.constants import (
+    PROFILE_VERSION,
+    PROFILE_VERSION_PREV,
+)
 
 
 def snapshot_coverage_report(
@@ -30,12 +33,13 @@ def snapshot_coverage_report(
 
     n_pitchers = 0
     n_batters = 0
+    versions = (PROFILE_VERSION, PROFILE_VERSION_PREV)
     if pitcher_date:
         n_pitchers = (
             db.query(MlbPitcherProfileSnapshot)
             .filter(
                 MlbPitcherProfileSnapshot.as_of_date == pitcher_date,
-                MlbPitcherProfileSnapshot.profile_version == PROFILE_VERSION,
+                MlbPitcherProfileSnapshot.profile_version.in_(versions),
                 MlbPitcherProfileSnapshot.window == window,
             )
             .count()
@@ -45,7 +49,7 @@ def snapshot_coverage_report(
             db.query(MlbBatterProfileSnapshot)
             .filter(
                 MlbBatterProfileSnapshot.as_of_date == batter_date,
-                MlbBatterProfileSnapshot.profile_version == PROFILE_VERSION,
+                MlbBatterProfileSnapshot.profile_version.in_(versions),
                 MlbBatterProfileSnapshot.window == window,
             )
             .count()
@@ -57,7 +61,7 @@ def snapshot_coverage_report(
             db.query(MlbBatterProfileSnapshot)
             .filter(
                 MlbBatterProfileSnapshot.as_of_date == batter_date,
-                MlbBatterProfileSnapshot.profile_version == PROFILE_VERSION,
+                MlbBatterProfileSnapshot.profile_version.in_(versions),
                 MlbBatterProfileSnapshot.window == window,
             )
             .limit(5000)
@@ -77,6 +81,11 @@ def snapshot_coverage_report(
     n_archetypes = (
         db.query(MlbPlayerArchetype).filter(MlbPlayerArchetype.season == season).count()
     )
+    n_pitcher_archetypes = (
+        db.query(MlbPitcherArchetype)
+        .filter(MlbPitcherArchetype.season == season)
+        .count()
+    )
 
     return {
         "latest_pitcher_as_of": str(latest_pitcher) if latest_pitcher else None,
@@ -89,5 +98,6 @@ def snapshot_coverage_report(
         "n_batter_snapshots": n_batters,
         "batter_reliability_coverage_pct": batter_coverage_pct,
         "n_archetypes_season": n_archetypes,
+        "n_pitcher_archetypes_season": n_pitcher_archetypes,
         "season": season,
     }

@@ -67,6 +67,10 @@ def matchup_adjusted_strikeouts(
     Adjusts strikeout projections based on pitch mix vs batter weaknesses.
     Uses ProfileStore when MLB_PROFILES_ENABLED.
     """
+    if batter_id is None:
+        # Training / no opposing batter: neutral factor (avoid per-row HTTP).
+        return 1.0
+
     as_of = as_of_date or date.today()
     pitcher_hand = _pitcher_hand(pitcher_id)
 

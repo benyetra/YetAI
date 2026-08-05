@@ -96,12 +96,15 @@ jobs:
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          # Match celery-worker so ProfileStore matchup_source is written (not legacy_api).
+          MLB_PROFILES_ENABLED: "1"
         run: |
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           export ODDS_API_KEY="$(python3 scripts/resolve_railway_variable.py ODDS_API_KEY)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
           echo "ODDS_API_KEY present: $([ -n "${ODDS_API_KEY:-}" ] && echo yes || echo no)"
+          echo "MLB_PROFILES_ENABLED=${MLB_PROFILES_ENABLED}"
           PYTHONPATH=. python3 scripts/prod_mlb_strikeout_refresh.py
 
       - name: Run migrations (staging)

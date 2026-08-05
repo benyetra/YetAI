@@ -50,6 +50,7 @@ def test_compute_lineup_k_matchup_from_snapshots():
     batter_snap.n_pitches = 200
     store.get_pitcher.return_value = pitcher_snap
     store.get_batter.return_value = batter_snap
+    store.db = None
 
     result = compute_lineup_k_matchup(store, 1, [101], "R", date(2024, 6, 1))
     assert isinstance(result, MatchupResult)
@@ -66,3 +67,49 @@ def test_batter_perf_from_profile_maps_zones():
         }
     )
     assert perf["FF"]["cold_zones"] == ["highInside"]
+
+
+def test_compute_lineup_k_thin_pitcher_uses_archetype():
+    store = MagicMock()
+    store.db = MagicMock()
+    pitcher_snap = MagicMock()
+    pitcher_snap.profile = {"usage": {"FF": 1.0}}
+    pitcher_snap.n_pitches = 50  # below PITCHER_ARCHETYPE_MIN_PITCHES
+    pitcher_snap.pitcher_id = 1
+    # Thin batter too so dominant source is not batter-observed
+    store.get_pitcher.return_value = pitcher_snap
+    store.get_batter.return_value = None
+
+    with __import__("unittest.mock", fromlist=["patch"]).patch(
+        "app.services.etl.mlb.profiles.pitcher_archetypes.get_pitcher_archetype",
+        return_value="power_fastball",
+    ) as get_arch:
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "app.services.etl.mlb.profiles.archetypes.get_player_archetype",
+            return_value="league_avg",
+        ):
+            result = compute_lineup_k_matchup(store, 1, [101], "R", date(2024, 6, 1))
+
+    get_arch.assert_called()
+    assert result.factor >= 0.0
+    assert result.source == "archetype"
+
+
+def test_compute_lineup_k_missing_pitcher_uses_archetype():
+    store = MagicMock()
+    store.db = MagicMock()
+    store.get_pitcher.return_value = None
+    store.get_batter.return_value = None
+
+    with __import__("unittest.mock", fromlist=["patch"]).patch(
+        "app.services.etl.mlb.profiles.pitcher_archetypes.get_pitcher_archetype",
+        return_value="mixed_arsenal",
+    ):
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "app.services.etl.mlb.profiles.archetypes.get_player_archetype",
+            return_value="league_avg",
+        ):
+            result = compute_lineup_k_matchup(store, 99, [101], "R", date(2024, 6, 1))
+
+    assert result.source == "archetype"
+    assert result.factor >= 0.0

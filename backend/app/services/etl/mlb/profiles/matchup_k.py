@@ -9,8 +9,6 @@ from typing import Literal
 from app.services.etl.mlb.profiles.constants import (
     LEAGUE_WHIFF_BY_PITCH,
     PITCH_TYPES,
-    PROFILE_VERSION,
-    SHRINKAGE_K_WHIFF,
 )
 from app.services.etl.mlb.profiles.profile_store import ProfileStore
 
@@ -108,24 +106,23 @@ def compute_lineup_k_matchup(
     if not batter_ids:
         return MatchupResult(0.0, "league")
 
-    ps = store.get_pitcher(pitcher_id, as_of_date, window=window)
-    if not ps or not ps.profile:
-        return MatchupResult(0.0, "league")
+    from app.services.etl.mlb.profiles.pitcher_archetypes import (
+        resolve_pitcher_profile_for_matchup,
+    )
 
-    pitcher_pitches, pitcher_locations = pitcher_tensors_from_profile(ps.profile)
+    ps = store.get_pitcher(pitcher_id, as_of_date, window=window)
+    db = getattr(store, "db", None)
+    pitcher_profile, pitcher_src = resolve_pitcher_profile_for_matchup(
+        db, pitcher_id, ps, as_of_date
+    )
+
+    pitcher_pitches, pitcher_locations = pitcher_tensors_from_profile(pitcher_profile)
     if not pitcher_pitches:
         return MatchupResult(0.0, "league")
 
-    sources: list[str] = []
-    if ps.n_pitches >= SHRINKAGE_K_WHIFF:
-        sources.append("observed")
-    elif ps.n_pitches > 0:
-        sources.append("shrunk")
-    else:
-        sources.append("league")
+    sources: list[str] = [pitcher_src]
 
     perf_by_batter: dict[int, dict] = {}
-    db = getattr(store, "db", None)
     season = as_of_date.year
     for bid in batter_ids:
         snap = store.get_batter(bid, pitcher_hand, as_of_date, window=window)

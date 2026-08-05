@@ -17,9 +17,6 @@ from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.calibration import CalibratedClassifierCV
 
 from app.services.etl.mlb._db import db_session
-from app.services.etl.mlb.mlb_matchup_analysis import (
-    matchup_adjusted_strikeouts,
-)  # OK for training features
 from app.services.etl.mlb._mlb_utils import read_csv_anywhere
 
 logging.basicConfig(level=logging.INFO)
@@ -156,10 +153,9 @@ def load_training_data() -> pd.DataFrame:
     # label
     df["over_label"] = (df["actual_strikeouts"] > df["threshold"]).astype(int)
 
-    # matchup & days rest (unchanged)
-    df["matchup_factor"] = df["pitcher_id"].apply(
-        lambda pid: matchup_adjusted_strikeouts(pid, None)
-    )
+    # Historical rows have no opposing batter id — neutral matchup (see matchup_adjusted_strikeouts).
+    # Do not call matchup per row: that triggers StatsAPI/ProfileStore and stalls retrain for hours.
+    df["matchup_factor"] = 1.0
     df["date"] = pd.to_datetime(df["date"])
     df = df.sort_values(["pitcher_id", "date"])
     df["days_rest"] = df.groupby("pitcher_id")["date"].diff().dt.days.fillna(7)
