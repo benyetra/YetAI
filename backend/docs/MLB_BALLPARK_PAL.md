@@ -6,10 +6,22 @@ Design reference: [Ballpark Pal MLB features spec](../../docs/superpowers/specs/
 
 ## Enablement
 
-1. Set `BALLPARK_PAL_API_KEY` on **celery-worker** (and API if you run projections locally).
-2. Set `BALLPARK_PAL_ENABLED=1`.
-3. Deploy / restart worker so the daily projections phase picks up env.
-4. Confirm pipeline log: `ballpark_pal.status=ok` with game/player counts, or `skipped` when disabled.
+### Railway (production)
+
+Set vars on **both** Railway services — **YetAI** (API) and **celery-worker**:
+
+1. `BALLPARK_PAL_API_KEY` — add on both services; redeploy/restart.
+2. Leave `BALLPARK_PAL_ENABLED` unset (default `0`) until the first successful sync appears in celery-worker logs (`ballpark_pal.status=ok` with game/player counts).
+3. Then set `BALLPARK_PAL_ENABLED=1` on **celery-worker** (and YetAI if you run projections locally against prod).
+4. Prior weights use defaults below unless you tune them via env (no redeploy needed for weight changes).
+
+Do **not** flip `BALLPARK_PAL_ENABLED=1` in prod until step 2 confirms snapshots are landing.
+
+### Local / general
+
+1. Set `BALLPARK_PAL_API_KEY`.
+2. Set `BALLPARK_PAL_ENABLED=1` when ready to sync.
+3. Confirm pipeline log: `ballpark_pal.status=ok` with game/player counts, or `skipped` when disabled.
 
 Prior weights are tunable without redeploying code (env only).
 
