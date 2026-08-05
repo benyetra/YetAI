@@ -13,6 +13,7 @@ import {
   type AccuracyTone,
 } from '@/lib/api/accuracy';
 import { BarChart3, ChevronRight } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 const SPORTS: Array<{
   sport: AccuracySport;
@@ -42,7 +43,7 @@ export default function StatProjectionsHubPage() {
   const [overviewError, setOverviewError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) router.push('/?login=true');
+    if (!loading && !isAuthenticated) router.push(buildLoginUrl());
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {

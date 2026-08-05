@@ -7,6 +7,7 @@ import PageHeader from '@/components/yetai/PageHeader';
 import AppLoading from '@/components/yetai/AppLoading';
 import { useAuth } from '@/components/Auth';
 import { HelpCircle, Search, Book, MessageSquare, Mail, ChevronDown, ChevronRight } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function HelpPage() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -16,7 +17,7 @@ export default function HelpPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

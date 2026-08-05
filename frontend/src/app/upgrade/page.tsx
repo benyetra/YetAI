@@ -10,6 +10,7 @@ import { StatTile } from '@/components/yetai/primitives';
 import { Check, Brain, TrendingUp, Shield, Users, ArrowLeft } from 'lucide-react';
 import EmbeddedCheckout from '@/components/EmbeddedCheckout';
 import { getApiUrl } from '@/lib/api-config';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function UpgradePage() {
   const { isAuthenticated, loading, user } = useAuth();
@@ -21,7 +22,7 @@ export default function UpgradePage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

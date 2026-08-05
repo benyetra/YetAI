@@ -34,6 +34,7 @@ import {
   Eye,
   X
 } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 function comparisonScoringLabel(scoringType?: string): string {
   if (scoringType === 'half_ppr') return 'Half PPR';
@@ -307,7 +308,7 @@ export default function FantasyPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

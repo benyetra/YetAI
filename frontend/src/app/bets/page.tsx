@@ -9,6 +9,7 @@ import UserBetPerformance from '@/components/UserBetPerformance';
 import Layout from '@/components/Layout';
 import AppLoading from '@/components/yetai/AppLoading';
 import PageHeader from '@/components/yetai/PageHeader';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 type BetsTab = 'history' | 'performance';
 
@@ -25,7 +26,7 @@ function BetsPageContent() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

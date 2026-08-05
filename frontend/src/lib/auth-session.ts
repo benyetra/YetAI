@@ -2,6 +2,8 @@
  * Client-side auth session helpers: JWT expiry, proactive logout, and 401 handling.
  */
 
+import { buildLoginUrl } from './auth-redirect';
+
 const AUTH_TOKEN_KEY = 'auth_token';
 const USER_DATA_KEY = 'user_data';
 
@@ -103,8 +105,7 @@ export function endSession(reason: SessionEndReason): void {
     path.startsWith('/forgot-password');
 
   if (!isPublicAuthPage) {
-    const params = new URLSearchParams({ login: 'true', reason });
-    window.location.href = `/?${params.toString()}`;
+    window.location.href = buildLoginUrl(undefined, { reason });
   }
 }
 

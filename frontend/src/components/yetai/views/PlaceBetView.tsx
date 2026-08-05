@@ -8,6 +8,7 @@ import { sportsAPI } from '@/lib/api';
 import { apiGameToDesignGame } from '@/lib/yetai-odds';
 import PlaceBetScreen from '../screens/PlaceBetScreen';
 import type { BetSlipPlaceContext, DesignGame, SlipItem } from '../types';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function PlaceBetView() {
   const { isAuthenticated, loading } = useAuth();
@@ -19,7 +20,7 @@ export default function PlaceBetView() {
   const [showPlaceModal, setShowPlaceModal] = useState(false);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) router.push('/?login=true');
+    if (!loading && !isAuthenticated) router.push(buildLoginUrl());
   }, [isAuthenticated, loading, router]);
 
   const loadOdds = useCallback(async (sportKey: string) => {

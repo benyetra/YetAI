@@ -12,6 +12,7 @@ import PageHeader from '@/components/yetai/PageHeader';
 import { StatTile } from '@/components/yetai/primitives';
 import { sportsAPI } from '@/lib/api';
 import { Layers, TrendingUp, DollarSign, Plus } from 'lucide-react';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 type ParlayAvailableGame = {
   id: string;
@@ -43,7 +44,7 @@ export default function ParlaysPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

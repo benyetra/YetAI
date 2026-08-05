@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Dashboard from '@/components/Dashboard';
 import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export default function DashboardPage() {
   const { isAuthenticated, loading } = useAuth();
@@ -12,7 +13,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

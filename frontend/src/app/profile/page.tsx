@@ -14,6 +14,7 @@ import { useAuth } from '@/components/Auth';
 import { useNotifications } from '@/components/NotificationProvider';
 import { sportsAPI, apiClient } from '@/lib/api';
 import { AvatarRef } from '@/components/Avatar';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 const EMPTY_PROFILE: ProfileFormData = {
   email: '',
@@ -132,7 +133,7 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!loading && !isAuthenticated) {
-      router.push('/?login=true');
+      router.push(buildLoginUrl());
     }
   }, [isAuthenticated, loading, router]);
 

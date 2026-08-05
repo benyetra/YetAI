@@ -9,6 +9,7 @@ import { apiBetToDesignPick } from '@/lib/yetai-mappers';
 import type { YetaiHistoryBet, YetaiHistoryStats } from '@/components/yetai/YetaiBetsHistory';
 import YetaiBetsScreen from '../screens/YetaiBetsScreen';
 import type { DesignPick } from '../types';
+import { buildLoginUrl } from '@/lib/auth-redirect';
 
 interface BestBet {
   id: string;
@@ -82,7 +83,7 @@ export default function YetaiBetsView() {
   const [showModal, setShowModal] = useState(false);
 
   useEffect(() => {
-    if (!loading && !isAuthenticated) router.push('/?login=true');
+    if (!loading && !isAuthenticated) router.push(buildLoginUrl());
   }, [isAuthenticated, loading, router]);
 
   useEffect(() => {
