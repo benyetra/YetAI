@@ -1,6 +1,7 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
+import { ChevronDown, ChevronRight } from 'lucide-react';
 import GameProjectionsGrid, {
   type GameProjectionSlipPick,
   type GameProjectionsVariant,
@@ -20,25 +21,36 @@ export default function GameProjectionsSection({
   isPastDate: boolean;
   onAddToSlip?: (pick: GameProjectionSlipPick) => void;
 }) {
+  const [expanded, setExpanded] = useState(true);
   const rows = useMemo(() => gameProjectionRows(variant, data), [variant, data]);
 
   return (
     <section style={{ marginBottom: 24 }}>
-      <div style={{ marginBottom: 12 }}>
-        <h2 className="type-section-title" style={{ margin: 0 }}>
-          Game projections
-        </h2>
+      <div style={{ marginBottom: expanded ? 12 : 0 }}>
+        <button
+          type="button"
+          className="predictions-table-toggle"
+          onClick={() => setExpanded((prev) => !prev)}
+          aria-expanded={expanded}
+        >
+          {expanded ? <ChevronDown size={18} /> : <ChevronRight size={18} />}
+          <h2 className="type-section-title" style={{ margin: 0 }}>
+            Game projections
+          </h2>
+        </button>
         <p className="dim" style={{ fontSize: 12, margin: '4px 0 0' }}>
           Win-probability and projected score by ML model
         </p>
       </div>
-      <GameProjectionsGrid
-        rows={rows}
-        loading={loading}
-        isPastDate={isPastDate}
-        variant={variant}
-        onAddToSlip={onAddToSlip}
-      />
+      {expanded && (
+        <GameProjectionsGrid
+          rows={rows}
+          loading={loading}
+          isPastDate={isPastDate}
+          variant={variant}
+          onAddToSlip={onAddToSlip}
+        />
+      )}
     </section>
   );
 }
