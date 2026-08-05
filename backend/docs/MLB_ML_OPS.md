@@ -263,6 +263,10 @@ Writes `app/services/etl/mlb/meta_learner.pkl` (+ S3). Production apply is gated
 
 Stays **pilot-only** — not wired into daily game MC until separate backtest sign-off (`MLB_MATCHUP_PROFILES.md` Phase 7).
 
+## Ballpark Pal priors
+
+Runtime BPP snapshot sync and prior injection (game MC, strikeouts, hits/HR): [MLB_BALLPARK_PAL.md](./MLB_BALLPARK_PAL.md).
+
 ## Related
 
 - Game model / projections: `game_model.py`, `game_projection_pipeline.py`

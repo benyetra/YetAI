@@ -30,6 +30,15 @@ PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_monte_carlo.py
 
 Game pipeline runs MC by default (`MLB_MC_ENABLED=1`). See `backend/docs/MLB_MONTE_CARLO.md`.
 
+## MLB Ballpark Pal smoke (no deploy)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_ballpark_pal.py
+```
+
+Optional: `--live` (today's games count when `BALLPARK_PAL_ENABLED=1` and key set). See `backend/docs/MLB_BALLPARK_PAL.md`.
+
 ## MLB strikeouts quick check (no deploy)
 
 ```bash
