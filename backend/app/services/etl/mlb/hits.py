@@ -22,8 +22,14 @@ from app.services.ballpark_pal.config import (
     bpp_hits_prior_weight,
     bpp_hr_prior_weight,
 )
-from app.services.ballpark_pal.priors import blend_prop_mean, shrink_with_matchup_rate
+from app.services.ballpark_pal.priors import shrink_with_matchup_rate
 from sqlalchemy import text
+
+BPP_HITS_BASELINE = 1.0
+BPP_HR_BASELINE = 0.15
+BPP_TYPICAL_PA = 4.0
+BPP_MULTIPLIER_MIN = 0.5
+BPP_MULTIPLIER_MAX = 1.5
 
 
 def _bpp_json_float(row, attribute: str, key: str) -> float | None:
@@ -32,6 +38,24 @@ def _bpp_json_float(row, attribute: str, key: str) -> float | None:
         return float(value) if value is not None else None
     except (AttributeError, TypeError, ValueError):
         return None
+
+
+def _relative_bpp_multiplier(
+    projection: float | None, baseline: float, weight: float
+) -> float:
+    """Return a bounded, scale-neutral BPP score multiplier.
+
+    Baselines represent league-typical per-game starter projections: 1.0 hit
+    and 0.15 home runs. A projection at its baseline leaves the heuristic
+    score unchanged; configured weight controls movement toward its ratio.
+    """
+    if projection is None or weight <= 0:
+        return 1.0
+
+    clamped_weight = min(max(weight, 0.0), 1.0)
+    ratio = projection / max(baseline, 1e-6)
+    multiplier = (1.0 - clamped_weight) + clamped_weight * ratio
+    return min(max(multiplier, BPP_MULTIPLIER_MIN), BPP_MULTIPLIER_MAX)
 
 
 def maybe_apply_bpp_hitter_priors(
@@ -43,7 +67,7 @@ def maybe_apply_bpp_hitter_priors(
     slate_date: date_type,
     session=None,
 ) -> tuple[float, float]:
-    """Blend stored BPP batter priors and HR context into board scores."""
+    """Scale board scores with relative BPP batter projections and HR context."""
     if not ballpark_pal_enabled():
         return combined_score, homer_score
 
@@ -57,22 +81,32 @@ def maybe_apply_bpp_hitter_priors(
         projection = bpp_store.load_player_proj(
             session, batter_id, slate_date, role="batter"
         )
-        adjusted_hits, _ = blend_prop_mean(
-            combined_score,
+        hits_multiplier = _relative_bpp_multiplier(
             _bpp_json_float(projection, "averages_json", "hits"),
+            BPP_HITS_BASELINE,
             bpp_hits_prior_weight(),
         )
-        adjusted_hr, _ = blend_prop_mean(
-            homer_score,
-            _bpp_json_float(projection, "averages_json", "homeRuns"),
-            bpp_hr_prior_weight(),
-        )
+        adjusted_hits = combined_score * hits_multiplier
 
         matchup = bpp_store.load_matchup(session, batter_id, pitcher_id, slate_date)
-        adjusted_hr, _ = shrink_with_matchup_rate(
-            adjusted_hr,
-            _bpp_json_float(matchup, "probs_json", "homeRunProbability"),
-            weight=bpp_hr_prior_weight(),
+        hr_weight = bpp_hr_prior_weight()
+        hr_projection = _bpp_json_float(projection, "averages_json", "homeRuns")
+        matchup_probability = _bpp_json_float(
+            matchup, "probs_json", "homeRunProbability"
+        )
+        if hr_projection is None and matchup_probability is not None:
+            hr_projection = matchup_probability / 100.0 * BPP_TYPICAL_PA
+        elif hr_projection is not None:
+            hr_projection, _ = shrink_with_matchup_rate(
+                hr_projection,
+                matchup_probability,
+                weight=hr_weight,
+                typical_pa=BPP_TYPICAL_PA,
+            )
+        hr_multiplier = _relative_bpp_multiplier(
+            hr_projection,
+            BPP_HR_BASELINE,
+            hr_weight,
         )
 
         park_factor = bpp_store.load_hitter_park_factor(
@@ -82,7 +116,10 @@ def maybe_apply_bpp_hitter_priors(
             getattr(projection, "bpp_game_id", None),
         )
         hr_park_scale = _bpp_json_float(park_factor, "factors_json", "homeRuns") or 1.0
-        return round(adjusted_hits, 2), round(adjusted_hr * hr_park_scale, 2)
+        hr_park_scale = min(max(hr_park_scale, BPP_MULTIPLIER_MIN), BPP_MULTIPLIER_MAX)
+        return round(adjusted_hits, 2), round(
+            homer_score * hr_multiplier * hr_park_scale, 2
+        )
     except Exception as exc:
         logger.warning(
             "Ballpark Pal hitter prior injection skipped for batter %s: %s",
