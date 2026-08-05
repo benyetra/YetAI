@@ -68,6 +68,36 @@ export function newsImpactClassName(value: unknown): string | undefined {
   return undefined;
 }
 
+/** Resolve team across sports (team_name vs MLB `team`). */
+export function formatTeamCell(
+  value: unknown,
+  row: Record<string, unknown>
+): string {
+  return formatString(value ?? row.team_name ?? row.team);
+}
+
+/** Resolve opponent across sports (opponent_team_name vs MLB `opponent`). */
+export function formatOpponentTeamCell(
+  value: unknown,
+  row: Record<string, unknown>
+): string {
+  return formatString(
+    value ?? row.opponent_team_name ?? row.opponent ?? row.opponent_name
+  );
+}
+
+export const TEAM_COLUMN: ColumnDef = {
+  key: 'team_name',
+  label: 'Team',
+  format: (v, row) => formatTeamCell(v, row),
+};
+
+export const OPPONENT_TEAM_COLUMN: ColumnDef = {
+  key: 'opponent_team_name',
+  label: 'Opponent Team',
+  format: (v, row) => formatOpponentTeamCell(v, row),
+};
+
 const NEWS_COLUMN: ColumnDef = {
   key: 'news',
   label: 'News',
@@ -87,7 +117,8 @@ export function buildBasketballPropColumns({
 }: BasketballPropColumnOptions): ColumnDef[] {
   return [
     { key: 'player_name', label: 'Player', format: (v) => formatString(v) },
-    { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
+    TEAM_COLUMN,
+    OPPONENT_TEAM_COLUMN,
     {
       key: projectedKey,
       label: projectedLabel,
@@ -161,7 +192,8 @@ export const WNBA_PROP_COLUMNS = {
 
 export const NHL_GOALIE_COLUMNS: ColumnDef[] = [
   { key: 'goalie_name', label: 'Goalie', format: (v) => formatString(v) },
-  { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   {
     key: 'predicted_saves',
     label: 'Proj Saves',
@@ -203,7 +235,8 @@ export const NHL_GOALIE_COLUMNS: ColumnDef[] = [
 
 export const NHL_SHOTS_COLUMNS: ColumnDef[] = [
   { key: 'player_name', label: 'Player', format: (v) => formatString(v) },
-  { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   {
     key: 'predicted_shots',
     label: 'Proj SOG',
@@ -245,6 +278,8 @@ export const NHL_SHOTS_COLUMNS: ColumnDef[] = [
 
 export const MLB_STRIKEOUT_COLUMNS_BASE = [
   { key: 'pitcher_name', label: 'Pitcher', format: (v: unknown) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   {
     key: 'projected_strikeouts',
     label: 'Proj K',
@@ -294,7 +329,8 @@ export const MLB_STRIKEOUT_COLUMNS_BASE = [
 
 export const NFL_QB_COLUMNS: ColumnDef[] = [
   { key: 'qb_player_name', label: 'QB', format: (v) => formatString(v) },
-  { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   {
     key: 'predicted_passing_yards',
     label: 'Pass Yds',

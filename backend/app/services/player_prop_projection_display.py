@@ -309,6 +309,190 @@ _NEWS_ENTITY_KEYS: dict[tuple[str, str], tuple[str, str]] = {
 }
 
 
+def attach_team_opponent_fields(
+    rows: list[dict[str, Any]],
+    *,
+    team_key: str = "team_name",
+    opponent_key: str = "opponent_team_name",
+    team_aliases: tuple[str, ...] = ("team",),
+    opponent_aliases: tuple[str, ...] = ("opponent", "opponent_name"),
+) -> list[dict[str, Any]]:
+    """Normalize team/opponent onto ``team_name`` / ``opponent_team_name``."""
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        enriched = dict(row)
+        if not enriched.get(team_key):
+            for alias in team_aliases:
+                val = enriched.get(alias)
+                if val:
+                    enriched[team_key] = val
+                    break
+        if not enriched.get(opponent_key):
+            for alias in opponent_aliases:
+                val = enriched.get(alias)
+                if val:
+                    enriched[opponent_key] = val
+                    break
+        out.append(enriched)
+    return out
+
+
+def attach_nba_team_names(
+    db: Session, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Fill missing ``team_name`` from TodayActivePlayers, then TeamRoster."""
+    if not rows:
+        return rows
+    from app.models.predictions_models import TeamRoster, TodayActivePlayers
+    from app.services.etl.nba._espn import NBA_TEAM_NAMES
+
+    player_ids = [int(r["player_id"]) for r in rows if r.get("player_id") is not None]
+    if not player_ids:
+        return attach_team_opponent_fields(rows)
+
+    dates = {r.get("date") for r in rows if r.get("date") is not None}
+    active_by_key: dict[tuple[int, Any], Any] = {}
+    if dates:
+        for p in (
+            db.query(TodayActivePlayers)
+            .filter(
+                TodayActivePlayers.player_id.in_(player_ids),
+                TodayActivePlayers.game_date.in_(dates),
+            )
+            .all()
+        ):
+            active_by_key[(int(p.player_id), p.game_date)] = p
+
+    roster_team_id = {
+        int(r.player_id): int(r.team_id)
+        for r in db.query(TeamRoster).filter(TeamRoster.player_id.in_(player_ids)).all()
+    }
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        if out.get("team_name"):
+            enriched.append(out)
+            continue
+        pid = out.get("player_id")
+        if pid is None:
+            enriched.append(out)
+            continue
+        pid_i = int(pid)
+        active = active_by_key.get((pid_i, out.get("date")))
+        if active is not None:
+            out["team_name"] = active.team_name
+            if not out.get("opponent_team_name"):
+                out["opponent_team_name"] = active.opponent_team_name
+        else:
+            team_id = roster_team_id.get(pid_i)
+            if team_id is not None:
+                out["team_name"] = NBA_TEAM_NAMES.get(team_id, "Unknown")
+        enriched.append(out)
+    return attach_team_opponent_fields(enriched)
+
+
+def attach_wnba_team_names(
+    db: Session, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Fill missing ``team_name`` from WNBATodayActivePlayers / roster."""
+    if not rows:
+        return rows
+    from app.models.predictions_models import WNBATeamRoster, WNBATodayActivePlayers
+    from app.services.etl.wnba._team_id_map import WNBA_ID_TO_NAME
+
+    player_ids = [int(r["player_id"]) for r in rows if r.get("player_id") is not None]
+    if not player_ids:
+        return attach_team_opponent_fields(rows)
+
+    dates = {r.get("date") for r in rows if r.get("date") is not None}
+    active_by_key: dict[tuple[int, Any], Any] = {}
+    if dates:
+        for p in (
+            db.query(WNBATodayActivePlayers)
+            .filter(
+                WNBATodayActivePlayers.player_id.in_(player_ids),
+                WNBATodayActivePlayers.game_date.in_(dates),
+            )
+            .all()
+        ):
+            active_by_key[(int(p.player_id), p.game_date)] = p
+
+    roster_team_id = {
+        int(r.player_id): int(r.team_id)
+        for r in db.query(WNBATeamRoster)
+        .filter(WNBATeamRoster.player_id.in_(player_ids))
+        .all()
+    }
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        if out.get("team_name"):
+            enriched.append(out)
+            continue
+        pid = out.get("player_id")
+        if pid is None:
+            enriched.append(out)
+            continue
+        pid_i = int(pid)
+        active = active_by_key.get((pid_i, out.get("date")))
+        if active is not None:
+            out["team_name"] = active.team_name
+            if not out.get("opponent_team_name"):
+                out["opponent_team_name"] = active.opponent_team_name
+        else:
+            team_id = roster_team_id.get(pid_i)
+            if team_id is not None:
+                out["team_name"] = WNBA_ID_TO_NAME.get(team_id, "Unknown")
+        enriched.append(out)
+    return attach_team_opponent_fields(enriched)
+
+
+def attach_mlb_batter_team_opponent(
+    db: Session, rows: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Join ProjectedHits/Homers rows to Hitter for team/opponent."""
+    if not rows:
+        return rows
+    from sqlalchemy import func
+
+    from app.models.predictions_models import Hitter
+
+    batter_ids = {str(r["batter_id"]) for r in rows if r.get("batter_id") is not None}
+    dates = {r.get("date") for r in rows if r.get("date") is not None}
+    if not batter_ids or not dates:
+        return attach_team_opponent_fields(rows)
+
+    hitters = (
+        db.query(Hitter)
+        .filter(
+            Hitter.player_id.in_(batter_ids),
+            func.date(Hitter.game_time).in_(dates),
+        )
+        .all()
+    )
+    by_key: dict[tuple[str, Any], Any] = {}
+    for h in hitters:
+        by_key[(str(h.player_id), h.game_time.date() if h.game_time else None)] = h
+
+    enriched: list[dict[str, Any]] = []
+    for row in rows:
+        out = dict(row)
+        bid = out.get("batter_id")
+        if bid is None:
+            enriched.append(out)
+            continue
+        h = by_key.get((str(bid), out.get("date")))
+        if h is not None:
+            out.setdefault("team_name", h.team)
+            out.setdefault("opponent_team_name", h.opponent)
+            out.setdefault("team", h.team)
+            out.setdefault("opponent", h.opponent)
+        enriched.append(out)
+    return attach_team_opponent_fields(enriched)
+
+
 def enrich_prop_rows(
     rows: list[dict[str, Any]],
     *,
@@ -319,16 +503,24 @@ def enrich_prop_rows(
     """Batch enrich for predictions API responses."""
     if sport == "nba":
         enriched = [enrich_nba_prop_row(r, stat) for r in rows]
+        if db is not None:
+            enriched = attach_nba_team_names(db, enriched)
     elif sport == "wnba":
         enriched = [enrich_wnba_prop_row(r, stat) for r in rows]
+        if db is not None:
+            enriched = attach_wnba_team_names(db, enriched)
     elif sport == "nhl":
-        enriched = [enrich_nhl_prop_row(r, stat) for r in rows]
+        enriched = attach_team_opponent_fields(
+            [enrich_nhl_prop_row(r, stat) for r in rows]
+        )
     elif sport == "mlb" and stat == "strikeouts":
-        enriched = [enrich_strikeout_display_row(r) for r in rows]
+        enriched = attach_team_opponent_fields(
+            [enrich_strikeout_display_row(r) for r in rows]
+        )
     elif sport == "nfl" and stat == "passing_yards":
-        enriched = [enrich_nfl_qb_row(r) for r in rows]
+        enriched = attach_team_opponent_fields([enrich_nfl_qb_row(r) for r in rows])
     else:
-        enriched = rows
+        enriched = attach_team_opponent_fields(rows)
 
     keys = _NEWS_ENTITY_KEYS.get((sport, stat))
     if db and keys:

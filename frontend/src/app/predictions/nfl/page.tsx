@@ -8,11 +8,17 @@ import {
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
-import { NFL_QB_COLUMNS, propRowClassName } from '@/lib/propProjectionDisplay';
+import {
+  NFL_QB_COLUMNS,
+  OPPONENT_TEAM_COLUMN,
+  TEAM_COLUMN,
+  propRowClassName,
+} from '@/lib/propProjectionDisplay';
 
 const KICKER_COLUMNS: ColumnDef[] = [
   { key: 'kicker_player_name', label: 'Kicker', format: (v) => formatString(v) },
-  { key: 'opponent_team_name', label: 'Opp', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   { key: 'predicted_fg_attempts', label: 'FGA', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'predicted_fg_made', label: 'FGM', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },
   { key: 'predicted_success_rate', label: 'Hit %', align: 'right', mono: true, format: (v) => formatNumber(v, 1) },

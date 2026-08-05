@@ -1,6 +1,12 @@
 """Unit tests for player prop display enrichment."""
 
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
 from app.services.player_prop_projection_display import (
+    attach_mlb_batter_team_opponent,
+    attach_team_opponent_fields,
     enrich_nba_prop_row,
     enrich_nhl_prop_row,
     enrich_strikeout_display_row,
@@ -76,3 +82,42 @@ def test_enrich_strikeout_display_row_value_tier():
     )
     assert row["value_tier"] == "strong"
     assert row["confidence_score"] == 72.0
+
+
+def test_attach_team_opponent_fields_normalizes_mlb_aliases():
+    rows = attach_team_opponent_fields(
+        [{"player_name": "Judge", "team": "NYY", "opponent": "BOS"}]
+    )
+    assert rows[0]["team_name"] == "NYY"
+    assert rows[0]["opponent_team_name"] == "BOS"
+
+
+def test_attach_mlb_batter_team_opponent_joins_hitter():
+    from datetime import datetime
+
+    db = MagicMock()
+    hitter = SimpleNamespace(
+        player_id="592450",
+        team="NYY",
+        opponent="BOS",
+        game_time=datetime(2026, 8, 5, 19, 0, 0),
+    )
+
+    query = MagicMock()
+    db.query.return_value = query
+    query.filter.return_value = query
+    query.all.return_value = [hitter]
+
+    rows = attach_mlb_batter_team_opponent(
+        db,
+        [
+            {
+                "batter_id": 592450,
+                "batter_name": "Judge",
+                "date": date(2026, 8, 5),
+                "projected_hits": 2,
+            }
+        ],
+    )
+    assert rows[0]["team_name"] == "NYY"
+    assert rows[0]["opponent_team_name"] == "BOS"
