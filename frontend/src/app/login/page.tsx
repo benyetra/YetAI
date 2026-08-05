@@ -1,9 +1,14 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { handleUnauthorizedResponse, persistAuthToken } from '@/lib/auth-session';
-import { useRouter } from 'next/navigation';
+import {
+  isSafeReturnPath,
+  resolvePostLoginRedirect,
+  stashOAuthReturnPath,
+} from '@/lib/auth-redirect';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/Auth';
 import { Eye, EyeOff, Mail, Lock } from 'lucide-react';
 import Link from 'next/link';
@@ -26,8 +31,10 @@ declare global {
   }
 }
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const nextParam = searchParams.get('next');
   const { login, isAuthenticated, loading } = useAuth();
   const [formData, setFormData] = useState({
     emailOrUsername: '',
@@ -39,9 +46,11 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [showForgotPasswordModal, setShowForgotPasswordModal] = useState(false);
 
+  const postLoginPath = resolvePostLoginRedirect(nextParam);
+
   useEffect(() => {
-    if (isAuthenticated) router.push('/dashboard');
-  }, [isAuthenticated, router]);
+    if (isAuthenticated) router.push(postLoginPath);
+  }, [isAuthenticated, router, postLoginPath]);
 
   const handleInputChange = (field: string, value: string | boolean) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
@@ -54,7 +63,7 @@ export default function LoginPage() {
     setError('');
     try {
       const result = await login(formData.emailOrUsername, formData.password);
-      if (result.success) router.push('/dashboard');
+      if (result.success) router.push(postLoginPath);
       else setError(result.message || 'Login failed. Please check your credentials.');
     } catch {
       setError('An unexpected error occurred. Please try again.');
@@ -80,7 +89,7 @@ export default function LoginPage() {
           localStorage.setItem('user_data', JSON.stringify(data.user));
         }
         // Full reload so AuthProvider picks up token + user (same as /auth/callback)
-        window.location.href = '/dashboard';
+        window.location.href = postLoginPath;
         return;
       } else {
         setError(data.message || 'Google Sign-in failed');
@@ -103,6 +112,9 @@ export default function LoginPage() {
         });
         window.google.accounts.id.prompt();
       } else {
+        if (nextParam && isSafeReturnPath(nextParam)) {
+          stashOAuthReturnPath(nextParam);
+        }
         const response = await fetch(getApiUrl('/api/auth/google/url'));
         const data = await response.json();
         if (data.status === 'success') window.location.href = data.authorization_url;
@@ -226,5 +238,19 @@ export default function LoginPage() {
         </form>
       </AuthShell>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <AuthShell showHero={false}>
+          <AppLoading label="Loading…" />
+        </AuthShell>
+      }
+    >
+      <LoginPageContent />
+    </Suspense>
   );
 }

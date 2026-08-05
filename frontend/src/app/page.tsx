@@ -21,7 +21,13 @@ function HomePageContent() {
   useEffect(() => {
     // Redirect to new login/signup pages
     if (searchParams.get('login') === 'true') {
-      router.push('/login');
+      const params = new URLSearchParams();
+      const next = searchParams.get('next');
+      const reason = searchParams.get('reason');
+      if (next) params.set('next', next);
+      if (reason) params.set('reason', reason);
+      const qs = params.toString();
+      router.push(qs ? `/login?${qs}` : '/login');
     } else if (searchParams.get('signup') === 'true') {
       router.push('/signup');
     }

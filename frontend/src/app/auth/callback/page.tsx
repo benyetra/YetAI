@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { persistAuthToken } from '@/lib/auth-session';
+import { consumeOAuthReturnPath, resolvePostLoginRedirect } from '@/lib/auth-redirect';
 
 function AuthCallbackContent() {
   const router = useRouter();
@@ -36,7 +37,7 @@ function AuthCallbackContent() {
 
         // Use window.location instead of router.push to force a full page reload
         // This ensures the AuthProvider re-initializes and reads the new localStorage data
-        window.location.href = '/dashboard';
+        window.location.href = resolvePostLoginRedirect(consumeOAuthReturnPath());
       } catch (err: any) {
         console.error('Auth callback error:', err);
         setError(err.message || 'Authentication failed');
