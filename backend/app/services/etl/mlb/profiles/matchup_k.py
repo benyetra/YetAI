@@ -12,7 +12,14 @@ from app.services.etl.mlb.profiles.constants import (
 )
 from app.services.etl.mlb.profiles.profile_store import ProfileStore
 
-MatchupSource = Literal["observed", "shrunk", "archetype", "league", "legacy_api"]
+MatchupSource = Literal[
+    "observed",
+    "shrunk",
+    "archetype",
+    "league",
+    "legacy_api",
+    "ballpark_pal",
+]
 
 
 @dataclass(frozen=True)
