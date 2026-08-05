@@ -46,7 +46,11 @@ class BallparkPalClient:
             logger.warning("BallparkPal network error caller=%s: %s", caller, exc)
             return None
         if resp.status_code == 429:
-            retry_after = int(resp.headers.get("Retry-After", "2") or 2)
+            retry_after_raw = resp.headers.get("Retry-After", "2") or "2"
+            try:
+                retry_after = int(retry_after_raw)
+            except (TypeError, ValueError):
+                retry_after = 2
             time.sleep(min(retry_after, 10))
             try:
                 resp = self._session.get(
