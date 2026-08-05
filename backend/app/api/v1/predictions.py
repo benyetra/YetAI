@@ -55,6 +55,8 @@ from app.models.predictions_models import (
 from app.services.etl.yetiwatch.news import attach_news_to_rows
 from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
 from app.services.player_prop_projection_display import (
+    attach_mlb_batter_team_opponent,
+    attach_team_opponent_fields,
     enrich_prop_rows,
     enrich_strikeout_display_row,
 )
@@ -322,6 +324,13 @@ def mlb_predictions(
             fd_point = getattr(meta, "fanduel_point", None)
             if (line is None or line <= 0) and fd_point and fd_point > 0:
                 row = {**row, "fanduel_line": fd_point}
+            row = {
+                **row,
+                "team_name": getattr(meta, "team", None),
+                "opponent_team_name": getattr(meta, "opponent", None),
+                "team": getattr(meta, "team", None),
+                "opponent": getattr(meta, "opponent", None),
+            }
         enriched = enrich_strikeout_projection_row(
             row,
             fanduel_flag=getattr(meta, "fanduel_flag", None) if meta else None,
@@ -395,18 +404,22 @@ def mlb_predictions(
         date_key="date",
     )
 
+    projected_hits = attach_mlb_batter_team_opponent(
+        db, _query_recent(db, ProjectedHits, "date", target_date, limit, tz=tz)
+    )
+    projected_homers = attach_mlb_batter_team_opponent(
+        db, _query_recent(db, ProjectedHomers, "date", target_date, limit, tz=tz)
+    )
+    home_run_predictions = attach_team_opponent_fields(
+        _query_recent(db, Homer, "game_time", target_date, limit, tz=tz)
+    )
+
     return {
         "strikeout_projections": cleaned_strikeouts,
         "game_projections": game_rows,
-        "projected_hits": _query_recent(
-            db, ProjectedHits, "date", target_date, limit, tz=tz
-        ),
-        "projected_homers": _query_recent(
-            db, ProjectedHomers, "date", target_date, limit, tz=tz
-        ),
-        "home_run_predictions": _query_recent(
-            db, Homer, "game_time", target_date, limit, tz=tz
-        ),
+        "projected_hits": projected_hits,
+        "projected_homers": projected_homers,
+        "home_run_predictions": home_run_predictions,
     }
 
 
@@ -515,8 +528,8 @@ def nfl_predictions(
             stat="passing_yards",
             db=db,
         ),
-        "kicker_predictions": _query_recent(
-            db, KickerPredictions, "game_date", target_date, limit, tz=tz
+        "kicker_predictions": attach_team_opponent_fields(
+            _query_recent(db, KickerPredictions, "game_date", target_date, limit, tz=tz)
         ),
     }
 

@@ -13,6 +13,8 @@ import {
 } from '@/components/PredictionsTable';
 import {
   MLB_STRIKEOUT_COLUMNS_BASE,
+  OPPONENT_TEAM_COLUMN,
+  TEAM_COLUMN,
   propRowClassName,
 } from '@/lib/propProjectionDisplay';
 
@@ -23,6 +25,8 @@ const STRIKEOUT_ACTUAL_COLUMNS: ColumnDef[] = [
 
 const HITS_BASE_COLUMNS: ColumnDef[] = [
   { key: 'batter_name', label: 'Batter', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   { key: 'projected_hits', label: 'Proj H', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
 ];
 
@@ -36,6 +40,8 @@ const HITS_ACTUAL_COLUMN: ColumnDef = {
 
 const HOMERS_BASE_COLUMNS: ColumnDef[] = [
   { key: 'batter_name', label: 'Batter', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   { key: 'projected_homers', label: 'Proj HR', align: 'right', mono: true, format: (v) => formatNumber(v, 0) },
 ];
 
@@ -49,8 +55,8 @@ const HOMERS_ACTUAL_COLUMN: ColumnDef = {
 
 const HR_COLUMNS: ColumnDef[] = [
   { key: 'player_name', label: 'Hitter', format: (v) => formatString(v) },
-  { key: 'team', label: 'Team', format: (v) => formatString(v) },
-  { key: 'opponent', label: 'Opp', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
   { key: 'opponent_pitcher', label: 'vs Pitcher', format: (v) => formatString(v) },
   { key: 'venue_name', label: 'Venue', format: (v) => formatString(v) },
 ];
