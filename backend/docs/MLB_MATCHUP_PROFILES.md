@@ -6,7 +6,7 @@ Versioned batter/pitcher Statcast profile snapshots for strikeouts, contact boar
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `MLB_PROFILES_ENABLED` | `0` | Enable ProfileStore consumers (Phase 3+) after backfill |
+| `MLB_PROFILES_ENABLED` | code default `0`; **prod YetAI + celery-worker = `1`** | Enable ProfileStore consumers (Phase 3+) after backfill |
 | `MLB_STATCAST_S3_PREFIX` | `s3://yetibets/mlb/statcast/pitches` | Raw pitch parquet store |
 | `MLB_PROFILE_WINDOW_DEFAULT` | `season` | Default read window |
 
@@ -98,6 +98,8 @@ PYTHONPATH=. .venv/bin/python scripts/prod_verify_mlb_profiles.py --json --min-b
 ```
 
 Coverage report: `profiles/monitoring.py` (`snapshot_coverage_report`).
+
+After enablement, confirm hits `profile_version`, MC `with_lineup_weighted_mc`, and K matchup log sources.
 
 ## Migrations
 
