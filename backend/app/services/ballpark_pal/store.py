@@ -197,6 +197,21 @@ def load_game_snapshot(
     )
 
 
+def load_game_park_factor(
+    session: Session, game_pk: int, slate_date: date
+) -> BppParkFactorSnapshot | None:
+    return (
+        session.query(BppParkFactorSnapshot)
+        .filter_by(
+            game_pk=game_pk,
+            slate_date=slate_date,
+            scope="game",
+            player_id=0,
+        )
+        .first()
+    )
+
+
 def load_player_proj(
     session: Session, player_id: int, slate_date: date, role: str
 ) -> BppPlayerProjSnapshot | None:
