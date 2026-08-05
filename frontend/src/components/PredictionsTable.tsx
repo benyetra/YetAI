@@ -58,7 +58,42 @@ type PredictionsTableProps = {
   rowClassName?: (row: Record<string, unknown>) => string | undefined;
 };
 
-function cellSortValue(value: unknown): number | string {
+/** Person-name columns — sort by last name, not first. */
+const PERSON_NAME_SORT_KEYS = new Set([
+  'player_name',
+  'pitcher_name',
+  'batter_name',
+  'goalie_name',
+  'qb_player_name',
+  'kicker_player_name',
+]);
+
+const NAME_SUFFIXES = new Set(['jr', 'jr.', 'sr', 'sr.', 'ii', 'iii', 'iv', 'v']);
+
+/** Sort key for "First Last" / "First Middle Last Jr." → last name primary. */
+export function personNameSortKey(name: unknown): string {
+  if (name === null || name === undefined || name === '') return '';
+  const parts = String(name)
+    .trim()
+    .replace(/,/g, ' ')
+    .split(/\s+/)
+    .filter(Boolean);
+  if (parts.length === 0) return '';
+  if (parts.length === 1) return parts[0].toLowerCase();
+
+  let lastIdx = parts.length - 1;
+  while (lastIdx > 0 && NAME_SUFFIXES.has(parts[lastIdx].toLowerCase())) {
+    lastIdx -= 1;
+  }
+  const last = parts[lastIdx];
+  const rest = [...parts.slice(0, lastIdx), ...parts.slice(lastIdx + 1)].join(' ');
+  return `${last} ${rest}`.toLowerCase();
+}
+
+function cellSortValue(value: unknown, key?: string): number | string {
+  if (key && PERSON_NAME_SORT_KEYS.has(key)) {
+    return personNameSortKey(value);
+  }
   if (value === null || value === undefined || value === '') return '';
   if (typeof value === 'number') return value;
   const asString = String(value).trim();
@@ -73,8 +108,8 @@ export function comparePredictionRows(
   key: string,
   dir: 'asc' | 'desc'
 ): number {
-  const va = cellSortValue(a[key]);
-  const vb = cellSortValue(b[key]);
+  const va = cellSortValue(a[key], key);
+  const vb = cellSortValue(b[key], key);
   let cmp = 0;
   if (typeof va === 'number' && typeof vb === 'number') {
     cmp = va - vb;
