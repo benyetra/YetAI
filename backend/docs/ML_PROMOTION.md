@@ -128,7 +128,7 @@ Promotion is **infrastructure + backfill**, not a single pickle. Stages:
 3. `scripts/mlb_rebuild_profiles.py --as-of <slate-date>`.
 4. `scripts/mlb_assign_archetypes.py --season <year>` (optional but recommended).
 5. `scripts/prod_verify_mlb_profiles.py --min-batter-coverage 80` (tune threshold).
-6. Set `MLB_PROFILES_ENABLED=1` on API + celery-worker; smoke strikeouts + game MC.
+6. Set `MLB_PROFILES_ENABLED=1` on API + celery-worker; smoke strikeouts + game MC. *(Production 2026-08 wire-up: YetAI + celery-worker = `1`; code default remains `0` in `constants.py`.)*
 7. Monitor `batter_reliability_coverage_pct` and ingest lag; PA pilot stays off prod MC until Phase 7 sign-off.
 
 Docs: [MLB_MATCHUP_PROFILES.md](./MLB_MATCHUP_PROFILES.md).
