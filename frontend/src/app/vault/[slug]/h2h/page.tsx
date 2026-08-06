@@ -1,8 +1,15 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { RivalryMark } from '../../../../components/vault/illustrations';
 import { H2HMatrixTable, type H2HCell } from '../../../../components/vault/tables';
-import { COLUMN_HELP, PAGE_HELP, fetchVaultSnapshot } from '../../../../lib/vault';
+import {
+  COLUMN_HELP,
+  PAGE_HELP,
+  fetchVaultSnapshot,
+  vaultNameFitClass,
+  vaultPath,
+} from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -53,7 +60,7 @@ export default async function H2HPage({ params }: Props) {
       <VaultPageHeader
         kicker="Rivalries"
         title="Head-to-Head"
-        blurb="All-time matrix. Sort managers with the corner control — scroll sideways on smaller screens."
+        blurb="All-time matrix. Columns use numbers keyed to the roster list below — sort managers with the corner control."
         help={COLUMN_HELP.h2h_matrix}
         illustration={<RivalryMark className="vault-illust" />}
       />
@@ -61,6 +68,24 @@ export default async function H2HPage({ params }: Props) {
         <p className="vault-muted" style={{ marginTop: 0 }}>
           {PAGE_HELP.h2h}
         </p>
+
+        <ol className="vault-h2h-key" aria-label="Manager column key">
+          {managers.map((m, index) => (
+            <li key={m.id} className="vault-h2h-key-item">
+              <span className="vault-h2h-key-num" aria-hidden="true">
+                {index + 1}
+              </span>
+              <Link
+                href={vaultPath(slug, `/managers/${m.slug}`)}
+                className={vaultNameFitClass(m.displayName)}
+                title={m.displayName}
+              >
+                {m.displayName}
+              </Link>
+            </li>
+          ))}
+        </ol>
+
         <ul className="vault-legend" aria-label="Matrix legend">
           <li>
             <span className="vault-legend-swatch is-win" aria-hidden="true" />
@@ -70,6 +95,7 @@ export default async function H2HPage({ params }: Props) {
             <span className="vault-legend-swatch is-self" aria-hidden="true" />
             Same manager (diagonal)
           </li>
+          <li>Column numbers match the roster key above</li>
         </ul>
         <H2HMatrixTable slug={slug} managers={managers} matrix={matrix} />
       </section>

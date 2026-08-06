@@ -49,6 +49,9 @@
   gap: 0.1rem;
   text-decoration: none;
   color: inherit;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .vault-brand-mark {
@@ -71,16 +74,35 @@
 
 .vault-brand-name {
   font-family: var(--font-vault-display), serif;
-  font-size: clamp(1.35rem, 4vw, 1.85rem);
-  line-height: 1.1;
+  font-size: clamp(1.25rem, 3.4vw, 1.85rem);
+  line-height: 1.15;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  /* Prefer wrapping at words over early ellipsis; clamp only as last resort */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: min(100%, 22rem);
+}
+
+/* Length-fit classes on the brand prefer scale over single-line ellipsis */
+.vault-brand-name.is-compact {
+  letter-spacing: -0.015em;
+}
+
+.vault-brand-name.is-tight,
+.vault-brand-name.is-micro {
+  white-space: normal;
+  text-overflow: unset;
+  font-size: clamp(1.1rem, 2.8vw, 1.55rem);
 }
 
 .vault-nav {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -427,24 +449,63 @@
 .vault-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
   font-size: 0.92rem;
 }
 
 .vault-table th,
 .vault-table td {
-  padding: 0.55rem 0.4rem;
+  padding: 0.55rem 0.55rem;
   border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 12%, transparent);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.vault-table thead th {
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: bottom;
+  padding-top: 0.35rem;
+  padding-bottom: 0.7rem;
+  color: color-mix(in srgb, var(--vault-ink) 78%, var(--vault-muted));
 }
 
 .vault-table th {
   font-weight: 600;
 }
 
+/* Wide label column only for record-book style tables */
 .vault-table-records th.vault-col-record,
-.vault-table-records td.vault-col-record {
+.vault-table-records td.vault-col-record,
+.vault-table-records th[scope='row'],
+.vault-table-records thead th:first-child {
   width: 42%;
+  white-space: normal;
+}
+
+.vault-table td.vault-num,
+.vault-table th.vault-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-table th.vault-col-num .vault-label-with-help {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* Year / identity columns stay left even if they use tabular nums */
+.vault-table-seasons tbody td:first-child,
+.vault-table-standings tbody td:nth-child(2),
+.vault-table-standings tbody td:nth-child(3) {
+  text-align: left;
+}
+
+.vault-table-seasons thead th:first-child,
+.vault-table-seasons thead th:nth-child(2),
+.vault-table-standings thead th:nth-child(2),
+.vault-table-standings thead th:nth-child(3) {
+  text-align: left;
 }
 
 .vault-table-caption {
@@ -530,6 +591,16 @@
 .vault-record-heading-medal {
   flex: 0 0 2.4rem;
   max-width: 2.4rem;
+}
+
+.vault-record-matchup {
+  display: inline;
+}
+
+.vault-record-vs {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--vault-muted) 80%, var(--vault-ink));
 }
 
 .vault-record-highlight > * {
@@ -729,6 +800,7 @@
   align-items: center;
   gap: 0.35rem;
   max-width: 100%;
+  white-space: nowrap;
 }
 
 .vault-help {
@@ -1242,6 +1314,60 @@
   color: var(--vault-accent);
 }
 
+.vault-h2h-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 0.95rem;
+  list-style: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2)),
+    color-mix(in srgb, var(--vault-paper) 88%, white);
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 14%, transparent);
+  border-top: 3px solid var(--vault-gold);
+}
+
+.vault-h2h-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vault-h2h-key-num,
+.vault-h2h-col-num,
+.vault-h2h-row-num {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  background: color-mix(in srgb, var(--vault-field) 88%, #0c1210);
+  color: var(--vault-paper);
+  font-family: var(--font-vault-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.vault-h2h-key-item a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.vault-h2h-key-item a:hover,
+.vault-h2h-key-item a:focus-visible {
+  color: var(--vault-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
 .vault-matrix {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1257,35 +1383,84 @@
 
 .vault-matrix table {
   border-collapse: collapse;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   min-width: 100%;
 }
 
 .vault-matrix th,
 .vault-matrix td {
-  padding: 0.35rem;
+  padding: 0.4rem 0.35rem;
   border: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
   text-align: center;
   white-space: nowrap;
 }
 
+.vault-matrix thead th {
+  vertical-align: bottom;
+  background: color-mix(in srgb, var(--vault-paper) 92%, white);
+}
+
 .vault-matrix th:first-child,
-.vault-matrix td:first-child {
+.vault-matrix td:first-child,
+.vault-matrix tbody th[scope='row'] {
   text-align: left;
   position: sticky;
   left: 0;
+  z-index: 1;
   background: var(--vault-paper);
   font-weight: 600;
+  min-width: 9.5rem;
+  max-width: 12rem;
+}
+
+.vault-matrix thead th:first-child {
+  z-index: 2;
+  background: color-mix(in srgb, var(--vault-paper) 92%, white);
+}
+
+.vault-matrix-corner-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vault-muted);
+}
+
+.vault-h2h-col-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.vault-h2h-col-head:hover .vault-h2h-col-num,
+.vault-h2h-col-head:focus-visible .vault-h2h-col-num {
+  background: var(--vault-accent);
+}
+
+.vault-h2h-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vault-h2h-row-label a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vault-matrix th a,
-.vault-matrix td:first-child a {
+.vault-matrix td:first-child a,
+.vault-matrix tbody th[scope='row'] a {
   color: inherit;
   text-decoration: none;
 }
 
 .vault-matrix th a:hover,
-.vault-matrix td:first-child a:hover {
+.vault-matrix td:first-child a:hover,
+.vault-matrix tbody th[scope='row'] a:hover {
   color: var(--vault-accent);
   text-decoration: underline;
 }
@@ -1417,7 +1592,33 @@
     flex-direction: row;
     align-items: flex-end;
     justify-content: space-between;
+    gap: 1.25rem;
     padding: 1rem 1.5rem 0.75rem;
+  }
+
+  .vault-brand {
+    /* Grow into leftover space after nav; no artificial ~22rem cap */
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .vault-brand-name {
+    /* Single line when the row has room; ellipsis only if truly squeezed */
+    display: block;
+    -webkit-line-clamp: unset;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vault-brand-name.is-tight,
+  .vault-brand-name.is-micro {
+    white-space: nowrap;
+  }
+
+  .vault-nav {
+    flex: 0 0 auto;
   }
 
   .vault-main {

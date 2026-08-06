@@ -44,7 +44,12 @@ export function VaultNav({
             <StadiumMark className="vault-brand-icon" />
             <span>League Vault</span>
           </span>
-          <span className="vault-brand-name">{displayName}</span>
+          <span
+            className={`vault-brand-name ${vaultNameFitClass(displayName)}`}
+            title={displayName}
+          >
+            {displayName}
+          </span>
         </Link>
         <nav className="vault-nav" aria-label="League sections">
           {NAV.map((item) => {

@@ -10,7 +10,6 @@ import {
 } from './VaultSortableTable';
 import {
   COLUMN_HELP,
-  h2hShortName,
   vaultNameFitClass,
   vaultPath,
 } from '../../lib/vault';
@@ -82,6 +81,7 @@ export function ManagersRosterTable({
       helpLabel: 'About record column',
       sortValue: (r) => r.wins,
       cell: (r) => r.recordLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -99,6 +99,7 @@ export function ManagersRosterTable({
         ) : (
           r.titles
         ),
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
   ];
@@ -137,6 +138,7 @@ export function SeasonsIndexTable({
       rowHeader: true,
       sortValue: (r) => r.season,
       cell: (r) => <Link href={vaultPath(slug, `/seasons/${r.season}`)}>{r.season}</Link>,
+      headerClassName: 'vault-col-num',
     },
     {
       key: 'champion',
@@ -158,6 +160,7 @@ export function SeasonsIndexTable({
       helpLabel: 'About teams column',
       sortValue: (r) => r.teams,
       cell: (r) => r.teams,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -240,6 +243,10 @@ export type RecordsBookRow = {
   valueLabel: string;
   holderName: string;
   holderSlug: string | null;
+  matchup?: {
+    managerA: { slug: string; displayName: string };
+    managerB: { slug: string; displayName: string };
+  };
   detail: string;
   highlight: boolean;
 };
@@ -270,6 +277,7 @@ export function RecordsBookTable({
       label: 'Value',
       sortValue: (r) => r.value,
       cell: (r) => r.valueLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -278,7 +286,21 @@ export function RecordsBookTable({
       sortValue: (r) => r.holderName || r.detail,
       cell: (r) => (
         <>
-          {r.holderSlug ? (
+          {r.matchup ? (
+            <span className="vault-record-matchup">
+              <ManagerNameLink
+                slug={slug}
+                managerSlug={r.matchup.managerA.slug}
+                name={r.matchup.managerA.displayName}
+              />
+              <span className="vault-record-vs"> vs </span>
+              <ManagerNameLink
+                slug={slug}
+                managerSlug={r.matchup.managerB.slug}
+                name={r.matchup.managerB.displayName}
+              />
+            </span>
+          ) : r.holderSlug ? (
             <ManagerNameLink slug={slug} managerSlug={r.holderSlug} name={r.holderName} />
           ) : (
             <span>{r.holderName || '—'}</span>
@@ -434,6 +456,7 @@ export function DraftBoardTable({
       helpLabel: 'About overall pick',
       sortValue: (r) => r.overall,
       cell: (r) => r.overall,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -441,6 +464,7 @@ export function DraftBoardTable({
       label: 'Rd',
       sortValue: (r) => r.round,
       cell: (r) => r.round,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -511,6 +535,7 @@ export function SeasonStandingsTable({
       label: '#',
       sortValue: (r) => r.rank ?? 999,
       cell: (r) => r.rank ?? '—',
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -535,6 +560,7 @@ export function SeasonStandingsTable({
       label: 'W-L',
       sortValue: (r) => r.wins * 1000 - r.losses,
       cell: (r) => r.recordLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -544,6 +570,7 @@ export function SeasonStandingsTable({
       helpLabel: 'About points for',
       sortValue: (r) => r.pf ?? -1,
       cell: (r) => r.pfLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -553,6 +580,7 @@ export function SeasonStandingsTable({
       helpLabel: 'About all-play',
       sortValue: (r) => r.allPlayWins ?? -1,
       cell: (r) => r.allPlayLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -562,12 +590,14 @@ export function SeasonStandingsTable({
       helpLabel: 'About luck',
       sortValue: (r) => r.luck ?? -999,
       cell: (r) => r.luckLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
   ];
 
   return (
     <VaultSortableTable
+      className="vault-table vault-table-standings"
       rows={rows}
       columns={columns}
       rowKey={(r) => r.id}
@@ -652,7 +682,6 @@ export function ManagerSeasonsTable({
           ) : null}
         </>
       ),
-      cellClassName: 'vault-num',
     },
     {
       key: 'team',
@@ -665,6 +694,7 @@ export function ManagerSeasonsTable({
       label: 'Record',
       sortValue: (r) => r.wins * 1000 - r.losses,
       cell: (r) => r.recordLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -674,6 +704,7 @@ export function ManagerSeasonsTable({
       helpLabel: 'About points for',
       sortValue: (r) => r.pf ?? -1,
       cell: (r) => r.pfLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -683,6 +714,7 @@ export function ManagerSeasonsTable({
       helpLabel: 'About all-play',
       sortValue: (r) => r.allPlayWins ?? -1,
       cell: (r) => r.allPlayLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -692,6 +724,7 @@ export function ManagerSeasonsTable({
       helpLabel: 'About luck',
       sortValue: (r) => r.luck ?? -999,
       cell: (r) => r.luckLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -699,12 +732,14 @@ export function ManagerSeasonsTable({
       label: 'Rank',
       sortValue: (r) => r.rank ?? 999,
       cell: (r) => r.rank ?? '—',
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
   ];
 
   return (
     <VaultSortableTable
+      className="vault-table vault-table-seasons"
       rows={rows}
       columns={columns}
       rowKey={(r) => r.season}
@@ -741,6 +776,7 @@ export function ManagerRecordsTable({ rows }: { rows: ManagerRecordRow[] }) {
       label: 'Value',
       sortValue: (r) => r.value,
       cell: (r) => r.valueLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
     {
@@ -748,12 +784,14 @@ export function ManagerRecordsTable({ rows }: { rows: ManagerRecordRow[] }) {
       label: 'Season',
       sortValue: (r) => r.seasonSort,
       cell: (r) => r.seasonLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
   ];
 
   return (
     <VaultSortableTable
+      className="vault-table vault-table-records"
       rows={rows}
       columns={columns}
       rowKey={(r) => r.key}
@@ -787,6 +825,13 @@ export function H2HMatrixTable({
 }) {
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
+  /** Stable roster numbers from the page key (alphabetical), independent of matrix sort. */
+  const rosterNumber = useMemo(() => {
+    const map = new Map<number, number>();
+    managers.forEach((m, index) => map.set(m.id, index + 1));
+    return map;
+  }, [managers]);
+
   const ordered = useMemo(() => {
     const list = [...managers];
     list.sort((a, b) =>
@@ -802,7 +847,7 @@ export function H2HMatrixTable({
       <table>
         <thead>
           <tr>
-            <th className="vault-th-sortable is-sorted">
+            <th scope="col" className="vault-matrix-corner vault-th-sortable is-sorted">
               <button
                 type="button"
                 className="vault-sort-btn"
@@ -815,54 +860,76 @@ export function H2HMatrixTable({
                 </span>
               </button>
             </th>
-            {ordered.map((m) => (
-              <th key={m.id}>
-                <Link
-                  href={vaultPath(slug, `/managers/${m.slug}`)}
-                  aria-label={m.displayName}
-                  title={m.displayName}
-                >
-                  {h2hShortName(m.displayName)}
-                </Link>
-              </th>
-            ))}
+            {ordered.map((m) => {
+              const num = rosterNumber.get(m.id) ?? 0;
+              return (
+                <th key={m.id} scope="col">
+                  <Link
+                    href={vaultPath(slug, `/managers/${m.slug}`)}
+                    className="vault-h2h-col-head"
+                    aria-label={`Column ${num}: ${m.displayName}`}
+                    title={m.displayName}
+                  >
+                    <span className="vault-h2h-col-num">{num}</span>
+                  </Link>
+                </th>
+              );
+            })}
           </tr>
         </thead>
         <tbody>
-          {ordered.map((row) => (
-            <tr key={row.id}>
-              <td>
-                <ManagerNameLink slug={slug} managerSlug={row.slug} name={row.displayName} />
-              </td>
-              {ordered.map((col) => {
-                const result =
-                  matrix[String(row.id)]?.[String(col.id)] ?? {
-                    text: '0-0',
-                    isSelf: row.id === col.id,
-                    isWinning: false,
-                  };
-                const aria =
-                  row.id === col.id
-                    ? `${row.displayName} versus self`
-                    : `${row.displayName} versus ${col.displayName}: ${result.text}`;
-                return (
-                  <td
-                    key={col.id}
-                    aria-label={aria}
-                    className={[
-                      'vault-num',
-                      result.isSelf ? 'vault-matrix-self' : '',
-                      result.isWinning ? 'vault-matrix-win' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                  >
-                    {result.text}
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+          {ordered.map((row) => {
+            const rowNum = rosterNumber.get(row.id) ?? 0;
+            return (
+              <tr key={row.id}>
+                <th scope="row">
+                  <span className="vault-h2h-row-label">
+                    <span className="vault-h2h-row-num" aria-hidden="true">
+                      {rowNum}
+                    </span>
+                    <ManagerNameLink
+                      slug={slug}
+                      managerSlug={row.slug}
+                      name={row.displayName}
+                    />
+                  </span>
+                </th>
+                {ordered.map((col) => {
+                  const result =
+                    matrix[String(row.id)]?.[String(col.id)] ?? {
+                      text: '0-0',
+                      isSelf: row.id === col.id,
+                      isWinning: false,
+                    };
+                  const colNum = rosterNumber.get(col.id) ?? 0;
+                  const aria =
+                    row.id === col.id
+                      ? `${row.displayName} versus self`
+                      : `${row.displayName} versus ${col.displayName}: ${result.text}`;
+                  return (
+                    <td
+                      key={col.id}
+                      aria-label={aria}
+                      title={
+                        row.id === col.id
+                          ? undefined
+                          : `vs ${col.displayName} (#${colNum})`
+                      }
+                      className={[
+                        'vault-num',
+                        result.isSelf ? 'vault-matrix-self' : '',
+                        result.isWinning ? 'vault-matrix-win' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {result.text}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>

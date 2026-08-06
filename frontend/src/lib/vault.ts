@@ -185,6 +185,81 @@ export function vaultNameFitClass(name: string | null | undefined): string {
   return 'vault-name';
 }
 
+function ctxNumber(value: unknown): number | null {
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function scoresClose(a: number | null, b: number | null, tol = 1e-6): boolean {
+  if (a == null || b == null) return false;
+  return Math.abs(a - b) <= tol;
+}
+
+export type VaultRecordMatchupParties = {
+  managerA: VaultManager;
+  managerB: VaultManager;
+  scoreA: number | null;
+  scoreB: number | null;
+};
+
+/** Resolve both managers for a matchup-derived record (closest, combined, etc.). */
+export function resolveRecordMatchup(
+  snap: VaultSnapshot,
+  record: VaultRecord,
+): VaultRecordMatchupParties | null {
+  const ctx = record.context || {};
+  const managerA = managerById(snap, ctxNumber(ctx.manager_a_id));
+  const managerB = managerById(snap, ctxNumber(ctx.manager_b_id));
+  if (managerA && managerB) {
+    return {
+      managerA,
+      managerB,
+      scoreA: ctxNumber(ctx.team_a_score),
+      scoreB: ctxNumber(ctx.team_b_score),
+    };
+  }
+
+  const season = ctxNumber(ctx.season) ?? record.season;
+  const week = ctxNumber(ctx.week);
+  if (season == null || week == null) return null;
+  const seasonRow = snap.seasons.find((s) => s.season === season);
+  if (!seasonRow) return null;
+
+  const scoreA = ctxNumber(ctx.team_a_score);
+  const scoreB = ctxNumber(ctx.team_b_score);
+  const focalTeamId = ctxNumber(ctx.team_id) ?? record.team_id;
+  const match =
+    seasonRow.matchups.find(
+      (m) =>
+        m.week === week &&
+        scoresClose(m.team_a_score, scoreA) &&
+        scoresClose(m.team_b_score, scoreB),
+    ) ??
+    seasonRow.matchups.find(
+      (m) =>
+        m.week === week &&
+        focalTeamId != null &&
+        (m.team_a_id === focalTeamId || m.team_b_id === focalTeamId),
+    );
+  if (!match?.team_a_id || !match?.team_b_id) return null;
+
+  const teamA = seasonRow.teams.find((t) => t.id === match.team_a_id);
+  const teamB = seasonRow.teams.find((t) => t.id === match.team_b_id);
+  const resolvedA = managerById(snap, teamA?.manager_id);
+  const resolvedB = managerById(snap, teamB?.manager_id);
+  if (!resolvedA || !resolvedB) return null;
+  return {
+    managerA: resolvedA,
+    managerB: resolvedB,
+    scoreA: match.team_a_score,
+    scoreB: match.team_b_score,
+  };
+}
+
 export function formatDraftPlayer(pick: {
   player_name?: string | null;
   player_position?: string | null;
@@ -315,7 +390,7 @@ export const PAGE_HELP = {
   records: 'Career and single-season peaks — including all-play strength and schedule luck.',
   managers: 'Every owner in the archive with career record and title count.',
   seasons: 'Jump into a year for standings, scoreboard, and that season’s draft board.',
-  h2h: 'All-time rivalry matrix. Read across a row to see that manager versus each column.',
+  h2h: 'All-time rivalry matrix. Use the numbered roster key for column names, then read across a row.',
   moves: 'Season-by-season waiver, free-agent, and trade activity from the league history.',
   draft: 'Pick-by-pick board for this season — overall order, round, team, and player.',
 } as const;

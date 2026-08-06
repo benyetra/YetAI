@@ -3,7 +3,9 @@ import {
   h2hShortName,
   isDraftPending,
   isPlaceholderPlayerId,
+  resolveRecordMatchup,
   vaultNameFitClass,
+  type VaultSnapshot,
 } from '../../src/lib/vault';
 
 describe('vault helpers', () => {
@@ -50,5 +52,44 @@ describe('vault helpers', () => {
         picks: [{ player_id: null }, { player_id: null }],
       }),
     ).toBe(true);
+  });
+
+  it('resolveRecordMatchup finds both managers from season scoreboard', () => {
+    const snap = {
+      managers: [
+        { id: 1, slug: 'alice', display_name: 'Alice' },
+        { id: 2, slug: 'bob', display_name: 'Bob' },
+      ],
+      seasons: [
+        {
+          season: 2022,
+          teams: [
+            { id: 10, manager_id: 1 },
+            { id: 11, manager_id: 2 },
+          ],
+          matchups: [
+            {
+              week: 10,
+              team_a_id: 10,
+              team_b_id: 11,
+              team_a_score: 97.84,
+              team_b_score: 97.9,
+            },
+          ],
+        },
+      ],
+    } as unknown as VaultSnapshot;
+
+    const parties = resolveRecordMatchup(snap, {
+      record_key: 'closest_game',
+      scope: 'all_time',
+      season: null,
+      manager_id: null,
+      team_id: null,
+      value: 0.06,
+      context: { season: 2022, week: 10, team_a_score: 97.84, team_b_score: 97.9 },
+    });
+    expect(parties?.managerA.display_name).toBe('Alice');
+    expect(parties?.managerB.display_name).toBe('Bob');
   });
 });

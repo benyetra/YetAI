@@ -10,10 +10,68 @@ import {
   fetchVaultSnapshot,
   formatRecord,
   managerById,
+  resolveRecordMatchup,
   type VaultRecord,
+  type VaultSnapshot,
 } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
+
+function toRows(
+  snap: VaultSnapshot,
+  rows: VaultRecord[],
+  isHighlighted: (r: VaultRecord) => boolean,
+): RecordsBookRow[] {
+  return rows.map((r) => {
+    const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+    const mgr = managerById(snap, r.manager_id);
+    const parties = resolveRecordMatchup(snap, r);
+    const contextSeason =
+      typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
+        ? String(r.context.season)
+        : null;
+    const detailParts = [
+      r.season != null ? String(r.season) : contextSeason,
+      r.context?.week != null ? `Wk ${r.context.week}` : null,
+    ].filter(Boolean);
+
+    if (parties) {
+      return {
+        key: `${r.record_key}-${r.manager_id}-${r.season}-${r.value}`,
+        label,
+        help: RECORD_HELP[r.record_key],
+        value: r.value,
+        valueLabel: formatRecord(r.value, r.record_key),
+        holderName: `${parties.managerA.display_name} vs ${parties.managerB.display_name}`,
+        holderSlug: null,
+        matchup: {
+          managerA: {
+            slug: parties.managerA.slug,
+            displayName: parties.managerA.display_name,
+          },
+          managerB: {
+            slug: parties.managerB.slug,
+            displayName: parties.managerB.display_name,
+          },
+        },
+        detail: detailParts.join(' · '),
+        highlight: isHighlighted(r),
+      };
+    }
+
+    return {
+      key: `${r.record_key}-${r.manager_id}-${r.season}-${r.value}`,
+      label,
+      help: RECORD_HELP[r.record_key],
+      value: r.value,
+      valueLabel: formatRecord(r.value, r.record_key),
+      holderName: mgr?.display_name ?? (detailParts.length ? 'Matchup' : ''),
+      holderSlug: mgr?.slug ?? null,
+      detail: detailParts.join(' · '),
+      highlight: isHighlighted(r),
+    };
+  });
+}
 
 export default async function RecordsPage({ params }: Props) {
   const { slug } = await params;
@@ -55,34 +113,6 @@ export default async function RecordsPage({ params }: Props) {
     return keys;
   })();
 
-  const toRows = (
-    rows: VaultRecord[],
-    isHighlighted: (r: VaultRecord) => boolean,
-  ): RecordsBookRow[] =>
-    rows.map((r) => {
-      const mgr = managerById(snap, r.manager_id);
-      const label = RECORD_LABELS[r.record_key] ?? r.record_key;
-      const contextSeason =
-        typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
-          ? String(r.context.season)
-          : null;
-      const detailParts = [
-        r.season != null ? String(r.season) : contextSeason,
-        r.context?.week != null ? `Wk ${r.context.week}` : null,
-      ].filter(Boolean);
-      return {
-        key: recordRowKey(r),
-        label,
-        help: RECORD_HELP[r.record_key],
-        value: r.value,
-        valueLabel: formatRecord(r.value, r.record_key),
-        holderName: mgr?.display_name ?? (detailParts.length ? 'Matchup' : ''),
-        holderSlug: mgr?.slug ?? null,
-        detail: detailParts.join(' · '),
-        highlight: isHighlighted(r),
-      };
-    });
-
   return (
     <>
       <VaultPageHeader
@@ -107,7 +137,7 @@ export default async function RecordsPage({ params }: Props) {
           </div>
           <RecordsBookTable
             slug={slug}
-            rows={toRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
+            rows={toRows(snap, career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
           />
         </section>
       ) : null}
@@ -122,13 +152,14 @@ export default async function RecordsPage({ params }: Props) {
             </VaultLabelWithHelp>
           </h2>
           <p className="vault-muted">
-            Click a column to sort. Use the ? beside a mark for plain-English definitions.
+            Matchup marks show both managers. Click a column to sort; use the ? for
+            definitions.
           </p>
         </div>
         {featured.length === 0 ? (
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (
-          <RecordsBookTable slug={slug} rows={toRows(featured, () => true)} />
+          <RecordsBookTable slug={slug} rows={toRows(snap, featured, () => true)} />
         )}
       </section>
     </>

@@ -111,12 +111,20 @@ def compute_records_for_lineage(db: Session, lineage_id: int) -> list[LvRecord]:
 
     def _ctx_matchup(m: LvMatchup, team_id: Optional[int] = None) -> dict:
         s = season_by_id[m.season_id]
+        ta = team_by_id.get(m.team_a_id) if m.team_a_id else None
+        tb = team_by_id.get(m.team_b_id) if m.team_b_id else None
         return {
             "season": s.season,
             "week": m.week,
             "team_a_score": m.team_a_score,
             "team_b_score": m.team_b_score,
             "team_id": team_id,
+            "team_a_id": m.team_a_id,
+            "team_b_id": m.team_b_id,
+            "manager_a_id": ta.manager_id if ta else None,
+            "manager_b_id": tb.manager_id if tb else None,
+            "team_a_name": ta.team_name if ta else None,
+            "team_b_name": tb.team_name if tb else None,
         }
 
     records: list[LvRecord] = []
