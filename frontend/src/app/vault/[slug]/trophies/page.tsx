@@ -1,8 +1,22 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, managerById, vaultPath } from '../../../../lib/vault';
+import { Medal, Podium, TrophyCup } from '../../../../components/vault/illustrations';
+import { fetchVaultSnapshot, managerById, type VaultManager, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
+type TitleLeader = { manager: VaultManager; n: number };
+type PodiumSlot = { rank: 1 | 2 | 3; leader: TitleLeader; className: string };
+
+function titleCopy(count: number): string {
+  return count === 1 ? 'title' : 'titles';
+}
+
+function rankClass(index: number): string | undefined {
+  if (index === 0) return 'vault-rank-1';
+  if (index === 1) return 'vault-rank-2';
+  if (index === 2) return 'vault-rank-3';
+  return undefined;
+}
 
 export default async function TrophiesPage({ params }: Props) {
   const { slug } = await params;
@@ -16,65 +30,128 @@ export default async function TrophiesPage({ params }: Props) {
     }
   }
   const leaderboard = [...titleCounts.entries()]
-    .map(([id, n]) => ({ manager: managerById(snap, id), n }))
-    .filter((x) => x.manager)
-    .sort((a, b) => b.n - a.n);
+    .flatMap<TitleLeader>(([id, n]) => {
+      const manager = managerById(snap, id);
+      return manager ? [{ manager, n }] : [];
+    })
+    .sort((a, b) => b.n - a.n || a.manager.display_name.localeCompare(b.manager.display_name));
+  const podiumSlots = [
+    { rank: 2 as const, leader: leaderboard[1], className: 'is-second' },
+    { rank: 1 as const, leader: leaderboard[0], className: 'is-first' },
+    { rank: 3 as const, leader: leaderboard[2], className: 'is-third' },
+  ].filter((slot): slot is PodiumSlot => Boolean(slot.leader));
 
   return (
     <>
-      <section className="vault-section">
-        <h1 className="vault-display">Trophy Room</h1>
-        <p className="vault-muted">
-          Champions, runners-up, and the {snap.last_place_label}.
-        </p>
+      <section className="vault-section vault-trophy-header">
+        <TrophyCup className="vault-illust vault-trophy-header-illust" />
+        <div>
+          <p className="vault-hero-kicker">League honors</p>
+          <h1 className="vault-display">Trophy Room</h1>
+          <p className="vault-muted">
+            Champions, runners-up, and the {snap.last_place_label}.
+          </p>
+        </div>
+      </section>
+
+      <section className="vault-section vault-title-podium" aria-labelledby="title-podium-heading">
+        <div className="vault-section-heading">
+          <h2 id="title-podium-heading">Title leaders podium</h2>
+          <p className="vault-muted">The managers with the most recorded championships.</p>
+        </div>
+        {podiumSlots.length === 0 ? (
+          <p className="vault-muted">No champions recorded yet.</p>
+        ) : (
+          <div className="vault-podium-stage">
+            <Podium className="vault-illust vault-podium-illust" />
+            <div className="vault-podium-slots">
+              {podiumSlots.map(({ rank, leader, className }) => (
+                <article
+                  key={leader.manager.id}
+                  className={`vault-podium-card ${className} vault-rank-${rank}`}
+                >
+                  <Medal className="vault-illust vault-podium-medal" rank={rank} />
+                  <span className="vault-podium-rank">No. {rank}</span>
+                  <Link
+                    href={vaultPath(slug, `/managers/${leader.manager.slug}`)}
+                    className="vault-podium-name"
+                  >
+                    {leader.manager.display_name}
+                  </Link>
+                  <span className="vault-podium-count">
+                    <strong className="vault-num">{leader.n}</strong> {titleCopy(leader.n)}
+                  </span>
+                </article>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="vault-section">
-        <h2>By season</h2>
-        <table className="vault-table">
-          <thead>
-            <tr>
-              <th>Year</th>
-              <th>Champion</th>
-              <th>Runner-up</th>
-              <th>{snap.last_place_label}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...snap.seasons].reverse().map((s) => (
-              <tr key={s.season}>
-                <td className="vault-num">{s.season}</td>
-                <td>
-                  {s.champion ? (
-                    <Link href={vaultPath(slug, `/managers/${s.champion.slug}`)}>
-                      {s.champion.display_name}
-                    </Link>
-                  ) : (
-                    <span className="vault-muted">In progress</span>
-                  )}
-                </td>
-                <td>
-                  {s.runner_up ? (
-                    <Link href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}>
-                      {s.runner_up.display_name}
-                    </Link>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-                <td>
-                  {s.last_place ? (
-                    <Link href={vaultPath(slug, `/managers/${s.last_place.slug}`)}>
-                      {s.last_place.display_name}
-                    </Link>
-                  ) : (
-                    '—'
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <div className="vault-section-heading">
+          <h2>Season chronicle</h2>
+          <p className="vault-muted">Every year’s podium finish and final footnote.</p>
+        </div>
+        <div className="vault-season-chronicle">
+          {[...snap.seasons].reverse().map((s) => {
+            const isComplete = Boolean(s.champion);
+            return (
+              <article
+                key={s.season}
+                className={`vault-season-entry${isComplete ? '' : ' is-in-progress'}`}
+              >
+                <div className="vault-season-year">
+                  <span className="vault-num">{s.season}</span>
+                </div>
+                <div className="vault-season-results">
+                  <div className="vault-season-result is-champion">
+                    {s.champion ? (
+                      <>
+                        <Medal className="vault-illust vault-season-medal" rank={1} />
+                        <span className="vault-season-label">Champion</span>
+                        <Link href={vaultPath(slug, `/managers/${s.champion.slug}`)}>
+                          {s.champion.display_name}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <span className="vault-season-label">Season status</span>
+                        <span className="vault-muted">In progress</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="vault-season-result is-runner-up">
+                    {s.runner_up && isComplete ? (
+                      <>
+                        <Medal className="vault-illust vault-season-medal" rank={2} />
+                        <span className="vault-season-label">Runner-up</span>
+                        <Link href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}>
+                          {s.runner_up.display_name}
+                        </Link>
+                      </>
+                    ) : (
+                      <>
+                        <span className="vault-season-label">Runner-up</span>
+                        <span className="vault-muted">—</span>
+                      </>
+                    )}
+                  </div>
+                  <div className="vault-season-result is-last-place">
+                    <span className="vault-season-label">{snap.last_place_label}</span>
+                    {s.last_place && isComplete ? (
+                      <Link href={vaultPath(slug, `/managers/${s.last_place.slug}`)}>
+                        {s.last_place.display_name}
+                      </Link>
+                    ) : (
+                      <span className="vault-muted">—</span>
+                    )}
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
       </section>
 
       <section className="vault-section">
@@ -84,15 +161,15 @@ export default async function TrophiesPage({ params }: Props) {
         ) : (
           <table className="vault-table">
             <tbody>
-              {leaderboard.map(({ manager, n }) => (
-                <tr key={manager!.id}>
+              {leaderboard.map(({ manager, n }, index) => (
+                <tr key={manager.id} className={rankClass(index)}>
                   <th scope="row">
-                    <Link href={vaultPath(slug, `/managers/${manager!.slug}`)}>
-                      {manager!.display_name}
+                    <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                      {manager.display_name}
                     </Link>
                   </th>
                   <td className="vault-num">{n}</td>
-                  <td className="vault-muted">{n === 1 ? 'title' : 'titles'}</td>
+                  <td className="vault-muted">{titleCopy(n)}</td>
                 </tr>
               ))}
             </tbody>
