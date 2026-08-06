@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models.league_vault_models import (
     LvDraft,
@@ -106,28 +106,61 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             else None
         )
 
-        drafts = db.query(LvDraft).filter_by(season_id=season.id).all()
+        # load_only: prod may lack newer columns (e.g. status) until schema_align
+        drafts = (
+            db.query(LvDraft)
+            .options(
+                load_only(
+                    LvDraft.id,
+                    LvDraft.season_id,
+                    LvDraft.platform_draft_id,
+                    LvDraft.draft_type,
+                    LvDraft.settings,
+                )
+            )
+            .filter_by(season_id=season.id)
+            .all()
+        )
         draft_payload = []
         for d in drafts:
             picks = (
                 db.query(LvDraftPick)
+                .options(
+                    load_only(
+                        LvDraftPick.id,
+                        LvDraftPick.draft_id,
+                        LvDraftPick.round,
+                        LvDraftPick.pick,
+                        LvDraftPick.overall_pick,
+                        LvDraftPick.platform_roster_id,
+                        LvDraftPick.player_id,
+                        LvDraftPick.team_id,
+                    )
+                )
                 .filter_by(draft_id=d.id)
-                .order_by(LvDraftPick.pick_no)
+                .order_by(LvDraftPick.round, LvDraftPick.pick)
                 .all()
             )
+            rounds = max((p.round for p in picks), default=None)
+            settings = d.settings if isinstance(d.settings, dict) else {}
+            if rounds is None and isinstance(settings.get("rounds"), int):
+                rounds = settings.get("rounds")
             draft_payload.append(
                 {
                     "draft_type": d.draft_type,
-                    "rounds": d.rounds,
+                    "status": None,
+                    "rounds": rounds,
                     "picks": [
                         {
                             "round": p.round,
-                            "pick_no": p.pick_no,
-                            "draft_slot": p.draft_slot,
+                            "pick_no": p.pick,
+                            "draft_slot": p.overall_pick,
                             "team_id": p.team_id,
                             "player_id": p.player_id,
-                            "is_keeper": p.is_keeper,
-                            "auction_amount": p.auction_amount,
+                            "platform_roster_id": p.platform_roster_id,
+                            # Keeper/auction not stored in current schema
+                            "is_keeper": None,
+                            "auction_amount": None,
                         }
                         for p in picks
                     ],

@@ -54,6 +54,7 @@ export type VaultSeason = {
   }>;
   drafts: Array<{
     draft_type: string | null;
+    status?: string | null;
     rounds: number | null;
     picks: Array<{
       round: number;
@@ -61,6 +62,7 @@ export type VaultSeason = {
       draft_slot: number | null;
       team_id: number | null;
       player_id: string | null;
+      platform_roster_id?: string | null;
       is_keeper: boolean | null;
       auction_amount: number | null;
     }>;
