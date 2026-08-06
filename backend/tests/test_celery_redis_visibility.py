@@ -14,3 +14,11 @@ def test_mlb_profile_rebuild_scheduled_before_projections():
     rebuild_hour = min(schedule["mlb-profile-rebuild"]["schedule"].hour)
     projections_hour = min(schedule["mlb-projections-daily"]["schedule"].hour)
     assert rebuild_hour < projections_hour
+
+
+def test_mlb_rebuild_profiles_time_limits():
+    from app.tasks.etl_pipeline import mlb_rebuild_profiles
+
+    # Soft limit must cover multi-hour Statcast load + 4 window aggregates.
+    assert mlb_rebuild_profiles.soft_time_limit >= 14400
+    assert mlb_rebuild_profiles.time_limit >= mlb_rebuild_profiles.soft_time_limit

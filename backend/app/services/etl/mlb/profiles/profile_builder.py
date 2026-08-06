@@ -298,25 +298,55 @@ def rebuild_all_profiles(
     as_of_date: date | None = None, prefix: str | None = None
 ) -> dict:
     as_of = as_of_date or date.today()
+    logger.info(
+        "rebuild_all_profiles as_of=%s profile_version=%s prefix=%s",
+        as_of,
+        PROFILE_VERSION,
+        prefix,
+    )
     df = load_pitches(prefix)
     if df.empty:
         logger.warning("no pitch data loaded for profile rebuild")
-        return {"pitchers": 0, "batters": 0}
+        return {
+            "pitchers": 0,
+            "batters": 0,
+            "profile_version": PROFILE_VERSION,
+            "as_of_date": as_of.isoformat(),
+        }
 
+    logger.info("loaded %s pitch rows for profile rebuild", len(df))
     if SessionLocal is None:
         raise RuntimeError("database not configured")
     db = SessionLocal()
     try:
-        db.query(MlbPitcherProfileSnapshot).filter(
-            MlbPitcherProfileSnapshot.as_of_date == as_of,
-            MlbPitcherProfileSnapshot.profile_version == PROFILE_VERSION,
-        ).delete(synchronize_session=False)
-        db.query(MlbBatterProfileSnapshot).filter(
-            MlbBatterProfileSnapshot.as_of_date == as_of,
-            MlbBatterProfileSnapshot.profile_version == PROFILE_VERSION,
-        ).delete(synchronize_session=False)
+        deleted_p = (
+            db.query(MlbPitcherProfileSnapshot)
+            .filter(
+                MlbPitcherProfileSnapshot.as_of_date == as_of,
+                MlbPitcherProfileSnapshot.profile_version == PROFILE_VERSION,
+            )
+            .delete(synchronize_session=False)
+        )
+        deleted_b = (
+            db.query(MlbBatterProfileSnapshot)
+            .filter(
+                MlbBatterProfileSnapshot.as_of_date == as_of,
+                MlbBatterProfileSnapshot.profile_version == PROFILE_VERSION,
+            )
+            .delete(synchronize_session=False)
+        )
         db.commit()
+        logger.info(
+            "cleared prior snapshots as_of=%s version=%s pitchers=%s batters=%s",
+            as_of,
+            PROFILE_VERSION,
+            deleted_p,
+            deleted_b,
+        )
         counts = build_snapshots_for_date(df, as_of, db=db)
+        counts["profile_version"] = PROFILE_VERSION
+        counts["as_of_date"] = as_of.isoformat()
+        logger.info("rebuild_all_profiles wrote %s", counts)
         return counts
     finally:
         db.close()
