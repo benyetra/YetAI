@@ -7,7 +7,11 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.models.league_vault_models import LvRecord, LvSite, LvSeason
+from app.models.league_vault_models import LvRecord, LvSeason, LvSite
+from app.services.league_vault.branding import (
+    heal_manager_display_names,
+    heal_site_branding,
+)
 from app.services.league_vault.compute.records import compute_records_for_lineage
 from app.services.league_vault.compute.standings import compute_all_play_for_lineage
 
@@ -20,10 +24,14 @@ def ensure_pilot_computed(
     *,
     force: bool = False,
 ) -> dict[str, Any]:
-    """Run all-play + records if the record book is empty (or ``force``).
+    """Run branding heal + all-play/records if the record book is empty (or ``force``).
 
-    Safe to call on every public snapshot GET — no-ops once records exist.
+    Safe to call on every public snapshot GET — compute no-ops once records exist.
+    Branding heal always runs (cheap) so quoted ESPN names get fixed.
     """
+    heal_site_branding(db, site)
+    heal_manager_display_names(db, site.lineage_id)
+
     lineage_id = site.lineage_id
     existing = db.query(LvRecord).filter_by(lineage_id=lineage_id).count()
     if existing > 0 and not force:

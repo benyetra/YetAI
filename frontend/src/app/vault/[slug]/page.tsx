@@ -23,13 +23,19 @@ export default async function VaultHomePage({ params }: Props) {
         <div className="vault-champ">
           <span className="vault-champ-label">Reigning champion</span>
           <span className="vault-champ-name vault-display">
-            {champ?.display_name ?? 'TBD'}
+            {champ ? (
+              <Link href={vaultPath(slug, `/managers/${champ.slug}`)}>
+                {champ.display_name}
+              </Link>
+            ) : (
+              'TBD'
+            )}
           </span>
           {champ?.season ? (
             <span className="vault-muted">{champ.season} season</span>
           ) : null}
         </div>
-        <DynastyBar timeline={snap.dynasty_timeline} />
+        <DynastyBar timeline={snap.dynasty_timeline} slug={slug} />
       </section>
 
       <section className="vault-section">

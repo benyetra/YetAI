@@ -95,6 +95,11 @@
   border-bottom-color: var(--vault-accent);
 }
 
+.vault-nav-link.is-active {
+  color: var(--vault-ink);
+  border-bottom-color: var(--vault-ink);
+}
+
 .vault-main {
   max-width: 72rem;
   margin: 0 auto;
