@@ -130,15 +130,15 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                         LvDraftPick.id,
                         LvDraftPick.draft_id,
                         LvDraftPick.round,
-                        LvDraftPick.pick,
-                        LvDraftPick.overall_pick,
+                        LvDraftPick.pick_no,
+                        LvDraftPick.draft_slot,
                         LvDraftPick.platform_roster_id,
                         LvDraftPick.player_id,
                         LvDraftPick.team_id,
                     )
                 )
                 .filter_by(draft_id=d.id)
-                .order_by(LvDraftPick.round, LvDraftPick.pick)
+                .order_by(LvDraftPick.round, LvDraftPick.pick_no)
                 .all()
             )
             rounds = max((p.round for p in picks), default=None)
@@ -153,12 +153,12 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                     "picks": [
                         {
                             "round": p.round,
-                            "pick_no": p.pick,
-                            "draft_slot": p.overall_pick,
+                            "pick_no": p.pick_no,
+                            "draft_slot": p.draft_slot,
                             "team_id": p.team_id,
                             "player_id": p.player_id,
                             "platform_roster_id": p.platform_roster_id,
-                            # Keeper/auction not stored in current schema
+                            # Optional columns may be missing until schema_align
                             "is_keeper": None,
                             "auction_amount": None,
                         }

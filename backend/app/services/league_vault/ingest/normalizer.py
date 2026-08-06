@@ -383,8 +383,8 @@ def normalize_sleeper_season(
                 LvDraftPick(
                     draft_id=lv_draft.id,
                     round=int(pick.get("round") or 0),
-                    pick=int(pick.get("pick_no") or pick.get("pick") or 0),
-                    overall_pick=pick.get("draft_slot"),
+                    pick_no=int(pick.get("pick_no") or pick.get("pick") or 0),
+                    draft_slot=pick.get("draft_slot"),
                     platform_roster_id=roster_id or None,
                     player_id=str(pick.get("player_id") or "") or None,
                     team_id=(
@@ -392,6 +392,8 @@ def normalize_sleeper_season(
                         if roster_id in roster_to_team
                         else None
                     ),
+                    is_keeper=pick.get("is_keeper"),
+                    auction_amount=pick.get("amount"),
                 )
             )
             draft_pick_count += 1
@@ -602,8 +604,8 @@ def normalize_espn_season(
                 LvDraftPick(
                     draft_id=lv_draft.id,
                     round=int(pick.get("roundId") or 0),
-                    pick=int(pick.get("roundPickNumber") or 0),
-                    overall_pick=pick.get("overallPickNumber"),
+                    pick_no=int(pick.get("roundPickNumber") or 0),
+                    draft_slot=pick.get("overallPickNumber"),
                     platform_roster_id=str(team_id) if team_id is not None else None,
                     player_id=str(player_id) if player_id is not None else None,
                     team_id=lv_team.id if lv_team else None,
