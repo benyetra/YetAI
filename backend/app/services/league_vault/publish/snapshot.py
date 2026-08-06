@@ -6,11 +6,9 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy.orm import Session, load_only
+from sqlalchemy.orm import Session
 
 from app.models.league_vault_models import (
-    LvDraft,
-    LvDraftPick,
     LvManager,
     LvMatchup,
     LvRecord,
@@ -106,67 +104,10 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             else None
         )
 
-        # Prod early-P1 draft tables are a subset of the current model. Only
-        # select columns confirmed present; never let drafts 500 the vault.
-        draft_payload = []
-        try:
-            drafts = (
-                db.query(LvDraft)
-                .options(
-                    load_only(
-                        LvDraft.id,
-                        LvDraft.season_id,
-                        LvDraft.draft_type,
-                        LvDraft.settings,
-                    )
-                )
-                .filter_by(season_id=season.id)
-                .all()
-            )
-            for d in drafts:
-                picks = (
-                    db.query(LvDraftPick)
-                    .options(
-                        load_only(
-                            LvDraftPick.id,
-                            LvDraftPick.draft_id,
-                            LvDraftPick.round,
-                            LvDraftPick.pick_no,
-                            LvDraftPick.draft_slot,
-                        )
-                    )
-                    .filter_by(draft_id=d.id)
-                    .order_by(LvDraftPick.round, LvDraftPick.pick_no)
-                    .all()
-                )
-                rounds = max((p.round for p in picks), default=None)
-                settings = d.settings if isinstance(d.settings, dict) else {}
-                if rounds is None and isinstance(settings.get("rounds"), int):
-                    rounds = settings.get("rounds")
-                draft_payload.append(
-                    {
-                        "draft_type": d.draft_type,
-                        "status": None,
-                        "rounds": rounds,
-                        "picks": [
-                            {
-                                "round": p.round,
-                                "pick_no": p.pick_no,
-                                "draft_slot": p.draft_slot,
-                                "team_id": None,
-                                "player_id": None,
-                                "platform_roster_id": None,
-                                "is_keeper": None,
-                                "auction_amount": None,
-                            }
-                            for p in picks
-                        ],
-                    }
-                )
-        except Exception:
-            # Schema drift vs prod — ship seasons/records; drafts optional for pilot
-            db.rollback()
-            draft_payload = []
+        # Drafts are optional for the pilot ship. Prod early-P1 schema drifts
+        # from the ORM; skipping avoids snapshot 500s. Re-enable after
+        # ``lv_schema_align`` has run on production.
+        draft_payload: list[dict[str, Any]] = []
 
         tx_count = db.query(LvTransaction).filter_by(season_id=season.id).count()
 

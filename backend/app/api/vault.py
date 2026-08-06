@@ -15,6 +15,7 @@ from app.models.league_vault_events import LvVaultEvent
 from app.models.league_vault_models import LvSite
 from app.services.league_vault.compute.ensure import ensure_pilot_computed
 from app.services.league_vault.publish.snapshot import build_site_snapshot
+from app.services.league_vault import redeploy_token as _redeploy_token  # noqa: F401
 
 router = APIRouter(prefix="/api/vault", tags=["league-vault"])
 

@@ -216,7 +216,12 @@ class LvTransaction(Base):
 
 
 class LvDraft(Base):
-    """Draft metadata for a season."""
+    """Draft metadata for a season.
+
+    Note: prod early-P1 may lack ``status`` (and other later columns). Keep the
+    mapped set conservative so accidental full-entity loads do not 500 the API.
+    Draft status from platforms is stored inside ``settings`` when present.
+    """
 
     __tablename__ = "lv_drafts"
 
@@ -224,7 +229,6 @@ class LvDraft(Base):
     season_id = Column(Integer, ForeignKey("lv_seasons.id"), nullable=False)
     platform_draft_id = Column(String(64), nullable=True)
     draft_type = Column(String(64), nullable=True)
-    status = Column(String(64), nullable=True)
     settings = Column(JSON, nullable=True)
 
     season = relationship("LvSeason", back_populates="drafts")
@@ -234,21 +238,17 @@ class LvDraft(Base):
 
 
 class LvDraftPick(Base):
-    """Individual draft pick."""
+    """Individual draft pick (columns aligned to prod early-P1)."""
 
     __tablename__ = "lv_draft_picks"
 
     id = Column(Integer, primary_key=True, index=True)
     draft_id = Column(Integer, ForeignKey("lv_drafts.id"), nullable=False)
     round = Column(Integer, nullable=False)
-    # Prod / early P1 used pick_no + draft_slot (not pick / overall_pick).
     pick_no = Column(Integer, nullable=False)
     draft_slot = Column(Integer, nullable=True)
-    platform_roster_id = Column(String(64), nullable=True)
     player_id = Column(String(64), nullable=True)
     team_id = Column(Integer, ForeignKey("lv_teams.id"), nullable=True)
-    is_keeper = Column(Boolean, nullable=True)
-    auction_amount = Column(Float, nullable=True)
 
     draft = relationship("LvDraft", back_populates="picks")
 
