@@ -49,6 +49,9 @@
   gap: 0.1rem;
   text-decoration: none;
   color: inherit;
+  min-width: 0;
+  flex: 1 1 auto;
+  max-width: 100%;
 }
 
 .vault-brand-mark {
@@ -71,16 +74,35 @@
 
 .vault-brand-name {
   font-family: var(--font-vault-display), serif;
-  font-size: clamp(1.35rem, 4vw, 1.85rem);
-  line-height: 1.1;
+  font-size: clamp(1.25rem, 3.4vw, 1.85rem);
+  line-height: 1.15;
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+  /* Prefer wrapping at words over early ellipsis; clamp only as last resort */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: min(100%, 22rem);
+}
+
+/* Length-fit classes on the brand prefer scale over single-line ellipsis */
+.vault-brand-name.is-compact {
+  letter-spacing: -0.015em;
+}
+
+.vault-brand-name.is-tight,
+.vault-brand-name.is-micro {
+  white-space: normal;
+  text-overflow: unset;
+  font-size: clamp(1.1rem, 2.8vw, 1.55rem);
 }
 
 .vault-nav {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1348,7 +1370,33 @@
     flex-direction: row;
     align-items: flex-end;
     justify-content: space-between;
+    gap: 1.25rem;
     padding: 1rem 1.5rem 0.75rem;
+  }
+
+  .vault-brand {
+    /* Grow into leftover space after nav; no artificial ~22rem cap */
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .vault-brand-name {
+    /* Single line when the row has room; ellipsis only if truly squeezed */
+    display: block;
+    -webkit-line-clamp: unset;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .vault-brand-name.is-tight,
+  .vault-brand-name.is-micro {
+    white-space: nowrap;
+  }
+
+  .vault-nav {
+    flex: 0 0 auto;
   }
 
   .vault-main {
