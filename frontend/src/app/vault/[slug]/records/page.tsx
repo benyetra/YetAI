@@ -1,8 +1,8 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, RecordBook } from '../../../../components/vault/illustrations';
+import { RecordsBookTable, type RecordsBookRow } from '../../../../components/vault/tables';
 import {
   PAGE_HELP,
   RECORD_HELP,
@@ -10,8 +10,6 @@ import {
   fetchVaultSnapshot,
   formatRecord,
   managerById,
-  vaultNameFitClass,
-  vaultPath,
   type VaultRecord,
 } from '../../../../lib/vault';
 
@@ -57,14 +55,13 @@ export default async function RecordsPage({ params }: Props) {
     return keys;
   })();
 
-  const renderRows = (
+  const toRows = (
     rows: VaultRecord[],
     isHighlighted: (r: VaultRecord) => boolean,
-  ) =>
+  ): RecordsBookRow[] =>
     rows.map((r) => {
       const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
-      const help = RECORD_HELP[r.record_key];
       const contextSeason =
         typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
           ? String(r.context.season)
@@ -73,35 +70,17 @@ export default async function RecordsPage({ params }: Props) {
         r.season != null ? String(r.season) : contextSeason,
         r.context?.week != null ? `Wk ${r.context.week}` : null,
       ].filter(Boolean);
-      return (
-        <tr
-          key={recordRowKey(r)}
-          className={isHighlighted(r) ? 'vault-record-highlight' : undefined}
-        >
-          <th scope="row">
-            <VaultLabelWithHelp help={help} helpLabel={`About ${label}`}>
-              {label}
-            </VaultLabelWithHelp>
-          </th>
-          <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-          <td className="vault-muted">
-            {mgr ? (
-              <Link
-                href={vaultPath(slug, `/managers/${mgr.slug}`)}
-                className={vaultNameFitClass(mgr.display_name)}
-                title={mgr.display_name}
-              >
-                {mgr.display_name}
-              </Link>
-            ) : detailParts.length ? (
-              <span>Matchup</span>
-            ) : (
-              '—'
-            )}
-            {detailParts.length ? ` · ${detailParts.join(' · ')}` : null}
-          </td>
-        </tr>
-      );
+      return {
+        key: recordRowKey(r),
+        label,
+        help: RECORD_HELP[r.record_key],
+        value: r.value,
+        valueLabel: formatRecord(r.value, r.record_key),
+        holderName: mgr?.display_name ?? (detailParts.length ? 'Matchup' : ''),
+        holderSlug: mgr?.slug ?? null,
+        detail: detailParts.join(' · '),
+        highlight: isHighlighted(r),
+      };
     });
 
   return (
@@ -126,11 +105,10 @@ export default async function RecordsPage({ params }: Props) {
               </VaultLabelWithHelp>
             </h2>
           </div>
-          <table className="vault-table">
-            <tbody>
-              {renderRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
-            </tbody>
-          </table>
+          <RecordsBookTable
+            slug={slug}
+            rows={toRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
+          />
         </section>
       ) : null}
       <section className="vault-section">
@@ -144,15 +122,13 @@ export default async function RecordsPage({ params }: Props) {
             </VaultLabelWithHelp>
           </h2>
           <p className="vault-muted">
-            Use the ? beside a mark for a plain-English definition — including all-play and luck.
+            Click a column to sort. Use the ? beside a mark for plain-English definitions.
           </p>
         </div>
         {featured.length === 0 ? (
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (
-          <table className="vault-table">
-            <tbody>{renderRows(featured, () => true)}</tbody>
-          </table>
+          <RecordsBookTable slug={slug} rows={toRows(featured, () => true)} />
         )}
       </section>
     </>

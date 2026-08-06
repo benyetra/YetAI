@@ -1,15 +1,8 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
-import { ManagersMark, Medal } from '../../../../components/vault/illustrations';
-import {
-  COLUMN_HELP,
-  PAGE_HELP,
-  fetchVaultSnapshot,
-  vaultNameFitClass,
-  vaultPath,
-} from '../../../../lib/vault';
+import { ManagersMark } from '../../../../components/vault/illustrations';
+import { ManagersRosterTable } from '../../../../components/vault/tables';
+import { PAGE_HELP, fetchVaultSnapshot } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -18,7 +11,7 @@ export default async function ManagersPage({ params }: Props) {
   const snap = await fetchVaultSnapshot(slug);
   if (!snap) notFound();
 
-  const rows = [...snap.managers].sort((a, b) => {
+  const sorted = [...snap.managers].sort((a, b) => {
     const careerA = snap.manager_careers[String(a.id)];
     const careerB = snap.manager_careers[String(b.id)];
     return (
@@ -29,83 +22,38 @@ export default async function ManagersPage({ params }: Props) {
   });
   const topTitleCount = Math.max(
     0,
-    ...rows.map((m) => snap.manager_careers[String(m.id)]?.titles ?? 0),
+    ...sorted.map((m) => snap.manager_careers[String(m.id)]?.titles ?? 0),
   );
+
+  const rows = sorted.map((m, index) => {
+    const career = snap.manager_careers[String(m.id)];
+    const titles = career?.titles ?? 0;
+    return {
+      id: m.id,
+      slug: m.slug,
+      displayName: m.display_name,
+      seasonsLabel: `${m.first_season}–${m.last_season}`,
+      firstSeason: m.first_season ?? 0,
+      wins: career?.wins ?? 0,
+      recordLabel: career
+        ? `${career.wins}-${career.losses}${career.ties ? `-${career.ties}` : ''}`
+        : '—',
+      titles,
+      highlight: index === 0 && topTitleCount > 0,
+    };
+  });
 
   return (
     <>
       <VaultPageHeader
         kicker="The roster"
         title="Managers"
-        blurb="Every owner in the archive — sorted by titles, then wins."
+        blurb="Every owner in the archive — click a column to sort."
         help={PAGE_HELP.managers}
         illustration={<ManagersMark className="vault-illust" />}
       />
       <section className="vault-section">
-        <table className="vault-table">
-          <thead>
-            <tr>
-              <th>Manager</th>
-              <th>
-                <VaultLabelWithHelp
-                  help={COLUMN_HELP.seasons_span}
-                  helpLabel="About seasons column"
-                >
-                  Seasons
-                </VaultLabelWithHelp>
-              </th>
-              <th>
-                <VaultLabelWithHelp help={COLUMN_HELP.record} helpLabel="About record column">
-                  Record
-                </VaultLabelWithHelp>
-              </th>
-              <th>
-                <VaultLabelWithHelp help={COLUMN_HELP.titles} helpLabel="About titles column">
-                  Titles
-                </VaultLabelWithHelp>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((m, index) => {
-              const career = snap.manager_careers[String(m.id)];
-              const titles = career?.titles ?? 0;
-              const record = career
-                ? `${career.wins}-${career.losses}${career.ties ? `-${career.ties}` : ''}`
-                : '—';
-              return (
-                <tr
-                  key={m.id}
-                  className={index === 0 && topTitleCount > 0 ? 'vault-rank-1' : undefined}
-                >
-                  <th scope="row">
-                    <Link
-                      href={vaultPath(slug, `/managers/${m.slug}`)}
-                      className={vaultNameFitClass(m.display_name)}
-                      title={m.display_name}
-                    >
-                      {m.display_name}
-                    </Link>
-                  </th>
-                  <td className="vault-muted">
-                    {m.first_season}–{m.last_season}
-                  </td>
-                  <td className="vault-num">{record}</td>
-                  <td className="vault-num">
-                    {titles > 0 ? (
-                      <span className="vault-title-count">
-                        <Medal className="vault-illust vault-title-count-medal" rank={1} />
-                        {titles}
-                      </span>
-                    ) : (
-                      titles
-                    )}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        <ManagersRosterTable slug={slug} rows={rows} />
       </section>
     </>
   );
