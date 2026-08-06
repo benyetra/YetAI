@@ -26,8 +26,10 @@ Append entries during P4 (ship & watch). Do **not** ask managers if they like it
 | Backend after `#45` | ❌ `black --check` on `app/main.py` |
 | `#46` merge | ✅ (`ae82030`) — code fix present; **no** push workflows fired |
 | `GET .../meta` both slugs | ✅ 200 (data already in prod from P1 ingest) |
-| `GET .../snapshot` | ❌ 500 — still serving pre-#46 API image |
+| `GET .../snapshot` (pre-#47) | ❌ 500 — `score_a` then after Railway git deploy `lv_drafts.status` missing + snapshot field drift |
 | `GET .../stats` | ✅ 200, 0 events |
+| `#47` merge | ✅ Railway git deploy success; GH Actions Alembic still queued |
+| Draft schema fix | follow-up PR — `load_only` + `lv_schema_align` migration |
 
 **Shipped at:** _pending Railway re-deploy + DNS_  
 **Links:**  
