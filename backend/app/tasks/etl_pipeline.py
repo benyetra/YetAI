@@ -434,14 +434,21 @@ def mlb_statcast_incremental() -> dict:
     return statcast_incremental()
 
 
-@celery_app.task(name="app.tasks.etl_pipeline.mlb.rebuild_profiles")
+@celery_app.task(
+    name="app.tasks.etl_pipeline.mlb.rebuild_profiles",
+    soft_time_limit=14400,  # 4h — full Statcast load + 4 windows routinely exceeds 1h
+    time_limit=16200,  # 4.5h hard kill
+)
 def mlb_rebuild_profiles(as_of_date: str | None = None) -> dict:
     from datetime import date
 
     from app.services.etl.mlb.profiles.profile_builder import rebuild_all_profiles
 
     as_of = date.fromisoformat(as_of_date) if as_of_date else date.today()
-    return rebuild_all_profiles(as_of_date=as_of)
+    logger.info("mlb.rebuild_profiles starting as_of=%s", as_of)
+    counts = rebuild_all_profiles(as_of_date=as_of)
+    logger.info("mlb.rebuild_profiles complete as_of=%s counts=%s", as_of, counts)
+    return counts
 
 
 # ============================================================================

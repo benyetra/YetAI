@@ -53,7 +53,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.mlb.backtest_quick": 1800.0,
     "app.tasks.etl_pipeline.mlb.statcast_backfill_season": 14400.0,
     "app.tasks.etl_pipeline.mlb.statcast_incremental": 900.0,
-    "app.tasks.etl_pipeline.mlb.rebuild_profiles": 3600.0,
+    "app.tasks.etl_pipeline.mlb.rebuild_profiles": 14400.0,
     "app.tasks.etl_pipeline.nhl.collect_ingest": 1200.0,
     "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
     "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
