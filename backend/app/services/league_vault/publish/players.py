@@ -6,6 +6,24 @@ from typing import Any, Optional
 
 from sqlalchemy.orm import Session
 
+# ESPN pre-draft order rows use playerId=-1; treat as unset.
+_PLACEHOLDER_PLAYER_IDS = frozenset({"", "-1", "0", "none", "null"})
+
+
+def normalize_draft_player_id(raw: Any) -> Optional[str]:
+    """Return a real platform player id, or None for blanks / ESPN placeholders."""
+    if raw is None:
+        return None
+    s = str(raw).strip()
+    if not s or s.lower() in _PLACEHOLDER_PLAYER_IDS:
+        return None
+    try:
+        if int(s) < 0:
+            return None
+    except ValueError:
+        pass
+    return s
+
 
 def resolve_player_labels(
     db: Session, player_ids: set[str]

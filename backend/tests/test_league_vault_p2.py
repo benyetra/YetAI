@@ -276,10 +276,56 @@ def test_snapshot_draft_picks_include_team_and_player(session):
     session.commit()
 
     snap = build_site_snapshot(session, slug="test-league")
-    picks = snap["seasons"][0]["drafts"][0]["picks"]
+    draft_out = snap["seasons"][0]["drafts"][0]
+    picks = draft_out["picks"]
     assert len(picks) == 2
     assert picks[0]["team_id"] == seeded["team_a"].id
     assert picks[0]["player_id"] == "4866"
     assert picks[1]["team_id"] == seeded["team_b"].id
     assert picks[1]["player_id"] == "7588"
     assert "player_name" in picks[0]
+    assert draft_out["status"] == "complete"
+    assert draft_out["picks_made"] == 2
+
+
+def test_snapshot_pending_draft_strips_placeholder_player_ids(session):
+    from app.models.league_vault_models import LvDraft, LvDraftPick
+    from app.services.league_vault.publish.snapshot import build_site_snapshot
+
+    seeded = _seed_two_team_season(session)
+    draft = LvDraft(
+        season_id=seeded["season"].id,
+        platform_draft_id="d-pending",
+        draft_type="snake",
+        settings={"status": "pending"},
+    )
+    session.add(draft)
+    session.flush()
+    session.add_all(
+        [
+            LvDraftPick(
+                draft_id=draft.id,
+                round=1,
+                pick_no=1,
+                draft_slot=1,
+                team_id=seeded["team_a"].id,
+                player_id="-1",
+            ),
+            LvDraftPick(
+                draft_id=draft.id,
+                round=1,
+                pick_no=2,
+                draft_slot=2,
+                team_id=seeded["team_b"].id,
+                player_id="-1",
+            ),
+        ]
+    )
+    session.commit()
+
+    snap = build_site_snapshot(session, slug="test-league")
+    draft_out = snap["seasons"][0]["drafts"][0]
+    assert draft_out["status"] == "pending"
+    assert draft_out["picks_made"] == 0
+    assert all(p["player_id"] is None for p in draft_out["picks"])
+    assert len(draft_out["picks"]) == 2

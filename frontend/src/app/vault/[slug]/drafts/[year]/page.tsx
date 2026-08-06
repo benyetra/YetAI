@@ -1,8 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
+  draftOverallPick,
   formatDraftPlayer,
   fetchVaultSnapshot,
+  isDraftPending,
   managerById,
   vaultPath,
 } from '../../../../../lib/vault';
@@ -18,6 +20,9 @@ export default async function DraftPage({ params }: Props) {
   if (!season) notFound();
   const draft = season.drafts[0];
   const teamById = new Map(season.teams.map((t) => [t.id, t]));
+  const pending = isDraftPending(draft);
+  const hasOrder = Boolean(draft && draft.picks.length > 0);
+  const picksMade = draft?.picks_made ?? draft?.picks.filter((p) => p.player_id).length ?? 0;
 
   return (
     <>
@@ -27,49 +32,63 @@ export default async function DraftPage({ params }: Props) {
         </p>
         <h1 className="vault-display">{seasonYear} Draft</h1>
         <p className="vault-muted">
-          {draft?.draft_type ?? 'Draft'} · {draft?.picks.length ?? 0} picks
+          {draft?.draft_type ?? 'Draft'}
+          {hasOrder
+            ? pending
+              ? ` · draft order · ${draft!.picks.length} slots`
+              : ` · ${picksMade} picks`
+            : ' · no picks yet'}
           {draft?.rounds != null ? ` · ${draft.rounds} rounds` : ''}
         </p>
       </section>
       <section className="vault-section">
-        {!draft || draft.picks.length === 0 ? (
-          <p className="vault-muted">No draft data for this season.</p>
+        {!hasOrder ? (
+          <p className="vault-muted">
+            The {seasonYear} draft hasn&apos;t happened yet.
+          </p>
         ) : (
-          <table className="vault-table">
-            <thead>
-              <tr>
-                <th>Overall</th>
-                <th>Rd</th>
-                <th>Team</th>
-                <th>Manager</th>
-                <th>Player</th>
-              </tr>
-            </thead>
-            <tbody>
-              {draft.picks.map((p) => {
-                const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
-                const manager = team ? managerById(snap, team.manager_id) : undefined;
-                const overall = p.draft_slot ?? p.pick_no;
-                return (
-                  <tr key={`${p.round}-${p.pick_no}-${overall}`}>
-                    <td className="vault-num">{overall}</td>
-                    <td className="vault-num">{p.round}</td>
-                    <td>{team?.team_name ?? '—'}</td>
-                    <td>
-                      {manager ? (
-                        <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
-                          {manager.display_name}
-                        </Link>
-                      ) : (
-                        '—'
-                      )}
-                    </td>
-                    <td>{formatDraftPlayer(p)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <>
+            {pending ? (
+              <p className="vault-muted" style={{ marginBottom: '1rem' }}>
+                Draft order is set, but picks haven&apos;t been made yet.
+              </p>
+            ) : null}
+            <table className="vault-table">
+              <thead>
+                <tr>
+                  <th>Overall</th>
+                  <th>Rd</th>
+                  <th>Team</th>
+                  <th>Manager</th>
+                  <th>Player</th>
+                </tr>
+              </thead>
+              <tbody>
+                {draft!.picks.map((p) => {
+                  const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
+                  const manager = team ? managerById(snap, team.manager_id) : undefined;
+                  const overall = draftOverallPick(p);
+                  return (
+                    <tr key={`${p.round}-${p.pick_no}-${overall}`}>
+                      <td className="vault-num">{overall}</td>
+                      <td className="vault-num">{p.round}</td>
+                      <td>{team?.team_name ?? '—'}</td>
+                      <td>
+                        {manager ? (
+                          <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                            {manager.display_name}
+                          </Link>
+                        ) : (
+                          '—'
+                        )}
+                      </td>
+                      <td>{pending ? 'TBD' : formatDraftPlayer(p)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </>
         )}
       </section>
     </>

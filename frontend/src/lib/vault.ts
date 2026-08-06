@@ -56,6 +56,7 @@ export type VaultSeason = {
     draft_type: string | null;
     status?: string | null;
     rounds: number | null;
+    picks_made?: number;
     picks: Array<{
       round: number;
       pick_no: number;
@@ -170,7 +171,53 @@ export function formatDraftPlayer(pick: {
     if (meta) bits.push(meta);
     return bits.join(' — ');
   }
-  return pick.player_id ?? '—';
+  if (!pick.player_id || isPlaceholderPlayerId(pick.player_id)) return '—';
+  return pick.player_id;
+}
+
+export function isPlaceholderPlayerId(id: string | null | undefined): boolean {
+  if (id == null || id === '') return true;
+  const s = String(id).trim().toLowerCase();
+  if (s === '-1' || s === '0' || s === 'none' || s === 'null') return true;
+  const n = Number(s);
+  return Number.isFinite(n) && n < 0;
+}
+
+/** Overall pick number — prefer pick_no (monotonic). draft_slot is often the slot. */
+export function draftOverallPick(pick: {
+  pick_no: number;
+  draft_slot: number | null;
+}): number {
+  return pick.pick_no ?? pick.draft_slot ?? 0;
+}
+
+export function isDraftPending(
+  draft:
+    | {
+        status?: string | null;
+        picks_made?: number;
+        picks: Array<{ player_id?: string | null; player_name?: string | null }>;
+      }
+    | null
+    | undefined,
+): boolean {
+  if (!draft) return true;
+  if (draft.status === 'pending' || draft.status === 'empty') return true;
+  if (typeof draft.picks_made === 'number') return draft.picks_made === 0;
+  if (!draft.picks.length) return true;
+  return !draft.picks.some(
+    (p) => p.player_name || (p.player_id && !isPlaceholderPlayerId(p.player_id)),
+  );
+}
+
+/** Latest season that has a completed (or in-progress) draft board. */
+export function latestDraftSeason(snap: VaultSnapshot): number | null {
+  for (const season of [...snap.seasons].reverse()) {
+    const draft = season.drafts[0];
+    if (!draft) continue;
+    if (!isDraftPending(draft) && draft.picks.length > 0) return season.season;
+  }
+  return null;
 }
 
 export const RECORD_LABELS: Record<string, string> = {

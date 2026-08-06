@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DynastyBar } from '../../../components/vault/VaultChrome';
-import { fetchVaultSnapshot, vaultPath } from '../../../lib/vault';
+import { fetchVaultSnapshot, latestDraftSeason, vaultPath } from '../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -11,6 +11,7 @@ export default async function VaultHomePage({ params }: Props) {
   if (!snap) notFound();
 
   const champ = snap.reigning_champion;
+  const draftSeason = latestDraftSeason(snap);
 
   return (
     <>
@@ -47,9 +48,9 @@ export default async function VaultHomePage({ params }: Props) {
           <Link href={vaultPath(slug, '/seasons')}>Seasons</Link>
           <Link href={vaultPath(slug, '/h2h')}>Head-to-Head</Link>
           <Link href={vaultPath(slug, '/transactions')}>Transactions</Link>
-          {snap.latest_season ? (
-            <Link href={vaultPath(slug, `/drafts/${snap.latest_season}`)}>
-              Draft {snap.latest_season}
+          {draftSeason ? (
+            <Link href={vaultPath(slug, `/drafts/${draftSeason}`)}>
+              Draft {draftSeason}
             </Link>
           ) : null}
         </div>
