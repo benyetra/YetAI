@@ -14,10 +14,18 @@ export default async function H2HPage({ params }: Props) {
   );
 
   const cell = (a: number, b: number) => {
-    if (a === b) return '—';
+    if (a === b) {
+      return { text: '—', isSelf: true, isWinning: false };
+    }
     const row = snap.h2h[String(a)]?.[String(b)];
-    if (!row) return '0-0';
-    return `${row.wins}-${row.losses}${row.ties ? `-${row.ties}` : ''}`;
+    if (!row) {
+      return { text: '0-0', isSelf: false, isWinning: false };
+    }
+    return {
+      text: `${row.wins}-${row.losses}${row.ties ? `-${row.ties}` : ''}`,
+      isSelf: false,
+      isWinning: row.wins > row.losses,
+    };
   };
 
   return (
@@ -48,11 +56,23 @@ export default async function H2HPage({ params }: Props) {
                     {row.display_name}
                   </Link>
                 </td>
-                {managers.map((col) => (
-                  <td key={col.id} className="vault-num">
-                    {cell(row.id, col.id)}
-                  </td>
-                ))}
+                {managers.map((col) => {
+                  const result = cell(row.id, col.id);
+                  return (
+                    <td
+                      key={col.id}
+                      className={[
+                        'vault-num',
+                        result.isSelf ? 'vault-matrix-self' : '',
+                        result.isWinning ? 'vault-matrix-win' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' ')}
+                    >
+                      {result.text}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>

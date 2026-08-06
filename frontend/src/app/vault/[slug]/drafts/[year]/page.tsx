@@ -50,7 +50,7 @@ export default async function DraftPage({ params }: Props) {
           <>
             {pending ? (
               <p className="vault-muted" style={{ marginBottom: '1rem' }}>
-                Draft order is set, but picks haven&apos;t been made yet.
+                Draft order is set; selections will appear here when the board is complete.
               </p>
             ) : null}
             <table className="vault-table">
@@ -68,8 +68,12 @@ export default async function DraftPage({ params }: Props) {
                   const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
                   const manager = team ? managerById(snap, team.manager_id) : undefined;
                   const overall = draftOverallPick(p);
+                  const isFirstOverall = p.round === 1 && overall === 1;
                   return (
-                    <tr key={`${p.round}-${p.pick_no}-${overall}`}>
+                    <tr
+                      key={`${p.round}-${p.pick_no}-${overall}`}
+                      className={isFirstOverall ? 'vault-draft-first-overall' : undefined}
+                    >
                       <td className="vault-num">{overall}</td>
                       <td className="vault-num">{p.round}</td>
                       <td>{team?.team_name ?? '—'}</td>

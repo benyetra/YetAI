@@ -52,12 +52,21 @@
 }
 
 .vault-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--vault-accent);
   font-family: var(--font-vault-sans), sans-serif;
   font-weight: 600;
+}
+
+.vault-brand-icon {
+  width: 1.15rem;
+  height: auto;
+  flex: 0 0 1.15rem;
 }
 
 .vault-brand-name {
@@ -99,7 +108,7 @@
 
 .vault-nav-link.is-active {
   color: var(--vault-ink);
-  border-bottom-color: var(--vault-ink);
+  border-bottom-color: var(--vault-gold);
 }
 
 .vault-main {
@@ -803,6 +812,40 @@
   border-top: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
 }
 
+.vault-footer-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.vault-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.vault-footer-mark {
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: auto;
+  opacity: 0.82;
+}
+
+.vault-footer-brand div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.vault-footer-brand strong {
+  color: var(--vault-ink);
+  font-family: var(--font-vault-display), ui-serif, Georgia, serif;
+  font-size: 1rem;
+}
+
+.vault-footer p {
+  margin: 0;
+}
+
 .vault-footer a {
   color: var(--vault-accent);
 }
@@ -845,6 +888,30 @@
 .vault-matrix td:first-child a:hover {
   color: var(--vault-accent);
   text-decoration: underline;
+}
+
+.vault-matrix td.vault-matrix-self {
+  color: color-mix(in srgb, var(--vault-gold) 75%, var(--vault-ink));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vault-gold) 18%, transparent), transparent 56%),
+    color-mix(in srgb, var(--vault-paper) 82%, white);
+  font-weight: 800;
+}
+
+.vault-matrix td.vault-matrix-win {
+  background: color-mix(in srgb, var(--vault-accent) 12%, transparent);
+  color: color-mix(in srgb, var(--vault-field) 82%, var(--vault-ink));
+}
+
+.vault-draft-first-overall > * {
+  background: color-mix(in srgb, var(--vault-gold) 16%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--vault-gold) 35%, transparent);
+}
+
+.vault-draft-first-overall > :first-child {
+  border-left: 3px solid var(--vault-gold);
+  color: color-mix(in srgb, var(--vault-gold) 78%, var(--vault-ink));
+  font-weight: 800;
 }
 
 .vault-week-block {
@@ -955,6 +1022,12 @@
 
   .vault-main {
     padding: 1.75rem 1.5rem 4rem;
+  }
+
+  .vault-footer-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
   }
 
   .vault-hero {
