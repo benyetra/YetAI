@@ -8,6 +8,7 @@ import {
   fetchVaultSnapshot,
   managerById,
   type VaultManager,
+  vaultNameFitClass,
   vaultPath,
 } from '../../../../lib/vault';
 
@@ -86,7 +87,12 @@ export default async function TrophiesPage({ params }: Props) {
                 >
                   <Medal className="vault-illust vault-podium-medal" rank={rank} />
                   <span className="vault-podium-rank">No. {rank}</span>
-                  <span className="vault-podium-name">{leader.manager.display_name}</span>
+                  <span
+                    className={`vault-podium-name ${vaultNameFitClass(leader.manager.display_name)}`}
+                    title={leader.manager.display_name}
+                  >
+                    {leader.manager.display_name}
+                  </span>
                   <span className="vault-podium-count">
                     <strong className="vault-num">{leader.n}</strong> {titleCopy(leader.n)}
                   </span>
@@ -121,7 +127,11 @@ export default async function TrophiesPage({ params }: Props) {
                       <>
                         <Medal className="vault-illust vault-season-medal" rank={1} />
                         <span className="vault-season-label">Champion</span>
-                        <Link href={vaultPath(slug, `/managers/${s.champion.slug}`)}>
+                        <Link
+                          href={vaultPath(slug, `/managers/${s.champion.slug}`)}
+                          className={vaultNameFitClass(s.champion.display_name)}
+                          title={s.champion.display_name}
+                        >
                           {s.champion.display_name}
                         </Link>
                       </>
@@ -141,7 +151,11 @@ export default async function TrophiesPage({ params }: Props) {
                           <Medal className="vault-illust vault-season-medal" rank={2} />
                         ) : null}
                         <span className="vault-season-label">Runner-up</span>
-                        <Link href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}>
+                        <Link
+                          href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}
+                          className={vaultNameFitClass(s.runner_up.display_name)}
+                          title={s.runner_up.display_name}
+                        >
                           {s.runner_up.display_name}
                         </Link>
                       </>
@@ -155,7 +169,11 @@ export default async function TrophiesPage({ params }: Props) {
                   <div className="vault-season-result is-last-place">
                     <span className="vault-season-label">{snap.last_place_label}</span>
                     {s.last_place ? (
-                      <Link href={vaultPath(slug, `/managers/${s.last_place.slug}`)}>
+                      <Link
+                        href={vaultPath(slug, `/managers/${s.last_place.slug}`)}
+                        className={vaultNameFitClass(s.last_place.display_name)}
+                        title={s.last_place.display_name}
+                      >
                         {s.last_place.display_name}
                       </Link>
                     ) : (
@@ -182,7 +200,11 @@ export default async function TrophiesPage({ params }: Props) {
               {leaderboard.map(({ manager, n }, index) => (
                 <tr key={manager.id} className={rankClass(index)}>
                   <th scope="row">
-                    <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                    <Link
+                      href={vaultPath(slug, `/managers/${manager.slug}`)}
+                      className={vaultNameFitClass(manager.display_name)}
+                      title={manager.display_name}
+                    >
                       {manager.display_name}
                     </Link>
                   </th>

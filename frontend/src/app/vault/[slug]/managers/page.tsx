@@ -3,7 +3,13 @@ import { notFound } from 'next/navigation';
 import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { ManagersMark, Medal } from '../../../../components/vault/illustrations';
-import { COLUMN_HELP, PAGE_HELP, fetchVaultSnapshot, vaultPath } from '../../../../lib/vault';
+import {
+  COLUMN_HELP,
+  PAGE_HELP,
+  fetchVaultSnapshot,
+  vaultNameFitClass,
+  vaultPath,
+} from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -73,7 +79,11 @@ export default async function ManagersPage({ params }: Props) {
                   className={index === 0 && topTitleCount > 0 ? 'vault-rank-1' : undefined}
                 >
                   <th scope="row">
-                    <Link href={vaultPath(slug, `/managers/${m.slug}`)}>
+                    <Link
+                      href={vaultPath(slug, `/managers/${m.slug}`)}
+                      className={vaultNameFitClass(m.display_name)}
+                      title={m.display_name}
+                    >
                       {m.display_name}
                     </Link>
                   </th>

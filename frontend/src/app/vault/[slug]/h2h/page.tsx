@@ -7,6 +7,7 @@ import {
   PAGE_HELP,
   fetchVaultSnapshot,
   h2hShortName,
+  vaultNameFitClass,
   vaultPath,
 } from '../../../../lib/vault';
 
@@ -81,7 +82,11 @@ export default async function H2HPage({ params }: Props) {
               {managers.map((row) => (
                 <tr key={row.id}>
                   <td>
-                    <Link href={vaultPath(slug, `/managers/${row.slug}`)}>
+                    <Link
+                      href={vaultPath(slug, `/managers/${row.slug}`)}
+                      className={vaultNameFitClass(row.display_name)}
+                      title={row.display_name}
+                    >
                       {row.display_name}
                     </Link>
                   </td>

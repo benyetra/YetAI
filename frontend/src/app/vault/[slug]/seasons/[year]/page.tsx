@@ -7,6 +7,7 @@ import {
   COLUMN_HELP,
   fetchVaultSnapshot,
   managerById,
+  vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
 
@@ -44,7 +45,11 @@ export default async function SeasonDetailPage({ params }: Props) {
         <>
           Champion:{' '}
           {season.champion ? (
-            <Link href={vaultPath(slug, `/managers/${season.champion.slug}`)}>
+            <Link
+              href={vaultPath(slug, `/managers/${season.champion.slug}`)}
+              className={vaultNameFitClass(season.champion.display_name)}
+              title={season.champion.display_name}
+            >
               {season.champion.display_name}
             </Link>
           ) : (
@@ -111,7 +116,11 @@ export default async function SeasonDetailPage({ params }: Props) {
                     <td>{t.team_name}</td>
                     <td>
                       {manager ? (
-                        <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                        <Link
+                          href={vaultPath(slug, `/managers/${manager.slug}`)}
+                          className={vaultNameFitClass(manager.display_name)}
+                          title={manager.display_name}
+                        >
                           {manager.display_name}
                         </Link>
                       ) : (

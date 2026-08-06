@@ -11,6 +11,7 @@ import {
   fetchVaultSnapshot,
   isDraftPending,
   managerById,
+  vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
 
@@ -97,7 +98,11 @@ export default async function DraftPage({ params }: Props) {
                       <td>{team?.team_name ?? '—'}</td>
                       <td>
                         {manager ? (
-                          <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                          <Link
+                            href={vaultPath(slug, `/managers/${manager.slug}`)}
+                            className={vaultNameFitClass(manager.display_name)}
+                            title={manager.display_name}
+                          >
                             {manager.display_name}
                           </Link>
                         ) : (

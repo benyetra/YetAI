@@ -6,7 +6,7 @@
 import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { vaultPath, type VaultSnapshot } from '../../lib/vault';
+import { vaultNameFitClass, vaultPath, type VaultSnapshot } from '../../lib/vault';
 import { StadiumMark } from './illustrations';
 
 const NAV = [
@@ -115,11 +115,20 @@ export function DynastyBar({
             <span className="vault-dynasty-year">{cell.season}</span>
             <span className="vault-dynasty-name">
               {cell.champion && slug ? (
-                <Link href={vaultPath(slug, `/managers/${cell.champion.slug}`)}>
+                <Link
+                  href={vaultPath(slug, `/managers/${cell.champion.slug}`)}
+                  className={vaultNameFitClass(cell.champion.display_name)}
+                  title={cell.champion.display_name}
+                >
                   {cell.champion.display_name}
                 </Link>
               ) : (
-                cell.champion?.display_name ?? 'TBD'
+                <span
+                  className={vaultNameFitClass(cell.champion?.display_name ?? 'TBD')}
+                  title={cell.champion?.display_name}
+                >
+                  {cell.champion?.display_name ?? 'TBD'}
+                </span>
               )}
             </span>
             <span className="vault-dynasty-note">
