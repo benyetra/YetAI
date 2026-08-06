@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { TrophyCup } from '../../../../../components/vault/illustrations';
 import {
   RECORD_LABELS,
   fetchVaultSnapshot,
@@ -26,20 +27,34 @@ export default async function ManagerDetailPage({ params }: Props) {
     .filter((x) => x.team);
 
   const heldRecords = snap.records.filter((r) => r.manager_id === manager.id);
+  const titleCount = career?.titles ?? 0;
 
   return (
     <>
-      <section className="vault-section">
-        <p className="vault-muted">
-          <Link href={vaultPath(slug, '/managers')}>Managers</Link>
-        </p>
-        <h1 className="vault-display">{manager.display_name}</h1>
-        <p className="vault-muted">
-          {manager.first_season}–{manager.last_season}
-          {career
-            ? ` · ${career.wins}-${career.losses} · ${career.titles} title${career.titles === 1 ? '' : 's'} · ${career.points_for.toFixed(0)} PF`
-            : null}
-        </p>
+      <section className="vault-section vault-manager-header">
+        <div>
+          <p className="vault-muted">
+            <Link href={vaultPath(slug, '/managers')}>Managers</Link>
+          </p>
+          <h1 className="vault-display">{manager.display_name}</h1>
+          <p className="vault-muted">
+            {manager.first_season}–{manager.last_season}
+            {career
+              ? ` · ${career.wins}-${career.losses} · ${career.titles} title${
+                  career.titles === 1 ? '' : 's'
+                } · ${career.points_for.toFixed(0)} PF`
+              : null}
+          </p>
+        </div>
+        {titleCount > 0 ? (
+          <div
+            className="vault-manager-title-badge"
+            aria-label={`${titleCount} championship titles`}
+          >
+            <TrophyCup className="vault-illust vault-manager-title-cup" />
+            <span className="vault-num">{titleCount}</span>
+          </div>
+        ) : null}
       </section>
       <section className="vault-section">
         <h2>Season-by-season</h2>
@@ -57,10 +72,18 @@ export default async function ManagerDetailPage({ params }: Props) {
           </thead>
           <tbody>
             {[...seasons].reverse().map(({ season, team, champion }) => (
-              <tr key={season}>
+              <tr
+                key={season}
+                className={champion ? 'vault-manager-season-champion' : undefined}
+              >
                 <td className="vault-num">
                   <Link href={vaultPath(slug, `/seasons/${season}`)}>{season}</Link>
-                  {champion ? ' ★' : ''}
+                  {champion ? (
+                    <span className="vault-champion-season-badge">
+                      <span className="vault-css-star" aria-hidden="true" />
+                      Champion
+                    </span>
+                  ) : null}
                 </td>
                 <td>{team?.team_name ?? '—'}</td>
                 <td className="vault-num">

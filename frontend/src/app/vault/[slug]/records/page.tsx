@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { Medal } from '../../../../components/vault/illustrations';
 import {
   RECORD_LABELS,
   fetchVaultSnapshot,
@@ -31,7 +32,7 @@ export default async function RecordsPage({ params }: Props) {
   );
 
   const renderRows = (rows: typeof snap.records) =>
-    rows.map((r) => {
+    rows.map((r, index) => {
       const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
       const detailParts = [
@@ -39,7 +40,10 @@ export default async function RecordsPage({ params }: Props) {
         r.context?.week != null ? `Wk ${r.context.week}` : null,
       ].filter(Boolean);
       return (
-        <tr key={`${r.record_key}-${r.manager_id}-${r.season}-${r.value}`}>
+        <tr
+          key={`${r.record_key}-${r.manager_id}-${r.season}-${r.value}`}
+          className={index === 0 ? 'vault-record-highlight' : undefined}
+        >
           <th scope="row">{label}</th>
           <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
           <td className="vault-muted">
@@ -63,7 +67,10 @@ export default async function RecordsPage({ params }: Props) {
       </section>
       {career.length > 0 ? (
         <section className="vault-section">
-          <h2>Career</h2>
+          <div className="vault-record-section-heading">
+            <Medal className="vault-illust vault-record-heading-medal" rank={1} />
+            <h2>Career</h2>
+          </div>
           <table className="vault-table">
             <tbody>{renderRows(career)}</tbody>
           </table>

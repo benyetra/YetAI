@@ -364,6 +364,35 @@
   width: 42%;
 }
 
+.vault-record-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 30%, transparent);
+}
+
+.vault-record-section-heading h2 {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.vault-record-heading-medal {
+  flex: 0 0 2.4rem;
+  max-width: 2.4rem;
+}
+
+.vault-record-highlight > * {
+  background: color-mix(in srgb, var(--vault-gold) 7%, transparent);
+}
+
+.vault-record-highlight > :first-child {
+  padding-left: 0.65rem;
+  border-left: 3px solid var(--vault-gold);
+}
+
 .vault-num {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-vault-sans), sans-serif;
@@ -581,6 +610,85 @@
   font-size: 1.2rem;
 }
 
+.vault-title-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--vault-ink);
+}
+
+.vault-title-count-medal {
+  flex: 0 0 1.35rem;
+  max-width: 1.35rem;
+}
+
+.vault-manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vault-manager-header h1 {
+  margin: 0;
+}
+
+.vault-manager-title-badge {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-width: 4.75rem;
+  padding: 0.45rem 0.65rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--vault-gold) 45%, transparent);
+  border-top: 3px solid var(--vault-gold);
+  background: color-mix(in srgb, var(--vault-gold) 12%, transparent);
+}
+
+.vault-manager-title-cup {
+  max-width: 3.6rem;
+  filter: drop-shadow(0 0.5rem 0.8rem rgba(12, 18, 16, 0.14));
+}
+
+.vault-manager-title-badge .vault-num {
+  color: var(--vault-ink);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.vault-manager-season-champion > * {
+  background: color-mix(in srgb, var(--vault-gold) 8%, transparent);
+}
+
+.vault-champion-season-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-left: 0.45rem;
+  color: var(--vault-gold);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vault-css-star {
+  width: 0.72rem;
+  height: 0.72rem;
+  background: var(--vault-gold);
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 56%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 56%,
+    2% 35%,
+    39% 35%
+  );
+}
+
 .vault-season-chronicle {
   position: relative;
   display: grid;
@@ -751,6 +859,19 @@
   text-transform: uppercase;
   color: var(--vault-muted);
   margin: 0 0 0.4rem;
+}
+
+.vault-week-heading.is-playoff {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding-left: 0.55rem;
+  color: var(--vault-ink);
+  border-left: 3px solid var(--vault-gold);
+}
+
+.vault-week-heading.is-playoff span {
+  color: var(--vault-gold);
 }
 
 @keyframes vault-rise {
