@@ -1173,6 +1173,60 @@
   color: var(--vault-accent);
 }
 
+.vault-h2h-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.65rem;
+  margin: 0 0 1rem;
+  padding: 0.85rem 0.95rem;
+  list-style: none;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.2)),
+    color-mix(in srgb, var(--vault-paper) 88%, white);
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 14%, transparent);
+  border-top: 3px solid var(--vault-gold);
+}
+
+.vault-h2h-key-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vault-h2h-key-num,
+.vault-h2h-col-num,
+.vault-h2h-row-num {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  min-width: 1.45rem;
+  height: 1.45rem;
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  background: color-mix(in srgb, var(--vault-field) 88%, #0c1210);
+  color: var(--vault-paper);
+  font-family: var(--font-vault-sans), ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.72rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.vault-h2h-key-item a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.vault-h2h-key-item a:hover,
+.vault-h2h-key-item a:focus-visible {
+  color: var(--vault-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
 .vault-matrix {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -1188,35 +1242,84 @@
 
 .vault-matrix table {
   border-collapse: collapse;
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   min-width: 100%;
 }
 
 .vault-matrix th,
 .vault-matrix td {
-  padding: 0.35rem;
+  padding: 0.4rem 0.35rem;
   border: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
   text-align: center;
   white-space: nowrap;
 }
 
+.vault-matrix thead th {
+  vertical-align: bottom;
+  background: color-mix(in srgb, var(--vault-paper) 92%, white);
+}
+
 .vault-matrix th:first-child,
-.vault-matrix td:first-child {
+.vault-matrix td:first-child,
+.vault-matrix tbody th[scope='row'] {
   text-align: left;
   position: sticky;
   left: 0;
+  z-index: 1;
   background: var(--vault-paper);
   font-weight: 600;
+  min-width: 9.5rem;
+  max-width: 12rem;
+}
+
+.vault-matrix thead th:first-child {
+  z-index: 2;
+  background: color-mix(in srgb, var(--vault-paper) 92%, white);
+}
+
+.vault-matrix-corner-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vault-muted);
+}
+
+.vault-h2h-col-head {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-decoration: none;
+}
+
+.vault-h2h-col-head:hover .vault-h2h-col-num,
+.vault-h2h-col-head:focus-visible .vault-h2h-col-num {
+  background: var(--vault-accent);
+}
+
+.vault-h2h-row-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.vault-h2h-row-label a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vault-matrix th a,
-.vault-matrix td:first-child a {
+.vault-matrix td:first-child a,
+.vault-matrix tbody th[scope='row'] a {
   color: inherit;
   text-decoration: none;
 }
 
 .vault-matrix th a:hover,
-.vault-matrix td:first-child a:hover {
+.vault-matrix td:first-child a:hover,
+.vault-matrix tbody th[scope='row'] a:hover {
   color: var(--vault-accent);
   text-decoration: underline;
 }

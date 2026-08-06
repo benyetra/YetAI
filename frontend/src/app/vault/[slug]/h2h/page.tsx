@@ -6,7 +6,6 @@ import {
   COLUMN_HELP,
   PAGE_HELP,
   fetchVaultSnapshot,
-  h2hShortName,
   vaultNameFitClass,
   vaultPath,
 } from '../../../../lib/vault';
@@ -42,7 +41,7 @@ export default async function H2HPage({ params }: Props) {
       <VaultPageHeader
         kicker="Rivalries"
         title="Head-to-Head"
-        blurb="All-time matrix. Rows vs columns — scroll sideways on smaller screens."
+        blurb="All-time matrix. Columns use numbers keyed to the roster list below — scroll sideways on smaller screens."
         help={COLUMN_HELP.h2h_matrix}
         illustration={<RivalryMark className="vault-illust" />}
       />
@@ -50,6 +49,24 @@ export default async function H2HPage({ params }: Props) {
         <p className="vault-muted" style={{ marginTop: 0 }}>
           {PAGE_HELP.h2h}
         </p>
+
+        <ol className="vault-h2h-key" aria-label="Manager column key">
+          {managers.map((m, index) => (
+            <li key={m.id} className="vault-h2h-key-item">
+              <span className="vault-h2h-key-num" aria-hidden="true">
+                {index + 1}
+              </span>
+              <Link
+                href={vaultPath(slug, `/managers/${m.slug}`)}
+                className={vaultNameFitClass(m.display_name)}
+                title={m.display_name}
+              >
+                {m.display_name}
+              </Link>
+            </li>
+          ))}
+        </ol>
+
         <ul className="vault-legend" aria-label="Matrix legend">
           <li>
             <span className="vault-legend-swatch is-win" aria-hidden="true" />
@@ -59,38 +76,48 @@ export default async function H2HPage({ params }: Props) {
             <span className="vault-legend-swatch is-self" aria-hidden="true" />
             Same manager (diagonal)
           </li>
+          <li>Column numbers match the roster key above</li>
         </ul>
+
         <div className="vault-matrix">
           <table>
             <thead>
               <tr>
-                <th />
-                {managers.map((m) => (
-                  <th key={m.id}>
+                <th scope="col" className="vault-matrix-corner">
+                  <span className="vault-matrix-corner-label">Manager</span>
+                </th>
+                {managers.map((m, index) => (
+                  <th key={m.id} scope="col">
                     <Link
                       href={vaultPath(slug, `/managers/${m.slug}`)}
-                      aria-label={m.display_name}
+                      className="vault-h2h-col-head"
+                      aria-label={`Column ${index + 1}: ${m.display_name}`}
                       title={m.display_name}
                     >
-                      {h2hShortName(m.display_name)}
+                      <span className="vault-h2h-col-num">{index + 1}</span>
                     </Link>
                   </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {managers.map((row) => (
+              {managers.map((row, rowIndex) => (
                 <tr key={row.id}>
-                  <td>
-                    <Link
-                      href={vaultPath(slug, `/managers/${row.slug}`)}
-                      className={vaultNameFitClass(row.display_name)}
-                      title={row.display_name}
-                    >
-                      {row.display_name}
-                    </Link>
-                  </td>
-                  {managers.map((col) => {
+                  <th scope="row">
+                    <span className="vault-h2h-row-label">
+                      <span className="vault-h2h-row-num" aria-hidden="true">
+                        {rowIndex + 1}
+                      </span>
+                      <Link
+                        href={vaultPath(slug, `/managers/${row.slug}`)}
+                        className={vaultNameFitClass(row.display_name)}
+                        title={row.display_name}
+                      >
+                        {row.display_name}
+                      </Link>
+                    </span>
+                  </th>
+                  {managers.map((col, colIndex) => {
                     const result = cell(row.id, col.id);
                     const aria =
                       row.id === col.id
@@ -100,6 +127,11 @@ export default async function H2HPage({ params }: Props) {
                       <td
                         key={col.id}
                         aria-label={aria}
+                        title={
+                          row.id === col.id
+                            ? undefined
+                            : `vs ${col.display_name} (#${colIndex + 1})`
+                        }
                         className={[
                           'vault-num',
                           result.isSelf ? 'vault-matrix-self' : '',
