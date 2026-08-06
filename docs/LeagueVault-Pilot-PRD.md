@@ -4,59 +4,61 @@
 
 | | |
 |---|---|
-| **Status** | Phase 3 in progress — public API + `/vault/[slug]` pages + OG + middleware on this branch |
+| **Status** | Phase 4 ready — instrumented; ship via checklist in `LeagueVault-Pilot-Log.md` |
 | **Author** | Bennett |
 | **Date** | 2026-08-06 |
-| **Supersedes for now** | `LeagueVault-PRD.md` (commercial product — parked, not cancelled) |
-| **Scope** | Bennett's Sleeper league + ESPN league `838295` |
+| **Supersedes for now** | `LeagueVault-PRD.md` (commercial — parked) |
+| **Scope** | Sleeper `mikes-hard` + ESPN `league-838295` |
 | **Target** | Live before Week 1 of the 2026 NFL season |
-
-## Pilot leagues
-
-| League | Platform | Slug (provisional) | Seasons |
-|--------|----------|--------------------|---------|
-| Mike's Hard Fantasy Football | Sleeper | `mikes-hard` | 2021–2026 (12 teams) |
-| ESPN `838295` | ESPN | `league-838295` | 2017–2026 (12→10 teams) |
 
 ## Phases
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| **P0** | API spike + fixtures | ✅ |
-| **P1** | `lv_*` schema, ingest, normalizer, sync CLI | ✅ |
-| **P2** | Identity overrides, all-play/luck, record book, snapshot JSON | ✅ |
-| **P3** | Wildcard DNS, middleware, `/vault/[slug]` pages, OG images, mobile, public API | ✅ code on branch — DNS/Vercel wildcard still manual |
-| **P4** | Ship links to group chats; go/no-go | Planned |
+| **P0** | API spike | ✅ |
+| **P1** | Schema + ingest | ✅ |
+| **P2** | Identity, all-play/luck, records, snapshot | ✅ |
+| **P3** | Public API, middleware, pages, OG | ✅ |
+| **P4** | Analytics beacons, verify script, observation log | ✅ code — passive watch after ship |
 
-## P3 deliverables (this branch)
+## P4 instrumentation
 
 | Piece | Location |
 |--------|----------|
-| Public API | `GET /api/vault/{slug}`, `GET /api/vault/{slug}/meta` — no auth, Cache-Control, PII guard |
-| CORS | `allow_origin_regex` for `https://*.yetai.app` |
-| Middleware | Subdomain → `/vault/{slug}` rewrite; reserved hosts skipped; matcher allows `robots.txt` |
-| Pages | Home, trophies, records, managers (+ detail), seasons (+ year), drafts, transactions, H2H |
-| OG image | `vault/[slug]/opengraph-image.tsx` via `next/og` |
-| Design | Editorial media-guide shell (Newsreader + Source Sans 3), mobile-first |
+| Page-view beacon | `POST /api/vault/{slug}/events` + `VaultAnalyticsBeacon` |
+| Aggregate stats | `GET /api/vault/{slug}/stats?days=14` |
+| Events table | `lv_vault_events` |
+| Readiness check | `scripts/league_vault/prod_verify_pilot.py` |
+| Human log / go-no-go | `docs/LeagueVault-Pilot-Log.md` |
 
-### Still manual ops
+### How to measure without asking
 
-1. Add wildcard `*.yetai.app` CNAME → Vercel; confirm `api.yetai.app` still points at Railway.
-2. Add wildcard domain on the Vercel project.
-3. Ensure prod `lv_sites.is_public=true` after re-sync (normalizer now defaults public).
-4. Run `compute_pilot.py` so records/all-play exist before sharing.
+1. Ship links with no “product test” framing.
+2. After 7 days: `curl -s https://api.yetai.app/api/vault/mikes-hard/stats \| jq`
+3. Compare `total_events`, `unique_paths`, and `by_path` against §9 thresholds.
+4. Fill `LeagueVault-Pilot-Log.md` and write the go/no-go.
 
-## Non-goals (binding)
+## Decision thresholds (unchanged)
 
-No Stripe, no self-serve onboarding, no commissioner admin UI, no themes, no auth on vault pages, no weekly automated sync.
+**Go:** unprompted engagement; ≥70% managers visit in 7d; median depth ≥4 paths; return visit week 2; ⭐ outward share / “do my other league?”; unprompted willingness to pay.
 
-## Ops
+**No-go / reshape:** polite silence; one-and-done; identity correction ≫ 30 min/league.
+
+## Ops (ship order)
 
 ```bash
 cd backend
+# DATABASE_URL + .env.leaguevault.local
+alembic upgrade head
 PYTHONPATH=. python3 scripts/league_vault/sync_pilot.py
 PYTHONPATH=. python3 scripts/league_vault/compute_pilot.py \
   --overrides scripts/league_vault/seed_overrides.json
-
-# local preview (no DNS): http://localhost:3000/vault/mikes-hard
+PYTHONPATH=. python3 scripts/league_vault/prod_verify_pilot.py \
+  --api-url https://api.yetai.app
 ```
+
+Then DNS wildcard → Vercel, iMessage OG smoke, post to both chats, log in `LeagueVault-Pilot-Log.md`.
+
+## Non-goals (binding)
+
+No Stripe, onboarding, commissioner UI, themes, or weekly auto-sync in the pilot.

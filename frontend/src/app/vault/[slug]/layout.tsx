@@ -3,6 +3,7 @@ import { Newsreader, Source_Sans_3 } from 'next/font/google';
 import { notFound } from 'next/navigation';
 import './../vault.css';
 import { VaultFooter, VaultNav } from '../../../components/vault/VaultChrome';
+import { VaultAnalyticsBeacon } from '../../../components/vault/VaultAnalyticsBeacon';
 import { fetchVaultSnapshot } from '../../../lib/vault';
 
 const display = Newsreader({
@@ -56,6 +57,7 @@ export default async function VaultLayout({ children, params }: Props) {
 
   return (
     <div className={`vault-root ${display.variable} ${sans.variable} ${sans.className}`}>
+      <VaultAnalyticsBeacon slug={slug} />
       <VaultNav slug={slug} displayName={snap.display_name} />
       <main className="vault-main">{children}</main>
       <VaultFooter slug={slug} />
