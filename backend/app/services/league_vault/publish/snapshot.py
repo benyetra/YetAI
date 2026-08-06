@@ -106,66 +106,67 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             else None
         )
 
-        # load_only: prod may lack newer columns (e.g. status) until schema_align
-        drafts = (
-            db.query(LvDraft)
-            .options(
-                load_only(
-                    LvDraft.id,
-                    LvDraft.season_id,
-                    LvDraft.platform_draft_id,
-                    LvDraft.draft_type,
-                    LvDraft.settings,
-                )
-            )
-            .filter_by(season_id=season.id)
-            .all()
-        )
+        # Prod early-P1 draft tables are a subset of the current model. Only
+        # select columns confirmed present; never let drafts 500 the vault.
         draft_payload = []
-        for d in drafts:
-            picks = (
-                db.query(LvDraftPick)
+        try:
+            drafts = (
+                db.query(LvDraft)
                 .options(
                     load_only(
-                        LvDraftPick.id,
-                        LvDraftPick.draft_id,
-                        LvDraftPick.round,
-                        LvDraftPick.pick_no,
-                        LvDraftPick.draft_slot,
-                        LvDraftPick.platform_roster_id,
-                        LvDraftPick.player_id,
-                        LvDraftPick.team_id,
+                        LvDraft.id,
+                        LvDraft.season_id,
+                        LvDraft.draft_type,
+                        LvDraft.settings,
                     )
                 )
-                .filter_by(draft_id=d.id)
-                .order_by(LvDraftPick.round, LvDraftPick.pick_no)
+                .filter_by(season_id=season.id)
                 .all()
             )
-            rounds = max((p.round for p in picks), default=None)
-            settings = d.settings if isinstance(d.settings, dict) else {}
-            if rounds is None and isinstance(settings.get("rounds"), int):
-                rounds = settings.get("rounds")
-            draft_payload.append(
-                {
-                    "draft_type": d.draft_type,
-                    "status": None,
-                    "rounds": rounds,
-                    "picks": [
-                        {
-                            "round": p.round,
-                            "pick_no": p.pick_no,
-                            "draft_slot": p.draft_slot,
-                            "team_id": p.team_id,
-                            "player_id": p.player_id,
-                            "platform_roster_id": p.platform_roster_id,
-                            # Optional columns may be missing until schema_align
-                            "is_keeper": None,
-                            "auction_amount": None,
-                        }
-                        for p in picks
-                    ],
-                }
-            )
+            for d in drafts:
+                picks = (
+                    db.query(LvDraftPick)
+                    .options(
+                        load_only(
+                            LvDraftPick.id,
+                            LvDraftPick.draft_id,
+                            LvDraftPick.round,
+                            LvDraftPick.pick_no,
+                            LvDraftPick.draft_slot,
+                        )
+                    )
+                    .filter_by(draft_id=d.id)
+                    .order_by(LvDraftPick.round, LvDraftPick.pick_no)
+                    .all()
+                )
+                rounds = max((p.round for p in picks), default=None)
+                settings = d.settings if isinstance(d.settings, dict) else {}
+                if rounds is None and isinstance(settings.get("rounds"), int):
+                    rounds = settings.get("rounds")
+                draft_payload.append(
+                    {
+                        "draft_type": d.draft_type,
+                        "status": None,
+                        "rounds": rounds,
+                        "picks": [
+                            {
+                                "round": p.round,
+                                "pick_no": p.pick_no,
+                                "draft_slot": p.draft_slot,
+                                "team_id": None,
+                                "player_id": None,
+                                "platform_roster_id": None,
+                                "is_keeper": None,
+                                "auction_amount": None,
+                            }
+                            for p in picks
+                        ],
+                    }
+                )
+        except Exception:
+            # Schema drift vs prod — ship seasons/records; drafts optional for pilot
+            db.rollback()
+            draft_payload = []
 
         tx_count = db.query(LvTransaction).filter_by(season_id=season.id).count()
 
