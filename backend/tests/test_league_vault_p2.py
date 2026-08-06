@@ -214,6 +214,11 @@ def test_records_include_blowout_and_champ(session):
     assert "titles" in keys
     blowout = next(r for r in records if r.record_key == "biggest_blowout")
     assert blowout.value == 60.0
+    assert blowout.context.get("manager_a_id") == seeded["alice"].id
+    assert blowout.context.get("manager_b_id") == seeded["bob"].id
+    closest = next(r for r in records if r.record_key == "closest_game")
+    assert closest.context.get("manager_a_id") is not None
+    assert closest.context.get("manager_b_id") is not None
     titles = next(r for r in records if r.record_key == "titles")
     assert titles.manager_id == seeded["alice"].id
     assert titles.value == 1.0
@@ -235,6 +240,9 @@ def test_snapshot_contains_pages_payload(session):
     assert "records" in snap
     assert "managers" in snap
     assert "h2h" in snap
+    closest = next(r for r in snap["records"] if r["record_key"] == "closest_game")
+    assert closest["context"]["manager_a_id"] == seeded["alice"].id
+    assert closest["context"]["manager_b_id"] == seeded["bob"].id
     # No PII
     blob = str(snap)
     assert "alice" not in blob or "platform_user_id" not in blob

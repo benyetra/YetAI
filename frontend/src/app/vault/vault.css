@@ -463,6 +463,16 @@
   max-width: 2.4rem;
 }
 
+.vault-record-matchup {
+  display: inline;
+}
+
+.vault-record-vs {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: color-mix(in srgb, var(--vault-muted) 80%, var(--vault-ink));
+}
+
 .vault-record-highlight > * {
   background: color-mix(in srgb, var(--vault-gold) 7%, transparent);
 }

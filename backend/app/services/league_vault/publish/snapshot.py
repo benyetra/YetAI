@@ -108,6 +108,68 @@ def _transaction_public(
     return dict(summary), recent
 
 
+def _scores_close(a: Any, b: Any, *, tol: float = 1e-6) -> bool:
+    if a is None or b is None:
+        return False
+    try:
+        return abs(float(a) - float(b)) <= tol
+    except (TypeError, ValueError):
+        return False
+
+
+def enrich_record_matchup_context(
+    context: dict[str, Any],
+    season_payloads: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Fill manager/team ids on matchup records from season scoreboard data.
+
+    Older compute rows only stored season/week/scores; resolve the pairing so
+    the Record Book can render \"A vs B\" without a full recompute.
+    """
+    ctx = dict(context or {})
+    if ctx.get("manager_a_id") is not None and ctx.get("manager_b_id") is not None:
+        return ctx
+    season = ctx.get("season")
+    week = ctx.get("week")
+    if season is None or week is None:
+        return ctx
+    season_row = next((s for s in season_payloads if s.get("season") == season), None)
+    if not season_row:
+        return ctx
+    team_by_id = {t["id"]: t for t in season_row.get("teams") or []}
+    score_a = ctx.get("team_a_score")
+    score_b = ctx.get("team_b_score")
+    team_id = ctx.get("team_id")
+    match = None
+    for m in season_row.get("matchups") or []:
+        if m.get("week") != week:
+            continue
+        if score_a is not None and score_b is not None:
+            if _scores_close(m.get("team_a_score"), score_a) and _scores_close(
+                m.get("team_b_score"), score_b
+            ):
+                match = m
+                break
+        if team_id is not None and (
+            m.get("team_a_id") == team_id or m.get("team_b_id") == team_id
+        ):
+            match = m
+            break
+    if not match:
+        return ctx
+    ta = team_by_id.get(match.get("team_a_id"))
+    tb = team_by_id.get(match.get("team_b_id"))
+    ctx["team_a_id"] = match.get("team_a_id")
+    ctx["team_b_id"] = match.get("team_b_id")
+    if ta:
+        ctx["manager_a_id"] = ta.get("manager_id")
+        ctx["team_a_name"] = ta.get("team_name")
+    if tb:
+        ctx["manager_b_id"] = tb.get("manager_id")
+        ctx["team_b_name"] = tb.get("team_name")
+    return ctx
+
+
 def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
     site = db.query(LvSite).filter_by(slug=slug).one()
     lineage_id = site.lineage_id
@@ -325,7 +387,7 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             "manager_id": r.manager_id,
             "team_id": r.team_id,
             "value": r.value,
-            "context": r.context or {},
+            "context": enrich_record_matchup_context(r.context or {}, season_payloads),
         }
         for r in records
     ]
