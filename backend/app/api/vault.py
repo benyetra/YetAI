@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.league_vault_events import LvVaultEvent
 from app.models.league_vault_models import LvSite
+from app.services.league_vault.compute.ensure import ensure_pilot_computed
 from app.services.league_vault.publish.snapshot import build_site_snapshot
 
 router = APIRouter(prefix="/api/vault", tags=["league-vault"])
@@ -50,6 +51,8 @@ class VaultEventIn(BaseModel):
 @router.get("/{slug}")
 def get_vault_site(slug: str, response: Response, db: Session = Depends(get_db)):
     site = _public_site(db, slug)
+    # First hit after ingest fills lv_records / all-play without a shell on prod.
+    ensure_pilot_computed(db, site)
     try:
         snapshot = build_site_snapshot(db, slug=site.slug)
     except Exception as exc:  # pragma: no cover

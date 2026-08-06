@@ -138,3 +138,74 @@ def test_vault_event_and_stats(client_and_db):
     body = stats.json()
     assert body["total_events"] >= 1
     assert "/vault/mikes-hard/records" in body["by_path"]
+
+
+def test_vault_snapshot_auto_computes_records(client_and_db):
+    """Empty record book is filled on first public snapshot GET."""
+    from app.models import league_vault_models as m
+
+    client, db, mgr = client_and_db
+    season = db.query(m.LvSeason).filter_by(season=2024).one()
+    mgr_b = m.LvManager(
+        lineage_id=mgr.lineage_id,
+        platform_user_id="other-secret",
+        canonical_name="Bob",
+        display_name="Bob",
+        first_season=2024,
+        last_season=2024,
+        is_active=True,
+    )
+    db.add(mgr_b)
+    db.flush()
+    team_a = m.LvTeam(
+        season_id=season.id,
+        manager_id=mgr.id,
+        platform_roster_id="1",
+        team_name="A",
+        wins=1,
+        losses=0,
+        ties=0,
+        points_for=120.0,
+        points_against=90.0,
+        final_rank=1,
+    )
+    team_b = m.LvTeam(
+        season_id=season.id,
+        manager_id=mgr_b.id,
+        platform_roster_id="2",
+        team_name="B",
+        wins=0,
+        losses=1,
+        ties=0,
+        points_for=90.0,
+        points_against=120.0,
+        final_rank=2,
+    )
+    db.add_all([team_a, team_b])
+    db.flush()
+    db.add(
+        m.LvMatchup(
+            season_id=season.id,
+            week=1,
+            is_playoff=False,
+            team_a_id=team_a.id,
+            team_b_id=team_b.id,
+            team_a_score=120.0,
+            team_b_score=90.0,
+            winner_team_id=team_a.id,
+            margin=30.0,
+        )
+    )
+    season.champion_manager_id = mgr.id
+    season.runner_up_manager_id = mgr_b.id
+    db.commit()
+
+    assert db.query(m.LvRecord).count() == 0
+    r = client.get("/api/vault/mikes-hard")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body.get("records") or []) > 0
+    assert db.query(m.LvRecord).count() > 0
+    r2 = client.get("/api/vault/mikes-hard")
+    assert r2.status_code == 200
+    assert len(r2.json().get("records") or []) > 0
