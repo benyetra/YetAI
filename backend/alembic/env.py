@@ -31,6 +31,8 @@ from app.models import bet_models  # noqa: F401
 from app.models import sports_models  # noqa: F401
 from app.models import simple_unified_bet_model  # noqa: F401
 from app.models import fantasy_models  # noqa: F401
+from app.models import league_vault_models  # noqa: F401
+from app.models import league_vault_events  # noqa: F401
 from app.models import player_mapping  # noqa: F401
 from app.models import predictions_models  # noqa: F401
 from app.services.ballpark_pal import models as bpp_models  # noqa: F401

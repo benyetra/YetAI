@@ -1,0 +1,164 @@
+/**
+ * League Vault client — fetches public snapshot from the API.
+ */
+
+import { cache } from 'react';
+
+export type VaultManager = {
+  id: number;
+  slug: string;
+  display_name: string;
+  canonical_name: string;
+  aliases: string[];
+  first_season: number | null;
+  last_season: number | null;
+  is_active: boolean;
+};
+
+export type VaultTeam = {
+  id: number;
+  manager_id: number;
+  team_name: string | null;
+  avatar_url: string | null;
+  wins: number | null;
+  losses: number | null;
+  ties: number | null;
+  points_for: number | null;
+  points_against: number | null;
+  final_rank: number | null;
+  playoff_seed: number | null;
+  all_play_wins: number | null;
+  all_play_losses: number | null;
+  luck_differential: number | null;
+  moves: number | null;
+};
+
+export type VaultSeason = {
+  season: number;
+  team_count: number | null;
+  playoff_teams: number | null;
+  regular_season_weeks: number | null;
+  champion: VaultManager | null;
+  runner_up: VaultManager | null;
+  last_place: VaultManager | null;
+  teams: VaultTeam[];
+  matchups: Array<{
+    week: number;
+    is_playoff: boolean;
+    team_a_id: number | null;
+    team_b_id: number | null;
+    score_a: number | null;
+    score_b: number | null;
+    winner_team_id: number | null;
+    margin: number | null;
+  }>;
+  drafts: Array<{
+    draft_type: string | null;
+    rounds: number | null;
+    picks: Array<{
+      round: number;
+      pick_no: number;
+      draft_slot: number | null;
+      team_id: number | null;
+      player_id: string | null;
+      is_keeper: boolean | null;
+      auction_amount: number | null;
+    }>;
+  }>;
+  transaction_count: number;
+};
+
+export type VaultRecord = {
+  record_key: string;
+  scope: string | null;
+  season: number | null;
+  manager_id: number | null;
+  team_id: number | null;
+  value: number;
+  context: Record<string, unknown>;
+};
+
+export type VaultSnapshot = {
+  slug: string;
+  display_name: string;
+  tagline: string | null;
+  first_season: number | null;
+  latest_season: number | null;
+  last_place_label: string;
+  generated_at: string;
+  reigning_champion: (VaultManager & { season: number }) | null;
+  managers: VaultManager[];
+  manager_careers: Record<
+    string,
+    { wins: number; losses: number; ties: number; points_for: number; titles: number }
+  >;
+  seasons: VaultSeason[];
+  records: VaultRecord[];
+  h2h: Record<string, Record<string, { wins: number; losses: number; ties: number }>>;
+  dynasty_timeline: Array<{ season: number; champion: VaultManager | null }>;
+};
+
+function vaultApiBase(): string {
+  if (process.env.NEXT_PUBLIC_API_URL) {
+    return process.env.NEXT_PUBLIC_API_URL.replace(/\/$/, '');
+  }
+  if (process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production') {
+    return 'https://api.yetai.app';
+  }
+  return 'http://localhost:8000';
+}
+
+export const fetchVaultSnapshot = cache(async function fetchVaultSnapshot(
+  slug: string,
+): Promise<VaultSnapshot | null> {
+  const url = `${vaultApiBase()}/api/vault/${encodeURIComponent(slug)}`;
+  const res = await fetch(url, {
+    next: { revalidate: 300 },
+  });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    throw new Error(`Vault fetch failed: ${res.status}`);
+  }
+  return (await res.json()) as VaultSnapshot;
+});
+
+export function vaultPath(slug: string, path = ''): string {
+  const suffix = path.startsWith('/') ? path : path ? `/${path}` : '';
+  return `/vault/${slug}${suffix}`;
+}
+
+export function managerById(
+  snap: VaultSnapshot,
+  id: number | null | undefined,
+): VaultManager | undefined {
+  if (id == null) return undefined;
+  return snap.managers.find((m) => m.id === id);
+}
+
+export function formatRecord(value: number, key: string): string {
+  if (key.includes('ppg') || key.includes('luck')) return value.toFixed(2);
+  if (Number.isInteger(value)) return String(value);
+  return value.toFixed(2);
+}
+
+export const RECORD_LABELS: Record<string, string> = {
+  highest_single_week_score: 'Highest single-week score',
+  lowest_single_week_score: 'Lowest single-week score',
+  biggest_blowout: 'Biggest blowout',
+  closest_game: 'Closest game',
+  most_points_in_loss: 'Most points in a loss',
+  fewest_points_in_win: 'Fewest points in a win',
+  highest_combined_score: 'Highest combined score',
+  highest_scoring_season_pf: 'Highest scoring season (PF)',
+  highest_scoring_season_ppg: 'Highest scoring season (PPG)',
+  best_regular_season_record: 'Best regular-season record',
+  worst_regular_season_record: 'Worst regular-season record',
+  longest_win_streak: 'Longest win streak',
+  longest_losing_streak: 'Longest losing streak',
+  titles: 'Most titles',
+  career_titles: 'Career titles',
+  career_wins: 'Career wins',
+  best_all_play_season: 'Best all-play season',
+  luckiest_season: 'Luckiest season',
+  unluckiest_season: 'Unluckiest season',
+};

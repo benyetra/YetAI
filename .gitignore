@@ -3,6 +3,13 @@
 .env.local
 .env.*.local
 
+# League Vault pilot fixtures (raw API dumps; may include PII)
+backend/scripts/league_vault_fixtures/
+backend/scripts/league_vault_snapshots/
+
+# Brainstorm visual companion sessions
+.superpowers/brainstorm/
+
 # Backend
 __pycache__/
 *.py[cod]

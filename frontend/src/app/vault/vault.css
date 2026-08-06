@@ -1,0 +1,318 @@
+.vault-root {
+  --vault-ink: #12161c;
+  --vault-paper: #e8edf2;
+  --vault-paper-deep: #d5dde6;
+  --vault-rule: #1a2330;
+  --vault-accent: #0f5c4c;
+  --vault-muted: #5a6573;
+  --vault-champ: #0f5c4c;
+  min-height: 100dvh;
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(15, 92, 76, 0.08), transparent 55%),
+    linear-gradient(180deg, #f3f6f9 0%, var(--vault-paper) 40%, #dde5ee 100%);
+  color: var(--vault-ink);
+  font-family: var(--font-vault-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.vault-root h1,
+.vault-root h2,
+.vault-root h3,
+.vault-root .vault-display {
+  font-family: var(--font-vault-display), ui-serif, Georgia, serif;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.vault-header {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(10px);
+  background: rgba(243, 246, 249, 0.92);
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
+}
+
+.vault-header-inner {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 0.85rem 1rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.vault-brand {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.vault-brand-mark {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--vault-accent);
+  font-family: var(--font-vault-sans), sans-serif;
+  font-weight: 600;
+}
+
+.vault-brand-name {
+  font-family: var(--font-vault-display), serif;
+  font-size: clamp(1.35rem, 4vw, 1.85rem);
+  line-height: 1.1;
+}
+
+.vault-nav {
+  display: flex;
+  gap: 0.15rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  padding-bottom: 0.15rem;
+}
+
+.vault-nav::-webkit-scrollbar {
+  display: none;
+}
+
+.vault-nav-link {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--vault-muted);
+  border-bottom: 2px solid transparent;
+}
+
+.vault-nav-link:hover,
+.vault-nav-link:focus-visible {
+  color: var(--vault-ink);
+  border-bottom-color: var(--vault-accent);
+}
+
+.vault-main {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 3rem;
+}
+
+.vault-hero {
+  display: grid;
+  gap: 1.25rem;
+  padding: 0.5rem 0 1.5rem;
+  border-bottom: 2px solid var(--vault-rule);
+  margin-bottom: 1.5rem;
+  animation: vault-rise 0.55s ease-out both;
+}
+
+.vault-hero-kicker {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--vault-muted);
+}
+
+.vault-hero h1 {
+  font-size: clamp(2rem, 8vw, 3.4rem);
+  line-height: 0.98;
+  margin: 0;
+}
+
+.vault-champ {
+  display: grid;
+  gap: 0.35rem;
+  padding: 1rem 0;
+}
+
+.vault-champ-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--vault-accent);
+  font-weight: 700;
+}
+
+.vault-champ-name {
+  font-size: clamp(1.6rem, 5vw, 2.4rem);
+  color: var(--vault-champ);
+}
+
+.vault-dynasty {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(4.5rem, 1fr);
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding: 0.5rem 0 0.25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vault-dynasty-cell {
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 25%, transparent);
+  background: rgba(255, 255, 255, 0.55);
+  padding: 0.45rem 0.35rem;
+  text-align: center;
+  min-height: 4.2rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+  animation: vault-rise 0.5s ease-out both;
+}
+
+.vault-dynasty-cell:nth-child(odd) {
+  animation-delay: 0.04s;
+}
+
+.vault-dynasty-year {
+  font-size: 0.65rem;
+  letter-spacing: 0.08em;
+  color: var(--vault-muted);
+  font-family: var(--font-vault-sans), sans-serif;
+}
+
+.vault-dynasty-name {
+  font-size: 0.72rem;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.vault-section {
+  margin: 1.75rem 0;
+  animation: vault-rise 0.45s ease-out both;
+}
+
+.vault-section h2 {
+  font-size: clamp(1.35rem, 3.5vw, 1.75rem);
+  margin: 0 0 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 30%, transparent);
+}
+
+.vault-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+.vault-table th,
+.vault-table td {
+  padding: 0.55rem 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 12%, transparent);
+  text-align: left;
+  vertical-align: top;
+}
+
+.vault-table th {
+  font-weight: 600;
+  width: 42%;
+}
+
+.vault-num {
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-vault-sans), sans-serif;
+  font-weight: 600;
+}
+
+.vault-muted {
+  color: var(--vault-muted);
+  font-size: 0.85rem;
+}
+
+.vault-grid-links {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.vault-grid-links a {
+  display: block;
+  padding: 0.85rem 0.75rem;
+  text-decoration: none;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: transform 0.2s ease, border-color 0.2s ease;
+}
+
+.vault-grid-links a:hover,
+.vault-grid-links a:focus-visible {
+  transform: translateY(-1px);
+  border-color: var(--vault-accent);
+}
+
+.vault-footer {
+  max-width: 72rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2.5rem;
+  font-size: 0.8rem;
+  color: var(--vault-muted);
+  border-top: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
+}
+
+.vault-footer a {
+  color: var(--vault-accent);
+}
+
+.vault-matrix {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.vault-matrix table {
+  border-collapse: collapse;
+  font-size: 0.72rem;
+  min-width: 100%;
+}
+
+.vault-matrix th,
+.vault-matrix td {
+  padding: 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.vault-matrix th:first-child,
+.vault-matrix td:first-child {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--vault-paper);
+  font-weight: 600;
+}
+
+@keyframes vault-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (min-width: 768px) {
+  .vault-header-inner {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 1rem 1.5rem 0.75rem;
+  }
+
+  .vault-main {
+    padding: 1.75rem 1.5rem 4rem;
+  }
+
+  .vault-grid-links {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
