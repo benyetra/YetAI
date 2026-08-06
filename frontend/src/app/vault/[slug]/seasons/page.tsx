@@ -31,9 +31,9 @@ export default async function SeasonsIndexPage({ params }: Props) {
         <table className="vault-table">
           <thead>
             <tr>
-              <th>Year</th>
+              <th className="vault-col-num">Year</th>
               <th>Champion</th>
-              <th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp
                   help="Number of teams that competed in the season."
                   helpLabel="About teams column"

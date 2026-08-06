@@ -170,7 +170,7 @@ export default async function RecordsPage({ params }: Props) {
               </VaultLabelWithHelp>
             </h2>
           </div>
-          <table className="vault-table">
+          <table className="vault-table vault-table-records">
             <tbody>
               {renderRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
             </tbody>
@@ -194,7 +194,7 @@ export default async function RecordsPage({ params }: Props) {
         {featured.length === 0 ? (
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (
-          <table className="vault-table">
+          <table className="vault-table vault-table-records">
             <tbody>{renderRows(featured, () => true)}</tbody>
           </table>
         )}

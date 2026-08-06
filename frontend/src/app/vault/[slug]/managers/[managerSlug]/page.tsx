@@ -73,28 +73,28 @@ export default async function ManagerDetailPage({ params }: Props) {
           <h2>Season-by-season</h2>
           <p className="vault-muted">Every year this manager fielded a team in the vault.</p>
         </div>
-        <table className="vault-table">
+        <table className="vault-table vault-table-seasons">
           <thead>
             <tr>
               <th>Year</th>
               <th>Team</th>
-              <th>Record</th>
-              <th>
+              <th className="vault-col-num">Record</th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp help={COLUMN_HELP.pf} helpLabel="About points for">
                   PF
                 </VaultLabelWithHelp>
               </th>
-              <th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp help={COLUMN_HELP.all_play} helpLabel="About all-play">
                   All-play
                 </VaultLabelWithHelp>
               </th>
-              <th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp help={COLUMN_HELP.luck} helpLabel="About luck">
                   Luck
                 </VaultLabelWithHelp>
               </th>
-              <th>Rank</th>
+              <th className="vault-col-num">Rank</th>
             </tr>
           </thead>
           <tbody>

@@ -427,20 +427,61 @@
 .vault-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: auto;
   font-size: 0.92rem;
 }
 
 .vault-table th,
 .vault-table td {
-  padding: 0.55rem 0.4rem;
+  padding: 0.55rem 0.55rem;
   border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 12%, transparent);
   text-align: left;
-  vertical-align: top;
+  vertical-align: middle;
+}
+
+.vault-table thead th {
+  font-weight: 700;
+  white-space: nowrap;
+  vertical-align: bottom;
+  padding-top: 0.35rem;
+  padding-bottom: 0.7rem;
+  color: color-mix(in srgb, var(--vault-ink) 78%, var(--vault-muted));
 }
 
 .vault-table th {
   font-weight: 600;
+}
+
+/* Wide label column only for record-book style tables */
+.vault-table-records th[scope='row'],
+.vault-table-records thead th:first-child {
   width: 42%;
+  white-space: normal;
+}
+
+.vault-table td.vault-num,
+.vault-table th.vault-col-num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.vault-table th.vault-col-num .vault-label-with-help {
+  justify-content: flex-end;
+  width: 100%;
+}
+
+/* Year / identity columns stay left even if they use tabular nums */
+.vault-table-seasons tbody td:first-child,
+.vault-table-standings tbody td:nth-child(2),
+.vault-table-standings tbody td:nth-child(3) {
+  text-align: left;
+}
+
+.vault-table-seasons thead th:first-child,
+.vault-table-seasons thead th:nth-child(2),
+.vault-table-standings thead th:nth-child(2),
+.vault-table-standings thead th:nth-child(3) {
+  text-align: left;
 }
 
 .vault-record-section-heading {
@@ -670,6 +711,7 @@
   align-items: center;
   gap: 0.35rem;
   max-width: 100%;
+  white-space: nowrap;
 }
 
 .vault-help {
