@@ -140,7 +140,6 @@ def upgrade() -> None:
         sa.Column("season_id", sa.Integer(), nullable=False),
         sa.Column("platform_draft_id", sa.String(length=64), nullable=True),
         sa.Column("draft_type", sa.String(length=64), nullable=True),
-        sa.Column("status", sa.String(length=64), nullable=True),
         sa.Column("settings", sa.JSON(), nullable=True),
         sa.ForeignKeyConstraint(["season_id"], ["lv_seasons.id"]),
     )
@@ -217,11 +216,8 @@ def upgrade() -> None:
         sa.Column("round", sa.Integer(), nullable=False),
         sa.Column("pick_no", sa.Integer(), nullable=False),
         sa.Column("draft_slot", sa.Integer(), nullable=True),
-        sa.Column("platform_roster_id", sa.String(length=64), nullable=True),
         sa.Column("player_id", sa.String(length=64), nullable=True),
         sa.Column("team_id", sa.Integer(), nullable=True),
-        sa.Column("is_keeper", sa.Boolean(), nullable=True),
-        sa.Column("auction_amount", sa.Float(), nullable=True),
         sa.ForeignKeyConstraint(["draft_id"], ["lv_drafts.id"]),
         sa.ForeignKeyConstraint(["team_id"], ["lv_teams.id"]),
     )
