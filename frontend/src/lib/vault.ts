@@ -72,6 +72,13 @@ export type VaultSeason = {
     }>;
   }>;
   transaction_count: number;
+  transaction_summary?: Record<string, number>;
+  transactions_recent?: Array<{
+    week: number | null;
+    type: string | null;
+    status: string | null;
+    team_names: string[];
+  }>;
 };
 
 export type VaultRecord = {

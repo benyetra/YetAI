@@ -306,6 +306,20 @@
   text-decoration: underline;
 }
 
+.vault-week-block {
+  margin-bottom: 1.25rem;
+}
+
+.vault-week-heading {
+  font-family: var(--font-vault-sans), sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vault-muted);
+  margin: 0 0 0.4rem;
+}
+
 @keyframes vault-rise {
   from {
     opacity: 0;
