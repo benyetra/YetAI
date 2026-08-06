@@ -66,22 +66,18 @@ export default async function TrophiesPage({ params }: Props) {
             <Podium className="vault-illust vault-podium-illust" />
             <div className="vault-podium-slots">
               {podiumSlots.map(({ rank, leader, className }) => (
-                <article
+                <Link
                   key={leader.manager.id}
+                  href={vaultPath(slug, `/managers/${leader.manager.slug}`)}
                   className={`vault-podium-card ${className} vault-rank-${rank}`}
                 >
                   <Medal className="vault-illust vault-podium-medal" rank={rank} />
                   <span className="vault-podium-rank">No. {rank}</span>
-                  <Link
-                    href={vaultPath(slug, `/managers/${leader.manager.slug}`)}
-                    className="vault-podium-name"
-                  >
-                    {leader.manager.display_name}
-                  </Link>
+                  <span className="vault-podium-name">{leader.manager.display_name}</span>
                   <span className="vault-podium-count">
                     <strong className="vault-num">{leader.n}</strong> {titleCopy(leader.n)}
                   </span>
-                </article>
+                </Link>
               ))}
             </div>
           </div>
@@ -121,10 +117,14 @@ export default async function TrophiesPage({ params }: Props) {
                       </>
                     )}
                   </div>
-                  <div className="vault-season-result is-runner-up">
-                    {s.runner_up && isComplete ? (
+                  <div
+                    className={`vault-season-result is-runner-up${s.runner_up && !isComplete ? ' is-no-medal' : ''}`}
+                  >
+                    {s.runner_up ? (
                       <>
-                        <Medal className="vault-illust vault-season-medal" rank={2} />
+                        {isComplete ? (
+                          <Medal className="vault-illust vault-season-medal" rank={2} />
+                        ) : null}
                         <span className="vault-season-label">Runner-up</span>
                         <Link href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}>
                           {s.runner_up.display_name}
@@ -139,7 +139,7 @@ export default async function TrophiesPage({ params }: Props) {
                   </div>
                   <div className="vault-season-result is-last-place">
                     <span className="vault-season-label">{snap.last_place_label}</span>
-                    {s.last_place && isComplete ? (
+                    {s.last_place ? (
                       <Link href={vaultPath(slug, `/managers/${s.last_place.slug}`)}>
                         {s.last_place.display_name}
                       </Link>

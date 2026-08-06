@@ -512,12 +512,22 @@
   align-content: start;
   min-height: 9.5rem;
   padding: 0.85rem;
+  text-decoration: none;
+  color: inherit;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(238, 243, 239, 0.6)),
     var(--vault-paper);
   border: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
   border-top: 4px solid color-mix(in srgb, var(--vault-rule) 28%, transparent);
   box-shadow: 0 1rem 2rem rgba(12, 18, 16, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.vault-podium-card:hover,
+.vault-podium-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--vault-accent) 42%, transparent);
+  box-shadow: 0 1.1rem 2.2rem rgba(12, 18, 16, 0.12);
 }
 
 .vault-podium-card.is-first {
@@ -556,11 +566,9 @@
   text-decoration: none;
 }
 
-.vault-podium-name:hover,
-.vault-podium-name:focus-visible {
+.vault-podium-card:hover .vault-podium-name,
+.vault-podium-card:focus-visible .vault-podium-name {
   color: var(--vault-accent);
-  text-decoration: underline;
-  text-underline-offset: 0.14em;
 }
 
 .vault-podium-count {
@@ -657,6 +665,11 @@
 
 .vault-season-result.is-runner-up {
   color: color-mix(in srgb, #5f6064 82%, var(--vault-ink));
+}
+
+.vault-season-result.is-runner-up.is-no-medal {
+  grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+  padding-left: calc(1.8rem + 0.45rem);
 }
 
 .vault-season-result.is-last-place {
