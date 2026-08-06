@@ -101,7 +101,9 @@ export default async function TrophiesPage({ params }: Props) {
                   <span className="vault-num">{s.season}</span>
                 </div>
                 <div className="vault-season-results">
-                  <div className="vault-season-result is-champion">
+                  <div
+                    className={`vault-season-result is-champion${s.champion ? '' : ' is-no-medal'}`}
+                  >
                     {s.champion ? (
                       <>
                         <Medal className="vault-illust vault-season-medal" rank={1} />

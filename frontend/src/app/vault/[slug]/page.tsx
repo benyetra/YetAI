@@ -1,7 +1,12 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DynastyBar } from '../../../components/vault/VaultChrome';
-import { Medal, StadiumMark, TrophyCup } from '../../../components/vault/illustrations';
+import {
+  Medal,
+  Podium,
+  StadiumMark,
+  TrophyCup,
+} from '../../../components/vault/illustrations';
 import { fetchVaultSnapshot, latestDraftSeason, vaultPath } from '../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
@@ -10,7 +15,7 @@ type ExploreTile = {
   href: string;
   label: string;
   tease: string;
-  illustration?: 'medal' | 'stadium';
+  icon: 'trophy' | 'medal-gold' | 'medal-silver' | 'stadium' | 'podium';
 };
 
 export default async function VaultHomePage({ params }: Props) {
@@ -25,35 +30,37 @@ export default async function VaultHomePage({ params }: Props) {
       href: vaultPath(slug, '/trophies'),
       label: 'Trophies',
       tease: 'Champions, runners-up, and every finished season.',
-      illustration: 'medal',
+      icon: 'trophy',
     },
     {
       href: vaultPath(slug, '/records'),
       label: 'Records',
       tease: 'Career marks and single-season league highs.',
-      illustration: 'stadium',
+      icon: 'medal-gold',
     },
     {
       href: vaultPath(slug, '/managers'),
       label: 'Managers',
       tease: 'Profiles for every owner in the vault.',
-      illustration: 'medal',
+      icon: 'medal-silver',
     },
     {
       href: vaultPath(slug, '/seasons'),
       label: 'Seasons',
       tease: 'Standings, matchups, and playoff paths by year.',
-      illustration: 'stadium',
+      icon: 'stadium',
     },
     {
       href: vaultPath(slug, '/h2h'),
       label: 'H2H',
       tease: 'Rivalry records across the whole league.',
+      icon: 'podium',
     },
     {
       href: vaultPath(slug, '/transactions'),
       label: 'Moves',
       tease: 'Waivers, trades, and roster churn by season.',
+      icon: 'stadium',
     },
     ...(draftSeason
       ? [
@@ -61,7 +68,7 @@ export default async function VaultHomePage({ params }: Props) {
             href: vaultPath(slug, `/drafts/${draftSeason}`),
             label: 'Draft',
             tease: `Latest board from the ${draftSeason} draft.`,
-            illustration: 'stadium' as const,
+            icon: 'medal-gold' as const,
           },
         ]
       : []),
@@ -108,16 +115,29 @@ export default async function VaultHomePage({ params }: Props) {
       <section className="vault-section vault-explore">
         <h2>Explore</h2>
         <div className="vault-explore-grid">
-          {exploreTiles.map((tile, index) => (
+          {exploreTiles.map((tile) => (
             <Link key={tile.href} href={tile.href} className="vault-explore-tile">
-              <span className="vault-explore-label">{tile.label}</span>
-              <span className="vault-explore-tease">{tile.tease}</span>
-              {tile.illustration === 'medal' ? (
-                <Medal className="vault-illust vault-explore-illust" rank={index === 0 ? 1 : 2} />
-              ) : null}
-              {tile.illustration === 'stadium' ? (
-                <StadiumMark className="vault-illust vault-explore-illust" />
-              ) : null}
+              <span className="vault-explore-copy">
+                <span className="vault-explore-label">{tile.label}</span>
+                <span className="vault-explore-tease">{tile.tease}</span>
+              </span>
+              <span className="vault-explore-icon" aria-hidden="true">
+                {tile.icon === 'trophy' ? (
+                  <TrophyCup className="vault-illust vault-explore-illust" />
+                ) : null}
+                {tile.icon === 'medal-gold' ? (
+                  <Medal className="vault-illust vault-explore-illust" rank={1} />
+                ) : null}
+                {tile.icon === 'medal-silver' ? (
+                  <Medal className="vault-illust vault-explore-illust" rank={2} />
+                ) : null}
+                {tile.icon === 'stadium' ? (
+                  <StadiumMark className="vault-illust vault-explore-illust" />
+                ) : null}
+                {tile.icon === 'podium' ? (
+                  <Podium className="vault-illust vault-explore-illust" />
+                ) : null}
+              </span>
             </Link>
           ))}
         </div>
