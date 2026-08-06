@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import type { ReactNode } from 'react';
 import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, RecordBook } from '../../../../components/vault/illustrations';
@@ -10,12 +11,79 @@ import {
   fetchVaultSnapshot,
   formatRecord,
   managerById,
+  resolveRecordMatchup,
   vaultNameFitClass,
   vaultPath,
   type VaultRecord,
+  type VaultSnapshot,
 } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
+
+function RecordAttribution({
+  slug,
+  snap,
+  record,
+}: {
+  slug: string;
+  snap: VaultSnapshot;
+  record: VaultRecord;
+}) {
+  const mgr = managerById(snap, record.manager_id);
+  const parties = resolveRecordMatchup(snap, record);
+  const contextSeason =
+    typeof record.context?.season === 'number' || typeof record.context?.season === 'string'
+      ? String(record.context.season)
+      : null;
+  const detailParts = [
+    record.season != null ? String(record.season) : contextSeason,
+    record.context?.week != null ? `Wk ${record.context.week}` : null,
+  ].filter(Boolean);
+
+  let partiesNode: ReactNode;
+  if (parties) {
+    partiesNode = (
+      <span className="vault-record-matchup">
+        <Link
+          href={vaultPath(slug, `/managers/${parties.managerA.slug}`)}
+          className={vaultNameFitClass(parties.managerA.display_name)}
+          title={parties.managerA.display_name}
+        >
+          {parties.managerA.display_name}
+        </Link>
+        <span className="vault-record-vs"> vs </span>
+        <Link
+          href={vaultPath(slug, `/managers/${parties.managerB.slug}`)}
+          className={vaultNameFitClass(parties.managerB.display_name)}
+          title={parties.managerB.display_name}
+        >
+          {parties.managerB.display_name}
+        </Link>
+      </span>
+    );
+  } else if (mgr) {
+    partiesNode = (
+      <Link
+        href={vaultPath(slug, `/managers/${mgr.slug}`)}
+        className={vaultNameFitClass(mgr.display_name)}
+        title={mgr.display_name}
+      >
+        {mgr.display_name}
+      </Link>
+    );
+  } else if (detailParts.length) {
+    partiesNode = <span>Matchup</span>;
+  } else {
+    partiesNode = '—';
+  }
+
+  return (
+    <td className="vault-muted">
+      {partiesNode}
+      {detailParts.length ? ` · ${detailParts.join(' · ')}` : null}
+    </td>
+  );
+}
 
 export default async function RecordsPage({ params }: Props) {
   const { slug } = await params;
@@ -62,17 +130,8 @@ export default async function RecordsPage({ params }: Props) {
     isHighlighted: (r: VaultRecord) => boolean,
   ) =>
     rows.map((r) => {
-      const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
       const help = RECORD_HELP[r.record_key];
-      const contextSeason =
-        typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
-          ? String(r.context.season)
-          : null;
-      const detailParts = [
-        r.season != null ? String(r.season) : contextSeason,
-        r.context?.week != null ? `Wk ${r.context.week}` : null,
-      ].filter(Boolean);
       return (
         <tr
           key={recordRowKey(r)}
@@ -84,22 +143,7 @@ export default async function RecordsPage({ params }: Props) {
             </VaultLabelWithHelp>
           </th>
           <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-          <td className="vault-muted">
-            {mgr ? (
-              <Link
-                href={vaultPath(slug, `/managers/${mgr.slug}`)}
-                className={vaultNameFitClass(mgr.display_name)}
-                title={mgr.display_name}
-              >
-                {mgr.display_name}
-              </Link>
-            ) : detailParts.length ? (
-              <span>Matchup</span>
-            ) : (
-              '—'
-            )}
-            {detailParts.length ? ` · ${detailParts.join(' · ')}` : null}
-          </td>
+          <RecordAttribution slug={slug} snap={snap} record={r} />
         </tr>
       );
     });
@@ -144,7 +188,7 @@ export default async function RecordsPage({ params }: Props) {
             </VaultLabelWithHelp>
           </h2>
           <p className="vault-muted">
-            Use the ? beside a mark for a plain-English definition — including all-play and luck.
+            Matchup marks show both managers. Use the ? beside a mark for definitions.
           </p>
         </div>
         {featured.length === 0 ? (
