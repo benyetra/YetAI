@@ -1,25 +1,20 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { vaultSlugFromHost } from './lib/vault-host';
 
-// Hosts that should be permanently redirected to yetai.app/predictions.
-// Added in Development-5ly as part of the YetiBets domain retirement —
-// once yetimonstah.com is pointed at this Vercel project (as a secondary
-// custom domain), any incoming request with that host gets a 301 to the
-// new predictions surface.
 const RETIRED_HOSTS = new Set([
   'yetimonstah.com',
   'www.yetimonstah.com',
 ]);
 
+export { vaultSlugFromHost, VAULT_RESERVED_SUBDOMAINS } from './lib/vault-host';
+
 export function middleware(req: NextRequest) {
   const host = req.headers.get('host')?.toLowerCase() ?? '';
-  if (RETIRED_HOSTS.has(host)) {
+  if (RETIRED_HOSTS.has(host.split(':')[0])) {
     const url = req.nextUrl.clone();
     url.protocol = 'https:';
     url.host = 'yetai.app';
-    // Preserve the path so legacy deep links (e.g. /mlb, /nfl/kickers) still
-    // resolve to something useful on the new site rather than dumping users
-    // on the home page. Map root → /predictions; anything else → /predictions/<path>.
     if (url.pathname === '/' || url.pathname === '') {
       url.pathname = '/predictions';
     } else {
@@ -27,11 +22,26 @@ export function middleware(req: NextRequest) {
     }
     return NextResponse.redirect(url, 301);
   }
+
+  const slug = vaultSlugFromHost(host);
+  if (slug) {
+    const url = req.nextUrl.clone();
+    if (
+      url.pathname === `/vault/${slug}` ||
+      url.pathname.startsWith(`/vault/${slug}/`)
+    ) {
+      return NextResponse.next();
+    }
+    const suffix = url.pathname === '/' ? '' : url.pathname;
+    url.pathname = `/vault/${slug}${suffix}`;
+    return NextResponse.rewrite(url);
+  }
+
   return NextResponse.next();
 }
 
 export const config = {
-  // Run on all paths except Next internals and static assets so the redirect
-  // catches every legacy link.
-  matcher: ['/((?!_next/|favicon.ico|.*\\..*).*)'],
+  matcher: [
+    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:png|jpg|jpeg|gif|svg|webp|ico|css|js|woff2?)$).*)',
+  ],
 };

@@ -90,7 +90,7 @@ def get_or_create_lineage_and_site(
             display_name=display_name,
             tagline=tagline,
             last_place_label=last_place_label,
-            is_public=False,
+            is_public=True,
         )
         db.add(site)
         db.flush()

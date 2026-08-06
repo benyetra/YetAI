@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| **Status** | Phase 2 complete on this branch — identity, all-play/luck, records, snapshot |
+| **Status** | Phase 3 in progress — public API + `/vault/[slug]` pages + OG + middleware on this branch |
 | **Author** | Bennett |
 | **Date** | 2026-08-06 |
 | **Supersedes for now** | `LeagueVault-PRD.md` (commercial product — parked, not cancelled) |
@@ -22,44 +22,41 @@
 
 | Phase | Scope | Status |
 |-------|--------|--------|
-| **P0** | API spike + fixtures | ✅ Green (Sleeper chain + ESPN history with `view=mMatchup`) |
-| **P1** | `lv_*` schema, ingest, normalizer, sync CLI | ✅ Models + migration + tests on this branch; prior prod ingest on local |
-| **P2** | Identity overrides, all-play/luck, record book, snapshot JSON | ✅ This branch |
-| **P3** | Wildcard DNS, `/vault/[slug]` pages, OG images, mobile | Next |
+| **P0** | API spike + fixtures | ✅ |
+| **P1** | `lv_*` schema, ingest, normalizer, sync CLI | ✅ |
+| **P2** | Identity overrides, all-play/luck, record book, snapshot JSON | ✅ |
+| **P3** | Wildcard DNS, middleware, `/vault/[slug]` pages, OG images, mobile, public API | ✅ code on branch — DNS/Vercel wildcard still manual |
 | **P4** | Ship links to group chats; go/no-go | Planned |
+
+## P3 deliverables (this branch)
+
+| Piece | Location |
+|--------|----------|
+| Public API | `GET /api/vault/{slug}`, `GET /api/vault/{slug}/meta` — no auth, Cache-Control, PII guard |
+| CORS | `allow_origin_regex` for `https://*.yetai.app` |
+| Middleware | Subdomain → `/vault/{slug}` rewrite; reserved hosts skipped; matcher allows `robots.txt` |
+| Pages | Home, trophies, records, managers (+ detail), seasons (+ year), drafts, transactions, H2H |
+| OG image | `vault/[slug]/opengraph-image.tsx` via `next/og` |
+| Design | Editorial media-guide shell (Newsreader + Source Sans 3), mobile-first |
+
+### Still manual ops
+
+1. Add wildcard `*.yetai.app` CNAME → Vercel; confirm `api.yetai.app` still points at Railway.
+2. Add wildcard domain on the Vercel project.
+3. Ensure prod `lv_sites.is_public=true` after re-sync (normalizer now defaults public).
+4. Run `compute_pilot.py` so records/all-play exist before sharing.
 
 ## Non-goals (binding)
 
-No Stripe, no self-serve onboarding, no commissioner admin UI, no themes, no auth on vault pages, no weekly automated sync (manual CLI is fine).
-
-## Schema (`lv_*`)
-
-`lv_league_lineage`, `lv_sites`, `lv_managers`, `lv_seasons`, `lv_teams`, `lv_matchups`, `lv_transactions`, `lv_drafts`, `lv_draft_picks`, `lv_records` (lineage-scoped: `record_key`, `scope`, `context`, `computed_at`), `lv_sync_jobs`.
-
-Deferred: `lv_roster_spots`, custom trophies, billing columns.
-
-## P2 deliverables
-
-| Module | Path |
-|--------|------|
-| Identity overrides | `app/services/league_vault/identity/resolver.py` + `scripts/league_vault/seed_overrides.json` |
-| All-play / luck | `app/services/league_vault/compute/standings.py` |
-| Record book | `app/services/league_vault/compute/records.py` |
-| Snapshot | `app/services/league_vault/publish/snapshot.py` |
-| CLI | `scripts/league_vault/compute_pilot.py` |
-
-Record keys include: highest/lowest single-week score, biggest blowout, closest game, most points in a loss, fewest in a win, highest combined, highest season PF/PPG, best/worst regular-season record, win/loss streaks, titles, career wins, all-play / luck leaders.
-
-Snapshots omit `platform_user_id` / SWID (public boundary).
+No Stripe, no self-serve onboarding, no commissioner admin UI, no themes, no auth on vault pages, no weekly automated sync.
 
 ## Ops
 
 ```bash
 cd backend
-# after DATABASE_URL + .env.leaguevault.local
 PYTHONPATH=. python3 scripts/league_vault/sync_pilot.py
 PYTHONPATH=. python3 scripts/league_vault/compute_pilot.py \
   --overrides scripts/league_vault/seed_overrides.json
-```
 
-Snapshots write to `scripts/league_vault_snapshots/` (gitignored).
+# local preview (no DNS): http://localhost:3000/vault/mikes-hard
+```
