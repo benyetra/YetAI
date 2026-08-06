@@ -1,15 +1,17 @@
 .vault-root {
-  --vault-ink: #12161c;
-  --vault-paper: #e8edf2;
-  --vault-paper-deep: #d5dde6;
-  --vault-rule: #1a2330;
-  --vault-accent: #0f5c4c;
-  --vault-muted: #5a6573;
-  --vault-champ: #0f5c4c;
+  --vault-ink: #0c1210;
+  --vault-paper: #eef3ef;
+  --vault-field: #0f3d2e;
+  --vault-gold: #c6a035;
+  --vault-accent: #147a5f;
+  --vault-muted: #5c6b63;
+  --vault-paper-deep: #dce5df;
+  --vault-rule: #0f3d2e;
+  --vault-champ: var(--vault-gold);
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(15, 92, 76, 0.08), transparent 55%),
-    linear-gradient(180deg, #f3f6f9 0%, var(--vault-paper) 40%, #dde5ee 100%);
+    radial-gradient(1200px 600px at 10% -10%, rgba(15, 61, 46, 0.1), transparent 55%),
+    linear-gradient(180deg, #f5f8f6 0%, var(--vault-paper) 40%, #dfe8e2 100%);
   color: var(--vault-ink);
   font-family: var(--font-vault-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -28,7 +30,7 @@
   top: 0;
   z-index: 20;
   backdrop-filter: blur(10px);
-  background: rgba(243, 246, 249, 0.92);
+  background: rgba(238, 243, 239, 0.92);
   border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
 }
 
@@ -329,6 +331,55 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes vault-shimmer {
+  0%,
+  100% {
+    background-position: 0% center;
+  }
+  50% {
+    background-position: 100% center;
+  }
+}
+
+/* ── Championship utility classes ── */
+
+.vault-gold-text {
+  color: var(--vault-gold);
+}
+
+.vault-rank-1 {
+  background: color-mix(in srgb, var(--vault-gold) 14%, transparent);
+}
+
+.vault-rank-2 {
+  background: color-mix(in srgb, #a8a9ad 12%, transparent);
+}
+
+.vault-rank-3 {
+  background: color-mix(in srgb, #cd7f32 12%, transparent);
+}
+
+.vault-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--vault-gold) 0%,
+    #e8d48b 45%,
+    var(--vault-gold) 90%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: vault-shimmer 3.5s ease-in-out infinite;
+}
+
+.vault-illust {
+  display: block;
+  width: 100%;
+  max-width: 8rem;
+  height: auto;
 }
 
 @media (min-width: 768px) {
