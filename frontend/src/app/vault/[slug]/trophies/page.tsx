@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, managerById } from '../../../../lib/vault';
+import { fetchVaultSnapshot, managerById, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -23,7 +24,9 @@ export default async function TrophiesPage({ params }: Props) {
     <>
       <section className="vault-section">
         <h1 className="vault-display">Trophy Room</h1>
-        <p className="vault-muted">Champions, runners-up, and the {snap.last_place_label}.</p>
+        <p className="vault-muted">
+          Champions, runners-up, and the {snap.last_place_label}.
+        </p>
       </section>
 
       <section className="vault-section">
@@ -41,9 +44,33 @@ export default async function TrophiesPage({ params }: Props) {
             {[...snap.seasons].reverse().map((s) => (
               <tr key={s.season}>
                 <td className="vault-num">{s.season}</td>
-                <td>{s.champion?.display_name ?? '—'}</td>
-                <td>{s.runner_up?.display_name ?? '—'}</td>
-                <td>{s.last_place?.display_name ?? '—'}</td>
+                <td>
+                  {s.champion ? (
+                    <Link href={vaultPath(slug, `/managers/${s.champion.slug}`)}>
+                      {s.champion.display_name}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  {s.runner_up ? (
+                    <Link href={vaultPath(slug, `/managers/${s.runner_up.slug}`)}>
+                      {s.runner_up.display_name}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </td>
+                <td>
+                  {s.last_place ? (
+                    <Link href={vaultPath(slug, `/managers/${s.last_place.slug}`)}>
+                      {s.last_place.display_name}
+                    </Link>
+                  ) : (
+                    '—'
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -52,17 +79,25 @@ export default async function TrophiesPage({ params }: Props) {
 
       <section className="vault-section">
         <h2>Titles</h2>
-        <table className="vault-table">
-          <tbody>
-            {leaderboard.map(({ manager, n }) => (
-              <tr key={manager!.id}>
-                <th scope="row">{manager!.display_name}</th>
-                <td className="vault-num">{n}</td>
-                <td className="vault-muted">{n === 1 ? 'title' : 'titles'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        {leaderboard.length === 0 ? (
+          <p className="vault-muted">No champions recorded yet.</p>
+        ) : (
+          <table className="vault-table">
+            <tbody>
+              {leaderboard.map(({ manager, n }) => (
+                <tr key={manager!.id}>
+                  <th scope="row">
+                    <Link href={vaultPath(slug, `/managers/${manager!.slug}`)}>
+                      {manager!.display_name}
+                    </Link>
+                  </th>
+                  <td className="vault-num">{n}</td>
+                  <td className="vault-muted">{n === 1 ? 'title' : 'titles'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </section>
     </>
   );

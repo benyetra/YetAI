@@ -1,7 +1,10 @@
 /**
  * Vault chrome — editorial media-guide shell (mobile-first).
  */
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { vaultPath, type VaultSnapshot } from '../../lib/vault';
 
 const NAV = [
@@ -14,6 +17,15 @@ const NAV = [
   { href: '/transactions', label: 'Moves' },
 ] as const;
 
+function navActive(pathname: string, slug: string, href: string): boolean {
+  const base = vaultPath(slug);
+  const target = vaultPath(slug, href);
+  if (!href) {
+    return pathname === base || pathname === `${base}/`;
+  }
+  return pathname === target || pathname.startsWith(`${target}/`);
+}
+
 export function VaultNav({
   slug,
   displayName,
@@ -21,6 +33,7 @@ export function VaultNav({
   slug: string;
   displayName: string;
 }) {
+  const pathname = usePathname() || '';
   return (
     <header className="vault-header">
       <div className="vault-header-inner">
@@ -29,15 +42,19 @@ export function VaultNav({
           <span className="vault-brand-name">{displayName}</span>
         </Link>
         <nav className="vault-nav" aria-label="League sections">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={vaultPath(slug, item.href)}
-              className="vault-nav-link"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) => {
+            const active = navActive(pathname, slug, item.href);
+            return (
+              <Link
+                key={item.href}
+                href={vaultPath(slug, item.href)}
+                className={`vault-nav-link${active ? ' is-active' : ''}`}
+                aria-current={active ? 'page' : undefined}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
       </div>
     </header>
@@ -61,8 +78,10 @@ export function VaultFooter({ slug }: { slug: string }) {
 
 export function DynastyBar({
   timeline,
+  slug,
 }: {
   timeline: VaultSnapshot['dynasty_timeline'];
+  slug?: string;
 }) {
   return (
     <div className="vault-dynasty" role="list" aria-label="Championship timeline">
@@ -70,30 +89,16 @@ export function DynastyBar({
         <div key={cell.season} className="vault-dynasty-cell" role="listitem">
           <span className="vault-dynasty-year">{cell.season}</span>
           <span className="vault-dynasty-name">
-            {cell.champion?.display_name ?? '—'}
+            {cell.champion && slug ? (
+              <Link href={vaultPath(slug, `/managers/${cell.champion.slug}`)}>
+                {cell.champion.display_name}
+              </Link>
+            ) : (
+              cell.champion?.display_name ?? '—'
+            )}
           </span>
         </div>
       ))}
     </div>
-  );
-}
-
-export function RecordTable({
-  rows,
-}: {
-  rows: Array<{ label: string; value: string; detail?: string }>;
-}) {
-  return (
-    <table className="vault-table">
-      <tbody>
-        {rows.map((r) => (
-          <tr key={r.label}>
-            <th scope="row">{r.label}</th>
-            <td className="vault-num">{r.value}</td>
-            <td className="vault-muted">{r.detail}</td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
   );
 }

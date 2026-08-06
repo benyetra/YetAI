@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.league_vault_events import LvVaultEvent
 from app.models.league_vault_models import LvSite
+from app.services.league_vault.branding import sanitize_site_display_name
 from app.services.league_vault.compute.ensure import ensure_pilot_computed
 from app.services.league_vault.publish.snapshot import build_site_snapshot
 from app.services.league_vault import redeploy_token as _redeploy_token  # noqa: F401
@@ -69,10 +70,11 @@ def get_vault_site(slug: str, response: Response, db: Session = Depends(get_db))
 @router.get("/{slug}/meta")
 def get_vault_meta(slug: str, response: Response, db: Session = Depends(get_db)):
     site = _public_site(db, slug)
+    ensure_pilot_computed(db, site)  # heals branding even when records exist
     response.headers["Cache-Control"] = _CACHE
     return {
         "slug": site.slug,
-        "display_name": site.display_name,
+        "display_name": sanitize_site_display_name(site.display_name, slug=site.slug),
         "tagline": site.tagline,
         "first_season": site.first_season,
         "latest_season": site.latest_season,

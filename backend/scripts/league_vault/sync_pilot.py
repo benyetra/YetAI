@@ -31,6 +31,13 @@ def _load_env() -> None:
     load_dotenv(BACKEND / ".env")
 
 
+def _strip_quotes(value: str) -> str:
+    s = (value or "").strip()
+    if len(s) >= 2 and s[0] == s[-1] and s[0] in ("'", '"'):
+        return s[1:-1].strip()
+    return s
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="League Vault pilot sync")
     parser.add_argument("--sleeper-only", action="store_true")
@@ -56,9 +63,11 @@ def main() -> int:
                 stats = ingest_sleeper_league(
                     db,
                     league_id=league_id,
-                    slug=os.environ.get("SLEEPER_SITE_SLUG", "mikes-hard-league"),
-                    display_name=os.environ.get(
-                        "SLEEPER_SITE_NAME", "Mike's Hard League"
+                    slug=os.environ.get("SLEEPER_SITE_SLUG", "mikes-hard"),
+                    display_name=_strip_quotes(
+                        os.environ.get(
+                            "SLEEPER_SITE_NAME", "Mike's Hard Fantasy Football"
+                        )
                     ),
                 )
                 print("Sleeper ingest:", stats)
@@ -70,8 +79,10 @@ def main() -> int:
             stats = ingest_espn_league(
                 db,
                 league_id=league_id,
-                slug=os.environ.get("ESPN_SITE_SLUG", "espn-838295"),
-                display_name=os.environ.get("ESPN_SITE_NAME", "ESPN League 838295"),
+                slug=os.environ.get("ESPN_SITE_SLUG", "league-838295"),
+                display_name=_strip_quotes(
+                    os.environ.get("ESPN_SITE_NAME", "ESPN League 838295")
+                ),
                 start_season=start,
                 end_season=end,
             )

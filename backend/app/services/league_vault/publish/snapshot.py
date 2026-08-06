@@ -6,9 +6,11 @@ from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, load_only
 
 from app.models.league_vault_models import (
+    LvDraft,
+    LvDraftPick,
     LvManager,
     LvMatchup,
     LvRecord,
@@ -17,13 +19,19 @@ from app.models.league_vault_models import (
     LvTeam,
     LvTransaction,
 )
+from app.services.league_vault.branding import (
+    public_manager_display_name,
+    sanitize_site_display_name,
+)
 
 
 def _manager_public(m: LvManager) -> dict[str, Any]:
     return {
         "id": m.id,
         "slug": _slugify(m.display_name or m.canonical_name or str(m.id)),
-        "display_name": m.display_name,
+        "display_name": public_manager_display_name(
+            m.display_name, canonical=m.canonical_name
+        ),
         "canonical_name": m.canonical_name,
         "aliases": m.aliases or [],
         "first_season": m.first_season,
@@ -104,10 +112,63 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             else None
         )
 
-        # Drafts are optional for the pilot ship. Prod early-P1 schema drifts
-        # from the ORM; skipping avoids snapshot 500s. Re-enable after
-        # ``lv_schema_align`` has run on production.
         draft_payload: list[dict[str, Any]] = []
+        try:
+            drafts = (
+                db.query(LvDraft)
+                .options(
+                    load_only(
+                        LvDraft.id,
+                        LvDraft.season_id,
+                        LvDraft.draft_type,
+                    )
+                )
+                .filter_by(season_id=season.id)
+                .all()
+            )
+            for d in drafts:
+                picks = (
+                    db.query(LvDraftPick)
+                    .options(
+                        load_only(
+                            LvDraftPick.id,
+                            LvDraftPick.draft_id,
+                            LvDraftPick.round,
+                            LvDraftPick.pick_no,
+                            LvDraftPick.draft_slot,
+                        )
+                    )
+                    .filter_by(draft_id=d.id)
+                    .order_by(LvDraftPick.round, LvDraftPick.pick_no)
+                    .all()
+                )
+                rounds = max((p.round for p in picks), default=None)
+                draft_payload.append(
+                    {
+                        "draft_type": d.draft_type,
+                        "status": None,
+                        "rounds": rounds,
+                        "picks": [
+                            {
+                                "round": p.round,
+                                "pick_no": p.pick_no,
+                                "draft_slot": p.draft_slot,
+                                "team_id": None,
+                                "player_id": None,
+                                "platform_roster_id": None,
+                                "is_keeper": None,
+                                "auction_amount": None,
+                            }
+                            for p in picks
+                        ],
+                    }
+                )
+        except Exception:
+            try:
+                db.rollback()
+            except Exception:
+                pass
+            draft_payload = []
 
         tx_count = db.query(LvTransaction).filter_by(season_id=season.id).count()
 
@@ -174,7 +235,6 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
         for r in records
     ]
 
-    # Career lines for managers page
     career: dict[int, dict[str, Any]] = {}
     for t in all_teams:
         c = career.setdefault(
@@ -190,17 +250,17 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             career[s.champion_manager_id]["titles"] += 1
 
     reigning = None
-    if seasons:
-        latest = seasons[-1]
-        if latest.champion_manager_id and latest.champion_manager_id in managers:
+    for season in reversed(seasons):
+        if season.champion_manager_id and season.champion_manager_id in managers:
             reigning = {
-                **_manager_public(managers[latest.champion_manager_id]),
-                "season": latest.season,
+                **_manager_public(managers[season.champion_manager_id]),
+                "season": season.season,
             }
+            break
 
     return {
         "slug": site.slug,
-        "display_name": site.display_name,
+        "display_name": sanitize_site_display_name(site.display_name, slug=site.slug),
         "tagline": site.tagline,
         "first_season": site.first_season,
         "latest_season": site.latest_season,

@@ -1,9 +1,11 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   RECORD_LABELS,
   fetchVaultSnapshot,
   formatRecord,
   managerById,
+  vaultPath,
 } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
@@ -14,7 +16,10 @@ export default async function RecordsPage({ params }: Props) {
   if (!snap) notFound();
 
   const featured = snap.records.filter(
-    (r) => r.scope !== 'career' && r.record_key !== 'career_titles' && r.record_key !== 'career_wins',
+    (r) =>
+      r.scope !== 'career' &&
+      r.record_key !== 'career_titles' &&
+      r.record_key !== 'career_wins',
   );
 
   return (
@@ -24,26 +29,37 @@ export default async function RecordsPage({ params }: Props) {
         <p className="vault-muted">All-time marks — including all-play and luck.</p>
       </section>
       <section className="vault-section">
-        <table className="vault-table">
-          <tbody>
-            {featured.map((r) => {
-              const mgr = managerById(snap, r.manager_id);
-              const label = RECORD_LABELS[r.record_key] ?? r.record_key;
-              const detailParts = [
-                mgr?.display_name,
-                r.season ? String(r.season) : null,
-                r.context?.week != null ? `Wk ${r.context.week}` : null,
-              ].filter(Boolean);
-              return (
-                <tr key={`${r.record_key}-${r.manager_id}-${r.season}`}>
-                  <th scope="row">{label}</th>
-                  <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-                  <td className="vault-muted">{detailParts.join(' · ')}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+        {featured.length === 0 ? (
+          <p className="vault-muted">Records will appear after the first compute pass.</p>
+        ) : (
+          <table className="vault-table">
+            <tbody>
+              {featured.map((r) => {
+                const mgr = managerById(snap, r.manager_id);
+                const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+                const detailParts = [
+                  r.season ? String(r.season) : null,
+                  r.context?.week != null ? `Wk ${r.context.week}` : null,
+                ].filter(Boolean);
+                return (
+                  <tr key={`${r.record_key}-${r.manager_id}-${r.season}-${r.value}`}>
+                    <th scope="row">{label}</th>
+                    <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
+                    <td className="vault-muted">
+                      {mgr ? (
+                        <Link href={vaultPath(slug, `/managers/${mgr.slug}`)}>
+                          {mgr.display_name}
+                        </Link>
+                      ) : null}
+                      {mgr && detailParts.length ? ' · ' : null}
+                      {detailParts.join(' · ')}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </section>
     </>
   );

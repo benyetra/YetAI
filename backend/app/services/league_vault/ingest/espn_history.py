@@ -81,6 +81,18 @@ def discover_espn_seasons(
     return found
 
 
+def espn_league_name_from_payload(payload: dict[str, Any]) -> str | None:
+    """ESPN mSettings puts the public league name at ``settings.name``."""
+    settings = payload.get("settings") if isinstance(payload, dict) else None
+    if not isinstance(settings, dict):
+        return None
+    name = settings.get("name")
+    if isinstance(name, str):
+        cleaned = name.strip().strip('"').strip("'")
+        return cleaned or None
+    return None
+
+
 def ingest_espn_league(
     db: Session,
     *,
@@ -118,8 +130,17 @@ def ingest_espn_league(
             )
             job.lineage_id = lineage.id
 
+            resolved_name: str | None = None
             for season in sorted(seasons):
                 payload = fetch_espn_season(client, league_id, season)
+                if not resolved_name:
+                    resolved_name = espn_league_name_from_payload(payload)
+                    if resolved_name and resolved_name != site.display_name:
+                        site.display_name = resolved_name
+                        site.updated_at = datetime.utcnow()
+                        db.add(site)
+                        db.flush()
+                        stats["display_name"] = resolved_name
                 result = normalize_espn_season(
                     db,
                     lineage=lineage,
