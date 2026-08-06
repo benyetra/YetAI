@@ -67,7 +67,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Admin List Owens Bets Api Admin Owens Bets Get"
                 }
               }
@@ -155,7 +154,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Admin Create Owens Bet Api Admin Owens Bets Post"
                 }
               }
@@ -256,7 +254,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Admin Update Owens Bet Api Admin Owens Bets  Bet Id  Patch"
                 }
               }
@@ -3064,7 +3061,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "User Data"
               }
@@ -3207,7 +3203,6 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "additionalProperties": true,
                 "title": "Update Data"
               }
             }
@@ -3833,7 +3828,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -4050,7 +4044,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -4137,7 +4130,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -4354,7 +4346,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -4590,7 +4581,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Config"
               }
@@ -5057,7 +5047,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -5725,7 +5714,11 @@
             "default": true
           },
           "bet_category": {
-            "$ref": "#/components/schemas/YetAIBetType",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/YetAIBetType"
+              }
+            ],
             "default": "straight"
           }
         },
@@ -5813,7 +5806,6 @@
             "title": "Platform"
           },
           "credentials": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Credentials"
           }
@@ -5880,12 +5872,10 @@
             "title": "Vs Opponent Avg"
           },
           "historical_vs_opponent": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Historical Vs Opponent"
           },
           "recent_form": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Recent Form"
           }
@@ -6372,7 +6362,6 @@
             "title": "Scoring Type"
           },
           "factors": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Factors"
           }
@@ -6405,18 +6394,15 @@
             "title": "Games Analyzed"
           },
           "trends": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Trends"
           },
           "consistency": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Consistency"
           },
           "recent_games": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -6448,12 +6434,10 @@
             "title": "Team2 Id"
           },
           "team1_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team1 Gives"
           },
           "team2_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team2 Gives"
           },
@@ -6499,12 +6483,10 @@
             "title": "Team2 Id"
           },
           "team1_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team1 Gives"
           },
           "team2_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team2 Gives"
           }
@@ -6628,7 +6610,6 @@
             "title": "Message"
           },
           "data": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Data"
           }
@@ -6657,20 +6638,17 @@
             "title": "Success"
           },
           "user_team": {
-            "additionalProperties": true,
             "type": "object",
             "title": "User Team"
           },
           "league_analytics": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
             "title": "League Analytics"
           },
           "league_insights": {
-            "additionalProperties": true,
             "type": "object",
             "title": "League Insights"
           },
@@ -6698,7 +6676,6 @@
         "properties": {
           "players": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -6792,7 +6769,6 @@
           "notification_settings": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -6916,6 +6892,38 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VaultEventIn": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Path"
+          },
+          "event_type": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Event Type",
+            "default": "page_view"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "VaultEventIn"
       },
       "WaiverAnalytics": {
         "properties": {
