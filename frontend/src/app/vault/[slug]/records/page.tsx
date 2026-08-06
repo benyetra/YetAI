@@ -7,6 +7,7 @@ import {
   formatRecord,
   managerById,
   vaultPath,
+  type VaultRecord,
 } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
@@ -31,8 +32,31 @@ export default async function RecordsPage({ params }: Props) {
       r.record_key !== 'titles',
   );
 
-  const renderRows = (rows: typeof snap.records) =>
-    rows.map((r, index) => {
+  const recordRowKey = (r: VaultRecord) =>
+    `${r.record_key}-${r.manager_id}-${r.season}-${r.value}`;
+
+  const careerHighlightKeys = (() => {
+    const maxByKey = new Map<string, number>();
+    for (const r of career) {
+      const prev = maxByKey.get(r.record_key);
+      if (prev === undefined || r.value > prev) {
+        maxByKey.set(r.record_key, r.value);
+      }
+    }
+    const keys = new Set<string>();
+    for (const r of career) {
+      if (r.value === maxByKey.get(r.record_key)) {
+        keys.add(recordRowKey(r));
+      }
+    }
+    return keys;
+  })();
+
+  const renderRows = (
+    rows: VaultRecord[],
+    isHighlighted: (r: VaultRecord) => boolean,
+  ) =>
+    rows.map((r) => {
       const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
       const detailParts = [
@@ -41,8 +65,8 @@ export default async function RecordsPage({ params }: Props) {
       ].filter(Boolean);
       return (
         <tr
-          key={`${r.record_key}-${r.manager_id}-${r.season}-${r.value}`}
-          className={index === 0 ? 'vault-record-highlight' : undefined}
+          key={recordRowKey(r)}
+          className={isHighlighted(r) ? 'vault-record-highlight' : undefined}
         >
           <th scope="row">{label}</th>
           <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
@@ -72,7 +96,9 @@ export default async function RecordsPage({ params }: Props) {
             <h2>Career</h2>
           </div>
           <table className="vault-table">
-            <tbody>{renderRows(career)}</tbody>
+            <tbody>
+              {renderRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
+            </tbody>
           </table>
         </section>
       ) : null}
@@ -82,7 +108,7 @@ export default async function RecordsPage({ params }: Props) {
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (
           <table className="vault-table">
-            <tbody>{renderRows(featured)}</tbody>
+            <tbody>{renderRows(featured, () => true)}</tbody>
           </table>
         )}
       </section>
