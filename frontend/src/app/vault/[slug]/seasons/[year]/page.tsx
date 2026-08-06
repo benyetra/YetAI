@@ -86,7 +86,7 @@ export default async function SeasonDetailPage({ params }: Props) {
                   {teamName(m.team_a_id)} vs {teamName(m.team_b_id)}
                 </td>
                 <td className="vault-num">
-                  {m.score_a?.toFixed(1)} – {m.score_b?.toFixed(1)}
+                  {m.team_a_score?.toFixed(1)} – {m.team_b_score?.toFixed(1)}
                 </td>
               </tr>
             ))}

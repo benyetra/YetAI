@@ -77,11 +77,11 @@ def compute_records_for_lineage(db: Session, lineage_id: int) -> list[LvRecord]:
     highest_combined: Optional[tuple[float, LvMatchup]] = None
 
     for m in matchups:
-        if m.score_a is None or m.score_b is None:
+        if m.team_a_score is None or m.team_b_score is None:
             continue
         if not m.team_a_id or not m.team_b_id:
             continue
-        sa, sb = float(m.score_a), float(m.score_b)
+        sa, sb = float(m.team_a_score), float(m.team_b_score)
         for tid, sc in ((m.team_a_id, sa), (m.team_b_id, sb)):
             if best_week is None or sc > best_week[0]:
                 best_week = (sc, m, tid)
@@ -114,8 +114,8 @@ def compute_records_for_lineage(db: Session, lineage_id: int) -> list[LvRecord]:
         return {
             "season": s.season,
             "week": m.week,
-            "score_a": m.score_a,
-            "score_b": m.score_b,
+            "team_a_score": m.team_a_score,
+            "team_b_score": m.team_b_score,
             "team_id": team_id,
         }
 
@@ -407,9 +407,9 @@ def _compute_streaks(matchups, team_by_id, season_by_id):
     # Chronological results per manager
     by_mgr: dict[int, list[bool]] = defaultdict(list)  # True = win
     for m in matchups:
-        if m.winner_team_id is None or m.score_a is None or m.score_b is None:
+        if m.winner_team_id is None or m.team_a_score is None or m.team_b_score is None:
             continue
-        if m.score_a == m.score_b:
+        if m.team_a_score == m.team_b_score:
             continue
         for tid in (m.team_a_id, m.team_b_id):
             if not tid or tid not in team_by_id:

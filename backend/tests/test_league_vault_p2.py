@@ -148,8 +148,8 @@ def _seed_two_team_season(session):
                 is_playoff=False,
                 team_a_id=t_a.id,
                 team_b_id=t_b.id,
-                score_a=sa,
-                score_b=sb,
+                team_a_score=sa,
+                team_b_score=sb,
                 winner_team_id=winner,
                 margin=abs(sa - sb),
             )

@@ -29,10 +29,10 @@ def compute_all_play_for_lineage(db: Session, lineage_id: int) -> dict[str, Any]
         week_scores: dict[int, list[tuple[int, float]]] = defaultdict(list)
         matchups = db.query(LvMatchup).filter_by(season_id=season.id).all()
         for m in matchups:
-            if m.team_a_id and m.score_a is not None:
-                week_scores[m.week].append((m.team_a_id, float(m.score_a)))
-            if m.team_b_id and m.score_b is not None:
-                week_scores[m.week].append((m.team_b_id, float(m.score_b)))
+            if m.team_a_id and m.team_a_score is not None:
+                week_scores[m.week].append((m.team_a_id, float(m.team_a_score)))
+            if m.team_b_id and m.team_b_score is not None:
+                week_scores[m.week].append((m.team_b_id, float(m.team_b_score)))
 
         ap_wins: dict[int, int] = defaultdict(int)
         ap_losses: dict[int, int] = defaultdict(int)

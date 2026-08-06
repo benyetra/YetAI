@@ -47,8 +47,8 @@ export type VaultSeason = {
     is_playoff: boolean;
     team_a_id: number | null;
     team_b_id: number | null;
-    score_a: number | null;
-    score_b: number | null;
+    team_a_score: number | null;
+    team_b_score: number | null;
     winner_team_id: number | null;
     margin: number | null;
   }>;

@@ -182,8 +182,8 @@ class LvMatchup(Base):
     bracket = Column(String(32), nullable=True)
     team_a_id = Column(Integer, ForeignKey("lv_teams.id"), nullable=False)
     team_b_id = Column(Integer, ForeignKey("lv_teams.id"), nullable=False)
-    score_a = Column(Float, nullable=True)
-    score_b = Column(Float, nullable=True)
+    team_a_score = Column(Float, nullable=True)
+    team_b_score = Column(Float, nullable=True)
     winner_team_id = Column(Integer, ForeignKey("lv_teams.id"), nullable=True)
     margin = Column(Float, nullable=True)
 
