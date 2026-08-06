@@ -62,6 +62,9 @@ export type VaultSeason = {
       draft_slot: number | null;
       team_id: number | null;
       player_id: string | null;
+      player_name?: string | null;
+      player_position?: string | null;
+      player_nfl_team?: string | null;
       platform_roster_id?: string | null;
       is_keeper: boolean | null;
       auction_amount: number | null;
@@ -141,6 +144,33 @@ export function formatRecord(value: number, key: string): string {
   if (key.includes('ppg') || key.includes('luck')) return value.toFixed(2);
   if (Number.isInteger(value)) return String(value);
   return value.toFixed(2);
+}
+
+/** Compact header label for H2H matrix columns. */
+export function h2hShortName(name: string): string {
+  const parts = (name || '').trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return '?';
+  if (parts.length === 1) {
+    const w = parts[0];
+    return w.length <= 4 ? w : w.slice(0, 4);
+  }
+  const initials = parts.map((p) => p[0]).join('').toUpperCase();
+  return initials.slice(0, 3);
+}
+
+export function formatDraftPlayer(pick: {
+  player_name?: string | null;
+  player_position?: string | null;
+  player_nfl_team?: string | null;
+  player_id?: string | null;
+}): string {
+  if (pick.player_name) {
+    const bits = [pick.player_name];
+    const meta = [pick.player_position, pick.player_nfl_team].filter(Boolean).join(' · ');
+    if (meta) bits.push(meta);
+    return bits.join(' — ');
+  }
+  return pick.player_id ?? '—';
 }
 
 export const RECORD_LABELS: Record<string, string> = {

@@ -1,5 +1,6 @@
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot } from '../../../../lib/vault';
+import { fetchVaultSnapshot, h2hShortName, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -32,7 +33,9 @@ export default async function H2HPage({ params }: Props) {
               <th />
               {managers.map((m) => (
                 <th key={m.id} title={m.display_name}>
-                  {m.display_name.slice(0, 3)}
+                  <Link href={vaultPath(slug, `/managers/${m.slug}`)}>
+                    {h2hShortName(m.display_name)}
+                  </Link>
                 </th>
               ))}
             </tr>
@@ -40,7 +43,11 @@ export default async function H2HPage({ params }: Props) {
           <tbody>
             {managers.map((row) => (
               <tr key={row.id}>
-                <td>{row.display_name}</td>
+                <td>
+                  <Link href={vaultPath(slug, `/managers/${row.slug}`)}>
+                    {row.display_name}
+                  </Link>
+                </td>
                 {managers.map((col) => (
                   <td key={col.id} className="vault-num">
                     {cell(row.id, col.id)}

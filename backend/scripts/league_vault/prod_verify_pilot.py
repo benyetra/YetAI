@@ -120,6 +120,18 @@ def check_api(api_url: str, slugs: list[str]) -> dict[str, Any]:
                     failures.append(f"{slug}: snapshot leaked platform_user_id")
                 if not body.get("seasons"):
                     failures.append(f"{slug}: snapshot has no seasons")
+                draft_picks = 0
+                identified = 0
+                for season in body.get("seasons") or []:
+                    for draft in season.get("drafts") or []:
+                        for pick in draft.get("picks") or []:
+                            draft_picks += 1
+                            if pick.get("team_id") or pick.get("player_id"):
+                                identified += 1
+                if draft_picks and identified == 0:
+                    failures.append(
+                        f"{slug}: draft picks present but team_id/player_id all null"
+                    )
             results.append(
                 {
                     "slug": slug,
