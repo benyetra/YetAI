@@ -25,6 +25,7 @@ from app.services.league_vault.branding import (
 )
 from app.services.league_vault.publish.players import (
     apply_player_labels_to_picks,
+    normalize_draft_player_id,
     resolve_player_labels,
 )
 
@@ -155,7 +156,7 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                 rounds = max((p.round for p in picks), default=None)
                 pick_rows: list[dict[str, Any]] = []
                 for p in picks:
-                    pid = str(p.player_id) if p.player_id else None
+                    pid = normalize_draft_player_id(p.player_id)
                     if pid:
                         draft_player_ids.add(pid)
                     pick_rows.append(
@@ -170,11 +171,23 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                             "auction_amount": None,
                         }
                     )
+                picks_made = sum(1 for row in pick_rows if row["player_id"])
+                if not pick_rows:
+                    status = "empty"
+                elif picks_made == 0:
+                    # ESPN often publishes snake order before the draft runs
+                    # (playerId=-1 on every row).
+                    status = "pending"
+                elif picks_made < len(pick_rows):
+                    status = "in_progress"
+                else:
+                    status = "complete"
                 draft_payload.append(
                     {
                         "draft_type": d.draft_type,
-                        "status": None,
+                        "status": status,
                         "rounds": rounds,
+                        "picks_made": picks_made,
                         "picks": pick_rows,
                     }
                 )

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 from app.services.league_vault.publish.players import (
     apply_player_labels_to_picks,
+    normalize_draft_player_id,
     resolve_player_labels,
     _label_from_sleeper,
 )
@@ -20,6 +21,14 @@ def test_resolve_player_labels_soft_fails():
     db = MagicMock()
     db.query.side_effect = RuntimeError("db down")
     assert resolve_player_labels(db, {"1"}) == {}
+
+
+def test_normalize_draft_player_id_strips_espn_placeholders():
+    assert normalize_draft_player_id("-1") is None
+    assert normalize_draft_player_id(-1) is None
+    assert normalize_draft_player_id("0") is None
+    assert normalize_draft_player_id("4866") == "4866"
+    assert normalize_draft_player_id(None) is None
 
 
 def test_label_from_sleeper_prefers_full_name():

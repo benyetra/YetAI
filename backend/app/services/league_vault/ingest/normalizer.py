@@ -612,14 +612,35 @@ def normalize_espn_season(
         for pick in draft_detail.get("picks") or []:
             team_id = pick.get("teamId")
             lv_team = espn_team_to_lv.get(int(team_id)) if team_id is not None else None
-            player_id = pick.get("playerId")
+            raw_player = pick.get("playerId")
+            # ESPN pre-draft order uses playerId=-1
+            if raw_player is None or int(raw_player) < 0:
+                player_id = None
+            else:
+                player_id = str(raw_player)
+            overall = pick.get("overallPickNumber")
+            round_pick = pick.get("roundPickNumber")
+            # Prefer true overall in pick_no. Some ESPN payloads put the slot in
+            # overallPickNumber and the running overall in roundPickNumber.
+            if (
+                overall is not None
+                and round_pick is not None
+                and int(overall) < int(round_pick)
+            ):
+                pick_no = int(round_pick)
+                draft_slot = int(overall)
+            else:
+                pick_no = int(overall or round_pick or 0)
+                draft_slot = (
+                    int(round_pick) if round_pick is not None else pick.get("slotId")
+                )
             db.add(
                 LvDraftPick(
                     draft_id=lv_draft.id,
                     round=int(pick.get("roundId") or 0),
-                    pick_no=int(pick.get("roundPickNumber") or 0),
-                    draft_slot=pick.get("overallPickNumber"),
-                    player_id=str(player_id) if player_id is not None else None,
+                    pick_no=pick_no,
+                    draft_slot=draft_slot,
+                    player_id=player_id,
                     team_id=lv_team.id if lv_team else None,
                 )
             )
