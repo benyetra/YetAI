@@ -9,11 +9,16 @@ from sqlalchemy.orm import Session
 
 from app.models.league_vault_models import LvManager, LvSite
 
-# Canonical public names for the two pilot slugs.
-PILOT_SITE_NAMES: dict[str, str] = {
+# Fallbacks when DB still has an ingest placeholder (real names come from ESPN/Sleeper).
+PILOT_SITE_NAME_FALLBACKS: dict[str, str] = {
     "mikes-hard": "Mike's Hard Fantasy Football",
-    "league-838295": "ESPN League 838295",
+    "league-838295": "The Famiglia League",
 }
+
+_PLACEHOLDER_SITE_NAME = re.compile(
+    r"^(ESPN League|League)\s+\d+$",
+    re.IGNORECASE,
+)
 
 
 def _strip_wrapping_quotes(value: str) -> str:
@@ -23,21 +28,23 @@ def _strip_wrapping_quotes(value: str) -> str:
     return s
 
 
+def is_placeholder_site_name(raw: Optional[str]) -> bool:
+    cleaned = _strip_wrapping_quotes(raw or "")
+    if not cleaned:
+        return True
+    return bool(_PLACEHOLDER_SITE_NAME.match(cleaned))
+
+
 def sanitize_site_display_name(raw: Optional[str], *, slug: str) -> str:
     cleaned = _strip_wrapping_quotes(raw or "")
-    canonical = PILOT_SITE_NAMES.get(slug)
-    if not canonical:
-        return cleaned or slug
-    # Heal quoted / empty / generic placeholder names from early ingest.
+    fallback = PILOT_SITE_NAME_FALLBACKS.get(slug)
     raw_s = raw or ""
-    if (
-        not cleaned
-        or '"' in raw_s
-        or (raw_s.strip().startswith("'") and raw_s.strip().endswith("'"))
-        or cleaned.lower() in {"espn league 838295", "league 838295"}
-    ):
-        return canonical
-    return cleaned
+    quoted = '"' in raw_s or (
+        raw_s.strip().startswith("'") and raw_s.strip().endswith("'")
+    )
+    if is_placeholder_site_name(cleaned) or quoted:
+        return fallback or cleaned or slug
+    return cleaned or fallback or slug
 
 
 def public_manager_display_name(

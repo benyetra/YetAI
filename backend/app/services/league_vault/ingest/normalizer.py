@@ -95,7 +95,15 @@ def get_or_create_lineage_and_site(
         db.add(site)
         db.flush()
     else:
-        site.display_name = display_name
+        # Do not clobber a real ESPN/Sleeper name with a placeholder default.
+        from app.services.league_vault.branding import is_placeholder_site_name
+
+        incoming = (display_name or "").strip()
+        if incoming:
+            if is_placeholder_site_name(site.display_name):
+                site.display_name = incoming
+            elif not is_placeholder_site_name(incoming):
+                site.display_name = incoming
         if tagline is not None:
             site.tagline = tagline
         if last_place_label is not None:
