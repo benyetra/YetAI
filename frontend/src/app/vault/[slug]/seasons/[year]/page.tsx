@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { VaultLabelWithHelp } from '../../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
+import { StadiumMark } from '../../../../../components/vault/illustrations';
 import {
+  COLUMN_HELP,
   fetchVaultSnapshot,
   managerById,
   vaultPath,
@@ -32,35 +36,42 @@ export default async function SeasonDetailPage({ params }: Props) {
   }
   const weekNums = [...weeks.keys()].sort((a, b) => a - b);
 
+  const blurb = (
+    <>
+      {inProgress ? (
+        <>Season in progress</>
+      ) : (
+        <>
+          Champion:{' '}
+          {season.champion ? (
+            <Link href={vaultPath(slug, `/managers/${season.champion.slug}`)}>
+              {season.champion.display_name}
+            </Link>
+          ) : (
+            '—'
+          )}
+        </>
+      )}
+      {' · '}
+      <Link href={vaultPath(slug, `/drafts/${season.season}`)}>Draft board</Link>
+    </>
+  );
+
   return (
     <>
-      <section className="vault-section">
-        <p className="vault-muted">
-          <Link href={vaultPath(slug, '/seasons')}>Seasons</Link>
-        </p>
-        <h1 className="vault-display">{season.season} Season</h1>
-        <p className="vault-muted">
-          {inProgress ? (
-            <>Season in progress</>
-          ) : (
-            <>
-              Champion:{' '}
-              {season.champion ? (
-                <Link href={vaultPath(slug, `/managers/${season.champion.slug}`)}>
-                  {season.champion.display_name}
-                </Link>
-              ) : (
-                '—'
-              )}
-            </>
-          )}
-          {' · '}
-          <Link href={vaultPath(slug, `/drafts/${season.season}`)}>Draft board</Link>
-        </p>
-      </section>
+      <VaultPageHeader
+        kicker={<Link href={vaultPath(slug, '/seasons')}>Seasons</Link>}
+        title={`${season.season} Season`}
+        blurb={blurb}
+        help="Standings, weekly scores, and a link to this year’s draft board."
+        illustration={<StadiumMark className="vault-illust" />}
+      />
 
       <section className="vault-section">
-        <h2>Standings</h2>
+        <div className="vault-section-heading">
+          <h2>Standings</h2>
+          <p className="vault-muted">Final ranks when available, with schedule-neutral all-play and luck.</p>
+        </div>
         {season.teams.length === 0 ? (
           <p className="vault-muted">No teams for this season yet.</p>
         ) : (
@@ -71,9 +82,21 @@ export default async function SeasonDetailPage({ params }: Props) {
                 <th>Team</th>
                 <th>Manager</th>
                 <th>W-L</th>
-                <th>PF</th>
-                <th>All-play</th>
-                <th>Luck</th>
+                <th>
+                  <VaultLabelWithHelp help={COLUMN_HELP.pf} helpLabel="About points for">
+                    PF
+                  </VaultLabelWithHelp>
+                </th>
+                <th>
+                  <VaultLabelWithHelp help={COLUMN_HELP.all_play} helpLabel="About all-play">
+                    All-play
+                  </VaultLabelWithHelp>
+                </th>
+                <th>
+                  <VaultLabelWithHelp help={COLUMN_HELP.luck} helpLabel="About luck">
+                    Luck
+                  </VaultLabelWithHelp>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -118,7 +141,10 @@ export default async function SeasonDetailPage({ params }: Props) {
       </section>
 
       <section className="vault-section">
-        <h2>Scoreboard</h2>
+        <div className="vault-section-heading">
+          <h2>Scoreboard</h2>
+          <p className="vault-muted">Weekly matchups — playoff weeks are marked.</p>
+        </div>
         {weekNums.length === 0 ? (
           <p className="vault-muted">No scored matchups yet.</p>
         ) : (

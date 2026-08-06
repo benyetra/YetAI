@@ -2,11 +2,10 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DynastyBar } from '../../../components/vault/VaultChrome';
 import {
-  Medal,
-  Podium,
-  StadiumMark,
-  TrophyCup,
-} from '../../../components/vault/illustrations';
+  VaultExploreIcon,
+  type VaultExploreIconName,
+} from '../../../components/vault/VaultExploreIcon';
+import { TrophyCup } from '../../../components/vault/illustrations';
 import { fetchVaultSnapshot, latestDraftSeason, vaultPath } from '../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
@@ -15,7 +14,7 @@ type ExploreTile = {
   href: string;
   label: string;
   tease: string;
-  icon: 'trophy' | 'medal-gold' | 'medal-silver' | 'stadium' | 'podium';
+  icon: VaultExploreIconName;
 };
 
 export default async function VaultHomePage({ params }: Props) {
@@ -36,31 +35,31 @@ export default async function VaultHomePage({ params }: Props) {
       href: vaultPath(slug, '/records'),
       label: 'Records',
       tease: 'Career marks and single-season league highs.',
-      icon: 'medal-gold',
+      icon: 'records',
     },
     {
       href: vaultPath(slug, '/managers'),
       label: 'Managers',
       tease: 'Profiles for every owner in the vault.',
-      icon: 'medal-silver',
+      icon: 'managers',
     },
     {
       href: vaultPath(slug, '/seasons'),
       label: 'Seasons',
       tease: 'Standings, matchups, and playoff paths by year.',
-      icon: 'stadium',
+      icon: 'seasons',
     },
     {
       href: vaultPath(slug, '/h2h'),
       label: 'H2H',
       tease: 'Rivalry records across the whole league.',
-      icon: 'podium',
+      icon: 'h2h',
     },
     {
       href: vaultPath(slug, '/transactions'),
       label: 'Moves',
       tease: 'Waivers, trades, and roster churn by season.',
-      icon: 'stadium',
+      icon: 'moves',
     },
     ...(draftSeason
       ? [
@@ -68,7 +67,7 @@ export default async function VaultHomePage({ params }: Props) {
             href: vaultPath(slug, `/drafts/${draftSeason}`),
             label: 'Draft',
             tease: `Latest board from the ${draftSeason} draft.`,
-            icon: 'medal-gold' as const,
+            icon: 'draft' as const,
           },
         ]
       : []),
@@ -113,7 +112,10 @@ export default async function VaultHomePage({ params }: Props) {
       </section>
 
       <section className="vault-section vault-explore">
-        <h2>Explore</h2>
+        <div className="vault-section-heading">
+          <h2>Explore</h2>
+          <p className="vault-muted">Jump into the rooms that make up this league’s archive.</p>
+        </div>
         <div className="vault-explore-grid">
           {exploreTiles.map((tile) => (
             <Link key={tile.href} href={tile.href} className="vault-explore-tile">
@@ -122,21 +124,7 @@ export default async function VaultHomePage({ params }: Props) {
                 <span className="vault-explore-tease">{tile.tease}</span>
               </span>
               <span className="vault-explore-icon" aria-hidden="true">
-                {tile.icon === 'trophy' ? (
-                  <TrophyCup className="vault-illust vault-explore-illust" />
-                ) : null}
-                {tile.icon === 'medal-gold' ? (
-                  <Medal className="vault-illust vault-explore-illust" rank={1} />
-                ) : null}
-                {tile.icon === 'medal-silver' ? (
-                  <Medal className="vault-illust vault-explore-illust" rank={2} />
-                ) : null}
-                {tile.icon === 'stadium' ? (
-                  <StadiumMark className="vault-illust vault-explore-illust" />
-                ) : null}
-                {tile.icon === 'podium' ? (
-                  <Podium className="vault-illust vault-explore-illust" />
-                ) : null}
+                <VaultExploreIcon name={tile.icon} />
               </span>
             </Link>
           ))}

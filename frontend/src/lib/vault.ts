@@ -248,3 +248,55 @@ export const RECORD_LABELS: Record<string, string> = {
   luckiest_season: 'Luckiest season',
   unluckiest_season: 'Unluckiest season',
 };
+
+/** Short explainers for record-book rows (shown via VaultHelp). */
+export const RECORD_HELP: Record<string, string> = {
+  highest_single_week_score: 'Most fantasy points scored by one team in a single week.',
+  lowest_single_week_score: 'Fewest fantasy points scored by one team in a single week.',
+  biggest_blowout: 'Largest point margin between winner and loser in one matchup.',
+  closest_game: 'Smallest point margin in a decided matchup.',
+  most_points_in_loss: 'Highest score that still lost — tough-luck high-scoring defeat.',
+  fewest_points_in_win: 'Lowest score that still won — a grind-it-out victory.',
+  highest_combined_score: 'Most total points scored by both teams in one matchup.',
+  highest_scoring_season_pf: 'Most points for across a full season.',
+  highest_scoring_season_ppg: 'Highest average points per game in a season.',
+  best_regular_season_record: 'Best win-loss mark before the playoffs.',
+  worst_regular_season_record: 'Worst win-loss mark before the playoffs.',
+  longest_win_streak: 'Most consecutive wins, including playoffs when available.',
+  longest_losing_streak: 'Most consecutive losses, including playoffs when available.',
+  titles: 'Most championships across finished seasons.',
+  career_titles: 'Championships won across a manager’s full vault history.',
+  career_wins: 'Regular-season and playoff wins tallied across seasons.',
+  best_all_play_season:
+    'Best record if every team played every other team each week — schedule-neutral strength.',
+  luckiest_season:
+    'Largest positive gap between actual wins and expected wins from all-play (schedule luck).',
+  unluckiest_season:
+    'Largest negative gap between actual wins and expected wins from all-play (schedule misfortune).',
+};
+
+/** Column / section explainers for standings, managers, and matrix pages. */
+export const COLUMN_HELP = {
+  all_play:
+    'Wins and losses if every team faced every other team each week — removes schedule strength.',
+  luck: 'Actual wins minus expected wins from all-play. Positive means the schedule helped.',
+  pf: 'Points for — total fantasy points scored.',
+  titles: 'Championships in finished seasons recorded in this vault.',
+  record: 'Career win-loss(-tie) across seasons this manager appears in.',
+  seasons_span: 'First and last season this manager appears in the vault.',
+  h2h_matrix:
+    'Each cell is the row manager’s all-time record against the column manager (W-L or W-L-T).',
+  moves_total: 'Counted roster transactions for the season (waivers, free agents, trades, etc.).',
+  moves_breakdown: 'Transaction counts by type when the platform provides them.',
+  draft_overall: 'Overall pick number on the draft board (1.01 style ordering).',
+} as const;
+
+export const PAGE_HELP = {
+  trophies: 'Championships, runners-up, and the league’s last-place honor for every finished year.',
+  records: 'Career and single-season peaks — including all-play strength and schedule luck.',
+  managers: 'Every owner in the archive with career record and title count.',
+  seasons: 'Jump into a year for standings, scoreboard, and that season’s draft board.',
+  h2h: 'All-time rivalry matrix. Read across a row to see that manager versus each column.',
+  moves: 'Season-by-season waiver, free-agent, and trade activity from the league history.',
+  draft: 'Pick-by-pick board for this season — overall order, round, team, and player.',
+} as const;

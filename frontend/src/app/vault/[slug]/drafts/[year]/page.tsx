@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { VaultLabelWithHelp } from '../../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
+import { DraftBoard } from '../../../../../components/vault/illustrations';
 import {
+  COLUMN_HELP,
+  PAGE_HELP,
   draftOverallPick,
   formatDraftPlayer,
   fetchVaultSnapshot,
@@ -24,23 +29,29 @@ export default async function DraftPage({ params }: Props) {
   const hasOrder = Boolean(draft && draft.picks.length > 0);
   const picksMade = draft?.picks_made ?? draft?.picks.filter((p) => p.player_id).length ?? 0;
 
+  const statusLine = [
+    draft?.draft_type ?? 'Draft',
+    hasOrder
+      ? pending
+        ? `draft order · ${draft!.picks.length} slots`
+        : `${picksMade} picks`
+      : 'no picks yet',
+    draft?.rounds != null ? `${draft.rounds} rounds` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
   return (
     <>
-      <section className="vault-section">
-        <p className="vault-muted">
+      <VaultPageHeader
+        kicker={
           <Link href={vaultPath(slug, `/seasons/${seasonYear}`)}>{seasonYear} season</Link>
-        </p>
-        <h1 className="vault-display">{seasonYear} Draft</h1>
-        <p className="vault-muted">
-          {draft?.draft_type ?? 'Draft'}
-          {hasOrder
-            ? pending
-              ? ` · draft order · ${draft!.picks.length} slots`
-              : ` · ${picksMade} picks`
-            : ' · no picks yet'}
-          {draft?.rounds != null ? ` · ${draft.rounds} rounds` : ''}
-        </p>
-      </section>
+        }
+        title={`${seasonYear} Draft`}
+        blurb={statusLine}
+        help={PAGE_HELP.draft}
+        illustration={<DraftBoard className="vault-illust" />}
+      />
       <section className="vault-section">
         {!hasOrder ? (
           <p className="vault-muted">
@@ -56,7 +67,14 @@ export default async function DraftPage({ params }: Props) {
             <table className="vault-table">
               <thead>
                 <tr>
-                  <th>Overall</th>
+                  <th>
+                    <VaultLabelWithHelp
+                      help={COLUMN_HELP.draft_overall}
+                      helpLabel="About overall pick"
+                    >
+                      Overall
+                    </VaultLabelWithHelp>
+                  </th>
                   <th>Rd</th>
                   <th>Team</th>
                   <th>Manager</th>

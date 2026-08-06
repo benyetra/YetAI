@@ -1,7 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Medal } from '../../../../components/vault/illustrations';
+import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
+import { Medal, RecordBook } from '../../../../components/vault/illustrations';
 import {
+  PAGE_HELP,
+  RECORD_HELP,
   RECORD_LABELS,
   fetchVaultSnapshot,
   formatRecord,
@@ -59,6 +63,7 @@ export default async function RecordsPage({ params }: Props) {
     rows.map((r) => {
       const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+      const help = RECORD_HELP[r.record_key];
       const contextSeason =
         typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
           ? String(r.context.season)
@@ -72,7 +77,11 @@ export default async function RecordsPage({ params }: Props) {
           key={recordRowKey(r)}
           className={isHighlighted(r) ? 'vault-record-highlight' : undefined}
         >
-          <th scope="row">{label}</th>
+          <th scope="row">
+            <VaultLabelWithHelp help={help} helpLabel={`About ${label}`}>
+              {label}
+            </VaultLabelWithHelp>
+          </th>
           <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
           <td className="vault-muted">
             {mgr ? (
@@ -92,15 +101,25 @@ export default async function RecordsPage({ params }: Props) {
 
   return (
     <>
-      <section className="vault-section">
-        <h1 className="vault-display">Record Book</h1>
-        <p className="vault-muted">All-time marks — including all-play and luck.</p>
-      </section>
+      <VaultPageHeader
+        kicker="All-time marks"
+        title="Record Book"
+        blurb="Career peaks and single-game extremes — including all-play and luck."
+        help={PAGE_HELP.records}
+        illustration={<RecordBook className="vault-illust" />}
+      />
       {career.length > 0 ? (
         <section className="vault-section">
           <div className="vault-record-section-heading">
             <Medal className="vault-illust vault-record-heading-medal" rank={1} />
-            <h2>Career</h2>
+            <h2>
+              <VaultLabelWithHelp
+                help="Career-long marks that span a manager’s full history in this vault."
+                helpLabel="About career records"
+              >
+                Career
+              </VaultLabelWithHelp>
+            </h2>
           </div>
           <table className="vault-table">
             <tbody>
@@ -110,7 +129,19 @@ export default async function RecordsPage({ params }: Props) {
         </section>
       ) : null}
       <section className="vault-section">
-        <h2>Single-season &amp; single-game</h2>
+        <div className="vault-section-heading">
+          <h2>
+            <VaultLabelWithHelp
+              help="Peak performances from a single season or a single matchup."
+              helpLabel="About single-season and single-game records"
+            >
+              Single-season &amp; single-game
+            </VaultLabelWithHelp>
+          </h2>
+          <p className="vault-muted">
+            Use the ? beside a mark for a plain-English definition — including all-play and luck.
+          </p>
+        </div>
         {featured.length === 0 ? (
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (

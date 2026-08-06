@@ -2,3 +2,8 @@ export { TrophyCup } from './TrophyCup';
 export { Podium } from './Podium';
 export { Medal } from './Medal';
 export { StadiumMark } from './StadiumMark';
+export { ManagersMark } from './ManagersMark';
+export { RecordBook } from './RecordBook';
+export { RivalryMark } from './RivalryMark';
+export { MovesMark } from './MovesMark';
+export { DraftBoard } from './DraftBoard';

@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, vaultPath } from '../../../../lib/vault';
+import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
+import { MovesMark } from '../../../../components/vault/illustrations';
+import { COLUMN_HELP, PAGE_HELP, fetchVaultSnapshot, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -33,18 +36,42 @@ export default async function TransactionsPage({ params }: Props) {
 
   return (
     <>
-      <section className="vault-section">
-        <h1 className="vault-display">Transactions</h1>
-        <p className="vault-muted">Waivers, free agents, and trades by season.</p>
-      </section>
+      <VaultPageHeader
+        kicker="Roster churn"
+        title="Moves"
+        blurb="Waivers, free agents, and trades pulled from the league history."
+        help={PAGE_HELP.moves}
+        illustration={<MovesMark className="vault-illust" />}
+      />
       <section className="vault-section">
         <table className="vault-table">
           <thead>
             <tr>
               <th>Season</th>
-              <th>Total</th>
-              <th>Breakdown</th>
-              <th>Most active</th>
+              <th>
+                <VaultLabelWithHelp
+                  help={COLUMN_HELP.moves_total}
+                  helpLabel="About total moves"
+                >
+                  Total
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp
+                  help={COLUMN_HELP.moves_breakdown}
+                  helpLabel="About moves breakdown"
+                >
+                  Breakdown
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp
+                  help="Teams with the highest move counts in that season."
+                  helpLabel="About most active"
+                >
+                  Most active
+                </VaultLabelWithHelp>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -71,7 +98,10 @@ export default async function TransactionsPage({ params }: Props) {
       </section>
       {latestWithActivity ? (
         <section className="vault-section">
-          <h2>{latestWithActivity.season} recent</h2>
+          <div className="vault-section-heading">
+            <h2>{latestWithActivity.season} recent</h2>
+            <p className="vault-muted">Latest logged transactions from the most recent active season.</p>
+          </div>
           <table className="vault-table">
             <thead>
               <tr>
