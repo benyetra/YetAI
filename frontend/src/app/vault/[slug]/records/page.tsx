@@ -59,8 +59,12 @@ export default async function RecordsPage({ params }: Props) {
     rows.map((r) => {
       const mgr = managerById(snap, r.manager_id);
       const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+      const contextSeason =
+        typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
+          ? String(r.context.season)
+          : null;
       const detailParts = [
-        r.season ? String(r.season) : null,
+        r.season != null ? String(r.season) : contextSeason,
         r.context?.week != null ? `Wk ${r.context.week}` : null,
       ].filter(Boolean);
       return (
@@ -75,9 +79,12 @@ export default async function RecordsPage({ params }: Props) {
               <Link href={vaultPath(slug, `/managers/${mgr.slug}`)}>
                 {mgr.display_name}
               </Link>
-            ) : null}
-            {mgr && detailParts.length ? ' · ' : null}
-            {detailParts.join(' · ')}
+            ) : detailParts.length ? (
+              <span>Matchup</span>
+            ) : (
+              '—'
+            )}
+            {detailParts.length ? ` · ${detailParts.join(' · ')}` : null}
           </td>
         </tr>
       );
