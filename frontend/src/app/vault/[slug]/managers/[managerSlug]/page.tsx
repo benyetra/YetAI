@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, vaultPath } from '../../../../../lib/vault';
+import {
+  RECORD_LABELS,
+  fetchVaultSnapshot,
+  formatRecord,
+  vaultPath,
+} from '../../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string; managerSlug: string }> };
 
@@ -20,6 +25,8 @@ export default async function ManagerDetailPage({ params }: Props) {
     }))
     .filter((x) => x.team);
 
+  const heldRecords = snap.records.filter((r) => r.manager_id === manager.id);
+
   return (
     <>
       <section className="vault-section">
@@ -30,7 +37,7 @@ export default async function ManagerDetailPage({ params }: Props) {
         <p className="vault-muted">
           {manager.first_season}–{manager.last_season}
           {career
-            ? ` · ${career.wins}-${career.losses} · ${career.titles} title${career.titles === 1 ? '' : 's'}`
+            ? ` · ${career.wins}-${career.losses} · ${career.titles} title${career.titles === 1 ? '' : 's'} · ${career.points_for.toFixed(0)} PF`
             : null}
         </p>
       </section>
@@ -43,6 +50,8 @@ export default async function ManagerDetailPage({ params }: Props) {
               <th>Team</th>
               <th>Record</th>
               <th>PF</th>
+              <th>All-play</th>
+              <th>Luck</th>
               <th>Rank</th>
             </tr>
           </thead>
@@ -58,12 +67,45 @@ export default async function ManagerDetailPage({ params }: Props) {
                   {team?.wins}-{team?.losses}
                 </td>
                 <td className="vault-num">{team?.points_for?.toFixed(1) ?? '—'}</td>
+                <td className="vault-num">
+                  {team?.all_play_wins != null
+                    ? `${team.all_play_wins}-${team.all_play_losses}`
+                    : '—'}
+                </td>
+                <td className="vault-num">
+                  {team?.luck_differential != null
+                    ? team.luck_differential.toFixed(2)
+                    : '—'}
+                </td>
                 <td className="vault-num">{team?.final_rank ?? '—'}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </section>
+      {heldRecords.length > 0 ? (
+        <section className="vault-section">
+          <h2>Record book</h2>
+          <table className="vault-table">
+            <thead>
+              <tr>
+                <th>Record</th>
+                <th>Value</th>
+                <th>Season</th>
+              </tr>
+            </thead>
+            <tbody>
+              {heldRecords.map((r) => (
+                <tr key={`${r.record_key}-${r.season ?? 'all'}-${r.value}`}>
+                  <td>{RECORD_LABELS[r.record_key] ?? r.record_key}</td>
+                  <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
+                  <td className="vault-num">{r.season ?? 'Career'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </section>
+      ) : null}
     </>
   );
 }

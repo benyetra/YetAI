@@ -54,6 +54,7 @@ Append entries during P4 (ship & watch). Do **not** ask managers if they like it
 | 2026-08-06 | — | Deploy/schema drift | #46–#53 |
 | 2026-08-06 | both | Empty records | auto-compute on GET |
 | 2026-08-06 | ESPN | Quoted name / emails | branding heal |
+| 2026-08-06 | both | Draft board blank (ids nulled in snapshot) | emit team_id/player_id + name resolve |
 
 **Identity correction time:** Sleeper _min_ / ESPN _min_ (email→local-part auto)
 

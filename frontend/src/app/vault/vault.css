@@ -294,6 +294,18 @@
   font-weight: 600;
 }
 
+.vault-matrix th a,
+.vault-matrix td:first-child a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.vault-matrix th a:hover,
+.vault-matrix td:first-child a:hover {
+  color: var(--vault-accent);
+  text-decoration: underline;
+}
+
 @keyframes vault-rise {
   from {
     opacity: 0;

@@ -238,3 +238,48 @@ def test_snapshot_contains_pages_payload(session):
     # No PII
     blob = str(snap)
     assert "alice" not in blob or "platform_user_id" not in blob
+
+
+def test_snapshot_draft_picks_include_team_and_player(session):
+    from app.models.league_vault_models import LvDraft, LvDraftPick
+    from app.services.league_vault.publish.snapshot import build_site_snapshot
+
+    seeded = _seed_two_team_season(session)
+    draft = LvDraft(
+        season_id=seeded["season"].id,
+        platform_draft_id="d1",
+        draft_type="snake",
+        settings={"status": "complete"},
+    )
+    session.add(draft)
+    session.flush()
+    session.add_all(
+        [
+            LvDraftPick(
+                draft_id=draft.id,
+                round=1,
+                pick_no=1,
+                draft_slot=1,
+                team_id=seeded["team_a"].id,
+                player_id="4866",
+            ),
+            LvDraftPick(
+                draft_id=draft.id,
+                round=1,
+                pick_no=2,
+                draft_slot=2,
+                team_id=seeded["team_b"].id,
+                player_id="7588",
+            ),
+        ]
+    )
+    session.commit()
+
+    snap = build_site_snapshot(session, slug="test-league")
+    picks = snap["seasons"][0]["drafts"][0]["picks"]
+    assert len(picks) == 2
+    assert picks[0]["team_id"] == seeded["team_a"].id
+    assert picks[0]["player_id"] == "4866"
+    assert picks[1]["team_id"] == seeded["team_b"].id
+    assert picks[1]["player_id"] == "7588"
+    assert "player_name" in picks[0]

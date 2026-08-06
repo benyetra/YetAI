@@ -23,6 +23,10 @@ from app.services.league_vault.branding import (
     public_manager_display_name,
     sanitize_site_display_name,
 )
+from app.services.league_vault.publish.players import (
+    apply_player_labels_to_picks,
+    resolve_player_labels,
+)
 
 
 def _manager_public(m: LvManager) -> dict[str, Any]:
@@ -62,6 +66,7 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
     )
     season_payloads = []
     all_teams: list[LvTeam] = []
+    draft_player_ids: set[str] = set()
     h2h: dict[str, dict[str, dict[str, int]]] = defaultdict(
         lambda: defaultdict(lambda: {"wins": 0, "losses": 0, "ties": 0})
     )
@@ -127,6 +132,9 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                 .all()
             )
             for d in drafts:
+                # team_id / player_id are on the original P1 table; load them so
+                # draft boards can show who picked whom (was hard-null'd during
+                # early prod schema-drift hardening).
                 picks = (
                     db.query(LvDraftPick)
                     .options(
@@ -136,6 +144,8 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                             LvDraftPick.round,
                             LvDraftPick.pick_no,
                             LvDraftPick.draft_slot,
+                            LvDraftPick.team_id,
+                            LvDraftPick.player_id,
                         )
                     )
                     .filter_by(draft_id=d.id)
@@ -143,24 +153,29 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                     .all()
                 )
                 rounds = max((p.round for p in picks), default=None)
+                pick_rows: list[dict[str, Any]] = []
+                for p in picks:
+                    pid = str(p.player_id) if p.player_id else None
+                    if pid:
+                        draft_player_ids.add(pid)
+                    pick_rows.append(
+                        {
+                            "round": p.round,
+                            "pick_no": p.pick_no,
+                            "draft_slot": p.draft_slot,
+                            "team_id": p.team_id,
+                            "player_id": pid,
+                            "platform_roster_id": None,
+                            "is_keeper": None,
+                            "auction_amount": None,
+                        }
+                    )
                 draft_payload.append(
                     {
                         "draft_type": d.draft_type,
                         "status": None,
                         "rounds": rounds,
-                        "picks": [
-                            {
-                                "round": p.round,
-                                "pick_no": p.pick_no,
-                                "draft_slot": p.draft_slot,
-                                "team_id": None,
-                                "player_id": None,
-                                "platform_roster_id": None,
-                                "is_keeper": None,
-                                "auction_amount": None,
-                            }
-                            for p in picks
-                        ],
+                        "picks": pick_rows,
                     }
                 )
         except Exception:
@@ -220,6 +235,11 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                 "transaction_count": tx_count,
             }
         )
+
+    player_labels = resolve_player_labels(db, draft_player_ids)
+    for season_row in season_payloads:
+        for draft in season_row.get("drafts") or []:
+            apply_player_labels_to_picks(draft.get("picks") or [], player_labels)
 
     records = db.query(LvRecord).filter_by(lineage_id=lineage_id).all()
     record_payload = [

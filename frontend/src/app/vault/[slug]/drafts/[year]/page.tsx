@@ -1,6 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, vaultPath } from '../../../../../lib/vault';
+import {
+  formatDraftPlayer,
+  fetchVaultSnapshot,
+  managerById,
+  vaultPath,
+} from '../../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string; year: string }> };
 
@@ -23,6 +28,7 @@ export default async function DraftPage({ params }: Props) {
         <h1 className="vault-display">{seasonYear} Draft</h1>
         <p className="vault-muted">
           {draft?.draft_type ?? 'Draft'} · {draft?.picks.length ?? 0} picks
+          {draft?.rounds != null ? ` · ${draft.rounds} rounds` : ''}
         </p>
       </section>
       <section className="vault-section">
@@ -32,21 +38,36 @@ export default async function DraftPage({ params }: Props) {
           <table className="vault-table">
             <thead>
               <tr>
-                <th>Pick</th>
+                <th>Overall</th>
                 <th>Rd</th>
                 <th>Team</th>
+                <th>Manager</th>
                 <th>Player</th>
               </tr>
             </thead>
             <tbody>
-              {draft.picks.map((p) => (
-                <tr key={p.pick_no}>
-                  <td className="vault-num">{p.pick_no}</td>
-                  <td className="vault-num">{p.round}</td>
-                  <td>{p.team_id ? teamById.get(p.team_id)?.team_name ?? '—' : '—'}</td>
-                  <td className="vault-num">{p.player_id ?? '—'}</td>
-                </tr>
-              ))}
+              {draft.picks.map((p) => {
+                const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
+                const manager = team ? managerById(snap, team.manager_id) : undefined;
+                const overall = p.draft_slot ?? p.pick_no;
+                return (
+                  <tr key={`${p.round}-${p.pick_no}-${overall}`}>
+                    <td className="vault-num">{overall}</td>
+                    <td className="vault-num">{p.round}</td>
+                    <td>{team?.team_name ?? '—'}</td>
+                    <td>
+                      {manager ? (
+                        <Link href={vaultPath(slug, `/managers/${manager.slug}`)}>
+                          {manager.display_name}
+                        </Link>
+                      ) : (
+                        '—'
+                      )}
+                    </td>
+                    <td>{formatDraftPlayer(p)}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         )}
