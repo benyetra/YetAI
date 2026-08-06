@@ -26,7 +26,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Health Api V1 Predictions Health Get"
                 }
@@ -117,7 +116,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Predictions Accuracy Overview Diagnostics Api V1 Predictions Accuracy Overview Diagnostics Get"
                 }
               }
@@ -212,7 +210,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Predictions Accuracy Overview Api V1 Predictions Accuracy Overview Get"
                 }
               }
@@ -344,7 +341,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Mlb P Over Total Api V1 Predictions Mlb P Over Total Get"
                 }
               }
@@ -482,7 +478,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Mlb Predictions Api V1 Predictions Mlb Get"
                 }
               }
@@ -573,7 +568,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Mlb Accuracy Api V1 Predictions Mlb Accuracy Get"
                 }
               }
@@ -693,7 +687,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nba Predictions Api V1 Predictions Nba Get"
                 }
               }
@@ -813,7 +806,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nfl Predictions Api V1 Predictions Nfl Get"
                 }
               }
@@ -904,7 +896,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nba Accuracy Api V1 Predictions Nba Accuracy Get"
                 }
               }
@@ -995,7 +986,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nfl Accuracy Api V1 Predictions Nfl Accuracy Get"
                 }
               }
@@ -1115,7 +1105,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nhl Predictions Api V1 Predictions Nhl Get"
                 }
               }
@@ -1206,7 +1195,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Nhl Accuracy Api V1 Predictions Nhl Accuracy Get"
                 }
               }
@@ -1340,7 +1328,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Wnba Predictions Api V1 Predictions Wnba Get"
                 }
               }
@@ -1431,7 +1418,6 @@
               "application/json": {
                 "schema": {
                   "type": "object",
-                  "additionalProperties": true,
                   "title": "Response Wnba Accuracy Api V1 Predictions Wnba Accuracy Get"
                 }
               }
@@ -1504,7 +1490,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Owens Betting Corner Api V1 Tools Owens Betting Corner Get"
                 }
@@ -4703,7 +4688,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -6208,7 +6192,6 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
                   "type": "object",
                   "title": "Response Get Sleeper Sync Status Api Sleeper Status Get"
                 }
@@ -6277,7 +6260,6 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
                     "type": "object"
                   },
                   "type": "array",
@@ -6365,8 +6347,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object",
-                    "additionalProperties": true
+                    "type": "object"
                   },
                   "title": "Response Get League Rosters Api Sleeper Leagues  League Id  Rosters Get"
                 }
@@ -6510,6 +6491,363 @@
           }
         },
         "x-audience": "public"
+      }
+    },
+    "/api/vault/{slug}": {
+      "get": {
+        "tags": [
+          "league-vault"
+        ],
+        "summary": "Get Vault Site",
+        "operationId": "get_vault_site_api_vault__slug__get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/vault/{slug}/meta": {
+      "get": {
+        "tags": [
+          "league-vault"
+        ],
+        "summary": "Get Vault Meta",
+        "operationId": "get_vault_meta_api_vault__slug__meta_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/vault/{slug}/events": {
+      "post": {
+        "tags": [
+          "league-vault"
+        ],
+        "summary": "Post Vault Event",
+        "description": "Anonymous beacon for pilot engagement (attributed to league slug).",
+        "operationId": "post_vault_event_api_vault__slug__events_post",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VaultEventIn"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/api/vault/{slug}/stats": {
+      "get": {
+        "tags": [
+          "league-vault"
+        ],
+        "summary": "Get Vault Stats",
+        "description": "Aggregate view counts for go/no-go (no PII \u2014 path tallies only).",
+        "operationId": "get_vault_stats_api_vault__slug__stats_get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Slug"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 14,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
+        "x-audience": "public",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
       }
     },
     "/api/serve-avatar/{filename}": {
@@ -7012,7 +7350,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -7185,7 +7522,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -7589,7 +7925,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Avatar Data"
               }
@@ -7865,7 +8200,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Profile Data"
               }
@@ -8058,7 +8392,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Credentials"
               }
@@ -8122,7 +8455,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -8165,7 +8497,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -8208,7 +8539,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -8251,7 +8581,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -8366,7 +8695,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Data"
               }
@@ -11124,7 +11452,6 @@
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": true,
                 "type": "object",
                 "title": "Request"
               }
@@ -12585,7 +12912,11 @@
             "default": true
           },
           "bet_category": {
-            "$ref": "#/components/schemas/YetAIBetType",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/YetAIBetType"
+              }
+            ],
             "default": "straight"
           }
         },
@@ -12673,7 +13004,6 @@
             "title": "Platform"
           },
           "credentials": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Credentials"
           }
@@ -12740,12 +13070,10 @@
             "title": "Vs Opponent Avg"
           },
           "historical_vs_opponent": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Historical Vs Opponent"
           },
           "recent_form": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Recent Form"
           }
@@ -13232,7 +13560,6 @@
             "title": "Scoring Type"
           },
           "factors": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Factors"
           }
@@ -13265,18 +13592,15 @@
             "title": "Games Analyzed"
           },
           "trends": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Trends"
           },
           "consistency": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Consistency"
           },
           "recent_games": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -13308,12 +13632,10 @@
             "title": "Team2 Id"
           },
           "team1_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team1 Gives"
           },
           "team2_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team2 Gives"
           },
@@ -13359,12 +13681,10 @@
             "title": "Team2 Id"
           },
           "team1_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team1 Gives"
           },
           "team2_gives": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Team2 Gives"
           }
@@ -13488,7 +13808,6 @@
             "title": "Message"
           },
           "data": {
-            "additionalProperties": true,
             "type": "object",
             "title": "Data"
           }
@@ -13517,20 +13836,17 @@
             "title": "Success"
           },
           "user_team": {
-            "additionalProperties": true,
             "type": "object",
             "title": "User Team"
           },
           "league_analytics": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
             "title": "League Analytics"
           },
           "league_insights": {
-            "additionalProperties": true,
             "type": "object",
             "title": "League Insights"
           },
@@ -13558,7 +13874,6 @@
         "properties": {
           "players": {
             "items": {
-              "additionalProperties": true,
               "type": "object"
             },
             "type": "array",
@@ -13652,7 +13967,6 @@
           "notification_settings": {
             "anyOf": [
               {
-                "additionalProperties": true,
                 "type": "object"
               },
               {
@@ -13776,6 +14090,38 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VaultEventIn": {
+        "properties": {
+          "path": {
+            "type": "string",
+            "maxLength": 512,
+            "title": "Path"
+          },
+          "event_type": {
+            "type": "string",
+            "maxLength": 64,
+            "title": "Event Type",
+            "default": "page_view"
+          },
+          "referrer": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1024
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referrer"
+          }
+        },
+        "type": "object",
+        "required": [
+          "path"
+        ],
+        "title": "VaultEventIn"
       },
       "WaiverAnalytics": {
         "properties": {
