@@ -6,7 +6,12 @@ import {
   type VaultExploreIconName,
 } from '../../../components/vault/VaultExploreIcon';
 import { TrophyCup } from '../../../components/vault/illustrations';
-import { fetchVaultSnapshot, latestDraftSeason, vaultPath } from '../../../lib/vault';
+import {
+  fetchVaultSnapshot,
+  latestDraftSeason,
+  vaultNameFitClass,
+  vaultPath,
+} from '../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -90,12 +95,13 @@ export default async function VaultHomePage({ params }: Props) {
             {champ ? (
               <Link
                 href={vaultPath(slug, `/managers/${champ.slug}`)}
-                className="vault-champ-name vault-display vault-shimmer"
+                className={`vault-champ-name vault-display vault-shimmer ${vaultNameFitClass(champ.display_name)}`}
+                title={champ.display_name}
               >
                 {champ.display_name}
               </Link>
             ) : (
-              <span className="vault-champ-name vault-display vault-shimmer">TBD</span>
+              <span className="vault-champ-name vault-display vault-shimmer vault-name">TBD</span>
             )}
             {champ?.season ? (
               <span className="vault-champ-season">{champ.season} season title holder</span>

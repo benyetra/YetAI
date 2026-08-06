@@ -8,6 +8,7 @@ import {
   RECORD_LABELS,
   fetchVaultSnapshot,
   formatRecord,
+  vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
 
@@ -42,7 +43,12 @@ export default async function ManagerDetailPage({ params }: Props) {
           <p className="vault-muted">
             <Link href={vaultPath(slug, '/managers')}>Managers</Link>
           </p>
-          <h1 className="vault-display">{manager.display_name}</h1>
+          <h1
+            className={`vault-display ${vaultNameFitClass(manager.display_name)}`}
+            title={manager.display_name}
+          >
+            {manager.display_name}
+          </h1>
           <p className="vault-muted">
             {manager.first_season}–{manager.last_season}
             {career

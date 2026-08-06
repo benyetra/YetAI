@@ -73,6 +73,10 @@
   font-family: var(--font-vault-display), serif;
   font-size: clamp(1.35rem, 4vw, 1.85rem);
   line-height: 1.1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(100%, 22rem);
 }
 
 .vault-nav {
@@ -179,13 +183,35 @@
 }
 
 .vault-hero h1 {
-  max-width: min(14ch, 100%);
+  max-width: min(16ch, 100%);
   font-size: clamp(2.4rem, 11vw, 7.8rem);
   line-height: 0.9;
   margin: 0;
   color: var(--vault-paper);
   text-wrap: balance;
-  overflow-wrap: anywhere;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+/* Length-aware name fitting — prefer scale/ellipsis over mid-word breaks */
+.vault-name {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: normal;
+  word-break: normal;
+  hyphens: none;
+}
+
+.vault-name.is-compact {
+  letter-spacing: -0.01em;
+}
+
+.vault-name.is-tight,
+.vault-name.is-micro {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vault-champ {
@@ -223,10 +249,20 @@
   display: block;
   max-width: 100%;
   font-size: clamp(1.45rem, 5.5vw, 3.4rem);
-  line-height: 1.05;
+  line-height: 1.1;
   text-decoration: none;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+}
+
+.vault-champ-name.is-compact {
+  font-size: clamp(1.25rem, 4.6vw, 2.75rem);
+}
+
+.vault-champ-name.is-tight {
+  font-size: clamp(1.1rem, 3.9vw, 2.25rem);
+}
+
+.vault-champ-name.is-micro {
+  font-size: clamp(0.98rem, 3.3vw, 1.85rem);
 }
 
 .vault-champ-name:hover,
@@ -331,11 +367,26 @@
   font-size: 0.84rem;
   font-weight: 800;
   line-height: 1.15;
+  min-width: 0;
 }
 
+.vault-dynasty-name .vault-name,
 .vault-dynasty-name a {
+  display: block;
   color: inherit;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.vault-dynasty-name .vault-name.is-compact {
+  font-size: 0.8rem;
+}
+
+.vault-dynasty-name .vault-name.is-tight,
+.vault-dynasty-name .vault-name.is-micro {
+  font-size: 0.74rem;
 }
 
 .vault-dynasty-name a:hover,
@@ -480,7 +531,24 @@
   color: var(--vault-muted);
   font-size: 0.9rem;
   line-height: 1.35;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+}
+
+.vault-table .vault-name,
+.vault-matrix td > a.vault-name,
+.vault-matrix td > .vault-name {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+}
+
+.vault-manager-header h1.vault-name.is-compact {
+  font-size: clamp(1.85rem, 7vw, 3.4rem);
+}
+
+.vault-manager-header h1.vault-name.is-tight,
+.vault-manager-header h1.vault-name.is-micro {
+  font-size: clamp(1.55rem, 5.5vw, 2.6rem);
 }
 
 .vault-explore-icon {
@@ -785,14 +853,27 @@
 }
 
 .vault-podium-name {
+  display: block;
+  width: 100%;
   color: var(--vault-ink);
   font-family: var(--font-vault-display), ui-serif, Georgia, serif;
   font-size: clamp(1.25rem, 5vw, 2rem);
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1.1;
   text-decoration: none;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  text-align: center;
+}
+
+.vault-podium-name.is-compact {
+  font-size: clamp(1.1rem, 4.2vw, 1.7rem);
+}
+
+.vault-podium-name.is-tight {
+  font-size: clamp(0.98rem, 3.6vw, 1.45rem);
+}
+
+.vault-podium-name.is-micro {
+  font-size: clamp(0.9rem, 3.2vw, 1.25rem);
 }
 
 .vault-podium-card:hover .vault-podium-name,
@@ -991,14 +1072,21 @@
 .vault-season-result > .vault-muted:not(.vault-season-label) {
   grid-area: name;
   min-width: 0;
-  overflow-wrap: anywhere;
-  word-break: break-word;
 }
 
 .vault-season-result a {
   color: inherit;
   font-weight: 800;
   text-decoration: none;
+}
+
+.vault-season-result a.is-compact {
+  font-size: 0.95em;
+}
+
+.vault-season-result a.is-tight,
+.vault-season-result a.is-micro {
+  font-size: 0.88em;
 }
 
 .vault-season-result a:hover,

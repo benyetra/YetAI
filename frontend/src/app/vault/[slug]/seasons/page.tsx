@@ -3,7 +3,13 @@ import { notFound } from 'next/navigation';
 import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { StadiumMark } from '../../../../components/vault/illustrations';
-import { PAGE_HELP, fetchVaultSnapshot, isDraftPending, vaultPath } from '../../../../lib/vault';
+import {
+  PAGE_HELP,
+  fetchVaultSnapshot,
+  isDraftPending,
+  vaultNameFitClass,
+  vaultPath,
+} from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -60,7 +66,18 @@ export default async function SeasonsIndexPage({ params }: Props) {
                   <th scope="row">
                     <Link href={vaultPath(slug, `/seasons/${s.season}`)}>{s.season}</Link>
                   </th>
-                  <td>{s.champion?.display_name ?? '—'}</td>
+                  <td>
+                    {s.champion ? (
+                      <span
+                        className={vaultNameFitClass(s.champion.display_name)}
+                        title={s.champion.display_name}
+                      >
+                        {s.champion.display_name}
+                      </span>
+                    ) : (
+                      '—'
+                    )}
+                  </td>
                   <td className="vault-num">{s.team_count ?? s.teams.length}</td>
                   <td>
                     <Link href={vaultPath(slug, `/drafts/${s.season}`)}>{draftLabel}</Link>

@@ -10,6 +10,7 @@ import {
   fetchVaultSnapshot,
   formatRecord,
   managerById,
+  vaultNameFitClass,
   vaultPath,
   type VaultRecord,
 } from '../../../../lib/vault';
@@ -85,7 +86,11 @@ export default async function RecordsPage({ params }: Props) {
           <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
           <td className="vault-muted">
             {mgr ? (
-              <Link href={vaultPath(slug, `/managers/${mgr.slug}`)}>
+              <Link
+                href={vaultPath(slug, `/managers/${mgr.slug}`)}
+                className={vaultNameFitClass(mgr.display_name)}
+                title={mgr.display_name}
+              >
                 {mgr.display_name}
               </Link>
             ) : detailParts.length ? (

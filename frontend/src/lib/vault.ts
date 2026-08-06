@@ -166,6 +166,25 @@ export function h2hShortName(name: string): string {
   return initials.slice(0, 3);
 }
 
+/**
+ * Class list for display names so long handles shrink / ellipsize
+ * instead of breaking mid-word (e.g. "thetylerwong").
+ */
+export function vaultNameFitClass(name: string | null | undefined): string {
+  const n = (name || '').trim();
+  if (!n) return 'vault-name';
+  const tokens = n.split(/\s+/).filter(Boolean);
+  const longest = tokens.reduce((max, token) => Math.max(max, token.length), 0);
+  const multiWord = tokens.length > 1;
+
+  if (!multiWord && longest >= 16) return 'vault-name is-micro';
+  if (!multiWord && longest >= 12) return 'vault-name is-tight';
+  if (!multiWord && longest >= 9) return 'vault-name is-compact';
+  if (multiWord && (n.length >= 24 || longest >= 14)) return 'vault-name is-tight';
+  if (multiWord && (n.length >= 18 || longest >= 11)) return 'vault-name is-compact';
+  return 'vault-name';
+}
+
 export function formatDraftPlayer(pick: {
   player_name?: string | null;
   player_position?: string | null;

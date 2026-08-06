@@ -1,4 +1,10 @@
-import { formatDraftPlayer, h2hShortName, isDraftPending, isPlaceholderPlayerId } from '../../src/lib/vault';
+import {
+  formatDraftPlayer,
+  h2hShortName,
+  isDraftPending,
+  isPlaceholderPlayerId,
+  vaultNameFitClass,
+} from '../../src/lib/vault';
 
 describe('vault helpers', () => {
   it('h2hShortName uses initials for multi-word names', () => {
@@ -9,6 +15,16 @@ describe('vault helpers', () => {
   it('h2hShortName truncates single tokens', () => {
     expect(h2hShortName('BYETRA')).toBe('BYET');
     expect(h2hShortName('Bob')).toBe('Bob');
+  });
+
+  it('vaultNameFitClass scales long unbroken handles instead of mid-word breaks', () => {
+    expect(vaultNameFitClass('Bob')).toBe('vault-name');
+    expect(vaultNameFitClass('Remdick')).toBe('vault-name');
+    expect(vaultNameFitClass('bearjew23')).toBe('vault-name is-compact');
+    expect(vaultNameFitClass('eddieprado89')).toBe('vault-name is-tight');
+    expect(vaultNameFitClass('thetylerwong')).toBe('vault-name is-tight');
+    expect(vaultNameFitClass('superlongusernamehere')).toBe('vault-name is-micro');
+    expect(vaultNameFitClass('Mike Hard')).toBe('vault-name');
   });
 
   it('formatDraftPlayer prefers name + meta over raw id', () => {
