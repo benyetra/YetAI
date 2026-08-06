@@ -80,24 +80,24 @@ export default async function SeasonDetailPage({ params }: Props) {
         {season.teams.length === 0 ? (
           <p className="vault-muted">No teams for this season yet.</p>
         ) : (
-          <table className="vault-table">
+          <table className="vault-table vault-table-standings">
             <thead>
               <tr>
-                <th>#</th>
+                <th className="vault-col-num">#</th>
                 <th>Team</th>
                 <th>Manager</th>
-                <th>W-L</th>
-                <th>
+                <th className="vault-col-num">W-L</th>
+                <th className="vault-col-num">
                   <VaultLabelWithHelp help={COLUMN_HELP.pf} helpLabel="About points for">
                     PF
                   </VaultLabelWithHelp>
                 </th>
-                <th>
+                <th className="vault-col-num">
                   <VaultLabelWithHelp help={COLUMN_HELP.all_play} helpLabel="About all-play">
                     All-play
                   </VaultLabelWithHelp>
                 </th>
-                <th>
+                <th className="vault-col-num">
                   <VaultLabelWithHelp help={COLUMN_HELP.luck} helpLabel="About luck">
                     Luck
                   </VaultLabelWithHelp>

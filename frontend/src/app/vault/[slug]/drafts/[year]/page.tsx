@@ -68,7 +68,7 @@ export default async function DraftPage({ params }: Props) {
             <table className="vault-table">
               <thead>
                 <tr>
-                  <th>
+                  <th className="vault-col-num">
                     <VaultLabelWithHelp
                       help={COLUMN_HELP.draft_overall}
                       helpLabel="About overall pick"
@@ -76,7 +76,7 @@ export default async function DraftPage({ params }: Props) {
                       Overall
                     </VaultLabelWithHelp>
                   </th>
-                  <th>Rd</th>
+                  <th className="vault-col-num">Rd</th>
                   <th>Team</th>
                   <th>Manager</th>
                   <th>Player</th>

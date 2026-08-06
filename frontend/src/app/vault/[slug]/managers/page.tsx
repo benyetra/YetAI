@@ -54,12 +54,12 @@ export default async function ManagersPage({ params }: Props) {
                   Seasons
                 </VaultLabelWithHelp>
               </th>
-              <th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp help={COLUMN_HELP.record} helpLabel="About record column">
                   Record
                 </VaultLabelWithHelp>
               </th>
-              <th>
+              <th className="vault-col-num">
                 <VaultLabelWithHelp help={COLUMN_HELP.titles} helpLabel="About titles column">
                   Titles
                 </VaultLabelWithHelp>
