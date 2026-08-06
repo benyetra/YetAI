@@ -315,7 +315,7 @@ export const PAGE_HELP = {
   records: 'Career and single-season peaks — including all-play strength and schedule luck.',
   managers: 'Every owner in the archive with career record and title count.',
   seasons: 'Jump into a year for standings, scoreboard, and that season’s draft board.',
-  h2h: 'All-time rivalry matrix. Read across a row to see that manager versus each column.',
+  h2h: 'All-time rivalry matrix. Use the numbered roster key for column names, then read across a row.',
   moves: 'Season-by-season waiver, free-agent, and trade activity from the league history.',
   draft: 'Pick-by-pick board for this season — overall order, round, team, and player.',
 } as const;
