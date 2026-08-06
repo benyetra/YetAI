@@ -79,11 +79,11 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                 continue
             ka = str(a.manager_id)
             kb = str(b.manager_id)
-            if m.score_a is not None and m.score_b is not None:
-                if m.score_a > m.score_b:
+            if m.team_a_score is not None and m.team_b_score is not None:
+                if m.team_a_score > m.team_b_score:
                     h2h[ka][kb]["wins"] += 1
                     h2h[kb][ka]["losses"] += 1
-                elif m.score_b > m.score_a:
+                elif m.team_b_score > m.team_a_score:
                     h2h[kb][ka]["wins"] += 1
                     h2h[ka][kb]["losses"] += 1
                 else:
@@ -173,8 +173,8 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                         "is_playoff": m.is_playoff,
                         "team_a_id": m.team_a_id,
                         "team_b_id": m.team_b_id,
-                        "score_a": m.score_a,
-                        "score_b": m.score_b,
+                        "team_a_score": m.team_a_score,
+                        "team_b_score": m.team_b_score,
                         "winner_team_id": m.winner_team_id,
                         "margin": m.margin,
                     }

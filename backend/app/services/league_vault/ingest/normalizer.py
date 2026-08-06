@@ -290,20 +290,20 @@ def normalize_sleeper_season(
     for week, week_rows in sorted(matchups_by_week.items()):
         is_playoff = week > reg_weeks if reg_weeks else False
         for a, b, mid in _pair_sleeper_matchups(week_rows):
-            score_a = float(a.get("points") or 0)
-            score_b = float(b.get("points") or 0)
+            team_a_score = float(a.get("points") or 0)
+            team_b_score = float(b.get("points") or 0)
             team_a = roster_to_team.get(str(a["roster_id"]))
             team_b = roster_to_team.get(str(b["roster_id"]))
             if not team_a or not team_b:
                 continue
             winner_id = None
             margin = None
-            if score_a > score_b:
+            if team_a_score > team_b_score:
                 winner_id = team_a.id
-                margin = score_a - score_b
-            elif score_b > score_a:
+                margin = team_a_score - team_b_score
+            elif team_b_score > team_a_score:
                 winner_id = team_b.id
-                margin = score_b - score_a
+                margin = team_b_score - team_a_score
 
             db.add(
                 LvMatchup(
@@ -313,8 +313,8 @@ def normalize_sleeper_season(
                     is_playoff=is_playoff,
                     team_a_id=team_a.id,
                     team_b_id=team_b.id,
-                    score_a=score_a,
-                    score_b=score_b,
+                    team_a_score=team_a_score,
+                    team_b_score=team_b_score,
                     winner_team_id=winner_id,
                     margin=margin,
                 )
@@ -334,16 +334,16 @@ def normalize_sleeper_season(
             if not t1 or not t2:
                 continue
             w = entry.get("w")
-            score_a = float(entry.get("p1") or 0) if "p1" in entry else None
-            score_b = float(entry.get("p2") or 0) if "p2" in entry else None
+            team_a_score = float(entry.get("p1") or 0) if "p1" in entry else None
+            team_b_score = float(entry.get("p2") or 0) if "p2" in entry else None
             winner_id = None
             margin = None
             if w is not None:
                 w_team = roster_to_team.get(str(w))
                 if w_team:
                     winner_id = w_team.id
-            if score_a is not None and score_b is not None:
-                margin = abs(score_a - score_b)
+            if team_a_score is not None and team_b_score is not None:
+                margin = abs(team_a_score - team_b_score)
             db.add(
                 LvMatchup(
                     season_id=lv_season.id,
@@ -356,8 +356,8 @@ def normalize_sleeper_season(
                     bracket=bracket_name,
                     team_a_id=t1.id,
                     team_b_id=t2.id,
-                    score_a=score_a,
-                    score_b=score_b,
+                    team_a_score=team_a_score,
+                    team_b_score=team_b_score,
                     winner_team_id=winner_id,
                     margin=margin,
                 )
@@ -554,16 +554,16 @@ def normalize_espn_season(
         team_b = espn_team_to_lv.get(int(away_id))
         if not team_a or not team_b:
             continue
-        score_a = float(home.get("totalPoints") or 0)
-        score_b = float(away.get("totalPoints") or 0)
+        team_a_score = float(home.get("totalPoints") or 0)
+        team_b_score = float(away.get("totalPoints") or 0)
         winner_id = None
         margin = None
-        if score_a > score_b:
+        if team_a_score > team_b_score:
             winner_id = team_a.id
-            margin = score_a - score_b
-        elif score_b > score_a:
+            margin = team_a_score - team_b_score
+        elif team_b_score > team_a_score:
             winner_id = team_b.id
-            margin = score_b - score_a
+            margin = team_b_score - team_a_score
 
         is_playoff = bool(reg_weeks and week > reg_weeks)
         db.add(
@@ -574,8 +574,8 @@ def normalize_espn_season(
                 is_playoff=is_playoff,
                 team_a_id=team_a.id,
                 team_b_id=team_b.id,
-                score_a=score_a,
-                score_b=score_b,
+                team_a_score=team_a_score,
+                team_b_score=team_b_score,
                 winner_team_id=winner_id,
                 margin=margin,
             )
