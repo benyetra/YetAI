@@ -1,7 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { Medal } from '../../../../components/vault/illustrations';
-import { fetchVaultSnapshot, vaultPath } from '../../../../lib/vault';
+import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
+import { ManagersMark, Medal } from '../../../../components/vault/illustrations';
+import { COLUMN_HELP, PAGE_HELP, fetchVaultSnapshot, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -26,17 +28,36 @@ export default async function ManagersPage({ params }: Props) {
 
   return (
     <>
-      <section className="vault-section">
-        <h1 className="vault-display">Managers</h1>
-      </section>
+      <VaultPageHeader
+        kicker="The roster"
+        title="Managers"
+        blurb="Every owner in the archive — sorted by titles, then wins."
+        help={PAGE_HELP.managers}
+        illustration={<ManagersMark className="vault-illust" />}
+      />
       <section className="vault-section">
         <table className="vault-table">
           <thead>
             <tr>
               <th>Manager</th>
-              <th>Seasons</th>
-              <th>Record</th>
-              <th>Titles</th>
+              <th>
+                <VaultLabelWithHelp
+                  help={COLUMN_HELP.seasons_span}
+                  helpLabel="About seasons column"
+                >
+                  Seasons
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp help={COLUMN_HELP.record} helpLabel="About record column">
+                  Record
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp help={COLUMN_HELP.titles} helpLabel="About titles column">
+                  Titles
+                </VaultLabelWithHelp>
+              </th>
             </tr>
           </thead>
           <tbody>

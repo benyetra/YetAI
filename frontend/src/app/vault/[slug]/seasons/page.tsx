@@ -1,6 +1,9 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { fetchVaultSnapshot, isDraftPending, vaultPath } from '../../../../lib/vault';
+import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
+import { StadiumMark } from '../../../../components/vault/illustrations';
+import { PAGE_HELP, fetchVaultSnapshot, isDraftPending, vaultPath } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -11,17 +14,35 @@ export default async function SeasonsIndexPage({ params }: Props) {
 
   return (
     <>
-      <section className="vault-section">
-        <h1 className="vault-display">Seasons</h1>
-      </section>
+      <VaultPageHeader
+        kicker="Year by year"
+        title="Seasons"
+        blurb="Open a year for standings, the scoreboard, and that season’s draft."
+        help={PAGE_HELP.seasons}
+        illustration={<StadiumMark className="vault-illust" />}
+      />
       <section className="vault-section">
         <table className="vault-table">
           <thead>
             <tr>
               <th>Year</th>
               <th>Champion</th>
-              <th>Teams</th>
-              <th />
+              <th>
+                <VaultLabelWithHelp
+                  help="Number of teams that competed in the season."
+                  helpLabel="About teams column"
+                >
+                  Teams
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp
+                  help="Jump to the draft board or published draft order for that year."
+                  helpLabel="About draft links"
+                >
+                  Draft
+                </VaultLabelWithHelp>
+              </th>
             </tr>
           </thead>
           <tbody>

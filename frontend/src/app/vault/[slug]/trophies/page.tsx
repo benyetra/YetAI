@@ -1,7 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { VaultHelp } from '../../../../components/vault/VaultHelp';
+import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, Podium, TrophyCup } from '../../../../components/vault/illustrations';
-import { fetchVaultSnapshot, managerById, type VaultManager, vaultPath } from '../../../../lib/vault';
+import {
+  PAGE_HELP,
+  fetchVaultSnapshot,
+  managerById,
+  type VaultManager,
+  vaultPath,
+} from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 type TitleLeader = { manager: VaultManager; n: number };
@@ -43,20 +51,25 @@ export default async function TrophiesPage({ params }: Props) {
 
   return (
     <>
-      <section className="vault-section vault-trophy-header">
-        <TrophyCup className="vault-illust vault-trophy-header-illust" />
-        <div>
-          <p className="vault-hero-kicker">League honors</p>
-          <h1 className="vault-display">Trophy Room</h1>
-          <p className="vault-muted">
-            Champions, runners-up, and the {snap.last_place_label}.
-          </p>
-        </div>
-      </section>
+      <VaultPageHeader
+        kicker="League honors"
+        title="Trophy Room"
+        blurb={`Champions, runners-up, and the ${snap.last_place_label}.`}
+        help={PAGE_HELP.trophies}
+        illustration={<TrophyCup className="vault-illust" />}
+      />
 
       <section className="vault-section vault-title-podium" aria-labelledby="title-podium-heading">
         <div className="vault-section-heading">
-          <h2 id="title-podium-heading">Title leaders podium</h2>
+          <h2 id="title-podium-heading">
+            <span className="vault-label-with-help">
+              Title leaders podium
+              <VaultHelp
+                text="Managers ranked by championships recorded in finished seasons."
+                label="About title leaders podium"
+              />
+            </span>
+          </h2>
           <p className="vault-muted">The managers with the most recorded championships.</p>
         </div>
         {podiumSlots.length === 0 ? (
@@ -157,7 +170,10 @@ export default async function TrophiesPage({ params }: Props) {
       </section>
 
       <section className="vault-section">
-        <h2>Titles</h2>
+        <div className="vault-section-heading">
+          <h2>Titles</h2>
+          <p className="vault-muted">Full championship tally for every manager with a crown.</p>
+        </div>
         {leaderboard.length === 0 ? (
           <p className="vault-muted">No champions recorded yet.</p>
         ) : (

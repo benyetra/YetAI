@@ -1,7 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { TrophyCup } from '../../../../../components/vault/illustrations';
+import { VaultLabelWithHelp } from '../../../../../components/vault/VaultHelp';
+import { ManagersMark, TrophyCup } from '../../../../../components/vault/illustrations';
 import {
+  COLUMN_HELP,
+  RECORD_HELP,
   RECORD_LABELS,
   fetchVaultSnapshot,
   formatRecord,
@@ -32,6 +35,9 @@ export default async function ManagerDetailPage({ params }: Props) {
   return (
     <>
       <section className="vault-section vault-manager-header">
+        <div className="vault-manager-header-mark" aria-hidden="true">
+          <ManagersMark className="vault-illust vault-manager-header-illust" />
+        </div>
         <div>
           <p className="vault-muted">
             <Link href={vaultPath(slug, '/managers')}>Managers</Link>
@@ -57,16 +63,31 @@ export default async function ManagerDetailPage({ params }: Props) {
         ) : null}
       </section>
       <section className="vault-section">
-        <h2>Season-by-season</h2>
+        <div className="vault-section-heading">
+          <h2>Season-by-season</h2>
+          <p className="vault-muted">Every year this manager fielded a team in the vault.</p>
+        </div>
         <table className="vault-table">
           <thead>
             <tr>
               <th>Year</th>
               <th>Team</th>
               <th>Record</th>
-              <th>PF</th>
-              <th>All-play</th>
-              <th>Luck</th>
+              <th>
+                <VaultLabelWithHelp help={COLUMN_HELP.pf} helpLabel="About points for">
+                  PF
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp help={COLUMN_HELP.all_play} helpLabel="About all-play">
+                  All-play
+                </VaultLabelWithHelp>
+              </th>
+              <th>
+                <VaultLabelWithHelp help={COLUMN_HELP.luck} helpLabel="About luck">
+                  Luck
+                </VaultLabelWithHelp>
+              </th>
               <th>Rank</th>
             </tr>
           </thead>
@@ -108,7 +129,10 @@ export default async function ManagerDetailPage({ params }: Props) {
       </section>
       {heldRecords.length > 0 ? (
         <section className="vault-section">
-          <h2>Record book</h2>
+          <div className="vault-section-heading">
+            <h2>Record book</h2>
+            <p className="vault-muted">League marks this manager currently holds.</p>
+          </div>
           <table className="vault-table">
             <thead>
               <tr>
@@ -118,13 +142,23 @@ export default async function ManagerDetailPage({ params }: Props) {
               </tr>
             </thead>
             <tbody>
-              {heldRecords.map((r) => (
-                <tr key={`${r.record_key}-${r.season ?? 'all'}-${r.value}`}>
-                  <td>{RECORD_LABELS[r.record_key] ?? r.record_key}</td>
-                  <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-                  <td className="vault-num">{r.season ?? 'Career'}</td>
-                </tr>
-              ))}
+              {heldRecords.map((r) => {
+                const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+                return (
+                  <tr key={`${r.record_key}-${r.season ?? 'all'}-${r.value}`}>
+                    <td>
+                      <VaultLabelWithHelp
+                        help={RECORD_HELP[r.record_key]}
+                        helpLabel={`About ${label}`}
+                      >
+                        {label}
+                      </VaultLabelWithHelp>
+                    </td>
+                    <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
+                    <td className="vault-num">{r.season ?? 'Career'}</td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </section>
