@@ -1,15 +1,17 @@
 .vault-root {
-  --vault-ink: #12161c;
-  --vault-paper: #e8edf2;
-  --vault-paper-deep: #d5dde6;
-  --vault-rule: #1a2330;
-  --vault-accent: #0f5c4c;
-  --vault-muted: #5a6573;
-  --vault-champ: #0f5c4c;
+  --vault-ink: #0c1210;
+  --vault-paper: #eef3ef;
+  --vault-field: #0f3d2e;
+  --vault-gold: #c6a035;
+  --vault-accent: #147a5f;
+  --vault-muted: #5c6b63;
+  --vault-paper-deep: #dce5df;
+  --vault-rule: #0f3d2e;
+  --vault-champ: var(--vault-gold);
   min-height: 100dvh;
   background:
-    radial-gradient(1200px 600px at 10% -10%, rgba(15, 92, 76, 0.08), transparent 55%),
-    linear-gradient(180deg, #f3f6f9 0%, var(--vault-paper) 40%, #dde5ee 100%);
+    radial-gradient(1200px 600px at 10% -10%, rgba(15, 61, 46, 0.1), transparent 55%),
+    linear-gradient(180deg, #f5f8f6 0%, var(--vault-paper) 40%, #dfe8e2 100%);
   color: var(--vault-ink);
   font-family: var(--font-vault-sans), ui-sans-serif, system-ui, sans-serif;
 }
@@ -28,7 +30,7 @@
   top: 0;
   z-index: 20;
   backdrop-filter: blur(10px);
-  background: rgba(243, 246, 249, 0.92);
+  background: rgba(238, 243, 239, 0.92);
   border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
 }
 
@@ -50,12 +52,21 @@
 }
 
 .vault-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
   font-size: 0.7rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
   color: var(--vault-accent);
   font-family: var(--font-vault-sans), sans-serif;
   font-weight: 600;
+}
+
+.vault-brand-icon {
+  width: 1.15rem;
+  height: auto;
+  flex: 0 0 1.15rem;
 }
 
 .vault-brand-name {
@@ -97,7 +108,7 @@
 
 .vault-nav-link.is-active {
   color: var(--vault-ink);
-  border-bottom-color: var(--vault-ink);
+  border-bottom-color: var(--vault-gold);
 }
 
 .vault-main {
@@ -108,83 +119,219 @@
 
 .vault-hero {
   display: grid;
-  gap: 1.25rem;
-  padding: 0.5rem 0 1.5rem;
-  border-bottom: 2px solid var(--vault-rule);
-  margin-bottom: 1.5rem;
+  gap: clamp(1.15rem, 3vw, 1.75rem);
+  min-height: calc(100svh - 8.5rem);
+  align-content: center;
+  padding: clamp(1.5rem, 5vw, 4rem) clamp(1rem, 4vw, 3rem);
+  margin: -0.25rem 0 1.75rem;
+  overflow: hidden;
+  position: relative;
+  color: var(--vault-paper);
+  background:
+    radial-gradient(640px 280px at 85% 8%, rgba(198, 160, 53, 0.22), transparent 60%),
+    radial-gradient(520px 260px at 12% 85%, rgba(20, 122, 95, 0.34), transparent 65%),
+    linear-gradient(135deg, #0c1210 0%, var(--vault-field) 58%, #10251e 100%);
+  border-bottom: 3px solid var(--vault-gold);
   animation: vault-rise 0.55s ease-out both;
 }
 
+.vault-hero::after {
+  content: '';
+  position: absolute;
+  inset: auto -8% -5rem;
+  height: 10rem;
+  background: repeating-linear-gradient(
+    90deg,
+    rgba(238, 243, 239, 0.08) 0 1px,
+    transparent 1px 5.5rem
+  );
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+.vault-hero-copy,
+.vault-champ,
+.vault-hero-ctas,
+.vault-hero .vault-dynasty {
+  position: relative;
+  z-index: 1;
+}
+
 .vault-hero-kicker {
+  margin: 0 0 0.45rem;
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--vault-muted);
+  color: color-mix(in srgb, var(--vault-paper) 74%, var(--vault-gold));
+  font-weight: 700;
 }
 
 .vault-hero h1 {
-  font-size: clamp(2rem, 8vw, 3.4rem);
-  line-height: 0.98;
+  max-width: 12ch;
+  font-size: clamp(3.4rem, 15vw, 7.8rem);
+  line-height: 0.86;
   margin: 0;
+  color: var(--vault-paper);
+  text-wrap: balance;
 }
 
 .vault-champ {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.85rem, 4vw, 2rem);
+  padding: 0.35rem 0;
+}
+
+.vault-champ-copy {
   display: grid;
   gap: 0.35rem;
-  padding: 1rem 0;
+  min-width: 0;
+}
+
+.vault-hero-trophy {
+  flex: 0 0 clamp(5.5rem, 24vw, 9.5rem);
+  max-width: clamp(5.5rem, 24vw, 9.5rem);
+  filter: drop-shadow(0 1.25rem 1.75rem rgba(0, 0, 0, 0.28));
+  animation: vault-rise 0.65s ease-out 0.12s both;
 }
 
 .vault-champ-label {
   font-size: 0.72rem;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  color: var(--vault-accent);
+  color: color-mix(in srgb, var(--vault-paper) 78%, var(--vault-gold));
   font-weight: 700;
 }
 
 .vault-champ-name {
-  font-size: clamp(1.6rem, 5vw, 2.4rem);
-  color: var(--vault-champ);
+  width: fit-content;
+  font-size: clamp(1.85rem, 7vw, 3.9rem);
+  line-height: 0.95;
+  text-decoration: none;
+}
+
+.vault-champ-name:hover,
+.vault-champ-name:focus-visible {
+  text-decoration: underline;
+  text-decoration-thickness: 0.06em;
+  text-underline-offset: 0.12em;
+}
+
+.vault-champ-season {
+  color: color-mix(in srgb, var(--vault-paper) 72%, transparent);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.vault-hero-ctas {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
+.vault-hero-ctas a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.8rem;
+  padding: 0.75rem 1rem;
+  color: var(--vault-paper);
+  border: 1px solid color-mix(in srgb, var(--vault-gold) 72%, transparent);
+  background: rgba(12, 18, 16, 0.28);
+  text-decoration: none;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.vault-hero-ctas a:hover,
+.vault-hero-ctas a:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--vault-gold);
+  background: rgba(198, 160, 53, 0.18);
 }
 
 .vault-dynasty {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(4.5rem, 1fr);
-  gap: 0.35rem;
+  grid-auto-columns: minmax(7.5rem, 1fr);
+  gap: 0.55rem;
   overflow-x: auto;
-  padding: 0.5rem 0 0.25rem;
+  padding: 0.7rem 0 0.35rem;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 
 .vault-dynasty-cell {
-  border: 1px solid color-mix(in srgb, var(--vault-rule) 25%, transparent);
-  background: rgba(255, 255, 255, 0.55);
-  padding: 0.45rem 0.35rem;
-  text-align: center;
-  min-height: 4.2rem;
+  border: 1px solid rgba(238, 243, 239, 0.22);
+  border-top: 3px solid color-mix(in srgb, var(--vault-paper) 24%, transparent);
+  background:
+    linear-gradient(180deg, rgba(238, 243, 239, 0.12), rgba(238, 243, 239, 0.05)),
+    rgba(12, 18, 16, 0.22);
+  padding: 0.7rem 0.65rem;
+  min-height: 5.75rem;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 0.2rem;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: var(--vault-paper);
+  box-shadow: inset 0 1px 0 rgba(238, 243, 239, 0.08);
   animation: vault-rise 0.5s ease-out both;
+  animation-delay: var(--vault-dynasty-delay, 0ms);
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
-.vault-dynasty-cell:nth-child(odd) {
-  animation-delay: 0.04s;
+.vault-dynasty-cell:hover,
+.vault-dynasty-cell:focus-within {
+  transform: translateY(-3px);
+  border-color: color-mix(in srgb, var(--vault-gold) 58%, var(--vault-paper));
+  background:
+    linear-gradient(180deg, rgba(198, 160, 53, 0.16), rgba(238, 243, 239, 0.06)),
+    rgba(12, 18, 16, 0.28);
+}
+
+.vault-dynasty-cell.is-current-champ {
+  border-color: var(--vault-gold);
+  border-top-color: var(--vault-gold);
+  box-shadow:
+    inset 0 1px 0 rgba(232, 212, 139, 0.24),
+    0 0 0 1px rgba(198, 160, 53, 0.18);
 }
 
 .vault-dynasty-year {
   font-size: 0.65rem;
-  letter-spacing: 0.08em;
-  color: var(--vault-muted);
+  letter-spacing: 0.12em;
+  color: color-mix(in srgb, var(--vault-paper) 72%, var(--vault-gold));
   font-family: var(--font-vault-sans), sans-serif;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .vault-dynasty-name {
-  font-size: 0.72rem;
-  font-weight: 600;
+  font-size: 0.84rem;
+  font-weight: 800;
   line-height: 1.15;
+}
+
+.vault-dynasty-name a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.vault-dynasty-name a:hover,
+.vault-dynasty-name a:focus-visible {
+  color: var(--vault-gold);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.vault-dynasty-note {
+  color: color-mix(in srgb, var(--vault-paper) 58%, transparent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .vault-section {
@@ -197,6 +344,14 @@
   margin: 0 0 0.75rem;
   padding-bottom: 0.4rem;
   border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 30%, transparent);
+}
+
+.vault-section-heading {
+  margin-bottom: 0.85rem;
+}
+
+.vault-section-heading h2 {
+  margin-bottom: 0.35rem;
 }
 
 .vault-table {
@@ -218,6 +373,35 @@
   width: 42%;
 }
 
+.vault-record-section-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 30%, transparent);
+}
+
+.vault-record-section-heading h2 {
+  margin: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.vault-record-heading-medal {
+  flex: 0 0 2.4rem;
+  max-width: 2.4rem;
+}
+
+.vault-record-highlight > * {
+  background: color-mix(in srgb, var(--vault-gold) 7%, transparent);
+}
+
+.vault-record-highlight > :first-child {
+  padding-left: 0.65rem;
+  border-left: 3px solid var(--vault-gold);
+}
+
 .vault-num {
   font-variant-numeric: tabular-nums;
   font-family: var(--font-vault-sans), sans-serif;
@@ -229,28 +413,394 @@
   font-size: 0.85rem;
 }
 
-.vault-grid-links {
+.vault-explore-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0.5rem;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
 }
 
-.vault-grid-links a {
-  display: block;
-  padding: 0.85rem 0.75rem;
+.vault-explore-tile {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 0.45rem;
+  min-height: 8.5rem;
+  padding: 1rem 5.25rem 1rem 1rem;
   text-decoration: none;
   color: inherit;
-  background: rgba(255, 255, 255, 0.5);
+  overflow: hidden;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.36)),
+    color-mix(in srgb, var(--vault-paper) 88%, white);
   border: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
-  font-weight: 600;
-  font-size: 0.9rem;
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, background 0.2s ease;
 }
 
-.vault-grid-links a:hover,
-.vault-grid-links a:focus-visible {
-  transform: translateY(-1px);
+.vault-explore-tile:hover,
+.vault-explore-tile:focus-visible {
+  transform: translateY(-3px);
   border-color: var(--vault-accent);
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(238, 243, 239, 0.58)),
+    var(--vault-paper);
+}
+
+.vault-explore-label {
+  font-family: var(--font-vault-display), ui-serif, Georgia, serif;
+  font-size: 1.35rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.vault-explore-tease {
+  color: var(--vault-muted);
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.vault-explore-illust {
+  position: absolute;
+  right: 0.75rem;
+  bottom: 0.45rem;
+  max-width: 4.8rem;
+  opacity: 0.88;
+  transform: rotate(2deg);
+}
+
+.vault-trophy-header {
+  display: flex;
+  align-items: center;
+  gap: clamp(0.9rem, 4vw, 1.5rem);
+  padding: clamp(1rem, 4vw, 1.75rem);
+  overflow: hidden;
+  color: var(--vault-paper);
+  background:
+    radial-gradient(460px 220px at 100% 0%, rgba(198, 160, 53, 0.24), transparent 62%),
+    linear-gradient(135deg, #0c1210 0%, var(--vault-field) 70%, #10251e 100%);
+  border-bottom: 3px solid var(--vault-gold);
+}
+
+.vault-trophy-header .vault-hero-kicker {
+  margin-bottom: 0.25rem;
+}
+
+.vault-trophy-header h1 {
+  margin: 0;
+  color: var(--vault-paper);
+  font-size: clamp(2.55rem, 11vw, 5rem);
+  line-height: 0.9;
+}
+
+.vault-trophy-header .vault-muted {
+  margin: 0.45rem 0 0;
+  color: color-mix(in srgb, var(--vault-paper) 72%, transparent);
+}
+
+.vault-trophy-header-illust {
+  flex: 0 0 clamp(4.8rem, 21vw, 8rem);
+  max-width: clamp(4.8rem, 21vw, 8rem);
+  filter: drop-shadow(0 1rem 1.35rem rgba(0, 0, 0, 0.3));
+}
+
+.vault-title-podium {
+  animation: vault-podium-entrance 0.7s ease-out both;
+}
+
+.vault-podium-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 24rem;
+  padding: clamp(1rem, 4vw, 1.5rem);
+  background:
+    radial-gradient(520px 240px at 50% 10%, rgba(198, 160, 53, 0.18), transparent 65%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.34)),
+    color-mix(in srgb, var(--vault-paper) 88%, white);
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
+}
+
+.vault-podium-stage::after {
+  content: '';
+  position: absolute;
+  inset: auto -8% 0;
+  height: 6rem;
+  background: linear-gradient(180deg, transparent, rgba(15, 61, 46, 0.1));
+  pointer-events: none;
+}
+
+.vault-podium-illust {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  width: min(92%, 36rem);
+  max-width: none;
+  opacity: 0.18;
+  transform: translateX(-50%);
+}
+
+.vault-podium-slots {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.vault-podium-card {
+  display: grid;
+  gap: 0.35rem;
+  align-content: start;
+  min-height: 9.5rem;
+  padding: 0.85rem;
+  text-decoration: none;
+  color: inherit;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.74), rgba(238, 243, 239, 0.6)),
+    var(--vault-paper);
+  border: 1px solid color-mix(in srgb, var(--vault-rule) 18%, transparent);
+  border-top: 4px solid color-mix(in srgb, var(--vault-rule) 28%, transparent);
+  box-shadow: 0 1rem 2rem rgba(12, 18, 16, 0.08);
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.vault-podium-card:hover,
+.vault-podium-card:focus-visible {
+  transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--vault-accent) 42%, transparent);
+  box-shadow: 0 1.1rem 2.2rem rgba(12, 18, 16, 0.12);
+}
+
+.vault-podium-card.is-first {
+  min-height: 11rem;
+  border-top-color: var(--vault-gold);
+}
+
+.vault-podium-card.is-second {
+  border-top-color: #a8a9ad;
+}
+
+.vault-podium-card.is-third {
+  border-top-color: #cd7f32;
+}
+
+.vault-podium-medal {
+  max-width: 3rem;
+  margin-bottom: 0.1rem;
+}
+
+.vault-podium-rank,
+.vault-season-label {
+  color: var(--vault-muted);
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.vault-podium-name {
+  color: var(--vault-ink);
+  font-family: var(--font-vault-display), ui-serif, Georgia, serif;
+  font-size: clamp(1.25rem, 5vw, 2rem);
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.vault-podium-card:hover .vault-podium-name,
+.vault-podium-card:focus-visible .vault-podium-name {
+  color: var(--vault-accent);
+}
+
+.vault-podium-count {
+  color: var(--vault-muted);
+  font-weight: 700;
+}
+
+.vault-podium-count strong {
+  color: var(--vault-ink);
+  font-size: 1.2rem;
+}
+
+.vault-title-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  color: var(--vault-ink);
+}
+
+.vault-title-count-medal {
+  flex: 0 0 1.35rem;
+  max-width: 1.35rem;
+}
+
+.vault-manager-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.vault-manager-header h1 {
+  margin: 0;
+}
+
+.vault-manager-title-badge {
+  display: grid;
+  justify-items: center;
+  gap: 0.1rem;
+  min-width: 4.75rem;
+  padding: 0.45rem 0.65rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--vault-gold) 45%, transparent);
+  border-top: 3px solid var(--vault-gold);
+  background: color-mix(in srgb, var(--vault-gold) 12%, transparent);
+}
+
+.vault-manager-title-cup {
+  max-width: 3.6rem;
+  filter: drop-shadow(0 0.5rem 0.8rem rgba(12, 18, 16, 0.14));
+}
+
+.vault-manager-title-badge .vault-num {
+  color: var(--vault-ink);
+  font-size: 1.25rem;
+  line-height: 1;
+}
+
+.vault-manager-season-champion > * {
+  background: color-mix(in srgb, var(--vault-gold) 8%, transparent);
+}
+
+.vault-champion-season-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-left: 0.45rem;
+  color: var(--vault-gold);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.vault-css-star {
+  width: 0.72rem;
+  height: 0.72rem;
+  background: var(--vault-gold);
+  clip-path: polygon(
+    50% 0%,
+    61% 35%,
+    98% 35%,
+    68% 56%,
+    79% 91%,
+    50% 70%,
+    21% 91%,
+    32% 56%,
+    2% 35%,
+    39% 35%
+  );
+}
+
+.vault-season-chronicle {
+  position: relative;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.vault-season-chronicle::before {
+  content: '';
+  position: absolute;
+  top: 0.4rem;
+  bottom: 0.4rem;
+  left: 1.35rem;
+  width: 2px;
+  background: color-mix(in srgb, var(--vault-rule) 18%, transparent);
+}
+
+.vault-season-entry {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.85rem minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background:
+    linear-gradient(90deg, rgba(198, 160, 53, 0.13), transparent 42%),
+    rgba(255, 255, 255, 0.54);
+  border: 1px solid color-mix(in srgb, var(--vault-gold) 30%, transparent);
+  border-left: 4px solid var(--vault-gold);
+}
+
+.vault-season-entry.is-in-progress {
+  background: rgba(255, 255, 255, 0.38);
+  border-color: color-mix(in srgb, var(--vault-rule) 12%, transparent);
+  border-left-color: color-mix(in srgb, var(--vault-muted) 38%, transparent);
+}
+
+.vault-season-year {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  align-self: start;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--vault-paper);
+  background: var(--vault-field);
+  border: 2px solid var(--vault-gold);
+}
+
+.vault-season-entry.is-in-progress .vault-season-year {
+  background: color-mix(in srgb, var(--vault-muted) 58%, var(--vault-field));
+  border-color: color-mix(in srgb, var(--vault-muted) 42%, transparent);
+}
+
+.vault-season-results {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.vault-season-result {
+  display: grid;
+  grid-template-columns: auto minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.vault-season-result a {
+  color: inherit;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.vault-season-result a:hover,
+.vault-season-result a:focus-visible {
+  color: var(--vault-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.vault-season-result.is-champion {
+  color: color-mix(in srgb, var(--vault-gold) 72%, var(--vault-ink));
+}
+
+.vault-season-result.is-runner-up {
+  color: color-mix(in srgb, #5f6064 82%, var(--vault-ink));
+}
+
+.vault-season-result.is-runner-up.is-no-medal {
+  grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+  padding-left: calc(1.8rem + 0.45rem);
+}
+
+.vault-season-result.is-last-place {
+  color: var(--vault-muted);
+  grid-template-columns: minmax(6.5rem, 0.35fr) minmax(0, 1fr);
+  padding-left: calc(1.8rem + 0.45rem);
+}
+
+.vault-season-entry.is-in-progress .vault-season-result {
+  color: var(--vault-muted);
+}
+
+.vault-season-medal {
+  max-width: 1.8rem;
 }
 
 .vault-footer {
@@ -260,6 +810,40 @@
   font-size: 0.8rem;
   color: var(--vault-muted);
   border-top: 1px solid color-mix(in srgb, var(--vault-rule) 15%, transparent);
+}
+
+.vault-footer-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+}
+
+.vault-footer-brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.vault-footer-mark {
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: auto;
+  opacity: 0.82;
+}
+
+.vault-footer-brand div {
+  display: grid;
+  gap: 0.1rem;
+}
+
+.vault-footer-brand strong {
+  color: var(--vault-ink);
+  font-family: var(--font-vault-display), ui-serif, Georgia, serif;
+  font-size: 1rem;
+}
+
+.vault-footer p {
+  margin: 0;
 }
 
 .vault-footer a {
@@ -306,6 +890,30 @@
   text-decoration: underline;
 }
 
+.vault-matrix td.vault-matrix-self {
+  color: color-mix(in srgb, var(--vault-gold) 75%, var(--vault-ink));
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--vault-gold) 18%, transparent), transparent 56%),
+    color-mix(in srgb, var(--vault-paper) 82%, white);
+  font-weight: 800;
+}
+
+.vault-matrix td.vault-matrix-win {
+  background: color-mix(in srgb, var(--vault-accent) 12%, transparent);
+  color: color-mix(in srgb, var(--vault-field) 82%, var(--vault-ink));
+}
+
+.vault-draft-first-overall > * {
+  background: color-mix(in srgb, var(--vault-gold) 16%, transparent);
+  border-bottom-color: color-mix(in srgb, var(--vault-gold) 35%, transparent);
+}
+
+.vault-draft-first-overall > :first-child {
+  border-left: 3px solid var(--vault-gold);
+  color: color-mix(in srgb, var(--vault-gold) 78%, var(--vault-ink));
+  font-weight: 800;
+}
+
 .vault-week-block {
   margin-bottom: 1.25rem;
 }
@@ -320,6 +928,19 @@
   margin: 0 0 0.4rem;
 }
 
+.vault-week-heading.is-playoff {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding-left: 0.55rem;
+  color: var(--vault-ink);
+  border-left: 3px solid var(--vault-gold);
+}
+
+.vault-week-heading.is-playoff span {
+  color: var(--vault-gold);
+}
+
 @keyframes vault-rise {
   from {
     opacity: 0;
@@ -329,6 +950,66 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+@keyframes vault-shimmer {
+  0%,
+  100% {
+    background-position: 0% center;
+  }
+  50% {
+    background-position: 100% center;
+  }
+}
+
+@keyframes vault-podium-entrance {
+  from {
+    opacity: 0;
+    transform: translateY(16px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ── Championship utility classes ── */
+
+.vault-gold-text {
+  color: var(--vault-gold);
+}
+
+.vault-rank-1 {
+  background: color-mix(in srgb, var(--vault-gold) 14%, transparent);
+}
+
+.vault-rank-2 {
+  background: color-mix(in srgb, #a8a9ad 12%, transparent);
+}
+
+.vault-rank-3 {
+  background: color-mix(in srgb, #cd7f32 12%, transparent);
+}
+
+.vault-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--vault-gold) 0%,
+    #e8d48b 45%,
+    var(--vault-gold) 90%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: vault-shimmer 3.5s ease-in-out infinite;
+}
+
+.vault-illust {
+  display: block;
+  width: 100%;
+  max-width: 8rem;
+  height: auto;
 }
 
 @media (min-width: 768px) {
@@ -343,7 +1024,142 @@
     padding: 1.75rem 1.5rem 4rem;
   }
 
-  .vault-grid-links {
+  .vault-footer-inner {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .vault-hero {
+    grid-template-columns: minmax(0, 1fr) minmax(18rem, 0.58fr);
+    align-items: end;
+    min-height: calc(100svh - 7.5rem);
+  }
+
+  .vault-hero-copy {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .vault-champ {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: center;
+  }
+
+  .vault-hero-ctas {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .vault-hero .vault-dynasty {
+    grid-column: 1 / -1;
+  }
+
+  .vault-explore-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .vault-podium-stage {
+    min-height: 22rem;
+  }
+
+  .vault-podium-slots {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-areas: 'second first third';
+    align-items: end;
+    min-height: 18rem;
+  }
+
+  .vault-podium-card.is-first {
+    grid-area: first;
+    min-height: 15.5rem;
+  }
+
+  .vault-podium-card.is-second {
+    grid-area: second;
+    min-height: 12.5rem;
+  }
+
+  .vault-podium-card.is-third {
+    grid-area: third;
+    min-height: 10.5rem;
+  }
+
+  .vault-season-entry {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    align-items: center;
+  }
+
+  .vault-season-chronicle::before {
+    left: 2.15rem;
+  }
+
+  .vault-season-results {
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) minmax(0, 0.9fr);
+  }
+
+  .vault-season-result,
+  .vault-season-result.is-last-place {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 0.35rem 0.5rem;
+    padding-left: 0;
+  }
+
+  .vault-season-result .vault-season-label {
+    grid-column: 2;
+  }
+
+  .vault-season-result a,
+  .vault-season-result > .vault-muted {
+    grid-column: 2;
+  }
+
+  .vault-season-result.is-last-place .vault-season-label,
+  .vault-season-result.is-last-place a,
+  .vault-season-result.is-last-place > .vault-muted {
+    grid-column: auto;
+  }
+}
+
+@media (min-width: 1100px) {
+  .vault-explore-grid {
     grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-hero,
+  .vault-hero-trophy,
+  .vault-dynasty-cell,
+  .vault-section,
+  .vault-title-podium,
+  .vault-shimmer {
+    animation: none;
+  }
+
+  .vault-shimmer {
+    color: var(--vault-gold);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+
+  .vault-hero-ctas a,
+  .vault-dynasty-cell,
+  .vault-explore-tile,
+  .vault-podium-card {
+    transition: none;
+  }
+
+  .vault-hero-ctas a:hover,
+  .vault-hero-ctas a:focus-visible,
+  .vault-dynasty-cell:hover,
+  .vault-dynasty-cell:focus-within,
+  .vault-explore-tile:hover,
+  .vault-explore-tile:focus-visible,
+  .vault-podium-card:hover,
+  .vault-podium-card:focus-visible {
+    transform: none;
   }
 }

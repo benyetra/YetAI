@@ -3,9 +3,11 @@
  */
 'use client';
 
+import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { vaultPath, type VaultSnapshot } from '../../lib/vault';
+import { StadiumMark } from './illustrations';
 
 const NAV = [
   { href: '', label: 'Home' },
@@ -38,7 +40,10 @@ export function VaultNav({
     <header className="vault-header">
       <div className="vault-header-inner">
         <Link href={vaultPath(slug)} className="vault-brand">
-          <span className="vault-brand-mark">League Vault</span>
+          <span className="vault-brand-mark">
+            <StadiumMark className="vault-brand-icon" />
+            <span>League Vault</span>
+          </span>
           <span className="vault-brand-name">{displayName}</span>
         </Link>
         <nav className="vault-nav" aria-label="League sections">
@@ -64,14 +69,23 @@ export function VaultNav({
 export function VaultFooter({ slug }: { slug: string }) {
   return (
     <footer className="vault-footer">
-      <p>
-        Powered by{' '}
-        <a href="https://yetai.app" rel="noopener noreferrer">
-          YetAI
-        </a>
-        {' · '}
-        <Link href={vaultPath(slug)}>League Vault</Link>
-      </p>
+      <div className="vault-footer-inner">
+        <div className="vault-footer-brand">
+          <StadiumMark className="vault-footer-mark" />
+          <div>
+            <strong>League Vault</strong>
+            <span>Championship archives, records, and draft boards.</span>
+          </div>
+        </div>
+        <p>
+          Powered by{' '}
+          <a href="https://yetai.app" rel="noopener noreferrer">
+            YetAI
+          </a>
+          {' · '}
+          <Link href={vaultPath(slug)}>Back to vault home</Link>
+        </p>
+      </div>
     </footer>
   );
 }
@@ -83,22 +97,37 @@ export function DynastyBar({
   timeline: VaultSnapshot['dynasty_timeline'];
   slug?: string;
 }) {
+  const mostRecentChampionSeason = [...timeline]
+    .reverse()
+    .find((cell) => cell.champion)?.season;
+
   return (
     <div className="vault-dynasty" role="list" aria-label="Championship timeline">
-      {timeline.map((cell) => (
-        <div key={cell.season} className="vault-dynasty-cell" role="listitem">
-          <span className="vault-dynasty-year">{cell.season}</span>
-          <span className="vault-dynasty-name">
-            {cell.champion && slug ? (
-              <Link href={vaultPath(slug, `/managers/${cell.champion.slug}`)}>
-                {cell.champion.display_name}
-              </Link>
-            ) : (
-              cell.champion?.display_name ?? '—'
-            )}
-          </span>
-        </div>
-      ))}
+      {timeline.map((cell, index) => {
+        const isMostRecentChampion = cell.season === mostRecentChampionSeason;
+        return (
+          <div
+            key={cell.season}
+            className={`vault-dynasty-cell${isMostRecentChampion ? ' is-current-champ' : ''}`}
+            role="listitem"
+            style={{ '--vault-dynasty-delay': `${index * 55}ms` } as CSSProperties}
+          >
+            <span className="vault-dynasty-year">{cell.season}</span>
+            <span className="vault-dynasty-name">
+              {cell.champion && slug ? (
+                <Link href={vaultPath(slug, `/managers/${cell.champion.slug}`)}>
+                  {cell.champion.display_name}
+                </Link>
+              ) : (
+                cell.champion?.display_name ?? 'TBD'
+              )}
+            </span>
+            <span className="vault-dynasty-note">
+              {cell.champion ? (isMostRecentChampion ? 'Current crown' : 'Champion') : 'In progress'}
+            </span>
+          </div>
+        );
+      })}
     </div>
   );
 }

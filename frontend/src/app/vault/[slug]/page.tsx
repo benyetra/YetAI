@@ -1,9 +1,17 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DynastyBar } from '../../../components/vault/VaultChrome';
+import { Medal, StadiumMark, TrophyCup } from '../../../components/vault/illustrations';
 import { fetchVaultSnapshot, latestDraftSeason, vaultPath } from '../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
+
+type ExploreTile = {
+  href: string;
+  label: string;
+  tease: string;
+  illustration?: 'medal' | 'stadium';
+};
 
 export default async function VaultHomePage({ params }: Props) {
   const { slug } = await params;
@@ -12,47 +20,106 @@ export default async function VaultHomePage({ params }: Props) {
 
   const champ = snap.reigning_champion;
   const draftSeason = latestDraftSeason(snap);
+  const exploreTiles: ExploreTile[] = [
+    {
+      href: vaultPath(slug, '/trophies'),
+      label: 'Trophies',
+      tease: 'Champions, runners-up, and every finished season.',
+      illustration: 'medal',
+    },
+    {
+      href: vaultPath(slug, '/records'),
+      label: 'Records',
+      tease: 'Career marks and single-season league highs.',
+      illustration: 'stadium',
+    },
+    {
+      href: vaultPath(slug, '/managers'),
+      label: 'Managers',
+      tease: 'Profiles for every owner in the vault.',
+      illustration: 'medal',
+    },
+    {
+      href: vaultPath(slug, '/seasons'),
+      label: 'Seasons',
+      tease: 'Standings, matchups, and playoff paths by year.',
+      illustration: 'stadium',
+    },
+    {
+      href: vaultPath(slug, '/h2h'),
+      label: 'H2H',
+      tease: 'Rivalry records across the whole league.',
+    },
+    {
+      href: vaultPath(slug, '/transactions'),
+      label: 'Moves',
+      tease: 'Waivers, trades, and roster churn by season.',
+    },
+    ...(draftSeason
+      ? [
+          {
+            href: vaultPath(slug, `/drafts/${draftSeason}`),
+            label: 'Draft',
+            tease: `Latest board from the ${draftSeason} draft.`,
+            illustration: 'stadium' as const,
+          },
+        ]
+      : []),
+  ];
 
   return (
     <>
       <section className="vault-hero">
-        <p className="vault-hero-kicker">
-          Est. {snap.first_season ?? '—'} · {snap.seasons.length} seasons
-        </p>
-        <h1 className="vault-display">{snap.display_name}</h1>
-        {snap.tagline ? <p className="vault-muted">{snap.tagline}</p> : null}
+        <div className="vault-hero-copy">
+          <p className="vault-hero-kicker">
+            Est. {snap.first_season ?? '—'} · {snap.seasons.length} seasons
+          </p>
+          <h1 className="vault-display">{snap.display_name}</h1>
+        </div>
+
         <div className="vault-champ">
-          <span className="vault-champ-label">Reigning champion</span>
-          <span className="vault-champ-name vault-display">
+          <TrophyCup className="vault-illust vault-hero-trophy" />
+          <div className="vault-champ-copy">
+            <span className="vault-champ-label">Reigning champion</span>
             {champ ? (
-              <Link href={vaultPath(slug, `/managers/${champ.slug}`)}>
+              <Link
+                href={vaultPath(slug, `/managers/${champ.slug}`)}
+                className="vault-champ-name vault-display vault-shimmer"
+              >
                 {champ.display_name}
               </Link>
             ) : (
-              'TBD'
+              <span className="vault-champ-name vault-display vault-shimmer">TBD</span>
             )}
-          </span>
-          {champ?.season ? (
-            <span className="vault-muted">{champ.season} season</span>
-          ) : null}
+            {champ?.season ? (
+              <span className="vault-champ-season">{champ.season} season title holder</span>
+            ) : null}
+          </div>
         </div>
+
+        <div className="vault-hero-ctas" aria-label="Primary vault destinations">
+          <Link href={vaultPath(slug, '/trophies')}>Trophy Room</Link>
+          <Link href={vaultPath(slug, '/records')}>Record Book</Link>
+        </div>
+
         <DynastyBar timeline={snap.dynasty_timeline} slug={slug} />
       </section>
 
-      <section className="vault-section">
+      <section className="vault-section vault-explore">
         <h2>Explore</h2>
-        <div className="vault-grid-links">
-          <Link href={vaultPath(slug, '/trophies')}>Trophy Room</Link>
-          <Link href={vaultPath(slug, '/records')}>Record Book</Link>
-          <Link href={vaultPath(slug, '/managers')}>Managers</Link>
-          <Link href={vaultPath(slug, '/seasons')}>Seasons</Link>
-          <Link href={vaultPath(slug, '/h2h')}>Head-to-Head</Link>
-          <Link href={vaultPath(slug, '/transactions')}>Transactions</Link>
-          {draftSeason ? (
-            <Link href={vaultPath(slug, `/drafts/${draftSeason}`)}>
-              Draft {draftSeason}
+        <div className="vault-explore-grid">
+          {exploreTiles.map((tile, index) => (
+            <Link key={tile.href} href={tile.href} className="vault-explore-tile">
+              <span className="vault-explore-label">{tile.label}</span>
+              <span className="vault-explore-tease">{tile.tease}</span>
+              {tile.illustration === 'medal' ? (
+                <Medal className="vault-illust vault-explore-illust" rank={index === 0 ? 1 : 2} />
+              ) : null}
+              {tile.illustration === 'stadium' ? (
+                <StadiumMark className="vault-illust vault-explore-illust" />
+              ) : null}
             </Link>
-          ) : null}
+          ))}
         </div>
       </section>
     </>

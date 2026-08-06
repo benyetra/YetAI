@@ -80,7 +80,10 @@ export default async function SeasonDetailPage({ params }: Props) {
               {season.teams.map((t) => {
                 const manager = managerById(snap, t.manager_id);
                 return (
-                  <tr key={t.id}>
+                  <tr
+                    key={t.id}
+                    className={t.final_rank === 1 ? 'vault-rank-1' : undefined}
+                  >
                     <td className="vault-num">{t.final_rank ?? '—'}</td>
                     <td>{t.team_name}</td>
                     <td>
@@ -124,9 +127,9 @@ export default async function SeasonDetailPage({ params }: Props) {
             const playoff = rows.some((m) => m.is_playoff);
             return (
               <div key={week} className="vault-week-block">
-                <h3 className="vault-week-heading">
+                <h3 className={`vault-week-heading${playoff ? ' is-playoff' : ''}`}>
                   Week {week}
-                  {playoff ? ' · Playoffs' : ''}
+                  {playoff ? <span>Playoffs</span> : null}
                 </h3>
                 <table className="vault-table">
                   <tbody>
