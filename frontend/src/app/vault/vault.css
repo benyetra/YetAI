@@ -1127,3 +1127,39 @@
     grid-template-columns: repeat(4, 1fr);
   }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .vault-hero,
+  .vault-hero-trophy,
+  .vault-dynasty-cell,
+  .vault-section,
+  .vault-title-podium,
+  .vault-shimmer {
+    animation: none;
+  }
+
+  .vault-shimmer {
+    color: var(--vault-gold);
+    background: none;
+    -webkit-background-clip: unset;
+    background-clip: unset;
+  }
+
+  .vault-hero-ctas a,
+  .vault-dynasty-cell,
+  .vault-explore-tile,
+  .vault-podium-card {
+    transition: none;
+  }
+
+  .vault-hero-ctas a:hover,
+  .vault-hero-ctas a:focus-visible,
+  .vault-dynasty-cell:hover,
+  .vault-dynasty-cell:focus-within,
+  .vault-explore-tile:hover,
+  .vault-explore-tile:focus-visible,
+  .vault-podium-card:hover,
+  .vault-podium-card:focus-visible {
+    transform: none;
+  }
+}

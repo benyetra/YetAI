@@ -36,8 +36,8 @@ export default async function TrophiesPage({ params }: Props) {
     })
     .sort((a, b) => b.n - a.n || a.manager.display_name.localeCompare(b.manager.display_name));
   const podiumSlots = [
-    { rank: 2 as const, leader: leaderboard[1], className: 'is-second' },
     { rank: 1 as const, leader: leaderboard[0], className: 'is-first' },
+    { rank: 2 as const, leader: leaderboard[1], className: 'is-second' },
     { rank: 3 as const, leader: leaderboard[2], className: 'is-third' },
   ].filter((slot): slot is PodiumSlot => Boolean(slot.leader));
 

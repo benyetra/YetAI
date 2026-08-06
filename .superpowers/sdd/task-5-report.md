@@ -18,3 +18,21 @@ Status: complete
 
 ### Notes
 - No push or PR performed per request.
+
+---
+
+## Final review fixes (whole-branch pass)
+
+Status: complete
+
+### Fixed
+1. **Trophy podium DOM order** (`trophies/page.tsx`): `podiumSlots` now renders 1→2→3 for mobile and screen-reader order. Desktop layout unchanged via existing `grid-template-areas: 'second first third'`.
+2. **Reduced motion** (`vault.css`): Added `@media (prefers-reduced-motion: reduce)` to disable `vault-rise`, `vault-podium-entrance`, and `vault-shimmer` animations; static gold text for shimmer; removed hover/transition motion on interactive vault cards and CTAs.
+
+### Gates
+- `npm run type-check` — passed
+- `npm run test:unit -- --testPathPatterns=vault-` — passed (8 tests)
+
+### Notes
+- Commit: `fix(league-vault): podium DOM order and reduced-motion`
+- No push or PR performed per request.
