@@ -53,6 +53,61 @@ def _slugify(name: str) -> str:
     return s or "manager"
 
 
+def _transaction_public(
+    db: Session, *, season_id: int, teams: list[LvTeam]
+) -> tuple[dict[str, int], list[dict[str, Any]]]:
+    """Type counts + a short recent ledger (no raw platform payloads)."""
+    summary: dict[str, int] = defaultdict(int)
+    recent: list[dict[str, Any]] = []
+    roster_to_team = {
+        str(t.platform_roster_id): t for t in teams if t.platform_roster_id
+    }
+    try:
+        rows = (
+            db.query(LvTransaction)
+            .options(
+                load_only(
+                    LvTransaction.id,
+                    LvTransaction.season_id,
+                    LvTransaction.week,
+                    LvTransaction.type,
+                    LvTransaction.status,
+                    LvTransaction.created_at_ts,
+                    LvTransaction.team_ids,
+                )
+            )
+            .filter_by(season_id=season_id)
+            .order_by(LvTransaction.id.desc())
+            .all()
+        )
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {}, []
+
+    for tx in rows:
+        key = str(tx.type or "unknown")
+        summary[key] += 1
+
+    for tx in rows[:40]:
+        team_names: list[str] = []
+        for rid in tx.team_ids or []:
+            t = roster_to_team.get(str(rid))
+            if t and t.team_name:
+                team_names.append(t.team_name)
+        recent.append(
+            {
+                "week": tx.week,
+                "type": tx.type,
+                "status": tx.status,
+                "team_names": team_names,
+            }
+        )
+    return dict(summary), recent
+
+
 def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
     site = db.query(LvSite).filter_by(slug=slug).one()
     lineage_id = site.lineage_id
@@ -172,16 +227,18 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                         }
                     )
                 picks_made = sum(1 for row in pick_rows if row["player_id"])
-                if not pick_rows:
+                total = len(pick_rows)
+                if total == 0:
                     status = "empty"
                 elif picks_made == 0:
                     # ESPN often publishes snake order before the draft runs
                     # (playerId=-1 on every row).
                     status = "pending"
-                elif picks_made < len(pick_rows):
-                    status = "in_progress"
-                else:
+                elif picks_made >= max(1, int(total * 0.8)):
+                    # A few blank ESPN slots are normal; treat as complete.
                     status = "complete"
+                else:
+                    status = "in_progress"
                 draft_payload.append(
                     {
                         "draft_type": d.draft_type,
@@ -199,6 +256,9 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             draft_payload = []
 
         tx_count = db.query(LvTransaction).filter_by(season_id=season.id).count()
+        tx_summary, tx_recent = _transaction_public(
+            db, season_id=season.id, teams=teams
+        )
 
         season_payloads.append(
             {
@@ -246,6 +306,8 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
                 ],
                 "drafts": draft_payload,
                 "transaction_count": tx_count,
+                "transaction_summary": tx_summary,
+                "transactions_recent": tx_recent,
             }
         )
 

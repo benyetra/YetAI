@@ -329,3 +329,49 @@ def test_snapshot_pending_draft_strips_placeholder_player_ids(session):
     assert draft_out["picks_made"] == 0
     assert all(p["player_id"] is None for p in draft_out["picks"])
     assert len(draft_out["picks"]) == 2
+
+
+def test_snapshot_transaction_summary(session):
+    from app.models.league_vault_models import LvTransaction
+    from app.services.league_vault.publish.snapshot import build_site_snapshot
+
+    seeded = _seed_two_team_season(session)
+    session.add_all(
+        [
+            LvTransaction(
+                season_id=seeded["season"].id,
+                week=3,
+                platform_transaction_id="t1",
+                type="trade",
+                status="complete",
+                team_ids=["1", "2"],
+            ),
+            LvTransaction(
+                season_id=seeded["season"].id,
+                week=4,
+                platform_transaction_id="t2",
+                type="waiver",
+                status="complete",
+                team_ids=["1"],
+            ),
+            LvTransaction(
+                season_id=seeded["season"].id,
+                week=5,
+                platform_transaction_id="t3",
+                type="waiver",
+                status="complete",
+                team_ids=["2"],
+            ),
+        ]
+    )
+    session.commit()
+
+    snap = build_site_snapshot(session, slug="test-league")
+    season = snap["seasons"][0]
+    assert season["transaction_count"] == 3
+    assert season["transaction_summary"]["trade"] == 1
+    assert season["transaction_summary"]["waiver"] == 2
+    assert len(season["transactions_recent"]) == 3
+    assert any(
+        "Alice FC" in (r.get("team_names") or []) for r in season["transactions_recent"]
+    )

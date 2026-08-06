@@ -50,7 +50,7 @@ export default async function TrophiesPage({ params }: Props) {
                       {s.champion.display_name}
                     </Link>
                   ) : (
-                    '—'
+                    <span className="vault-muted">In progress</span>
                   )}
                 </td>
                 <td>
