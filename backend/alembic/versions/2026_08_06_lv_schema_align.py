@@ -39,13 +39,38 @@ def upgrade() -> None:
         )
 
     if "lv_draft_picks" in tables:
+        cols = {c["name"] for c in inspect(bind).get_columns("lv_draft_picks")}
+        # Prefer prod/PRD names pick_no + draft_slot
+        if "pick" in cols and "pick_no" not in cols:
+            op.alter_column(
+                "lv_draft_picks",
+                "pick",
+                new_column_name="pick_no",
+                existing_type=sa.Integer(),
+                existing_nullable=False,
+            )
+            cols.discard("pick")
+            cols.add("pick_no")
+        if "overall_pick" in cols and "draft_slot" not in cols:
+            op.alter_column(
+                "lv_draft_picks",
+                "overall_pick",
+                new_column_name="draft_slot",
+                existing_type=sa.Integer(),
+                existing_nullable=True,
+            )
+            cols.discard("overall_pick")
+            cols.add("draft_slot")
         _add_missing(
             "lv_draft_picks",
             [
-                ("overall_pick", sa.Integer()),
+                ("pick_no", sa.Integer()),
+                ("draft_slot", sa.Integer()),
                 ("platform_roster_id", sa.String(64)),
                 ("player_id", sa.String(64)),
                 ("team_id", sa.Integer()),
+                ("is_keeper", sa.Boolean()),
+                ("auction_amount", sa.Float()),
             ],
         )
 

@@ -241,11 +241,14 @@ class LvDraftPick(Base):
     id = Column(Integer, primary_key=True, index=True)
     draft_id = Column(Integer, ForeignKey("lv_drafts.id"), nullable=False)
     round = Column(Integer, nullable=False)
-    pick = Column(Integer, nullable=False)
-    overall_pick = Column(Integer, nullable=True)
+    # Prod / early P1 used pick_no + draft_slot (not pick / overall_pick).
+    pick_no = Column(Integer, nullable=False)
+    draft_slot = Column(Integer, nullable=True)
     platform_roster_id = Column(String(64), nullable=True)
     player_id = Column(String(64), nullable=True)
     team_id = Column(Integer, ForeignKey("lv_teams.id"), nullable=True)
+    is_keeper = Column(Boolean, nullable=True)
+    auction_amount = Column(Float, nullable=True)
 
     draft = relationship("LvDraft", back_populates="picks")
 
