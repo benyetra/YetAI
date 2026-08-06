@@ -1,9 +1,11 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { VaultLabelWithHelp } from '../../../../../components/vault/VaultHelp';
 import { ManagersMark, TrophyCup } from '../../../../../components/vault/illustrations';
 import {
-  COLUMN_HELP,
+  ManagerRecordsTable,
+  ManagerSeasonsTable,
+} from '../../../../../components/vault/tables';
+import {
   RECORD_HELP,
   RECORD_LABELS,
   fetchVaultSnapshot,
@@ -32,6 +34,39 @@ export default async function ManagerDetailPage({ params }: Props) {
 
   const heldRecords = snap.records.filter((r) => r.manager_id === manager.id);
   const titleCount = career?.titles ?? 0;
+
+  const seasonRows = [...seasons].reverse().map(({ season, team, champion }) => ({
+    season,
+    teamName: team?.team_name ?? '—',
+    wins: team?.wins ?? 0,
+    losses: team?.losses ?? 0,
+    recordLabel: `${team?.wins}-${team?.losses}`,
+    pf: team?.points_for ?? null,
+    pfLabel: team?.points_for?.toFixed(1) ?? '—',
+    allPlayWins: team?.all_play_wins ?? null,
+    allPlayLabel:
+      team?.all_play_wins != null
+        ? `${team.all_play_wins}-${team.all_play_losses}`
+        : '—',
+    luck: team?.luck_differential ?? null,
+    luckLabel:
+      team?.luck_differential != null ? team.luck_differential.toFixed(2) : '—',
+    rank: team?.final_rank ?? null,
+    champion,
+  }));
+
+  const recordRows = heldRecords.map((r) => {
+    const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+    return {
+      key: `${r.record_key}-${r.season ?? 'all'}-${r.value}`,
+      label,
+      help: RECORD_HELP[r.record_key],
+      value: r.value,
+      valueLabel: formatRecord(r.value, r.record_key),
+      seasonSort: r.season ?? 0,
+      seasonLabel: r.season != null ? String(r.season) : 'Career',
+    };
+  });
 
   return (
     <>
@@ -71,102 +106,17 @@ export default async function ManagerDetailPage({ params }: Props) {
       <section className="vault-section">
         <div className="vault-section-heading">
           <h2>Season-by-season</h2>
-          <p className="vault-muted">Every year this manager fielded a team in the vault.</p>
+          <p className="vault-muted">Every year this manager fielded a team — click a column to sort.</p>
         </div>
-        <table className="vault-table vault-table-seasons">
-          <thead>
-            <tr>
-              <th>Year</th>
-              <th>Team</th>
-              <th className="vault-col-num">Record</th>
-              <th className="vault-col-num">
-                <VaultLabelWithHelp help={COLUMN_HELP.pf} helpLabel="About points for">
-                  PF
-                </VaultLabelWithHelp>
-              </th>
-              <th className="vault-col-num">
-                <VaultLabelWithHelp help={COLUMN_HELP.all_play} helpLabel="About all-play">
-                  All-play
-                </VaultLabelWithHelp>
-              </th>
-              <th className="vault-col-num">
-                <VaultLabelWithHelp help={COLUMN_HELP.luck} helpLabel="About luck">
-                  Luck
-                </VaultLabelWithHelp>
-              </th>
-              <th className="vault-col-num">Rank</th>
-            </tr>
-          </thead>
-          <tbody>
-            {[...seasons].reverse().map(({ season, team, champion }) => (
-              <tr
-                key={season}
-                className={champion ? 'vault-manager-season-champion' : undefined}
-              >
-                <td className="vault-num">
-                  <Link href={vaultPath(slug, `/seasons/${season}`)}>{season}</Link>
-                  {champion ? (
-                    <span className="vault-champion-season-badge">
-                      <span className="vault-css-star" aria-hidden="true" />
-                      Champion
-                    </span>
-                  ) : null}
-                </td>
-                <td>{team?.team_name ?? '—'}</td>
-                <td className="vault-num">
-                  {team?.wins}-{team?.losses}
-                </td>
-                <td className="vault-num">{team?.points_for?.toFixed(1) ?? '—'}</td>
-                <td className="vault-num">
-                  {team?.all_play_wins != null
-                    ? `${team.all_play_wins}-${team.all_play_losses}`
-                    : '—'}
-                </td>
-                <td className="vault-num">
-                  {team?.luck_differential != null
-                    ? team.luck_differential.toFixed(2)
-                    : '—'}
-                </td>
-                <td className="vault-num">{team?.final_rank ?? '—'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <ManagerSeasonsTable slug={slug} rows={seasonRows} />
       </section>
-      {heldRecords.length > 0 ? (
+      {recordRows.length > 0 ? (
         <section className="vault-section">
           <div className="vault-section-heading">
             <h2>Record book</h2>
             <p className="vault-muted">League marks this manager currently holds.</p>
           </div>
-          <table className="vault-table">
-            <thead>
-              <tr>
-                <th>Record</th>
-                <th>Value</th>
-                <th>Season</th>
-              </tr>
-            </thead>
-            <tbody>
-              {heldRecords.map((r) => {
-                const label = RECORD_LABELS[r.record_key] ?? r.record_key;
-                return (
-                  <tr key={`${r.record_key}-${r.season ?? 'all'}-${r.value}`}>
-                    <td>
-                      <VaultLabelWithHelp
-                        help={RECORD_HELP[r.record_key]}
-                        helpLabel={`About ${label}`}
-                      >
-                        {label}
-                      </VaultLabelWithHelp>
-                    </td>
-                    <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-                    <td className="vault-num">{r.season ?? 'Career'}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <ManagerRecordsTable rows={recordRows} />
         </section>
       ) : null}
     </>

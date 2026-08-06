@@ -3,6 +3,7 @@ import { notFound } from 'next/navigation';
 import { VaultHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, Podium, TrophyCup } from '../../../../components/vault/illustrations';
+import { TitlesTable } from '../../../../components/vault/tables';
 import {
   PAGE_HELP,
   fetchVaultSnapshot,
@@ -195,25 +196,17 @@ export default async function TrophiesPage({ params }: Props) {
         {leaderboard.length === 0 ? (
           <p className="vault-muted">No champions recorded yet.</p>
         ) : (
-          <table className="vault-table">
-            <tbody>
-              {leaderboard.map(({ manager, n }, index) => (
-                <tr key={manager.id} className={rankClass(index)}>
-                  <th scope="row">
-                    <Link
-                      href={vaultPath(slug, `/managers/${manager.slug}`)}
-                      className={vaultNameFitClass(manager.display_name)}
-                      title={manager.display_name}
-                    >
-                      {manager.display_name}
-                    </Link>
-                  </th>
-                  <td className="vault-num">{n}</td>
-                  <td className="vault-muted">{titleCopy(n)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <TitlesTable
+            slug={slug}
+            rows={leaderboard.map(({ manager, n }, index) => ({
+              id: manager.id,
+              slug: manager.slug,
+              displayName: manager.display_name,
+              titles: n,
+              titleLabel: titleCopy(n),
+              rankClass: rankClass(index),
+            }))}
+          />
         )}
       </section>
     </>

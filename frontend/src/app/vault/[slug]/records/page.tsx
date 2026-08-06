@@ -1,9 +1,8 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import type { ReactNode } from 'react';
 import { VaultLabelWithHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, RecordBook } from '../../../../components/vault/illustrations';
+import { RecordsBookTable, type RecordsBookRow } from '../../../../components/vault/tables';
 import {
   PAGE_HELP,
   RECORD_HELP,
@@ -12,77 +11,66 @@ import {
   formatRecord,
   managerById,
   resolveRecordMatchup,
-  vaultNameFitClass,
-  vaultPath,
   type VaultRecord,
   type VaultSnapshot,
 } from '../../../../lib/vault';
 
 type Props = { params: Promise<{ slug: string }> };
 
-function RecordAttribution({
-  slug,
-  snap,
-  record,
-}: {
-  slug: string;
-  snap: VaultSnapshot;
-  record: VaultRecord;
-}) {
-  const mgr = managerById(snap, record.manager_id);
-  const parties = resolveRecordMatchup(snap, record);
-  const contextSeason =
-    typeof record.context?.season === 'number' || typeof record.context?.season === 'string'
-      ? String(record.context.season)
-      : null;
-  const detailParts = [
-    record.season != null ? String(record.season) : contextSeason,
-    record.context?.week != null ? `Wk ${record.context.week}` : null,
-  ].filter(Boolean);
+function toRows(
+  snap: VaultSnapshot,
+  rows: VaultRecord[],
+  isHighlighted: (r: VaultRecord) => boolean,
+): RecordsBookRow[] {
+  return rows.map((r) => {
+    const label = RECORD_LABELS[r.record_key] ?? r.record_key;
+    const mgr = managerById(snap, r.manager_id);
+    const parties = resolveRecordMatchup(snap, r);
+    const contextSeason =
+      typeof r.context?.season === 'number' || typeof r.context?.season === 'string'
+        ? String(r.context.season)
+        : null;
+    const detailParts = [
+      r.season != null ? String(r.season) : contextSeason,
+      r.context?.week != null ? `Wk ${r.context.week}` : null,
+    ].filter(Boolean);
 
-  let partiesNode: ReactNode;
-  if (parties) {
-    partiesNode = (
-      <span className="vault-record-matchup">
-        <Link
-          href={vaultPath(slug, `/managers/${parties.managerA.slug}`)}
-          className={vaultNameFitClass(parties.managerA.display_name)}
-          title={parties.managerA.display_name}
-        >
-          {parties.managerA.display_name}
-        </Link>
-        <span className="vault-record-vs"> vs </span>
-        <Link
-          href={vaultPath(slug, `/managers/${parties.managerB.slug}`)}
-          className={vaultNameFitClass(parties.managerB.display_name)}
-          title={parties.managerB.display_name}
-        >
-          {parties.managerB.display_name}
-        </Link>
-      </span>
-    );
-  } else if (mgr) {
-    partiesNode = (
-      <Link
-        href={vaultPath(slug, `/managers/${mgr.slug}`)}
-        className={vaultNameFitClass(mgr.display_name)}
-        title={mgr.display_name}
-      >
-        {mgr.display_name}
-      </Link>
-    );
-  } else if (detailParts.length) {
-    partiesNode = <span>Matchup</span>;
-  } else {
-    partiesNode = '—';
-  }
+    if (parties) {
+      return {
+        key: `${r.record_key}-${r.manager_id}-${r.season}-${r.value}`,
+        label,
+        help: RECORD_HELP[r.record_key],
+        value: r.value,
+        valueLabel: formatRecord(r.value, r.record_key),
+        holderName: `${parties.managerA.display_name} vs ${parties.managerB.display_name}`,
+        holderSlug: null,
+        matchup: {
+          managerA: {
+            slug: parties.managerA.slug,
+            displayName: parties.managerA.display_name,
+          },
+          managerB: {
+            slug: parties.managerB.slug,
+            displayName: parties.managerB.display_name,
+          },
+        },
+        detail: detailParts.join(' · '),
+        highlight: isHighlighted(r),
+      };
+    }
 
-  return (
-    <td className="vault-muted">
-      {partiesNode}
-      {detailParts.length ? ` · ${detailParts.join(' · ')}` : null}
-    </td>
-  );
+    return {
+      key: `${r.record_key}-${r.manager_id}-${r.season}-${r.value}`,
+      label,
+      help: RECORD_HELP[r.record_key],
+      value: r.value,
+      valueLabel: formatRecord(r.value, r.record_key),
+      holderName: mgr?.display_name ?? (detailParts.length ? 'Matchup' : ''),
+      holderSlug: mgr?.slug ?? null,
+      detail: detailParts.join(' · '),
+      highlight: isHighlighted(r),
+    };
+  });
 }
 
 export default async function RecordsPage({ params }: Props) {
@@ -125,29 +113,6 @@ export default async function RecordsPage({ params }: Props) {
     return keys;
   })();
 
-  const renderRows = (
-    rows: VaultRecord[],
-    isHighlighted: (r: VaultRecord) => boolean,
-  ) =>
-    rows.map((r) => {
-      const label = RECORD_LABELS[r.record_key] ?? r.record_key;
-      const help = RECORD_HELP[r.record_key];
-      return (
-        <tr
-          key={recordRowKey(r)}
-          className={isHighlighted(r) ? 'vault-record-highlight' : undefined}
-        >
-          <th scope="row">
-            <VaultLabelWithHelp help={help} helpLabel={`About ${label}`}>
-              {label}
-            </VaultLabelWithHelp>
-          </th>
-          <td className="vault-num">{formatRecord(r.value, r.record_key)}</td>
-          <RecordAttribution slug={slug} snap={snap} record={r} />
-        </tr>
-      );
-    });
-
   return (
     <>
       <VaultPageHeader
@@ -170,11 +135,10 @@ export default async function RecordsPage({ params }: Props) {
               </VaultLabelWithHelp>
             </h2>
           </div>
-          <table className="vault-table vault-table-records">
-            <tbody>
-              {renderRows(career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
-            </tbody>
-          </table>
+          <RecordsBookTable
+            slug={slug}
+            rows={toRows(snap, career, (r) => careerHighlightKeys.has(recordRowKey(r)))}
+          />
         </section>
       ) : null}
       <section className="vault-section">
@@ -188,15 +152,14 @@ export default async function RecordsPage({ params }: Props) {
             </VaultLabelWithHelp>
           </h2>
           <p className="vault-muted">
-            Matchup marks show both managers. Use the ? beside a mark for definitions.
+            Matchup marks show both managers. Click a column to sort; use the ? for
+            definitions.
           </p>
         </div>
         {featured.length === 0 ? (
           <p className="vault-muted">Records will appear after the first compute pass.</p>
         ) : (
-          <table className="vault-table vault-table-records">
-            <tbody>{renderRows(featured, () => true)}</tbody>
-          </table>
+          <RecordsBookTable slug={slug} rows={toRows(snap, featured, () => true)} />
         )}
       </section>
     </>

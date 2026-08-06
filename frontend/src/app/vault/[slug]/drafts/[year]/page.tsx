@@ -1,17 +1,15 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { VaultLabelWithHelp } from '../../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
 import { DraftBoard } from '../../../../../components/vault/illustrations';
+import { DraftBoardTable } from '../../../../../components/vault/tables';
 import {
-  COLUMN_HELP,
   PAGE_HELP,
   draftOverallPick,
   formatDraftPlayer,
   fetchVaultSnapshot,
   isDraftPending,
   managerById,
-  vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
 
@@ -42,6 +40,23 @@ export default async function DraftPage({ params }: Props) {
     .filter(Boolean)
     .join(' · ');
 
+  const pickRows =
+    draft?.picks.map((p) => {
+      const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
+      const manager = team ? managerById(snap, team.manager_id) : undefined;
+      const overall = draftOverallPick(p);
+      return {
+        key: `${p.round}-${p.pick_no}-${overall}`,
+        overall,
+        round: p.round,
+        teamName: team?.team_name ?? '—',
+        managerName: manager?.display_name ?? '',
+        managerSlug: manager?.slug ?? null,
+        playerLabel: pending ? 'TBD' : formatDraftPlayer(p),
+        firstOverall: p.round === 1 && overall === 1,
+      };
+    }) ?? [];
+
   return (
     <>
       <VaultPageHeader
@@ -55,9 +70,7 @@ export default async function DraftPage({ params }: Props) {
       />
       <section className="vault-section">
         {!hasOrder ? (
-          <p className="vault-muted">
-            The {seasonYear} draft hasn&apos;t happened yet.
-          </p>
+          <p className="vault-muted">The {seasonYear} draft hasn&apos;t happened yet.</p>
         ) : (
           <>
             {pending ? (
@@ -65,56 +78,7 @@ export default async function DraftPage({ params }: Props) {
                 Draft order is set; selections will appear here when the board is complete.
               </p>
             ) : null}
-            <table className="vault-table">
-              <thead>
-                <tr>
-                  <th className="vault-col-num">
-                    <VaultLabelWithHelp
-                      help={COLUMN_HELP.draft_overall}
-                      helpLabel="About overall pick"
-                    >
-                      Overall
-                    </VaultLabelWithHelp>
-                  </th>
-                  <th className="vault-col-num">Rd</th>
-                  <th>Team</th>
-                  <th>Manager</th>
-                  <th>Player</th>
-                </tr>
-              </thead>
-              <tbody>
-                {draft!.picks.map((p) => {
-                  const team = p.team_id != null ? teamById.get(p.team_id) : undefined;
-                  const manager = team ? managerById(snap, team.manager_id) : undefined;
-                  const overall = draftOverallPick(p);
-                  const isFirstOverall = p.round === 1 && overall === 1;
-                  return (
-                    <tr
-                      key={`${p.round}-${p.pick_no}-${overall}`}
-                      className={isFirstOverall ? 'vault-draft-first-overall' : undefined}
-                    >
-                      <td className="vault-num">{overall}</td>
-                      <td className="vault-num">{p.round}</td>
-                      <td>{team?.team_name ?? '—'}</td>
-                      <td>
-                        {manager ? (
-                          <Link
-                            href={vaultPath(slug, `/managers/${manager.slug}`)}
-                            className={vaultNameFitClass(manager.display_name)}
-                            title={manager.display_name}
-                          >
-                            {manager.display_name}
-                          </Link>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td>{pending ? 'TBD' : formatDraftPlayer(p)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <DraftBoardTable slug={slug} rows={pickRows} />
           </>
         )}
       </section>
