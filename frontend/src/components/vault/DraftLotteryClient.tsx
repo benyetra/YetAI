@@ -13,6 +13,7 @@ export type LotteryEntry = {
   manager_slug?: string | null;
   display_name: string;
   final_rank?: number | null;
+  playoff_finish?: number | null;
   combinations?: number | null;
   chance_pct?: number | null;
   group: string;
@@ -226,7 +227,11 @@ export function DraftLotteryClient({
               <span className="vault-muted">
                 {' '}
                 · {row.team_name || '—'}
-                {row.final_rank != null ? ` · finished #${row.final_rank}` : ''}
+                {row.playoff_finish != null
+                  ? ` · finished #${row.playoff_finish}`
+                  : row.final_rank != null
+                    ? ` · RS #${row.final_rank}`
+                    : ''}
               </span>
             </li>
           ))}

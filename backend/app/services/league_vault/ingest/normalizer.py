@@ -180,22 +180,28 @@ def _bracket_champ_runner_up(
     winners_bracket: list[dict[str, Any]] | None,
     roster_to_team: dict[str, LvTeam],
 ) -> tuple[LvTeam | None, LvTeam | None]:
-    """Champion from winners_bracket entry with p==1; runner-up from p==2 if present."""
+    """
+    Champion / runner-up from winners_bracket championship game (p==1).
+
+    Sleeper: ``r`` is round, ``w``/``l`` are winner/loser roster ids, ``p`` is
+    the place contested (1 = title game → winner 1st, loser 2nd).
+    """
     if not winners_bracket:
         return None, None
 
-    champ_roster: str | None = None
-    runner_roster: str | None = None
+    champ_team: LvTeam | None = None
+    runner_team: LvTeam | None = None
     for entry in winners_bracket:
-        p = entry.get("p")
-        rid = str(entry.get("r") or entry.get("roster_id") or "")
-        if p == 1 and rid:
-            champ_roster = rid
-        elif p == 2 and rid:
-            runner_roster = rid
+        if entry.get("p") != 1:
+            continue
+        w = entry.get("w")
+        l = entry.get("l")
+        if w is not None:
+            champ_team = roster_to_team.get(str(w))
+        if l is not None:
+            runner_team = roster_to_team.get(str(l))
+        break
 
-    champ_team = roster_to_team.get(champ_roster) if champ_roster else None
-    runner_team = roster_to_team.get(runner_roster) if runner_roster else None
     return champ_team, runner_team
 
 

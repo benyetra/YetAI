@@ -155,7 +155,7 @@ def test_normalize_sleeper_season_writes_12_teams(session):
             ],
         }
     ]
-    winners_bracket = [{"p": 1, "r": 1, "w": 1}]
+    winners_bracket = [{"p": 1, "r": 3, "m": 6, "t1": 1, "t2": 2, "w": 1, "l": 2}]
 
     result = normalize_sleeper_season(
         session,
@@ -184,6 +184,10 @@ def test_normalize_sleeper_season_writes_12_teams(session):
 
     season_row = session.query(LvSeason).filter(LvSeason.season == 2024).one()
     assert season_row.champion_manager_id is not None
+    alice = session.query(LvManager).filter(LvManager.canonical_name == "Alice").one()
+    bob = session.query(LvManager).filter(LvManager.canonical_name == "Bob").one()
+    assert season_row.champion_manager_id == alice.id
+    assert season_row.runner_up_manager_id == bob.id
 
     mgrs = session.query(LvManager).filter(LvManager.lineage_id == lineage.id).all()
     assert len(mgrs) == 2
