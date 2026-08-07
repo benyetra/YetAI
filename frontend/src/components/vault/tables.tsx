@@ -631,6 +631,7 @@ export function WeekScoreboardTable({ rows }: { rows: ScoreboardRow[] }) {
       label: 'Score',
       sortValue: (r) => r.scoreSort,
       cell: (r) => r.scoreLabel,
+      headerClassName: 'vault-col-num',
       cellClassName: 'vault-num',
     },
   ];

@@ -498,6 +498,30 @@
   width: 100%;
 }
 
+/*
+ * Numeric sortable headers: pack chrome to the right so the label sits on the
+ * same edge as the figures. Visual order: ◇ ? Luck
+ */
+.vault-table th.vault-col-num .vault-th-sort-wrap,
+.vault-table th.vault-col-num .vault-th-static {
+  display: flex;
+  width: 100%;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.vault-table th.vault-col-num .vault-sort-btn {
+  order: 2;
+  flex-direction: row-reverse;
+  text-align: right;
+}
+
+.vault-table th.vault-col-num .vault-th-sort-wrap > .vault-help,
+.vault-table th.vault-col-num .vault-th-static > .vault-help {
+  order: 1;
+}
+
 /* Year / identity columns stay left even if they use tabular nums */
 .vault-table-seasons tbody td:first-child,
 .vault-table-standings tbody td:nth-child(2),
