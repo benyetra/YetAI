@@ -2277,3 +2277,34 @@
   display: grid;
   gap: 0.4rem;
 }
+
+/* Championship title asterisk / footnotes */
+.vault-title-asterisk {
+  font-family: var(--vault-font-display, inherit);
+  font-size: 0.75em;
+  font-weight: 700;
+  line-height: 0;
+  margin-left: 0.12em;
+  color: var(--vault-accent, #b45309);
+  vertical-align: super;
+}
+
+.vault-title-footnotes {
+  margin-top: 1.25rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--vault-ink, #1a1a1a) 12%, transparent);
+  max-width: 42rem;
+}
+
+.vault-title-footnotes p {
+  margin: 0.35rem 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+}
+
+.vault-share-asterisk-note {
+  margin: 0.35rem 0 0.6rem;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  max-width: 28rem;
+}

@@ -28,7 +28,18 @@ export function ShareSeasonCard({ card }: { card: ShareSeasonCardModel }) {
       <div className="vault-share-card-face">
         <p className="vault-intrigue-kicker">{card.leagueName}</p>
         <p className="vault-share-year">{card.season}</p>
-        <p className="vault-share-champ vault-display">{card.championName}</p>
+        <p className="vault-share-champ vault-display" title={card.championNote || undefined}>
+          {card.championName}
+          {card.championAsterisk ? (
+            <sup className="vault-title-asterisk">{card.championMarker || '*'}</sup>
+          ) : null}
+        </p>
+        {card.championNote ? (
+          <p className="vault-muted vault-share-asterisk-note">
+            <sup className="vault-title-asterisk">{card.championMarker || '*'}</sup>
+            {card.championNote}
+          </p>
+        ) : null}
         <p className="vault-muted vault-share-record">{card.recordLine}</p>
         <dl className="vault-share-meta">
           <div>

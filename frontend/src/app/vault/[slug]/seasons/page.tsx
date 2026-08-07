@@ -1,4 +1,5 @@
 import { notFound } from 'next/navigation';
+import { TitleFootnotes } from '../../../../components/vault/TitleAsterisk';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { StadiumMark } from '../../../../components/vault/illustrations';
 import { SeasonsIndexTable } from '../../../../components/vault/tables';
@@ -19,6 +20,9 @@ export default async function SeasonsIndexPage({ params }: Props) {
     return {
       season: s.season,
       championName: s.champion?.display_name ?? '',
+      championAsterisk: Boolean(s.champion_asterisk),
+      championMarker: s.champion_marker || '*',
+      championNote: s.champion_note || null,
       teams: s.team_count ?? s.teams.length,
       draftLabel,
     };
@@ -35,6 +39,7 @@ export default async function SeasonsIndexPage({ params }: Props) {
       />
       <section className="vault-section">
         <SeasonsIndexTable slug={slug} rows={rows} />
+        <TitleFootnotes snap={snap} />
       </section>
     </>
   );

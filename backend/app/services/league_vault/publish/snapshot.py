@@ -28,6 +28,7 @@ from app.services.league_vault.publish.players import (
     normalize_draft_player_id,
     resolve_player_labels,
 )
+from app.services.league_vault.title_annotations import apply_title_annotations
 
 
 def _manager_public(m: LvManager) -> dict[str, Any]:
@@ -415,28 +416,32 @@ def build_site_snapshot(db: Session, *, slug: str) -> dict[str, Any]:
             }
             break
 
-    return {
-        "slug": site.slug,
-        "display_name": sanitize_site_display_name(site.display_name, slug=site.slug),
-        "tagline": site.tagline,
-        "first_season": site.first_season,
-        "latest_season": site.latest_season,
-        "last_place_label": site.last_place_label or "Last Place",
-        "generated_at": datetime.utcnow().isoformat() + "Z",
-        "reigning_champion": reigning,
-        "managers": [_manager_public(m) for m in managers.values()],
-        "manager_careers": {str(mid): data for mid, data in career.items()},
-        "seasons": season_payloads,
-        "records": record_payload,
-        "h2h": {a: dict(b) for a, b in h2h.items()},
-        "dynasty_timeline": [
-            {
-                "season": s["season"],
-                "champion": s["champion"],
-            }
-            for s in season_payloads
-        ],
-    }
+    return apply_title_annotations(
+        {
+            "slug": site.slug,
+            "display_name": sanitize_site_display_name(
+                site.display_name, slug=site.slug
+            ),
+            "tagline": site.tagline,
+            "first_season": site.first_season,
+            "latest_season": site.latest_season,
+            "last_place_label": site.last_place_label or "Last Place",
+            "generated_at": datetime.utcnow().isoformat() + "Z",
+            "reigning_champion": reigning,
+            "managers": [_manager_public(m) for m in managers.values()],
+            "manager_careers": {str(mid): data for mid, data in career.items()},
+            "seasons": season_payloads,
+            "records": record_payload,
+            "h2h": {a: dict(b) for a, b in h2h.items()},
+            "dynasty_timeline": [
+                {
+                    "season": s["season"],
+                    "champion": s["champion"],
+                }
+                for s in season_payloads
+            ],
+        }
+    )
 
 
 def write_snapshot_file(snapshot: dict[str, Any], path: str) -> str:
