@@ -2179,3 +2179,101 @@
     max-width: none;
   }
 }
+
+/* ── Draft lottery ── */
+
+.vault-lottery-note {
+  max-width: 42rem;
+  margin: 0 0 1.25rem;
+}
+
+.vault-lottery-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.65rem;
+  margin-bottom: 1.75rem;
+}
+
+.vault-lottery-run {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 0.75rem 1.25rem;
+  font-family: var(--font-vault-sans), sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vault-paper);
+  background: linear-gradient(135deg, var(--vault-field), #163528);
+  border-bottom: 3px solid var(--vault-gold);
+  transition: transform 0.15s ease;
+}
+
+.vault-lottery-run:hover,
+.vault-lottery-run:focus-visible {
+  transform: translateY(-1px);
+  outline: none;
+}
+
+.vault-lottery-run:disabled {
+  opacity: 0.65;
+  cursor: wait;
+  transform: none;
+}
+
+.vault-lottery-locked {
+  margin: 0 0 1.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--vault-accent);
+}
+
+.vault-lottery-error {
+  margin: 0 0 1rem;
+  color: #8b3a3a;
+  font-weight: 600;
+}
+
+.vault-lottery-order {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.vault-lottery-pick {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: baseline;
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--vault-rule) 12%, transparent);
+}
+
+.vault-lottery-pick.is-lottery-win {
+  background: color-mix(in srgb, var(--vault-gold) 12%, transparent);
+}
+
+.vault-lottery-pick-num {
+  font-weight: 700;
+  color: var(--vault-field);
+}
+
+.vault-lottery-pick-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.vault-lottery-playoff-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+}

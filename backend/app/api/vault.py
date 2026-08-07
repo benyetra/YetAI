@@ -82,6 +82,55 @@ def get_vault_meta(slug: str, response: Response, db: Session = Depends(get_db))
     }
 
 
+@router.get("/{slug}/lottery")
+def get_vault_lottery(
+    slug: str,
+    response: Response,
+    upcoming_season: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """Preview lottery odds (or the locked order if already drawn)."""
+    from app.services.league_vault.lottery.service import preview_lottery
+
+    site = _public_site(db, slug)
+    try:
+        payload = preview_lottery(db, site, upcoming_season=upcoming_season)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    _assert_no_pii(payload)
+    if payload.get("status") == "drawn":
+        response.headers["Cache-Control"] = _CACHE
+    else:
+        response.headers["Cache-Control"] = "public, max-age=30"
+    return payload
+
+
+@router.post("/{slug}/lottery/run")
+def post_vault_lottery_run(
+    slug: str,
+    upcoming_season: int | None = None,
+    db: Session = Depends(get_db),
+):
+    """
+    Run the weighted draft lottery once for the upcoming season.
+
+    Idempotent: a second run returns the original draw (``already_drawn: true``).
+    """
+    from app.services.league_vault.lottery.service import run_lottery
+
+    site = _public_site(db, slug)
+    try:
+        payload = run_lottery(db, site, upcoming_season=upcoming_season)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)
+        ) from exc
+    _assert_no_pii(payload)
+    return payload
+
+
 @router.post("/{slug}/events", status_code=status.HTTP_204_NO_CONTENT)
 def post_vault_event(slug: str, body: VaultEventIn, db: Session = Depends(get_db)):
     """Anonymous beacon for pilot engagement (attributed to league slug)."""
