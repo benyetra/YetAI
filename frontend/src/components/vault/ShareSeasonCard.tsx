@@ -38,6 +38,19 @@ export function ShareSeasonCard({ card }: { card: ShareSeasonCardModel }) {
           <p className="vault-muted vault-share-asterisk-note">
             <sup className="vault-title-asterisk">{card.championMarker || '*'}</sup>
             {card.championNote}
+            {card.championLink ? (
+              <>
+                {' '}
+                <a
+                  className="vault-title-footnote-link"
+                  href={card.championLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  {card.championLinkLabel || 'Watch'}
+                </a>
+              </>
+            ) : null}
           </p>
         ) : null}
         <p className="vault-muted vault-share-record">{card.recordLine}</p>

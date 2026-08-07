@@ -44,6 +44,8 @@ export type VaultSeason = {
   champion_asterisk?: boolean;
   champion_marker?: string | null;
   champion_note?: string | null;
+  champion_link?: string | null;
+  champion_link_label?: string | null;
   teams: VaultTeam[];
   matchups: Array<{
     week: number;
@@ -117,8 +119,16 @@ export type VaultSnapshot = {
     champion_asterisk?: boolean;
     champion_marker?: string | null;
     champion_note?: string | null;
+    champion_link?: string | null;
+    champion_link_label?: string | null;
   }>;
-  title_footnotes?: Array<{ season: number; marker: string; note: string }>;
+  title_footnotes?: Array<{
+    season: number;
+    marker: string;
+    note: string;
+    link?: string | null;
+    link_label?: string | null;
+  }>;
 };
 
 function vaultApiBase(): string {

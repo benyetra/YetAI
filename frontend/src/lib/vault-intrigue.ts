@@ -77,6 +77,8 @@ export type ShareSeasonCardModel = {
   championAsterisk?: boolean;
   championMarker?: string;
   championNote?: string | null;
+  championLink?: string | null;
+  championLinkLabel?: string | null;
   runnerUpName: string;
   lastPlaceName: string;
   lastPlaceLabel: string;
@@ -746,6 +748,8 @@ export function buildShareSeasonCard(
     championAsterisk: Boolean(season.champion_asterisk),
     championMarker: season.champion_marker || '*',
     championNote: season.champion_note || null,
+    championLink: season.champion_link || null,
+    championLinkLabel: season.champion_link_label || null,
     runnerUpName: season.runner_up?.display_name ?? '—',
     lastPlaceName: season.last_place?.display_name ?? '—',
     lastPlaceLabel: snap.last_place_label,

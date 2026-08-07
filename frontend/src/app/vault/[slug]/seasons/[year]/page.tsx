@@ -120,6 +120,8 @@ export default async function SeasonDetailPage({ params }: Props) {
                 season: season.season,
                 marker: season.champion_marker || '*',
                 note: season.champion_note,
+                link: season.champion_link,
+                link_label: season.champion_link_label,
               },
             ],
           }}

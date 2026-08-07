@@ -2,17 +2,25 @@
 
 from __future__ import annotations
 
+from app.services.league_vault import title_annotations as ta
 from app.services.league_vault.title_annotations import (
     annotation_for_season,
     apply_title_annotations,
 )
 
 
+def setup_function():
+    ta._load_all.cache_clear()
+
+
 def test_mikes_hard_2022_eddie_title_has_asterisk():
     ann = annotation_for_season("mikes-hard", 2022)
     assert ann is not None
     assert ann["marker"] == "*"
-    assert "asterisk" in ann["note"].lower() or "cut" in ann["note"].lower()
+    assert "Hamlin" in ann["note"]
+    assert "totally fine" in ann["note"]
+    assert ann["link"] == "https://www.youtube.com/watch?v=2TGJQT-JgPI"
+    assert ann["link_label"] == "Watch the hit"
 
 
 def test_apply_title_annotations_onto_snapshot():
@@ -33,9 +41,9 @@ def test_apply_title_annotations_onto_snapshot():
     by_year = {s["season"]: s for s in out["seasons"]}
     assert by_year[2022]["champion_asterisk"] is True
     assert by_year[2022]["champion_marker"] == "*"
+    assert "Hamlin" in by_year[2022]["champion_note"]
     assert (
-        "eddie" in by_year[2022]["champion_note"].lower()
-        or "title" in by_year[2022]["champion_note"].lower()
+        by_year[2022]["champion_link"] == "https://www.youtube.com/watch?v=2TGJQT-JgPI"
     )
     assert by_year[2021].get("champion_asterisk") is False
     assert by_year[2023].get("champion_asterisk") is False
@@ -44,6 +52,7 @@ def test_apply_title_annotations_onto_snapshot():
     assert dyn[2022]["champion_asterisk"] is True
     assert len(out["title_footnotes"]) == 1
     assert out["title_footnotes"][0]["season"] == 2022
+    assert out["title_footnotes"][0]["link_label"] == "Watch the hit"
 
 
 def test_other_slugs_unaffected():

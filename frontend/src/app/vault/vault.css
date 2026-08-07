@@ -2302,6 +2302,17 @@
   line-height: 1.45;
 }
 
+.vault-title-footnote-link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.vault-title-footnote-link:hover,
+.vault-title-footnote-link:focus-visible {
+  color: var(--vault-accent, #b45309);
+}
+
 .vault-share-asterisk-note {
   margin: 0.35rem 0 0.6rem;
   font-size: 0.85rem;
