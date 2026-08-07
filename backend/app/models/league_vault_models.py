@@ -290,3 +290,30 @@ class LvSyncJob(Base):
     stats = Column(JSON, nullable=True)
 
     lineage = relationship("LvLeagueLineage", back_populates="sync_jobs")
+
+
+class LvDraftLottery(Base):
+    """One-shot weighted draft lottery result for an upcoming season."""
+
+    __tablename__ = "lv_draft_lottery"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "upcoming_season",
+            name="uq_lv_draft_lottery_site_season",
+        ),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    site_id = Column(Integer, ForeignKey("lv_sites.id"), nullable=False, index=True)
+    upcoming_season = Column(Integer, nullable=False)
+    source_season = Column(Integer, nullable=False)
+    drawn_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    rng_seed = Column(String(64), nullable=False)
+    # Frozen inputs: lottery odds, playoff reverse order, team/manager labels
+    seed_snapshot = Column(JSON, nullable=False, default=dict)
+    # Final draft order: [{pick, manager_id, manager_slug, display_name, ...}]
+    drawn_order = Column(JSON, nullable=False, default=list)
+    lottery_picks = Column(Integer, nullable=False, default=3)
+
+    site = relationship("LvSite")

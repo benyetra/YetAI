@@ -80,6 +80,12 @@ export default async function VaultHomePage({ params }: Props) {
       icon: 'h2h',
     },
     {
+      href: vaultPath(slug, '/lottery'),
+      label: 'Lottery',
+      tease: 'Weighted draft order for the upcoming season.',
+      icon: 'draft',
+    },
+    {
       href: vaultPath(slug, '/transactions'),
       label: 'Moves',
       tease: 'Waivers, trades, and roster churn by season.',
