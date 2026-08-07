@@ -426,6 +426,10 @@
   text-transform: uppercase;
 }
 
+.vault-dynasty-cell.is-streak .vault-dynasty-note {
+  color: var(--vault-gold);
+}
+
 .vault-section {
   margin: 1.75rem 0;
   animation: vault-rise 0.45s ease-out both;
@@ -1783,7 +1787,371 @@
   .vault-explore-tile:hover,
   .vault-explore-tile:focus-visible,
   .vault-podium-card:hover,
-  .vault-podium-card:focus-visible {
+  .vault-podium-card:focus-visible,
+  .vault-intrigue-card:hover,
+  .vault-share-card-face:hover {
     transform: none;
+  }
+}
+
+/* ── Intrigue: rivalries, karma, stories, share cards ── */
+
+.vault-intrigue-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+.vault-intrigue-grid-2 {
+  grid-template-columns: 1fr;
+}
+
+.vault-intrigue-card {
+  padding: 1.1rem 1.15rem 1.2rem;
+  border-top: 2px solid color-mix(in srgb, var(--vault-gold) 55%, transparent);
+  background:
+    linear-gradient(
+      160deg,
+      color-mix(in srgb, var(--vault-field) 8%, transparent),
+      transparent 55%
+    ),
+    color-mix(in srgb, var(--vault-paper-deep) 55%, transparent);
+  animation: vault-rise 0.5s ease-out both;
+  transition: transform 0.2s ease;
+}
+
+.vault-intrigue-card:hover {
+  transform: translateY(-2px);
+}
+
+.vault-intrigue-card.is-lucky {
+  border-top-color: var(--vault-accent);
+}
+
+.vault-intrigue-card.is-unlucky,
+.vault-intrigue-card.is-drought {
+  border-top-color: color-mix(in srgb, var(--vault-ink) 35%, var(--vault-muted));
+}
+
+.vault-intrigue-card.is-glory,
+.vault-intrigue-card.is-streak {
+  border-top-color: var(--vault-gold);
+}
+
+.vault-intrigue-card.is-regret {
+  border-top-color: color-mix(in srgb, #8b3a3a 70%, var(--vault-ink));
+}
+
+.vault-intrigue-kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--vault-accent);
+}
+
+.vault-intrigue-headline {
+  margin: 0 0 0.45rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.35rem 0.65rem;
+  font-size: 1.15rem;
+  font-family: var(--font-vault-display), serif;
+  line-height: 1.2;
+}
+
+.vault-intrigue-headline a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.vault-intrigue-headline a:hover,
+.vault-intrigue-headline a:focus-visible {
+  color: var(--vault-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.12em;
+}
+
+.vault-intrigue-record {
+  font-family: var(--font-vault-sans), sans-serif;
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--vault-field);
+}
+
+.vault-intrigue-link,
+.vault-share-copy {
+  display: inline-block;
+  margin-top: 0.65rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--vault-field);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.vault-intrigue-link:hover,
+.vault-intrigue-link:focus-visible,
+.vault-share-copy:hover,
+.vault-share-copy:focus-visible {
+  color: var(--vault-accent);
+  text-decoration: underline;
+  text-underline-offset: 0.14em;
+}
+
+.vault-throwback-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1.35rem 1.25rem;
+  background:
+    radial-gradient(500px 180px at 90% 0%, rgba(198, 160, 53, 0.18), transparent 60%),
+    linear-gradient(135deg, #0c1210 0%, var(--vault-field) 70%, #10251e 100%);
+  color: var(--vault-paper);
+  animation: vault-rise 0.55s ease-out both;
+}
+
+.vault-throwback .vault-intrigue-kicker {
+  color: color-mix(in srgb, var(--vault-paper) 70%, var(--vault-gold));
+}
+
+.vault-throwback-title {
+  margin: 0 0 0.75rem;
+  font-size: clamp(1.35rem, 3.5vw, 1.85rem);
+  color: var(--vault-paper);
+  border: none;
+  padding: 0;
+}
+
+.vault-throwback-matchup {
+  margin: 0 0 0.4rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.45rem 0.75rem;
+  font-family: var(--font-vault-display), serif;
+  font-size: 1.2rem;
+}
+
+.vault-throwback-score {
+  font-family: var(--font-vault-sans), sans-serif;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--vault-gold);
+}
+
+.vault-throwback .vault-muted {
+  color: color-mix(in srgb, var(--vault-paper) 62%, transparent);
+}
+
+.vault-throwback .vault-intrigue-link {
+  color: var(--vault-gold);
+  align-self: flex-start;
+}
+
+.vault-story-beats {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.vault-story-beats li {
+  display: grid;
+  gap: 0.15rem;
+  padding-left: 0.85rem;
+  border-left: 3px solid color-mix(in srgb, var(--vault-gold) 65%, transparent);
+  animation: vault-rise 0.45s ease-out both;
+}
+
+.vault-story-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--vault-accent);
+}
+
+.vault-story-detail {
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.vault-draft-intrigue {
+  display: grid;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.vault-epithet-block {
+  margin: 0.15rem 0 0.35rem;
+}
+
+.vault-epithet {
+  margin: 0;
+  font-family: var(--font-vault-display), serif;
+  font-size: 1.15rem;
+  font-style: italic;
+  color: var(--vault-field);
+}
+
+.vault-epithet-inline {
+  display: block;
+  margin-top: 0.15rem;
+  font-family: var(--font-vault-display), serif;
+  font-size: 0.85rem;
+  font-style: italic;
+  color: var(--vault-muted);
+}
+
+.vault-manager-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.1rem;
+}
+
+.vault-luck-chip {
+  margin: 0.35rem 0 0;
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--vault-muted);
+}
+
+.vault-luck-chip.is-lucky {
+  color: var(--vault-accent);
+}
+
+.vault-luck-chip.is-unlucky {
+  color: color-mix(in srgb, #8b3a3a 80%, var(--vault-ink));
+}
+
+.vault-share-section .vault-share-grid,
+.vault-share-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+}
+
+.vault-share-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  max-width: 24rem;
+}
+
+.vault-share-card-face {
+  padding: 1.35rem 1.25rem 1.45rem;
+  color: var(--vault-paper);
+  background:
+    radial-gradient(420px 160px at 100% 0%, rgba(198, 160, 53, 0.28), transparent 55%),
+    linear-gradient(145deg, #0c1210 0%, var(--vault-field) 62%, #163528 100%);
+  border-bottom: 3px solid var(--vault-gold);
+  transition: transform 0.2s ease;
+  animation: vault-rise 0.5s ease-out both;
+}
+
+.vault-share-card-face:hover {
+  transform: translateY(-2px);
+}
+
+.vault-share-card-face .vault-intrigue-kicker {
+  color: color-mix(in srgb, var(--vault-paper) 68%, var(--vault-gold));
+}
+
+.vault-share-year {
+  margin: 0.15rem 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--vault-gold);
+}
+
+.vault-share-champ {
+  margin: 0;
+  font-size: clamp(1.6rem, 4vw, 2.1rem);
+  line-height: 1.05;
+  color: var(--vault-paper);
+}
+
+.vault-share-record {
+  margin: 0.4rem 0 0.85rem;
+  color: color-mix(in srgb, var(--vault-paper) 70%, transparent);
+}
+
+.vault-share-meta {
+  margin: 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+}
+
+.vault-share-meta dt {
+  margin: 0;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--vault-paper) 55%, transparent);
+}
+
+.vault-share-meta dd {
+  margin: 0.15rem 0 0;
+  font-size: 0.92rem;
+}
+
+.vault-share-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem 1.25rem;
+  align-items: center;
+}
+
+.vault-share-actions .vault-intrigue-link,
+.vault-share-actions .vault-share-copy {
+  margin-top: 0;
+}
+
+@media (min-width: 768px) {
+  .vault-intrigue-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vault-intrigue-grid-2,
+  .vault-draft-intrigue {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vault-throwback-inner {
+    flex-direction: row;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 1.6rem 1.75rem;
+  }
+
+  .vault-story-beats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .vault-share-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .vault-share-card {
+    max-width: none;
   }
 }

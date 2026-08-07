@@ -7,6 +7,7 @@ import type { CSSProperties } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { vaultNameFitClass, vaultPath, type VaultSnapshot } from '../../lib/vault';
+import { dynastyCellNote } from '../../lib/vault-intrigue';
 import { StadiumMark } from './illustrations';
 
 const NAV = [
@@ -98,9 +99,12 @@ export function VaultFooter({ slug }: { slug: string }) {
 export function DynastyBar({
   timeline,
   slug,
+  snapshot,
 }: {
   timeline: VaultSnapshot['dynasty_timeline'];
   slug?: string;
+  /** When provided, cell notes include back-to-backs / three-peats. */
+  snapshot?: VaultSnapshot;
 }) {
   const mostRecentChampionSeason = [...timeline]
     .reverse()
@@ -110,10 +114,20 @@ export function DynastyBar({
     <div className="vault-dynasty" role="list" aria-label="Championship timeline">
       {timeline.map((cell, index) => {
         const isMostRecentChampion = cell.season === mostRecentChampionSeason;
+        const note = snapshot
+          ? dynastyCellNote(snapshot, cell.season, cell.champion?.id)
+          : cell.champion
+            ? isMostRecentChampion
+              ? 'Current crown'
+              : 'Champion'
+            : 'In progress';
+        const streaky = /peat|Back-to-back|Year \d/.test(note);
         return (
           <div
             key={cell.season}
-            className={`vault-dynasty-cell${isMostRecentChampion ? ' is-current-champ' : ''}`}
+            className={`vault-dynasty-cell${isMostRecentChampion ? ' is-current-champ' : ''}${
+              streaky ? ' is-streak' : ''
+            }`}
             role="listitem"
             style={{ '--vault-dynasty-delay': `${index * 55}ms` } as CSSProperties}
           >
@@ -136,9 +150,7 @@ export function DynastyBar({
                 </span>
               )}
             </span>
-            <span className="vault-dynasty-note">
-              {cell.champion ? (isMostRecentChampion ? 'Current crown' : 'Champion') : 'In progress'}
-            </span>
+            <span className="vault-dynasty-note">{note}</span>
           </div>
         );
       })}

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ManagerEpithetLine } from '../../../../../components/vault/VaultIntrigue';
 import { ManagersMark, TrophyCup } from '../../../../../components/vault/illustrations';
 import {
   ManagerRecordsTable,
@@ -13,6 +14,11 @@ import {
   vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
+import {
+  buildTitleDroughts,
+  managerEpithet,
+  managerLuckBadge,
+} from '../../../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string; managerSlug: string }> };
 
@@ -34,6 +40,9 @@ export default async function ManagerDetailPage({ params }: Props) {
 
   const heldRecords = snap.records.filter((r) => r.manager_id === manager.id);
   const titleCount = career?.titles ?? 0;
+  const epithet = managerEpithet(snap, manager.id);
+  const luckBadge = managerLuckBadge(snap, manager.id);
+  const drought = buildTitleDroughts(snap, 20).find((d) => d.manager.id === manager.id);
 
   const seasonRows = [...seasons].reverse().map(({ season, team, champion }) => ({
     season,
@@ -84,6 +93,7 @@ export default async function ManagerDetailPage({ params }: Props) {
           >
             {manager.display_name}
           </h1>
+          <ManagerEpithetLine epithet={epithet} luck={luckBadge} />
           <p className="vault-muted">
             {manager.first_season}–{manager.last_season}
             {career
@@ -91,6 +101,7 @@ export default async function ManagerDetailPage({ params }: Props) {
                   career.titles === 1 ? '' : 's'
                 } · ${career.points_for.toFixed(0)} PF`
               : null}
+            {drought ? ` · ${drought.label}` : null}
           </p>
         </div>
         {titleCount > 0 ? (
