@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ShareSeasonCard } from '../../../../components/vault/ShareSeasonCard';
+import { DroughtStreakStrip } from '../../../../components/vault/VaultIntrigue';
 import { VaultHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { Medal, Podium, TrophyCup } from '../../../../components/vault/illustrations';
@@ -12,6 +14,11 @@ import {
   vaultNameFitClass,
   vaultPath,
 } from '../../../../lib/vault';
+import {
+  buildShareSeasonCard,
+  buildTitleDroughts,
+  buildTitleStreaks,
+} from '../../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string }> };
 type TitleLeader = { manager: VaultManager; n: number };
@@ -51,6 +58,14 @@ export default async function TrophiesPage({ params }: Props) {
     { rank: 3 as const, leader: leaderboard[2], className: 'is-third' },
   ].filter((slot): slot is PodiumSlot => Boolean(slot.leader));
 
+  const streaks = buildTitleStreaks(snap);
+  const droughts = buildTitleDroughts(snap);
+  const shareCards = [...snap.seasons]
+    .reverse()
+    .map((s) => buildShareSeasonCard(snap, s, slug))
+    .filter((c): c is NonNullable<typeof c> => Boolean(c))
+    .slice(0, 3);
+
   return (
     <>
       <VaultPageHeader
@@ -60,6 +75,22 @@ export default async function TrophiesPage({ params }: Props) {
         help={PAGE_HELP.trophies}
         illustration={<TrophyCup className="vault-illust" />}
       />
+
+      <DroughtStreakStrip slug={slug} streaks={streaks} droughts={droughts} />
+
+      {shareCards.length > 0 ? (
+        <section className="vault-section vault-share-section" aria-labelledby="share-heading">
+          <div className="vault-section-heading">
+            <h2 id="share-heading">Shareable crowns</h2>
+            <p className="vault-muted">Postcard the latest title years into the chat.</p>
+          </div>
+          <div className="vault-share-grid">
+            {shareCards.map((card) => (
+              <ShareSeasonCard key={card.season} card={card} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="vault-section vault-title-podium" aria-labelledby="title-podium-heading">
         <div className="vault-section-heading">

@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { DraftIntriguePanel } from '../../../../../components/vault/VaultIntrigue';
 import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
 import { DraftBoard } from '../../../../../components/vault/illustrations';
 import { DraftBoardTable } from '../../../../../components/vault/tables';
@@ -12,6 +13,7 @@ import {
   managerById,
   vaultPath,
 } from '../../../../../lib/vault';
+import { buildDraftIntrigue } from '../../../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string; year: string }> };
 
@@ -78,6 +80,7 @@ export default async function DraftPage({ params }: Props) {
                 Draft order is set; selections will appear here when the board is complete.
               </p>
             ) : null}
+            {!pending ? <DraftIntriguePanel items={buildDraftIntrigue(snap, season)} /> : null}
             <DraftBoardTable slug={slug} rows={pickRows} />
           </>
         )}

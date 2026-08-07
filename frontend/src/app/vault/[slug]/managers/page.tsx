@@ -3,6 +3,7 @@ import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
 import { ManagersMark } from '../../../../components/vault/illustrations';
 import { ManagersRosterTable } from '../../../../components/vault/tables';
 import { PAGE_HELP, fetchVaultSnapshot } from '../../../../lib/vault';
+import { managerEpithet } from '../../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -40,6 +41,7 @@ export default async function ManagersPage({ params }: Props) {
         : '—',
       titles,
       highlight: index === 0 && topTitleCount > 0,
+      epithet: managerEpithet(snap, m.id)?.epithet ?? null,
     };
   });
 

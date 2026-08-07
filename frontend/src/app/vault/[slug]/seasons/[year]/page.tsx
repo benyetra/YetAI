@@ -1,5 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { ShareSeasonCard } from '../../../../../components/vault/ShareSeasonCard';
+import { SeasonStoryBeats } from '../../../../../components/vault/VaultIntrigue';
 import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
 import { StadiumMark } from '../../../../../components/vault/illustrations';
 import {
@@ -12,6 +14,10 @@ import {
   vaultNameFitClass,
   vaultPath,
 } from '../../../../../lib/vault';
+import {
+  buildSeasonBeats,
+  buildShareSeasonCard,
+} from '../../../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string; year: string }> };
 
@@ -85,6 +91,9 @@ export default async function SeasonDetailPage({ params }: Props) {
     </>
   );
 
+  const storyBeats = buildSeasonBeats(snap, season);
+  const shareCard = buildShareSeasonCard(snap, season, slug);
+
   return (
     <>
       <VaultPageHeader
@@ -94,6 +103,17 @@ export default async function SeasonDetailPage({ params }: Props) {
         help="Standings, weekly scores, and a link to this year’s draft board."
         illustration={<StadiumMark className="vault-illust" />}
       />
+
+      <SeasonStoryBeats beats={storyBeats} />
+      {shareCard ? (
+        <section className="vault-section vault-share-section">
+          <div className="vault-section-heading">
+            <h2>Share the season</h2>
+            <p className="vault-muted">A postcard for the group chat.</p>
+          </div>
+          <ShareSeasonCard card={shareCard} />
+        </section>
+      ) : null}
 
       <section className="vault-section">
         <div className="vault-section-heading">

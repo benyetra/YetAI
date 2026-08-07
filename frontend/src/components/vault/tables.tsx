@@ -46,6 +46,7 @@ export type ManagersRosterRow = {
   recordLabel: string;
   titles: number;
   highlight: boolean;
+  epithet?: string | null;
 };
 
 export function ManagersRosterTable({
@@ -62,7 +63,10 @@ export function ManagersRosterTable({
       rowHeader: true,
       sortValue: (r) => r.displayName,
       cell: (r) => (
-        <ManagerNameLink slug={slug} managerSlug={r.slug} name={r.displayName} />
+        <span className="vault-manager-cell">
+          <ManagerNameLink slug={slug} managerSlug={r.slug} name={r.displayName} />
+          {r.epithet ? <span className="vault-epithet-inline">“{r.epithet}”</span> : null}
+        </span>
       ),
     },
     {

@@ -2,6 +2,12 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { DynastyBar } from '../../../components/vault/VaultChrome';
 import {
+  DroughtStreakStrip,
+  KarmaStrip,
+  RivalryCards,
+  ThrowbackBanner,
+} from '../../../components/vault/VaultIntrigue';
+import {
   VaultExploreIcon,
   type VaultExploreIconName,
 } from '../../../components/vault/VaultExploreIcon';
@@ -12,6 +18,13 @@ import {
   vaultNameFitClass,
   vaultPath,
 } from '../../../lib/vault';
+import {
+  buildLuckCallouts,
+  buildRivalryCards,
+  buildThrowbackMoment,
+  buildTitleDroughts,
+  buildTitleStreaks,
+} from '../../../lib/vault-intrigue';
 
 type Props = { params: Promise<{ slug: string }> };
 
@@ -29,6 +42,12 @@ export default async function VaultHomePage({ params }: Props) {
 
   const champ = snap.reigning_champion;
   const draftSeason = latestDraftSeason(snap);
+  const rivalries = buildRivalryCards(snap);
+  const throwback = buildThrowbackMoment(snap);
+  const karma = buildLuckCallouts(snap);
+  const streaks = buildTitleStreaks(snap);
+  const droughts = buildTitleDroughts(snap);
+
   const exploreTiles: ExploreTile[] = [
     {
       href: vaultPath(slug, '/trophies'),
@@ -114,8 +133,13 @@ export default async function VaultHomePage({ params }: Props) {
           <Link href={vaultPath(slug, '/records')}>Record Book</Link>
         </div>
 
-        <DynastyBar timeline={snap.dynasty_timeline} slug={slug} />
+        <DynastyBar timeline={snap.dynasty_timeline} slug={slug} snapshot={snap} />
       </section>
+
+      <RivalryCards slug={slug} cards={rivalries} />
+      <ThrowbackBanner slug={slug} moment={throwback} />
+      <KarmaStrip slug={slug} callouts={karma} />
+      <DroughtStreakStrip slug={slug} streaks={streaks} droughts={droughts} />
 
       <section className="vault-section vault-explore">
         <div className="vault-section-heading">
