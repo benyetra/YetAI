@@ -96,6 +96,10 @@ cd backend && PYTHONPATH=. python3 scripts/sync_team_colors.py
 
 Refreshes `frontend/src/lib/team-colors-registry.generated.ts`. UI lookups: `frontend/src/lib/team-colors.ts`.
 
+## League Vault auto-sync
+
+Public vault sites refresh on a **Tuesday 07:15 ET** Celery Beat job (`league-vault-weekly-sync` → re-ingest + force recompute). Snapshot GET also recomputes when `last_synced` is newer than the record book. Disable with `LEAGUE_VAULT_AUTO_SYNC=false`. Manual: `PYTHONPATH=. python3 scripts/league_vault/refresh_pilot.py`.
+
 ## Railway production deploy
 
 **Railway Production Deploy** runs only on `backend/**`, `railway.json`, or workflow changes — not on frontend-only commits. Use **workflow_dispatch** if you need to redeploy API after a frontend-only push.

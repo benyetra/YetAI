@@ -61,4 +61,14 @@ Then DNS wildcard → Vercel, iMessage OG smoke, post to both chats, log in `Lea
 
 ## Non-goals (binding)
 
-No Stripe, onboarding, commissioner UI, themes, or weekly auto-sync in the pilot.
+No Stripe, onboarding, commissioner UI, or themes in the pilot.
+
+## Auto-update (synced leagues)
+
+Public vault sites stay current without a manual `sync_pilot` pass:
+
+1. **Celery Beat** — `league-vault-weekly-sync` (Tue 07:15 ET) runs `app.tasks.league_vault_sync.sync_all_vault_sites`: re-ingest every `is_public` site from Sleeper/ESPN, then **force** all-play + records.
+2. **Stale recompute on GET** — if `lineage.last_synced` is newer than `lv_records.computed_at`, `GET /api/vault/{slug}` rebuilds the record book (no platform pull on the request path).
+3. **Manual** — `PYTHONPATH=. python3 scripts/league_vault/refresh_pilot.py` (`--slug`, `--compute-only`).
+
+Disable the weekly job with `LEAGUE_VAULT_AUTO_SYNC=false`. ESPN re-ingest requires `ESPN_S2` + `ESPN_SWID` on the worker.

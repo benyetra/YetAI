@@ -26,6 +26,7 @@ celery_app = Celery(
         "app.tasks.health",
         "app.tasks.auto_pick",
         "app.tasks.expire_pending_picks",
+        "app.tasks.league_vault_sync",
     ],
 )
 
@@ -152,6 +153,13 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=6, minute=30, day_of_week=2),
         "options": {"expires": 86400},
     },
+    # League Vault — re-ingest public pilots + force-recompute (Tue after analytics).
+    # Disable with LEAGUE_VAULT_AUTO_SYNC=false. ESPN sites need ESPN_S2 + ESPN_SWID.
+    "league-vault-weekly-sync": {
+        "task": "app.tasks.league_vault_sync.sync_all_vault_sites",
+        "schedule": crontab(hour=7, minute=15, day_of_week=2),
+        "options": {"expires": 86400},
+    },
 }
 
 
@@ -160,7 +168,6 @@ import os
 # Register Celery signal handlers for admin pipeline notifications. Import
 # side effect: @task_prerun / @task_postrun / @task_failure decorators run.
 from app.core import celery_signals  # noqa: E402,F401
-
 
 if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
