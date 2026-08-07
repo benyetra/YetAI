@@ -9,6 +9,7 @@ import { usePathname } from 'next/navigation';
 import { vaultNameFitClass, vaultPath, type VaultSnapshot } from '../../lib/vault';
 import { dynastyCellNote } from '../../lib/vault-intrigue';
 import { StadiumMark } from './illustrations';
+import { titleMarker } from './TitleAsterisk';
 
 const NAV = [
   { href: '', label: 'Home' },
@@ -138,16 +139,27 @@ export function DynastyBar({
                 <Link
                   href={vaultPath(slug, `/managers/${cell.champion.slug}`)}
                   className={vaultNameFitClass(cell.champion.display_name)}
-                  title={cell.champion.display_name}
+                  title={cell.champion_note || cell.champion.display_name}
                 >
                   {cell.champion.display_name}
+                  {titleMarker(cell) ? (
+                    <sup
+                      className="vault-title-asterisk"
+                      aria-label={cell.champion_note || 'Title annotated'}
+                    >
+                      {titleMarker(cell)}
+                    </sup>
+                  ) : null}
                 </Link>
               ) : (
                 <span
                   className={vaultNameFitClass(cell.champion?.display_name ?? 'TBD')}
-                  title={cell.champion?.display_name}
+                  title={cell.champion_note || cell.champion?.display_name}
                 >
                   {cell.champion?.display_name ?? 'TBD'}
+                  {titleMarker(cell) ? (
+                    <sup className="vault-title-asterisk">{titleMarker(cell)}</sup>
+                  ) : null}
                 </span>
               )}
             </span>

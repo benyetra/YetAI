@@ -124,6 +124,9 @@ export function ManagersRosterTable({
 export type SeasonsIndexRow = {
   season: number;
   championName: string;
+  championAsterisk?: boolean;
+  championMarker?: string;
+  championNote?: string | null;
   teams: number;
   draftLabel: string;
 };
@@ -150,8 +153,19 @@ export function SeasonsIndexTable({
       sortValue: (r) => r.championName || '',
       cell: (r) =>
         r.championName ? (
-          <span className={vaultNameFitClass(r.championName)} title={r.championName}>
+          <span
+            className={vaultNameFitClass(r.championName)}
+            title={r.championNote || r.championName}
+          >
             {r.championName}
+            {r.championAsterisk ? (
+              <sup
+                className="vault-title-asterisk"
+                aria-label={r.championNote || 'Title annotated'}
+              >
+                {r.championMarker || '*'}
+              </sup>
+            ) : null}
           </span>
         ) : (
           '—'
@@ -662,6 +676,9 @@ export type ManagerSeasonRow = {
   luckLabel: string;
   rank: number | null;
   champion: boolean;
+  championAsterisk?: boolean;
+  championMarker?: string;
+  championNote?: string | null;
 };
 
 export function ManagerSeasonsTable({
@@ -680,9 +697,20 @@ export function ManagerSeasonsTable({
         <>
           <Link href={vaultPath(slug, `/seasons/${r.season}`)}>{r.season}</Link>
           {r.champion ? (
-            <span className="vault-champion-season-badge">
+            <span
+              className="vault-champion-season-badge"
+              title={r.championNote || undefined}
+            >
               <span className="vault-css-star" aria-hidden="true" />
               Champion
+              {r.championAsterisk ? (
+                <sup
+                  className="vault-title-asterisk"
+                  aria-label={r.championNote || 'Title annotated'}
+                >
+                  {r.championMarker || '*'}
+                </sup>
+              ) : null}
             </span>
           ) : null}
         </>

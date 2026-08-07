@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ShareSeasonCard } from '../../../../components/vault/ShareSeasonCard';
+import {
+  ChampionNameWithAsterisk,
+  TitleFootnotes,
+} from '../../../../components/vault/TitleAsterisk';
 import { DroughtStreakStrip } from '../../../../components/vault/VaultIntrigue';
 import { VaultHelp } from '../../../../components/vault/VaultHelp';
 import { VaultPageHeader } from '../../../../components/vault/VaultPageHeader';
@@ -159,13 +163,20 @@ export default async function TrophiesPage({ params }: Props) {
                       <>
                         <Medal className="vault-illust vault-season-medal" rank={1} />
                         <span className="vault-season-label">Champion</span>
-                        <Link
-                          href={vaultPath(slug, `/managers/${s.champion.slug}`)}
-                          className={vaultNameFitClass(s.champion.display_name)}
-                          title={s.champion.display_name}
+                        <ChampionNameWithAsterisk
+                          name={s.champion.display_name}
+                          season={s}
                         >
-                          {s.champion.display_name}
-                        </Link>
+                          <Link
+                            href={vaultPath(slug, `/managers/${s.champion.slug}`)}
+                            className={vaultNameFitClass(s.champion.display_name)}
+                            title={
+                              s.champion_note || s.champion.display_name
+                            }
+                          >
+                            {s.champion.display_name}
+                          </Link>
+                        </ChampionNameWithAsterisk>
                       </>
                     ) : (
                       <>
@@ -218,6 +229,8 @@ export default async function TrophiesPage({ params }: Props) {
           })}
         </div>
       </section>
+
+      <TitleFootnotes snap={snap} />
 
       <section className="vault-section">
         <div className="vault-section-heading">

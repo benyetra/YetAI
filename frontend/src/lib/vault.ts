@@ -41,6 +41,11 @@ export type VaultSeason = {
   champion: VaultManager | null;
   runner_up: VaultManager | null;
   last_place: VaultManager | null;
+  champion_asterisk?: boolean;
+  champion_marker?: string | null;
+  champion_note?: string | null;
+  champion_link?: string | null;
+  champion_link_label?: string | null;
   teams: VaultTeam[];
   matchups: Array<{
     week: number;
@@ -108,7 +113,22 @@ export type VaultSnapshot = {
   seasons: VaultSeason[];
   records: VaultRecord[];
   h2h: Record<string, Record<string, { wins: number; losses: number; ties: number }>>;
-  dynasty_timeline: Array<{ season: number; champion: VaultManager | null }>;
+  dynasty_timeline: Array<{
+    season: number;
+    champion: VaultManager | null;
+    champion_asterisk?: boolean;
+    champion_marker?: string | null;
+    champion_note?: string | null;
+    champion_link?: string | null;
+    champion_link_label?: string | null;
+  }>;
+  title_footnotes?: Array<{
+    season: number;
+    marker: string;
+    note: string;
+    link?: string | null;
+    link_label?: string | null;
+  }>;
 };
 
 function vaultApiBase(): string {

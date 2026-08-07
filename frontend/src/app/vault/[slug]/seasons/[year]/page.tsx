@@ -1,6 +1,10 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { ShareSeasonCard } from '../../../../../components/vault/ShareSeasonCard';
+import {
+  ChampionNameWithAsterisk,
+  TitleFootnotes,
+} from '../../../../../components/vault/TitleAsterisk';
 import { SeasonStoryBeats } from '../../../../../components/vault/VaultIntrigue';
 import { VaultPageHeader } from '../../../../../components/vault/VaultPageHeader';
 import { StadiumMark } from '../../../../../components/vault/illustrations';
@@ -74,13 +78,15 @@ export default async function SeasonDetailPage({ params }: Props) {
         <>
           Champion:{' '}
           {season.champion ? (
-            <Link
-              href={vaultPath(slug, `/managers/${season.champion.slug}`)}
-              className={vaultNameFitClass(season.champion.display_name)}
-              title={season.champion.display_name}
-            >
-              {season.champion.display_name}
-            </Link>
+            <ChampionNameWithAsterisk name={season.champion.display_name} season={season}>
+              <Link
+                href={vaultPath(slug, `/managers/${season.champion.slug}`)}
+                className={vaultNameFitClass(season.champion.display_name)}
+                title={season.champion_note || season.champion.display_name}
+              >
+                {season.champion.display_name}
+              </Link>
+            </ChampionNameWithAsterisk>
           ) : (
             '—'
           )}
@@ -105,6 +111,22 @@ export default async function SeasonDetailPage({ params }: Props) {
       />
 
       <SeasonStoryBeats beats={storyBeats} />
+      {season.champion_asterisk && season.champion_note ? (
+        <TitleFootnotes
+          snap={{
+            ...snap,
+            title_footnotes: [
+              {
+                season: season.season,
+                marker: season.champion_marker || '*',
+                note: season.champion_note,
+                link: season.champion_link,
+                link_label: season.champion_link_label,
+              },
+            ],
+          }}
+        />
+      ) : null}
       {shareCard ? (
         <section className="vault-section vault-share-section">
           <div className="vault-section-heading">

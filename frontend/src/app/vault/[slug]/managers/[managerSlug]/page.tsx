@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
+import { TitleFootnotes } from '../../../../../components/vault/TitleAsterisk';
 import { ManagerEpithetLine } from '../../../../../components/vault/VaultIntrigue';
 import { ManagersMark, TrophyCup } from '../../../../../components/vault/illustrations';
 import {
@@ -35,6 +36,9 @@ export default async function ManagerDetailPage({ params }: Props) {
       season: s.season,
       team: s.teams.find((t) => t.manager_id === manager.id),
       champion: s.champion?.id === manager.id,
+      championAsterisk: Boolean(s.champion_asterisk && s.champion?.id === manager.id),
+      championMarker: s.champion_marker || '*',
+      championNote: s.champion_note || null,
     }))
     .filter((x) => x.team);
 
@@ -44,25 +48,30 @@ export default async function ManagerDetailPage({ params }: Props) {
   const luckBadge = managerLuckBadge(snap, manager.id);
   const drought = buildTitleDroughts(snap, 20).find((d) => d.manager.id === manager.id);
 
-  const seasonRows = [...seasons].reverse().map(({ season, team, champion }) => ({
-    season,
-    teamName: team?.team_name ?? '—',
-    wins: team?.wins ?? 0,
-    losses: team?.losses ?? 0,
-    recordLabel: `${team?.wins}-${team?.losses}`,
-    pf: team?.points_for ?? null,
-    pfLabel: team?.points_for?.toFixed(1) ?? '—',
-    allPlayWins: team?.all_play_wins ?? null,
-    allPlayLabel:
-      team?.all_play_wins != null
-        ? `${team.all_play_wins}-${team.all_play_losses}`
-        : '—',
-    luck: team?.luck_differential ?? null,
-    luckLabel:
-      team?.luck_differential != null ? team.luck_differential.toFixed(2) : '—',
-    rank: team?.final_rank ?? null,
-    champion,
-  }));
+  const seasonRows = [...seasons].reverse().map(
+    ({ season, team, champion, championAsterisk, championMarker, championNote }) => ({
+      season,
+      teamName: team?.team_name ?? '—',
+      wins: team?.wins ?? 0,
+      losses: team?.losses ?? 0,
+      recordLabel: `${team?.wins}-${team?.losses}`,
+      pf: team?.points_for ?? null,
+      pfLabel: team?.points_for?.toFixed(1) ?? '—',
+      allPlayWins: team?.all_play_wins ?? null,
+      allPlayLabel:
+        team?.all_play_wins != null
+          ? `${team.all_play_wins}-${team.all_play_losses}`
+          : '—',
+      luck: team?.luck_differential ?? null,
+      luckLabel:
+        team?.luck_differential != null ? team.luck_differential.toFixed(2) : '—',
+      rank: team?.final_rank ?? null,
+      champion,
+      championAsterisk,
+      championMarker,
+      championNote,
+    }),
+  );
 
   const recordRows = heldRecords.map((r) => {
     const label = RECORD_LABELS[r.record_key] ?? r.record_key;
@@ -120,6 +129,16 @@ export default async function ManagerDetailPage({ params }: Props) {
           <p className="vault-muted">Every year this manager fielded a team — click a column to sort.</p>
         </div>
         <ManagerSeasonsTable slug={slug} rows={seasonRows} />
+        <TitleFootnotes
+          snap={{
+            ...snap,
+            title_footnotes: (snap.title_footnotes || []).filter((n) =>
+              seasons.some(
+                (s) => s.champion && s.championAsterisk && s.season === n.season,
+              ),
+            ),
+          }}
+        />
       </section>
       {recordRows.length > 0 ? (
         <section className="vault-section">
