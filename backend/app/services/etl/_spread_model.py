@@ -20,6 +20,7 @@ class SpreadLeagueConfig:
 
 WNBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5)
 NBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.8)
+NFL_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, edge_threshold=3.0)
 
 
 class SpreadActualRow(Protocol):
