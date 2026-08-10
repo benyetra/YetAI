@@ -23,7 +23,7 @@ def _mock_db(rows_by_model):
     return db
 
 
-def test_returns_three_nfl_buckets():
+def test_returns_five_nfl_buckets():
     qb_p = SimpleNamespace(
         qb_player_id="qb1",
         predicted_passing_yards=275.0,
@@ -43,7 +43,13 @@ def test_returns_three_nfl_buckets():
     )
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     keys = [b["key"] for b in out["buckets"]]
-    assert keys == ["qb_passing_ou", "qb_passing_mae", "kicker_fg_mae"]
+    assert keys == [
+        "qb_passing_ou",
+        "qb_passing_mae",
+        "kicker_fg_mae",
+        "spread_ats",
+        "totals_ou",
+    ]
     assert out["available"] is True
     # QB picked OVER 250.5, actual 310 → correct
     qb_ou = next(b for b in out["buckets"] if b["key"] == "qb_passing_ou")
@@ -54,4 +60,4 @@ def test_unavailable_when_no_rows():
     db = _mock_db({})
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 3
+    assert len(out["buckets"]) == 5

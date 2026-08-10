@@ -27,6 +27,9 @@ from app.models.predictions_models import (
     GameProjections,
     Homer,
     KickerPredictions,
+    NFLGameLines,
+    NFLSpreadProjections,
+    NFLTotalsProjections,
     NBAGameLines,
     NBASpreadProjections,
     NBATotalsProjections,
@@ -519,8 +522,18 @@ def nfl_predictions(
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent NFL props: QB passing/rushing + kicker FG predictions."""
+    """Recent NFL props: QB passing yards, kicker FG, and game spreads/totals."""
+    from app.services.game_projection_schedule import attach_game_times_from_lines
+
     tz = _safe_tz(tz)
+    spreads = _query_recent(
+        db, NFLSpreadProjections, "game_date", target_date, limit, tz=tz
+    )
+    totals = _query_recent(
+        db, NFLTotalsProjections, "game_date", target_date, limit, tz=tz
+    )
+    spreads = attach_game_times_from_lines(db, spreads, NFLGameLines)
+    totals = attach_game_times_from_lines(db, totals, NFLGameLines)
     return {
         "qb_predictions": enrich_prop_rows(
             _query_recent(db, QBPredictions, "game_date", target_date, limit, tz=tz),
@@ -531,6 +544,8 @@ def nfl_predictions(
         "kicker_predictions": attach_team_opponent_fields(
             _query_recent(db, KickerPredictions, "game_date", target_date, limit, tz=tz)
         ),
+        "spreads": spreads,
+        "totals": totals,
     }
 
 
