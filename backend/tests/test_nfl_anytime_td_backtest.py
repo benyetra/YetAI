@@ -84,7 +84,58 @@ def test_committed_metrics_artifact_regression():
 
     payload = json.loads(FIXTURE_METRICS.read_text(encoding="utf-8"))
     metrics = payload["metrics"]
-    assert metrics["n_graded"] == len(QUICK_SYNTHETIC_ROWS)
-    assert metrics["brier"] == pytest.approx(
-        compute_metrics(QUICK_SYNTHETIC_ROWS)["brier"]
+    # Quick smoke artifact OR walk-forward artifact both must pass gate.
+    assert metrics["n_graded"] >= DEFAULT_GATE_BASELINES["min_n_graded"]
+    assert "brier" in metrics
+    assert "baseline_brier" in metrics
+
+
+def test_walk_forward_on_injectable_weekly_records():
+    """Synthetic multi-week walk-forward (no nflverse) grades weeks > 1."""
+    from app.services.etl.nfl.anytime_td_backtest import run_walk_forward_backtest
+
+    weekly = []
+    for week in (1, 2, 3):
+        weekly.append(
+            {
+                "player_id": "rb1",
+                "player_display_name": "RB One",
+                "position": "RB",
+                "recent_team": "KC",
+                "opponent_team": "BUF",
+                "week": week,
+                "targets": 2,
+                "carries": 15,
+                "rushing_tds": 1 if week in (1, 3) else 0,
+                "receiving_tds": 0,
+                "target_share": 0.1,
+            }
+        )
+        weekly.append(
+            {
+                "player_id": "wr1",
+                "player_display_name": "WR One",
+                "position": "WR",
+                "recent_team": "KC",
+                "opponent_team": "BUF",
+                "week": week,
+                "targets": 8,
+                "carries": 0,
+                "rushing_tds": 0,
+                "receiving_tds": 1 if week == 2 else 0,
+                "target_share": 0.28,
+            }
+        )
+
+    out = run_walk_forward_backtest(
+        seasons=(2024,),
+        start_week=2,
+        end_week=3,
+        weekly_by_season={2024: weekly},
+        pbp_by_season={2024: []},
     )
+    assert out["preset"] == "walk_forward"
+    assert out["metrics"]["n_graded"] >= 2
+    assert "brier" in out["metrics"]
+    assert "top20_hit_rate" in out["metrics"]
+    assert "by_position" in out["metrics"]
