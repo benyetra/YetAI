@@ -90,19 +90,28 @@ def build_upsert_row(
 
 
 def _try_build_feature_rows(season: int, week: int) -> list[dict[str, Any]]:
-    """Attempt nflverse-backed feature build; empty until hooks are wired."""
-    from app.services.etl.nfl.anytime_td_features import fetch_player_usage_nflverse
+    """Build feature rows from nflverse weekly/schedules/depth + YAML schemes."""
+    from app.services.etl.nfl.anytime_td_features import (
+        build_feature_rows_from_nflverse,
+    )
 
     try:
-        fetch_player_usage_nflverse(season=season, week=week)
-    except NotImplementedError:
-        logger.info(
-            "anytime TD feature fetch not wired (season=%s week=%s); skipping",
+        rows = build_feature_rows_from_nflverse(season, week)
+    except Exception as exc:
+        logger.exception(
+            "anytime TD feature build failed (season=%s week=%s): %s",
             season,
             week,
+            exc,
         )
         return []
-    return []
+    logger.info(
+        "anytime TD feature rows built: %s (season=%s week=%s)",
+        len(rows),
+        season,
+        week,
+    )
+    return rows
 
 
 def run(
@@ -113,9 +122,8 @@ def run(
 ) -> dict[str, Any]:
     """Project anytime-TD probabilities and upsert predictions.
 
-    Pass ``feature_rows`` in tests or when nflverse ETL is unavailable.
-    When ``feature_rows`` is None, attempts the real nflverse path (may return
-    zero rows until feature fetch is implemented).
+    Pass ``feature_rows`` in tests. When ``feature_rows`` is None, builds rows
+    from nflverse weekly/schedules/depth charts plus YAML scheme tags.
     """
     resolved_season = resolve_nfl_season(season)
     resolved_week = week if week is not None else get_current_nfl_week(resolved_season)

@@ -88,7 +88,7 @@ def test_run_with_injected_feature_rows_upserts():
     mock_db.close.assert_called_once()
 
 
-def test_run_without_rows_when_nflverse_unwired():
+def test_run_without_rows_when_feature_build_empty():
     with patch(
         "app.services.etl.nfl.anytime_td_projector._try_build_feature_rows",
         return_value=[],
@@ -97,3 +97,30 @@ def test_run_without_rows_when_nflverse_unwired():
 
     assert result["status"] == "ok"
     assert result["predictions"] == 0
+
+
+def test_try_build_feature_rows_delegates_to_nflverse_builder():
+    from app.services.etl.nfl.anytime_td_projector import _try_build_feature_rows
+
+    sample = [
+        {
+            "player_id": "p1",
+            "player_name": "A",
+            "position": "RB",
+            "team_name": "Kansas City Chiefs",
+            "opponent_team_name": "Buffalo Bills",
+            "team_rz_trips": 3.0,
+            "player_rz_share": 0.2,
+            "conversion_rate": 0.3,
+            "defense_mult": 1.0,
+            "weather_mult": 1.0,
+            "script_mult": 1.0,
+        }
+    ]
+    with patch(
+        "app.services.etl.nfl.anytime_td_features.build_feature_rows_from_nflverse",
+        return_value=sample,
+    ) as builder:
+        rows = _try_build_feature_rows(2025, 5)
+    assert rows == sample
+    builder.assert_called_once_with(2025, 5)

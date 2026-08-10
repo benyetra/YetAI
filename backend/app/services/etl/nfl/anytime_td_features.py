@@ -1,11 +1,19 @@
-"""Pure feature builders for NFL anytime-TD projections."""
+"""Feature builders for NFL anytime-TD projections (pure + nflverse assembly)."""
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+import math
+from datetime import date
+from typing import Any, Iterable
 
-from app.services.etl.nfl.team_names import normalize_team_name
+from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_name
 
+logger = logging.getLogger(__name__)
+
+SKILL_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
+_MIN_DEPTH_TEAM = 2  # include depth chart slots 1–2
+_MIN_PRIOR_TOUCHES = 3.0  # targets+carries threshold for weekly universe
 # League-average priors (REG season, per-game unless noted)
 _TEAM_RZ_TRIPS_PRIOR = 3.2
 _LEAGUE_AVG_TEAM_TOTAL = 22.5
@@ -152,15 +160,24 @@ def build_player_feature_row(
     opponent = normalize_team_name(opponent_team_name)
 
     team_rz_trips = float(team_stats.get("team_rz_trips", _TEAM_RZ_TRIPS_PRIOR))
+    player_rz_share_raw = player_stats.get("player_rz_share")
     player_rz_share = float(
-        player_stats.get("player_rz_share", _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18))
+        player_rz_share_raw
+        if player_rz_share_raw is not None
+        else _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
     )
+    conversion_raw = player_stats.get("conversion_rate")
     conversion_rate = float(
-        player_stats.get("conversion_rate", _CONVERSION_RATE_PRIOR.get(pos, 0.22))
+        conversion_raw
+        if conversion_raw is not None
+        else _CONVERSION_RATE_PRIOR.get(pos, 0.22)
     )
 
+    tds_allowed_raw = opponent_defense.get("tds_allowed_vs_pos")
     tds_allowed = float(
-        opponent_defense.get("tds_allowed_vs_pos", _TDS_ALLOWED_PRIOR.get(pos, 0.45))
+        tds_allowed_raw
+        if tds_allowed_raw is not None
+        else _TDS_ALLOWED_PRIOR.get(pos, 0.45)
     )
     league_avg_tds = _TDS_ALLOWED_PRIOR.get(pos, 0.45)
     scheme_for_def = dict(scheme) if scheme else {}
@@ -247,13 +264,569 @@ def build_player_feature_row(
     }
 
 
-def fetch_player_usage_nflverse(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-    """Optional nflverse hook; override/mock in ETL tests."""
-    raise NotImplementedError(
-        "fetch_player_usage_nflverse requires nflverse ETL wiring"
+def _is_missing(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        return bool(math.isnan(float(value)))
+    except (TypeError, ValueError):
+        return False
+
+
+def _num(row: dict[str, Any], *keys: str, default: float = 0.0) -> float:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if _is_missing(value):
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return default
+
+
+def _str(row: dict[str, Any], *keys: str, default: str = "") -> str:
+    for key in keys:
+        if key not in row:
+            continue
+        value = row.get(key)
+        if value is None or _is_missing(value):
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return default
+
+
+def _anytime_tds(row: dict[str, Any]) -> float:
+    return _num(row, "rushing_tds") + _num(row, "receiving_tds")
+
+
+def _abbr_to_name(abbr: str) -> str:
+    key = abbr.strip().upper()
+    return _CANONICAL_BY_ABBR.get(key, normalize_team_name(abbr))
+
+
+def records_from_dataframe(frame: Any) -> list[dict[str, Any]]:
+    """Convert a pandas DataFrame (or list of dicts) to plain records."""
+    if frame is None:
+        return []
+    if isinstance(frame, list):
+        return [dict(r) for r in frame]
+    if hasattr(frame, "to_dict"):
+        return [dict(r) for r in frame.to_dict(orient="records")]
+    return []
+
+
+def aggregate_player_usage_from_weekly(
+    weekly_records: Iterable[dict[str, Any]],
+    *,
+    as_of_week: int,
+) -> dict[str, dict[str, Any]]:
+    """Aggregate prior-week usage for each skill player (weeks < as_of_week)."""
+    by_player: dict[str, list[dict[str, Any]]] = {}
+    for raw in weekly_records:
+        week = int(_num(raw, "week", default=0))
+        if week <= 0 or week >= as_of_week:
+            continue
+        pos = _str(raw, "position").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        player_id = _str(raw, "player_id")
+        if not player_id:
+            continue
+        by_player.setdefault(player_id, []).append(dict(raw))
+
+    out: dict[str, dict[str, Any]] = {}
+    for player_id, rows in by_player.items():
+        rows.sort(key=lambda r: int(_num(r, "week", default=0)))
+        last3 = rows[-3:]
+        last5 = rows[-5:]
+        targets_l3 = sum(_num(r, "targets") for r in last3) / max(len(last3), 1)
+        carries_l3 = sum(_num(r, "carries") for r in last3) / max(len(last3), 1)
+        td_l3 = sum(_anytime_tds(r) for r in last3)
+        td_l5 = sum(_anytime_tds(r) for r in last5)
+        td_season = sum(_anytime_tds(r) for r in rows)
+        touches = sum(_num(r, "targets") + _num(r, "carries") for r in rows)
+        conversion = (td_season / touches) if touches > 0 else None
+        target_shares = [
+            _num(r, "target_share")
+            for r in last3
+            if not _is_missing(r.get("target_share"))
+        ]
+        snap_pct = sum(target_shares) / len(target_shares) if target_shares else None
+        # RZ share proxy: player's TD share of team TDs in prior weeks
+        team = _str(rows[-1], "recent_team", "team")
+        latest = rows[-1]
+        out[player_id] = {
+            "player_id": player_id,
+            "player_name": _str(
+                latest, "player_display_name", "player_name", "full_name"
+            ),
+            "position": _str(latest, "position").upper(),
+            "team_abbr": team.upper(),
+            "targets_l3": targets_l3,
+            "carries_l3": carries_l3,
+            "td_l3": td_l3,
+            "td_l5": td_l5,
+            "td_season": td_season,
+            "conversion_rate": conversion,
+            "snap_pct": snap_pct,
+            "touches_season": touches,
+            "games_count": len(rows),
+        }
+    return out
+
+
+def aggregate_team_rz_from_weekly(
+    weekly_records: Iterable[dict[str, Any]],
+    *,
+    as_of_week: int,
+) -> dict[str, dict[str, Any]]:
+    """Team opportunity proxies from prior weekly scoring (no PBP required)."""
+    team_games: dict[str, set[int]] = {}
+    team_tds: dict[str, float] = {}
+    team_rec_tds: dict[str, float] = {}
+    team_rush_tds: dict[str, float] = {}
+
+    for raw in weekly_records:
+        week = int(_num(raw, "week", default=0))
+        if week <= 0 or week >= as_of_week:
+            continue
+        pos = _str(raw, "position").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        team = _str(raw, "recent_team", "team").upper()
+        if not team:
+            continue
+        team_games.setdefault(team, set()).add(week)
+        rush = _num(raw, "rushing_tds")
+        rec = _num(raw, "receiving_tds")
+        team_tds[team] = team_tds.get(team, 0.0) + rush + rec
+        team_rec_tds[team] = team_rec_tds.get(team, 0.0) + rec
+        team_rush_tds[team] = team_rush_tds.get(team, 0.0) + rush
+
+    out: dict[str, dict[str, Any]] = {}
+    for team, weeks in team_games.items():
+        n = max(len(weeks), 1)
+        tds_pg = team_tds.get(team, 0.0) / n
+        # Approximate RZ trips from scoring rate (league ~3.2 trips → ~2.4 TDs).
+        team_rz_trips = _clamp(tds_pg * 1.35, 2.0, 5.5)
+        scored = team_tds.get(team, 0.0)
+        pass_rate = (
+            team_rec_tds.get(team, 0.0) / scored
+            if scored > 0
+            else _TEAM_RZ_PASS_RATE_PRIOR
+        )
+        out[team] = {
+            "team_rz_trips": team_rz_trips,
+            "team_rz_pass_rate": _clamp(pass_rate, 0.35, 0.75),
+            "early_down_pass_pct": _EARLY_DOWN_PASS_PRIOR,
+            "team_tds_per_game": tds_pg,
+        }
+    return out
+
+
+def aggregate_defense_allowed_from_weekly(
+    weekly_records: Iterable[dict[str, Any]],
+    *,
+    as_of_week: int,
+) -> dict[str, dict[str, float]]:
+    """TDs allowed by defense abbr vs position (per-game prior weeks)."""
+    # defender -> pos -> (tds, game weeks)
+    tds: dict[str, dict[str, float]] = {}
+    weeks_seen: dict[str, set[int]] = {}
+
+    for raw in weekly_records:
+        week = int(_num(raw, "week", default=0))
+        if week <= 0 or week >= as_of_week:
+            continue
+        pos = _str(raw, "position").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        defense = _str(raw, "opponent_team", "defteam").upper()
+        if not defense:
+            continue
+        scored = _anytime_tds(raw)
+        tds.setdefault(defense, {p: 0.0 for p in SKILL_POSITIONS})
+        tds[defense][pos] = tds[defense].get(pos, 0.0) + scored
+        weeks_seen.setdefault(defense, set()).add(week)
+
+    out: dict[str, dict[str, float]] = {}
+    for defense, by_pos in tds.items():
+        n = max(len(weeks_seen.get(defense, set())), 1)
+        out[defense] = {pos: by_pos.get(pos, 0.0) / n for pos in SKILL_POSITIONS}
+        # RZ TD rate allowed proxy from scoring concentration
+        out[defense]["rz_td_rate_allowed"] = _RZ_TD_RATE_ALLOWED_PRIOR
+        out[defense]["def_epa"] = _DEF_EPA_PRIOR
+    return out
+
+
+def _player_rz_share_from_usage(
+    usage: dict[str, Any],
+    team_stats: dict[str, Any] | None,
+    position: str,
+) -> float | None:
+    pos = _pos(position)
+    prior = _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
+    td_season = float(usage.get("td_season") or 0.0)
+    team_tds_pg = float((team_stats or {}).get("team_tds_per_game") or 0.0)
+    games = float(usage.get("game_count") or 0.0)
+    team_tds = team_tds_pg * games
+    if team_tds <= 0:
+        return None
+    share = td_season / team_tds
+    return _clamp(0.55 * share + 0.45 * prior, 0.02, 0.55)
+
+
+def select_skill_universe(
+    *,
+    depth_records: Iterable[dict[str, Any]],
+    usage_by_player: dict[str, dict[str, Any]],
+    week: int,
+) -> list[dict[str, Any]]:
+    """Active QB/RB/WR/TE: depth chart 1–2 plus prior-week contributors."""
+    universe: dict[str, dict[str, Any]] = {}
+
+    # Depth chart (prefer latest week <= target)
+    by_team_pos: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for raw in depth_records:
+        pos = _str(raw, "position", "pos_abb").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        team = _str(raw, "club_code", "team").upper()
+        player_id = _str(raw, "gsis_id", "player_id")
+        if not team or not player_id:
+            continue
+        depth_week = int(_num(raw, "week", default=week))
+        if depth_week > week:
+            continue
+        depth_team = int(_num(raw, "depth_team", default=99))
+        if depth_team > _MIN_DEPTH_TEAM:
+            continue
+        key = (team, pos)
+        by_team_pos.setdefault(key, []).append(
+            {
+                "player_id": player_id,
+                "player_name": _str(raw, "full_name", "football_name", "player_name"),
+                "position": pos,
+                "team_abbr": team,
+                "depth_team": depth_team,
+                "depth_week": depth_week,
+            }
+        )
+
+    for players in by_team_pos.values():
+        players.sort(key=lambda p: (-p["depth_week"], p["depth_team"]))
+        seen_slots: set[int] = set()
+        for player in players:
+            slot = player["depth_team"]
+            if slot in seen_slots:
+                continue
+            seen_slots.add(slot)
+            universe[player["player_id"]] = player
+
+    for player_id, usage in usage_by_player.items():
+        touches = float(usage.get("touches_season") or 0.0)
+        if touches < _MIN_PRIOR_TOUCHES and player_id not in universe:
+            continue
+        universe.setdefault(
+            player_id,
+            {
+                "player_id": player_id,
+                "player_name": usage.get("player_name") or player_id,
+                "position": usage.get("position"),
+                "team_abbr": usage.get("team_abbr"),
+                "depth_team": 99,
+            },
+        )
+        # Prefer latest team/name from usage
+        if usage.get("team_abbr"):
+            universe[player_id]["team_abbr"] = usage["team_abbr"]
+        if usage.get("player_name"):
+            universe[player_id]["player_name"] = usage["player_name"]
+        if usage.get("position"):
+            universe[player_id]["position"] = usage["position"]
+
+    return list(universe.values())
+
+
+def _schedule_matchups(
+    schedule_records: Iterable[dict[str, Any]], *, week: int
+) -> dict[str, dict[str, Any]]:
+    """Map team abbr → opponent, game_date, weather proxies."""
+    out: dict[str, dict[str, Any]] = {}
+    for raw in schedule_records:
+        if int(_num(raw, "week", default=-1)) != week:
+            continue
+        game_type = _str(raw, "game_type", default="REG").upper()
+        if game_type and game_type != "REG":
+            continue
+        home = _str(raw, "home_team").upper()
+        away = _str(raw, "away_team").upper()
+        if not home or not away:
+            continue
+        gameday = raw.get("gameday")
+        game_date: date | None
+        if isinstance(gameday, date):
+            game_date = gameday
+        elif gameday is not None and not _is_missing(gameday):
+            try:
+                game_date = date.fromisoformat(str(gameday)[:10])
+            except ValueError:
+                game_date = None
+        else:
+            game_date = None
+
+        roof = _str(raw, "roof").lower()
+        outdoor = roof not in ("dome", "closed", "indoor")
+        wind = raw.get("wind")
+        wind_mph = None if _is_missing(wind) else float(wind)
+
+        home_entry = {
+            "opponent_abbr": away,
+            "game_date": game_date,
+            "home": True,
+            "outdoor": outdoor,
+            "wind_mph": wind_mph,
+            "precip": False,
+        }
+        away_entry = {
+            "opponent_abbr": home,
+            "game_date": game_date,
+            "home": False,
+            "outdoor": outdoor,
+            "wind_mph": wind_mph,
+            "precip": False,
+        }
+        out[home] = home_entry
+        out[away] = away_entry
+    return out
+
+
+def _scheme_for_team(
+    schemes: dict[str, dict[str, Any]] | None, team_abbr: str
+) -> dict[str, Any] | None:
+    if not schemes:
+        return None
+    if team_abbr in schemes:
+        return schemes[team_abbr]
+    full = _abbr_to_name(team_abbr)
+    return schemes.get(full)
+
+
+def build_weekly_feature_rows(
+    season: int,
+    week: int,
+    *,
+    weekly_records: list[dict[str, Any]] | None = None,
+    schedule_records: list[dict[str, Any]] | None = None,
+    depth_records: list[dict[str, Any]] | None = None,
+    schemes: dict[str, dict[str, Any]] | None = None,
+    game_lines_by_team: dict[str, dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Assemble projector feature rows for one REG week (injectable inputs)."""
+    weekly_records = weekly_records if weekly_records is not None else []
+    schedule_records = schedule_records if schedule_records is not None else []
+    depth_records = depth_records if depth_records is not None else []
+    if schemes is None:
+        from app.services.etl.nfl.scheme_loader import load_schemes_from_yaml
+
+        schemes = load_schemes_from_yaml()
+
+    usage = aggregate_player_usage_from_weekly(weekly_records, as_of_week=week)
+    team_rz = aggregate_team_rz_from_weekly(weekly_records, as_of_week=week)
+    defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=week)
+    matchups = _schedule_matchups(schedule_records, week=week)
+    universe = select_skill_universe(
+        depth_records=depth_records, usage_by_player=usage, week=week
     )
 
+    rows: list[dict[str, Any]] = []
+    for player in universe:
+        team_abbr = str(player.get("team_abbr") or "").upper()
+        if not team_abbr or team_abbr not in matchups:
+            continue
+        match = matchups[team_abbr]
+        opp_abbr = match["opponent_abbr"]
+        pos = str(player.get("position") or "WR").upper()
+        player_id = str(player["player_id"])
+        player_usage = usage.get(player_id, {})
+        team_stats = team_rz.get(team_abbr, {})
+        def_stats = defense.get(opp_abbr, {})
 
-def fetch_team_rz_nflverse(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
-    """Optional nflverse hook; override/mock in ETL tests."""
-    raise NotImplementedError("fetch_team_rz_nflverse requires nflverse ETL wiring")
+        player_stats = {
+            "targets_l3": player_usage.get("targets_l3"),
+            "carries_l3": player_usage.get("carries_l3"),
+            "td_l3": player_usage.get("td_l3"),
+            "td_l5": player_usage.get("td_l5"),
+            "td_season": player_usage.get("td_season"),
+            "snap_pct": player_usage.get("snap_pct"),
+            "conversion_rate": player_usage.get("conversion_rate"),
+        }
+        rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
+        if rz_share is not None:
+            player_stats["player_rz_share"] = rz_share
+
+        tds_allowed = def_stats.get(pos)
+        opponent_defense = {
+            "tds_allowed_vs_pos": tds_allowed,
+            "rz_td_rate_allowed": def_stats.get("rz_td_rate_allowed"),
+            "def_epa": def_stats.get("def_epa"),
+        }
+
+        game_env: dict[str, Any] = {}
+        if game_lines_by_team and team_abbr in game_lines_by_team:
+            game_env.update(game_lines_by_team[team_abbr])
+
+        weather = {
+            "outdoor": bool(match.get("outdoor")),
+            "wind_mph": match.get("wind_mph"),
+            "precip": bool(match.get("precip")),
+        }
+
+        row = build_player_feature_row(
+            player_id=player_id,
+            player_name=str(player.get("player_name") or player_id),
+            position=pos,
+            team_name=_abbr_to_name(team_abbr),
+            opponent_team_name=_abbr_to_name(opp_abbr),
+            season=season,
+            week=week,
+            player_stats=player_stats,
+            team_stats=team_stats,
+            opponent_defense=opponent_defense,
+            scheme=_scheme_for_team(schemes, opp_abbr),
+            weather=weather,
+            game_env=game_env,
+        )
+        if match.get("game_date") is not None:
+            row["game_date"] = match["game_date"]
+        rows.append(row)
+
+    # Sort by opportunity proxy (λ inputs); projector re-ranks by P(TD).
+    rows.sort(
+        key=lambda r: (
+            -float(r.get("player_rz_share") or 0) * float(r.get("team_rz_trips") or 0),
+            r["player_name"],
+        )
+    )
+    return rows
+
+
+def _import_nfl():
+    try:
+        import nfl_data_py as nfl
+    except ImportError as exc:
+        raise RuntimeError(
+            "nfl_data_py not installed. "
+            "Run: pip install nfl-data-py==0.3.3 --no-deps && pip install appdirs fastparquet"
+        ) from exc
+    return nfl
+
+
+def fetch_player_usage_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:
+    """Load prior-week player usage from nflverse weekly data."""
+    nfl = _import_nfl()
+    weekly = nfl.import_weekly_data([season])
+    records = records_from_dataframe(weekly)
+    return aggregate_player_usage_from_weekly(records, as_of_week=week)
+
+
+def fetch_team_rz_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:
+    """Load team RZ/opportunity proxies from nflverse weekly data."""
+    nfl = _import_nfl()
+    weekly = nfl.import_weekly_data([season])
+    records = records_from_dataframe(weekly)
+    return aggregate_team_rz_from_weekly(records, as_of_week=week)
+
+
+def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]:
+    """Optional game-env features from ``pred_nfl_game_lines`` (best-effort)."""
+    try:
+        from app.core.database import SessionLocal
+        from app.models.predictions_models import NFLGameLines
+    except Exception:
+        return {}
+
+    db = SessionLocal()
+    try:
+        lines = db.query(NFLGameLines).all()
+    except Exception as exc:
+        logger.info("game lines unavailable for anytime TD features: %s", exc)
+        return {}
+    finally:
+        db.close()
+
+    # Match by team name without requiring schedule join; use latest line per team pair.
+    by_team: dict[str, dict[str, Any]] = {}
+    for line in lines:
+        total = line.total
+        if total is None:
+            continue
+        home = normalize_team_name(line.home_team_name)
+        away = normalize_team_name(line.away_team_name)
+        spread_home = line.spread_home
+        # implied team totals from market total + spread
+        if spread_home is not None:
+            home_implied = (float(total) - float(spread_home)) / 2.0
+            away_implied = float(total) - home_implied
+        else:
+            home_implied = float(total) / 2.0
+            away_implied = home_implied
+        by_team[home] = {
+            "implied_total": float(total),
+            "spread": float(spread_home) if spread_home is not None else None,
+            "implied_team_total": home_implied,
+        }
+        by_team[away] = {
+            "implied_total": float(total),
+            "spread": (-float(spread_home) if spread_home is not None else None),
+            "implied_team_total": away_implied,
+        }
+        # also key by abbreviation when known
+        for abbr, name in _CANONICAL_BY_ABBR.items():
+            if name == home:
+                by_team[abbr] = by_team[home]
+            if name == away:
+                by_team[abbr] = by_team[away]
+    return by_team
+
+
+def fetch_weekly_feature_inputs_nflverse(
+    season: int, week: int
+) -> dict[str, list[dict[str, Any]]]:
+    """Fetch weekly / schedule / depth chart records from nflverse."""
+    nfl = _import_nfl()
+    weekly = records_from_dataframe(nfl.import_weekly_data([season]))
+    schedules = records_from_dataframe(nfl.import_schedules([season]))
+    try:
+        depth = records_from_dataframe(nfl.import_depth_charts([season]))
+    except Exception as exc:
+        logger.warning("depth charts unavailable (%s); using weekly universe only", exc)
+        depth = []
+    return {
+        "weekly_records": weekly,
+        "schedule_records": schedules,
+        "depth_records": depth,
+    }
+
+
+def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, Any]]:
+    """End-to-end: nflverse + YAML schemes (+ optional game lines) → feature rows."""
+    inputs = fetch_weekly_feature_inputs_nflverse(season, week)
+    try:
+        game_lines = load_game_lines_by_team(season, week)
+    except Exception as exc:
+        logger.info("skipping game lines for anytime TD: %s", exc)
+        game_lines = {}
+    return build_weekly_feature_rows(
+        season,
+        week,
+        weekly_records=inputs["weekly_records"],
+        schedule_records=inputs["schedule_records"],
+        depth_records=inputs["depth_records"],
+        game_lines_by_team=game_lines,
+    )
