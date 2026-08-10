@@ -98,12 +98,25 @@ def _try_build_feature_rows(season: int, week: int) -> list[dict[str, Any]]:
     try:
         rows = build_feature_rows_from_nflverse(season, week)
     except Exception as exc:
-        logger.exception(
-            "anytime TD feature build failed (season=%s week=%s): %s",
-            season,
-            week,
-            exc,
-        )
+        # Missing nflverse parquets (early season 404) are expected; avoid
+        # traceback spam in Railway while still logging unexpected failures.
+        from urllib.error import HTTPError
+
+        if isinstance(exc, HTTPError) and getattr(exc, "code", None) == 404:
+            logger.warning(
+                "anytime TD feature build skipped — nflverse data not ready "
+                "(season=%s week=%s): %s",
+                season,
+                week,
+                exc,
+            )
+        else:
+            logger.exception(
+                "anytime TD feature build failed (season=%s week=%s): %s",
+                season,
+                week,
+                exc,
+            )
         return []
     logger.info(
         "anytime TD feature rows built: %s (season=%s week=%s)",

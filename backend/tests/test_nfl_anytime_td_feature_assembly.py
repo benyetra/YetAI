@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 from datetime import date
+from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 
 from app.services.etl.nfl.anytime_td_features import (
+    _usage_as_of_week_for_priors,
     aggregate_defense_allowed_from_weekly,
     aggregate_player_usage_from_weekly,
     aggregate_team_rz_from_weekly,
     build_weekly_feature_rows,
+    load_weekly_records_with_fallback,
     select_skill_universe,
 )
 
@@ -192,3 +196,48 @@ def test_build_weekly_feature_rows_end_to_end_offline():
     assert rb["defense_mult"] > 0
     assert rb["script_mult"] > 1.0
     assert rb["cover_base"] == "cover_3"
+
+
+def test_usage_as_of_week_uses_all_prior_season_weeks():
+    assert _usage_as_of_week_for_priors(season=2026, week=1, weekly_season=2024) == 99
+    assert _usage_as_of_week_for_priors(season=2026, week=3, weekly_season=2026) == 3
+
+
+def test_prior_season_usage_as_of_includes_week1_rows():
+    """Week-1 target with prior-season weekly must not zero out usage."""
+    usage = aggregate_player_usage_from_weekly(_weekly_sample(), as_of_week=99)
+    assert "rb1" in usage
+    assert usage["rb1"]["td_season"] >= 2
+
+
+def test_load_weekly_records_falls_back_after_404():
+    err = HTTPError(
+        "https://example/2026.parquet", 404, "Not Found", hdrs=None, fp=None
+    )
+
+    class _FakeDf:
+        def to_dict(self, orient="records"):
+            assert orient == "records"
+            return [{"player_id": "x", "week": 1, "position": "RB"}]
+
+        def __len__(self):
+            return 1
+
+    nfl = MagicMock()
+
+    def _import_weekly(years):
+        y = years[0]
+        if y >= 2025:
+            raise err
+        return _FakeDf()
+
+    nfl.import_weekly_data.side_effect = _import_weekly
+
+    with patch(
+        "app.services.etl.nfl.anytime_td_features._import_nfl", return_value=nfl
+    ):
+        records, source = load_weekly_records_with_fallback(2026, max_lookback=3)
+
+    assert source == 2024
+    assert len(records) == 1
+    assert nfl.import_weekly_data.call_count == 3  # 2026, 2025, 2024
