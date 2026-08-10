@@ -45,6 +45,8 @@ from app.services.accuracy_shared import (
     overview_item_from_totals,
 )
 
+ANYTIME_TD_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
+
 
 def _game_date_only(value: Any) -> date_type:
     if value is None:
@@ -230,12 +232,18 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
 
     anytime_proj = (
         db.query(NFLAnytimeTDPredictions)
-        .filter(NFLAnytimeTDPredictions.game_date == target_date)
+        .filter(
+            NFLAnytimeTDPredictions.game_date == target_date,
+            NFLAnytimeTDPredictions.position.in_(ANYTIME_TD_POSITIONS),
+        )
         .all()
     )
     anytime_actuals = (
         db.query(NFLAnytimeTDActuals)
-        .filter(NFLAnytimeTDActuals.game_date == target_date)
+        .filter(
+            NFLAnytimeTDActuals.game_date == target_date,
+            NFLAnytimeTDActuals.position.in_(ANYTIME_TD_POSITIONS),
+        )
         .all()
     )
     anytime_rows = _merge_actuals_anytime_td(anytime_proj, anytime_actuals)

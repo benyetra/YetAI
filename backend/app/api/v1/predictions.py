@@ -145,7 +145,12 @@ def _query_nfl_anytime_td_predictions(
     )
     if target_date is not None:
         q = q.filter(NFLAnytimeTDPredictions.game_date == target_date)
-    rows = q.order_by(NFLAnytimeTDPredictions.td_probability.desc()).all()
+    fetch_limit = limit * 5
+    rows = (
+        q.order_by(NFLAnytimeTDPredictions.td_probability.desc())
+        .limit(fetch_limit)
+        .all()
+    )
     latest: dict[tuple[Any, ...], Any] = {}
     for row in rows:
         key = (row.season, row.week, row.player_id)

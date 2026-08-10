@@ -49,6 +49,7 @@ def test_query_nfl_anytime_td_sorted_and_deduped(monkeypatch):
     mock_q = MagicMock()
     mock_q.filter.return_value = mock_q
     mock_q.order_by.return_value = mock_q
+    mock_q.limit.return_value = mock_q
     mock_q.all.return_value = sorted(rows, key=lambda r: r.td_probability, reverse=True)
 
     mock_db = MagicMock()
