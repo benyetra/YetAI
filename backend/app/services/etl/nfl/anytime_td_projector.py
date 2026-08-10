@@ -53,8 +53,21 @@ def _resolve_game_date(row: dict[str, Any], *, season: int, week: int) -> date:
     if isinstance(raw, date):
         return raw
     if raw is not None:
-        return date.fromisoformat(str(raw))
+        return date.fromisoformat(str(raw)[:10])
     return date.today()
+
+
+def _json_safe(value: Any) -> Any:
+    """Convert dates/datetimes so JSON/JSONB columns can bind."""
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(v) for v in value]
+    return value
 
 
 def build_upsert_row(
@@ -82,7 +95,8 @@ def build_upsert_row(
         "expected_tds": proj["expected_tds"],
         "td_probability": td_prob,
         "confidence_score": confidence,
-        "features": feature_row,
+        # Feature rows carry Python date objects from schedules; JSONB needs ISO strings.
+        "features": _json_safe(feature_row),
         "model_version": MODEL_VERSION,
         "prediction_date": now,
         "created_at": now,
