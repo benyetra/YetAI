@@ -1,0 +1,17 @@
+{
+  "description": "NFL anytime-TD quick backtest (--quick). Synthetic offline sample; refresh after intentional model changes.",
+  "updated_at": "2026-08-10",
+  "preset": "quick",
+  "gate": {
+    "max_brier": 0.25,
+    "min_n_graded": 4,
+    "max_brier_vs_baseline_margin": 0.02
+  },
+  "metrics": {
+    "n_graded": 8,
+    "brier": 0.1978,
+    "baseline_brier": 0.2576,
+    "brier_delta_vs_baseline": -0.0597
+  },
+  "passes_gate": true
+}

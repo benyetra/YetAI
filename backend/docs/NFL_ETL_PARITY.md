@@ -68,6 +68,7 @@ Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG his
 | `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines, `player_anytime_td` |
 | `REDIS_URL` | Celery broker (worker) |
 | `NFL_SEASON` | Override season year (default **2026**) |
+| `NFL_ANYTIME_TD_UI` | Show anytime-TD UI group when `1`/`true` (default off; requires backtest gate) |
 
 Python: `nfl-data-py` (see `requirements.txt`).
 
@@ -99,6 +100,8 @@ During NFL season, expect rows in `pred_qb_predictions` / `pred_kicker_predictio
 
 ## Backtest CLI
 
+**QB / kicker replay** (needs `DATABASE_URL`):
+
 ```bash
 cd backend
 PYTHONPATH=. python scripts/nfl_backtest.py --quick
@@ -106,6 +109,20 @@ PYTHONPATH=. python scripts/nfl_backtest.py --quick --write-baseline
 ```
 
 Offline CI: `tests/test_nfl_backtest_regression.py` vs `tests/fixtures/nfl_backtest_quick_baseline.json`.
+
+**Anytime TD gate** (offline `--quick` smoke; no Odds credits):
+
+```bash
+cd backend
+PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick
+PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --write-metrics
+PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --check-gate
+```
+
+Artifact: `backend/models/nfl/anytime_td_metrics.json`. Offline CI:
+`tests/test_nfl_anytime_td_backtest.py`. Enable UI only when metrics pass gate
+and `NFL_ANYTIME_TD_UI` / `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` are set — see
+`backend/docs/NFL_ANYTIME_TD.md`.
 
 ## Still deferred
 
