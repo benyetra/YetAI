@@ -56,6 +56,11 @@ def test_passes_gate_fails_when_n_graded_too_low():
     assert passes_gate(metrics, baselines) is False
 
 
+def test_passes_gate_fails_when_baseline_brier_missing():
+    metrics = {"brier": 0.10, "n_graded": 10}
+    assert passes_gate(metrics, DEFAULT_GATE_BASELINES) is False
+
+
 def test_passes_gate_passes_when_model_beats_baseline():
     metrics = {"brier": 0.18, "baseline_brier": 0.22, "n_graded": 8}
     assert passes_gate(metrics, DEFAULT_GATE_BASELINES) is True

@@ -211,7 +211,9 @@ def passes_gate(metrics: Mapping[str, Any], baselines: Mapping[str, Any]) -> boo
         return False
 
     baseline_brier = metrics.get("baseline_brier")
-    if baseline_brier is not None and float(brier) > float(baseline_brier) + margin:
+    if baseline_brier is None:
+        return False
+    if float(brier) > float(baseline_brier) + margin:
         return False
     return True
 

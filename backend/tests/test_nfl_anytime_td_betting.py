@@ -100,6 +100,11 @@ def test_normalize_and_match_player_name():
     assert match_player_odds("Unknown Player", odds) is None
 
 
+def test_match_player_odds_last_name_only_odds_key():
+    odds = {"Kelce": -110}
+    assert match_player_odds("Travis Kelce", odds) == -110
+
+
 def test_match_player_odds_rejects_ambiguous_last_name():
     odds = {"A.J. Brown": -120, "Antonio Brown": -130}
     assert match_player_odds("Brown", odds) is None

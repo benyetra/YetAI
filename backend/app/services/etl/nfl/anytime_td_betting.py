@@ -151,12 +151,15 @@ def match_player_odds(
         if not pred_first_parts:
             last_matches.append(price)
             continue
+        if not odds_first_parts:
+            last_matches.append(price)
+            continue
         pred_first = pred_first_parts[0].lower()
-        odds_first = odds_first_parts[0].lower() if odds_first_parts else ""
+        odds_first = odds_first_parts[0].lower()
         if pred_first == odds_first:
             last_matches.append(price)
             continue
-        if pred_first[0] == odds_first[0]:
+        if odds_first and pred_first[0] == odds_first[0]:
             last_matches.append(price)
 
     if len(last_matches) == 1:
