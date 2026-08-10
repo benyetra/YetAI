@@ -32,9 +32,9 @@ ACTUALS_UPSERT_UPDATE_KEYS = [
 
 
 def aggregate_player_td_count(stat: dict[str, Any]) -> int:
-    """Sum offensive TD columns from an injectable player stat dict."""
+    """Sum rushing + receiving TDs (anytime TD market excludes passing TDs)."""
     total = 0
-    for key in ("passing_tds", "rushing_tds", "receiving_tds"):
+    for key in ("rushing_tds", "receiving_tds"):
         value = stat.get(key, 0) or 0
         total += int(value)
     return total

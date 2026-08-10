@@ -1,4 +1,10 @@
-"""Load curated NFL defensive scheme tags from YAML and upsert to DB."""
+"""Load curated NFL defensive scheme tags from YAML and upsert to DB.
+
+Feature builders (``anytime_td_features``) read string tags directly from YAML.
+This module encodes tags to int/float for ``pred_nfl_defense_scheme`` persistence.
+Season-level YAML sync uses ``SEASON_LEVEL_WEEK`` (0); the ``week`` column stays
+nullable for future week-specific overrides.
+"""
 
 from __future__ import annotations
 
@@ -18,6 +24,7 @@ from app.services.etl.wnba._db_upsert import upsert_many
 logger = logging.getLogger(__name__)
 
 SOURCE_YAML = "yaml"
+SEASON_LEVEL_WEEK = 0
 
 _COVER_BASE_TO_INT: dict[str, int] = {
     "cover_1": 1,
@@ -32,6 +39,9 @@ _PRESSURE_TO_FLOAT: dict[str, float] = {
     "medium": 0.5,
     "high": 0.75,
 }
+_INT_TO_COVER_BASE: dict[int, str] = {v: k for k, v in _COVER_BASE_TO_INT.items()}
+_FLOAT_TO_MAN_ZONE: dict[float, str] = {v: k for k, v in _MAN_ZONE_TO_FLOAT.items()}
+_FLOAT_TO_PRESSURE: dict[float, str] = {v: k for k, v in _PRESSURE_TO_FLOAT.items()}
 
 SCHEME_UPSERT_UPDATE_KEYS = [
     "cover_base",
@@ -127,12 +137,42 @@ def _encode_pressure_lean(value: Any) -> float | None:
     return _PRESSURE_TO_FLOAT.get(str(value).lower())
 
 
+def decode_cover_base(value: int | None) -> str | None:
+    """Decode persisted ``cover_base`` int to YAML tag (e.g. 3 → ``cover_3``)."""
+    if value is None:
+        return None
+    return _INT_TO_COVER_BASE.get(int(value))
+
+
+def decode_man_zone_lean(value: float | None) -> str | None:
+    """Decode persisted ``man_zone_lean`` float to YAML tag."""
+    if value is None:
+        return None
+    return _FLOAT_TO_MAN_ZONE.get(float(value))
+
+
+def decode_pressure_lean(value: float | None) -> str | None:
+    """Decode persisted ``pressure_lean`` float to YAML tag."""
+    if value is None:
+        return None
+    return _FLOAT_TO_PRESSURE.get(float(value))
+
+
+def db_row_to_scheme_tags(row: dict[str, Any]) -> dict[str, str | None]:
+    """Map one ``pred_nfl_defense_scheme`` row to YAML-style string tags."""
+    return {
+        "cover_base": decode_cover_base(row.get("cover_base")),
+        "man_zone_lean": decode_man_zone_lean(row.get("man_zone_lean")),
+        "pressure_lean": decode_pressure_lean(row.get("pressure_lean")),
+    }
+
+
 def yaml_entry_to_db_row(
     abbr: str,
     entry: dict[str, Any],
     *,
     season: int,
-    week: int | None = None,
+    week: int = SEASON_LEVEL_WEEK,
     now: datetime | None = None,
 ) -> dict[str, Any]:
     """Map one YAML team entry to ``pred_nfl_defense_scheme`` upsert row."""
@@ -154,7 +194,7 @@ def build_scheme_upsert_rows(
     schemes: dict[str, dict[str, Any]],
     *,
     season: int,
-    week: int | None = None,
+    week: int = SEASON_LEVEL_WEEK,
     now: datetime | None = None,
 ) -> list[dict[str, Any]]:
     """One row per primary abbr (32 teams), keyed by canonical full name."""
@@ -172,7 +212,7 @@ def build_scheme_upsert_rows(
 def upsert_schemes_from_yaml(
     *,
     season: int | None = None,
-    week: int | None = None,
+    week: int = SEASON_LEVEL_WEEK,
     path: Path | None = None,
 ) -> dict[str, Any]:
     """Load YAML and upsert season-level scheme tags for all 32 teams."""

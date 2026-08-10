@@ -60,13 +60,23 @@ def test_player_scored_anytime_td():
     assert player_scored_anytime_td(3) is True
 
 
-def test_aggregate_player_td_count_sums_offensive_tds():
+def test_aggregate_player_td_count_sums_rush_and_receiving_only():
     stat = {
         "passing_tds": 2,
         "rushing_tds": 1,
         "receiving_tds": 0,
     }
-    assert aggregate_player_td_count(stat) == 3
+    assert aggregate_player_td_count(stat) == 1
+
+
+def test_aggregate_player_td_count_qb_passing_only_is_zero():
+    stat = {
+        "passing_tds": 3,
+        "rushing_tds": 0,
+        "receiving_tds": 0,
+    }
+    assert aggregate_player_td_count(stat) == 0
+    assert player_scored_anytime_td(aggregate_player_td_count(stat)) is False
 
 
 def test_grade_correct_prediction_threshold():
@@ -154,7 +164,7 @@ def test_yaml_entry_to_db_row_encodes_tags():
     )
     assert row["team_name"] == "Kansas City Chiefs"
     assert row["season"] == 2026
-    assert row["week"] is None
+    assert row["week"] == 0
     assert row["cover_base"] == 3
     assert row["man_zone_lean"] == 0.0
     assert row["pressure_lean"] == 0.75
@@ -209,5 +219,5 @@ def test_run_sync_schemes_delegates_to_loader():
     ) as upsert:
         result = run_sync_schemes(season=2026)
 
-    upsert.assert_called_once_with(season=2026, week=None)
+    upsert.assert_called_once_with(season=2026, week=0)
     assert result["upserted"] == 32

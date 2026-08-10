@@ -50,11 +50,12 @@ Failures in non-critical tasks still yield `partial_failure` on the orchestrator
 | `statistical_kicker_prediction.py` | CSV-backed stats (`data/nfl/*.csv`) |
 | `collect_qb_actuals.py` | `pred_qb_actuals` |
 | `collect_kicker_actuals.py` | `pred_kicker_actuals` |
-| `scheme_loader.py` | Load `defensive_schemes.yaml`; upsert `pred_nfl_defense_scheme` |
+| `scheme_loader.py` | Load `defensive_schemes.yaml`; upsert `pred_nfl_defense_scheme` (encoded int/float; season rows `week=0`) |
 | `sync_defense_schemes.py` | Celery wrapper for scheme YAML sync |
+| `anytime_td_features.py` | Scheme multipliers from YAML string tags (not DB-encoded values) |
 | `anytime_td_projector.py` | `pred_nfl_anytime_td_predictions` |
 | `anytime_td_betting.py` | Market odds/edge on anytime TD predictions |
-| `anytime_td_actuals.py` | `pred_nfl_anytime_td_actuals` |
+| `anytime_td_actuals.py` | `pred_nfl_anytime_td_actuals` (rush + rec TDs only; passing TDs excluded) |
 | `nfl_common.py` | Week/season helpers |
 
 Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG history).
@@ -64,7 +65,7 @@ Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG his
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Postgres (`pred_qb_*`, `pred_kicker_*`, `pred_nfl_*`) |
-| `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines |
+| `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines, `player_anytime_td` |
 | `REDIS_URL` | Celery broker (worker) |
 | `NFL_SEASON` | Override season year (default **2026**) |
 
@@ -115,6 +116,13 @@ Offline CI: `tests/test_nfl_backtest_regression.py` vs `tests/fixtures/nfl_backt
 ## Season / week
 
 Single source: `nfl_common.py` — `get_nfl_season()` (`NFL_SEASON` env), `get_current_nfl_week()`.
+
+## Anytime TD + defensive schemes
+
+- **Actuals grading** — `player_anytime_td` / design spec: player **scores** ≥1 TD (rushing or receiving). Passing TDs do not count for the passer.
+- **Feature path** — `anytime_td_features.scheme_defense_adjustment` reads string tags from `defensive_schemes.yaml` (e.g. `cover_3`, `zone`, `high`).
+- **DB persistence** — `scheme_loader` encodes tags to int/float on upsert (`cover_3`→3, `zone`→0.0, `high`→0.75). Use `decode_cover_base` / `decode_man_zone_lean` / `decode_pressure_lean` or `db_row_to_scheme_tags` when reading encoded rows back to tags.
+- **Season scheme rows** — YAML sync upserts with `week=0` (`SEASON_LEVEL_WEEK`) so Postgres unique `(team_name, season, week)` is idempotent. Column stays nullable for future week-specific overrides.
 
 ## Ops: Elo cold start
 
