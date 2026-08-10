@@ -1,5 +1,6 @@
 import {
   ANYTIME_TD_COLUMNS,
+  formatAnytimeTdEdge,
   formatMarketOdds,
   formatTdProbability,
   isAnytimeTdUiEnabled,
@@ -41,6 +42,20 @@ describe('formatTdProbability', () => {
   });
 });
 
+describe('formatAnytimeTdEdge', () => {
+  it('formats probability edges as signed percentage points', () => {
+    expect(formatAnytimeTdEdge(0.05)).toBe('+5.0%');
+    expect(formatAnytimeTdEdge(-0.032)).toBe('-3.2%');
+    expect(formatAnytimeTdEdge(0)).toBe('0.0%');
+  });
+
+  it('handles missing values', () => {
+    expect(formatAnytimeTdEdge(null)).toBe('—');
+    expect(formatAnytimeTdEdge(undefined)).toBe('—');
+    expect(formatAnytimeTdEdge('')).toBe('—');
+  });
+});
+
 describe('formatMarketOdds', () => {
   it('formats American odds with sign', () => {
     expect(formatMarketOdds(150)).toBe('+150');
@@ -53,6 +68,11 @@ describe('formatMarketOdds', () => {
 });
 
 describe('ANYTIME_TD_COLUMNS', () => {
+  it('formats edge column as percentage points', () => {
+    const edgeCol = ANYTIME_TD_COLUMNS.find((c) => c.key === 'edge');
+    expect(edgeCol?.format?.(0.05, {})).toBe('+5.0%');
+  });
+
   it('defines the expected board columns', () => {
     expect(ANYTIME_TD_COLUMNS.map((c) => c.label)).toEqual([
       'Player',

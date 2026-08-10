@@ -6,7 +6,6 @@ import { formatOdds } from '@/lib/formatting';
 import {
   formatOpponentTeamCell,
   formatPickConfidence,
-  formatSignedEdge,
   formatTeamCell,
   OPPONENT_TEAM_COLUMN,
   TEAM_COLUMN,
@@ -36,6 +35,16 @@ export function formatMarketOdds(value: unknown): string {
   const n = Number(value);
   if (Number.isNaN(n)) return formatString(value);
   return formatOdds(n);
+}
+
+/** Model minus implied probability edge as percentage points (e.g. 0.05 → +5.0%). */
+export function formatAnytimeTdEdge(value: unknown): string {
+  if (value === null || value === undefined || value === '') return '—';
+  const n = Number(value);
+  if (Number.isNaN(n)) return formatString(value);
+  const pctPoints = n * 100;
+  const sign = pctPoints > 0 ? '+' : '';
+  return `${sign}${pctPoints.toFixed(1)}%`;
 }
 
 const OPPONENT_COLUMN: ColumnDef = {
@@ -74,7 +83,7 @@ export const ANYTIME_TD_COLUMNS: ColumnDef[] = [
     label: 'Edge',
     align: 'right',
     mono: true,
-    format: (v) => formatSignedEdge(v),
+    format: (v) => formatAnytimeTdEdge(v),
     className: 'prop-edge-cell',
   },
   {
