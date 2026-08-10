@@ -3,6 +3,20 @@
 Hierarchical λ → `P(TD) = 1 - exp(-λ)` for QB/RB/WR/TE. Predictions live in
 `pred_nfl_anytime_td_predictions`; grading in `pred_nfl_anytime_td_actuals`.
 
+## Feature build (nflverse)
+
+Projector `run()` without injected `feature_rows` calls
+`build_feature_rows_from_nflverse`:
+
+1. `import_weekly_data` — prior-week usage, team scoring proxies, defense TDs allowed
+2. `import_schedules` — REG matchups, kickoff date, roof/wind
+3. `import_depth_charts` — skill-position depth 1–2 (weekly contributors also included)
+4. YAML schemes — opponent cover / man-zone / pressure tags
+5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
+
+Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
+RZ trips / share are **weekly proxies** until PBP red-zone ETL lands.
+
 ## Pipeline
 
 See `backend/docs/NFL_ETL_PARITY.md` — Celery phase **anytime_td** runs scheme
