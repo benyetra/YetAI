@@ -28,3 +28,24 @@
 cd backend && PYTHONPATH=. .venv/bin/python -m pytest tests/test_nfl_anytime_td_projector.py tests/test_nfl_anytime_td_betting.py -q
 # 11 passed
 ```
+
+---
+
+## Review fix (2026-08-10)
+
+**Commit:** `fix(nfl): anytime TD projector created_at and odds name match`
+
+### Findings addressed
+
+1. **created_at overwrite** — `anytime_td_projector.run()` now passes explicit `update_keys=ANYTIME_TD_UPSERT_UPDATE_KEYS`, omitting `created_at` (and conflict keys) so re-runs update projections without resetting insert timestamp.
+2. **Substring name match** — `match_player_odds` now tries exact normalized match, compact alphanumeric equality, then last-name (+ first-name/initial) with uniqueness required; bare substring `in` matching removed.
+
+### Tests
+
+```bash
+cd backend && PYTHONPATH=. .venv/bin/python -m pytest tests/test_nfl_anytime_td_projector.py tests/test_nfl_anytime_td_betting.py -q
+# 13 passed
+```
+
+Added: upsert `update_keys` assertion (no `created_at`), ambiguous last-name returns `None`, substring false-positive guard.
+

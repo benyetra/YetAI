@@ -16,6 +16,21 @@ logger = logging.getLogger(__name__)
 
 MODEL_VERSION = "hierarchical_v1"
 
+# Mutable columns on conflict; omit created_at (insert-only) and identity keys.
+ANYTIME_TD_UPSERT_UPDATE_KEYS = [
+    "game_date",
+    "player_name",
+    "position",
+    "team_name",
+    "opponent_team_name",
+    "expected_tds",
+    "td_probability",
+    "confidence_score",
+    "features",
+    "model_version",
+    "prediction_date",
+]
+
 
 def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float]:
     """Pure: compute expected TDs and anytime probability from a feature row."""
@@ -132,6 +147,7 @@ def run(
             NFLAnytimeTDPredictions,
             upsert_rows,
             conflict_keys=["season", "week", "player_id"],
+            update_keys=ANYTIME_TD_UPSERT_UPDATE_KEYS,
         )
         db.commit()
         return {

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.services.etl.nfl.anytime_td_projector import (
+    ANYTIME_TD_UPSERT_UPDATE_KEYS,
     MODEL_VERSION,
     build_upsert_row,
     project_prediction_from_features,
@@ -80,6 +81,9 @@ def test_run_with_injected_feature_rows_upserts():
     assert result["status"] == "ok"
     assert result["predictions"] == 1
     um.assert_called_once()
+    _, kwargs = um.call_args
+    assert kwargs["update_keys"] == ANYTIME_TD_UPSERT_UPDATE_KEYS
+    assert "created_at" not in kwargs["update_keys"]
     mock_db.commit.assert_called_once()
     mock_db.close.assert_called_once()
 

@@ -100,18 +100,67 @@ def parse_player_anytime_td_outcomes(odds_payload: dict[str, Any]) -> dict[str, 
     return best
 
 
+def _compact_name(name: str) -> str:
+    """Alphanumeric lowercase key for punctuation-insensitive equality."""
+    cleaned = normalize_player_name(name).lower()
+    return "".join(ch for ch in cleaned if ch.isalnum())
+
+
+def _name_first_last(name: str) -> tuple[list[str], str]:
+    parts = normalize_player_name(name).split()
+    if not parts:
+        return [], ""
+    return parts[:-1], parts[-1].lower()
+
+
 def match_player_odds(
     prediction_name: str,
     odds_by_player: dict[str, int],
 ) -> int | None:
-    """Fuzzy match prediction player name to odds map."""
-    normalized = normalize_player_name(prediction_name).lower()
+    """Match prediction player name to odds map (exact → compact → last-name)."""
+    pred_norm = normalize_player_name(prediction_name).lower()
+    pred_compact = _compact_name(prediction_name)
+    pred_first_parts, pred_last = _name_first_last(prediction_name)
+
+    entries: list[tuple[str, str, int]] = []
     for odds_name, price in odds_by_player.items():
-        odds_norm = normalize_player_name(odds_name).lower()
-        if normalized == odds_norm:
+        entries.append(
+            (
+                normalize_player_name(odds_name).lower(),
+                _compact_name(odds_name),
+                price,
+            )
+        )
+
+    for odds_norm, _, price in entries:
+        if pred_norm == odds_norm:
             return price
-        if normalized in odds_norm or odds_norm in normalized:
+
+    for _, odds_compact, price in entries:
+        if pred_compact == odds_compact:
             return price
+
+    if not pred_last:
+        return None
+
+    last_matches: list[int] = []
+    for odds_norm, _, price in entries:
+        odds_first_parts, odds_last = _name_first_last(odds_norm)
+        if odds_last != pred_last:
+            continue
+        if not pred_first_parts:
+            last_matches.append(price)
+            continue
+        pred_first = pred_first_parts[0].lower()
+        odds_first = odds_first_parts[0].lower() if odds_first_parts else ""
+        if pred_first == odds_first:
+            last_matches.append(price)
+            continue
+        if pred_first[0] == odds_first[0]:
+            last_matches.append(price)
+
+    if len(last_matches) == 1:
+        return last_matches[0]
     return None
 
 

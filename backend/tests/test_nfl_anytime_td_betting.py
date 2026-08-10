@@ -100,6 +100,16 @@ def test_normalize_and_match_player_name():
     assert match_player_odds("Unknown Player", odds) is None
 
 
+def test_match_player_odds_rejects_ambiguous_last_name():
+    odds = {"A.J. Brown": -120, "Antonio Brown": -130}
+    assert match_player_odds("Brown", odds) is None
+
+
+def test_match_player_odds_no_substring_false_positive():
+    odds = {"Johnson": -110, "Peterson": -120}
+    assert match_player_odds("son", odds) is None
+
+
 def test_run_attaches_odds_to_predictions():
     pred = MagicMock()
     pred.season = 2025
