@@ -6,6 +6,7 @@ import Layout from '@/components/Layout';
 import { useAuth } from '@/components/Auth';
 import PageHeader from '@/components/yetai/PageHeader';
 import { LeagueChip } from '@/components/yetai/primitives';
+import BestEdgesDiscovery from '@/components/yetai/BestEdgesDiscovery';
 import {
   PredictionsTable,
   PredictionsPaywall,
@@ -14,7 +15,12 @@ import {
 } from '@/components/PredictionsTable';
 import { usePredictions, type PredictionSport } from '@/lib/usePredictions';
 import { countTopPlays, isTopPlay } from '@/lib/propProjectionDisplay';
-import { Crown, Sparkles } from 'lucide-react';
+import {
+  buildDiscoverySections,
+  rowMatchesPlayerSearch,
+  type DiscoveryGroupConfig,
+} from '@/lib/propDiscovery';
+import { Crown, Search, Sparkles, X } from 'lucide-react';
 import { buildLoginUrl } from '@/lib/auth-redirect';
 
 export type PropGroup = {
@@ -30,6 +36,8 @@ export type GroupsContext = {
 };
 
 export type GroupsProp = PropGroup[] | ((ctx: GroupsContext) => PropGroup[]);
+
+export type { DiscoveryGroupConfig };
 
 function todayIso(): string {
   const now = new Date();
@@ -49,6 +57,7 @@ export default function SportPredictionsPage({
   emoji,
   subtitle,
   groups,
+  discoveryGroups,
   topSection,
   accuracySummary,
 }: {
@@ -57,6 +66,8 @@ export default function SportPredictionsPage({
   emoji: string;
   subtitle: string;
   groups: GroupsProp;
+  /** Optional best-edges / hit-chance discovery strip configs. */
+  discoveryGroups?: DiscoveryGroupConfig[];
   topSection?: (ctx: {
     data: Record<string, Array<Record<string, unknown>>> | null;
     loading: boolean;
@@ -67,6 +78,7 @@ export default function SportPredictionsPage({
   const { isAuthenticated, loading: authLoading } = useAuth();
   const router = useRouter();
   const [date, setDate] = useState<string>(todayIso);
+  const [playerSearch, setPlayerSearch] = useState('');
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
 
   const isPastDate = useMemo(() => date < todayIso(), [date]);
@@ -164,7 +176,13 @@ export default function SportPredictionsPage({
     }, 0);
   }, [data, hasTopPlayGroups, resolvedGroups]);
 
-  const showPropToolbar = resolvedGroups.length > 1 || hasTopPlayGroups;
+  const discoverySections = useMemo(
+    () => buildDiscoverySections(data, discoveryGroups ?? []),
+    [data, discoveryGroups]
+  );
+
+  const showPropToolbar = true;
+  const searchActive = playerSearch.trim().length > 0;
 
   if (!isAuthenticated) return null;
 
@@ -206,8 +224,34 @@ export default function SportPredictionsPage({
             ? accuracySummary({ date, isPastDate })
             : null}
 
+          {(discoveryGroups?.length ?? 0) > 0 ? (
+            <BestEdgesDiscovery sections={discoverySections} loading={loading} />
+          ) : null}
+
           {showPropToolbar && (
             <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table filters">
+              <div className="predictions-toolbar-search">
+                <Search size={14} aria-hidden className="predictions-toolbar-search-icon" />
+                <input
+                  type="search"
+                  className="input predictions-toolbar-search-input"
+                  placeholder="Search players…"
+                  value={playerSearch}
+                  onChange={(e) => setPlayerSearch(e.target.value)}
+                  aria-label="Search player names"
+                  disabled={loading}
+                />
+                {searchActive ? (
+                  <button
+                    type="button"
+                    className="predictions-toolbar-search-clear"
+                    onClick={() => setPlayerSearch('')}
+                    aria-label="Clear player search"
+                  >
+                    <X size={14} />
+                  </button>
+                ) : null}
+              </div>
               <div className="predictions-toolbar-actions">
                 {hasTopPlayGroups && (
                   <button
@@ -281,11 +325,19 @@ export default function SportPredictionsPage({
 
           {resolvedGroups.map((g) => {
             const allRows = (data?.[g.responseKey] as Array<Record<string, unknown>>) ?? [];
-            const rows =
+            let rows =
               topPlaysOnly && g.rowClassName ? allRows.filter(isTopPlay) : allRows;
-            if (topPlaysOnly && g.rowClassName && rows.length === 0) {
+            if (searchActive) {
+              rows = rows.filter((row) => rowMatchesPlayerSearch(row, playerSearch));
+            }
+            if (topPlaysOnly && g.rowClassName && rows.length === 0 && !searchActive) {
               return null;
             }
+            const emptyMessage = searchActive
+              ? 'No players match.'
+              : topPlaysOnly && g.rowClassName
+                ? 'No top plays in this category for this date.'
+                : undefined;
             return (
               <PredictionsTable
                 key={g.responseKey}
@@ -298,11 +350,7 @@ export default function SportPredictionsPage({
                   setExpandedByKey((prev) => ({ ...prev, [g.responseKey]: next }))
                 }
                 rowClassName={g.rowClassName}
-                emptyMessage={
-                  topPlaysOnly && g.rowClassName
-                    ? 'No top plays in this category for this date.'
-                    : undefined
-                }
+                emptyMessage={emptyMessage}
               />
             );
           })}
