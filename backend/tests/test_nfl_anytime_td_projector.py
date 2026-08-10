@@ -64,6 +64,22 @@ def test_build_upsert_row_includes_metadata():
     assert row["td_probability"] > 0
 
 
+def test_build_upsert_row_features_are_json_safe():
+    """JSONB bind fails if features still contain Python date objects."""
+    import json
+
+    now = datetime(2025, 10, 1, 12, 0, 0)
+    row = build_upsert_row(
+        _sample_feature_row(game_date=date(2025, 10, 5)),
+        season=2025,
+        week=5,
+        now=now,
+    )
+    assert row["features"]["game_date"] == "2025-10-05"
+    # Must round-trip through stdlib json (same constraint as SQLAlchemy JSON).
+    json.dumps(row["features"])
+
+
 def test_run_with_injected_feature_rows_upserts():
     feature_rows = [_sample_feature_row()]
     mock_db = MagicMock()
