@@ -232,7 +232,7 @@ def _run_qb_betting_core():
     if len(qb_predictions) == 0:
         print("🔄 No QB predictions found. Generating predictions first...")
         # Import and run the dynamic QB script logic
-        from qb_dynamic_heroku import main as generate_dynamic_predictions
+        from app.services.etl.nfl.qb_dynamic import run as generate_dynamic_predictions
 
         generate_dynamic_predictions()
 
