@@ -41,6 +41,11 @@ def test_nfl_predictions_returns_all_expected_keys(monkeypatch):
         "app.services.game_projection_schedule.attach_game_times_from_lines",
         fake_attach_game_times,
     )
+    monkeypatch.setattr(
+        predictions_module,
+        "_query_nfl_anytime_td_predictions",
+        lambda db, target_date, limit: [],
+    )
 
     result = predictions_module.nfl_predictions(
         target_date=date(2026, 9, 7),
@@ -53,6 +58,7 @@ def test_nfl_predictions_returns_all_expected_keys(monkeypatch):
     assert set(result.keys()) == {
         "qb_predictions",
         "kicker_predictions",
+        "anytime_td_predictions",
         "spreads",
         "totals",
     }

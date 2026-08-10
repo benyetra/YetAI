@@ -263,6 +263,49 @@ def recommendation_side_bucket(
     )
 
 
+def brier_bucket(
+    rows: Iterable[dict[str, Any]],
+    *,
+    prob_field: str,
+    actual_field: str,
+    label: str,
+    key: str,
+) -> AccuracyBucket:
+    """Mean Brier score for binary outcomes (lower is better).
+
+    Skips rows missing probability or actual outcome.
+    """
+    scores: list[float] = []
+    for row in rows:
+        prob = row.get(prob_field)
+        actual = row.get(actual_field)
+        if prob is None or actual is None:
+            continue
+        try:
+            p = float(prob)
+            y = 1.0 if actual else 0.0
+            scores.append((p - y) ** 2)
+        except (TypeError, ValueError):
+            continue
+
+    if not scores:
+        return AccuracyBucket(
+            key=key,
+            label=label,
+            primary="—",
+            secondary="No graded rows",
+            tone="neutral",
+        )
+    brier = sum(scores) / len(scores)
+    return AccuracyBucket(
+        key=key,
+        label=label,
+        primary=f"Brier {brier:.3f}",
+        secondary=f"Across {len(scores)} graded",
+        tone="neutral",
+    )
+
+
 def mae_bucket(
     rows: Iterable[dict[str, Any]],
     *,

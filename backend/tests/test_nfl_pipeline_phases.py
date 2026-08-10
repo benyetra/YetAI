@@ -1,6 +1,12 @@
 from app.tasks.etl_pipeline import NFL_PHASES
 
-EXPECTED_PHASE_ORDER = ["actuals", "game_lines", "game_projections", "predictions"]
+EXPECTED_PHASE_ORDER = [
+    "actuals",
+    "game_lines",
+    "game_projections",
+    "anytime_td",
+    "predictions",
+]
 SEED_ELO_TASK = "app.tasks.etl_pipeline.nfl.seed_elo_history"
 STORE_GAME_ACTUALS_TASK = "app.tasks.etl_pipeline.nfl.store_game_actuals"
 

@@ -13,6 +13,7 @@ on:
     paths:
       - 'backend/**'
       - 'docs/api/**'
+      - '.github/workflows/backend-ci-cd.yml'
 
 env:
   PYTHON_VERSION: '3.11'
@@ -63,6 +64,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+        # Match Dockerfile: nfl-data-py pins numpy<2 in metadata; install with --no-deps
+        pip install nfl-data-py==0.3.3 --no-deps
+        pip install appdirs fastparquet
         pip install pytest pytest-asyncio pytest-cov httpx
 
     - name: Set up test environment

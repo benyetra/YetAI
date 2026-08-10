@@ -1,0 +1,161 @@
+# Curated defensive scheme tags (2025/26 defaults). Primary keys: nflverse abbreviations.
+ARI:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+ATL:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+BAL:
+  cover_base: cover_1
+  man_zone_lean: man
+  pressure_lean: high
+  as_of: "2026-08-01"
+BUF:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: high
+  as_of: "2026-08-01"
+CAR:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+CHI:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+CIN:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+CLE:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+DAL:
+  cover_base: cover_1
+  man_zone_lean: man
+  pressure_lean: high
+  as_of: "2026-08-01"
+DEN:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+DET:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+GB:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+HOU:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+IND:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+JAX:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+KC:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+LAC:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+LAR:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+LV:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+MIA:
+  cover_base: cover_1
+  man_zone_lean: man
+  pressure_lean: high
+  as_of: "2026-08-01"
+MIN:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+NE:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+"NO":
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+NYG:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+NYJ:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+PHI:
+  cover_base: cover_2
+  man_zone_lean: zone
+  pressure_lean: high
+  as_of: "2026-08-01"
+PIT:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: high
+  as_of: "2026-08-01"
+SEA:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+SF:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+TB:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+TEN:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"
+WAS:
+  cover_base: cover_3
+  man_zone_lean: zone
+  pressure_lean: medium
+  as_of: "2026-08-01"

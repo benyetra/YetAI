@@ -27,6 +27,7 @@ from app.models.predictions_models import (
     GameProjections,
     Homer,
     KickerPredictions,
+    NFLAnytimeTDPredictions,
     NFLGameLines,
     NFLSpreadProjections,
     NFLTotalsProjections,
@@ -70,6 +71,7 @@ ALLOWED_TIERS = {"pro", "elite", "PRO", "ELITE"}
 DEFAULT_LIMIT = 50
 WNBA_PROP_DEFAULT_LIMIT = 75
 MAX_LIMIT = 500
+ANYTIME_TD_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
 
 
 def require_paid_tier(current_user: dict = Depends(get_current_user)) -> dict:
@@ -130,6 +132,32 @@ def _query_recent(
         if key not in latest:
             latest[key] = row
     return list(latest.values())[:limit]
+
+
+def _query_nfl_anytime_td_predictions(
+    db: Session,
+    target_date: date_type | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    """Anytime-TD rows for skill positions, deduped and sorted by P(TD) desc."""
+    q = db.query(NFLAnytimeTDPredictions).filter(
+        NFLAnytimeTDPredictions.position.in_(ANYTIME_TD_POSITIONS)
+    )
+    if target_date is not None:
+        q = q.filter(NFLAnytimeTDPredictions.game_date == target_date)
+    fetch_limit = limit * 5
+    rows = (
+        q.order_by(NFLAnytimeTDPredictions.td_probability.desc())
+        .limit(fetch_limit)
+        .all()
+    )
+    latest: dict[tuple[Any, ...], Any] = {}
+    for row in rows:
+        key = (row.season, row.week, row.player_id)
+        if key not in latest:
+            latest[key] = row
+    deduped = sorted(latest.values(), key=lambda r: r.td_probability, reverse=True)
+    return [_row_to_dict(r) for r in deduped[:limit]]
 
 
 def _load_wnba_season_minutes_avg(
@@ -543,6 +571,9 @@ def nfl_predictions(
         ),
         "kicker_predictions": attach_team_opponent_fields(
             _query_recent(db, KickerPredictions, "game_date", target_date, limit, tz=tz)
+        ),
+        "anytime_td_predictions": _query_nfl_anytime_td_predictions(
+            db, target_date, limit
         ),
         "spreads": spreads,
         "totals": totals,

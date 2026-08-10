@@ -46,6 +46,7 @@ pyjwt[crypto]==2.10.1
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.18
 pyotp==2.9.0
+PyYAML==6.0.3
 qrcode==7.4.2
 google-auth==2.30.0
 google-auth-oauthlib==1.2.0

@@ -586,6 +586,121 @@ class NFLTeamElo(Base):
         return f"<NFLTeamElo {self.team_name}: elo={self.elo} as_of={self.as_of_date}>"
 
 
+class NFLDefenseScheme(Base):
+    """Curated defensive scheme tags per team (season / optional week)."""
+
+    __tablename__ = "pred_nfl_defense_scheme"
+
+    id = Column(Integer, primary_key=True)
+    team_name = Column(String(100), nullable=False)
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=True)
+    cover_base = Column(Integer, nullable=True)
+    man_zone_lean = Column(Float, nullable=True)
+    pressure_lean = Column(Float, nullable=True)
+    source = Column(String(50), nullable=True)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "team_name",
+            "season",
+            "week",
+            name="unique_nfl_defense_scheme",
+        ),
+        Index("idx_nfl_defense_scheme_season", "season"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLDefenseScheme {self.team_name} s{self.season}w{self.week}: "
+            f"cover={self.cover_base}>"
+        )
+
+
+class NFLAnytimeTDPredictions(Base):
+    """Weekly anytime touchdown probability predictions."""
+
+    __tablename__ = "pred_nfl_anytime_td_predictions"
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False)
+    player_id = Column(String(20), nullable=False)
+    player_name = Column(String(100), nullable=False)
+    position = Column(String(10), nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_name = Column(String(100), nullable=False)
+    expected_tds = Column(Float, nullable=False)
+    td_probability = Column(Float, nullable=False)
+    market_odds = Column(Integer, nullable=True)
+    market_implied_prob = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    features = Column(JSON, nullable=True)
+    model_version = Column(String(20), nullable=True)
+    prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "season",
+            "week",
+            "player_id",
+            name="unique_nfl_anytime_td_prediction",
+        ),
+        Index("idx_nfl_anytime_td_predictions_date", "game_date"),
+        Index("idx_nfl_anytime_td_predictions_prob", "td_probability"),
+        Index("idx_nfl_anytime_td_predictions_edge", "edge"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLAnytimeTDPredictions {self.player_name} ({self.position}): "
+            f"P(TD)={self.td_probability:.3f}>"
+        )
+
+
+class NFLAnytimeTDActuals(Base):
+    """Post-game anytime TD outcomes for grading."""
+
+    __tablename__ = "pred_nfl_anytime_td_actuals"
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False)
+    player_id = Column(String(20), nullable=False)
+    player_name = Column(String(100), nullable=False)
+    position = Column(String(10), nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_name = Column(String(100), nullable=False)
+    scored_anytime_td = Column(Boolean, nullable=False)
+    actual_td_count = Column(Integer, nullable=False)
+    predicted_td_probability = Column(Float, nullable=True)
+    expected_tds = Column(Float, nullable=True)
+    correct_prediction = Column(Boolean, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "season",
+            "week",
+            "player_id",
+            name="unique_nfl_anytime_td_actual",
+        ),
+        Index("idx_nfl_anytime_td_actuals_date", "game_date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLAnytimeTDActuals {self.player_name}: "
+            f"scored={self.scored_anytime_td} tds={self.actual_td_count}>"
+        )
+
+
 class StrikeoutProjections(Base):
     __tablename__ = "pred_strikeout_projections"
     id = Column(Integer, primary_key=True)

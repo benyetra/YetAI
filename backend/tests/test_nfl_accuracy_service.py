@@ -23,7 +23,7 @@ def _mock_db(rows_by_model):
     return db
 
 
-def test_returns_five_nfl_buckets():
+def test_returns_six_nfl_buckets():
     qb_p = SimpleNamespace(
         qb_player_id="qb1",
         predicted_passing_yards=275.0,
@@ -49,6 +49,7 @@ def test_returns_five_nfl_buckets():
         "kicker_fg_mae",
         "spread_ats",
         "totals_ou",
+        "anytime_td_brier",
     ]
     assert out["available"] is True
     # QB picked OVER 250.5, actual 310 → correct
@@ -60,4 +61,29 @@ def test_unavailable_when_no_rows():
     db = _mock_db({})
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 5
+    assert len(out["buckets"]) == 6
+
+
+def test_anytime_td_brier_bucket_when_actuals_exist():
+    td_p = SimpleNamespace(
+        season=2026,
+        week=1,
+        player_id="rb1",
+        td_probability=0.6,
+    )
+    td_a = SimpleNamespace(
+        season=2026,
+        week=1,
+        player_id="rb1",
+        scored_anytime_td=True,
+    )
+    db = _mock_db(
+        {
+            "NFLAnytimeTDPredictions": [td_p],
+            "NFLAnytimeTDActuals": [td_a],
+        }
+    )
+    out = svc.daily_accuracy(db, target_date=date(2026, 9, 7))
+    brier = next(b for b in out["buckets"] if b["key"] == "anytime_td_brier")
+    assert brier["primary"] == "Brier 0.160"
+    assert out["available"] is True
