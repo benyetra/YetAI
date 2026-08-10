@@ -626,8 +626,14 @@ def build_weekly_feature_rows(
     depth_records: list[dict[str, Any]] | None = None,
     schemes: dict[str, dict[str, Any]] | None = None,
     game_lines_by_team: dict[str, dict[str, Any]] | None = None,
+    usage_as_of_week: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Assemble projector feature rows for one REG week (injectable inputs)."""
+    """Assemble projector feature rows for one REG week (injectable inputs).
+
+    ``usage_as_of_week`` defaults to ``week`` (in-season lookback: weeks < week).
+    Pass a large value (e.g. 99) when ``weekly_records`` are from a prior season
+    so all prior-season weeks count as usage/defense priors.
+    """
     weekly_records = weekly_records if weekly_records is not None else []
     schedule_records = schedule_records if schedule_records is not None else []
     depth_records = depth_records if depth_records is not None else []
@@ -636,9 +642,10 @@ def build_weekly_feature_rows(
 
         schemes = load_schemes_from_yaml()
 
-    usage = aggregate_player_usage_from_weekly(weekly_records, as_of_week=week)
-    team_rz = aggregate_team_rz_from_weekly(weekly_records, as_of_week=week)
-    defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=week)
+    as_of = week if usage_as_of_week is None else usage_as_of_week
+    usage = aggregate_player_usage_from_weekly(weekly_records, as_of_week=as_of)
+    team_rz = aggregate_team_rz_from_weekly(weekly_records, as_of_week=as_of)
+    defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=as_of)
     matchups = _schedule_matchups(schedule_records, week=week)
     universe = select_skill_universe(
         depth_records=depth_records, usage_by_player=usage, week=week
@@ -727,20 +734,90 @@ def _import_nfl():
     return nfl
 
 
+def _is_missing_nflverse_data_error(exc: BaseException) -> bool:
+    """True when nflverse parquet is not published yet (typical HTTP 404)."""
+    from urllib.error import HTTPError, URLError
+
+    if isinstance(exc, HTTPError) and getattr(exc, "code", None) == 404:
+        return True
+    if isinstance(exc, URLError):
+        return True
+    text = str(exc).lower()
+    return "404" in text or "not found" in text
+
+
+def _usage_as_of_week_for_priors(
+    *,
+    season: int,
+    week: int,
+    weekly_season: int | None,
+) -> int:
+    """When weekly rows are from a prior season, include all weeks as priors."""
+    if weekly_season is not None and weekly_season < season:
+        return 99
+    return week
+
+
+def load_weekly_records_with_fallback(
+    season: int, *, max_lookback: int = 3
+) -> tuple[list[dict[str, Any]], int | None]:
+    """Load nflverse weekly player rows, falling back to recent prior seasons.
+
+    Early-season / preseason often 404s for the current season parquet (and
+    sometimes the previous season until nflverse publishes). Walk back up to
+    ``max_lookback`` years and return ``(records, source_season)``.
+    """
+    nfl = _import_nfl()
+    last_err: BaseException | None = None
+    for candidate in range(season, season - max_lookback - 1, -1):
+        if candidate < 1999:
+            break
+        try:
+            records = records_from_dataframe(nfl.import_weekly_data([candidate]))
+        except Exception as exc:
+            if not _is_missing_nflverse_data_error(exc):
+                raise
+            last_err = exc
+            logger.info(
+                "nflverse weekly data missing for season=%s (%s); trying prior",
+                candidate,
+                exc,
+            )
+            continue
+        if candidate < season:
+            logger.warning(
+                "nflverse weekly data for %s unavailable; using %s for "
+                "usage/defense priors",
+                season,
+                candidate,
+            )
+        return records, candidate
+    if last_err is not None:
+        logger.warning(
+            "no nflverse weekly data found for seasons %s–%s: %s",
+            season - max_lookback,
+            season,
+            last_err,
+        )
+    return [], None
+
+
 def fetch_player_usage_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:
     """Load prior-week player usage from nflverse weekly data."""
-    nfl = _import_nfl()
-    weekly = nfl.import_weekly_data([season])
-    records = records_from_dataframe(weekly)
-    return aggregate_player_usage_from_weekly(records, as_of_week=week)
+    records, weekly_season = load_weekly_records_with_fallback(season)
+    as_of = _usage_as_of_week_for_priors(
+        season=season, week=week, weekly_season=weekly_season
+    )
+    return aggregate_player_usage_from_weekly(records, as_of_week=as_of)
 
 
 def fetch_team_rz_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:
     """Load team RZ/opportunity proxies from nflverse weekly data."""
-    nfl = _import_nfl()
-    weekly = nfl.import_weekly_data([season])
-    records = records_from_dataframe(weekly)
-    return aggregate_team_rz_from_weekly(records, as_of_week=week)
+    records, weekly_season = load_weekly_records_with_fallback(season)
+    as_of = _usage_as_of_week_for_priors(
+        season=season, week=week, weekly_season=weekly_season
+    )
+    return aggregate_team_rz_from_weekly(records, as_of_week=as_of)
 
 
 def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]:
@@ -795,20 +872,33 @@ def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]
     return by_team
 
 
-def fetch_weekly_feature_inputs_nflverse(
-    season: int, week: int
-) -> dict[str, list[dict[str, Any]]]:
-    """Fetch weekly / schedule / depth chart records from nflverse."""
+def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, Any]:
+    """Fetch weekly / schedule / depth chart records from nflverse.
+
+    ``week`` is unused here; lookback/`usage_as_of_week` is applied in
+    ``build_feature_rows_from_nflverse``. Schedules/depth stay on ``season``.
+    """
+    _ = week
     nfl = _import_nfl()
-    weekly = records_from_dataframe(nfl.import_weekly_data([season]))
+    weekly, weekly_season = load_weekly_records_with_fallback(season)
     schedules = records_from_dataframe(nfl.import_schedules([season]))
     try:
         depth = records_from_dataframe(nfl.import_depth_charts([season]))
     except Exception as exc:
-        logger.warning("depth charts unavailable (%s); using weekly universe only", exc)
+        if _is_missing_nflverse_data_error(exc):
+            logger.warning(
+                "depth charts unavailable for %s (%s); using weekly universe only",
+                season,
+                exc,
+            )
+        else:
+            logger.warning(
+                "depth charts unavailable (%s); using weekly universe only", exc
+            )
         depth = []
     return {
         "weekly_records": weekly,
+        "weekly_season": weekly_season,
         "schedule_records": schedules,
         "depth_records": depth,
     }
@@ -822,6 +912,11 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
     except Exception as exc:
         logger.info("skipping game lines for anytime TD: %s", exc)
         game_lines = {}
+    usage_as_of = _usage_as_of_week_for_priors(
+        season=season,
+        week=week,
+        weekly_season=inputs.get("weekly_season"),
+    )
     return build_weekly_feature_rows(
         season,
         week,
@@ -829,4 +924,5 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
         schedule_records=inputs["schedule_records"],
         depth_records=inputs["depth_records"],
         game_lines_by_team=game_lines,
+        usage_as_of_week=usage_as_of,
     )
