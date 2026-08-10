@@ -13,6 +13,7 @@ from app.services.etl.nfl.seed_elo import (
 from app.services.etl.nfl.store_game_actuals import (
     refresh_team_elo_snapshot,
     upsert_spread_and_totals_actuals,
+    upsert_team_elo_snapshot,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,17 +29,25 @@ def run(
     games = fetch_reg_games_nflverse(resolved)
     games_with_dates = [g for g in games if getattr(g, "game_date", None) is not None]
 
+    elos = seed_elos_from_games(games)
+
     db = SessionLocal()
     try:
         spread_n = totals_n = 0
-        if write_actuals and games_with_dates:
-            spread_n, totals_n = upsert_spread_and_totals_actuals(db, games_with_dates)
-        elo_stats = refresh_team_elo_snapshot(db)
+        if write_actuals:
+            if games_with_dates:
+                spread_n, totals_n = upsert_spread_and_totals_actuals(
+                    db, games_with_dates
+                )
+            elo_stats = refresh_team_elo_snapshot(db)
+        elif elos and games_with_dates:
+            as_of = max(g.game_date for g in games_with_dates)
+            elo_stats = upsert_team_elo_snapshot(db, elos, as_of)
+        else:
+            elo_stats = {"teams": 0}
         db.commit()
     finally:
         db.close()
-
-    elos = seed_elos_from_games(games)
     return {
         "status": "ok",
         "seasons": resolved,

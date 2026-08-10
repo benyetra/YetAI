@@ -1,4 +1,8 @@
-"""Store completed NFL REG game scores and refresh Elo snapshot."""
+"""Store completed NFL REG game scores and refresh Elo snapshot.
+
+v1 uses nflverse REG finals only (no ESPN scoreboard). The pilot spec allowed
+either source; we standardize on nflverse for parity with ``seed_elo_history``.
+"""
 
 from __future__ import annotations
 
@@ -146,16 +150,11 @@ def upsert_spread_and_totals_actuals(
     return len(spread_rows), len(totals_rows)
 
 
-def refresh_team_elo_snapshot(db) -> dict:
-    """Rebuild pred_nfl_team_elo from chronological spread actuals."""
-    actuals = (
-        db.query(NFLSpreadActuals).order_by(NFLSpreadActuals.game_date.asc()).all()
-    )
-    if not actuals:
+def upsert_team_elo_snapshot(db, elos: dict[str, float], as_of: date) -> dict:
+    """Persist computed team Elos into pred_nfl_team_elo."""
+    if not elos:
         return {"teams": 0}
 
-    elos = load_elos_from_actuals(actuals, cfg=NFL_CONFIG)
-    as_of = max(row.game_date for row in actuals)
     now = datetime.utcnow()
     rows = [
         {
@@ -168,6 +167,19 @@ def refresh_team_elo_snapshot(db) -> dict:
     ]
     upsert_many(db, NFLTeamElo, rows, conflict_keys=["team_name"])
     return {"teams": len(rows), "as_of_date": as_of.isoformat()}
+
+
+def refresh_team_elo_snapshot(db) -> dict:
+    """Rebuild pred_nfl_team_elo from chronological spread actuals."""
+    actuals = (
+        db.query(NFLSpreadActuals).order_by(NFLSpreadActuals.game_date.asc()).all()
+    )
+    if not actuals:
+        return {"teams": 0}
+
+    elos = load_elos_from_actuals(actuals, cfg=NFL_CONFIG)
+    as_of = max(row.game_date for row in actuals)
+    return upsert_team_elo_snapshot(db, elos, as_of)
 
 
 def run(*, lookback_days: int = DEFAULT_LOOKBACK_DAYS) -> dict:
