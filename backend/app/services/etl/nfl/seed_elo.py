@@ -6,7 +6,6 @@ from datetime import date
 from types import SimpleNamespace
 from typing import Sequence
 
-import nfl_data_py as nfl
 import pandas as pd
 
 from app.services.etl._spread_model import (
@@ -50,6 +49,14 @@ def seed_elos_from_games(
 
 def fetch_reg_games_nflverse(seasons: list[int] | None = None) -> list[SimpleNamespace]:
     """Load completed REG games; normalize team names; skip missing scores."""
+    try:
+        import nfl_data_py as nfl
+    except ImportError as exc:
+        raise RuntimeError(
+            "nfl_data_py not installed. "
+            "Run: pip install nfl-data-py==0.3.3 --no-deps && pip install appdirs fastparquet"
+        ) from exc
+
     resolved = list(seasons if seasons is not None else DEFAULT_SEED_SEASONS)
     if not resolved:
         return []
