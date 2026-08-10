@@ -20,7 +20,18 @@ RZ trips / share are **weekly proxies** until PBP red-zone ETL lands.
 ## Pipeline
 
 See `backend/docs/NFL_ETL_PARITY.md` — Celery phase **anytime_td** runs scheme
-sync, projector, and Odds attach (`player_anytime_td`).
+sync, projector, and Odds attach (`player_anytime_td`) inside the full NFL weekly
+pipeline (`run_nfl_update_pipeline`, Beat `nfl-update-pipeline-daily` @ 4:30 ET).
+
+Admin portal (`/admin/pipelines`):
+
+| Catalog entry | Purpose |
+|---------------|---------|
+| **NFL anytime TD pipeline** | `run_nfl_anytime_td_pipeline` — actuals → schemes → projector → Odds |
+| Debug fireables | schemes, projector, Odds attach, actuals, game lines |
+| Beat | `nfl-anytime-td-pipeline-midweek` Tue–Fri 11:00 ET |
+
+Enqueue the anytime TD orchestrator for a midweek refresh without re-running QB/kickers.
 
 ## Backtest gate (required before UI)
 

@@ -67,6 +67,13 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nfl.qb_betting": 300.0,
     "app.tasks.etl_pipeline.nfl.qb_weekly": 900.0,
     "app.tasks.etl_pipeline.nfl.kickers": 600.0,
+    "app.tasks.etl_pipeline.nfl.sync_defense_schemes": 180.0,
+    "app.tasks.etl_pipeline.nfl.anytime_td_projector": 900.0,
+    "app.tasks.etl_pipeline.nfl.anytime_td_betting": 300.0,
+    "app.tasks.etl_pipeline.nfl.anytime_td_actuals": 600.0,
+    "app.tasks.etl_pipeline.nfl.update_game_lines": 300.0,
+    "app.tasks.etl_pipeline.nfl.spread_projector": 300.0,
+    "app.tasks.etl_pipeline.nfl.totals_projector": 300.0,
     "app.tasks.etl_pipeline.wnba.update_game_lines": 120.0,
     "app.tasks.etl_pipeline.wnba.today_active_players": 120.0,
     "app.tasks.etl_pipeline.wnba.totals_projector": 300.0,
@@ -125,7 +132,20 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         "task_name": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
         "label": "NFL weekly pipeline",
         "sport": "nfl",
-        "description": "QB actuals + kicker actuals, QB yards/lines, kicker projections (optional ML blend).",
+        "description": (
+            "Actuals (QB/kicker/game/anytime TD), game lines + Elo spreads/totals, "
+            "anytime TD (schemes → projector → Odds), QB yards + kickers."
+        ),
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline",
+        "label": "NFL anytime TD pipeline",
+        "sport": "nfl",
+        "description": (
+            "Anytime TD slice only: grade prior-week actuals, sync defensive schemes, "
+            "project λ→P(TD), attach Odds player_anytime_td. Use for midweek refresh "
+            "without re-running the full NFL weekly pipeline."
+        ),
     },
     {
         "task_name": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
@@ -244,6 +264,51 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "sport": "nfl",
         "timeout_s": ADMIN_FIREABLE_TASKS["app.tasks.etl_pipeline.nfl.kickers"],
         "description": "Kicker projections; ML blend when NFL_MODELS_S3_PREFIX or local models.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.sync_defense_schemes",
+        "label": "NFL defense schemes",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nfl.sync_defense_schemes"
+        ],
+        "description": "Upsert curated YAML scheme tags → pred_nfl_defense_scheme (week=0).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.anytime_td_projector",
+        "label": "NFL anytime TD projector",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nfl.anytime_td_projector"
+        ],
+        "description": "Build nflverse feature rows → λ→P(TD) → pred_nfl_anytime_td_predictions.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.anytime_td_betting",
+        "label": "NFL anytime TD Odds",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nfl.anytime_td_betting"
+        ],
+        "description": "Attach Odds API player_anytime_td (edge / OVER vs NO_PLAY).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.anytime_td_actuals",
+        "label": "NFL anytime TD actuals",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nfl.anytime_td_actuals"
+        ],
+        "description": "Grade rush+rec TD outcomes → pred_nfl_anytime_td_actuals.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nfl.update_game_lines",
+        "label": "NFL game lines",
+        "sport": "nfl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nfl.update_game_lines"
+        ],
+        "description": "Odds API spreads/totals → pred_nfl_game_lines (feeds script_mult).",
     },
     {
         "task_name": "app.tasks.etl_pipeline.wnba.update_game_lines",

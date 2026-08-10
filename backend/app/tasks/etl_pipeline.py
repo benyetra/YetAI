@@ -798,6 +798,36 @@ def run_nfl_update_pipeline(self) -> dict:
     return _run_phases("nfl", NFL_PHASES)
 
 
+# Admin / midweek slice — anytime TD only (also runs inside NFL_PHASES).
+NFL_ANYTIME_TD_PHASES = [
+    (
+        "actuals",
+        [
+            nfl_anytime_td_actuals,
+        ],
+    ),
+    (
+        "anytime_td",
+        [
+            nfl_sync_defense_schemes,
+            nfl_anytime_td_projector,
+            nfl_anytime_td_betting,
+        ],
+    ),
+]
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline", bind=True)
+def run_nfl_anytime_td_pipeline(self) -> dict:
+    """NFL anytime-TD pipeline — actuals, schemes, projector, Odds attach.
+
+    Enqueue from admin to refresh the anytime board without the full weekly NFL
+    pipeline. See ``NFL_ANYTIME_TD.md``.
+    """
+    logger.info("NFL anytime TD pipeline starting (task_id=%s)", self.request.id)
+    return _run_phases("nfl", NFL_ANYTIME_TD_PHASES)
+
+
 # --- Fantasy sub-tasks -------------------------------------------------------
 @celery_app.task(name="app.tasks.etl_pipeline.fantasy.sync_player_analytics")
 def fantasy_sync_player_analytics(season: int | None = None):

@@ -143,6 +143,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
         "schedule": crontab(hour=4, minute=30),
     },
+    # Midweek anytime-TD refresh (Tue–Fri 11:00 ET) — Odds + board without full NFL run.
+    "nfl-anytime-td-pipeline-midweek": {
+        "task": "app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline",
+        "schedule": crontab(hour=11, minute=0, day_of_week="2-5"),
+    },
     "nhl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
         "schedule": crontab(hour=5, minute=0),
