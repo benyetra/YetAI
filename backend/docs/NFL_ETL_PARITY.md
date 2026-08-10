@@ -31,6 +31,13 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 4. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
 5. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers`
 
+### Anytime TD admin slice
+
+| Entry | Role |
+|-------|------|
+| `run_nfl_anytime_td_pipeline` | Admin enqueue + Beat `nfl-anytime-td-pipeline-midweek` (Tue–Fri 11:00 ET) |
+| `NFL_ANYTIME_TD_PHASES` | actuals → schemes → projector → Odds (no QB/kickers) |
+
 Failures in non-critical tasks still yield `partial_failure` on the orchestrator; QB weekly + kickers are **critical**.
 
 ## Modules (ported)
@@ -128,7 +135,7 @@ and `NFL_ANYTIME_TD_UI` / `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` are set — see
 
 - `advanced_qb_predictor.py` / QB **yards** ML ensemble (current path: tier table in `qb_dynamic.py`)
 - `enhanced_qb_integration.py`, warehouse FG tables
-- Midweek Beat refresh for line movement (daily 4:30 ET only for v1)
+- Midweek Beat `nfl-anytime-td-pipeline-midweek` (Tue–Fri 11:00 ET) + admin enqueue card
 
 ## Season / week
 
