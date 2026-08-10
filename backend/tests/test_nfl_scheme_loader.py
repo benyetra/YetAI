@@ -1,11 +1,13 @@
 from pathlib import Path
 
-from app.services.etl.nfl.scheme_loader import load_schemes_from_yaml
+from app.services.etl.nfl.scheme_loader import _PRIMARY_ABBRS, load_schemes_from_yaml
 
 
 def test_load_schemes_has_thirty_two_teams(tmp_path: Path):
     schemes = load_schemes_from_yaml()
-    assert len(schemes) >= 32
+    primary_keys = {k for k in schemes if k in _PRIMARY_ABBRS}
+    assert primary_keys == set(_PRIMARY_ABBRS)
+    assert len(primary_keys) == 32
     sample = next(iter(schemes.values()))
     assert "cover_base" in sample
     assert "man_zone_lean" in sample
