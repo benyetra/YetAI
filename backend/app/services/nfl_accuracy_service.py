@@ -10,6 +10,7 @@ Buckets:
 - Kicker FG Made MAE
 - Spread ATS (HOME/AWAY edge plays vs market line)
 - Game Totals O/U (market_total + recommendation)
+- Anytime TD Brier (P(TD) vs binary scored outcome)
 """
 
 from __future__ import annotations
@@ -23,6 +24,8 @@ from sqlalchemy.orm import Session
 from app.models.predictions_models import (
     KickerActuals,
     KickerPredictions,
+    NFLAnytimeTDActuals,
+    NFLAnytimeTDPredictions,
     NFLSpreadActuals,
     NFLSpreadProjections,
     NFLTotalsActuals,
@@ -33,6 +36,7 @@ from app.models.predictions_models import (
 from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
+    brier_bucket,
     edge_play_bucket,
     mae_bucket,
     ou_call_bucket,
@@ -164,6 +168,21 @@ def _merge_actuals_kicker(projections, actuals) -> list[dict[str, Any]]:
     return out
 
 
+def _merge_actuals_anytime_td(projections, actuals) -> list[dict[str, Any]]:
+    by_key = {(a.season, a.week, a.player_id): a for a in actuals}
+    out: list[dict[str, Any]] = []
+    for p in projections:
+        key = (p.season, p.week, p.player_id)
+        a = by_key.get(key)
+        out.append(
+            {
+                "td_probability": p.td_probability,
+                "scored_anytime_td": a.scored_anytime_td if a else None,
+            }
+        )
+    return out
+
+
 def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     """Build the NFL accuracy summary for `target_date`."""
 
@@ -209,6 +228,18 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     )
     totals_rows = _merge_actuals_totals(totals_proj, totals_actuals)
 
+    anytime_proj = (
+        db.query(NFLAnytimeTDPredictions)
+        .filter(NFLAnytimeTDPredictions.game_date == target_date)
+        .all()
+    )
+    anytime_actuals = (
+        db.query(NFLAnytimeTDActuals)
+        .filter(NFLAnytimeTDActuals.game_date == target_date)
+        .all()
+    )
+    anytime_rows = _merge_actuals_anytime_td(anytime_proj, anytime_actuals)
+
     buckets: list[AccuracyBucket] = [
         ou_call_bucket(
             qb_rows,
@@ -252,12 +283,19 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             label="Game Totals O/U",
             key="totals_ou",
         ),
+        brier_bucket(
+            anytime_rows,
+            prob_field="td_probability",
+            actual_field="scored_anytime_td",
+            label="Anytime TD",
+            key="anytime_td_brier",
+        ),
     ]
 
     return assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
-        available=bool(qb_rows or k_rows or spread_rows or totals_rows),
+        available=bool(qb_rows or k_rows or spread_rows or totals_rows or anytime_rows),
     )
 
 
