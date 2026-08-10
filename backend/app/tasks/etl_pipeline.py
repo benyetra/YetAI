@@ -716,6 +716,34 @@ def nfl_seed_elo_history():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.sync_defense_schemes")
+def nfl_sync_defense_schemes():
+    from app.services.etl.nfl.sync_defense_schemes import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.anytime_td_projector")
+def nfl_anytime_td_projector():
+    from app.services.etl.nfl.anytime_td_projector import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.anytime_td_betting")
+def nfl_anytime_td_betting():
+    from app.services.etl.nfl.anytime_td_betting import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.anytime_td_actuals")
+def nfl_anytime_td_actuals():
+    from app.services.etl.nfl.anytime_td_actuals import run
+
+    return run()
+
+
 # Grade last week, refresh game board, then current-week props.
 NFL_PHASES = [
     (
@@ -724,6 +752,7 @@ NFL_PHASES = [
             nfl_collect_qb_actuals,
             nfl_collect_kicker_actuals,
             nfl_store_game_actuals,
+            nfl_anytime_td_actuals,
         ],
     ),
     (
@@ -740,6 +769,14 @@ NFL_PHASES = [
         ],
     ),
     (
+        "anytime_td",
+        [
+            nfl_sync_defense_schemes,
+            nfl_anytime_td_projector,
+            nfl_anytime_td_betting,
+        ],
+    ),
+    (
         "predictions",
         [
             nfl_yetiwatch,
@@ -752,9 +789,9 @@ NFL_PHASES = [
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)
 def run_nfl_update_pipeline(self) -> dict:
-    """NFL weekly pipeline — actuals, game lines/projections, QB + kicker props.
+    """NFL weekly pipeline — actuals, game lines/projections, anytime TD, QB + kicker props.
 
-    Phases: actuals → game_lines → game_projections → predictions (YetiWatch + props).
+    Phases: actuals → game_lines → game_projections → anytime_td → predictions.
     Scheduled on Beat as ``nfl-update-pipeline-daily`` (4:30 ET). See ``NFL_ETL_PARITY.md``.
     """
     logger.info("NFL update pipeline starting (task_id=%s)", self.request.id)

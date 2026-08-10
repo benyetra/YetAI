@@ -17,14 +17,19 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 | `nfl.qb_weekly` | `qb_dynamic_heroku.py` then `qb_betting_heroku.py` |
 | `nfl.qb_dynamic` / `nfl.qb_betting` | Same modules, fireable individually for debugging |
 | `nfl.kickers` | `kickers.py` → `pred_kickers` + `pred_kicker_predictions` |
+| `nfl.sync_defense_schemes` | `defensive_schemes.yaml` → `pred_nfl_defense_scheme` |
+| `nfl.anytime_td_projector` | Feature rows → λ → P(TD) → `pred_nfl_anytime_td_predictions` |
+| `nfl.anytime_td_betting` | Odds API `player_anytime_td` attach on predictions |
+| `nfl.anytime_td_actuals` | nflverse weekly TDs → grade vs predictions → `pred_nfl_anytime_td_actuals` |
 | `yetiwatch.nfl` | YetiWatch news/signals for NFL props |
 
 ### `NFL_PHASES` (Beat: `nfl-update-pipeline-daily` 4:30 ET)
 
-1. **actuals** — `nfl_collect_qb_actuals`, `nfl_collect_kicker_actuals`, `nfl_store_game_actuals`
+1. **actuals** — `nfl_collect_qb_actuals`, `nfl_collect_kicker_actuals`, `nfl_store_game_actuals`, `nfl_anytime_td_actuals`
 2. **game_lines** — `nfl_update_game_lines`
 3. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
-4. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers`
+4. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
+5. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers`
 
 Failures in non-critical tasks still yield `partial_failure` on the orchestrator; QB weekly + kickers are **critical**.
 
@@ -45,6 +50,11 @@ Failures in non-critical tasks still yield `partial_failure` on the orchestrator
 | `statistical_kicker_prediction.py` | CSV-backed stats (`data/nfl/*.csv`) |
 | `collect_qb_actuals.py` | `pred_qb_actuals` |
 | `collect_kicker_actuals.py` | `pred_kicker_actuals` |
+| `scheme_loader.py` | Load `defensive_schemes.yaml`; upsert `pred_nfl_defense_scheme` |
+| `sync_defense_schemes.py` | Celery wrapper for scheme YAML sync |
+| `anytime_td_projector.py` | `pred_nfl_anytime_td_predictions` |
+| `anytime_td_betting.py` | Market odds/edge on anytime TD predictions |
+| `anytime_td_actuals.py` | `pred_nfl_anytime_td_actuals` |
 | `nfl_common.py` | Week/season helpers |
 
 Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG history).
