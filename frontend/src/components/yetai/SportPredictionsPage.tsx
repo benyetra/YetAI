@@ -218,15 +218,15 @@ export default function SportPredictionsPage({
         <PredictionsError message={error} />
       ) : (
         <div className="predictions-stack">
+          {(discoveryGroups?.length ?? 0) > 0 ? (
+            <BestEdgesDiscovery sections={discoverySections} loading={loading} />
+          ) : null}
+
           {topSection ? topSection({ data, loading, isPastDate }) : null}
 
           {accuracySummary && isPastDate
             ? accuracySummary({ date, isPastDate })
             : null}
-
-          {(discoveryGroups?.length ?? 0) > 0 ? (
-            <BestEdgesDiscovery sections={discoverySections} loading={loading} />
-          ) : null}
 
           {showPropToolbar && (
             <div className="predictions-toolbar card" role="toolbar" aria-label="Prop table filters">
