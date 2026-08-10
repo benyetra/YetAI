@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from types import SimpleNamespace
 from typing import Sequence
 
@@ -17,6 +18,25 @@ from app.services.etl._spread_model import (
 from app.services.etl.nfl.team_names import normalize_team_name
 
 DEFAULT_SEED_SEASONS: tuple[int, ...] = (2023, 2024, 2025)
+
+
+def _parse_game_date(value) -> date | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, date):
+        return value
+    if hasattr(value, "date"):
+        try:
+            return value.date()
+        except (AttributeError, TypeError, ValueError):
+            pass
+    text = str(value).strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
 
 
 def seed_elos_from_games(
@@ -56,8 +76,10 @@ def fetch_reg_games_nflverse(seasons: list[int] | None = None) -> list[SimpleNam
         away_score = getattr(row, "away_score", None)
         if pd.isna(home_score) or pd.isna(away_score):
             continue
+        game_date = _parse_game_date(getattr(row, "gameday", None))
         games.append(
             SimpleNamespace(
+                game_date=game_date,
                 home_team_name=normalize_team_name(str(row.home_team)),
                 away_team_name=normalize_team_name(str(row.away_team)),
                 home_score=int(home_score),

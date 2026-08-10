@@ -681,13 +681,62 @@ def nfl_kickers():
     return run()
 
 
-# Grade last week, then refresh current-week QB + kicker projections.
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.update_game_lines")
+def nfl_update_game_lines():
+    from app.services.etl.nfl.update_game_lines import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.spread_projector")
+def nfl_spread_projector():
+    from app.services.etl.nfl.spread_projector import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.totals_projector")
+def nfl_totals_projector():
+    from app.services.etl.nfl.totals_projector import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.store_game_actuals")
+def nfl_store_game_actuals():
+    from app.services.etl.nfl.store_game_actuals import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.seed_elo_history")
+def nfl_seed_elo_history():
+    from app.services.etl.nfl.seed_elo_history import run
+
+    return run()
+
+
+# Grade last week, refresh game board, then current-week props.
 NFL_PHASES = [
     (
         "actuals",
         [
             nfl_collect_qb_actuals,
             nfl_collect_kicker_actuals,
+            nfl_store_game_actuals,
+        ],
+    ),
+    (
+        "game_lines",
+        [
+            nfl_update_game_lines,
+        ],
+    ),
+    (
+        "game_projections",
+        [
+            nfl_spread_projector,
+            nfl_totals_projector,
         ],
     ),
     (
@@ -703,10 +752,10 @@ NFL_PHASES = [
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)
 def run_nfl_update_pipeline(self) -> dict:
-    """NFL weekly pipeline — QB passing yards + kicker props.
+    """NFL weekly pipeline — actuals, game lines/projections, QB + kicker props.
 
-    Mirrors YetiBets ``qb_dynamic_heroku`` → ``qb_betting_heroku`` and ``kickers.py``.
-    See ``backend/docs/NFL_ETL_PARITY.md``. Not on Beat until schedule is configured.
+    Phases: actuals → game_lines → game_projections → predictions (YetiWatch + props).
+    Scheduled on Beat as ``nfl-update-pipeline-daily`` (4:30 ET). See ``NFL_ETL_PARITY.md``.
     """
     logger.info("NFL update pipeline starting (task_id=%s)", self.request.id)
     return _run_phases("nfl", NFL_PHASES)
