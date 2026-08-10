@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from datetime import date, timedelta
 
-DEFAULT_NFL_SEASON = 2025
+DEFAULT_NFL_SEASON = 2026
 
 
 def get_nfl_season() -> int:

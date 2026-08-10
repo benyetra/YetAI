@@ -13,7 +13,11 @@ import pandas as pd
 
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    _first_regular_season_thursday,
+    get_current_nfl_week,
+    get_nfl_season,
+)
 from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
 
 warnings.filterwarnings("ignore")
@@ -99,27 +103,67 @@ def get_team_full_name(abbreviation: str) -> str:
     return team_names.get(abbreviation, f"{abbreviation} Team")
 
 
+def _week_reg_schedules(season: int, week: int) -> pd.DataFrame:
+    schedules = nfl.import_schedules([season])
+    week_schedule = schedules[schedules["week"] == week]
+    if "game_type" in week_schedule.columns:
+        week_schedule = week_schedule[week_schedule["game_type"] == "REG"]
+    return week_schedule
+
+
+def _team_game_row(team_abbr: str, season: int, week: int) -> pd.Series | None:
+    week_schedule = _week_reg_schedules(season, week)
+    team_game = week_schedule[
+        (week_schedule["home_team"] == team_abbr)
+        | (week_schedule["away_team"] == team_abbr)
+    ]
+    if team_game.empty:
+        return None
+    return team_game.iloc[0]
+
+
+def get_game_kickoff(team_abbr: str, season: int, week: int) -> datetime | None:
+    """Return scheduled kickoff for a team's REG game in the given week."""
+    try:
+        game = _team_game_row(team_abbr, season, week)
+        if game is None:
+            return None
+
+        gameday = game.get("gameday")
+        gametime = game.get("gametime")
+        if pd.isna(gameday) or not gameday:
+            return None
+
+        gameday_str = str(gameday)
+        if pd.isna(gametime) or not gametime:
+            return datetime.strptime(gameday_str, "%Y-%m-%d")
+
+        return datetime.strptime(f"{gameday_str} {gametime}", "%Y-%m-%d %H:%M")
+    except Exception as e:
+        print(f"⚠️ Error getting kickoff for {team_abbr}: {e}")
+        return None
+
+
+def _fallback_game_date(season: int, week: int) -> datetime:
+    """Noon on the Thursday of the requested regular-season week."""
+    thursday = _first_regular_season_thursday(season) + timedelta(days=(week - 1) * 7)
+    return datetime(thursday.year, thursday.month, thursday.day, 12, 0, 0)
+
+
+def _resolve_game_date(team_abbr: str, season: int, week: int) -> datetime:
+    return get_game_kickoff(team_abbr, season, week) or _fallback_game_date(
+        season, week
+    )
+
+
 def get_team_opponent(team_abbr: str, season: int, week: int) -> str:
     """Get opponent team abbreviation for a given team in a specific week"""
     try:
-        schedules = nfl.import_schedules([season])
-
-        # Filter for the specific week
-        week_schedule = schedules[schedules["week"] == week]
-
-        # Find the game for this team
-        team_game = week_schedule[
-            (week_schedule["home_team"] == team_abbr)
-            | (week_schedule["away_team"] == team_abbr)
-        ]
-
-        if not team_game.empty:
-            game = team_game.iloc[0]
-            # Return the opponent
+        game = _team_game_row(team_abbr, season, week)
+        if game is not None:
             if game["home_team"] == team_abbr:
                 return game["away_team"]
-            else:
-                return game["home_team"]
+            return game["home_team"]
 
         return "TBD"  # No game found
 
@@ -390,8 +434,9 @@ def _run_qb_dynamic_core():
             player_id = qb_data["player_id"]
             is_backup = qb_data["is_backup"]
 
-            # Get opponent team
+            # Get opponent team and scheduled kickoff
             opponent_abbr = get_team_opponent(team_abbr, season, week)
+            game_date = _resolve_game_date(team_abbr, season, week)
 
             tier_prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
             prediction = enrich_qb_prediction_for_write(
@@ -415,7 +460,7 @@ def _run_qb_dynamic_core():
                     team_id=team_id,
                     team_name=team_name,
                     opponent_team_name=opponent_abbr,
-                    game_date=datetime.now(),
+                    game_date=game_date,
                     venue_name="TBD",
                     season=season,
                     week=week,
@@ -446,6 +491,7 @@ def _run_qb_dynamic_core():
                 existing_prediction.opponent_team_name = (
                     opponent_abbr  # Update opponent name
                 )
+                existing_prediction.game_date = game_date
                 existing_prediction.prediction_date = datetime.utcnow()
                 updated_predictions += 1
                 status = "🤕 Backup" if is_backup else "⭐ Starter"

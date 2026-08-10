@@ -8,12 +8,14 @@ Buckets:
 - QB Passing Yards O/U (uses `ou_line` + `betting_recommendation`)
 - QB Passing Yards MAE
 - Kicker FG Made MAE
+- Spread ATS (HOME/AWAY edge plays vs market line)
+- Game Totals O/U (market_total + recommendation)
 """
 
 from __future__ import annotations
 
 from datetime import date as date_type
-from typing import Any
+from typing import Any, Optional
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -21,12 +23,17 @@ from sqlalchemy.orm import Session
 from app.models.predictions_models import (
     KickerActuals,
     KickerPredictions,
+    NFLSpreadActuals,
+    NFLSpreadProjections,
+    NFLTotalsActuals,
+    NFLTotalsProjections,
     QBActuals,
     QBPredictions,
 )
 from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
+    edge_play_bucket,
     mae_bucket,
     ou_call_bucket,
     ou_call_graded_breakdown,
@@ -82,6 +89,66 @@ def _merge_actuals_qb(projections, actuals) -> list[dict[str, Any]]:
     return out
 
 
+def _game_key(row) -> tuple:
+    return (row.game_date, row.home_team_name, row.away_team_name)
+
+
+def _ats_covered(
+    recommendation: Optional[str],
+    actual_margin: int | None,
+    market_spread_home: float | None,
+) -> bool | None:
+    """Return True/False if pick covered; None for pushes or no-play."""
+    if not recommendation or recommendation == "NO_PLAY" or market_spread_home is None:
+        return None
+    if actual_margin is None:
+        return None
+    threshold = -market_spread_home
+    if actual_margin == threshold:
+        return None
+    if recommendation == "HOME":
+        return actual_margin > threshold
+    if recommendation == "AWAY":
+        return actual_margin < threshold
+    return None
+
+
+def _merge_actuals_spread(projections, actuals) -> list[dict[str, Any]]:
+    by_key = {_game_key(a): a for a in actuals}
+    out: list[dict[str, Any]] = []
+    for p in projections:
+        a = by_key.get(_game_key(p))
+        actual_margin = a.actual_margin if a else None
+        out.append(
+            {
+                "projected_margin": p.projected_margin,
+                "market_spread_home": p.market_spread_home,
+                "recommendation": p.recommendation,
+                "actual_margin": actual_margin,
+                "spread_correct": _ats_covered(
+                    p.recommendation, actual_margin, p.market_spread_home
+                ),
+            }
+        )
+    return out
+
+
+def _merge_actuals_totals(projections, actuals) -> list[dict[str, Any]]:
+    by_key = {_game_key(a): a for a in actuals}
+    out: list[dict[str, Any]] = []
+    for p in projections:
+        a = by_key.get(_game_key(p))
+        out.append(
+            {
+                "projected_total": p.projected_total,
+                "market_total": p.market_total,
+                "recommendation": p.recommendation,
+                "actual_total": a.actual_total if a else None,
+            }
+        )
+    return out
+
+
 def _merge_actuals_kicker(projections, actuals) -> list[dict[str, Any]]:
     by_pid = {a.kicker_id: a for a in actuals}
     out = []
@@ -118,6 +185,30 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     k_actuals = db.query(KickerActuals).filter(KickerActuals.date == target_date).all()
     k_rows = _merge_actuals_kicker(k_proj, k_actuals)
 
+    spread_proj = (
+        db.query(NFLSpreadProjections)
+        .filter(NFLSpreadProjections.game_date == target_date)
+        .all()
+    )
+    spread_actuals = (
+        db.query(NFLSpreadActuals)
+        .filter(NFLSpreadActuals.game_date == target_date)
+        .all()
+    )
+    spread_rows = _merge_actuals_spread(spread_proj, spread_actuals)
+
+    totals_proj = (
+        db.query(NFLTotalsProjections)
+        .filter(NFLTotalsProjections.game_date == target_date)
+        .all()
+    )
+    totals_actuals = (
+        db.query(NFLTotalsActuals)
+        .filter(NFLTotalsActuals.game_date == target_date)
+        .all()
+    )
+    totals_rows = _merge_actuals_totals(totals_proj, totals_actuals)
+
     buckets: list[AccuracyBucket] = [
         ou_call_bucket(
             qb_rows,
@@ -144,12 +235,29 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             key="kicker_fg_mae",
             unit_label="FG",
         ),
+        edge_play_bucket(
+            spread_rows,
+            pick_field="recommendation",
+            correct_field="spread_correct",
+            label="Spread ATS",
+            key="spread_ats",
+            secondary="Spread edge plays vs market line",
+        ),
+        ou_call_bucket(
+            totals_rows,
+            line_field="market_total",
+            pick_field="recommendation",
+            actual_field="actual_total",
+            projected_field="projected_total",
+            label="Game Totals O/U",
+            key="totals_ou",
+        ),
     ]
 
     return assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
-        available=bool(qb_rows or k_rows),
+        available=bool(qb_rows or k_rows or spread_rows or totals_rows),
     )
 
 

@@ -225,7 +225,8 @@ def get_kicker_game_stats(player_id, season_year):
         return []
 
 
-def get_team_statistics(team_id, season_year=2024, season_type=2):
+def get_team_statistics(team_id, season_year=None, season_type=2):
+    season_year = season_year or get_nfl_season()
     url = f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season_year}/types/{season_type}/teams/{team_id}/statistics"
     response = requests.get(url)
     if response.status_code == 200:

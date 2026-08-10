@@ -25,7 +25,10 @@ export function gameProjectionRows(variant: GameProjectionsVariant, data: ApiDat
       rows = mapNhlTeamTotalsRows((data.team_totals as Row[]) ?? []);
       break;
     case 'nfl':
-      rows = [];
+      rows = mergeSpreadTotalsGameProjections(
+        (data.spreads as Row[]) ?? [],
+        (data.totals as Row[]) ?? [],
+      );
       break;
     default:
       rows = [];
