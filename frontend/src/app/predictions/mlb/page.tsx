@@ -11,6 +11,7 @@ import {
   formatString,
   type ColumnDef,
 } from '@/components/PredictionsTable';
+import { MLB_DISCOVERY_GROUPS } from '@/lib/propDiscoveryConfigs';
 import {
   MLB_STRIKEOUT_COLUMNS_BASE,
   OPPONENT_TEAM_COLUMN,
@@ -110,6 +111,7 @@ export default function MLBPredictionsPage() {
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="mlb" date={date} />}
       groups={buildGroups}
+      discoveryGroups={MLB_DISCOVERY_GROUPS}
     />
   );
 }

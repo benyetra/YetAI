@@ -3,6 +3,7 @@
 import AccuracySummary from '@/components/yetai/AccuracySummary';
 import GameProjectionsSection from '@/components/yetai/GameProjectionsSection';
 import SportPredictionsPage from '@/components/yetai/SportPredictionsPage';
+import { WNBA_DISCOVERY_GROUPS } from '@/lib/propDiscoveryConfigs';
 import {
   propRowClassName,
   WNBA_PROP_COLUMNS,
@@ -46,6 +47,7 @@ export default function WNBAPredictionsPage() {
       )}
       accuracySummary={({ date }) => <AccuracySummary sport="wnba" date={date} />}
       groups={PROP_GROUPS}
+      discoveryGroups={WNBA_DISCOVERY_GROUPS}
     />
   );
 }
