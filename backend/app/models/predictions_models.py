@@ -365,6 +365,227 @@ class NFLWeather(Base):
     rain_intensity = Column(Float, nullable=False)
 
 
+class NFLGameLines(Base):
+    """Vegas lines for NFL games — spread, totals, and moneyline."""
+
+    __tablename__ = "pred_nfl_game_lines"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+
+    odds_api_event_id = Column(String(100), nullable=True)
+    game_time = Column(DateTime, nullable=True)
+
+    spread_home = Column(Float, nullable=True)
+    spread_away = Column(Float, nullable=True)
+    spread_home_odds = Column(Integer, nullable=True)
+    spread_away_odds = Column(Integer, nullable=True)
+
+    total = Column(Float, nullable=True)
+    over_odds = Column(Integer, nullable=True)
+    under_odds = Column(Integer, nullable=True)
+
+    moneyline_home = Column(Integer, nullable=True)
+    moneyline_away = Column(Integer, nullable=True)
+
+    bookmaker = Column(String(50), nullable=True, default="consensus")
+    last_updated = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date", "home_team_name", "away_team_name", name="unique_nfl_game_line"
+        ),
+        Index("idx_nfl_game_lines_date", "game_date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLGameLines {self.away_team_name} @ {self.home_team_name}: "
+            f"spread={self.spread_home}, total={self.total}>"
+        )
+
+
+class NFLSpreadProjections(Base):
+    """Spread / win-probability projections for NFL games."""
+
+    __tablename__ = "pred_nfl_spread_projections"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    projected_margin = Column(Float, nullable=False)
+    home_win_prob = Column(Float, nullable=False)
+    home_elo = Column(Float, nullable=True)
+    away_elo = Column(Float, nullable=True)
+    home_court_advantage = Column(Float, nullable=True)
+    pace_adjustment = Column(Float, nullable=True)
+    market_spread_home = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    factors = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nfl_spread_projection",
+        ),
+        Index("idx_nfl_spread_projections_date", "game_date"),
+        Index("idx_nfl_spread_projections_edge", "edge"),
+    )
+
+
+class NFLTotalsProjections(Base):
+    """Over/under totals projections for NFL games."""
+
+    __tablename__ = "pred_nfl_totals_projections"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+
+    projected_total = Column(Float, nullable=False)
+    home_projected_score = Column(Float, nullable=True)
+    away_projected_score = Column(Float, nullable=True)
+
+    base_projection = Column(Float, nullable=True)
+    expected_pace = Column(Float, nullable=True)
+    home_offensive_rating = Column(Float, nullable=True)
+    away_offensive_rating = Column(Float, nullable=True)
+    home_defensive_rating = Column(Float, nullable=True)
+    away_defensive_rating = Column(Float, nullable=True)
+
+    injury_adjustment = Column(Float, nullable=True, default=0.0)
+    rest_adjustment = Column(Float, nullable=True, default=0.0)
+    venue_adjustment = Column(Float, nullable=True, default=0.0)
+    form_adjustment = Column(Float, nullable=True, default=0.0)
+    total_adjustment = Column(Float, nullable=True, default=0.0)
+
+    market_total = Column(Float, nullable=True)
+    edge = Column(Float, nullable=True)
+    recommendation = Column(String(20), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+
+    injury_report = Column(JSON, nullable=True)
+    factors = Column(JSON, nullable=True)
+
+    home_starters = Column(JSON, nullable=True)
+    away_starters = Column(JSON, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nfl_totals_projection",
+        ),
+        Index("idx_nfl_totals_projections_date", "game_date"),
+        Index("idx_nfl_totals_projections_edge", "edge"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLTotalsProjections {self.away_team_name} @ {self.home_team_name}: "
+            f"projected={self.projected_total}, edge={self.edge}>"
+        )
+
+
+class NFLSpreadActuals(Base):
+    __tablename__ = "pred_nfl_spread_actuals"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+    home_score = Column(Integer, nullable=False)
+    away_score = Column(Integer, nullable=False)
+    actual_margin = Column(Integer, nullable=False)
+    home_won = Column(Boolean, nullable=False)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nfl_spread_actual",
+        ),
+    )
+
+
+class NFLTotalsActuals(Base):
+    __tablename__ = "pred_nfl_totals_actuals"
+
+    id = Column(Integer, primary_key=True)
+    game_date = Column(Date, nullable=False, index=True)
+
+    home_team_id = Column(Integer, nullable=True)
+    away_team_id = Column(Integer, nullable=True)
+    home_team_name = Column(String(100), nullable=False)
+    away_team_name = Column(String(100), nullable=False)
+
+    actual_total = Column(Integer, nullable=False)
+    home_actual_score = Column(Integer, nullable=True)
+    away_actual_score = Column(Integer, nullable=True)
+
+    projected_total = Column(Float, nullable=True)
+    market_total = Column(Float, nullable=True)
+
+    projection_error = Column(Float, nullable=True)
+    market_error = Column(Float, nullable=True)
+    was_over = Column(Boolean, nullable=True)
+    correct_prediction = Column(Boolean, nullable=True)
+
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "game_date",
+            "home_team_name",
+            "away_team_name",
+            name="unique_nfl_totals_actual",
+        ),
+        Index("idx_nfl_totals_actuals_date", "game_date"),
+    )
+
+    def __repr__(self):
+        return (
+            f"<NFLTotalsActuals {self.away_team_name} @ {self.home_team_name}: "
+            f"actual={self.actual_total}>"
+        )
+
+
+class NFLTeamElo(Base):
+    """Current Elo rating per NFL team."""
+
+    __tablename__ = "pred_nfl_team_elo"
+
+    team_name = Column(String(100), primary_key=True)
+    elo = Column(Float, nullable=False)
+    as_of_date = Column(Date, nullable=False)
+    updated_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    def __repr__(self):
+        return f"<NFLTeamElo {self.team_name}: elo={self.elo} as_of={self.as_of_date}>"
+
+
 class StrikeoutProjections(Base):
     __tablename__ = "pred_strikeout_projections"
     id = Column(Integer, primary_key=True)
