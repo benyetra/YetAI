@@ -8,8 +8,10 @@ Hierarchical λ → `P(TD) = 1 - exp(-λ)` for QB/RB/WR/TE. Predictions live in
 Projector `run()` without injected `feature_rows` calls
 `build_feature_rows_from_nflverse`:
 
-1. `import_weekly_data` — prior-week usage, team scoring proxies, defense TDs allowed
-2. `import_schedules` — REG matchups, kickoff date, roof/wind
+1. `import_weekly_data` — prior-week usage, team scoring proxies, defense TDs allowed.
+   If the current (or prior) season parquet 404s, fall back up to 3 seasons and use
+   all prior-season weeks as priors (needed for Week 1 / preseason).
+2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
 3. `import_depth_charts` — skill-position depth 1–2 (weekly contributors also included)
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
