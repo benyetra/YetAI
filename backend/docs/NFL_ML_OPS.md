@@ -55,32 +55,33 @@ Promotion gate: residual ML MAE ≥ **10%** better than tier on holdout.
 
 ### Actuals backfill + multi-season re-eval (2026-08-11)
 
-`pred_kicker_actuals` and multi-season `pred_qb_actuals` are required before the
-next promote-gate push.
+| Metric | Value |
+|--------|-------|
+| Rows | **1756** (train 1171 / holdout 585 = season 2025) |
+| Real `ou_line` coverage | **386 / 1756 (22%)** — 2025 preds only |
+| Tier MAE | **66.7** |
+| Residual ML MAE | **64.7** |
+| Lift | **+3.0%** (below 10% gate) |
+| Promote? | **No** |
+| Kicker FG MAE | **0.98** on **479** `pred_kicker_actuals` rows |
+| Blend pin | `NFL_KICKER_BLEND_TUNED_WEIGHT=0.5` (CSV walk-forward) |
 
 ```bash
 export DATABASE_URL=...   # Railway Postgres
 cd backend
-# Kickers (was empty — offseason default skipped weeks)
-PYTHONPATH=. python -m app.services.etl.nfl.collect_kicker_actuals \
-  --backfill --season 2025 --start-week 1 --end-week 18
-# Or:
 PYTHONPATH=. python scripts/nfl_backfill_actuals.py --kickers --season 2025
-# QB actuals (nflverse weekly; PBP fallback when weekly 404)
 PYTHONPATH=. python scripts/nfl_backfill_actuals.py --qb --seasons 2023,2024,2025
-# Promote gate (defaults 2023-09-01 → 2026-02-15; real ou_line only for O/U)
 PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
 PYTHONPATH=. python scripts/nfl_backtest.py --season 2025 --start-week 1 --end-week 18 --json
-PYTHONPATH=. python scripts/nfl_tune_kicker_blend.py --write   # prints prod FG MAE when DB set
+PYTHONPATH=. python scripts/nfl_tune_kicker_blend.py --write
 ```
 
 **Do not enable `NFL_QB_ML_ENABLED=1` unless holdout lift ≥10%.** Real pass-yards
 prop lines come from `pred_qb_predictions.ou_line` (2025 coverage only unless
 Odds API historical props are backfilled).
 
-Prod prediction replay (`scripts/nfl_backtest.py --season 2025`): QB MAE **67.0**
-on 332 graded rows (earlier run); kicker FG MAE scores from
-`pred_kicker_actuals.projected_field_goals` after backfill.
+Prod replay (`nfl_backtest.py --season 2025`): QB MAE **68.4** (n=407),
+kicker MAE **0.98** (n=479), QB O/U hit **46.4%** (n=386).
 
 ```bash
 export DATABASE_URL=...   # Railway Postgres

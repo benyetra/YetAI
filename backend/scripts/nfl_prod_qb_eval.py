@@ -249,35 +249,56 @@ def train_and_eval(
         round(real_line_n / len(meta), 4) if len(meta) else 0.0
     )
 
-    # O/U only on real stored prop lines (QBPredictions.ou_line) — no synthetic jitter
-    ou_rows = []
-    ou_labels = []
-    for i in train_idx:
-        feats = features.iloc[i].to_dict()
-        actual = float(target.iloc[i])
+    # O/U on real stored prop lines only. Lines live mostly on 2025 preds; when
+    # holdout is season_2025, train_idx has none — so split within real-line rows.
+    ou_meta_rows: list[dict[str, Any]] = []
+    for i in range(len(features)):
         line = meta.iloc[i].get("pass_yds_line_real")
         if line is None or (isinstance(line, float) and np.isnan(line)):
             continue
-        line = float(line)
-        if abs(actual - line) < 0.5:
+        line_f = float(line)
+        actual = float(target.iloc[i])
+        if abs(actual - line_f) < 0.5:
             continue
-        ou_rows.append(build_ou_feature_row(feats, line))
-        ou_labels.append(1 if actual > line else 0)
-    ou_model = ou_meta = None
-    if len(ou_rows) >= 60 and len(set(ou_labels)) > 1:
-        ou_model, ou_meta = train_qb_ou_classifier(
-            pd.DataFrame(ou_rows), pd.Series(ou_labels)
+        ou_meta_rows.append(
+            {
+                "i": i,
+                "feats": features.iloc[i].to_dict(),
+                "label": 1 if actual > line_f else 0,
+                "line": line_f,
+                "season": int(meta.iloc[i]["season"]),
+                "week": int(meta.iloc[i]["week"]),
+            }
         )
-        report["ou_classifier"] = {
-            "status": "ok",
-            "metadata": ou_meta,
-            "source": "pred_qb_predictions.ou_line",
-            "rows": len(ou_rows),
-        }
+    ou_meta_rows.sort(key=lambda r: (r["season"], r["week"]))
+    ou_model = ou_meta = None
+    if len(ou_meta_rows) >= 60 and len({r["label"] for r in ou_meta_rows}) > 1:
+        cut = max(40, int(len(ou_meta_rows) * 0.8))
+        train_ou = ou_meta_rows[:cut]
+        ou_rows = [build_ou_feature_row(r["feats"], r["line"]) for r in train_ou]
+        ou_labels = [r["label"] for r in train_ou]
+        if len(set(ou_labels)) > 1:
+            ou_model, ou_meta = train_qb_ou_classifier(
+                pd.DataFrame(ou_rows), pd.Series(ou_labels)
+            )
+            report["ou_classifier"] = {
+                "status": "ok",
+                "metadata": ou_meta,
+                "source": "pred_qb_predictions.ou_line",
+                "rows_total_real": len(ou_meta_rows),
+                "rows_train": len(ou_rows),
+            }
+        else:
+            report["ou_classifier"] = {
+                "status": "skipped",
+                "rows": len(ou_rows),
+                "source": "pred_qb_predictions.ou_line",
+                "note": "train labels not mixed",
+            }
     else:
         report["ou_classifier"] = {
             "status": "skipped",
-            "rows": len(ou_rows),
+            "rows": len(ou_meta_rows),
             "source": "pred_qb_predictions.ou_line",
             "note": "need ≥60 graded rows with real pass-yards prop lines",
         }

@@ -1,17 +1,16 @@
 {
-  "source": "pred_qb_predictions vs pred_qb_actuals",
-  "season": 2025,
-  "weeks": "3-18",
-  "metrics": {
-    "n_qb": 332,
-    "qb_mae": 67.04,
-    "qb_ou_hit_rate": 0.472,
-    "qb_ou_n": 322,
-    "ou_hit_rate": 0.472,
-    "ou_n": 322
-  },
+  "n_qb": 407,
+  "qb_mae": 68.35,
+  "qb_ou_hit_rate": 0.4637,
+  "qb_ou_n": 386,
+  "n_kicker": 479,
+  "kicker_mae": 0.98,
+  "kicker_ou_hit_rate": 0.5668,
+  "kicker_ou_n": 277,
+  "ou_hit_rate": 0.5068,
+  "ou_n": 663,
   "notes": [
-    "kicker actuals table empty \u2014 no FG MAE",
-    "stored predictions are tier-v3 production yards"
+    "kicker FG MAE from pred_kicker_actuals after backfill",
+    "promote gate still fails (+3.0% on multi-season)"
   ]
 }
