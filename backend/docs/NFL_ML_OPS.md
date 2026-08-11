@@ -4,8 +4,8 @@
 
 | Mode | Env | Production yards | `model_version` |
 |------|-----|------------------|-----------------|
-| Tier table (default) | — | Stable tier base (+ injury soft-downgrade) | `tier-v3` |
-| ML shadow | — | Tier (unchanged) | `tier-v3`; `feature_importance.ml_shadow_yards` |
+| Dynamic tier (default) | — | Static name table blended with rolling form | `tier-v3` (+ form blend) |
+| ML shadow | — | Dynamic tier (unchanged) | `tier-v3`; `feature_importance.ml_shadow_yards` |
 | ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM (`baseline + residual`) | `gbm-qb-residual-YYYYMMDD` |
 
 **Tier v3:** No hash-based week noise. Uncertainty is
@@ -139,9 +139,16 @@ PYTHONPATH=. python scripts/nfl_prod_qb_eval.py --force-upload --upload-kickers
 Kicker ensemble lives at `s3://yetibets/nfl/` (`NFL_MODELS_S3_PREFIX=s3://yetibets/nfl/`).
 QB yards/O/U artifacts go under `s3://yetibets/nfl/ml_models/`.
 
-**S3 upload (2026-08-11):** refreshed kicker pickles + attempts model pushed to
-`s3://yetibets/nfl/`; residual QB + O/U shadow artifacts pushed to
-`s3://yetibets/nfl/ml_models/` (promote still **off**).
+**S3 upload (2026-08-11, post-#89):** v5 residual QB + O/U shadow artifacts
+force-uploaded to `s3://yetibets/nfl/ml_models/`
+(`gbm-qb-residual-20260811`, market-aware baseline, 28 features including
+volume + `line_minus_tier`). Promote still **off** — do **not** set
+`NFL_QB_ML_ENABLED=1` (holdout lift +0.9% ≪ 10%). Railway Production Deploy
+for `#89` ships the same bundled pickles under `backend/models/nfl/`.
+
+**Prior S3 upload (2026-08-11):** refreshed kicker pickles + attempts model
+pushed to `s3://yetibets/nfl/`; earlier residual QB + O/U shadows under
+`s3://yetibets/nfl/ml_models/`.
 
 **Do not enable `NFL_QB_ML_ENABLED=1` until holdout lift ≥10%.**
 

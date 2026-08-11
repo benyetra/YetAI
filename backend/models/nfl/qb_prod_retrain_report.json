@@ -141,5 +141,15 @@
     "ou_model": "/workspace/backend/models/nfl/qb_pass_yds_ou.pkl",
     "ou_metadata": "/workspace/backend/models/nfl/qb_pass_yds_ou_metadata.json"
   },
-  "report_path": "/workspace/backend/models/nfl/qb_prod_retrain_report.json"
+  "report_path": "/workspace/backend/models/nfl/qb_prod_retrain_report.json",
+  "s3_uploaded": {
+    "qb_passing_yards": {
+      "model": "s3://yetibets/nfl/ml_models/qb_passing_yards.pkl",
+      "metadata": "s3://yetibets/nfl/ml_models/qb_passing_yards_metadata.json"
+    },
+    "qb_pass_yds_ou": {
+      "model": "s3://yetibets/nfl/ml_models/qb_pass_yds_ou.pkl",
+      "metadata": "s3://yetibets/nfl/ml_models/qb_pass_yds_ou_metadata.json"
+    }
+  }
 }
