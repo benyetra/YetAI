@@ -97,20 +97,27 @@ class MLFeatureMapper:
         features["month"] = now.month
         features["is_playoff"] = game_context.get("is_playoff", 0)
 
+        late_in_game = int(
+            features["qtr"] >= 4 and features["game_seconds_remaining"] <= 300
+        )
+        close_game = int(abs(features["score_differential"]) <= 7)
         features.update(
             {
-                "late_in_game": int(
-                    features["qtr"] >= 4 and features["game_seconds_remaining"] <= 300
-                ),
+                "late_in_game": late_in_game,
                 "overtime": int(features["qtr"] > 4),
-                "close_game": int(abs(features["score_differential"]) <= 7),
+                "close_game": close_game,
                 "trailing": int(features["score_differential"] < 0),
                 "leading": int(features["score_differential"] > 0),
-                "is_clutch": int(features["late_in_game"] and features["close_game"]),
+                "is_clutch": int(
+                    game_context.get("is_clutch", late_in_game and close_game)
+                ),
                 "is_game_winning": int(
-                    features["late_in_game"]
-                    and features["score_differential"] <= 3
-                    and features["score_differential"] >= -3
+                    game_context.get(
+                        "is_game_winning",
+                        late_in_game
+                        and features["score_differential"] <= 3
+                        and features["score_differential"] >= -3,
+                    )
                 ),
             }
         )

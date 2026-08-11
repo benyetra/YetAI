@@ -10,13 +10,92 @@ from app.services.etl.nfl.qb_features import (
     estimate_opp_defense_from_weekly,
     estimate_opp_pass_allowed_from_weekly,
     form_features_from_prior_yards,
+    implied_team_total_from_market,
     prior_yards_for_player,
+    scheme_features_for_opponent,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import (
     build_features_from_tier_prediction,
     feature_names,
 )
 from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
+
+
+def _load_schemes() -> dict[str, dict[str, Any]]:
+    try:
+        from app.services.etl.nfl.scheme_loader import load_schemes_from_yaml
+
+        return load_schemes_from_yaml()
+    except Exception:
+        return {}
+
+
+def _schedule_market_index(seasons: list[int]) -> dict[tuple[int, int, str], dict]:
+    """Map (season, week, team_abbr) → total_line / spread_for_team / is_home."""
+    import nfl_data_py as nfl
+
+    out: dict[tuple[int, int, str], dict] = {}
+    try:
+        schedules = nfl.import_schedules([int(s) for s in seasons])
+    except Exception:
+        return out
+    if schedules is None or getattr(schedules, "empty", True):
+        return out
+    if "game_type" in schedules.columns:
+        schedules = schedules[schedules["game_type"] == "REG"]
+    for _, row in schedules.iterrows():
+        try:
+            season = int(row.get("season") or 0)
+            week = int(row.get("week") or 0)
+        except (TypeError, ValueError):
+            continue
+        home = str(row.get("home_team") or "").upper()
+        away = str(row.get("away_team") or "").upper()
+        total = row.get("total_line")
+        spread = row.get("spread_line")  # home perspective
+        try:
+            total_f = float(total) if total is not None and pd.notna(total) else None
+        except (TypeError, ValueError):
+            total_f = None
+        try:
+            spread_home = (
+                float(spread) if spread is not None and pd.notna(spread) else None
+            )
+        except (TypeError, ValueError):
+            spread_home = None
+        roof = str(row.get("roof") or "").lower()
+        dome = roof in {"dome", "closed", "retractable"}
+        temp = row.get("temp")
+        wind = row.get("wind")
+        for team, is_home, team_spread in (
+            (home, True, spread_home),
+            (
+                away,
+                False,
+                (-spread_home if spread_home is not None else None),
+            ),
+        ):
+            if not team:
+                continue
+            implied = None
+            if total_f is not None and team_spread is not None:
+                implied = implied_team_total_from_market(
+                    total_line=total_f, spread_line=team_spread
+                )
+            out[(season, week, team)] = {
+                "total_line": total_f,
+                "spread_line": team_spread,
+                "implied_team_total": implied,
+                "is_home": 1.0 if is_home else 0.0,
+                "dome": dome,
+                "temperature": (
+                    float(temp) if temp is not None and pd.notna(temp) else None
+                ),
+                "wind_speed": (
+                    float(wind) if wind is not None and pd.notna(wind) else None
+                ),
+            }
+    return out
 
 
 def _weekly_records(seasons: list[int]) -> list[dict[str, Any]]:
@@ -97,6 +176,8 @@ def build_from_nflverse(
             pd.DataFrame(),
         )
 
+    market = _schedule_market_index(seasons)
+    schemes = _load_schemes()
     history_sorted = sorted(history, key=lambda r: (r["season"], r["week"]))
     records: list[dict[str, float]] = []
     targets: list[float] = []
@@ -117,15 +198,32 @@ def build_from_nflverse(
         )
         form = form_features_from_prior_yards(prior, tier_yards=tier_yards)
         opp = str(row.get("opponent_team") or "")
+        team = str(row.get("recent_team") or "").upper()
         opp_allowed = estimate_opp_pass_allowed_from_weekly(
             history_sorted, opponent_abbr=opp, season=season, week=week
         )
         defense = estimate_opp_defense_from_weekly(
             history_sorted, opponent_abbr=opp, season=season, week=week
         )
-        context: dict[str, Any] = {**form, **defense}
+        scheme = scheme_features_for_opponent(opp, schemes=schemes)
+        mkt = market.get((season, week, team), {})
+        context: dict[str, Any] = {**form, **defense, **scheme}
         if opp_allowed is not None:
             context["opp_pass_yds_allowed"] = opp_allowed
+        for key in (
+            "total_line",
+            "spread_line",
+            "implied_team_total",
+            "is_home",
+            "dome",
+            "temperature",
+            "wind_speed",
+        ):
+            if mkt.get(key) is not None:
+                context[key] = mkt[key]
+        # pass_yds_line unavailable historically in schedules — tier anchor
+        context["pass_yds_line"] = tier_yards
+        context["opponent_abbr"] = opp
         feats = build_features_from_tier_prediction(
             tier_pred, season=season, week=week, context=context
         )

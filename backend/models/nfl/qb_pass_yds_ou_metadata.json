@@ -1,7 +1,7 @@
 {
   "model_key": "qb_pass_yds_ou",
   "target": "actual_over_ou_line",
-  "trained_at": "2026-08-11T02:59:04.380220",
+  "trained_at": "2026-08-11T11:21:47.170416",
   "train_date": "20260811",
   "model_version": "gbm-qb-ou-20260811",
   "n_train": 679,
@@ -25,6 +25,12 @@
     "wind_speed",
     "temperature",
     "dome",
+    "total_line",
+    "spread_line",
+    "pass_yds_line",
+    "opp_cover_base",
+    "opp_man_zone",
+    "opp_scheme_pressure",
     "ou_line",
     "yards_minus_line"
   ],
@@ -35,7 +41,7 @@
     "subsample": 0.85,
     "random_state": 42
   },
-  "holdout_accuracy": 0.5814977973568282,
-  "holdout_brier": 0.24196174537436874,
-  "holdout_log_loss": 0.6769155452468482
+  "holdout_accuracy": 0.5991189427312775,
+  "holdout_brier": 0.23416839801000425,
+  "holdout_log_loss": 0.6618928954645541
 }

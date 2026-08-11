@@ -55,3 +55,21 @@ def test_anytime_td_midweek_beat_registered():
 
     entry = celery_app.conf.beat_schedule["nfl-anytime-td-pipeline-midweek"]
     assert entry["task"] == _ANYTIME_TD_ORCH
+
+
+def test_gameday_availability_beat_and_catalog():
+    from app.celery_app import celery_app
+    from app.data.celery_tasks import ADMIN_ENQUEUE_TASKS, PIPELINE_ENQUEUE_CATALOG
+    from app.tasks.etl_pipeline import NFL_GAMEDAY_AVAILABILITY_PHASES
+
+    orch = "app.tasks.etl_pipeline.run_nfl_gameday_availability"
+    assert (
+        celery_app.conf.beat_schedule["nfl-gameday-availability-sun-am"]["task"] == orch
+    )
+    assert celery_app.conf.beat_schedule["nfl-gameday-availability-mon"]["task"] == orch
+    names = {e["task_name"] for e in PIPELINE_ENQUEUE_CATALOG}
+    assert orch in names
+    assert orch in ADMIN_ENQUEUE_TASKS
+    flat = [t.name for _, tasks in NFL_GAMEDAY_AVAILABILITY_PHASES for t in tasks]
+    assert "app.tasks.etl_pipeline.nfl.qb_weekly" in flat
+    assert "app.tasks.etl_pipeline.nfl.kickers" in flat

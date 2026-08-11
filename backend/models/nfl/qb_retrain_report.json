@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "trained_at": "2026-08-11T02:59:04.160383",
+  "trained_at": "2026-08-11T11:21:46.912743",
   "seasons": [
     2023,
     2024,
@@ -10,18 +10,20 @@
   "rows_train": 912,
   "rows_holdout": 228,
   "holdout": "time_20pct",
+  "model_family": "residual_gbm",
   "tier_mae": 61.803,
-  "ml_mae": 65.383,
-  "mae_lift": -0.0579,
+  "ml_mae": 61.657,
+  "mae_lift": 0.0024,
   "promote_gate": 0.1,
   "promote_recommended": false,
-  "model_version": "gbm-qb-yards-20260811",
+  "model_version": "gbm-qb-residual-20260811",
   "train_metadata": {
     "model_key": "qb_passing_yards",
-    "target": "actual_passing_yards",
-    "trained_at": "2026-08-11T02:59:04.128912",
+    "target": "residual_actual_minus_tier",
+    "residual_target": true,
+    "trained_at": "2026-08-11T11:21:46.879928",
     "train_date": "20260811",
-    "model_version": "gbm-qb-yards-20260811",
+    "model_version": "gbm-qb-residual-20260811",
     "n_train": 729,
     "n_test": 183,
     "features": [
@@ -42,28 +44,37 @@
       "implied_team_total",
       "wind_speed",
       "temperature",
-      "dome"
+      "dome",
+      "total_line",
+      "spread_line",
+      "pass_yds_line",
+      "opp_cover_base",
+      "opp_man_zone",
+      "opp_scheme_pressure"
     ],
     "hyperparams": {
-      "n_estimators": 120,
-      "max_depth": 4,
-      "learning_rate": 0.08,
+      "n_estimators": 150,
+      "max_depth": 3,
+      "learning_rate": 0.06,
       "subsample": 0.85,
-      "random_state": 42
+      "random_state": 42,
+      "min_samples_leaf": 8
     },
-    "train_mae": 33.331950802152804,
-    "test_mae": 57.442767443281916,
-    "holdout_mae": 57.442767443281916,
-    "train_rmse": 41.46161711462741,
-    "test_rmse": 74.08640196588208
+    "train_mae": 42.08329768495882,
+    "test_mae": 56.09563121736969,
+    "holdout_mae": 56.09563121736969,
+    "train_rmse": 53.09551568224467,
+    "test_rmse": 72.10879896852795,
+    "train_residual_mae": 42.08329768495883,
+    "test_residual_mae": 56.09563121736969
   },
-  "recommendation": "Keep tier-v3 production; ML stays shadow-only",
+  "recommendation": "Keep tier-v3 production; residual ML stays shadow-only",
   "ou_classifier": {
     "status": "ok",
     "metadata": {
       "model_key": "qb_pass_yds_ou",
       "target": "actual_over_ou_line",
-      "trained_at": "2026-08-11T02:59:04.380220",
+      "trained_at": "2026-08-11T11:21:47.170416",
       "train_date": "20260811",
       "model_version": "gbm-qb-ou-20260811",
       "n_train": 679,
@@ -87,6 +98,12 @@
         "wind_speed",
         "temperature",
         "dome",
+        "total_line",
+        "spread_line",
+        "pass_yds_line",
+        "opp_cover_base",
+        "opp_man_zone",
+        "opp_scheme_pressure",
         "ou_line",
         "yards_minus_line"
       ],
@@ -97,9 +114,9 @@
         "subsample": 0.85,
         "random_state": 42
       },
-      "holdout_accuracy": 0.5814977973568282,
-      "holdout_brier": 0.24196174537436874,
-      "holdout_log_loss": 0.6769155452468482
+      "holdout_accuracy": 0.5991189427312775,
+      "holdout_brier": 0.23416839801000425,
+      "holdout_log_loss": 0.6618928954645541
     }
   },
   "local_artifacts": {

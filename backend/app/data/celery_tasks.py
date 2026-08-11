@@ -148,6 +148,15 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
         ),
     },
     {
+        "task_name": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "label": "NFL gameday availability",
+        "sport": "nfl",
+        "description": (
+            "Late Questionable→Out refresh: re-run QB yards + kickers near kickoff. "
+            "Escalates Q risk and heavily discounts live backups. Beat: Sun/Mon gameday."
+        ),
+    },
+    {
         "task_name": "app.tasks.etl_pipeline.run_nhl_update_pipeline",
         "label": "NHL daily pipeline",
         "sport": "nhl",

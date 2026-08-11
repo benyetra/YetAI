@@ -274,6 +274,50 @@ def _implied_team_total_for_team(
     return None
 
 
+def _market_lines_for_team(team_abbr: str, season: int, week: int) -> dict:
+    """total_line / team spread / weather from nflverse schedules."""
+    try:
+        game = _team_game_row(team_abbr, season, week)
+        if game is None:
+            return {}
+        home = str(game.get("home_team") or "").upper()
+        is_home = team_abbr.strip().upper() == home
+        total = game.get("total_line")
+        spread_home = game.get("spread_line")
+        try:
+            total_f = float(total) if total is not None and pd.notna(total) else None
+        except (TypeError, ValueError):
+            total_f = None
+        try:
+            spread_home_f = (
+                float(spread_home)
+                if spread_home is not None and pd.notna(spread_home)
+                else None
+            )
+        except (TypeError, ValueError):
+            spread_home_f = None
+        team_spread = None
+        if spread_home_f is not None:
+            team_spread = spread_home_f if is_home else -spread_home_f
+        roof = str(game.get("roof") or "").lower()
+        out: dict = {
+            "total_line": total_f,
+            "spread_line": team_spread,
+            "is_home": 1.0 if is_home else 0.0,
+            "dome": roof in {"dome", "closed", "retractable"},
+        }
+        temp = game.get("temp")
+        wind = game.get("wind")
+        if temp is not None and pd.notna(temp):
+            out["temperature"] = float(temp)
+        if wind is not None and pd.notna(wind):
+            out["wind_speed"] = float(wind)
+        return out
+    except Exception as e:
+        print(f"⚠️ market lines lookup failed for {team_abbr}: {e}")
+        return {}
+
+
 def build_qb_prediction_context(
     *,
     qb_name: str,
@@ -285,15 +329,18 @@ def build_qb_prediction_context(
     weekly_history: list[dict] | None = None,
     injury_status: str | None = None,
     is_backup: bool = False,
+    hours_to_kickoff: float | None = None,
+    pass_yds_line: float | None = None,
 ) -> dict:
     """Assemble matchup/form context for GBM features."""
     from app.services.etl.nfl.qb_features import (
         estimate_opp_defense_from_weekly,
         estimate_opp_pass_allowed_from_weekly,
         form_features_from_prior_yards,
-        injury_risk_from_status,
         prior_yards_for_player,
+        scheme_features_for_opponent,
     )
+    from app.services.etl.nfl.qb_late_availability import late_injury_risk
 
     history = weekly_history if weekly_history is not None else []
     prior = prior_yards_for_player(
@@ -322,15 +369,21 @@ def build_qb_prediction_context(
         season=season,
         week=week,
     )
+    scheme = scheme_features_for_opponent(opponent_abbr or "")
     implied = _implied_team_total_for_team(team_abbr, season, week)
-    risk = injury_risk_from_status(injury_status)
-    if is_backup:
-        risk = max(risk, 0.85)
+    market = _market_lines_for_team(team_abbr, season, week)
+    risk = late_injury_risk(
+        injury_status,
+        hours_to_kickoff=hours_to_kickoff,
+        is_backup=is_backup,
+    )
     ctx: dict = {
         **form,
         **defense,
-        "is_home": team_is_home(team_abbr, season, week),
+        **scheme,
+        "is_home": market.get("is_home", team_is_home(team_abbr, season, week)),
         "team_abbr": team_abbr,
+        "opponent_abbr": opponent_abbr,
         "injury_status": injury_status or "Healthy",
         "injury_risk": risk,
     }
@@ -338,6 +391,13 @@ def build_qb_prediction_context(
         ctx["opp_pass_yds_allowed"] = opp_allowed
     if implied is not None:
         ctx["implied_team_total"] = implied
+    elif market.get("implied_team_total") is not None:
+        ctx["implied_team_total"] = market["implied_team_total"]
+    for key in ("total_line", "spread_line", "dome", "temperature", "wind_speed"):
+        if market.get(key) is not None:
+            ctx[key] = market[key]
+    if pass_yds_line is not None:
+        ctx["pass_yds_line"] = float(pass_yds_line)
     if week > 1 and history:
         played_prior = any(
             int(r.get("week") or 0) == week - 1
@@ -353,6 +413,11 @@ def build_qb_prediction_context(
 
 def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
     """Get current starting QBs using depth charts and injury data"""
+    from app.services.etl.nfl.qb_late_availability import (
+        hours_until_kickoff,
+        should_promote_backup,
+    )
+
     print(f"🔍 Getting starting QBs for {season} Week {week}")
 
     # Get depth charts
@@ -414,76 +479,89 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
                 (qb_depth["club_code"] == team) & (qb_depth["week"] == latest_week)
             ].sort_values("depth_team")
 
-        if not team_qbs.empty:
-            # Get the starter (different field names for different formats)
-            if use_2025_format:
-                starter = team_qbs[team_qbs["pos_rank"] == 1]
-                depth_field = "pos_rank"
-                name_field = "player_name"
-            else:
-                starter = team_qbs[team_qbs["depth_team"] == "1"]
-                depth_field = "depth_team"
-                name_field = "full_name"
+        if team_qbs.empty:
+            continue
 
-            if not starter.empty:
-                qb = starter.iloc[0]
+        # Get the starter (different field names for different formats)
+        if use_2025_format:
+            starter = team_qbs[team_qbs["pos_rank"] == 1]
+            depth_field = "pos_rank"
+            name_field = "player_name"
+        else:
+            starter = team_qbs[team_qbs["depth_team"] == "1"]
+            depth_field = "depth_team"
+            name_field = "full_name"
 
-                # Check if QB is injured
-                is_injured = False
-                injury_status = "Healthy"
+        if starter.empty:
+            continue
 
-                if not injuries.empty:
-                    qb_injuries = injuries[
-                        (injuries["gsis_id"] == qb["gsis_id"])
-                        & (injuries["week"] >= latest_week - 1)  # Recent injury reports
-                    ]
+        qb = starter.iloc[0]
+        is_injured = False
+        injury_status = "Healthy"
+        kickoff = get_game_kickoff(str(team), season, week)
+        hours = hours_until_kickoff(kickoff)
 
-                    if not qb_injuries.empty:
-                        latest_injury = qb_injuries.sort_values("date_modified").iloc[
-                            -1
-                        ]
-                        injury_status = latest_injury.get("report_status", "Unknown")
+        if not injuries.empty:
+            qb_injuries = injuries[
+                (injuries["gsis_id"] == qb["gsis_id"])
+                & (injuries["week"] >= latest_week - 1)  # Recent injury reports
+            ]
 
-                        # Unavailable → promote backup; Questionable stays but
-                        # is flagged for confidence / yard soft-downgrade.
-                        if injury_status in ["Out", "IR", "Doubtful"]:
-                            is_injured = True
-                            print(f"  ⚠️ {qb[name_field]} ({team}) - {injury_status}")
+            if not qb_injuries.empty:
+                latest_injury = qb_injuries.sort_values("date_modified").iloc[-1]
+                injury_status = latest_injury.get("report_status", "Unknown")
 
-                            # Try to get backup QB
-                            if use_2025_format:
-                                backup = team_qbs[team_qbs["pos_rank"] == 2]
-                            else:
-                                backup = team_qbs[team_qbs["depth_team"] == "2"]
+                # Unavailable or late-escalated Questionable → promote backup
+                promote = should_promote_backup(
+                    injury_status, hours_to_kickoff=hours
+                ) or injury_status in ["Out", "IR", "Doubtful"]
+                if promote:
+                    is_injured = True
+                    print(
+                        f"  ⚠️ {qb[name_field]} ({team}) - {injury_status}"
+                        + (
+                            f" (late escalate, {hours:.1f}h to KO)"
+                            if hours is not None
+                            and str(injury_status).lower() in {"questionable", "q"}
+                            else ""
+                        )
+                    )
 
-                            if not backup.empty:
-                                qb = backup.iloc[0]
-                                print(f"    ↳ Using backup: {qb[name_field]}")
-                        elif str(injury_status).lower() in {"questionable", "q"}:
-                            print(
-                                f"  ⚡ {qb[name_field]} ({team}) - Questionable "
-                                "(soft downgrade)"
-                            )
+                    if use_2025_format:
+                        backup = team_qbs[team_qbs["pos_rank"] == 2]
+                    else:
+                        backup = team_qbs[team_qbs["depth_team"] == "2"]
 
-                # Add to starting QBs list
-                team_id = team_id_mapping.get(team, 99)
+                    if not backup.empty:
+                        qb = backup.iloc[0]
+                        print(f"    ↳ Using backup: {qb[name_field]}")
+                elif str(injury_status).lower() in {"questionable", "q"}:
+                    print(
+                        f"  ⚡ {qb[name_field]} ({team}) - Questionable "
+                        f"(soft downgrade"
+                        + (f", {hours:.1f}h to KO" if hours is not None else "")
+                        + ")"
+                    )
 
-                qb_data = {
-                    "name": qb[name_field],
-                    "team_id": team_id,
-                    "team_name": get_team_full_name(team),
-                    "team_abbr": team,  # Add team abbreviation
-                    "player_id": qb["gsis_id"],
-                    "depth": int(qb[depth_field]),
-                    "week": int(latest_week),
-                    "injury_status": injury_status,
-                    "is_backup": is_injured,
-                }
+        team_id = team_id_mapping.get(team, 99)
 
-                starting_qbs.append(qb_data)
-                print(
-                    f"  ✅ {qb[name_field]} - {get_team_full_name(team)} (Depth: {qb[depth_field]})"
-                )
+        qb_data = {
+            "name": qb[name_field],
+            "team_id": team_id,
+            "team_name": get_team_full_name(team),
+            "team_abbr": team,  # Add team abbreviation
+            "player_id": qb["gsis_id"],
+            "depth": int(qb[depth_field]),
+            "week": int(latest_week),
+            "injury_status": injury_status,
+            "is_backup": is_injured,
+            "hours_to_kickoff": hours,
+        }
+
+        starting_qbs.append(qb_data)
+        print(
+            f"  ✅ {qb[name_field]} - {get_team_full_name(team)} (Depth: {qb[depth_field]})"
+        )
 
     print(f"\n🎯 Found {len(starting_qbs)} starting QBs")
     return starting_qbs
@@ -522,10 +600,14 @@ def _run_qb_dynamic_core():
             player_id = qb_data["player_id"]
             is_backup = qb_data["is_backup"]
             injury_status = qb_data.get("injury_status") or "Healthy"
+            hours = qb_data.get("hours_to_kickoff")
 
             # Get opponent team and scheduled kickoff
             opponent_abbr = get_team_opponent(team_abbr, season, week)
             game_date = _resolve_game_date(team_abbr, season, week)
+
+            from app.services.etl.nfl.qb_late_availability import late_yard_adjustment
+            from app.services.etl.nfl.qb_tiers import lookup_tier_base_yards
 
             tier_prediction = predict_qb_passing_yards(
                 qb_name,
@@ -534,6 +616,33 @@ def _run_qb_dynamic_core():
                 is_backup,
                 injury_status=None if is_backup else injury_status,
             )
+            # Late availability: escalate Q cuts / heavier backup discount near KO
+            raw_base = float(lookup_tier_base_yards(qb_name))
+            late_yards, late_meta = late_yard_adjustment(
+                base_yards=raw_base,
+                injury_status=None if is_backup else injury_status,
+                is_backup=is_backup,
+                hours_to_kickoff=hours if isinstance(hours, (int, float)) else None,
+            )
+            tier_prediction["predicted_passing_yards"] = late_yards
+            if late_meta.get("yard_cut"):
+                half = (
+                    float(
+                        tier_prediction.get("prediction_interval_upper") or late_yards
+                    )
+                    - float(
+                        tier_prediction.get("prediction_interval_lower") or late_yards
+                    )
+                ) / 2.0
+                if half <= 0:
+                    half = 35.0
+                tier_prediction["prediction_interval_lower"] = round(
+                    max(120.0, late_yards - half), 1
+                )
+                tier_prediction["prediction_interval_upper"] = round(
+                    min(380.0, late_yards + half), 1
+                )
+
             context = build_qb_prediction_context(
                 qb_name=qb_name,
                 player_id=str(player_id),
@@ -544,7 +653,11 @@ def _run_qb_dynamic_core():
                 weekly_history=weekly_history,
                 injury_status=injury_status,
                 is_backup=is_backup,
+                hours_to_kickoff=(
+                    float(hours) if isinstance(hours, (int, float)) else None
+                ),
             )
+            context["late_availability"] = late_meta
             # If no prior games, anchor form features to this week's tier yards
             tier_yards = float(tier_prediction["predicted_passing_yards"])
             if not any(
