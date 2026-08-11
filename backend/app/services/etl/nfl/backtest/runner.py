@@ -99,25 +99,36 @@ def _load_kicker_pairs(
     season: int,
     weeks: Sequence[tuple[int, int]],
 ) -> list[tuple[Any, Any]]:
-    from app.models.predictions_models import KickerActuals, KickerPredictions
+    """Score FG MAE from ``pred_kicker_actuals`` for the season window.
 
-    _ = season, weeks  # kicker tables keyed by game date, not week column
-    preds = session.query(KickerPredictions).all()
-    actuals = session.query(KickerActuals).all()
-    if not preds or not actuals:
-        return []
+    Prediction join is unreliable (ID schemes / game_date timestamps differ),
+    so we use ``projected_field_goals`` already stored on each actuals row
+    (filled by ``collect_kicker_actuals`` from matched preds or league prior).
+    """
+    from datetime import date
+    from types import SimpleNamespace
 
-    pred_by_kicker_date: dict[tuple[str, Any], Any] = {}
-    for pred in preds:
-        if not pred.game_date:
-            continue
-        pred_by_kicker_date[(pred.kicker_player_id, pred.game_date.date())] = pred
+    from app.models.predictions_models import KickerActuals
 
+    _ = weeks
+    start = date(season, 9, 1)
+    end = date(season + 1, 2, 28)
+    actuals = (
+        session.query(KickerActuals)
+        .filter(KickerActuals.date >= start, KickerActuals.date <= end)
+        .all()
+    )
     pairs: list[tuple[Any, Any]] = []
     for actual in actuals:
-        pred = pred_by_kicker_date.get((actual.kicker_id, actual.date))
-        if pred is not None:
-            pairs.append((pred, actual))
+        projected = getattr(actual, "projected_field_goals", None)
+        if projected is None:
+            continue
+        pred = SimpleNamespace(
+            predicted_fg_made=float(projected),
+            projected_field_goals=float(projected),
+            kicker_player_id=actual.kicker_id,
+        )
+        pairs.append((pred, actual))
     return pairs
 
 

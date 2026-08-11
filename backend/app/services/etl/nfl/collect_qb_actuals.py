@@ -397,63 +397,44 @@ def save_qb_actuals(qb_results: List[Dict]) -> Dict:
     return results
 
 
-def _run_qb_actuals_core():
+def _run_qb_actuals_core(season: int | None = None, week: int | None = None):
     """
-    Main function to collect QB actuals
+    Main function to collect QB actuals for one week.
     """
     print("🏈 QB Actuals Collection Script")
     print("=" * 50)
 
-    season = get_nfl_season()
-    week = get_current_nfl_week(season)
+    from datetime import date as date_cls
 
-    print(f"📅 Collecting actuals for {season} Week {week}")
+    from app.services.etl.nfl.backfill_qb_actuals import upsert_qb_actuals_for_week
 
-    # Collect QB stats from NFLverse
-    qb_actuals = collect_qb_game_stats(season, week)
+    resolved_season = season if season is not None else get_nfl_season()
+    resolved_week = week if week is not None else get_current_nfl_week(resolved_season)
+    today = date_cls.today()
+    # Offseason (pre-Sept): grade prior season final week by default
+    if season is None and week is None and today.month < 9 and resolved_week <= 1:
+        resolved_season = resolved_season - 1
+        resolved_week = 18
 
-    if not qb_actuals:
-        print("❌ No QB actuals collected. Exiting.")
-        return
-
-    # Match with predictions
-    matched_results = match_predictions_with_actuals(qb_actuals, season, week)
-
-    # Save to database
-    save_results = save_qb_actuals(matched_results)
-
-    # Print summary
-    print(f"\n{'=' * 50}")
-    print("📊 COLLECTION SUMMARY")
-    print(f"{'=' * 50}")
-    print(f"QBs with actuals collected: {len(qb_actuals)}")
-    print(f"QBs matched with predictions: {len(matched_results)}")
-    print(f"QBs saved to database: {save_results['saved_qbs']}")
-    print(f"Errors: {len(save_results['errors'])}")
-
-    if save_results["accuracy_stats"]["total_predictions"] > 0:
-        stats = save_results["accuracy_stats"]
-        print(f"\n🎯 PREDICTION ACCURACY")
-        print(f"Total predictions: {stats['total_predictions']}")
-        print(f"Correct predictions: {stats['correct_predictions']}")
-        print(f"Accuracy rate: {stats['accuracy_rate']:.1%}")
-        print(f"Average error: {stats['average_error']:.1f} yards")
-        print(f"Average accuracy: {stats['average_accuracy']:.1%}")
-
-    if save_results["errors"]:
-        print(f"\n❌ ERRORS:")
-        for error in save_results["errors"]:
-            print(f"  - {error}")
-
-    print(f"\n✅ QB actuals collection complete!")
+    print(f"📅 Collecting actuals for {resolved_season} Week {resolved_week}")
+    stats = upsert_qb_actuals_for_week(resolved_season, resolved_week)
+    print(f"\n✅ QB actuals collection complete: {stats}")
+    return stats
 
 
 if __name__ == "__main__":
+    import argparse
+
     from app.services.etl.nfl._db import close_session, init_session
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--season", type=int, default=None)
+    parser.add_argument("--week", type=int, default=None)
+    args = parser.parse_args()
 
     init_session()
     try:
-        _run_qb_actuals_core()
+        _run_qb_actuals_core(args.season, args.week)
     finally:
         close_session()
 
@@ -463,7 +444,7 @@ def run() -> dict:
 
     init_session()
     try:
-        _run_qb_actuals_core()
-        return {"status": "ok", "task": "nfl_collect_qb_actuals"}
+        stats = _run_qb_actuals_core()
+        return {"status": "ok", "task": "nfl_collect_qb_actuals", **(stats or {})}
     finally:
         close_session()

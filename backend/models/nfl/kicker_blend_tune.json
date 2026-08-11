@@ -1,6 +1,11 @@
 {
-  "tuned_at": "2026-08-11T11:21:52.283760",
+  "tuned_at": "2026-08-11T12:26:08.066410",
   "NFL_KICKER_BLEND_TUNED_WEIGHT": 0.5,
   "source": "field_goal_data.csv walk-forward proxy",
-  "note": "Prefer re-tuning from prod statistical_fgs/ml_fgs/actual_fg_made rows when available; this CSV proxy is a bootstrap default."
+  "note": "Prefer re-tuning from prod statistical_fgs/ml_fgs/actual_fg_made rows when available; this CSV proxy is a bootstrap default.",
+  "prod_fg_mae": {
+    "n": 479,
+    "kicker_mae": 0.976,
+    "source": "pred_kicker_actuals.projected_field_goals"
+  }
 }
