@@ -225,69 +225,146 @@ def get_kicker_game_stats(player_id, season_year):
         return []
 
 
-def get_team_statistics(team_id, season_year=None, season_type=2):
-    season_year = season_year or get_nfl_season()
-    url = f"https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/{season_year}/types/{season_type}/teams/{team_id}/statistics"
-    response = requests.get(url)
-    if response.status_code == 200:
-        return response.json()
-    else:
+# League-average priors used when ESPN has no usable season team stats yet
+# (common in offseason / Week 1 before games are played).
+_TEAM_STAT_PRIORS = {
+    "team_red_zone_efficiency": 60.0,
+    "opponent_red_zone_efficiency": 60.0,
+    "third_down_conversion_rate": 40.0,
+    "redzone_touchdown_pct": 55.0,
+    "redzone_field_goal_pct": 80.0,
+}
+
+# ESPN team statistics categories[10] efficiency indices used historically.
+_EFFICIENCY_CATEGORY_IDX = 10
+_RED_ZONE_EFFICIENCY_STAT_IDX = 10
+_REDZONE_FG_PCT_STAT_IDX = 11
+_REDZONE_TD_PCT_STAT_IDX = 13
+_THIRD_DOWN_CONV_STAT_IDX = 15
+_YARDS_ALLOWED_CATEGORY_IDX = 4
+_YARDS_ALLOWED_STAT_IDX = 23
+
+
+def _has_usable_team_stats(payload) -> bool:
+    """True when ESPN payload has enough categories for efficiency lookups."""
+    if not isinstance(payload, dict):
+        return False
+    categories = (payload.get("splits") or {}).get("categories")
+    return isinstance(categories, list) and len(categories) > _EFFICIENCY_CATEGORY_IDX
+
+
+def _stat_at(payload, category_idx: int, stat_idx: int, default: float = 0.0) -> float:
+    """Safely read ESPN splits.categories[i].stats[j].value."""
+    try:
+        categories = payload["splits"]["categories"]
+        stats = categories[category_idx].get("stats") or []
+        return float(stats[stat_idx].get("value", default))
+    except (IndexError, KeyError, TypeError, ValueError, AttributeError):
+        return float(default)
+
+
+def _fetch_team_statistics_once(team_id, season_year, season_type=2):
+    url = (
+        "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/"
+        f"seasons/{season_year}/types/{season_type}/teams/{team_id}/statistics"
+    )
+    try:
+        response = requests.get(url, timeout=30)
+    except requests.RequestException as exc:
+        print(f"Failed to fetch team stats for team {team_id}: {exc}")
+        return None
+
+    if response.status_code != 200:
         print(f"Failed to fetch team stats for team {team_id}: {response.status_code}")
-        return {"splits": {"categories": [{}]}}
+        return None
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        print(f"Invalid team stats JSON for team {team_id}: {exc}")
+        return None
+
+    if not _has_usable_team_stats(payload):
+        print(
+            f"Team stats payload incomplete for team {team_id} "
+            f"(season {season_year})"
+        )
+        return None
+    return payload
+
+
+def get_team_statistics(
+    team_id, season_year=None, season_type=2, *, fallback_prior_season: bool = True
+):
+    """Fetch ESPN team statistics; fall back to prior season when current is empty.
+
+    Returns None when no usable payload is available (never a stub with empty
+    categories — those previously caused IndexError on categories[10]).
+    """
+    season_year = season_year or get_nfl_season()
+    payload = _fetch_team_statistics_once(team_id, season_year, season_type)
+    if payload is not None:
+        return payload
+
+    if fallback_prior_season and season_year:
+        prior_season = int(season_year) - 1
+        print(
+            f"Falling back to {prior_season} team stats for team {team_id} "
+            f"(no usable {season_year} data)"
+        )
+        return _fetch_team_statistics_once(team_id, prior_season, season_type)
+    return None
 
 
 def get_3rd_down_conversion_rate(team_id):
     stats = get_team_statistics(team_id)
-    if stats:
-        try:
-            third_down_conversion_rate = stats["splits"]["categories"][10]["stats"][
-                15
-            ].get("value", 0)
-            redzone_touchdown_pct = stats["splits"]["categories"][10]["stats"][13].get(
-                "value", 0
-            )
-            redzone_field_goal_pct = stats["splits"]["categories"][10]["stats"][11].get(
-                "value", 0
-            )
-            return {
-                "third_down_conversion_rate": third_down_conversion_rate,
-                "redzone_touchdown_pct": redzone_touchdown_pct,
-                "redzone_field_goal_pct": redzone_field_goal_pct,
-            }
-        except (IndexError, KeyError) as e:
-            print(f"Error extracting stats: {e}")
-            return {
-                "third_down_conversion_rate": 0,
-                "redzone_touchdown_pct": 0,
-                "redzone_field_goal_pct": 0,
-            }
+    if not stats:
+        return {
+            "third_down_conversion_rate": _TEAM_STAT_PRIORS[
+                "third_down_conversion_rate"
+            ],
+            "redzone_touchdown_pct": _TEAM_STAT_PRIORS["redzone_touchdown_pct"],
+            "redzone_field_goal_pct": _TEAM_STAT_PRIORS["redzone_field_goal_pct"],
+        }
+
     return {
-        "third_down_conversion_rate": 0,
-        "redzone_touchdown_pct": 0,
-        "redzone_field_goal_pct": 0,
+        "third_down_conversion_rate": _stat_at(
+            stats,
+            _EFFICIENCY_CATEGORY_IDX,
+            _THIRD_DOWN_CONV_STAT_IDX,
+            _TEAM_STAT_PRIORS["third_down_conversion_rate"],
+        ),
+        "redzone_touchdown_pct": _stat_at(
+            stats,
+            _EFFICIENCY_CATEGORY_IDX,
+            _REDZONE_TD_PCT_STAT_IDX,
+            _TEAM_STAT_PRIORS["redzone_touchdown_pct"],
+        ),
+        "redzone_field_goal_pct": _stat_at(
+            stats,
+            _EFFICIENCY_CATEGORY_IDX,
+            _REDZONE_FG_PCT_STAT_IDX,
+            _TEAM_STAT_PRIORS["redzone_field_goal_pct"],
+        ),
     }
 
 
 def get_opponent_yards_allowed(team_id):
     stats = get_team_statistics(team_id)
-    if stats:
-        try:
-            return stats["splits"]["categories"][4]["stats"][23].get("value", 0)
-        except (IndexError, KeyError) as e:
-            print(f"Error extracting yards allowed: {e}")
-            return 0
-    return 0
+    if not stats:
+        return 0
+    return _stat_at(
+        stats, _YARDS_ALLOWED_CATEGORY_IDX, _YARDS_ALLOWED_STAT_IDX, default=0
+    )
 
 
 def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name):
     team_stats = get_team_statistics(kicker["team_id"], season, 2)
-    if (
-        not team_stats
-        or "splits" not in team_stats
-        or "categories" not in team_stats["splits"]
-    ):
-        print(f"Failed to fetch valid team stats for team {kicker['team_id']}")
-        return
+    if not team_stats:
+        print(
+            f"No usable ESPN team stats for team {kicker['team_id']}; "
+            "using league-average priors"
+        )
 
     kicker_stats = get_kicker_stats(kicker["player_id"])
     if not kicker_stats:
@@ -334,13 +411,11 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         return
 
     opponent_team_stats = get_team_statistics(opponent_team_id, season, 2)
-    if (
-        not opponent_team_stats
-        or "splits" not in opponent_team_stats
-        or "categories" not in opponent_team_stats["splits"]
-    ):
-        print(f"Failed to fetch valid opponent team stats for team {opponent_team_id}")
-        return
+    if not opponent_team_stats:
+        print(
+            f"No usable ESPN opponent team stats for team {opponent_team_id}; "
+            "using league-average priors"
+        )
 
     # Additional stats for the kicker
     conversion_rates = get_3rd_down_conversion_rate(kicker["team_id"])
@@ -354,12 +429,26 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         "venue_name": venue_name,
         "opponent_name": opponent_name,
         "game_time": game_time,
-        "team_red_zone_efficiency": team_stats["splits"]["categories"][10]
-        .get("stats", [{}])[10]
-        .get("value", 0),
-        "opponent_red_zone_efficiency": opponent_team_stats["splits"]["categories"][10]
-        .get("stats", [{}])[10]
-        .get("value", 0),
+        "team_red_zone_efficiency": (
+            _stat_at(
+                team_stats,
+                _EFFICIENCY_CATEGORY_IDX,
+                _RED_ZONE_EFFICIENCY_STAT_IDX,
+                _TEAM_STAT_PRIORS["team_red_zone_efficiency"],
+            )
+            if team_stats
+            else _TEAM_STAT_PRIORS["team_red_zone_efficiency"]
+        ),
+        "opponent_red_zone_efficiency": (
+            _stat_at(
+                opponent_team_stats,
+                _EFFICIENCY_CATEGORY_IDX,
+                _RED_ZONE_EFFICIENCY_STAT_IDX,
+                _TEAM_STAT_PRIORS["opponent_red_zone_efficiency"],
+            )
+            if opponent_team_stats
+            else _TEAM_STAT_PRIORS["opponent_red_zone_efficiency"]
+        ),
         "third_down_conversion_rate": conversion_rates["third_down_conversion_rate"],
         "redzone_touchdown_pct": conversion_rates["redzone_touchdown_pct"],
         "redzone_field_goal_pct": conversion_rates["redzone_field_goal_pct"],
@@ -368,6 +457,12 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         "career_field_position_stats": career_field_position_stats,
         "game_stats": game_stats,
     }
+
+    # Defaults so ImportError / missing weather never leaves unbound locals
+    weather_data = None
+    weather_info = {}
+    venue_type = "dome" if "dome" in (venue_name or "").lower() else "outdoor"
+    surface_type = "turf" if "turf" in (venue_name or "").lower() else "grass"
 
     # Enhanced prediction with weather and game context
     try:
@@ -385,7 +480,7 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         enhanced_team_data = {
             "team_red_zone_efficiency": kicker_data["team_red_zone_efficiency"],
             "third_down_conversion_rate": kicker_data["third_down_conversion_rate"],
-            "venue_type": "dome" if "dome" in venue_name.lower() else "outdoor",
+            "venue_type": venue_type,
         }
 
         # Get live weather data for the venue
@@ -412,8 +507,6 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         except ImportError:
             print("⚠️ Weather integration not available")
             weather_data = None
-            venue_type = "dome" if "dome" in venue_name.lower() else "outdoor"
-            surface_type = "turf" if "turf" in venue_name.lower() else "grass"
 
         # Update team data with venue info
         enhanced_team_data["venue_type"] = venue_type
