@@ -10,9 +10,12 @@ import pandas as pd
 from app.services.etl.nfl import qb_passing_yards_ml as qbm
 from app.services.etl.nfl.qb_features import FEATURE_NAMES
 from app.services.etl.nfl.qb_passing_yards_ml import (
+    PROMOTE_BASELINE_MODE,
+    PROMOTE_FEATURE_NAMES,
     build_features_from_tier_prediction,
     enrich_qb_prediction_for_write,
     predict_yards_ml,
+    train_promote_qb_yards_model,
     train_qb_yards_model,
 )
 
@@ -246,6 +249,71 @@ def test_train_qb_yards_model_tier_baseline_and_v5_features():
         baseline_mode="tier",
     )
     assert 150 <= pred <= 400
+
+
+def test_train_promote_qb_yards_model_tier_only_fit_full():
+    n = 50
+    rng = np.random.default_rng(11)
+    df = pd.DataFrame(
+        {
+            name: (
+                np.linspace(200, 260, n)
+                if name
+                in (
+                    "tier_yards",
+                    "rolling_yards_l3",
+                    "pass_yds_line",
+                    "season_avg_yards",
+                )
+                else np.full(n, 1.0 if name == "line_is_real" else 0.0)
+            )
+            for name in FEATURE_NAMES
+        }
+    )
+    df["season"] = np.concatenate([np.full(25, 2024), np.full(25, 2025)])
+    df["week"] = np.arange(1, n + 1)
+    y = df["tier_yards"] + 0.2 * df["rolling_yards_l3"] + rng.normal(0, 8, n)
+    model, meta = train_promote_qb_yards_model((df, y), residual_target=True)
+    assert meta["baseline_mode"] == PROMOTE_BASELINE_MODE == "tier"
+    assert meta["fit_full"] is True
+    assert meta["n_train"] == n
+    assert meta["features"] == list(PROMOTE_FEATURE_NAMES)
+    assert "pass_yds_line" not in meta["features"]
+    assert meta.get("promote_hp_selected") in {"default", "shallow", "strong_reg"}
+    assert isinstance(meta.get("promote_hp_sweep"), list)
+    assert len(meta["promote_hp_sweep"]) >= 2
+    pred = predict_yards_ml(
+        model,
+        df.iloc[0].to_dict(),
+        feature_order=list(PROMOTE_FEATURE_NAMES),
+        residual_target=True,
+        baseline_mode="tier",
+    )
+    assert 150 <= pred <= 400
+
+
+def test_predict_yards_ml_loaded_respects_tier_baseline_mode(monkeypatch):
+    class _Stub:
+        def predict(self, X):  # noqa: N803
+            return np.array([5.0])
+
+    monkeypatch.setattr(qbm, "_MODEL", _Stub())
+    monkeypatch.setattr(
+        qbm,
+        "_METADATA",
+        {
+            "features": ["tier_yards", "rolling_yards_l3"],
+            "residual_target": True,
+            "baseline_mode": "tier",
+            "target": "residual_actual_minus_baseline",
+        },
+    )
+    monkeypatch.setattr(qbm, "_LOAD_FAILED", False)
+    # baseline = tier 250; residual +5 → 255 (ignores pass_yds_line)
+    out = qbm.predict_yards_ml_loaded(
+        {"tier_yards": 250.0, "rolling_yards_l3": 240.0, "pass_yds_line": 300.0}
+    )
+    assert out == 255.0
 
 
 def test_predict_yards_ml_uses_market_baseline():

@@ -17,12 +17,53 @@ import pandas as pd
 
 from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
+    TIER_ONLY_FEATURE_NAMES,
     build_qb_features,
     feature_names as qb_feature_names,
     resolve_yards_baseline,
 )
 
 BaselineMode = str  # "market" | "tier"
+
+# Promote path (Railway gate): tier residual only — prop-line features/baseline
+# collapsed toward the market in ablations (2026-08-11).
+PROMOTE_BASELINE_MODE: BaselineMode = "tier"
+PROMOTE_FEATURE_NAMES: tuple[str, ...] = TIER_ONLY_FEATURE_NAMES
+
+DEFAULT_HYPERPARAMS: dict[str, Any] = {
+    "n_estimators": 150,
+    "max_depth": 3,
+    "learning_rate": 0.06,
+    "subsample": 0.85,
+    "random_state": 42,
+    "min_samples_leaf": 8,
+}
+
+# Capacity-shrunk candidates for promote / tier-only residual.
+PROMOTE_HYPERPARAM_CANDIDATES: tuple[dict[str, Any], ...] = (
+    {
+        "name": "default",
+        **DEFAULT_HYPERPARAMS,
+    },
+    {
+        "name": "shallow",
+        "n_estimators": 100,
+        "max_depth": 2,
+        "learning_rate": 0.05,
+        "subsample": 0.75,
+        "random_state": 42,
+        "min_samples_leaf": 16,
+    },
+    {
+        "name": "strong_reg",
+        "n_estimators": 80,
+        "max_depth": 2,
+        "learning_rate": 0.04,
+        "subsample": 0.70,
+        "random_state": 42,
+        "min_samples_leaf": 24,
+    },
+)
 
 logger = logging.getLogger(__name__)
 
@@ -277,15 +318,7 @@ def train_qb_yards_model(
     if features_df.empty or len(features_df) < 30:
         raise ValueError("insufficient training rows")
 
-    default_hp = {
-        "n_estimators": 150,
-        "max_depth": 3,
-        "learning_rate": 0.06,
-        "subsample": 0.85,
-        "random_state": 42,
-        "min_samples_leaf": 8,
-    }
-    hp = {**default_hp, **(hyperparams or {})}
+    hp = {**DEFAULT_HYPERPARAMS, **(hyperparams or {})}
 
     order = list(feature_order) if feature_order is not None else feature_names()
     features_df = _fill_missing_feature_columns(features_df.copy())
@@ -412,6 +445,75 @@ def train_qb_yards_model(
     return model, metadata
 
 
+def train_promote_qb_yards_model(
+    dataset: tuple[pd.DataFrame, pd.Series],
+    *,
+    residual_target: bool = True,
+    feature_order: Sequence[str] | None = None,
+    baseline_mode: BaselineMode | None = None,
+    hyperparam_candidates: Sequence[Mapping[str, Any]] | None = None,
+) -> tuple[Any, dict[str, Any]]:
+    """
+    Promote-path trainer: tier-only residual + fit_full, with a small HP sweep.
+
+    Selects the candidate with lowest inner time-ordered CV yards MAE, then
+    refits on all rows with that HP set.
+    """
+    order = (
+        list(feature_order)
+        if feature_order is not None
+        else list(PROMOTE_FEATURE_NAMES)
+    )
+    mode: BaselineMode = (
+        baseline_mode if baseline_mode is not None else PROMOTE_BASELINE_MODE
+    )
+    candidates = list(hyperparam_candidates or PROMOTE_HYPERPARAM_CANDIDATES)
+
+    sweep: list[dict[str, Any]] = []
+    best: tuple[float, dict[str, Any], str] | None = None
+    for raw in candidates:
+        cand = dict(raw)
+        name = str(cand.pop("name", "candidate"))
+        _, cv_meta = train_qb_yards_model(
+            dataset,
+            residual_target=residual_target,
+            fit_full=False,
+            feature_order=order,
+            baseline_mode=mode,
+            hyperparams=cand,
+        )
+        cv_mae = float(cv_meta.get("holdout_mae") or cv_meta.get("test_mae") or 1e9)
+        entry = {
+            "name": name,
+            "hyperparams": cand,
+            "cv_holdout_mae": round(cv_mae, 3),
+            "cv_n_train": cv_meta.get("cv_n_train", cv_meta.get("n_train")),
+            "cv_n_test": cv_meta.get("cv_n_test", cv_meta.get("n_test")),
+        }
+        sweep.append(entry)
+        if best is None or cv_mae < best[0]:
+            best = (cv_mae, cand, name)
+
+    assert best is not None
+    _, best_hp, best_name = best
+    model, metadata = train_qb_yards_model(
+        dataset,
+        residual_target=residual_target,
+        fit_full=True,
+        feature_order=order,
+        baseline_mode=mode,
+        hyperparams=best_hp,
+    )
+    metadata = {
+        **metadata,
+        "promote_path": "tier_only_residual",
+        "promote_hp_selected": best_name,
+        "promote_hp_sweep": sweep,
+        "model_family": "residual_gbm_tier_only",
+    }
+    return model, metadata
+
+
 def reinject_pass_yds_line(
     features: Mapping[str, float],
     *,
@@ -498,13 +600,18 @@ def model_available() -> bool:
 def predict_yards_ml_loaded(features: Mapping[str, float]) -> float | None:
     if not _ensure_loaded() or _MODEL is None:
         return None
-    order = (_METADATA or {}).get("features") or feature_names()
-    residual = _model_is_residual(_METADATA)
+    meta = _METADATA or {}
+    order = meta.get("features") or feature_names()
+    residual = _model_is_residual(meta)
+    baseline_mode = str(meta.get("baseline_mode") or "market")
+    if baseline_mode not in {"market", "tier"}:
+        baseline_mode = "market"
     return predict_yards_ml(
         _MODEL,
         features,
         feature_order=list(order),
         residual_target=residual,
+        baseline_mode=baseline_mode,
     )
 
 

@@ -44,8 +44,10 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
     )
     from app.services.etl.nfl.qb_passing_yards_ml import (
         MODEL_KEY,
+        PROMOTE_BASELINE_MODE,
+        PROMOTE_FEATURE_NAMES,
         predict_yards_ml,
-        train_qb_yards_model,
+        train_promote_qb_yards_model,
     )
 
     features, target, meta = build_from_nflverse(seasons)
@@ -76,10 +78,22 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
     y_test = target.iloc[test_idx].to_numpy()
     tier_test = meta.iloc[test_idx]["tier_yards"].to_numpy()
 
-    model, metadata = train_qb_yards_model((X_train, y_train), residual_target=True)
+    promote_features = list(PROMOTE_FEATURE_NAMES)
+    model, metadata = train_promote_qb_yards_model(
+        (X_train, y_train),
+        residual_target=True,
+        feature_order=promote_features,
+        baseline_mode=PROMOTE_BASELINE_MODE,
+    )
     ml_pred = np.array(
         [
-            predict_yards_ml(model, X_test.iloc[i].to_dict(), residual_target=True)
+            predict_yards_ml(
+                model,
+                X_test.iloc[i].to_dict(),
+                feature_order=promote_features,
+                residual_target=True,
+                baseline_mode=PROMOTE_BASELINE_MODE,
+            )
             for i in range(len(X_test))
         ]
     )
