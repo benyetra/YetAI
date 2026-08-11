@@ -1,5 +1,6 @@
 from app.services.etl.nfl._db import db_session
 from datetime import datetime, timedelta
+from typing import Dict, Optional
 import requests
 
 from app.models.predictions_models import Kickers, KickerPredictions
@@ -251,6 +252,33 @@ def _has_usable_team_stats(payload) -> bool:
         return False
     categories = (payload.get("splits") or {}).get("categories")
     return isinstance(categories, list) and len(categories) > _EFFICIENCY_CATEGORY_IDX
+
+
+def _as_python_float(value) -> Optional[float]:
+    """Coerce numpy / pandas scalars to plain float for DB binds."""
+    if value is None:
+        return None
+    try:
+        if hasattr(value, "item"):
+            value = value.item()
+    except Exception:
+        pass
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _sanitize_feature_importance(raw) -> Dict[str, float]:
+    """Ensure feature_importance JSON is JSON/DB-safe (no numpy scalars)."""
+    if not isinstance(raw, dict):
+        return {}
+    out: Dict[str, float] = {}
+    for key, value in raw.items():
+        coerced = _as_python_float(value)
+        if coerced is not None:
+            out[str(key)] = coerced
+    return out
 
 
 def _stat_at(payload, category_idx: int, stat_idx: int, default: float = 0.0) -> float:
@@ -574,6 +602,19 @@ def save_kicker_data(kicker_data):
         else kicker_data["game_time"]
     )
 
+    # Coerce numeric fields up front so SQLAlchemy never binds numpy scalars
+    # (psycopg2 otherwise literalizes np.float64 as "np.float64(...)" → schema "np").
+    team_rz = _as_python_float(kicker_data.get("team_red_zone_efficiency", 0)) or 0.0
+    opp_rz = _as_python_float(kicker_data.get("opponent_red_zone_efficiency", 0)) or 0.0
+    third_down = (
+        _as_python_float(kicker_data.get("third_down_conversion_rate", 0)) or 0.0
+    )
+    rz_td = _as_python_float(kicker_data.get("redzone_touchdown_pct", 0)) or 0.0
+    rz_fg = _as_python_float(kicker_data.get("redzone_field_goal_pct", 0)) or 0.0
+    projected_fg = _as_python_float(kicker_data.get("projected_field_goals", 0)) or 0.0
+    temperature = _as_python_float(kicker_data.get("temperature"))
+    wind_speed = _as_python_float(kicker_data.get("wind_speed"))
+
     # 1. Save to current Kickers table (for current week display)
     kicker = (
         db_session.query(Kickers)
@@ -589,23 +630,21 @@ def save_kicker_data(kicker_data):
             venue_name=kicker_data["venue_name"],
             opponent_team_name=kicker_data["opponent_name"],
             game_time=kicker_data["game_time"],
-            team_red_zone_efficiency=kicker_data.get("team_red_zone_efficiency", 0),
-            opponent_red_zone_efficiency=kicker_data.get(
-                "opponent_red_zone_efficiency", 0
-            ),
-            third_down_conversion_rate=kicker_data.get("third_down_conversion_rate", 0),
-            redzone_touchdown_pct=kicker_data.get("redzone_touchdown_pct", 0),
-            redzone_field_goal_pct=kicker_data.get("redzone_field_goal_pct", 0),
+            team_red_zone_efficiency=team_rz,
+            opponent_red_zone_efficiency=opp_rz,
+            third_down_conversion_rate=third_down,
+            redzone_touchdown_pct=rz_td,
+            redzone_field_goal_pct=rz_fg,
             career_surface_stats=kicker_data.get("career_surface_stats", []),
             career_location_stats=kicker_data.get("career_location_stats", []),
             career_field_position_stats=kicker_data.get(
                 "career_field_position_stats", []
             ),
             game_stats=kicker_data.get("game_stats", []),
-            projected_field_goals=kicker_data.get("projected_field_goals", 0),
+            projected_field_goals=projected_fg,
             # Weather and venue information
-            temperature=kicker_data.get("temperature"),
-            wind_speed=kicker_data.get("wind_speed"),
+            temperature=temperature,
+            wind_speed=wind_speed,
             weather_conditions=kicker_data.get("weather_conditions"),
             venue_type=kicker_data.get("venue_type"),
             surface_type=kicker_data.get("surface_type"),
@@ -613,26 +652,22 @@ def save_kicker_data(kicker_data):
         db_session.add(kicker)
     else:
         # Update current record
-        kicker.team_red_zone_efficiency = kicker_data.get("team_red_zone_efficiency", 0)
-        kicker.opponent_red_zone_efficiency = kicker_data.get(
-            "opponent_red_zone_efficiency", 0
-        )
-        kicker.third_down_conversion_rate = kicker_data.get(
-            "third_down_conversion_rate", 0
-        )
-        kicker.redzone_touchdown_pct = kicker_data.get("redzone_touchdown_pct", 0)
-        kicker.redzone_field_goal_pct = kicker_data.get("redzone_field_goal_pct", 0)
+        kicker.team_red_zone_efficiency = team_rz
+        kicker.opponent_red_zone_efficiency = opp_rz
+        kicker.third_down_conversion_rate = third_down
+        kicker.redzone_touchdown_pct = rz_td
+        kicker.redzone_field_goal_pct = rz_fg
         kicker.career_surface_stats = kicker_data.get("career_surface_stats", [])
         kicker.career_location_stats = kicker_data.get("career_location_stats", [])
         kicker.career_field_position_stats = kicker_data.get(
             "career_field_position_stats", []
         )
         kicker.game_stats = kicker_data.get("game_stats", [])
-        kicker.projected_field_goals = kicker_data.get("projected_field_goals", 0)
+        kicker.projected_field_goals = projected_fg
         kicker.game_time = kicker_data["game_time"]
         # Update weather and venue information
-        kicker.temperature = kicker_data.get("temperature")
-        kicker.wind_speed = kicker_data.get("wind_speed")
+        kicker.temperature = temperature
+        kicker.wind_speed = wind_speed
         kicker.weather_conditions = kicker_data.get("weather_conditions")
         kicker.venue_type = kicker_data.get("venue_type")
         kicker.surface_type = kicker_data.get("surface_type")
@@ -645,29 +680,36 @@ def save_kicker_data(kicker_data):
         .first()
     )
 
+    saved_historical = False
+    predicted_fg_made = projected_fg
     if not existing_prediction:
         # Calculate distance-specific probabilities (placeholder logic - enhance as needed)
-        predicted_fg_made = kicker_data.get("projected_field_goals", 0)
-        predicted_fg_attempts = max(1.5, predicted_fg_made * 1.2)  # Rough estimate
-        predicted_success_rate = min(
-            0.95,
-            (
-                predicted_fg_made / predicted_fg_attempts
-                if predicted_fg_attempts > 0
-                else 0.85
-            ),
+        predicted_fg_attempts = float(max(1.5, predicted_fg_made * 1.2))
+        predicted_success_rate = float(
+            min(
+                0.95,
+                (
+                    predicted_fg_made / predicted_fg_attempts
+                    if predicted_fg_attempts > 0
+                    else 0.85
+                ),
+            )
         )
 
-        # Feature importance for model transparency
-        feature_importance = {
-            "team_red_zone_efficiency": kicker_data.get("team_red_zone_efficiency", 0),
-            "weather_impact": (
-                kicker_data.get("wind_speed", 0) * -0.1
-                + (kicker_data.get("temperature", 70) - 70) * -0.02
-            ),
-            "venue_type": 0.1 if kicker_data.get("venue_type") == "dome" else 0.0,
-            "surface_type": 0.05 if kicker_data.get("surface_type") == "turf" else 0.0,
-        }
+        wind_for_impact = wind_speed if wind_speed is not None else 0.0
+        temp_for_impact = temperature if temperature is not None else 70.0
+        feature_importance = _sanitize_feature_importance(
+            {
+                "team_red_zone_efficiency": team_rz,
+                "weather_impact": (
+                    wind_for_impact * -0.1 + (temp_for_impact - 70.0) * -0.02
+                ),
+                "venue_type": 0.1 if kicker_data.get("venue_type") == "dome" else 0.0,
+                "surface_type": (
+                    0.05 if kicker_data.get("surface_type") == "turf" else 0.0
+                ),
+            }
+        )
 
         # Create instance with required parameters only (due to custom __init__)
         historical_prediction = KickerPredictions(
@@ -679,33 +721,31 @@ def save_kicker_data(kicker_data):
             opponent_team_name=kicker_data["opponent_name"],
             game_date=kicker_data["game_time"],
             predicted_fg_attempts=predicted_fg_attempts,
-            predicted_fg_made=predicted_fg_made,
+            predicted_fg_made=float(predicted_fg_made),
             predicted_success_rate=predicted_success_rate,
         )
 
         # Note: KickerPredictions model uses game_date for temporal tracking instead of season/week
 
         # Set additional attributes manually
-        historical_prediction.short_distance_prob = min(
-            0.95, predicted_success_rate + 0.1
+        historical_prediction.short_distance_prob = float(
+            min(0.95, predicted_success_rate + 0.1)
         )  # <30 yards
-        historical_prediction.medium_distance_prob = (
-            predicted_success_rate  # 30-49 yards
-        )
-        historical_prediction.long_distance_prob = max(
-            0.6, predicted_success_rate - 0.2
+        historical_prediction.medium_distance_prob = float(
+            predicted_success_rate
+        )  # 30-49 yards
+        historical_prediction.long_distance_prob = float(
+            max(0.6, predicted_success_rate - 0.2)
         )  # 50+ yards
         historical_prediction.model_confidence = 0.75  # Placeholder confidence score
         historical_prediction.feature_importance = feature_importance
-        historical_prediction.temperature = kicker_data.get("temperature")
-        historical_prediction.wind_speed = kicker_data.get("wind_speed")
+        historical_prediction.temperature = temperature
+        historical_prediction.wind_speed = wind_speed
         historical_prediction.roof_type = kicker_data.get("venue_type")
         historical_prediction.surface_type = kicker_data.get("surface_type")
 
         db_session.add(historical_prediction)
-        print(
-            f"📊 Saved historical prediction for {kicker_data['name']} on {game_date}: {predicted_fg_made} FGs"
-        )
+        saved_historical = True
     else:
         print(
             f"⚠️ Prediction already exists for {kicker_data['name']} on {game_date}, skipping historical save"
@@ -713,6 +753,10 @@ def save_kicker_data(kicker_data):
 
     try:
         db_session.commit()
+        if saved_historical:
+            print(
+                f"📊 Saved historical prediction for {kicker_data['name']} on {game_date}: {predicted_fg_made} FGs"
+            )
         print(f"✅ Successfully saved kicker data for {kicker_data['name']}")
     except Exception as e:
         db_session.rollback()
