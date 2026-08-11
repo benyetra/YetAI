@@ -52,15 +52,17 @@ def test_get_game_kickoff_parses_reg_datetime():
 
 def test_get_team_statistics_default_uses_get_nfl_season(monkeypatch):
     monkeypatch.setattr(kickers, "get_nfl_season", lambda: 2026)
-    called = {}
+    called = []
 
     def fake_get(url, timeout=30):
-        called["url"] = url
+        called.append(url)
         m = MagicMock()
         m.status_code = 200
+        # Incomplete payload so we do not rely on prior-season shape here
         m.json.return_value = {"splits": {"categories": []}}
         return m
 
     with patch("app.services.etl.nfl.kickers.requests.get", side_effect=fake_get):
-        kickers.get_team_statistics(1)  # no season_year
-    assert "/seasons/2026/" in called["url"]
+        kickers.get_team_statistics(1, fallback_prior_season=False)  # no season_year
+    assert called
+    assert "/seasons/2026/" in called[0]
