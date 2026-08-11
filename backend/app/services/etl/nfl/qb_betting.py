@@ -332,9 +332,34 @@ def _run_qb_betting_core():
                     if isinstance(qb.feature_importance, dict)
                     else {}
                 )
+                fi = dict(fi) if fi else {}
                 feat_ctx = (
                     fi.get("features") if isinstance(fi.get("features"), dict) else {}
                 )
+                feat_ctx = dict(feat_ctx) if feat_ctx else {}
+
+                # Reinject real prop line into feature vector + refresh ML shadow
+                try:
+                    from app.services.etl.nfl.qb_passing_yards_ml import (
+                        predict_yards_ml_loaded,
+                        qb_ml_enabled,
+                        reinject_pass_yds_line,
+                    )
+
+                    if feat_ctx:
+                        feat_ctx = reinject_pass_yds_line(
+                            feat_ctx, ou_line=float(ou_line)
+                        )
+                        fi["features"] = feat_ctx
+                        ml_yards = predict_yards_ml_loaded(feat_ctx)
+                        if ml_yards is not None:
+                            fi["ml_shadow_yards"] = float(ml_yards)
+                            if qb_ml_enabled():
+                                qb.predicted_passing_yards = float(ml_yards)
+                        qb.feature_importance = fi
+                except Exception:
+                    pass
+
                 try:
                     from app.services.etl.nfl.qb_ou_classifier import (
                         predict_over_probability_loaded,
@@ -361,8 +386,12 @@ def _run_qb_betting_core():
                 qb.bet_size = recommendation["bet_size"]
                 qb.edge_percentage = recommendation["edge_percentage"]
                 qb.recommendation_reason = recommendation["reason"]
-                if over_prob is not None and isinstance(fi, dict):
-                    fi = dict(fi)
+                if over_prob is not None:
+                    fi = (
+                        dict(qb.feature_importance)
+                        if isinstance(qb.feature_importance, dict)
+                        else dict(fi)
+                    )
                     fi["ml_over_probability"] = round(float(over_prob), 3)
                     qb.feature_importance = fi
 

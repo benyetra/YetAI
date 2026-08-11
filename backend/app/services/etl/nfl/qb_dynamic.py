@@ -227,6 +227,12 @@ def _load_weekly_qb_history(season: int) -> list[dict]:
                     and not pd.isna(row.get("attempts"))
                     else None
                 ),
+                "completions": (
+                    float(row["completions"])
+                    if row.get("completions") is not None
+                    and not pd.isna(row.get("completions"))
+                    else None
+                ),
                 "sacks": (
                     float(row["sacks"])
                     if row.get("sacks") is not None and not pd.isna(row.get("sacks"))
@@ -331,21 +337,26 @@ def build_qb_prediction_context(
     is_backup: bool = False,
     hours_to_kickoff: float | None = None,
     pass_yds_line: float | None = None,
+    static_tier_yards: float | None = None,
 ) -> dict:
     """Assemble matchup/form context for GBM features."""
     from app.services.etl.nfl.qb_features import (
+        blend_tier_with_form,
         estimate_opp_defense_from_weekly,
         estimate_opp_pass_allowed_from_weekly,
         form_features_from_prior_yards,
+        form_volume_features_from_prior,
+        prior_game_stats_for_player,
         prior_yards_for_player,
         scheme_features_for_opponent,
     )
     from app.services.etl.nfl.qb_late_availability import late_injury_risk
 
     history = weekly_history if weekly_history is not None else []
+    player_key = player_id or qb_name
     prior = prior_yards_for_player(
         history,
-        player_key=player_id or qb_name,
+        player_key=player_key,
         season=season,
         week=week,
     )
@@ -356,7 +367,23 @@ def build_qb_prediction_context(
             season=season,
             week=week,
         )
-    form = form_features_from_prior_yards(prior, tier_yards=210.0)
+    prior_stats = prior_game_stats_for_player(
+        history,
+        player_key=player_key,
+        season=season,
+        week=week,
+    )
+    if not prior_stats and qb_name:
+        prior_stats = prior_game_stats_for_player(
+            history,
+            player_key=qb_name,
+            season=season,
+            week=week,
+        )
+    tier_anchor = float(static_tier_yards) if static_tier_yards is not None else 210.0
+    form = form_features_from_prior_yards(prior, tier_yards=tier_anchor)
+    volume = form_volume_features_from_prior(prior_stats)
+    dynamic_tier = blend_tier_with_form(tier_anchor, prior)
     opp_allowed = estimate_opp_pass_allowed_from_weekly(
         history,
         opponent_abbr=opponent_abbr or "",
@@ -379,8 +406,10 @@ def build_qb_prediction_context(
     )
     ctx: dict = {
         **form,
+        **volume,
         **defense,
         **scheme,
+        "dynamic_tier_yards": dynamic_tier,
         "is_home": market.get("is_home", team_is_home(team_abbr, season, week)),
         "team_abbr": team_abbr,
         "opponent_abbr": opponent_abbr,
@@ -656,6 +685,7 @@ def _run_qb_dynamic_core():
                 hours_to_kickoff=(
                     float(hours) if isinstance(hours, (int, float)) else None
                 ),
+                static_tier_yards=float(tier_prediction["predicted_passing_yards"]),
             )
             context["late_availability"] = late_meta
             # If no prior games, anchor form features to this week's tier yards
@@ -671,6 +701,9 @@ def _run_qb_dynamic_core():
                 context["rolling_yards_l3"] = tier_yards
                 context["rolling_yards_l5"] = tier_yards
                 context["season_avg_yards"] = tier_yards
+            # Publish dynamic (form-blended) tier as the non-ML point estimate
+            dynamic_tier = float(context.get("dynamic_tier_yards") or tier_yards)
+            tier_prediction["predicted_passing_yards"] = dynamic_tier
             prediction = enrich_qb_prediction_for_write(
                 tier_prediction,
                 season=season,

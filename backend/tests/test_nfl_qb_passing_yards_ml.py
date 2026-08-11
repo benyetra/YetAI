@@ -103,12 +103,15 @@ def test_train_qb_yards_model_smoke():
     base = {
         "tier_yards": np.linspace(200, 280, n),
         "is_backup": np.zeros(n),
-        "week": np.ones(n),
+        "week": np.arange(1, n + 1) % 18 + 1,
         "confidence": np.full(n, 0.7),
-        "season": np.full(n, 2024),
+        "season": np.concatenate([np.full(25, 2024), np.full(25, 2025)]),
         "rolling_yards_l3": np.linspace(195, 275, n),
         "rolling_yards_l5": np.linspace(198, 278, n),
         "season_avg_yards": np.linspace(200, 270, n),
+        "rolling_attempts_l3": np.full(n, 34.0),
+        "rolling_ypa_l3": np.full(n, 7.0),
+        "rolling_comp_pct_l3": np.full(n, 0.65),
         "opp_pass_yds_allowed": np.full(n, 220.0),
         "opp_def_epa": rng.normal(0, 0.1, n),
         "opp_pressure_rate": np.full(n, 0.25),
@@ -122,6 +125,7 @@ def test_train_qb_yards_model_smoke():
         "total_line": np.full(n, 46.0),
         "spread_line": np.zeros(n),
         "pass_yds_line": np.linspace(200, 280, n),
+        "line_minus_tier": np.zeros(n),
         "opp_cover_base": np.full(n, 3.0),
         "opp_man_zone": np.zeros(n),
         "opp_scheme_pressure": np.full(n, 0.5),
@@ -140,7 +144,34 @@ def test_train_qb_yards_model_smoke():
     assert meta["holdout_mae"] >= 0
     assert meta["residual_target"] is True
     assert "residual" in meta["target"]
+    assert meta["cv_split"] == "time_ordered_last_20pct"
+    assert meta["baseline"] == "market_aware_tier_line_blend"
     assert set(FEATURE_NAMES).issubset(set(meta["features"]))
+
+
+def test_predict_yards_ml_uses_market_baseline():
+    class _Stub:
+        def predict(self, X):  # noqa: N803
+            return np.array([5.0])
+
+    feats = {
+        "tier_yards": 250.0,
+        "pass_yds_line": 270.0,
+        "line_minus_tier": 20.0,
+    }
+    # baseline = 260; + residual 5 → 265
+    assert predict_yards_ml(_Stub(), feats, residual_target=True) == 265.0
+
+
+def test_reinject_pass_yds_line():
+    from app.services.etl.nfl.qb_passing_yards_ml import reinject_pass_yds_line
+
+    out = reinject_pass_yds_line(
+        {"tier_yards": 250.0, "pass_yds_line": 250.0, "line_minus_tier": 0.0},
+        ou_line=275.5,
+    )
+    assert out["pass_yds_line"] == 275.5
+    assert out["line_minus_tier"] == 25.5
 
 
 def test_enrich_promotes_residual_method(monkeypatch):
