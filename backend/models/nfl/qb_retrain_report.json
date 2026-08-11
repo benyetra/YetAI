@@ -1,0 +1,111 @@
+{
+  "status": "ok",
+  "trained_at": "2026-08-11T02:59:04.160383",
+  "seasons": [
+    2023,
+    2024,
+    2025
+  ],
+  "rows_total": 1140,
+  "rows_train": 912,
+  "rows_holdout": 228,
+  "holdout": "time_20pct",
+  "tier_mae": 61.803,
+  "ml_mae": 65.383,
+  "mae_lift": -0.0579,
+  "promote_gate": 0.1,
+  "promote_recommended": false,
+  "model_version": "gbm-qb-yards-20260811",
+  "train_metadata": {
+    "model_key": "qb_passing_yards",
+    "target": "actual_passing_yards",
+    "trained_at": "2026-08-11T02:59:04.128912",
+    "train_date": "20260811",
+    "model_version": "gbm-qb-yards-20260811",
+    "n_train": 729,
+    "n_test": 183,
+    "features": [
+      "tier_yards",
+      "is_backup",
+      "week",
+      "confidence",
+      "season",
+      "rolling_yards_l3",
+      "rolling_yards_l5",
+      "season_avg_yards",
+      "opp_pass_yds_allowed",
+      "opp_def_epa",
+      "opp_pressure_rate",
+      "injury_risk",
+      "is_home",
+      "rest_days",
+      "implied_team_total",
+      "wind_speed",
+      "temperature",
+      "dome"
+    ],
+    "hyperparams": {
+      "n_estimators": 120,
+      "max_depth": 4,
+      "learning_rate": 0.08,
+      "subsample": 0.85,
+      "random_state": 42
+    },
+    "train_mae": 33.331950802152804,
+    "test_mae": 57.442767443281916,
+    "holdout_mae": 57.442767443281916,
+    "train_rmse": 41.46161711462741,
+    "test_rmse": 74.08640196588208
+  },
+  "recommendation": "Keep tier-v3 production; ML stays shadow-only",
+  "ou_classifier": {
+    "status": "ok",
+    "metadata": {
+      "model_key": "qb_pass_yds_ou",
+      "target": "actual_over_ou_line",
+      "trained_at": "2026-08-11T02:59:04.380220",
+      "train_date": "20260811",
+      "model_version": "gbm-qb-ou-20260811",
+      "n_train": 679,
+      "n_test": 227,
+      "features": [
+        "tier_yards",
+        "is_backup",
+        "week",
+        "confidence",
+        "season",
+        "rolling_yards_l3",
+        "rolling_yards_l5",
+        "season_avg_yards",
+        "opp_pass_yds_allowed",
+        "opp_def_epa",
+        "opp_pressure_rate",
+        "injury_risk",
+        "is_home",
+        "rest_days",
+        "implied_team_total",
+        "wind_speed",
+        "temperature",
+        "dome",
+        "ou_line",
+        "yards_minus_line"
+      ],
+      "hyperparams": {
+        "n_estimators": 100,
+        "max_depth": 3,
+        "learning_rate": 0.08,
+        "subsample": 0.85,
+        "random_state": 42
+      },
+      "holdout_accuracy": 0.5814977973568282,
+      "holdout_brier": 0.24196174537436874,
+      "holdout_log_loss": 0.6769155452468482
+    }
+  },
+  "local_artifacts": {
+    "model": "/workspace/backend/models/nfl/qb_passing_yards.pkl",
+    "metadata": "/workspace/backend/models/nfl/qb_passing_yards_metadata.json",
+    "ou_model": "/workspace/backend/models/nfl/qb_pass_yds_ou.pkl",
+    "ou_metadata": "/workspace/backend/models/nfl/qb_pass_yds_ou_metadata.json"
+  }
+}

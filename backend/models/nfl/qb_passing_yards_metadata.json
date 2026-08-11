@@ -1,0 +1,51 @@
+{
+  "model_key": "qb_passing_yards",
+  "target": "actual_passing_yards",
+  "trained_at": "2026-08-11T02:59:04.128912",
+  "train_date": "20260811",
+  "model_version": "gbm-qb-yards-20260811",
+  "n_train": 729,
+  "n_test": 183,
+  "features": [
+    "tier_yards",
+    "is_backup",
+    "week",
+    "confidence",
+    "season",
+    "rolling_yards_l3",
+    "rolling_yards_l5",
+    "season_avg_yards",
+    "opp_pass_yds_allowed",
+    "opp_def_epa",
+    "opp_pressure_rate",
+    "injury_risk",
+    "is_home",
+    "rest_days",
+    "implied_team_total",
+    "wind_speed",
+    "temperature",
+    "dome"
+  ],
+  "hyperparams": {
+    "n_estimators": 120,
+    "max_depth": 4,
+    "learning_rate": 0.08,
+    "subsample": 0.85,
+    "random_state": 42
+  },
+  "train_mae": 33.331950802152804,
+  "test_mae": 57.442767443281916,
+  "holdout_mae": 57.442767443281916,
+  "train_rmse": 41.46161711462741,
+  "test_rmse": 74.08640196588208,
+  "promote_recommended": false,
+  "holdout_tier_mae": 61.803,
+  "holdout_ml_mae": 65.383,
+  "holdout_mae_lift": -0.0579,
+  "training_source": "nflverse_weekly",
+  "seasons": [
+    2023,
+    2024,
+    2025
+  ]
+}

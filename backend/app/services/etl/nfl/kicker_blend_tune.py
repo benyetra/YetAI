@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -113,7 +114,7 @@ def walk_forward_blend_weight(
 def resolve_blend_weight(
     tune_records: Sequence[Mapping[str, Any]] | None = None,
 ) -> float:
-    """Env override → walk-forward on records → CSV-tuned default → 0.30."""
+    """Env override → walk-forward on records → tuned JSON → 0.30."""
     tuned = os.getenv("NFL_KICKER_BLEND_TUNED_WEIGHT", "").strip()
     if tuned:
         try:
@@ -128,7 +129,19 @@ def resolve_blend_weight(
             return float(env_default)
         except ValueError:
             pass
-    # Prefer a slightly lower ML weight with the new volume model (less overfit
-    # to make-prob alone). Ops can pin NFL_KICKER_BLEND_TUNED_WEIGHT after
-    # prod walk-forward.
+    # Shipped offline tune artifact (scripts/nfl_tune_kicker_blend.py --write)
+    tune_path = (
+        Path(__file__).resolve().parents[4]
+        / "models"
+        / "nfl"
+        / "kicker_blend_tune.json"
+    )
+    if tune_path.is_file():
+        try:
+            payload = json.loads(tune_path.read_text())
+            w = payload.get("NFL_KICKER_BLEND_TUNED_WEIGHT")
+            if w is not None:
+                return float(w)
+        except Exception:
+            pass
     return 0.30
