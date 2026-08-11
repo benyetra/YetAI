@@ -5,6 +5,7 @@ from __future__ import annotations
 from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
     build_qb_features,
+    encode_scheme_tags,
     estimate_opp_defense_from_weekly,
     estimate_opp_pass_allowed_from_weekly,
     form_features_from_prior_yards,
@@ -24,6 +25,12 @@ def test_feature_names_include_matchup_form():
     assert "opp_pressure_rate" in names
     assert "injury_risk" in names
     assert "implied_team_total" in names
+    assert "total_line" in names
+    assert "spread_line" in names
+    assert "pass_yds_line" in names
+    assert "opp_cover_base" in names
+    assert "opp_man_zone" in names
+    assert "opp_scheme_pressure" in names
 
 
 def test_rolling_mean_window():
@@ -147,3 +154,32 @@ def test_estimate_opp_pass_allowed():
         weekly, opponent_abbr="KC", season=2024, week=4
     )
     assert allowed == 280.0
+
+
+def test_encode_scheme_tags():
+    out = encode_scheme_tags(
+        {"cover_base": "cover_1", "man_zone_lean": "man", "pressure_lean": "high"}
+    )
+    assert out["opp_cover_base"] == 1.0
+    assert out["opp_man_zone"] == 1.0
+    assert out["opp_scheme_pressure"] == 0.75
+
+
+def test_build_qb_features_market_and_scheme():
+    feats = build_qb_features(
+        tier_yards=250.0,
+        season=2025,
+        week=3,
+        context={
+            "total_line": 48.5,
+            "spread_line": -3.0,
+            "cover_base": "cover_2",
+            "man_zone_lean": "zone",
+            "pressure_lean": "high",
+        },
+    )
+    assert feats["total_line"] == 48.5
+    assert feats["spread_line"] == -3.0
+    assert feats["opp_cover_base"] == 2.0
+    assert feats["opp_scheme_pressure"] == 0.75
+    assert feats["implied_team_total"] == 25.75  # 48.5/2 - (-3)/2

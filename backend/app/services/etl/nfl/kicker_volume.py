@@ -149,6 +149,25 @@ def estimate_attempts_heuristic(
     return float(min(2.8, max(1.1, base)))
 
 
+def resolve_attempts(
+    team_data: Mapping[str, Any] | None = None,
+    weather_data: Mapping[str, Any] | None = None,
+    *,
+    attempts: float | None = None,
+    season: int | None = None,
+    week: int | None = None,
+) -> tuple[float, str]:
+    """Prefer explicit attempts → ML regressor → heuristic."""
+    if attempts is not None:
+        return float(min(3.0, max(1.0, attempts))), "explicit"
+    try:
+        from app.services.etl.nfl.kicker_attempts import estimate_attempts
+
+        return estimate_attempts(team_data, weather_data, season=season, week=week)
+    except Exception:
+        return estimate_attempts_heuristic(team_data, weather_data), "heuristic"
+
+
 def expected_fg_made(
     *,
     attempts: float | None = None,
@@ -157,16 +176,20 @@ def expected_fg_made(
     weather_data: Mapping[str, Any] | None = None,
     kicker_make_rate: float | None = None,
     classifier_make_prob: float | None = None,
+    season: int | None = None,
+    week: int | None = None,
 ) -> tuple[float, dict[str, Any]]:
     """
     E[FG] = attempts × make%.
 
     Make% blends distance mixture with optional binary classifier probability.
     """
-    att = (
-        float(attempts)
-        if attempts is not None
-        else estimate_attempts_heuristic(team_data, weather_data)
+    att, att_source = resolve_attempts(
+        team_data,
+        weather_data,
+        attempts=attempts,
+        season=season,
+        week=week,
     )
     att = max(1.0, min(3.0, att))
 
@@ -193,6 +216,7 @@ def expected_fg_made(
     projected = round(att * make, 2)
     meta = {
         "projected_attempts": round(att, 2),
+        "attempts_source": att_source,
         "make_probability": round(make, 3),
         "mixture_make_probability": round(mixture, 3),
         "volume_model": "attempts_x_distance_mixture",

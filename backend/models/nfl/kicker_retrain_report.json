@@ -1,0 +1,114 @@
+{
+  "trained_at": "2026-08-11T11:21:24.305135",
+  "csv": "/workspace/backend/data/nfl/field_goal_data.csv",
+  "make_miss": {
+    "status": "ok",
+    "rows": 6487,
+    "n_train": 5189,
+    "n_test": 1298,
+    "metrics": {
+      "logistic": {
+        "cv_mean": 0.8475625368123181,
+        "cv_std": 0.0019342914820623827,
+        "cv_scores": [
+          0.8458574181117534,
+          0.8448940269749519,
+          0.8497109826589595,
+          0.8477842003853564,
+          0.849566055930569
+        ],
+        "holdout_accuracy": 0.847457627118644,
+        "holdout_auc": 0.7730555555555555
+      },
+      "random_forest": {
+        "cv_mean": 0.8446706911704318,
+        "cv_std": 0.0029230471772974023,
+        "cv_scores": [
+          0.8420038535645472,
+          0.846820809248555,
+          0.848747591522158,
+          0.8448940269749519,
+          0.840887174541948
+        ],
+        "holdout_accuracy": 0.8451463790446841,
+        "holdout_auc": 0.7594489981785063
+      },
+      "gradient_boosting": {
+        "cv_mean": 0.8429358439101975,
+        "cv_std": 0.00365522553611856,
+        "cv_scores": [
+          0.8420038535645472,
+          0.8420038535645472,
+          0.846820809248555,
+          0.846820809248555,
+          0.837029893924783
+        ],
+        "holdout_accuracy": 0.8405238828967643,
+        "holdout_auc": 0.7478642987249546
+      },
+      "xgboost": {
+        "cv_mean": 0.8408161976057361,
+        "cv_std": 0.003403247066228312,
+        "cv_scores": [
+          0.838150289017341,
+          0.8420038535645472,
+          0.8458574181117534,
+          0.8420038535645472,
+          0.8360655737704918
+        ],
+        "holdout_accuracy": 0.8466872110939908,
+        "holdout_auc": 0.754940801457195
+      }
+    },
+    "artifacts": {
+      "logistic": "/workspace/backend/models/nfl/logistic_model.pkl",
+      "random_forest": "/workspace/backend/models/nfl/random_forest_model.pkl",
+      "gradient_boosting": "/workspace/backend/models/nfl/gradient_boosting_model.pkl",
+      "xgboost": "/workspace/backend/models/nfl/xgboost_model.pkl",
+      "scaler": "/workspace/backend/models/nfl/main_scaler.pkl",
+      "metrics": "/workspace/backend/models/nfl/model_metrics.json"
+    }
+  },
+  "attempts": {
+    "status": "ok",
+    "metadata": {
+      "model_key": "kicker_attempts",
+      "target": "fg_attempts",
+      "trained_at": "2026-08-11T11:21:39.775865",
+      "train_date": "20260811",
+      "model_version": "gbm-kicker-attempts-20260811",
+      "n_train": 2363,
+      "n_test": 591,
+      "features": [
+        "implied_team_total",
+        "spread",
+        "rz_efficiency",
+        "third_down_rate",
+        "plays_per_game",
+        "is_dome",
+        "wind_speed",
+        "temperature",
+        "week",
+        "season"
+      ],
+      "hyperparams": {
+        "n_estimators": 100,
+        "max_depth": 3,
+        "learning_rate": 0.08,
+        "subsample": 0.9,
+        "random_state": 42,
+        "min_samples_leaf": 10
+      },
+      "train_mae": 0.8735135620181887,
+      "test_mae": 0.9159407046836542,
+      "holdout_mae": 0.9159407046836542,
+      "train_rmse": 1.0735329060561356,
+      "test_rmse": 1.1515852563584976,
+      "training_source": "field_goal_data.csv"
+    },
+    "artifacts": {
+      "model": "/workspace/backend/models/nfl/kicker_attempts.pkl",
+      "metadata": "/workspace/backend/models/nfl/kicker_attempts_metadata.json"
+    }
+  }
+}

@@ -76,9 +76,12 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
     y_test = target.iloc[test_idx].to_numpy()
     tier_test = meta.iloc[test_idx]["tier_yards"].to_numpy()
 
-    model, metadata = train_qb_yards_model((X_train, y_train))
+    model, metadata = train_qb_yards_model((X_train, y_train), residual_target=True)
     ml_pred = np.array(
-        [predict_yards_ml(model, X_test.iloc[i].to_dict()) for i in range(len(X_test))]
+        [
+            predict_yards_ml(model, X_test.iloc[i].to_dict(), residual_target=True)
+            for i in range(len(X_test))
+        ]
     )
     tier_mae = _mae(y_test, tier_test)
     ml_mae = _mae(y_test, ml_pred)
@@ -93,6 +96,7 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
         "rows_train": int(len(X_train)),
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
+        "model_family": "residual_gbm",
         "tier_mae": round(tier_mae, 3),
         "ml_mae": round(ml_mae, 3),
         "mae_lift": round(lift, 4),
@@ -103,7 +107,7 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
         "recommendation": (
             "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
             if promote
-            else "Keep tier-v3 production; ML stays shadow-only"
+            else "Keep tier-v3 production; residual ML stays shadow-only"
         ),
     }
 

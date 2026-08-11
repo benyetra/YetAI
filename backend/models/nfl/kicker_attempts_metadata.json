@@ -1,0 +1,35 @@
+{
+  "model_key": "kicker_attempts",
+  "target": "fg_attempts",
+  "trained_at": "2026-08-11T11:21:39.775865",
+  "train_date": "20260811",
+  "model_version": "gbm-kicker-attempts-20260811",
+  "n_train": 2363,
+  "n_test": 591,
+  "features": [
+    "implied_team_total",
+    "spread",
+    "rz_efficiency",
+    "third_down_rate",
+    "plays_per_game",
+    "is_dome",
+    "wind_speed",
+    "temperature",
+    "week",
+    "season"
+  ],
+  "hyperparams": {
+    "n_estimators": 100,
+    "max_depth": 3,
+    "learning_rate": 0.08,
+    "subsample": 0.9,
+    "random_state": 42,
+    "min_samples_leaf": 10
+  },
+  "train_mae": 0.8735135620181887,
+  "test_mae": 0.9159407046836542,
+  "holdout_mae": 0.9159407046836542,
+  "train_rmse": 1.0735329060561356,
+  "test_rmse": 1.1515852563584976,
+  "training_source": "field_goal_data.csv"
+}

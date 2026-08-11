@@ -143,6 +143,28 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
         "schedule": crontab(hour=4, minute=30),
     },
+    # Gameday late availability — refresh QB/kicker boards as Q→Out locks in.
+    # Sun 10:00 / 12:30 / 15:30 ET covers early + afternoon windows; Mon 18:00 for MNF.
+    "nfl-gameday-availability-sun-am": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=10, minute=0, day_of_week="0"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-sun-mid": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=12, minute=30, day_of_week="0"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-sun-pm": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=15, minute=30, day_of_week="0"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-mon": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=18, minute=0, day_of_week="1"),
+        "options": {"expires": 7200},
+    },
     # Midweek anytime-TD refresh (Tue–Fri 11:00 ET) — Odds + board without full NFL run.
     "nfl-anytime-td-pipeline-midweek": {
         "task": "app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline",

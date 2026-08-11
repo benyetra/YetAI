@@ -82,7 +82,14 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
 def test_enrich_promotes_ml_when_enabled(monkeypatch):
     monkeypatch.setenv("NFL_QB_ML_ENABLED", "1")
     with patch.object(qbm, "predict_yards_ml_loaded", return_value=260.0):
-        with patch.object(qbm, "_METADATA", {"model_version": "gbm-qb-yards-20260525"}):
+        with patch.object(
+            qbm,
+            "_METADATA",
+            {
+                "model_version": "gbm-qb-yards-20260525",
+                "target": "actual_passing_yards",
+            },
+        ):
             with patch.object(qbm, "_MODEL", object()):
                 out = enrich_qb_prediction_for_write(_tier_pred(), season=2024, week=3)
     assert out["predicted_passing_yards"] == 260.0
@@ -112,6 +119,12 @@ def test_train_qb_yards_model_smoke():
         "wind_speed": np.full(n, 8.0),
         "temperature": np.full(n, 60.0),
         "dome": np.zeros(n),
+        "total_line": np.full(n, 46.0),
+        "spread_line": np.zeros(n),
+        "pass_yds_line": np.linspace(200, 280, n),
+        "opp_cover_base": np.full(n, 3.0),
+        "opp_man_zone": np.zeros(n),
+        "opp_scheme_pressure": np.full(n, 0.5),
     }
     df = pd.DataFrame(base)
     assert set(FEATURE_NAMES).issubset(set(df.columns))
@@ -121,8 +134,27 @@ def test_train_qb_yards_model_smoke():
         + 0.1 * df["opp_pass_yds_allowed"]
         + rng.normal(0, 12, n)
     )
-    model, meta = train_qb_yards_model((df, y))
-    pred = predict_yards_ml(model, df.iloc[0].to_dict())
+    model, meta = train_qb_yards_model((df, y), residual_target=True)
+    pred = predict_yards_ml(model, df.iloc[0].to_dict(), residual_target=True)
     assert 150 <= pred <= 400
     assert meta["holdout_mae"] >= 0
+    assert meta["residual_target"] is True
+    assert "residual" in meta["target"]
     assert set(FEATURE_NAMES).issubset(set(meta["features"]))
+
+
+def test_enrich_promotes_residual_method(monkeypatch):
+    monkeypatch.setenv("NFL_QB_ML_ENABLED", "1")
+    with patch.object(qbm, "predict_yards_ml_loaded", return_value=260.0):
+        with patch.object(
+            qbm,
+            "_METADATA",
+            {
+                "model_version": "gbm-qb-residual-20260811",
+                "target": "residual_actual_minus_tier",
+            },
+        ):
+            with patch.object(qbm, "_MODEL", object()):
+                out = enrich_qb_prediction_for_write(_tier_pred(), season=2024, week=3)
+    assert out["predicted_passing_yards"] == 260.0
+    assert out["prediction_method"] == "gbm_qb_residual"
