@@ -77,8 +77,28 @@ PYTHONPATH=. python scripts/nfl_tune_kicker_blend.py --write
 ```
 
 **Do not enable `NFL_QB_ML_ENABLED=1` unless holdout lift ≥10%.** Real pass-yards
-prop lines come from `pred_qb_predictions.ou_line` (2025 coverage only unless
-Odds API historical props are backfilled).
+prop lines come from `pred_qb_predictions.ou_line` and the historical Odds API
+index (`models/nfl/pass_yds_lines.json`).
+
+### Historical pass-yards props (Odds API)
+
+Paid plan. Measured costs: **1 credit / gameday** (events slate) +
+**10 credits / game** (`player_pass_yds`, `regions=us`). Responses cache in
+`scripts/nfl_odds_cache.db` (gitignored `*.db`); derived lines land in
+`models/nfl/pass_yds_lines.json`.
+
+```bash
+export ODDS_API_KEY=...
+cd backend
+# Cost plan only
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2023,2024 --dry-run
+# Fetch under budget (~5.5k credits for 2023–24 REG)
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2023,2024 --max-credits 6000
+# Optional: fill team_abbr from pred_qb_actuals
+export DATABASE_URL=...
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --assign-teams --seasons 2023,2024,2025
+PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
+```
 
 Prod replay (`nfl_backtest.py --season 2025`): QB MAE **68.4** (n=407),
 kicker MAE **0.98** (n=479), QB O/U hit **46.4%** (n=386).

@@ -115,6 +115,8 @@ def build(
 
 def _prediction_context_for_actual(session, row) -> dict[str, Any]:
     """Pull implied total / home / weather / prop line from matching QBPredictions."""
+    ctx: dict[str, Any] = {}
+    pred = None
     try:
         from app.models.predictions_models import QBPredictions
 
@@ -128,7 +130,6 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             .first()
         )
         if pred is None:
-            # Name fallback
             pred = (
                 session.query(QBPredictions)
                 .filter(
@@ -139,43 +140,60 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
                 .first()
             )
     except Exception:
-        return {}
-    if pred is None:
-        return {}
-    ctx: dict[str, Any] = {}
-    if pred.implied_team_total is not None:
-        ctx["implied_team_total"] = float(pred.implied_team_total)
-    if pred.weather_temperature is not None:
-        ctx["temperature"] = float(pred.weather_temperature)
-    if pred.weather_wind_speed is not None:
-        ctx["wind_speed"] = float(pred.weather_wind_speed)
-    if pred.dome_game is not None:
-        ctx["dome"] = bool(pred.dome_game)
-    if getattr(pred, "spread", None) is not None:
-        ctx["spread_line"] = float(pred.spread)
-    if getattr(pred, "total_points", None) is not None:
-        ctx["total_line"] = float(pred.total_points)
-    # Real pass-yards prop line when Odds attached it
-    if pred.ou_line is not None:
-        ctx["pass_yds_line"] = float(pred.ou_line)
-    fi = pred.feature_importance if isinstance(pred.feature_importance, dict) else {}
-    nested = fi.get("features") if isinstance(fi.get("features"), dict) else {}
-    for key in (
-        "opp_pass_yds_allowed",
-        "is_home",
-        "rest_days",
-        "rolling_yards_l3",
-        "rolling_yards_l5",
-        "season_avg_yards",
-        "opp_cover_base",
-        "opp_man_zone",
-        "opp_scheme_pressure",
-        "total_line",
-        "spread_line",
-        "pass_yds_line",
-    ):
-        if nested.get(key) is not None:
-            ctx[key] = nested[key]
-        elif fi.get(key) is not None:
-            ctx[key] = fi[key]
+        pred = None
+
+    if pred is not None:
+        if pred.implied_team_total is not None:
+            ctx["implied_team_total"] = float(pred.implied_team_total)
+        if pred.weather_temperature is not None:
+            ctx["temperature"] = float(pred.weather_temperature)
+        if pred.weather_wind_speed is not None:
+            ctx["wind_speed"] = float(pred.weather_wind_speed)
+        if pred.dome_game is not None:
+            ctx["dome"] = bool(pred.dome_game)
+        if getattr(pred, "spread", None) is not None:
+            ctx["spread_line"] = float(pred.spread)
+        if getattr(pred, "total_points", None) is not None:
+            ctx["total_line"] = float(pred.total_points)
+        if pred.ou_line is not None:
+            ctx["pass_yds_line"] = float(pred.ou_line)
+        fi = (
+            pred.feature_importance if isinstance(pred.feature_importance, dict) else {}
+        )
+        nested = fi.get("features") if isinstance(fi.get("features"), dict) else {}
+        for key in (
+            "opp_pass_yds_allowed",
+            "is_home",
+            "rest_days",
+            "rolling_yards_l3",
+            "rolling_yards_l5",
+            "season_avg_yards",
+            "opp_cover_base",
+            "opp_man_zone",
+            "opp_scheme_pressure",
+            "total_line",
+            "spread_line",
+            "pass_yds_line",
+        ):
+            if nested.get(key) is not None:
+                ctx[key] = nested[key]
+            elif fi.get(key) is not None:
+                ctx[key] = fi[key]
+
+    if ctx.get("pass_yds_line") is None:
+        try:
+            from app.services.etl.nfl.historical_pass_yds_odds import (
+                lookup_pass_yds_line,
+            )
+
+            hist = lookup_pass_yds_line(
+                season=int(row.season),
+                week=int(row.week),
+                player_name=str(row.qb_player_name or ""),
+                team_abbr=str(getattr(row, "team_name", "") or ""),
+            )
+            if hist is not None:
+                ctx["pass_yds_line"] = float(hist)
+        except Exception:
+            pass
     return ctx
