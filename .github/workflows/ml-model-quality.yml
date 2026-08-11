@@ -106,4 +106,6 @@ jobs:
             tests/test_nfl_common.py \
             tests/test_nfl_backtest_regression.py \
             tests/test_nfl_qb_passing_yards_ml.py \
+            tests/test_nfl_qb_features.py \
+            tests/test_nfl_qb_tier_2026.py \
             tests/test_nfl_kicker_blend_tune.py -q

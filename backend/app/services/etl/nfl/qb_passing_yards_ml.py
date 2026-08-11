@@ -15,20 +15,18 @@ from typing import Any, Mapping
 import numpy as np
 import pandas as pd
 
+from app.services.etl.nfl.qb_features import (
+    FEATURE_NAMES,
+    build_qb_features,
+    feature_names as qb_feature_names,
+)
+
 logger = logging.getLogger(__name__)
 
 S3_BUCKET = "yetibets"
 S3_PREFIX = "nfl/ml_models"
 MODEL_KEY = "qb_passing_yards"
-TIER_VERSION = "tier-v1"
-
-_FEATURE_NAMES: tuple[str, ...] = (
-    "tier_yards",
-    "is_backup",
-    "week",
-    "confidence",
-    "season",
-)
+TIER_VERSION = "tier-v2"
 
 _MODEL: object | None = None
 _METADATA: dict[str, Any] | None = None
@@ -39,7 +37,7 @@ _TRUTHY = frozenset({"1", "true", "yes"})
 
 
 def feature_names() -> list[str]:
-    return list(_FEATURE_NAMES)
+    return qb_feature_names()
 
 
 def qb_ml_enabled() -> bool:
@@ -61,15 +59,18 @@ def build_features_from_tier_prediction(
     season: int,
     week: int,
     is_backup: bool = False,
+    context: Mapping[str, Any] | None = None,
 ) -> dict[str, float]:
+    """Build GBM features from tier prediction + optional matchup/form context."""
     tier_yards = _float_or(prediction.get("predicted_passing_yards"), 210.0)
-    return {
-        "tier_yards": tier_yards,
-        "is_backup": 1.0 if is_backup else 0.0,
-        "week": float(week),
-        "confidence": _float_or(prediction.get("confidence"), 0.65),
-        "season": float(season),
-    }
+    return build_qb_features(
+        tier_yards=tier_yards,
+        season=season,
+        week=week,
+        is_backup=is_backup,
+        confidence=_float_or(prediction.get("confidence"), 0.65),
+        context=context,
+    )
 
 
 def predict_yards_tier(features: Mapping[str, float]) -> float:
@@ -118,10 +119,30 @@ def train_qb_yards_model(
     hp = {**default_hp, **(hyperparams or {})}
 
     order = feature_names()
+    # Older artifacts / partial frames may omit newer columns — fill priors via
+    # build_qb_features defaults rather than raw zeros.
     for col in order:
         if col not in features_df.columns:
-            features_df[col] = 0.0
-    X = features_df[order]
+            if col in ("is_home",):
+                features_df[col] = 0.5
+            elif col in ("rest_days",):
+                features_df[col] = 7.0
+            elif col in (
+                "opp_pass_yds_allowed",
+                "rolling_yards_l3",
+                "rolling_yards_l5",
+                "season_avg_yards",
+            ):
+                features_df[col] = features_df.get("tier_yards", 220.0)
+            elif col == "implied_team_total":
+                features_df[col] = 22.5
+            elif col == "temperature":
+                features_df[col] = 65.0
+            elif col == "wind_speed":
+                features_df[col] = 5.0
+            else:
+                features_df[col] = 0.0
+    X = features_df[list(order)]
     X_train, X_test, y_train, y_test = train_test_split(
         X, target, test_size=0.2, random_state=42
     )
@@ -251,12 +272,20 @@ def enrich_qb_prediction_for_write(
     season: int,
     week: int,
     is_backup: bool = False,
+    context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
     Shadow enrich: production yards stay tier table unless ``NFL_QB_ML_ENABLED=1``.
+
+    ``context`` carries matchup/form features (rolling yards, opp pass D, home,
+    rest, implied total, weather). See ``qb_features.build_qb_features``.
     """
     feats = build_features_from_tier_prediction(
-        prediction, season=season, week=week, is_backup=is_backup
+        prediction,
+        season=season,
+        week=week,
+        is_backup=is_backup,
+        context=context,
     )
     tier_yards = predict_yards_tier(feats)
     prediction = dict(prediction)
@@ -268,6 +297,7 @@ def enrich_qb_prediction_for_write(
     feature_importance: dict[str, Any] = {
         "tier_yards": tier_yards,
         "prediction_method": prediction.get("prediction_method"),
+        "features": {k: feats.get(k) for k in FEATURE_NAMES},
     }
     if ml_yards is not None and not qb_ml_enabled():
         feature_importance["ml_shadow_yards"] = ml_yards
@@ -287,4 +317,5 @@ def enrich_qb_prediction_for_write(
         "feature_importance": feature_importance,
         "tier_yards": tier_yards,
         "ml_shadow_yards": ml_yards,
+        "feature_context": feats,
     }

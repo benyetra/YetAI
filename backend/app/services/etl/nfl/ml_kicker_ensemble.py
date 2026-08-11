@@ -136,6 +136,39 @@ def get_ml_kicker_ensemble(*, reload: bool = False) -> MLKickerEnsemble:
     return _ensemble
 
 
+def estimate_ml_field_goal_volume(
+    make_probability: float,
+    team_data: dict | None = None,
+    weather_data: dict | None = None,
+    *,
+    predicted_attempts: float | None = None,
+) -> tuple[float, float]:
+    """
+    Convert FG make probability into expected FG made via attempt volume.
+
+    ``E[FG] = attempts × make%`` instead of the legacy linear map ``1.2 + p×2.3``.
+    Returns ``(projected_made, attempts_used)``.
+    """
+    prob = max(0.0, min(1.0, float(make_probability)))
+    if predicted_attempts is not None:
+        attempts = float(predicted_attempts)
+    else:
+        try:
+            from app.services.etl.nfl.statistical_kicker_prediction import (
+                get_statistical_predictor,
+            )
+
+            attempts = float(
+                get_statistical_predictor().estimate_field_goal_attempts(
+                    team_data or {}, weather_data
+                )
+            )
+        except Exception:
+            attempts = 1.85
+    attempts = max(1.0, min(3.0, attempts))
+    return round(attempts * prob, 2), round(attempts, 2)
+
+
 def blend_field_goal_projection(
     statistical_fgs: float,
     kicker_data: dict,
@@ -145,7 +178,7 @@ def blend_field_goal_projection(
     weight_ml: float | None = None,
 ) -> tuple[float, dict]:
     """
-    Blend statistical FG count with ML make probability at typical attempt distance.
+    Blend statistical FG count with ML make probability × projected attempts.
 
     Returns (projected_fgs, metadata).
     """
@@ -167,14 +200,36 @@ def blend_field_goal_projection(
     if prob is None:
         return statistical_fgs, meta
 
-    ml_fgs = 1.2 + prob * 2.3
+    attempt_hint = None
+    for key in ("predicted_attempts", "fg_attempts", "projected_attempts"):
+        if ctx.get(key) is not None:
+            try:
+                attempt_hint = float(ctx[key])
+                break
+            except (TypeError, ValueError):
+                pass
+        if team_data.get(key) is not None:
+            try:
+                attempt_hint = float(team_data[key])
+                break
+            except (TypeError, ValueError):
+                pass
+
+    ml_fgs, attempts_used = estimate_ml_field_goal_volume(
+        prob,
+        team_data,
+        weather_data,
+        predicted_attempts=attempt_hint,
+    )
     blended = (1.0 - weight_ml) * statistical_fgs + weight_ml * ml_fgs
     meta = {
         "ml_used": True,
         "model_source": ensemble.model_source,
         "ml_success_probability": round(prob, 3),
+        "ml_projected_attempts": attempts_used,
         "ml_projected_fgs": round(ml_fgs, 2),
         "statistical_fgs": round(statistical_fgs, 2),
         "blend_weight": weight_ml,
+        "volume_model": "attempts_x_make_prob",
     }
     return round(blended, 2), meta

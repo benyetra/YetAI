@@ -19,6 +19,7 @@ from app.services.etl.nfl.nfl_common import (
     get_nfl_season,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
+from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
 
 warnings.filterwarnings("ignore")
 
@@ -172,6 +173,153 @@ def get_team_opponent(team_abbr: str, season: int, week: int) -> str:
         return "TBD"
 
 
+def team_is_home(team_abbr: str, season: int, week: int) -> float:
+    """1.0 home / 0.0 away / 0.5 unknown."""
+    try:
+        game = _team_game_row(team_abbr, season, week)
+        if game is None:
+            return 0.5
+        if game["home_team"] == team_abbr:
+            return 1.0
+        if game["away_team"] == team_abbr:
+            return 0.0
+    except Exception:
+        pass
+    return 0.5
+
+
+def _load_weekly_qb_history(season: int) -> list[dict]:
+    """nflverse weekly QB rows for rolling form / opp allowed (best-effort)."""
+    try:
+        weekly = nfl.import_weekly_data([season])
+    except Exception as e:
+        print(f"⚠️ weekly data unavailable for QB features: {e}")
+        return []
+    if weekly is None or getattr(weekly, "empty", True):
+        return []
+    records: list[dict] = []
+    for _, row in weekly.iterrows():
+        pos = str(row.get("position") or "").upper()
+        if pos and pos != "QB":
+            continue
+        records.append(
+            {
+                "qb_player_id": str(row.get("player_id") or ""),
+                "qb_player_name": str(
+                    row.get("player_display_name") or row.get("player_name") or ""
+                ),
+                "season": int(row.get("season") or season),
+                "week": int(row.get("week") or 0),
+                "actual_passing_yards": float(row.get("passing_yards") or 0),
+                "recent_team": str(row.get("recent_team") or row.get("team") or ""),
+                "opponent_team": str(row.get("opponent_team") or ""),
+                "position": "QB",
+                "passing_yards": float(row.get("passing_yards") or 0),
+            }
+        )
+    return records
+
+
+def _implied_team_total_for_team(
+    team_abbr: str, season: int, week: int
+) -> float | None:
+    """Best-effort implied team total from pred_nfl_game_lines."""
+    try:
+        from app.models.predictions_models import NFLGameLines
+        from app.services.etl.nfl.anytime_td_features import game_env_from_line
+        from app.services.etl.nfl.team_names import (
+            _CANONICAL_BY_ABBR,
+            normalize_team_name,
+        )
+
+        team_name = _CANONICAL_BY_ABBR.get(team_abbr.upper()) or get_team_full_name(
+            team_abbr
+        )
+        kickoff = get_game_kickoff(team_abbr, season, week)
+        lines = db_session.query(NFLGameLines).all()
+        if not lines:
+            return None
+        target = normalize_team_name(team_name)
+        kickoff_date = kickoff.date() if kickoff is not None else None
+        for line in lines:
+            home = normalize_team_name(getattr(line, "home_team_name", "") or "")
+            away = normalize_team_name(getattr(line, "away_team_name", "") or "")
+            if target not in {home, away}:
+                continue
+            if kickoff_date is not None and getattr(line, "game_date", None):
+                if line.game_date != kickoff_date:
+                    continue
+            env = game_env_from_line(line, home=(target == home))
+            if env.get("implied_team_total") is not None:
+                return float(env["implied_team_total"])
+    except Exception as e:
+        print(f"⚠️ implied total lookup failed for {team_abbr}: {e}")
+    return None
+
+
+def build_qb_prediction_context(
+    *,
+    qb_name: str,
+    player_id: str,
+    team_abbr: str,
+    opponent_abbr: str,
+    season: int,
+    week: int,
+    weekly_history: list[dict] | None = None,
+) -> dict:
+    """Assemble matchup/form context for GBM features."""
+    from app.services.etl.nfl.qb_features import (
+        estimate_opp_pass_allowed_from_weekly,
+        form_features_from_prior_yards,
+        prior_yards_for_player,
+    )
+
+    history = weekly_history if weekly_history is not None else []
+    prior = prior_yards_for_player(
+        history,
+        player_key=player_id or qb_name,
+        season=season,
+        week=week,
+    )
+    if not prior and qb_name:
+        prior = prior_yards_for_player(
+            history,
+            player_key=qb_name,
+            season=season,
+            week=week,
+        )
+    # Tier yards unknown here — form helpers use prior or caller fills later
+    form = form_features_from_prior_yards(prior, tier_yards=210.0)
+    opp_allowed = estimate_opp_pass_allowed_from_weekly(
+        history,
+        opponent_abbr=opponent_abbr or "",
+        season=season,
+        week=week,
+    )
+    implied = _implied_team_total_for_team(team_abbr, season, week)
+    ctx: dict = {
+        **form,
+        "is_home": team_is_home(team_abbr, season, week),
+        "team_abbr": team_abbr,
+    }
+    if opp_allowed is not None:
+        ctx["opp_pass_yds_allowed"] = opp_allowed
+    if implied is not None:
+        ctx["implied_team_total"] = implied
+    # Rest: bye weeks ≈ 14 days when no game prior week
+    if week > 1 and history:
+        played_prior = any(
+            int(r.get("week") or 0) == week - 1
+            and (
+                str(r.get("qb_player_id") or "") == str(player_id)
+                or str(r.get("qb_player_name") or "").lower() == qb_name.lower()
+            )
+            for r in history
+        )
+        ctx["rest_days"] = 7.0 if played_prior else 14.0
+    return ctx
+
+
 def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
     """Get current starting QBs using depth charts and injury data"""
     print(f"🔍 Getting starting QBs for {season} Week {week}")
@@ -304,105 +452,7 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
     return starting_qbs
 
 
-def predict_qb_passing_yards(
-    qb_name: str, season: int, week: int, is_backup: bool = False
-) -> Dict:
-    """Predict QB passing yards using realistic tier system with variance"""
-    qb_tiers = {
-        # Tier 1: Elite QBs (270-300 yards base)
-        "josh allen": 285,
-        "patrick mahomes": 290,
-        "lamar jackson": 275,
-        "joe burrow": 280,
-        "justin herbert": 285,
-        "jalen hurts": 270,
-        # Tier 2: Above Average QBs (240-270 yards base)
-        "dak prescott": 265,
-        "russell wilson": 250,
-        "aaron rodgers": 255,
-        "tua tagovailoa": 245,
-        "brock purdy": 250,
-        "geno smith": 240,
-        "sam darnold": 245,
-        "jordan love": 255,
-        "trevor lawrence": 260,
-        "c.j. stroud": 255,
-        "kyler murray": 250,
-        # Tier 3: Average QBs (210-240 yards base)
-        "jared goff": 230,
-        "daniel jones": 215,
-        "baker mayfield": 220,
-        "matthew stafford": 235,
-        "kirk cousins": 225,
-        "derek carr": 220,
-        "jameis winston": 225,
-        "gardner minshew": 200,
-        # Tier 4: Developing/Rookie QBs (180-210 yards base)
-        "caleb williams": 200,
-        "jayden daniels": 195,
-        "jacoby brissett": 185,
-        "bo nix": 180,
-        "bryce young": 190,
-        "anthony richardson": 195,
-        "will levis": 185,
-        "drake maye": 190,
-        # Backups and other QBs (170-200 yards base)
-        "tyler huntley": 185,
-        "spencer rattler": 175,
-        "brandon allen": 180,
-        "cooper rush": 185,
-        "joe flacco": 190,
-        "mac jones": 185,
-        "aidan o'connell": 180,
-        "drew lock": 185,
-        "mason rudolph": 185,
-        "michael penix": 185,
-    }
-
-    qb_key = qb_name.lower().strip()
-    base_yards = qb_tiers.get(qb_key, 210)
-
-    # Reduce prediction for backup QBs
-    if is_backup:
-        base_yards = max(150, base_yards - 25)
-
-    # Add realistic variance
-    import hashlib
-
-    seed = int(hashlib.md5(f"{qb_name}_{season}_{week}".encode()).hexdigest()[:8], 16)
-
-    # Variance range depends on tier
-    if base_yards >= 270:
-        variance_range = 30
-        base_confidence = 0.82
-    elif base_yards >= 240:
-        variance_range = 35
-        base_confidence = 0.75
-    elif base_yards >= 210:
-        variance_range = 40
-        base_confidence = 0.68
-    else:
-        variance_range = 45
-        base_confidence = 0.60
-
-    # Reduce confidence for backup QBs
-    if is_backup:
-        base_confidence = max(0.45, base_confidence - 0.15)
-
-    variance = (seed % (variance_range * 2 + 1)) - variance_range
-    predicted_yards = max(150, min(350, base_yards + variance))
-
-    # Confidence varies with prediction quality
-    confidence_variance = ((seed % 21) - 10) / 200
-    final_confidence = max(0.45, min(0.90, base_confidence + confidence_variance))
-
-    method = "dynamic_backup" if is_backup else "dynamic_starter"
-
-    return {
-        "predicted_passing_yards": round(predicted_yards, 1),
-        "confidence": round(final_confidence, 3),
-        "prediction_method": method,
-    }
+# predict_qb_passing_yards imported from qb_tiers (re-exported for callers)
 
 
 def _run_qb_dynamic_core():
@@ -422,6 +472,7 @@ def _run_qb_dynamic_core():
         print("❌ No starting QBs found")
         return
 
+    weekly_history = _load_weekly_qb_history(season)
     created_predictions = 0
     updated_predictions = 0
 
@@ -439,11 +490,34 @@ def _run_qb_dynamic_core():
             game_date = _resolve_game_date(team_abbr, season, week)
 
             tier_prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            context = build_qb_prediction_context(
+                qb_name=qb_name,
+                player_id=str(player_id),
+                team_abbr=team_abbr,
+                opponent_abbr=opponent_abbr,
+                season=season,
+                week=week,
+                weekly_history=weekly_history,
+            )
+            # If no prior games, anchor form features to this week's tier yards
+            tier_yards = float(tier_prediction["predicted_passing_yards"])
+            if not any(
+                (
+                    str(r.get("qb_player_id") or "") == str(player_id)
+                    or str(r.get("qb_player_name") or "").lower() == qb_name.lower()
+                )
+                and int(r.get("week") or 0) < week
+                for r in weekly_history
+            ):
+                context["rolling_yards_l3"] = tier_yards
+                context["rolling_yards_l5"] = tier_yards
+                context["season_avg_yards"] = tier_yards
             prediction = enrich_qb_prediction_for_write(
                 tier_prediction,
                 season=season,
                 week=week,
                 is_backup=is_backup,
+                context=context,
             )
 
             # Create/update prediction
@@ -451,6 +525,15 @@ def _run_qb_dynamic_core():
                 db_session.query(QBPredictions)
                 .filter_by(qb_player_id=player_id, season=season, week=week)
                 .first()
+            )
+
+            write_kwargs = dict(
+                predicted_passing_yards=prediction["predicted_passing_yards"],
+                model_confidence=prediction["model_confidence"],
+                prediction_method=prediction["prediction_method"],
+                model_version=prediction.get("model_version"),
+                feature_importance=prediction.get("feature_importance"),
+                implied_team_total=context.get("implied_team_total"),
             )
 
             if not existing_prediction:
@@ -464,12 +547,8 @@ def _run_qb_dynamic_core():
                     venue_name="TBD",
                     season=season,
                     week=week,
-                    predicted_passing_yards=prediction["predicted_passing_yards"],
-                    model_confidence=prediction["model_confidence"],
-                    prediction_method=prediction["prediction_method"],
-                    model_version=prediction.get("model_version"),
-                    feature_importance=prediction.get("feature_importance"),
                     prediction_date=datetime.utcnow(),
+                    **write_kwargs,
                 )
                 db_session.add(new_prediction)
                 created_predictions += 1
@@ -479,15 +558,21 @@ def _run_qb_dynamic_core():
                 )
             else:
                 # Update existing prediction
-                existing_prediction.predicted_passing_yards = prediction[
+                existing_prediction.predicted_passing_yards = write_kwargs[
                     "predicted_passing_yards"
                 ]
-                existing_prediction.model_confidence = prediction["model_confidence"]
-                existing_prediction.prediction_method = prediction["prediction_method"]
-                existing_prediction.model_version = prediction.get("model_version")
-                existing_prediction.feature_importance = prediction.get(
+                existing_prediction.model_confidence = write_kwargs["model_confidence"]
+                existing_prediction.prediction_method = write_kwargs[
+                    "prediction_method"
+                ]
+                existing_prediction.model_version = write_kwargs["model_version"]
+                existing_prediction.feature_importance = write_kwargs[
                     "feature_importance"
-                )
+                ]
+                if write_kwargs.get("implied_team_total") is not None:
+                    existing_prediction.implied_team_total = write_kwargs[
+                        "implied_team_total"
+                    ]
                 existing_prediction.opponent_team_name = (
                     opponent_abbr  # Update opponent name
                 )

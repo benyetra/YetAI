@@ -37,7 +37,10 @@ Items previously listed as "not ported" that are now wired into YetAI Celery pip
 | Integration | Blends into `kickers.py` |
 | Env | `NFL_MODELS_S3_PREFIX`, `NFL_KICKER_ML_BLEND_WEIGHT` |
 
-QB **passing-yard** ML (`advanced_qb_predictor.py`) remains deferred.
+QB **passing-yard** ML (`advanced_qb_predictor.py` as a separate module) remains
+deferred as a full port, but the production path now carries v2 matchup/form
+features in `qb_features.py` + GBM shadow (`qb_passing_yards_ml.py`). Promote
+still requires a retrain that beats the tier baseline by ≥10% MAE.
 
 ## NHL odds edges
 

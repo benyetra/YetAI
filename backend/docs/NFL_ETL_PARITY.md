@@ -133,7 +133,9 @@ and `NFL_ANYTIME_TD_UI` / `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` are set — see
 
 ## Still deferred
 
-- `advanced_qb_predictor.py` / QB **yards** ML ensemble (current path: tier table in `qb_dynamic.py`)
+- `advanced_qb_predictor.py` as a standalone warehouse port (current path:
+  `qb_dynamic` tier-v2 + `qb_features` + GBM shadow in `qb_passing_yards_ml.py`)
+  — full promote still gated on ≥10% MAE lift after retrain
 - `enhanced_qb_integration.py`, warehouse FG tables
 - Midweek Beat `nfl-anytime-td-pipeline-midweek` (Tue–Fri 11:00 ET) + admin enqueue card
 
