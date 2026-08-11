@@ -19,7 +19,7 @@ _SPECIAL_TEAMS_DEPTH_POSITIONS = frozenset(
     {"PR", "KR", "KOR", "PS", "H", "LS", "P", "K", "PK"}
 )
 # When depth charts are missing, keep top-N prior-usage players per team/pos.
-_USAGE_STARTER_SLOTS: dict[str, int] = {"QB": 1, "RB": 1, "WR": 3, "TE": 1}
+_USAGE_STARTER_SLOTS: dict[str, int] = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 _MIN_PRIOR_TOUCHES = 3.0  # touches floor for usage-based starter fallback
 # League-average priors (REG season, per-game unless noted)
 _TEAM_RZ_TRIPS_PRIOR = 3.2
@@ -179,6 +179,20 @@ def build_player_feature_row(
         if conversion_raw is not None
         else _CONVERSION_RATE_PRIOR.get(pos, 0.22)
     )
+    # RB goal-line role: blend conversion toward GL TD rate when available.
+    if pos == "RB" and player_stats.get("gl_td_rate") is not None:
+        gl_td = float(player_stats["gl_td_rate"])
+        conversion_rate = _clamp(0.65 * conversion_rate + 0.35 * gl_td, 0.15, 0.65)
+    # Prefer position-specific RZ/GL shares when PBP provided them.
+    if pos == "RB" and player_stats.get("rz_rush_share") is not None:
+        rush = float(player_stats["rz_rush_share"])
+        gl_s = player_stats.get("gl_carry_share")
+        if gl_s is not None:
+            player_rz_share = _clamp(0.70 * rush + 0.30 * float(gl_s), 0.02, 0.55)
+        else:
+            player_rz_share = _clamp(rush, 0.02, 0.55)
+    elif pos in {"WR", "TE"} and player_stats.get("rz_target_share") is not None:
+        player_rz_share = _clamp(float(player_stats["rz_target_share"]), 0.02, 0.55)
 
     tds_allowed_raw = opponent_defense.get("tds_allowed_vs_pos")
     tds_allowed = float(
@@ -801,13 +815,35 @@ def build_weekly_feature_rows(
             "injury_status": player.get("injury_status"),
             "availability_mult": player.get("availability_mult", 1.0),
         }
-        if pbp_player.get("rz_targets") is not None:
+        if pbp_player.get("rz_targets_pg") is not None:
+            player_stats["rz_targets"] = pbp_player["rz_targets_pg"]
+        elif pbp_player.get("rz_targets") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets"]
-        if pbp_player.get("gl_carries") is not None:
+        if pbp_player.get("gl_carries_pg") is not None:
+            player_stats["gl_carries"] = pbp_player["gl_carries_pg"]
+        elif pbp_player.get("gl_carries") is not None:
             player_stats["gl_carries"] = pbp_player["gl_carries"]
-        # Prefer PBP RZ share; fall back to TD-share proxy from weekly usage.
-        if pbp_player.get("player_rz_share") is not None:
-            player_stats["player_rz_share"] = pbp_player["player_rz_share"]
+        for key in (
+            "rz_rush_share",
+            "rz_target_share",
+            "gl_carry_share",
+            "gl_td_rate",
+            "rz_carries",
+        ):
+            if pbp_player.get(key) is not None:
+                player_stats[key] = pbp_player[key]
+        # Prefer position-aware PBP RZ share; fall back to TD-share proxy.
+        from app.services.etl.nfl.anytime_td_pbp import resolve_position_rz_share
+
+        pos_share = resolve_position_rz_share(
+            position=pos,
+            rz_rush_share=pbp_player.get("rz_rush_share"),
+            rz_target_share=pbp_player.get("rz_target_share"),
+            gl_carry_share=pbp_player.get("gl_carry_share"),
+            blended_share=pbp_player.get("player_rz_share"),
+        )
+        if pos_share is not None:
+            player_stats["player_rz_share"] = pos_share
         else:
             rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
             if rz_share is not None:

@@ -24,9 +24,12 @@ def _num(row: dict[str, Any], *keys: str, default: float = 0.0) -> float:
         if key not in row or row[key] is None:
             continue
         try:
-            return float(row[key])
+            val = float(row[key])
         except (TypeError, ValueError):
             continue
+        if val != val:  # NaN
+            continue
+        return val
     return default
 
 
@@ -79,10 +82,7 @@ def aggregate_team_rz_from_pbp(
     *,
     as_of_week: int,
 ) -> dict[str, dict[str, Any]]:
-    """Team RZ trips / pass rate from prior-week PBP (yardline_100 ≤ 20).
-
-    Trips ≈ distinct ``drive`` ids per team-week (fallback: unique play count / 4).
-    """
+    """Team RZ trips / pass rate / early-down pass% from prior-week PBP."""
     rz = [
         p
         for p in filter_red_zone_plays(plays)
@@ -92,8 +92,12 @@ def aggregate_team_rz_from_pbp(
     drives: dict[str, dict[int, set[Any]]] = {}
     pass_n: dict[str, float] = {}
     rush_n: dict[str, float] = {}
+    early_pass: dict[str, float] = {}
+    early_plays: dict[str, float] = {}
     weeks: dict[str, set[int]] = {}
     play_counts: dict[str, dict[int, int]] = {}
+    gl_rush: dict[str, float] = {}
+    gl_plays: dict[str, float] = {}
 
     for play in rz:
         team = _str(play, "posteam").upper()
@@ -111,6 +115,16 @@ def aggregate_team_rz_from_pbp(
             pass_n[team] = pass_n.get(team, 0.0) + 1.0
         if _is_flag(play, "rush"):
             rush_n[team] = rush_n.get(team, 0.0) + 1.0
+        down = int(_num(play, "down", default=0))
+        if down in {1, 2} and (_is_flag(play, "pass") or _is_flag(play, "rush")):
+            early_plays[team] = early_plays.get(team, 0.0) + 1.0
+            if _is_flag(play, "pass"):
+                early_pass[team] = early_pass.get(team, 0.0) + 1.0
+        yl = _num(play, "yardline_100", default=99)
+        if yl <= GL_YARDLINE and (_is_flag(play, "pass") or _is_flag(play, "rush")):
+            gl_plays[team] = gl_plays.get(team, 0.0) + 1.0
+            if _is_flag(play, "rush"):
+                gl_rush[team] = gl_rush.get(team, 0.0) + 1.0
 
     out: dict[str, dict[str, Any]] = {}
     for team, week_set in weeks.items():
@@ -128,13 +142,49 @@ def aggregate_team_rz_from_pbp(
         pass_rate = (
             pass_n.get(team, 0.0) / scored if scored > 0 else _TEAM_RZ_PASS_RATE_PRIOR
         )
+        early_n = early_plays.get(team, 0.0)
+        early_pct = (
+            early_pass.get(team, 0.0) / early_n
+            if early_n > 0
+            else _EARLY_DOWN_PASS_PRIOR
+        )
+        gl_n = gl_plays.get(team, 0.0)
+        gl_rush_rate = gl_rush.get(team, 0.0) / gl_n if gl_n > 0 else 0.55
         out[team] = {
             "team_rz_trips": _clamp(trips_pg, 1.5, 6.0),
             "team_rz_pass_rate": _clamp(pass_rate, 0.35, 0.75),
-            "early_down_pass_pct": _EARLY_DOWN_PASS_PRIOR,
+            "early_down_pass_pct": _clamp(early_pct, 0.30, 0.70),
+            "team_gl_rush_rate": _clamp(gl_rush_rate, 0.25, 0.85),
             "team_tds_per_game": None,  # filled by weekly overlay when available
         }
     return out
+
+
+def resolve_position_rz_share(
+    *,
+    position: str | None,
+    rz_rush_share: float | None,
+    rz_target_share: float | None,
+    gl_carry_share: float | None,
+    blended_share: float | None,
+) -> float | None:
+    """Pick RZ share for λ: RBs use rush+GL; WR/TE use targets; else blended."""
+    pos = str(position or "").strip().upper()
+    if pos == "RB":
+        rush = rz_rush_share if rz_rush_share is not None else blended_share
+        if rush is None and gl_carry_share is None:
+            return None
+        if rush is None:
+            return _clamp(float(gl_carry_share), 0.02, 0.55)  # type: ignore[arg-type]
+        if gl_carry_share is None:
+            return _clamp(float(rush), 0.02, 0.55)
+        return _clamp(0.70 * float(rush) + 0.30 * float(gl_carry_share), 0.02, 0.55)
+    if pos in {"WR", "TE"}:
+        share = rz_target_share if rz_target_share is not None else blended_share
+        return _clamp(float(share), 0.02, 0.55) if share is not None else None
+    if blended_share is not None:
+        return _clamp(float(blended_share), 0.02, 0.55)
+    return None
 
 
 def aggregate_player_rz_from_pbp(
@@ -142,7 +192,11 @@ def aggregate_player_rz_from_pbp(
     *,
     as_of_week: int,
 ) -> dict[str, dict[str, Any]]:
-    """Player RZ targets/carries/share and GL carries from prior-week PBP."""
+    """Player RZ targets/carries/share and GL carries from prior-week PBP.
+
+    Emits rush/target/GL shares so callers can pick position-appropriate λ inputs.
+    Rates are also normalized per prior game for GBM stability.
+    """
     rz = [
         p
         for p in filter_red_zone_plays(plays)
@@ -154,7 +208,11 @@ def aggregate_player_rz_from_pbp(
         if 0 < int(_num(p, "week", default=0)) < as_of_week
     ]
 
+    prior_games = max(as_of_week - 1, 1)
     team_week_touches: dict[tuple[str, int], float] = {}
+    team_rz_rushes: dict[str, float] = {}
+    team_rz_passes: dict[str, float] = {}
+    team_gl_rushes: dict[str, float] = {}
     for play in rz:
         team = _str(play, "posteam").upper()
         week = int(_num(play, "week", default=0))
@@ -163,10 +221,16 @@ def aggregate_player_rz_from_pbp(
         if _is_flag(play, "pass") or _is_flag(play, "rush"):
             key = (team, week)
             team_week_touches[key] = team_week_touches.get(key, 0.0) + 1.0
+        if _is_flag(play, "rush"):
+            team_rz_rushes[team] = team_rz_rushes.get(team, 0.0) + 1.0
+        if _is_flag(play, "pass"):
+            team_rz_passes[team] = team_rz_passes.get(team, 0.0) + 1.0
 
     targets: dict[str, float] = {}
     carries: dict[str, float] = {}
-    player_team_week: dict[str, tuple[str, int]] = {}
+    player_team: dict[str, str] = {}
+    player_weeks: dict[str, set[int]] = {}
+    gl_tds: dict[str, float] = {}
 
     for play in rz:
         week = int(_num(play, "week", default=0))
@@ -175,20 +239,28 @@ def aggregate_player_rz_from_pbp(
             pid = _str(play, "receiver_player_id")
             if pid:
                 targets[pid] = targets.get(pid, 0.0) + 1.0
-                player_team_week[pid] = (team, week)
+                player_team[pid] = team
+                player_weeks.setdefault(pid, set()).add(week)
         if _is_flag(play, "rush"):
             pid = _str(play, "rusher_player_id")
             if pid:
                 carries[pid] = carries.get(pid, 0.0) + 1.0
-                player_team_week[pid] = (team, week)
+                player_team[pid] = team
+                player_weeks.setdefault(pid, set()).add(week)
 
     gl_carries: dict[str, float] = {}
     for play in gl:
         if not _is_flag(play, "rush"):
             continue
         pid = _str(play, "rusher_player_id")
-        if pid:
-            gl_carries[pid] = gl_carries.get(pid, 0.0) + 1.0
+        if not pid:
+            continue
+        team = _str(play, "posteam").upper()
+        gl_carries[pid] = gl_carries.get(pid, 0.0) + 1.0
+        player_team[pid] = team or player_team.get(pid, "")
+        team_gl_rushes[team] = team_gl_rushes.get(team, 0.0) + 1.0
+        if _is_flag(play, "touchdown"):
+            gl_tds[pid] = gl_tds.get(pid, 0.0) + 1.0
 
     player_ids = set(targets) | set(carries) | set(gl_carries)
     out: dict[str, dict[str, Any]] = {}
@@ -196,23 +268,60 @@ def aggregate_player_rz_from_pbp(
         t = targets.get(pid, 0.0)
         c = carries.get(pid, 0.0)
         touches = t + c
-        share = None
-        team_week = player_team_week.get(pid)
-        if team_week is not None:
-            # Season share vs all prior team RZ touches for that team
-            team = team_week[0]
+        team = player_team.get(pid, "")
+        blended = None
+        if team:
             team_total = sum(
                 v for (tm, _w), v in team_week_touches.items() if tm == team
             )
             if team_total > 0:
-                share = touches / team_total
+                blended = touches / team_total
+        rush_share = None
+        if team and team_rz_rushes.get(team, 0.0) > 0 and c > 0:
+            rush_share = c / team_rz_rushes[team]
+        target_share = None
+        if team and team_rz_passes.get(team, 0.0) > 0 and t > 0:
+            target_share = t / team_rz_passes[team]
+        gl_c = gl_carries.get(pid, 0.0)
+        gl_share = None
+        if team and team_gl_rushes.get(team, 0.0) > 0 and gl_c > 0:
+            gl_share = gl_c / team_gl_rushes[team]
+        gl_td_rate = None
+        if gl_c > 0:
+            gl_td_rate = gl_tds.get(pid, 0.0) / gl_c
+
+        # Default blended share kept for backward compatibility.
+        default_share = (
+            _clamp(float(blended), 0.02, 0.55) if blended is not None else None
+        )
         out[pid] = {
             "rz_targets": t,
-            "gl_carries": gl_carries.get(pid, 0.0),
+            "rz_carries": c,
+            "gl_carries": gl_c,
             "rz_touches": touches,
-            "player_rz_share": (
-                _clamp(float(share), 0.02, 0.55) if share is not None else None
+            "rz_targets_pg": t / prior_games,
+            "rz_carries_pg": c / prior_games,
+            "gl_carries_pg": gl_c / prior_games,
+            "rz_rush_share": (
+                _clamp(float(rush_share), 0.02, 0.70)
+                if rush_share is not None
+                else None
             ),
+            "rz_target_share": (
+                _clamp(float(target_share), 0.02, 0.55)
+                if target_share is not None
+                else None
+            ),
+            "gl_carry_share": (
+                _clamp(float(gl_share), 0.02, 0.70) if gl_share is not None else None
+            ),
+            "gl_td_rate": (
+                _clamp(float(gl_td_rate), 0.05, 0.85)
+                if gl_td_rate is not None
+                else None
+            ),
+            "player_rz_share": default_share,
+            "prior_games": float(prior_games),
         }
     return out
 
@@ -244,6 +353,8 @@ def load_pbp_records_nflverse(season: int) -> list[dict[str, Any]]:
         "yardline_100",
         "pass",
         "rush",
+        "down",
+        "touchdown",
         "receiver_player_id",
         "rusher_player_id",
         "drive",

@@ -111,27 +111,61 @@ def train_and_eval(seasons: list[int]) -> dict[str, Any]:
         ),
     }
 
-    # Synthetic O/U labels from tier±noise as line proxy when market lines absent
+    # Real-line-only O/U training (skip when no market lines available).
+    from app.services.etl.nfl.historical_pass_yds_odds import lookup_pass_yds_line
+    from app.services.etl.nfl.qb_ou_classifier import is_real_ou_line
+
     ou_rows = []
     ou_labels = []
-    rng = np.random.default_rng(42)
     for i in train_idx:
         feats = features.iloc[i].to_dict()
         actual = float(target.iloc[i])
-        # Proxy line near tier with small noise (better than skipping entirely)
-        line = float(meta.iloc[i]["tier_yards"]) + float(rng.normal(0, 5))
-        if abs(actual - line) < 0.5:
+        m = meta.iloc[i]
+        line = None
+        try:
+            line = lookup_pass_yds_line(
+                season=int(m.get("season") or 0),
+                week=int(m.get("week") or 0),
+                player_name=str(m.get("qb_player_name") or m.get("player_name") or ""),
+                team_abbr=str(m.get("team") or m.get("recent_team") or "") or None,
+            )
+        except Exception:
+            line = None
+        if line is None:
+            # Fall back to feature pass_yds_line only when marked real.
+            cand = feats.get("pass_yds_line")
+            if is_real_ou_line(
+                ou_line=cand,
+                tier_yards=feats.get("tier_yards"),
+                line_is_real=(
+                    bool(float(feats.get("line_is_real") or 0.0) >= 0.5)
+                    if feats.get("line_is_real") is not None
+                    else None
+                ),
+            ):
+                line = float(cand)
+        if line is None:
             continue
-        ou_rows.append(build_ou_feature_row(feats, line))
-        ou_labels.append(1 if actual > line else 0)
+        if abs(actual - float(line)) < 0.5:
+            continue
+        ou_rows.append(build_ou_feature_row(feats, float(line)))
+        ou_labels.append(1 if actual > float(line) else 0)
     if len(ou_rows) >= 60 and len(set(ou_labels)) > 1:
         ou_model, ou_meta = train_qb_ou_classifier(
             pd.DataFrame(ou_rows), pd.Series(ou_labels)
         )
-        report["ou_classifier"] = {"status": "ok", "metadata": ou_meta}
+        report["ou_classifier"] = {
+            "status": "ok",
+            "metadata": ou_meta,
+            "real_line_rows": len(ou_rows),
+        }
     else:
         ou_model, ou_meta = None, None
-        report["ou_classifier"] = {"status": "skipped", "rows": len(ou_rows)}
+        report["ou_classifier"] = {
+            "status": "skipped",
+            "rows": len(ou_rows),
+            "reason": "need ≥60 real market lines with both classes",
+        }
 
     _MODELS_DIR.mkdir(parents=True, exist_ok=True)
     yards_path = _MODELS_DIR / f"{MODEL_KEY}.pkl"

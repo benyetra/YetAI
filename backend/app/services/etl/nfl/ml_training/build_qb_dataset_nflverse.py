@@ -7,10 +7,13 @@ from typing import Any
 import pandas as pd
 
 from app.services.etl.nfl.qb_features import (
+    estimate_opp_air_yards_allowed_from_weekly,
     estimate_opp_defense_from_weekly,
     estimate_opp_pass_allowed_from_weekly,
     form_features_from_prior_yards,
+    form_volume_features_from_prior,
     implied_team_total_from_market,
+    prior_game_stats_for_player,
     prior_yards_for_player,
     scheme_features_for_opponent,
 )
@@ -147,9 +150,21 @@ def _weekly_records(seasons: list[int]) -> list[dict[str, Any]]:
                     if row.get("attempts") is not None and pd.notna(row.get("attempts"))
                     else None
                 ),
+                "completions": (
+                    float(row["completions"])
+                    if row.get("completions") is not None
+                    and pd.notna(row.get("completions"))
+                    else None
+                ),
                 "sacks": (
                     float(row["sacks"])
                     if row.get("sacks") is not None and pd.notna(row.get("sacks"))
+                    else None
+                ),
+                "passing_air_yards": (
+                    float(row["passing_air_yards"])
+                    if row.get("passing_air_yards") is not None
+                    and pd.notna(row.get("passing_air_yards"))
                     else None
                 ),
             }
@@ -197,9 +212,19 @@ def build_from_nflverse(
             week=week,
         )
         form = form_features_from_prior_yards(prior, tier_yards=tier_yards)
+        prior_stats = prior_game_stats_for_player(
+            history_sorted,
+            player_key=str(player_key),
+            season=season,
+            week=week,
+        )
+        volume = form_volume_features_from_prior(prior_stats)
         opp = str(row.get("opponent_team") or "")
         team = str(row.get("recent_team") or "").upper()
         opp_allowed = estimate_opp_pass_allowed_from_weekly(
+            history_sorted, opponent_abbr=opp, season=season, week=week
+        )
+        opp_air = estimate_opp_air_yards_allowed_from_weekly(
             history_sorted, opponent_abbr=opp, season=season, week=week
         )
         defense = estimate_opp_defense_from_weekly(
@@ -207,9 +232,11 @@ def build_from_nflverse(
         )
         scheme = scheme_features_for_opponent(opp, schemes=schemes)
         mkt = market.get((season, week, team), {})
-        context: dict[str, Any] = {**form, **defense, **scheme}
+        context: dict[str, Any] = {**form, **volume, **defense, **scheme}
         if opp_allowed is not None:
             context["opp_pass_yds_allowed"] = opp_allowed
+        if opp_air is not None:
+            context["opp_air_yards_allowed"] = opp_air
         for key in (
             "total_line",
             "spread_line",
@@ -221,8 +248,27 @@ def build_from_nflverse(
         ):
             if mkt.get(key) is not None:
                 context[key] = mkt[key]
-        # pass_yds_line unavailable historically in schedules — tier anchor
-        context["pass_yds_line"] = tier_yards
+        # Prefer historical Odds index; else tier-anchor (line_is_real=False).
+        pass_line = None
+        try:
+            from app.services.etl.nfl.historical_pass_yds_odds import (
+                lookup_pass_yds_line,
+            )
+
+            pass_line = lookup_pass_yds_line(
+                season=season,
+                week=week,
+                player_name=name,
+                team_abbr=team or None,
+            )
+        except Exception:
+            pass_line = None
+        if pass_line is not None:
+            context["pass_yds_line"] = float(pass_line)
+            context["line_is_real"] = True
+        else:
+            context["pass_yds_line"] = tier_yards
+            context["line_is_real"] = False
         context["opponent_abbr"] = opp
         feats = build_features_from_tier_prediction(
             tier_pred, season=season, week=week, context=context
@@ -236,11 +282,11 @@ def build_from_nflverse(
                 "season": season,
                 "week": week,
                 "opponent_team": opp,
+                "recent_team": team,
                 "tier_yards": tier_yards,
                 "actual_passing_yards": float(row["actual_passing_yards"]),
             }
         )
-
     return (
         pd.DataFrame(records),
         pd.Series(targets, name="actual_passing_yards"),

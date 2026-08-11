@@ -27,7 +27,11 @@ def test_feature_names_include_matchup_form():
     assert "rolling_attempts_l3" in names
     assert "rolling_ypa_l3" in names
     assert "rolling_comp_pct_l3" in names
+    assert "rolling_air_yards_l3" in names
+    assert "rolling_dropbacks_l3" in names
+    assert "rolling_sack_rate_l3" in names
     assert "opp_pass_yds_allowed" in names
+    assert "opp_air_yards_allowed" in names
     assert "opp_def_epa" in names
     assert "opp_pressure_rate" in names
     assert "injury_risk" in names
@@ -36,6 +40,9 @@ def test_feature_names_include_matchup_form():
     assert "spread_line" in names
     assert "pass_yds_line" in names
     assert "line_minus_tier" in names
+    assert "line_is_real" in names
+    assert "market_residual_l3" in names
+    assert "line_minus_rolling" in names
     assert "opp_cover_base" in names
     assert "opp_man_zone" in names
     assert "opp_scheme_pressure" in names
@@ -264,3 +271,41 @@ def test_build_qb_features_uses_dynamic_tier_and_line_edge():
     assert feats["pass_yds_line"] == 275.0
     assert feats["line_minus_tier"] == 10.0
     assert feats["rolling_attempts_l3"] == 38.0
+    assert feats["line_is_real"] == 1.0
+    assert feats["market_residual_l3"] != 0.0 or feats["rolling_yards_l3"] == 265.0
+
+
+def test_form_volume_includes_air_and_dropbacks():
+    stats = [
+        {
+            "yards": 280.0,
+            "attempts": 35.0,
+            "completions": 23.0,
+            "sacks": 2.0,
+            "dropbacks": 37.0,
+            "sack_rate": 2.0 / 37.0,
+            "air_yards_per_attempt": 8.0,
+        },
+        {
+            "yards": 250.0,
+            "attempts": 30.0,
+            "completions": 20.0,
+            "sacks": 3.0,
+            "dropbacks": 33.0,
+            "sack_rate": 3.0 / 33.0,
+            "air_yards_per_attempt": 7.5,
+        },
+        {
+            "yards": 300.0,
+            "attempts": 40.0,
+            "completions": 28.0,
+            "sacks": 1.0,
+            "dropbacks": 41.0,
+            "sack_rate": 1.0 / 41.0,
+            "air_yards_per_attempt": 8.5,
+        },
+    ]
+    vol = form_volume_features_from_prior(stats)
+    assert vol["rolling_air_yards_l3"] == 8.0
+    assert vol["rolling_dropbacks_l3"] > 30.0
+    assert 0.0 < vol["rolling_sack_rate_l3"] < 0.2
