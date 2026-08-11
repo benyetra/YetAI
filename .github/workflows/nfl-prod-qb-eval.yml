@@ -1,0 +1,97 @@
+name: NFL Prod QB Eval (Railway)
+
+on:
+  workflow_dispatch:
+    inputs:
+      season_start:
+        description: Inclusive start date on pred_qb_actuals.game_date
+        required: true
+        default: "2023-09-01"
+      season_end:
+        description: Inclusive end date on pred_qb_actuals.game_date
+        required: true
+        default: "2026-02-15"
+      force_upload:
+        description: Force-upload shadow QB artifacts to S3 even if promote=false
+        required: true
+        type: boolean
+        default: true
+
+jobs:
+  eval:
+    name: Prod QB residual eval (v6 + real lines)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run nfl_prod_qb_eval.py
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION || 'us-east-1' }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
+          EXTRA=""
+          if [ "${{ inputs.force_upload }}" = "true" ]; then
+            EXTRA="--force-upload"
+          fi
+          PYTHONPATH=. python scripts/nfl_prod_qb_eval.py \
+            --season-start "${{ inputs.season_start }}" \
+            --season-end "${{ inputs.season_end }}" \
+            $EXTRA | tee /tmp/nfl_prod_qb_eval.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path("models/nfl/qb_prod_retrain_report.json").read_text())
+          print("=== PROMOTE GATE ===")
+          for k in (
+              "status",
+              "rows",
+              "holdout",
+              "tier_mae",
+              "ml_mae",
+              "mae_lift",
+              "mae_lift_vs_static_tier",
+              "pass_yds_line_real_n",
+              "pass_yds_line_real_rate",
+              "promote_recommended",
+              "recommendation",
+          ):
+              print(f"{k}: {report.get(k)}")
+          ou = report.get("ou_classifier") or {}
+          meta = ou.get("metadata") or {}
+          print("ou_status:", ou.get("status"), "acc:", meta.get("holdout_accuracy"), "brier:", meta.get("holdout_brier"))
+          PY
+
+      - name: Upload eval artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfl-prod-qb-eval-v6
+          path: |
+            backend/models/nfl/qb_prod_retrain_report.json
+            backend/models/nfl/qb_passing_yards.pkl
+            backend/models/nfl/qb_passing_yards_metadata.json
+            backend/models/nfl/qb_pass_yds_ou.pkl
+            backend/models/nfl/qb_pass_yds_ou_metadata.json
