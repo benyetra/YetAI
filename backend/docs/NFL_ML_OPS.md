@@ -36,7 +36,21 @@ Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
 **Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears.**
 
-### Latest offline retrain (2026-08-11, residual GBM, nflverse 2023–2025)
+### Latest Railway promote-gate (2026-08-11, v5 lift levers)
+
+| Metric | Value |
+|--------|-------|
+| Rows | 1756 (2023–2025 actuals) |
+| Holdout | season_2025 (585) |
+| Real prop-line rate | 82.7% |
+| Dynamic-tier MAE | **65.5** |
+| Static-tier MAE | 66.7 |
+| Residual ML MAE | **65.0** |
+| Lift vs dynamic | **+0.9%** (need ≥10%) |
+| Lift vs static | +2.7% |
+| Promote | **No** — keep ML shadow-only |
+
+### Prior offline retrain (2026-08-11, residual GBM, nflverse 2023–2025)
 
 | Metric | Value |
 |--------|-------|
