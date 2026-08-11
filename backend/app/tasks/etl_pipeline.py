@@ -809,6 +809,7 @@ NFL_ANYTIME_TD_PHASES = [
     (
         "anytime_td",
         [
+            nfl_update_game_lines,
             nfl_sync_defense_schemes,
             nfl_anytime_td_projector,
             nfl_anytime_td_betting,

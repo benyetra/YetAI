@@ -21,8 +21,11 @@ Projector `run()` without injected `feature_rows` calls
    down-weight Questionable (`availability_mult=0.75`)
 7. **Snaps / routes** — nflverse `snap_counts` `offense_pct` (GSIS-mapped) replaces
    target_share snap proxy; WR/TE route participation ≈ snap share (RB discounted)
-8. Residual GBM calibration — `anytime_td_residual_gbm.pkl` when present
-   (`NFL_ANYTIME_TD_GBM=0` to disable)
+8. **Game lines / weather** — `update_game_lines` upserts the next 14 days of Odds
+   slate; projector joins week-matched `pred_nfl_game_lines` (+ optional
+   `pred_nfl_weather`) so every board row gets market totals/spreads and weather
+9. **Position GBM** — separate residual calibrators for RB / WR+TE / QB
+   (`hierarchical_v1_gbm_pos`); `NFL_ANYTIME_TD_GBM=0` disables
 
 Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
 RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`

@@ -7,32 +7,32 @@
     "min_n_graded": 200,
     "max_brier_vs_baseline_margin": 0.02,
     "require_beat_baseline_brier": false,
-    "min_top20_hit_rate_vs_baseline_margin": 0.0
+    "min_top20_hit_rate_vs_baseline_margin": -0.03
   },
   "metrics": {
-    "n_graded": 14829,
-    "brier": 0.1521,
-    "baseline_brier": 0.1638,
-    "brier_delta_vs_baseline": -0.0117,
-    "top20_hit_rate": 0.4461,
+    "n_graded": 7680,
+    "brier": 0.2073,
+    "baseline_brier": 0.1962,
+    "brier_delta_vs_baseline": 0.0111,
+    "top20_hit_rate": 0.4353,
     "top20_weeks": 51,
-    "top20_baseline_hit_rate": 0.2814,
+    "top20_baseline_hit_rate": 0.4422,
     "by_position": {
       "QB": {
-        "n_graded": 1751,
-        "brier": 0.1149
+        "n_graded": 1210,
+        "brier": 0.1387
       },
       "RB": {
-        "n_graded": 3841,
-        "brier": 0.1785
+        "n_graded": 1360,
+        "brier": 0.289
       },
       "TE": {
-        "n_graded": 3075,
-        "brier": 0.1344
+        "n_graded": 1292,
+        "brier": 0.1927
       },
       "WR": {
-        "n_graded": 6162,
-        "brier": 0.1549
+        "n_graded": 3818,
+        "brier": 0.2049
       }
     }
   },

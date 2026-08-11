@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import date
-from typing import Any, Iterable, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_name
 
@@ -25,16 +25,16 @@ _MIN_PRIOR_TOUCHES = 3.0  # touches floor for usage-based starter fallback
 _TEAM_RZ_TRIPS_PRIOR = 3.2
 _LEAGUE_AVG_TEAM_TOTAL = 22.5
 _CONVERSION_RATE_PRIOR: dict[str, float] = {
-    "QB": 0.15,
-    "RB": 0.35,
-    "WR": 0.22,
-    "TE": 0.25,
+    "QB": 0.14,
+    "RB": 0.38,  # goal-line / short-yardage conversion
+    "WR": 0.20,
+    "TE": 0.24,
 }
 _PLAYER_RZ_SHARE_PRIOR: dict[str, float] = {
-    "QB": 0.08,
-    "RB": 0.25,
-    "WR": 0.18,
-    "TE": 0.15,
+    "QB": 0.07,
+    "RB": 0.28,
+    "WR": 0.16,
+    "TE": 0.14,
 }
 _TDS_ALLOWED_PRIOR: dict[str, float] = {
     "QB": 0.25,
@@ -637,6 +637,8 @@ def _schedule_matchups(
         outdoor = roof not in ("dome", "closed", "indoor")
         wind = raw.get("wind")
         wind_mph = None if _is_missing(wind) else float(wind)
+        temp = raw.get("temp")
+        temperature = None if _is_missing(temp) else float(temp)
 
         home_entry = {
             "opponent_abbr": away,
@@ -645,6 +647,7 @@ def _schedule_matchups(
             "outdoor": outdoor,
             "wind_mph": wind_mph,
             "precip": False,
+            "temperature": temperature,
         }
         away_entry = {
             "opponent_abbr": home,
@@ -653,6 +656,7 @@ def _schedule_matchups(
             "outdoor": outdoor,
             "wind_mph": wind_mph,
             "precip": False,
+            "temperature": temperature,
         }
         out[home] = home_entry
         out[away] = away_entry
@@ -680,6 +684,7 @@ def build_weekly_feature_rows(
     pbp_records: list[dict[str, Any]] | None = None,
     snap_records: list[dict[str, Any]] | None = None,
     injury_records: list[dict[str, Any]] | None = None,
+    weather_by_team: dict[str, dict[str, Any]] | None = None,
     schemes: dict[str, dict[str, Any]] | None = None,
     game_lines_by_team: dict[str, dict[str, Any]] | None = None,
     usage_as_of_week: int | None = None,
@@ -818,11 +823,21 @@ def build_weekly_feature_rows(
         game_env: dict[str, Any] = {}
         if game_lines_by_team and team_abbr in game_lines_by_team:
             game_env.update(game_lines_by_team[team_abbr])
+        # Also try canonical full name keys.
+        if not game_env and game_lines_by_team:
+            full = _abbr_to_name(team_abbr)
+            if full in game_lines_by_team:
+                game_env.update(game_lines_by_team[full])
 
+        weather_match = merge_weather_into_matchup(
+            match,
+            (weather_by_team or {}).get(team_abbr)
+            or (weather_by_team or {}).get(_abbr_to_name(team_abbr)),
+        )
         weather = {
-            "outdoor": bool(match.get("outdoor")),
-            "wind_mph": match.get("wind_mph"),
-            "precip": bool(match.get("precip")),
+            "outdoor": bool(weather_match.get("outdoor")),
+            "wind_mph": weather_match.get("wind_mph"),
+            "precip": bool(weather_match.get("precip")),
         }
 
         row = build_player_feature_row(
@@ -1050,8 +1065,170 @@ def fetch_team_rz_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:
     return aggregate_team_rz_from_weekly(records, as_of_week=as_of)
 
 
-def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]:
-    """Optional game-env features from ``pred_nfl_game_lines`` (best-effort)."""
+def game_env_from_line(line: Any, *, home: bool) -> dict[str, Any]:
+    """Build script/game-env fields from a ``pred_nfl_game_lines`` row."""
+    total = getattr(line, "total", None)
+    if total is None:
+        return {}
+    spread_home = getattr(line, "spread_home", None)
+    if spread_home is not None:
+        home_implied = (float(total) - float(spread_home)) / 2.0
+        away_implied = float(total) - home_implied
+    else:
+        home_implied = float(total) / 2.0
+        away_implied = home_implied
+    if home:
+        return {
+            "implied_total": float(total),
+            "spread": float(spread_home) if spread_home is not None else None,
+            "implied_team_total": home_implied,
+        }
+    return {
+        "implied_total": float(total),
+        "spread": (-float(spread_home) if spread_home is not None else None),
+        "implied_team_total": away_implied,
+    }
+
+
+def index_game_lines_by_team_for_week(
+    lines: Iterable[Any],
+    *,
+    schedule_records: Iterable[dict[str, Any]],
+    week: int,
+) -> dict[str, dict[str, Any]]:
+    """Attach market totals/spreads to teams playing in ``week`` (by game_date)."""
+    matchups = _schedule_matchups(schedule_records, week=week)
+    if not matchups:
+        return {}
+
+    target_dates: set[date] = set()
+    for m in matchups.values():
+        gd = m.get("game_date")
+        if isinstance(gd, date):
+            target_dates.add(gd)
+
+    # Index lines by normalized team pair + date.
+    by_team: dict[str, dict[str, Any]] = {}
+    for line in lines:
+        total = getattr(line, "total", None)
+        if total is None:
+            continue
+        line_date = getattr(line, "game_date", None)
+        if (
+            target_dates
+            and isinstance(line_date, date)
+            and line_date not in target_dates
+        ):
+            continue
+        home = normalize_team_name(getattr(line, "home_team_name", "") or "")
+        away = normalize_team_name(getattr(line, "away_team_name", "") or "")
+        home_env = game_env_from_line(line, home=True)
+        away_env = game_env_from_line(line, home=False)
+        if not home_env:
+            continue
+        by_team[home] = home_env
+        by_team[away] = away_env
+        for abbr, name in _CANONICAL_BY_ABBR.items():
+            if name == home:
+                by_team[abbr] = home_env
+            if name == away:
+                by_team[abbr] = away_env
+
+    # Ensure schedule teams get env when names matched via abbr already.
+    return by_team
+
+
+def merge_weather_into_matchup(
+    match: dict[str, Any],
+    forecast: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Overlay ``pred_nfl_weather`` (or similar) onto schedule weather proxies."""
+    out = dict(match)
+    if not forecast:
+        return out
+    if forecast.get("wind_mph") is not None:
+        out["wind_mph"] = float(forecast["wind_mph"])
+    if forecast.get("precip") is not None:
+        out["precip"] = bool(forecast["precip"])
+    elif forecast.get("precip_probability") is not None:
+        out["precip"] = float(forecast["precip_probability"]) >= 0.45
+    if forecast.get("temperature") is not None:
+        out["temperature"] = float(forecast["temperature"])
+    return out
+
+
+def load_weather_by_team(
+    season: int,
+    week: int,
+    *,
+    schedule_records: list[dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Best-effort weather from ``pred_nfl_weather`` keyed by team abbr/name."""
+    _ = season
+    try:
+        from app.core.database import SessionLocal
+        from app.models.predictions_models import NFLWeather
+    except Exception:
+        return {}
+
+    matchups = _schedule_matchups(schedule_records or [], week=week)
+    if not matchups:
+        return {}
+
+    db = SessionLocal()
+    try:
+        rows = db.query(NFLWeather).all()
+    except Exception as exc:
+        logger.info("pred_nfl_weather unavailable for anytime TD: %s", exc)
+        return {}
+    finally:
+        db.close()
+
+    if not rows:
+        return {}
+
+    # Match on calendar day of game_time when possible.
+    by_date: dict[date, list[Any]] = {}
+    for row in rows:
+        gt = getattr(row, "game_time", None)
+        if gt is None:
+            continue
+        gd = gt.date() if hasattr(gt, "date") else None
+        if gd is None:
+            continue
+        by_date.setdefault(gd, []).append(row)
+
+    out: dict[str, dict[str, Any]] = {}
+    for team, match in matchups.items():
+        gd = match.get("game_date")
+        if not isinstance(gd, date):
+            continue
+        candidates = by_date.get(gd) or []
+        if not candidates:
+            continue
+        # Prefer highest precip probability row for that day (stadium-agnostic fallback).
+        best = max(
+            candidates,
+            key=lambda r: float(getattr(r, "precipitation_probability", 0) or 0),
+        )
+        precip_p = float(getattr(best, "precipitation_probability", 0) or 0)
+        out[team] = {
+            "wind_mph": float(getattr(best, "wind_speed", 0) or 0),
+            "precip": precip_p >= 0.45,
+            "precip_probability": precip_p,
+            "temperature": float(getattr(best, "temperature", 0) or 0),
+        }
+    return out
+
+
+def load_game_lines_by_team(
+    season: int,
+    week: int,
+    *,
+    schedule_records: list[dict[str, Any]] | None = None,
+) -> dict[str, dict[str, Any]]:
+    """Game-env features from ``pred_nfl_game_lines`` for the target week slate."""
+    _ = season
     try:
         from app.core.database import SessionLocal
         from app.models.predictions_models import NFLGameLines
@@ -1067,38 +1244,27 @@ def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]
     finally:
         db.close()
 
-    # Match by team name without requiring schedule join; use latest line per team pair.
+    if schedule_records:
+        return index_game_lines_by_team_for_week(
+            lines, schedule_records=schedule_records, week=week
+        )
+
+    # Fallback: latest line per team (legacy behavior when no schedule given).
     by_team: dict[str, dict[str, Any]] = {}
     for line in lines:
-        total = line.total
-        if total is None:
+        if line.total is None:
             continue
         home = normalize_team_name(line.home_team_name)
         away = normalize_team_name(line.away_team_name)
-        spread_home = line.spread_home
-        # implied team totals from market total + spread
-        if spread_home is not None:
-            home_implied = (float(total) - float(spread_home)) / 2.0
-            away_implied = float(total) - home_implied
-        else:
-            home_implied = float(total) / 2.0
-            away_implied = home_implied
-        by_team[home] = {
-            "implied_total": float(total),
-            "spread": float(spread_home) if spread_home is not None else None,
-            "implied_team_total": home_implied,
-        }
-        by_team[away] = {
-            "implied_total": float(total),
-            "spread": (-float(spread_home) if spread_home is not None else None),
-            "implied_team_total": away_implied,
-        }
-        # also key by abbreviation when known
+        home_env = game_env_from_line(line, home=True)
+        away_env = game_env_from_line(line, home=False)
+        by_team[home] = home_env
+        by_team[away] = away_env
         for abbr, name in _CANONICAL_BY_ABBR.items():
             if name == home:
-                by_team[abbr] = by_team[home]
+                by_team[abbr] = home_env
             if name == away:
-                by_team[abbr] = by_team[away]
+                by_team[abbr] = away_env
     return by_team
 
 
@@ -1163,11 +1329,17 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
 def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, Any]]:
     """End-to-end: nflverse + YAML schemes (+ optional game lines) → feature rows."""
     inputs = fetch_weekly_feature_inputs_nflverse(season, week)
+    schedules = inputs["schedule_records"]
     try:
-        game_lines = load_game_lines_by_team(season, week)
+        game_lines = load_game_lines_by_team(season, week, schedule_records=schedules)
     except Exception as exc:
         logger.info("skipping game lines for anytime TD: %s", exc)
         game_lines = {}
+    try:
+        weather_by_team = load_weather_by_team(season, week, schedule_records=schedules)
+    except Exception as exc:
+        logger.info("skipping pred_nfl_weather for anytime TD: %s", exc)
+        weather_by_team = {}
     usage_as_of = _usage_as_of_week_for_priors(
         season=season,
         week=week,
@@ -1177,22 +1349,16 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
     pbp_as_of = (
         99 if pbp_season is not None and int(pbp_season) < season else usage_as_of
     )
-    snap_season = inputs.get("snap_season")
-    snap_as_of = (
-        99 if snap_season is not None and int(snap_season) < season else usage_as_of
-    )
-    # When snaps come from a prior season, still aggregate with as_of=99 via
-    # usage_as_of; snap merge uses the same as_of inside build_weekly_feature_rows.
-    _ = snap_as_of
     return build_weekly_feature_rows(
         season,
         week,
         weekly_records=inputs["weekly_records"],
-        schedule_records=inputs["schedule_records"],
+        schedule_records=schedules,
         depth_records=inputs["depth_records"],
         pbp_records=inputs.get("pbp_records") or None,
         snap_records=inputs.get("snap_records") or None,
         injury_records=inputs.get("injury_records"),
+        weather_by_team=weather_by_team,
         game_lines_by_team=game_lines,
         usage_as_of_week=usage_as_of,
         pbp_as_of_week=pbp_as_of,

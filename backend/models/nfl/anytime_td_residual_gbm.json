@@ -1,5 +1,5 @@
 {
-  "model_version": "hierarchical_v1_gbm",
+  "model_version": "hierarchical_v1_gbm_pos",
   "features": [
     "hier_p",
     "expected_tds",
@@ -17,8 +17,13 @@
     "is_wr",
     "is_te"
   ],
-  "trained_at": "2026-08-11T00:24:59.828390+00:00",
-  "n_train": 14829,
+  "groups": [
+    "pass",
+    "qb",
+    "rb"
+  ],
+  "trained_at": "2026-08-11T00:43:11.066417+00:00",
+  "n_train": 7680,
   "seasons": [
     2023,
     2024,
@@ -26,5 +31,10 @@
   ],
   "start_week": 2,
   "end_week": 18,
-  "positive_rate": 0.20284577517027447
+  "group_counts": {
+    "rb": 1360,
+    "pass": 5110,
+    "qb": 1210
+  },
+  "positive_rate": 0.27682291666666664
 }

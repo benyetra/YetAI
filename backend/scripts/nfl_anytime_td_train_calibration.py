@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Train anytime-TD residual GBM calibrator from walk-forward graded rows.
+"""Train anytime-TD residual GBM calibrators (per-position bundle).
 
-Writes ``backend/models/nfl/anytime_td_residual_gbm.pkl`` (+ metadata JSON).
+Writes ``backend/models/nfl/anytime_td_residual_gbm.pkl`` (+ metadata JSON)
+containing separate models for ``rb``, ``pass`` (WR+TE), and ``qb``.
 
 Examples::
 
@@ -55,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
         resolve_walk_forward_seasons,
     )
     from app.services.etl.nfl.anytime_td_calibration import (
-        fit_residual_gbm,
+        fit_position_gbm_bundle,
         save_calibration_artifact,
     )
     from app.services.etl.nfl.anytime_td_features import (
@@ -85,9 +86,9 @@ def main(argv: list[str] | None = None) -> int:
             train_rows.extend(graded)
         logger.info("season %s cumulative train rows=%s", season, len(train_rows))
 
-    model = fit_residual_gbm(train_rows)
+    model = fit_position_gbm_bundle(train_rows)
     if model is None:
-        logger.error("failed to fit residual GBM (n=%s)", len(train_rows))
+        logger.error("failed to fit residual GBM bundle (n=%s)", len(train_rows))
         return 1
 
     meta = {
@@ -96,6 +97,19 @@ def main(argv: list[str] | None = None) -> int:
         "seasons": list(seasons),
         "start_week": args.start_week,
         "end_week": args.end_week,
+        "groups": sorted(model.keys()),
+        "group_counts": {
+            g: sum(
+                1
+                for r in train_rows
+                if (
+                    (g == "rb" and r.get("position") == "RB")
+                    or (g == "qb" and r.get("position") == "QB")
+                    or (g == "pass" and r.get("position") in {"WR", "TE"})
+                )
+            )
+            for g in model
+        },
         "positive_rate": (
             sum(1 for r in train_rows if r.get("scored_anytime_td")) / len(train_rows)
             if train_rows

@@ -27,7 +27,7 @@ DEFAULT_MODEL_PATH = BACKEND_ROOT / "models" / "nfl" / "anytime_td_residual_gbm.
 DEFAULT_META_PATH = BACKEND_ROOT / "models" / "nfl" / "anytime_td_residual_gbm.json"
 
 MODEL_VERSION_HIER = "hierarchical_v1"
-MODEL_VERSION_GBM = "hierarchical_v1_gbm"
+MODEL_VERSION_GBM = "hierarchical_v1_gbm_pos"
 
 CALIBRATION_FEATURE_NAMES: tuple[str, ...] = (
     "hier_p",
@@ -47,13 +47,25 @@ CALIBRATION_FEATURE_NAMES: tuple[str, ...] = (
     "is_te",
 )
 
+# Position groups: RB (goal-line), WR+TE (pass catchers), QB (light).
+CALIBRATION_GROUPS: tuple[str, ...] = ("rb", "pass", "qb")
 _MIN_TRAIN_ROWS = 80
+_MIN_TRAIN_ROWS_BY_GROUP: dict[str, int] = {"rb": 80, "pass": 80, "qb": 40}
 _TRUTHY = frozenset({"1", "true", "yes", "on"})
 
 _MODEL: Any | None = None
 _METADATA: dict[str, Any] | None = None
 _LOAD_FAILED = False
 _LOCK = threading.Lock()
+
+
+def calibration_group_for_position(position: str | None) -> str:
+    pos = str(position or "").strip().upper()
+    if pos == "RB":
+        return "rb"
+    if pos == "QB":
+        return "qb"
+    return "pass"
 
 
 def calibration_enabled() -> bool:
@@ -169,12 +181,100 @@ def fit_residual_gbm(
     return model
 
 
+def fit_position_gbm_bundle(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    random_state: int = 42,
+    min_rows: Mapping[str, int] | None = None,
+) -> dict[str, Any] | None:
+    """Fit separate GBMs for rb / pass (WR+TE) / qb. Returns None if none fit."""
+    caps = dict(_MIN_TRAIN_ROWS_BY_GROUP)
+    if min_rows:
+        caps.update({k: int(v) for k, v in min_rows.items()})
+    by_group: dict[str, list[Mapping[str, Any]]] = {g: [] for g in CALIBRATION_GROUPS}
+    for row in rows:
+        by_group[calibration_group_for_position(str(row.get("position") or ""))].append(
+            row
+        )
+
+    models: dict[str, Any] = {}
+    for group, group_rows in by_group.items():
+        # QB light: shallower tree / fewer iters when data is thin.
+        if group == "qb":
+            fitted = _fit_gbm_with_hyperparams(
+                group_rows,
+                random_state=random_state,
+                min_rows=caps.get(group, 40),
+                max_depth=3,
+                max_iter=80,
+            )
+        else:
+            fitted = fit_residual_gbm(
+                group_rows,
+                random_state=random_state,
+                min_rows=caps.get(group, _MIN_TRAIN_ROWS),
+            )
+        if fitted is not None:
+            models[group] = fitted
+            logger.info("anytime-TD GBM group=%s n=%s fitted", group, len(group_rows))
+        else:
+            logger.info(
+                "anytime-TD GBM group=%s n=%s skipped (insufficient)",
+                group,
+                len(group_rows),
+            )
+    return models or None
+
+
+def _fit_gbm_with_hyperparams(
+    rows: Sequence[Mapping[str, Any]],
+    *,
+    random_state: int,
+    min_rows: int,
+    max_depth: int,
+    max_iter: int,
+) -> Any | None:
+    if len(rows) < min_rows:
+        return None
+    try:
+        import numpy as np
+        from sklearn.ensemble import HistGradientBoostingClassifier  # type: ignore
+    except ImportError:
+        return None
+    X = np.asarray([build_calibration_feature_vector(r) for r in rows], dtype=float)
+    y = np.asarray([1 if r.get("scored_anytime_td") else 0 for r in rows], dtype=int)
+    if y.min() == y.max():
+        return None
+    model = HistGradientBoostingClassifier(
+        max_depth=max_depth,
+        learning_rate=0.08,
+        max_iter=max_iter,
+        l2_regularization=0.1,
+        random_state=random_state,
+    )
+    model.fit(X, y)
+    return model
+
+
+def model_for_row(row: Mapping[str, Any], model_or_bundle: Any | None) -> Any | None:
+    """Resolve per-position model from a bundle or legacy single estimator."""
+    if model_or_bundle is None:
+        return None
+    if isinstance(model_or_bundle, dict):
+        group = calibration_group_for_position(str(row.get("position") or ""))
+        return model_or_bundle.get(group) or model_or_bundle.get("pass")
+    return model_or_bundle
+
+
 def apply_calibrated_probability(
     row: Mapping[str, Any],
     *,
     model: Any | None = None,
 ) -> float:
-    """Return calibrated P(anytime) when ``model`` is set; else hierarchical P."""
+    """Return calibrated P(anytime) when ``model`` is set; else hierarchical P.
+
+    ``model`` may be a single estimator or a position-group bundle dict.
+    """
     hier = row.get("td_probability")
     if hier is None:
         hier = hierarchical_probability(
@@ -186,25 +286,27 @@ def apply_calibrated_probability(
             script_mult=_float(row, "script_mult", 1.0),
         )
     hier_f = float(hier)
-    if model is None:
+    estimator = model_for_row(row, model)
+    if estimator is None:
         return min(1.0, max(0.0, hier_f))
 
     try:
         import numpy as np
 
         vec = np.asarray([build_calibration_feature_vector(row)], dtype=float)
-        if hasattr(model, "predict_proba"):
-            proba = model.predict_proba(vec)[0]
-            # class order may be [0,1] or single class
+        if hasattr(estimator, "predict_proba"):
+            proba = estimator.predict_proba(vec)[0]
             if len(proba) == 1:
                 p = float(proba[0])
             else:
-                classes = list(getattr(model, "classes_", [0, 1]))
+                classes = list(getattr(estimator, "classes_", [0, 1]))
                 idx = classes.index(1) if 1 in classes else -1
                 p = float(proba[idx])
         else:
-            p = float(model.predict(vec)[0])
-        return min(1.0, max(0.0, p))
+            p = float(estimator.predict(vec)[0])
+        # Shrink toward hierarchical so calibration doesn't scramble board ranking.
+        blended = 0.55 * float(p) + 0.45 * hier_f
+        return min(1.0, max(0.0, blended))
     except Exception as exc:
         logger.info("anytime-TD GBM predict failed; using hierarchical: %s", exc)
         return min(1.0, max(0.0, hier_f))
@@ -225,6 +327,9 @@ def save_calibration_artifact(
     payload = {
         "model_version": MODEL_VERSION_GBM,
         "features": list(CALIBRATION_FEATURE_NAMES),
+        "groups": (
+            sorted(model.keys()) if isinstance(model, dict) else ["legacy_single"]
+        ),
         **dict(metadata or {}),
     }
     jpath.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -284,7 +389,10 @@ def calibrate_prediction_row(row: Mapping[str, Any]) -> tuple[float, bool]:
     enriched["td_probability"] = hier
     if not calibration_enabled():
         return hier, False
-    model = load_calibration_model()
-    if model is None:
+    bundle = load_calibration_model()
+    if bundle is None:
         return hier, False
-    return apply_calibrated_probability(enriched, model=model), True
+    estimator = model_for_row(enriched, bundle)
+    if estimator is None:
+        return hier, False
+    return apply_calibrated_probability(enriched, model=bundle), True
