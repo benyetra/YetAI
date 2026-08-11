@@ -49,7 +49,12 @@ FEATURE_NAMES: tuple[str, ...] = (
     "rolling_attempts_l3",
     "rolling_ypa_l3",
     "rolling_comp_pct_l3",
+    # v6 residual levers (volume quality + market residual)
+    "rolling_air_yards_l3",
+    "rolling_dropbacks_l3",
+    "rolling_sack_rate_l3",
     "opp_pass_yds_allowed",
+    "opp_air_yards_allowed",
     "opp_def_epa",
     "opp_pressure_rate",
     "injury_risk",
@@ -64,6 +69,9 @@ FEATURE_NAMES: tuple[str, ...] = (
     "spread_line",
     "pass_yds_line",
     "line_minus_tier",
+    "line_is_real",
+    "market_residual_l3",
+    "line_minus_rolling",
     # Curated opponent defensive scheme tags
     "opp_cover_base",
     "opp_man_zone",
@@ -73,6 +81,10 @@ FEATURE_NAMES: tuple[str, ...] = (
 _LEAGUE_AVG_ATTEMPTS = 34.0
 _LEAGUE_AVG_YPA = 7.0
 _LEAGUE_AVG_COMP_PCT = 0.65
+_LEAGUE_AVG_AIR_YARDS = 7.5
+_LEAGUE_AVG_DROPBACKS = 36.0
+_LEAGUE_AVG_SACK_RATE = 0.07
+_LEAGUE_AVG_OPP_AIR_ALLOWED = 7.5
 
 
 def feature_names() -> list[str]:
@@ -198,6 +210,11 @@ def prior_game_stats_for_player(
         completions = row.get("actual_completions")
         if completions is None:
             completions = row.get("completions") or row.get("passing_completions")
+        sacks = row.get("sacks")
+        air_yards = row.get("passing_air_yards")
+        if air_yards is None:
+            air_yards = row.get("air_yards")
+        aya = row.get("air_yards_per_attempt")
         try:
             att = float(attempts) if attempts is not None else None
         except (TypeError, ValueError):
@@ -206,14 +223,35 @@ def prior_game_stats_for_player(
             comp = float(completions) if completions is not None else None
         except (TypeError, ValueError):
             comp = None
+        try:
+            sack_f = float(sacks) if sacks is not None else 0.0
+        except (TypeError, ValueError):
+            sack_f = 0.0
+        air_per_att = None
+        try:
+            if aya is not None:
+                air_per_att = float(aya)
+            elif air_yards is not None and att is not None and att > 0:
+                air_per_att = float(air_yards) / float(att)
+        except (TypeError, ValueError):
+            air_per_att = None
+        att_f = float(att) if att is not None and att > 0 else 0.0
+        dropbacks = att_f + sack_f if att_f > 0 else 0.0
+        sack_rate = (sack_f / dropbacks) if dropbacks > 0 else 0.0
         prior.append(
             (
                 row_season,
                 row_week,
                 {
                     "yards": y,
-                    "attempts": float(att) if att is not None and att > 0 else 0.0,
+                    "attempts": att_f,
                     "completions": float(comp) if comp is not None else 0.0,
+                    "sacks": sack_f,
+                    "dropbacks": dropbacks,
+                    "sack_rate": sack_rate,
+                    "air_yards_per_attempt": (
+                        float(air_per_att) if air_per_att is not None else 0.0
+                    ),
                 },
             )
         )
@@ -224,20 +262,31 @@ def prior_game_stats_for_player(
 def form_volume_features_from_prior(
     prior_stats: Sequence[Mapping[str, float]],
 ) -> dict[str, float]:
-    """Rolling attempts / YPA / completion% from prior games (league fallback)."""
+    """Rolling attempts / YPA / completion% / air / dropbacks from prior games."""
     attempts = [float(r.get("attempts") or 0.0) for r in prior_stats]
     yards = [float(r.get("yards") or 0.0) for r in prior_stats]
     completions = [float(r.get("completions") or 0.0) for r in prior_stats]
+    dropbacks = [float(r.get("dropbacks") or 0.0) for r in prior_stats]
+    sack_rates = [float(r.get("sack_rate") or 0.0) for r in prior_stats]
+    air_vals = [float(r.get("air_yards_per_attempt") or 0.0) for r in prior_stats]
     att_l3 = rolling_mean([a for a in attempts if a > 0], window=3)
-    # YPA / comp% over last up to 3 games with attempts
+    drop_l3 = rolling_mean([d for d in dropbacks if d > 0], window=3)
+    # YPA / comp% / air / sack rate over last up to 3 games with attempts
     ypa_vals: list[float] = []
     comp_vals: list[float] = []
-    for a, y, c in zip(attempts, yards, completions):
+    air_l3_vals: list[float] = []
+    sack_l3_vals: list[float] = []
+    for a, y, c, air, sr in zip(attempts, yards, completions, air_vals, sack_rates):
         if a and a > 0:
             ypa_vals.append(y / a)
             comp_vals.append(c / a)
+            if air > 0:
+                air_l3_vals.append(air)
+            sack_l3_vals.append(sr)
     ypa_l3 = rolling_mean(ypa_vals, window=3)
     comp_l3 = rolling_mean(comp_vals, window=3)
+    air_l3 = rolling_mean(air_l3_vals, window=3)
+    sack_l3 = rolling_mean(sack_l3_vals, window=3)
     return {
         "rolling_attempts_l3": float(
             att_l3 if att_l3 is not None else _LEAGUE_AVG_ATTEMPTS
@@ -246,6 +295,32 @@ def form_volume_features_from_prior(
         "rolling_comp_pct_l3": float(
             comp_l3 if comp_l3 is not None else _LEAGUE_AVG_COMP_PCT
         ),
+        "rolling_air_yards_l3": float(
+            air_l3 if air_l3 is not None else _LEAGUE_AVG_AIR_YARDS
+        ),
+        "rolling_dropbacks_l3": float(
+            drop_l3 if drop_l3 is not None else _LEAGUE_AVG_DROPBACKS
+        ),
+        "rolling_sack_rate_l3": float(
+            sack_l3 if sack_l3 is not None else _LEAGUE_AVG_SACK_RATE
+        ),
+    }
+
+
+def market_residual_features(
+    *,
+    rolling_yards_l3: float,
+    pass_yds_line: float,
+    line_is_real: bool,
+) -> dict[str, float]:
+    """Form vs market residual features (0 when line is tier-anchored)."""
+    if not line_is_real:
+        return {"market_residual_l3": 0.0, "line_minus_rolling": 0.0}
+    roll = _float_or(rolling_yards_l3, _LEAGUE_AVG_PASS_YARDS)
+    line = _float_or(pass_yds_line, roll)
+    return {
+        "market_residual_l3": float(roll - line),
+        "line_minus_rolling": float(line - roll),
     }
 
 
@@ -422,8 +497,18 @@ def build_qb_features(
         "rolling_attempts_l3": _LEAGUE_AVG_ATTEMPTS,
         "rolling_ypa_l3": _LEAGUE_AVG_YPA,
         "rolling_comp_pct_l3": _LEAGUE_AVG_COMP_PCT,
+        "rolling_air_yards_l3": _LEAGUE_AVG_AIR_YARDS,
+        "rolling_dropbacks_l3": _LEAGUE_AVG_DROPBACKS,
+        "rolling_sack_rate_l3": _LEAGUE_AVG_SACK_RATE,
     }
-    for key in ("rolling_attempts_l3", "rolling_ypa_l3", "rolling_comp_pct_l3"):
+    for key in (
+        "rolling_attempts_l3",
+        "rolling_ypa_l3",
+        "rolling_comp_pct_l3",
+        "rolling_air_yards_l3",
+        "rolling_dropbacks_l3",
+        "rolling_sack_rate_l3",
+    ):
         if ctx.get(key) is not None:
             volume[key] = _float_or(ctx.get(key), volume[key])
 
@@ -485,9 +570,24 @@ def build_qb_features(
         pass_line = _float_or(pass_line_raw, tier)
         if line_is_real is None:
             line_is_real = abs(pass_line - tier) > 0.5
+    line_is_real_f = 1.0 if bool(line_is_real) else 0.0
     line_minus_tier = ctx.get("line_minus_tier")
     if line_minus_tier is None:
         line_minus_tier = float(pass_line) - float(tier) if line_is_real else 0.0
+
+    market_res = market_residual_features(
+        rolling_yards_l3=form["rolling_yards_l3"],
+        pass_yds_line=float(pass_line),
+        line_is_real=bool(line_is_real),
+    )
+    if ctx.get("market_residual_l3") is not None:
+        market_res["market_residual_l3"] = _float_or(
+            ctx.get("market_residual_l3"), market_res["market_residual_l3"]
+        )
+    if ctx.get("line_minus_rolling") is not None:
+        market_res["line_minus_rolling"] = _float_or(
+            ctx.get("line_minus_rolling"), market_res["line_minus_rolling"]
+        )
 
     return {
         "tier_yards": tier,
@@ -501,8 +601,14 @@ def build_qb_features(
         "rolling_attempts_l3": volume["rolling_attempts_l3"],
         "rolling_ypa_l3": volume["rolling_ypa_l3"],
         "rolling_comp_pct_l3": volume["rolling_comp_pct_l3"],
+        "rolling_air_yards_l3": volume["rolling_air_yards_l3"],
+        "rolling_dropbacks_l3": volume["rolling_dropbacks_l3"],
+        "rolling_sack_rate_l3": volume["rolling_sack_rate_l3"],
         "opp_pass_yds_allowed": _float_or(
             ctx.get("opp_pass_yds_allowed"), _LEAGUE_AVG_OPP_PASS_ALLOWED
+        ),
+        "opp_air_yards_allowed": _float_or(
+            ctx.get("opp_air_yards_allowed"), _LEAGUE_AVG_OPP_AIR_ALLOWED
         ),
         "opp_def_epa": _float_or(ctx.get("opp_def_epa"), _LEAGUE_AVG_DEF_EPA),
         "opp_pressure_rate": _clamp(
@@ -519,6 +625,9 @@ def build_qb_features(
         "spread_line": _float_or(spread_line, 0.0),
         "pass_yds_line": _float_or(pass_line, tier),
         "line_minus_tier": float(line_minus_tier),
+        "line_is_real": line_is_real_f,
+        "market_residual_l3": market_res["market_residual_l3"],
+        "line_minus_rolling": market_res["line_minus_rolling"],
         "opp_cover_base": scheme["opp_cover_base"],
         "opp_man_zone": scheme["opp_man_zone"],
         "opp_scheme_pressure": scheme["opp_scheme_pressure"],
@@ -684,3 +793,49 @@ def estimate_opp_pass_allowed_from_weekly(
     if not allowed:
         return None
     return float(sum(allowed) / len(allowed))
+
+
+def estimate_opp_air_yards_allowed_from_weekly(
+    weekly_rows: Sequence[Mapping[str, Any]],
+    *,
+    opponent_abbr: str,
+    season: int,
+    week: int,
+) -> float | None:
+    """Mean prior air-yards/attempt allowed by opponent (coverage depth proxy)."""
+    opp = opponent_abbr.strip().upper()
+    if not opp:
+        return None
+    vals: list[float] = []
+    for row in weekly_rows:
+        pos = str(row.get("position") or "").upper()
+        if pos and pos != "QB":
+            continue
+        row_opp = str(row.get("opponent_team") or row.get("opponent") or "").upper()
+        if row_opp != opp:
+            continue
+        try:
+            row_week = int(row.get("week") or 0)
+            row_season = int(row.get("season") or season)
+        except (TypeError, ValueError):
+            continue
+        if row_season != season or row_week >= week or row_week < 1:
+            continue
+        aya = row.get("air_yards_per_attempt")
+        if aya is None:
+            air = row.get("passing_air_yards")
+            att = row.get("attempts") or row.get("passing_attempts")
+            try:
+                if air is not None and att is not None and float(att) > 0:
+                    aya = float(air) / float(att)
+            except (TypeError, ValueError):
+                aya = None
+        if aya is None:
+            continue
+        try:
+            vals.append(float(aya))
+        except (TypeError, ValueError):
+            continue
+    if len(vals) < 2:
+        return None
+    return float(sum(vals) / len(vals))

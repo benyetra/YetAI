@@ -19,18 +19,21 @@ kickoff. Within 3h of KO, Questionable escalates to Out (backup promotion).
 Within 12h, Q risk/yard cuts escalate; live backups take an extra −20 yards
 (`NFL_QB_LATE_AVAILABILITY=0` to disable).
 
-**Features (v5 lift levers):** prior form + volume (`rolling_attempts_l3`,
-`rolling_ypa_l3`, `rolling_comp_pct_l3`) + defense + weather, market
-(`total_line`, `spread_line`, `pass_yds_line`, `line_minus_tier`,
-`implied_team_total`), and curated scheme tags. **Dynamic tier** blends the
+**Features (v6 residual levers):** prior form + volume (`rolling_attempts_l3`,
+`rolling_ypa_l3`, `rolling_comp_pct_l3`, `rolling_air_yards_l3`,
+`rolling_dropbacks_l3`, `rolling_sack_rate_l3`) + defense + weather, market
+(`total_line`, `spread_line`, `pass_yds_line`, `line_minus_tier`, `line_is_real`,
+`market_residual_l3`, `line_minus_rolling`, `implied_team_total`), opponent air
+yards allowed, and curated scheme tags. **Dynamic tier** blends the
 static name table with leak-safe rolling form (`blend_tier_with_form`). Residual
 target is vs a **market-aware baseline** (`0.5*(tier+line)` when a real prop
 line is present). Training CV is time-ordered (last 20%). Live `qb_betting`
 reinjects `pass_yds_line` after odds attach and refreshes `ml_shadow_yards`.
 
-**O/U classifier:** `qb_ou_classifier` trains `gbm-qb-ou-*` alongside yards GBM.
+**O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
-edge is strong (≥10%).
+edge is strong (≥12%). ML PASS unless `|P(over)−0.5| ≥ 10%`; yards min edge 7%,
+min confidence 70%.
 
 Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
@@ -49,6 +52,17 @@ holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
 | Lift vs dynamic | **+0.9%** (need ≥10%) |
 | Lift vs static | +2.7% |
 | Promote | **No** — keep ML shadow-only |
+
+### Offline nflverse retrain (2026-08-11, v6 features)
+
+| Metric | Value |
+|--------|-------|
+| Holdout | time 20% |
+| Tier MAE | **61.8** |
+| Residual ML MAE | **62.7** |
+| Lift | **−1.4%** (still below gate) |
+| O/U (real lines only) | acc **0.55**, brier **0.248**, n=855 |
+| Promote | **No** — keep `NFL_QB_ML_ENABLED` unset/0 |
 
 ### Prior offline retrain (2026-08-11, residual GBM, nflverse 2023–2025)
 

@@ -46,12 +46,26 @@ def _float_or(value: Any, default: float) -> float:
 def build_ou_feature_row(
     features: Mapping[str, float],
     ou_line: float,
+    *,
+    projected_yards: float | None = None,
 ) -> dict[str, float]:
     row = {name: _float_or(features.get(name), 0.0) for name in FEATURE_NAMES}
     row[_OU_FEATURE] = float(ou_line)
-    # Edge signal: yards projection vs line (tier or ML projected yards if present)
-    tier = _float_or(features.get("tier_yards"), 210.0)
-    row["yards_minus_line"] = tier - float(ou_line)
+    # Prefer live/ML projected yards over tier when available (stronger edge signal).
+    proj = projected_yards
+    if proj is None:
+        for key in ("projected_yards", "ml_shadow_yards", "predicted_passing_yards"):
+            raw = features.get(key)
+            if raw is None:
+                continue
+            try:
+                proj = float(raw)
+                break
+            except (TypeError, ValueError):
+                continue
+    if proj is None:
+        proj = _float_or(features.get("tier_yards"), 210.0)
+    row["yards_minus_line"] = float(proj) - float(ou_line)
     return row
 
 
@@ -61,11 +75,76 @@ def ou_model_feature_order(metadata: Mapping[str, Any] | None = None) -> list[st
     return ou_feature_names() + ["yards_minus_line"]
 
 
+def is_real_ou_line(
+    *,
+    ou_line: float | None,
+    tier_yards: float | None = None,
+    line_is_real: bool | None = None,
+    min_abs_diff_from_tier: float = 0.5,
+) -> bool:
+    """True when the O/U line looks like a market prop (not a tier anchor)."""
+    if ou_line is None:
+        return False
+    try:
+        line = float(ou_line)
+    except (TypeError, ValueError):
+        return False
+    if line <= 0:
+        return False
+    if line_is_real is not None:
+        return bool(line_is_real)
+    if tier_yards is None:
+        return True
+    try:
+        tier = float(tier_yards)
+    except (TypeError, ValueError):
+        return True
+    return abs(line - tier) > min_abs_diff_from_tier
+
+
+def filter_real_ou_training_rows(
+    features_df: pd.DataFrame,
+    actuals: pd.Series,
+    *,
+    line_col: str = "ou_line",
+    tier_col: str = "tier_yards",
+    real_col: str | None = "line_is_real",
+) -> tuple[pd.DataFrame, pd.Series]:
+    """Keep rows with a real market line and a non-push actual."""
+    if features_df.empty:
+        return features_df.copy(), actuals.copy()
+    keep: list[int] = []
+    for idx in features_df.index:
+        row = features_df.loc[idx]
+        line = row.get(line_col)
+        tier = row.get(tier_col)
+        real_flag = None
+        if real_col and real_col in features_df.columns:
+            try:
+                real_flag = bool(float(row.get(real_col) or 0.0) >= 0.5)
+            except (TypeError, ValueError):
+                real_flag = None
+        if not is_real_ou_line(ou_line=line, tier_yards=tier, line_is_real=real_flag):
+            continue
+        try:
+            actual = float(actuals.loc[idx])
+            line_f = float(line)
+        except (TypeError, ValueError, KeyError):
+            continue
+        if abs(actual - line_f) < 0.5:
+            continue
+        keep.append(idx)
+    if not keep:
+        return features_df.iloc[0:0].copy(), actuals.iloc[0:0].copy()
+    return features_df.loc[keep].copy(), actuals.loc[keep].copy()
+
+
 def train_qb_ou_classifier(
     features_df: pd.DataFrame,
     over_labels: pd.Series,
     *,
     hyperparams: dict[str, Any] | None = None,
+    time_ordered: bool = True,
 ) -> tuple[Any, dict[str, Any]]:
     from sklearn.ensemble import GradientBoostingClassifier  # type: ignore
     from sklearn.metrics import accuracy_score, brier_score_loss, log_loss  # type: ignore
@@ -91,9 +170,20 @@ def train_qb_ou_classifier(
         "random_state": 42,
     }
     hp = {**default_hp, **(hyperparams or {})}
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.25, random_state=42, stratify=y
-    )
+
+    # Prefer time-ordered holdout (last 20%) when rows are chronological.
+    if time_ordered and len(X) >= 60:
+        cut = int(len(X) * 0.8)
+        X_train, X_test = X.iloc[:cut], X.iloc[cut:]
+        y_train, y_test = y.iloc[:cut], y.iloc[cut:]
+        if y_train.nunique() < 2 or y_test.nunique() < 2:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=0.25, random_state=42, stratify=y
+            )
+    else:
+        X_train, X_test, y_train, y_test = train_test_split(
+            X, y, test_size=0.25, random_state=42, stratify=y
+        )
     model = GradientBoostingClassifier(**hp)
     model.fit(X_train, y_train)
     proba_test = model.predict_proba(X_test)[:, 1]
@@ -110,6 +200,7 @@ def train_qb_ou_classifier(
         "n_test": int(len(X_test)),
         "features": order,
         "hyperparams": hp,
+        "real_line_only": True,
         "holdout_accuracy": float(accuracy_score(y_test, pred_test)),
         "holdout_brier": float(brier_score_loss(y_test, proba_test)),
         "holdout_log_loss": float(log_loss(y_test, proba_test)),
@@ -129,8 +220,9 @@ def predict_over_probability(
     ou_line: float,
     *,
     feature_order: list[str] | None = None,
+    projected_yards: float | None = None,
 ) -> float:
-    row = build_ou_feature_row(features, ou_line)
+    row = build_ou_feature_row(features, ou_line, projected_yards=projected_yards)
     order = feature_order or ou_model_feature_order()
     vec = np.array([[float(row.get(name, 0.0)) for name in order]])
     if hasattr(model, "predict_proba"):
@@ -203,17 +295,29 @@ def _ensure_loaded() -> bool:
 def predict_over_probability_loaded(
     features: Mapping[str, float],
     ou_line: float,
+    *,
+    projected_yards: float | None = None,
 ) -> float | None:
     if not _ensure_loaded() or _MODEL is None:
         return None
     order = ou_model_feature_order(_METADATA)
-    return predict_over_probability(_MODEL, features, ou_line, feature_order=order)
+    return predict_over_probability(
+        _MODEL,
+        features,
+        ou_line,
+        feature_order=order,
+        projected_yards=projected_yards,
+    )
+
+
+# Default ML edge vs 0.5 — tightened vs prior 8% to cut coin-flip O/U calls.
+DEFAULT_OU_MIN_EDGE = 0.10
 
 
 def recommendation_from_over_prob(
     over_prob: float,
     *,
-    min_edge: float = 0.08,
+    min_edge: float = DEFAULT_OU_MIN_EDGE,
 ) -> dict[str, Any]:
     """Map P(over) to OVER/UNDER/PASS with edge vs 0.5."""
     edge = over_prob - 0.5

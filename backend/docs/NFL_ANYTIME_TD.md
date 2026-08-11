@@ -30,6 +30,11 @@ Projector `run()` without injected `feature_rows` calls
 Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
 RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`
 ≤ 20 / ≤ 5) when available, with weekly scoring proxies as fallback.
+**RBs** use rush + goal-line carry share (not blended RZ touches) and blend
+conversion toward GL TD rate; WR/TE use RZ target share. Usage universe keeps
+top **2 RBs** per team. Walk-forward gate requires beating baseline Brier
+(`require_beat_baseline_brier=true`) and RB Brier ≤ `max_rb_brier` (0.28).
+UI flags stay off until that gate clears on a fresh metrics write.
 
 ## Pipeline
 

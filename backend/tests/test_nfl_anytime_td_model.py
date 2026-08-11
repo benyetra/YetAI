@@ -24,3 +24,25 @@ def test_expected_tds_multiplicative():
 def test_anytime_td_probability_clamped():
     assert anytime_td_probability(-1.0) == 0.0
     assert anytime_td_probability(100.0) == 1.0
+
+
+def test_rb_gl_share_raises_expected_tds_vs_low_gl_back():
+    """RB with higher GL share / conversion should have higher λ."""
+    low = expected_tds(
+        team_rz_trips=3.2,
+        player_rz_share=0.20,
+        conversion_rate=0.30,
+        defense_mult=1.0,
+        weather_mult=1.0,
+        script_mult=1.0,
+    )
+    high = expected_tds(
+        team_rz_trips=3.2,
+        player_rz_share=0.40,
+        conversion_rate=0.50,
+        defense_mult=1.0,
+        weather_mult=1.0,
+        script_mult=1.0,
+    )
+    assert high > low
+    assert anytime_td_probability(high) > anytime_td_probability(low)

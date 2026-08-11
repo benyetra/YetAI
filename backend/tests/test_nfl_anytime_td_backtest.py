@@ -66,6 +66,18 @@ def test_passes_gate_passes_when_model_beats_baseline():
     assert passes_gate(metrics, DEFAULT_GATE_BASELINES) is True
 
 
+def test_passes_gate_fails_when_rb_brier_too_high():
+    from app.services.etl.nfl.anytime_td_backtest import WALK_FORWARD_GATE_BASELINES
+
+    metrics = {
+        "brier": 0.18,
+        "baseline_brier": 0.20,
+        "n_graded": 250,
+        "by_position": {"RB": {"brier": 0.30, "n": 80}},
+    }
+    assert passes_gate(metrics, WALK_FORWARD_GATE_BASELINES) is False
+
+
 def test_score_synthetic_rows_builds_graded_rows():
     rows = score_synthetic_rows(QUICK_SYNTHETIC_ROWS)
     assert len(rows) == len(QUICK_SYNTHETIC_ROWS)

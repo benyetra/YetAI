@@ -106,6 +106,52 @@ def test_aggregate_player_rz_from_pbp():
     assert players["wr1"]["rz_targets"] >= 1
     assert players["wr1"]["player_rz_share"] is not None
     assert 0.0 < players["wr1"]["player_rz_share"] <= 1.0
+    assert players["rb1"]["rz_rush_share"] is not None
+    assert players["rb1"]["gl_carry_share"] is not None
+    assert players["rb1"]["gl_carries_pg"] is not None
+
+
+def test_aggregate_team_early_down_pass_pct():
+    plays = _pbp_sample() + [
+        {
+            "week": 1,
+            "posteam": "KC",
+            "yardline_100": 10,
+            "pass": 1,
+            "rush": 0,
+            "down": 1,
+            "receiver_player_id": "wr1",
+            "rusher_player_id": None,
+            "drive": 4,
+        },
+        {
+            "week": 1,
+            "posteam": "KC",
+            "yardline_100": 8,
+            "pass": 0,
+            "rush": 1,
+            "down": 2,
+            "receiver_player_id": None,
+            "rusher_player_id": "rb1",
+            "drive": 4,
+        },
+    ]
+    team = aggregate_team_rz_from_pbp(plays, as_of_week=3)
+    assert 0.30 <= team["KC"]["early_down_pass_pct"] <= 0.70
+
+
+def test_resolve_position_rz_share_rb_prefers_rush_and_gl():
+    from app.services.etl.nfl.anytime_td_pbp import resolve_position_rz_share
+
+    share = resolve_position_rz_share(
+        position="RB",
+        rz_rush_share=0.40,
+        rz_target_share=0.05,
+        gl_carry_share=0.50,
+        blended_share=0.20,
+    )
+    assert share is not None
+    assert abs(share - (0.70 * 0.40 + 0.30 * 0.50)) < 1e-9
 
 
 def test_player_rz_share_uses_games_count_key():

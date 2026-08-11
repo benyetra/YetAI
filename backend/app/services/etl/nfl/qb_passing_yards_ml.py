@@ -170,7 +170,17 @@ def _fill_missing_feature_columns(features_df: pd.DataFrame) -> pd.DataFrame:
             features_df[col] = 7.0
         elif col == "rolling_comp_pct_l3":
             features_df[col] = 0.65
-        elif col == "line_minus_tier":
+        elif col == "rolling_air_yards_l3":
+            features_df[col] = 7.5
+        elif col == "rolling_dropbacks_l3":
+            features_df[col] = 36.0
+        elif col == "rolling_sack_rate_l3":
+            features_df[col] = 0.07
+        elif col == "opp_air_yards_allowed":
+            features_df[col] = 7.5
+        elif col in ("line_minus_tier", "market_residual_l3", "line_minus_rolling"):
+            features_df[col] = 0.0
+        elif col == "line_is_real":
             features_df[col] = 0.0
         elif col == "opp_def_epa":
             features_df[col] = 0.0

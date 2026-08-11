@@ -41,10 +41,14 @@ WALK_FORWARD_GATE_BASELINES: dict[str, Any] = {
     "max_brier": 0.25,
     "min_n_graded": 200,
     "max_brier_vs_baseline_margin": 0.02,
-    "require_beat_baseline_brier": False,
+    # Require model Brier ≤ baseline (+ margin). Position-prior baseline when
+    # market odds are absent; market-implied when present on graded rows.
+    "require_beat_baseline_brier": True,
     # Starter-only universe makes position-prior top-20 a strong baseline; allow a
     # small gap while still requiring absolute Brier ≤ max_brier.
     "min_top20_hit_rate_vs_baseline_margin": -0.03,
+    # RB is the historical weak spot — keep a position ceiling in the gate.
+    "max_rb_brier": 0.28,
 }
 
 DEFAULT_BRIER_TOLERANCE = 0.02
@@ -242,6 +246,14 @@ def passes_gate(metrics: Mapping[str, Any], baselines: Mapping[str, Any]) -> boo
     require_beat = bool(gate.get("require_beat_baseline_brier", True))
     if require_beat and float(brier) > float(baseline_brier) + margin:
         return False
+
+    max_rb_brier = gate.get("max_rb_brier")
+    if max_rb_brier is not None:
+        by_pos = metrics.get("by_position") or {}
+        rb = by_pos.get("RB") if isinstance(by_pos, dict) else None
+        if isinstance(rb, dict) and rb.get("brier") is not None:
+            if float(rb["brier"]) > float(max_rb_brier):
+                return False
 
     # Optional ranking check when both rates are present (walk-forward).
     top20 = metrics.get("top20_hit_rate")
@@ -478,12 +490,34 @@ def grade_week_from_weekly_records(
             "snap_pct": player_usage.get("snap_pct"),
             "conversion_rate": player_usage.get("conversion_rate"),
         }
-        if pbp_player.get("rz_targets") is not None:
+        if pbp_player.get("rz_targets_pg") is not None:
+            player_stats["rz_targets"] = pbp_player["rz_targets_pg"]
+        elif pbp_player.get("rz_targets") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets"]
-        if pbp_player.get("gl_carries") is not None:
+        if pbp_player.get("gl_carries_pg") is not None:
+            player_stats["gl_carries"] = pbp_player["gl_carries_pg"]
+        elif pbp_player.get("gl_carries") is not None:
             player_stats["gl_carries"] = pbp_player["gl_carries"]
-        if pbp_player.get("player_rz_share") is not None:
-            player_stats["player_rz_share"] = pbp_player["player_rz_share"]
+        for key in (
+            "rz_rush_share",
+            "rz_target_share",
+            "gl_carry_share",
+            "gl_td_rate",
+            "rz_carries",
+        ):
+            if pbp_player.get(key) is not None:
+                player_stats[key] = pbp_player[key]
+        from app.services.etl.nfl.anytime_td_pbp import resolve_position_rz_share
+
+        pos_share = resolve_position_rz_share(
+            position=pos,
+            rz_rush_share=pbp_player.get("rz_rush_share"),
+            rz_target_share=pbp_player.get("rz_target_share"),
+            gl_carry_share=pbp_player.get("gl_carry_share"),
+            blended_share=pbp_player.get("player_rz_share"),
+        )
+        if pos_share is not None:
+            player_stats["player_rz_share"] = pos_share
         else:
             rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
             if rz_share is not None:

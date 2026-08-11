@@ -238,6 +238,12 @@ def _load_weekly_qb_history(season: int) -> list[dict]:
                     if row.get("sacks") is not None and not pd.isna(row.get("sacks"))
                     else None
                 ),
+                "passing_air_yards": (
+                    float(row["passing_air_yards"])
+                    if row.get("passing_air_yards") is not None
+                    and not pd.isna(row.get("passing_air_yards"))
+                    else None
+                ),
             }
         )
     return records
@@ -342,6 +348,7 @@ def build_qb_prediction_context(
     """Assemble matchup/form context for GBM features."""
     from app.services.etl.nfl.qb_features import (
         blend_tier_with_form,
+        estimate_opp_air_yards_allowed_from_weekly,
         estimate_opp_defense_from_weekly,
         estimate_opp_pass_allowed_from_weekly,
         form_features_from_prior_yards,
@@ -390,6 +397,12 @@ def build_qb_prediction_context(
         season=season,
         week=week,
     )
+    opp_air = estimate_opp_air_yards_allowed_from_weekly(
+        history,
+        opponent_abbr=opponent_abbr or "",
+        season=season,
+        week=week,
+    )
     defense = estimate_opp_defense_from_weekly(
         history,
         opponent_abbr=opponent_abbr or "",
@@ -418,6 +431,8 @@ def build_qb_prediction_context(
     }
     if opp_allowed is not None:
         ctx["opp_pass_yds_allowed"] = opp_allowed
+    if opp_air is not None:
+        ctx["opp_air_yards_allowed"] = opp_air
     if implied is not None:
         ctx["implied_team_total"] = implied
     elif market.get("implied_team_total") is not None:
