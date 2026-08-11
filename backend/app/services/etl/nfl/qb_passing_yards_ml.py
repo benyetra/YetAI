@@ -183,12 +183,21 @@ def train_qb_yards_model(
     return model, metadata
 
 
+def _bundled_model_paths() -> tuple[Path, Path]:
+    root = Path(__file__).resolve().parents[4] / "models" / "nfl"
+    return root / f"{MODEL_KEY}.pkl", root / f"{MODEL_KEY}_metadata.json"
+
+
 def _local_model_paths() -> tuple[Path, Path] | None:
     base = os.getenv("NFL_QB_MODEL_LOCAL", "").strip()
-    if not base:
-        return None
-    root = Path(base)
-    return root / f"{MODEL_KEY}.pkl", root / f"{MODEL_KEY}_metadata.json"
+    if base:
+        root = Path(base)
+        return root / f"{MODEL_KEY}.pkl", root / f"{MODEL_KEY}_metadata.json"
+    # Fall back to shipped backend/models/nfl artifacts (same pattern as kickers)
+    model_path, meta_path = _bundled_model_paths()
+    if model_path.is_file() and meta_path.is_file():
+        return model_path, meta_path
+    return None
 
 
 def _download_artifact(s3_key: str, local_path: Path) -> None:

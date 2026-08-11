@@ -1,0 +1,41 @@
+{
+  "model_key": "qb_pass_yds_ou",
+  "target": "actual_over_ou_line",
+  "trained_at": "2026-08-11T02:59:04.380220",
+  "train_date": "20260811",
+  "model_version": "gbm-qb-ou-20260811",
+  "n_train": 679,
+  "n_test": 227,
+  "features": [
+    "tier_yards",
+    "is_backup",
+    "week",
+    "confidence",
+    "season",
+    "rolling_yards_l3",
+    "rolling_yards_l5",
+    "season_avg_yards",
+    "opp_pass_yds_allowed",
+    "opp_def_epa",
+    "opp_pressure_rate",
+    "injury_risk",
+    "is_home",
+    "rest_days",
+    "implied_team_total",
+    "wind_speed",
+    "temperature",
+    "dome",
+    "ou_line",
+    "yards_minus_line"
+  ],
+  "hyperparams": {
+    "n_estimators": 100,
+    "max_depth": 3,
+    "learning_rate": 0.08,
+    "subsample": 0.85,
+    "random_state": 42
+  },
+  "holdout_accuracy": 0.5814977973568282,
+  "holdout_brier": 0.24196174537436874,
+  "holdout_log_loss": 0.6769155452468482
+}

@@ -6,7 +6,7 @@
 |------|-----|------------------|-----------------|
 | Tier table (default) | — | Stable tier base (+ injury soft-downgrade) | `tier-v3` |
 | ML shadow | — | Tier (unchanged) | `tier-v3`; `feature_importance.ml_shadow_yards` |
-| ML promote | `NFL_QB_ML_ENABLED=1` | GBM from S3/local | `gbm-qb-yards-YYYYMMDD` |
+| ML promote | `NFL_QB_ML_ENABLED=1` | GBM from S3/local/`models/nfl` | `gbm-qb-yards-YYYYMMDD` |
 
 **Tier v3:** No hash-based week noise. Uncertainty is
 `prediction_interval_lower/upper` + confidence. Opt-in legacy noise with
@@ -22,35 +22,34 @@
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
 edge is strong (≥10%).
 
-Promotion gate (backtest on prod DB): ML MAE ≥ **10%** better than tier-only baseline documented in `nfl_backtest_quick_baseline.json`.
+Promotion gate: ML MAE ≥ **10%** better than tier on holdout.
 
-Retrain after feature expansion before promoting — older S3 artifacts trained on
-narrower feature matrices are not compatible with the current feature order.
+### Latest offline retrain (2026-08-11, nflverse 2023–2025)
 
-## Train + upload
+| Metric | Value |
+|--------|-------|
+| Rows | 1140 train+holdout |
+| Tier MAE | **61.8** |
+| ML MAE | 65.4 |
+| Lift | **−5.8%** (worse than tier) |
+| Promote? | **No** — keep `NFL_QB_ML_ENABLED` unset/0 |
+
+Artifacts shipped under `backend/models/nfl/` for shadow inference:
+`qb_passing_yards.pkl`, `qb_pass_yds_ou.pkl`, `qb_retrain_report.json`.
+
+Re-run:
 
 ```bash
 cd backend
+PYTHONPATH=. python scripts/nfl_retrain_qb_models.py --seasons 2023,2024,2025
+# With prod credentials:
+PYTHONPATH=. python scripts/nfl_retrain_qb_models.py --seasons 2023,2024,2025 --upload
 PYTHONPATH=. python -m app.services.etl.nfl.ml_training.train_qb_model \
   --season-start 2024-09-01 --season-end 2025-02-15 --upload
-```
-
-Artifacts:
-- `s3://yetibets/nfl/ml_models/qb_passing_yards.pkl` (+ metadata)
-- `s3://yetibets/nfl/ml_models/qb_pass_yds_ou.pkl` (+ metadata) when O/U labels exist
-
-Local dev: `NFL_QB_MODEL_LOCAL=/path/to/models`
-
-## Backtest
-
-```bash
 PYTHONPATH=. python scripts/nfl_backtest.py --quick
 ```
 
-Offline CI: `tests/test_nfl_backtest_regression.py`, `tests/test_nfl_qb_*`,
-`tests/test_nfl_kicker_blend_tune.py`, `tests/test_nfl_accuracy_model_version.py`.
-
-Accuracy API includes `by_model_version` MAE for QB yards and kicker FG.
+Local path: `NFL_QB_MODEL_LOCAL` or bundled `backend/models/nfl/`.
 
 ## Kicker blend (Phase 4.4+)
 
@@ -60,14 +59,17 @@ Accuracy API includes `by_model_version` MAE for QB yards and kicker FG.
 | `NFL_KICKER_BLEND_TUNED_WEIGHT` | Pin walk-forward optimal weight in prod |
 | `NFL_MODELS_S3_PREFIX` | Kicker ensemble pickles |
 
-Default blend weight is **0.30** (was 0.35) with the volume model.
+Offline CSV tune (`scripts/nfl_tune_kicker_blend.py --write`) recommended
+**0.50** → written to `models/nfl/kicker_blend_tune.json` (auto-loaded when env unset).
+Prefer re-tuning from prod `statistical_fgs` / `ml_fgs` / `actual_fg_made` rows.
 
-Kick distance uses `impute_kick_distance()` (kicker avg → CSV → league mean).
+```bash
+# Railway / prod recommendation until prod walk-forward exists:
+NFL_KICKER_BLEND_TUNED_WEIGHT=0.5
+```
 
-ML FG count uses **attempts × distance-mixture make%** (`kicker_volume.py`),
-blending the binary FG classifier with band make rates — not `1.2 + p×2.3`.
+ML FG count uses **attempts × distance-mixture make%** (`kicker_volume.py`).
 
-Attempts use `estimate_attempts_heuristic` (RZ, 3rd down, pace, script, weather).
+## Accuracy
 
-Walk-forward helper: `kicker_blend_tune.walk_forward_blend_weight(records)` with rows
-`statistical_fgs`, `ml_fgs`, `actual_fg_made`. Run backtest first, then set tuned weight from CLI output.
+`GET` NFL accuracy includes `by_model_version` MAE for QB yards and kicker FG.

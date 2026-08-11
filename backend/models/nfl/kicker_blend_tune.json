@@ -1,0 +1,6 @@
+{
+  "tuned_at": "2026-08-11T02:59:02.050314",
+  "NFL_KICKER_BLEND_TUNED_WEIGHT": 0.5,
+  "source": "field_goal_data.csv walk-forward proxy",
+  "note": "Prefer re-tuning from prod statistical_fgs/ml_fgs/actual_fg_made rows when available; this CSV proxy is a bootstrap default."
+}

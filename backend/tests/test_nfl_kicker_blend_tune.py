@@ -52,8 +52,17 @@ def test_walk_forward_prefers_stat_when_stat_closer():
     assert w <= 0.35
 
 
-def test_default_blend_weight_is_30():
-    assert resolve_blend_weight() == 0.30
+def test_default_blend_weight_uses_tuned_json(monkeypatch):
+    monkeypatch.delenv("NFL_KICKER_BLEND_TUNED_WEIGHT", raising=False)
+    monkeypatch.delenv("NFL_KICKER_ML_BLEND_WEIGHT", raising=False)
+    # Shipped tune artifact should be picked up
+    w = resolve_blend_weight()
+    assert w == 0.5
+
+
+def test_env_tuned_weight_overrides_json(monkeypatch):
+    monkeypatch.setenv("NFL_KICKER_BLEND_TUNED_WEIGHT", "0.25")
+    assert resolve_blend_weight() == 0.25
 
 
 def test_mixture_make_probability_in_band():
