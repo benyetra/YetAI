@@ -69,19 +69,31 @@ def _predict_residual_holdout(
     X_test: pd.DataFrame,
     feature_order: list[str],
     baseline_mode: str,
+    hyperparams: dict[str, Any] | None = None,
+    use_promote_trainer: bool = False,
 ) -> tuple[np.ndarray, dict[str, Any]]:
     from app.services.etl.nfl.qb_passing_yards_ml import (
         predict_yards_ml,
+        train_promote_qb_yards_model,
         train_qb_yards_model,
     )
 
-    model, metadata = train_qb_yards_model(
-        (X_train, y_train),
-        residual_target=True,
-        fit_full=True,
-        feature_order=feature_order,
-        baseline_mode=baseline_mode,
-    )
+    if use_promote_trainer:
+        model, metadata = train_promote_qb_yards_model(
+            (X_train, y_train),
+            residual_target=True,
+            feature_order=feature_order,
+            baseline_mode=baseline_mode,
+        )
+    else:
+        model, metadata = train_qb_yards_model(
+            (X_train, y_train),
+            residual_target=True,
+            fit_full=True,
+            feature_order=feature_order,
+            baseline_mode=baseline_mode,
+            hyperparams=hyperparams,
+        )
     preds = np.array(
         [
             predict_yards_ml(
@@ -172,12 +184,42 @@ def run_holdout_ablations(
         },
     }
 
-    residual_specs = (
-        ("v5_features_market_residual", list(V5_FEATURE_NAMES), "market"),
-        ("v6_features_market_residual", list(FEATURE_NAMES), "market"),
-        ("tier_only_residual", list(TIER_ONLY_FEATURE_NAMES), "tier"),
+    from app.services.etl.nfl.qb_passing_yards_ml import (
+        DEFAULT_HYPERPARAMS,
+        PROMOTE_HYPERPARAM_CANDIDATES,
     )
-    for key, order, baseline_mode in residual_specs:
+
+    residual_specs: list[tuple[str, list[str], str, dict[str, Any] | None, bool]] = [
+        ("v5_features_market_residual", list(V5_FEATURE_NAMES), "market", None, False),
+        ("v6_features_market_residual", list(FEATURE_NAMES), "market", None, False),
+        (
+            "tier_only_residual",
+            list(TIER_ONLY_FEATURE_NAMES),
+            "tier",
+            dict(DEFAULT_HYPERPARAMS),
+            False,
+        ),
+        (
+            "tier_only_promote_sweep",
+            list(TIER_ONLY_FEATURE_NAMES),
+            "tier",
+            None,
+            True,
+        ),
+    ]
+    for cand in PROMOTE_HYPERPARAM_CANDIDATES:
+        hp = {k: v for k, v in cand.items() if k != "name"}
+        residual_specs.append(
+            (
+                f"tier_only_residual_{cand.get('name', 'hp')}",
+                list(TIER_ONLY_FEATURE_NAMES),
+                "tier",
+                hp,
+                False,
+            )
+        )
+
+    for key, order, baseline_mode, hyperparams, use_promote in residual_specs:
         try:
             preds, meta = _predict_residual_holdout(
                 X_train=X_train,
@@ -185,6 +227,8 @@ def run_holdout_ablations(
                 X_test=X_test,
                 feature_order=order,
                 baseline_mode=baseline_mode,
+                hyperparams=hyperparams,
+                use_promote_trainer=use_promote,
             )
             mae = _mae(y_test, preds)
             tier_mae = ablations["dynamic_tier"]["mae"]
@@ -197,6 +241,8 @@ def run_holdout_ablations(
                 "n_train": meta.get("n_train"),
                 "fit_full": meta.get("fit_full"),
                 "baseline_mode": baseline_mode,
+                "promote_hp_selected": meta.get("promote_hp_selected"),
+                "hyperparams": meta.get("hyperparams"),
             }
             if real_mask.any():
                 # Diagnose market collapse: how close is ML to the line vs tier?
@@ -213,10 +259,17 @@ def run_holdout_ablations(
 
     v5 = ablations.get("v5_features_market_residual") or {}
     v6 = ablations.get("v6_features_market_residual") or {}
+    tier_only = ablations.get("tier_only_residual") or {}
+    promote_arm = ablations.get("tier_only_promote_sweep") or {}
     line_only = ablations.get("line_only") or {}
     ablations["summary"] = {
         "v5_lift_vs_dynamic_tier": v5.get("mae_lift_vs_dynamic_tier"),
         "v6_lift_vs_dynamic_tier": v6.get("mae_lift_vs_dynamic_tier"),
+        "tier_only_lift_vs_dynamic_tier": tier_only.get("mae_lift_vs_dynamic_tier"),
+        "promote_sweep_lift_vs_dynamic_tier": promote_arm.get(
+            "mae_lift_vs_dynamic_tier"
+        ),
+        "promote_hp_selected": promote_arm.get("promote_hp_selected"),
         "v6_ml_mae_near_line_only": (
             abs(float(v6.get("mae") or 0) - float(line_only.get("mae") or 0)) < 3.0
             if v6.get("mae") is not None and line_only.get("mae") is not None
@@ -224,6 +277,9 @@ def run_holdout_ablations(
         ),
         "v5_still_non_negative_lift": bool(
             (v5.get("mae_lift_vs_dynamic_tier") or -1.0) >= 0.0
+        ),
+        "tier_only_positive_lift": bool(
+            (tier_only.get("mae_lift_vs_dynamic_tier") or -1.0) > 0.0
         ),
     }
     return ablations
@@ -393,8 +449,10 @@ def train_and_eval(
     )
     from app.services.etl.nfl.qb_passing_yards_ml import (
         MODEL_KEY,
+        PROMOTE_BASELINE_MODE,
+        PROMOTE_FEATURE_NAMES,
         predict_yards_ml,
-        train_qb_yards_model,
+        train_promote_qb_yards_model,
     )
 
     features, target, meta = _build_with_meta(season_start, season_end)
@@ -419,14 +477,22 @@ def train_and_eval(
         else tier_test
     )
 
-    model, metadata = train_qb_yards_model(
+    promote_features = list(PROMOTE_FEATURE_NAMES)
+    model, metadata = train_promote_qb_yards_model(
         (X_train, y_train),
         residual_target=True,
-        fit_full=True,
+        feature_order=promote_features,
+        baseline_mode=PROMOTE_BASELINE_MODE,
     )
     ml_pred = np.array(
         [
-            predict_yards_ml(model, X_test.iloc[i].to_dict(), residual_target=True)
+            predict_yards_ml(
+                model,
+                X_test.iloc[i].to_dict(),
+                feature_order=promote_features,
+                residual_target=True,
+                baseline_mode=PROMOTE_BASELINE_MODE,
+            )
             for i in range(len(X_test))
         ]
     )
@@ -460,8 +526,12 @@ def train_and_eval(
         "rows_train": int(len(X_train)),
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
-        "model_family": "residual_gbm_market_aware",
+        "model_family": "residual_gbm_tier_only",
+        "promote_path": "tier_only_residual",
+        "promote_hp_selected": metadata.get("promote_hp_selected"),
         "fit_full": True,
+        "baseline_mode": PROMOTE_BASELINE_MODE,
+        "n_features": len(promote_features),
         "tier_mae": round(tier_mae, 3),
         "static_tier_mae": round(static_tier_mae, 3),
         "ml_mae": round(ml_mae, 3),

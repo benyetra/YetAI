@@ -19,16 +19,18 @@ kickoff. Within 3h of KO, Questionable escalates to Out (backup promotion).
 Within 12h, Q risk/yard cuts escalate; live backups take an extra −20 yards
 (`NFL_QB_LATE_AVAILABILITY=0` to disable).
 
-**Features (v6 residual levers):** prior form + volume (`rolling_attempts_l3`,
-`rolling_ypa_l3`, `rolling_comp_pct_l3`, `rolling_air_yards_l3`,
-`rolling_dropbacks_l3`, `rolling_sack_rate_l3`) + defense + weather, market
-(`total_line`, `spread_line`, `pass_yds_line`, `line_minus_tier`, `line_is_real`,
-`market_residual_l3`, `line_minus_rolling`, `implied_team_total`), opponent air
-yards allowed, and curated scheme tags. **Dynamic tier** blends the
-static name table with leak-safe rolling form (`blend_tier_with_form`). Residual
-target is vs a **market-aware baseline** (`0.5*(tier+line)` when a real prop
-line is present). Training CV is time-ordered (last 20%). Live `qb_betting`
-reinjects `pass_yds_line` after odds attach and refreshes `ml_shadow_yards`.
+**Features:** form + volume + defense + weather + game market
+(`total_line` / `spread_line` / `implied_team_total`) + scheme tags. Full feature
+matrix still includes prop-line columns for O/U / diagnostics, but the
+**promote residual path is tier-only**: baseline = dynamic tier (no
+`0.5*(tier+line)`), and prop-line columns (`pass_yds_line`, `line_minus_tier`,
+`line_is_real`, `market_residual_l3`, `line_minus_rolling`) are dropped from the
+GBM. Railway ablations (2026-08-11) showed market-residual arms collapsing
+toward the line (−2% / −11% lift) while tier-only residual was **+3.0%**.
+Promote trainer sweeps a small regularized HP grid on inner time CV, then
+`fit_full` on all train rows. Live `qb_betting` still reinjects `pass_yds_line`
+for O/U / shadow context; yards residual inference reads `baseline_mode` from
+model metadata.
 
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
@@ -41,15 +43,23 @@ holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
 
 Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 (Railway)**):
-- Promote model uses **`fit_full=True`** (inner time 20% CV for metadata, then
-  refit on all `rows_train`; expect `n_train == rows_train`).
-- Report includes **`ablations`**: dynamic/static tier, line-only, market
-  baseline `0.5*(tier+line)`, v5-feature residual, v6-feature residual, and
-  tier-only residual (no prop-line features/baseline). Use
-  `ml_closer_to_line_than_tier` / `summary.v6_ml_mae_near_line_only` to detect
-  market collapse.
+- Promote model = **tier-only residual** + HP sweep (`default` / `shallow` /
+  `strong_reg`) + **`fit_full=True`** (`n_train == rows_train`).
+- Report includes **`ablations`** (market arms + tier-only HP variants) and
+  `promote_hp_selected`.
 
-### Latest Railway promote-gate (2026-08-11, v5 lift levers)
+### Latest Railway ablations (2026-08-11, post-#98)
+
+| Arm | MAE | Lift vs dynamic tier |
+|-----|----:|---------------------:|
+| Dynamic tier | 65.5 | — |
+| Line-only (real rows) | 54.8 | — |
+| v5 market residual | 67.0 | −2.3% |
+| v6 market residual | 72.6 | −10.8% |
+| Tier-only residual | **63.5** | **+3.0%** |
+| Promote | **No** — keep ML shadow-only; next = tier-only + regularize |
+
+### Prior Railway promote-gate (2026-08-11, v5 lift levers)
 
 | Metric | Value |
 |--------|-------|

@@ -19,7 +19,7 @@ on:
 
 jobs:
   eval:
-    name: Prod QB residual eval (ablations + full-train)
+    name: Prod QB residual eval (tier-only promote + ablations)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -77,6 +77,10 @@ jobs:
               "rows_total",
               "rows_train",
               "holdout",
+              "model_family",
+              "promote_path",
+              "promote_hp_selected",
+              "baseline_mode",
               "fit_full",
               "tier_mae",
               "ml_mae",
@@ -96,8 +100,11 @@ jobs:
               tm.get("cv_n_train"),
               "fit_full_meta:",
               tm.get("fit_full"),
+              "hp:",
+              tm.get("promote_hp_selected"),
           )
           print("n_train_equals_rows_train:", tm.get("n_train") == report.get("rows_train"))
+          print("promote_hp_sweep:", tm.get("promote_hp_sweep"))
           print("=== ABLATIONS ===")
           ab = report.get("ablations") or {}
           for name, payload in ab.items():
@@ -107,6 +114,7 @@ jobs:
                   print(
                       f"{name}: mae={payload.get('mae')} "
                       f"lift={payload.get('mae_lift_vs_dynamic_tier')} "
+                      f"hp={payload.get('promote_hp_selected')} "
                       f"ml_closer_to_line={payload.get('ml_closer_to_line_than_tier')}"
                   )
           print("summary:", ab.get("summary"))
