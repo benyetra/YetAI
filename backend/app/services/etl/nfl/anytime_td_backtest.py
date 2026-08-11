@@ -407,6 +407,7 @@ def grade_week_from_weekly_records(
         aggregate_player_usage_from_weekly,
         aggregate_team_rz_from_weekly,
         build_player_feature_row,
+        starter_ids_from_usage,
     )
 
     if schemes is None:
@@ -438,6 +439,9 @@ def grade_week_from_weekly_records(
 
     defense = aggregate_defense_allowed_from_weekly(weekly_list, as_of_week=as_of)
 
+    # Match live board: starters only (usage top-N proxy when depth charts absent).
+    starter_ids = starter_ids_from_usage(usage)
+
     graded: list[dict[str, Any]] = []
     for raw in weekly_list:
         if int(float(raw.get("week") or 0)) != week:
@@ -448,13 +452,15 @@ def grade_week_from_weekly_records(
         player_id = str(raw.get("player_id") or raw.get("gsis_id") or "").strip()
         if not player_id:
             continue
+        if starter_ids and player_id not in starter_ids:
+            continue
         team = _str(raw, "recent_team", "team").upper()
         opp = _str(raw, "opponent_team", "defteam").upper()
         if not team or not opp:
             continue
 
         player_usage = usage.get(player_id, {})
-        # Board-relevant universe: require prior-week usage (matches projector depth/usage filter).
+        # Board-relevant universe: require prior-week usage (starter proxy needs history).
         if not player_usage or float(player_usage.get("games_count") or 0) <= 0:
             continue
         team_stats = team_rz.get(team, {})

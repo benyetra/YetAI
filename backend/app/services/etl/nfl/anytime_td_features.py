@@ -12,8 +12,15 @@ from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_n
 logger = logging.getLogger(__name__)
 
 SKILL_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
-_MIN_DEPTH_TEAM = 2  # include depth chart slots 1–2
-_MIN_PRIOR_TOUCHES = 3.0  # targets+carries threshold for weekly universe
+# Starters only: depth_team == 1 (exclude backups / depth 2+)
+_STARTER_DEPTH_TEAM = 1
+# Special-teams depth slots often tagged depth_team=1; exclude from TD board.
+_SPECIAL_TEAMS_DEPTH_POSITIONS = frozenset(
+    {"PR", "KR", "KOR", "PS", "H", "LS", "P", "K", "PK"}
+)
+# When depth charts are missing, keep top-N prior-usage players per team/pos.
+_USAGE_STARTER_SLOTS: dict[str, int] = {"QB": 1, "RB": 1, "WR": 3, "TE": 1}
+_MIN_PRIOR_TOUCHES = 3.0  # touches floor for usage-based starter fallback
 # League-average priors (REG season, per-game unless noted)
 _TEAM_RZ_TRIPS_PRIOR = 3.2
 _LEAGUE_AVG_TEAM_TOTAL = 22.5
@@ -481,20 +488,66 @@ def _player_rz_share_from_usage(
     return _clamp(0.55 * share + 0.45 * prior, 0.02, 0.55)
 
 
+def _offensive_starter_depth_ok(raw: dict[str, Any]) -> bool:
+    """True when depth chart row is an offensive starter (not ST/return)."""
+    depth_team = int(_num(raw, "depth_team", "pos_rank", default=99))
+    if depth_team != _STARTER_DEPTH_TEAM:
+        return False
+    depth_pos = _str(raw, "depth_position", "pos_abb", "position").upper()
+    if depth_pos in _SPECIAL_TEAMS_DEPTH_POSITIONS:
+        return False
+    pos = _str(raw, "position", "pos_abb").upper()
+    return pos in SKILL_POSITIONS
+
+
+def starter_ids_from_usage(
+    usage_by_player: dict[str, dict[str, Any]],
+    *,
+    slots: dict[str, int] | None = None,
+) -> set[str]:
+    """Top prior-usage players per team/position (depth-chart fallback / backtest)."""
+    caps = slots or _USAGE_STARTER_SLOTS
+    by_team_pos: dict[tuple[str, str], list[tuple[float, str]]] = {}
+    for player_id, usage in usage_by_player.items():
+        pos = str(usage.get("position") or "").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        team = str(usage.get("team_abbr") or "").upper()
+        if not team:
+            continue
+        touches = float(usage.get("touches_season") or 0.0)
+        if touches < _MIN_PRIOR_TOUCHES:
+            continue
+        # Prefer role-relevant volume when present.
+        if pos == "RB":
+            score = float(usage.get("carries_l3") or 0.0) * 10.0 + touches
+        elif pos in {"WR", "TE"}:
+            score = float(usage.get("targets_l3") or 0.0) * 10.0 + touches
+        else:
+            score = touches
+        by_team_pos.setdefault((team, pos), []).append((score, player_id))
+
+    out: set[str] = set()
+    for (team, pos), ranked in by_team_pos.items():
+        ranked.sort(key=lambda t: (-t[0], t[1]))
+        for _, player_id in ranked[: caps.get(pos, 1)]:
+            out.add(player_id)
+    return out
+
+
 def select_skill_universe(
     *,
     depth_records: Iterable[dict[str, Any]],
     usage_by_player: dict[str, dict[str, Any]],
     week: int,
 ) -> list[dict[str, Any]]:
-    """Active QB/RB/WR/TE: depth chart 1–2 plus prior-week contributors."""
+    """Active QB/RB/WR/TE starters only (depth_team=1; usage top-N if no depth)."""
     universe: dict[str, dict[str, Any]] = {}
 
-    # Depth chart (prefer latest week <= target)
-    by_team_pos: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    # Depth chart starters for latest week <= target (all WR1/RB1/… rows, not ST).
+    by_player_best: dict[str, dict[str, Any]] = {}
     for raw in depth_records:
-        pos = _str(raw, "position", "pos_abb").upper()
-        if pos not in SKILL_POSITIONS:
+        if not _offensive_starter_depth_ok(raw):
             continue
         team = _str(raw, "club_code", "team").upper()
         player_id = _str(raw, "gsis_id", "player_id")
@@ -503,52 +556,44 @@ def select_skill_universe(
         depth_week = int(_num(raw, "week", default=week))
         if depth_week > week:
             continue
-        depth_team = int(_num(raw, "depth_team", default=99))
-        if depth_team > _MIN_DEPTH_TEAM:
-            continue
-        key = (team, pos)
-        by_team_pos.setdefault(key, []).append(
-            {
-                "player_id": player_id,
-                "player_name": _str(raw, "full_name", "football_name", "player_name"),
-                "position": pos,
-                "team_abbr": team,
-                "depth_team": depth_team,
-                "depth_week": depth_week,
-            }
-        )
+        pos = _str(raw, "position", "pos_abb").upper()
+        candidate = {
+            "player_id": player_id,
+            "player_name": _str(raw, "full_name", "football_name", "player_name"),
+            "position": pos,
+            "team_abbr": team,
+            "depth_team": _STARTER_DEPTH_TEAM,
+            "depth_week": depth_week,
+            "depth_position": _str(raw, "depth_position", default=pos),
+        }
+        prev = by_player_best.get(player_id)
+        if prev is None or candidate["depth_week"] >= prev["depth_week"]:
+            by_player_best[player_id] = candidate
 
-    for players in by_team_pos.values():
-        players.sort(key=lambda p: (-p["depth_week"], p["depth_team"]))
-        seen_slots: set[int] = set()
-        for player in players:
-            slot = player["depth_team"]
-            if slot in seen_slots:
-                continue
-            seen_slots.add(slot)
-            universe[player["player_id"]] = player
+    universe.update(by_player_best)
 
-    for player_id, usage in usage_by_player.items():
-        touches = float(usage.get("touches_season") or 0.0)
-        if touches < _MIN_PRIOR_TOUCHES and player_id not in universe:
-            continue
-        universe.setdefault(
-            player_id,
-            {
+    if not universe:
+        # No depth published yet — approximate starters from prior usage.
+        for player_id in starter_ids_from_usage(usage_by_player):
+            usage = usage_by_player[player_id]
+            universe[player_id] = {
                 "player_id": player_id,
                 "player_name": usage.get("player_name") or player_id,
                 "position": usage.get("position"),
                 "team_abbr": usage.get("team_abbr"),
-                "depth_team": 99,
-            },
-        )
-        # Prefer latest team/name from usage
-        if usage.get("team_abbr"):
-            universe[player_id]["team_abbr"] = usage["team_abbr"]
-        if usage.get("player_name"):
-            universe[player_id]["player_name"] = usage["player_name"]
-        if usage.get("position"):
-            universe[player_id]["position"] = usage["position"]
+                "depth_team": _STARTER_DEPTH_TEAM,
+                "depth_week": week,
+            }
+    else:
+        # Enrich names/teams from usage; do not add non-starters.
+        for player_id, player in list(universe.items()):
+            usage = usage_by_player.get(player_id) or {}
+            if usage.get("team_abbr"):
+                player["team_abbr"] = usage["team_abbr"]
+            if usage.get("player_name"):
+                player["player_name"] = usage["player_name"]
+            if usage.get("position"):
+                player["position"] = usage["position"]
 
     return list(universe.values())
 

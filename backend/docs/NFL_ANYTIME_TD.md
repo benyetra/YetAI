@@ -13,7 +13,8 @@ Projector `run()` without injected `feature_rows` calls
    `stats_player_week_{season}.parquet` (maps `team` → `recent_team`), then fall
    back up to 3 seasons and use all prior-season weeks as priors (needed for Week 1).
 2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
-3. `import_depth_charts` — skill-position depth 1–2 (weekly contributors also included)
+3. `import_depth_charts` — skill-position **starters** only (`depth_team=1`;
+   excludes KR/PR). If depth is empty, top prior-usage QB/RB/WR×3/TE per team.
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
 6. Residual GBM calibration — `anytime_td_residual_gbm.pkl` when present
