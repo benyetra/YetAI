@@ -8,13 +8,19 @@ from typing import Any
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import NFLAnytimeTDPredictions
-from app.services.etl.nfl.anytime_td_model import anytime_td_probability, expected_tds
+from app.services.etl.nfl.anytime_td_calibration import (
+    MODEL_VERSION_GBM,
+    MODEL_VERSION_HIER,
+    calibrate_prediction_row,
+)
+from app.services.etl.nfl.anytime_td_model import expected_tds
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
 
-MODEL_VERSION = "hierarchical_v1"
+# Default label when GBM artifact is absent; upserts stamp the applied version.
+MODEL_VERSION = MODEL_VERSION_HIER
 
 # Mutable columns on conflict; omit created_at (insert-only) and identity keys.
 ANYTIME_TD_UPSERT_UPDATE_KEYS = [
@@ -32,8 +38,11 @@ ANYTIME_TD_UPSERT_UPDATE_KEYS = [
 ]
 
 
-def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float]:
-    """Pure: compute expected TDs and anytime probability from a feature row."""
+def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | str]:
+    """Pure: compute expected TDs and anytime probability from a feature row.
+
+    Applies residual GBM calibration when the artifact is present and enabled.
+    """
     lam = expected_tds(
         team_rz_trips=float(row["team_rz_trips"]),
         player_rz_share=float(row["player_rz_share"]),
@@ -42,9 +51,11 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float]:
         weather_mult=float(row["weather_mult"]),
         script_mult=float(row["script_mult"]),
     )
+    td_prob, gbm_applied = calibrate_prediction_row(row)
     return {
         "expected_tds": lam,
-        "td_probability": anytime_td_probability(lam),
+        "td_probability": td_prob,
+        "model_version": MODEL_VERSION_GBM if gbm_applied else MODEL_VERSION_HIER,
     }
 
 
@@ -97,7 +108,7 @@ def build_upsert_row(
         "confidence_score": confidence,
         # Feature rows carry Python date objects from schedules; JSONB needs ISO strings.
         "features": _json_safe(feature_row),
-        "model_version": MODEL_VERSION,
+        "model_version": str(proj.get("model_version") or MODEL_VERSION),
         "prediction_date": now,
         "created_at": now,
     }

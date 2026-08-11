@@ -10,29 +10,29 @@
     "min_top20_hit_rate_vs_baseline_margin": 0.0
   },
   "metrics": {
-    "n_graded": 9417,
-    "brier": 0.2018,
-    "baseline_brier": 0.1679,
-    "brier_delta_vs_baseline": 0.0339,
-    "top20_hit_rate": 0.4221,
-    "top20_weeks": 34,
-    "top20_baseline_hit_rate": 0.2882,
+    "n_graded": 14829,
+    "brier": 0.1521,
+    "baseline_brier": 0.1638,
+    "brier_delta_vs_baseline": -0.0117,
+    "top20_hit_rate": 0.4461,
+    "top20_weeks": 51,
+    "top20_baseline_hit_rate": 0.2814,
     "by_position": {
       "QB": {
-        "n_graded": 1168,
-        "brier": 0.1398
+        "n_graded": 1751,
+        "brier": 0.1149
       },
       "RB": {
-        "n_graded": 2417,
-        "brier": 0.2538
+        "n_graded": 3841,
+        "brier": 0.1785
       },
       "TE": {
-        "n_graded": 1928,
-        "brier": 0.1551
+        "n_graded": 3075,
+        "brier": 0.1344
       },
       "WR": {
-        "n_graded": 3904,
-        "brier": 0.2112
+        "n_graded": 6162,
+        "brier": 0.1549
       }
     }
   },

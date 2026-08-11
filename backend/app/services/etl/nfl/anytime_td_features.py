@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import math
 from datetime import date
-from typing import Any, Iterable
+from typing import Any, Iterable, Sequence
 
 from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_name
 
@@ -792,6 +792,80 @@ def _usage_as_of_week_for_priors(
     return week
 
 
+# nfl_data_py historically served player_stats_{season}.parquet; newer seasons
+# publish under stats_player/stats_player_week_{season}.parquet (team vs recent_team).
+_STATS_PLAYER_WEEK_URL = (
+    "https://github.com/nflverse/nflverse-data/releases/download/"
+    "stats_player/stats_player_week_{season}.parquet"
+)
+
+
+def normalize_weekly_record(row: dict[str, Any]) -> dict[str, Any]:
+    """Normalize nflverse weekly schemas (legacy + stats_player_week)."""
+    out = dict(row)
+    team = _str(out, "recent_team", "team")
+    if team:
+        out["recent_team"] = team
+        out.setdefault("team", team)
+    opp = _str(out, "opponent_team", "opponent", "defteam")
+    if opp:
+        out["opponent_team"] = opp
+    return out
+
+
+def _read_stats_player_week_parquet(season: int) -> Any:
+    """Load ``stats_player_week_{season}.parquet`` (pandas DataFrame)."""
+    import pandas as pd
+
+    url = _STATS_PLAYER_WEEK_URL.format(season=int(season))
+    return pd.read_parquet(url)
+
+
+def load_weekly_records_for_season(season: int) -> list[dict[str, Any]]:
+    """Load one season of weekly player rows (legacy import, then stats_player_week).
+
+    Raises the last missing-data error when neither source is published yet.
+    """
+    nfl = _import_nfl()
+    last_err: BaseException | None = None
+    try:
+        raw = records_from_dataframe(nfl.import_weekly_data([int(season)]))
+        return [normalize_weekly_record(r) for r in raw]
+    except Exception as exc:
+        if not _is_missing_nflverse_data_error(exc):
+            raise
+        last_err = exc
+        logger.info(
+            "nflverse import_weekly_data missing for season=%s (%s); "
+            "trying stats_player_week parquet",
+            season,
+            exc,
+        )
+
+    try:
+        frame = _read_stats_player_week_parquet(int(season))
+        raw = records_from_dataframe(frame)
+        if not raw:
+            raise FileNotFoundError(
+                f"stats_player_week_{season}.parquet returned no rows"
+            )
+        logger.info(
+            "loaded nflverse stats_player_week_%s.parquet (%s rows)",
+            season,
+            len(raw),
+        )
+        return [normalize_weekly_record(r) for r in raw]
+    except Exception as exc:
+        if last_err is not None and _is_missing_nflverse_data_error(exc):
+            raise last_err from exc
+        if _is_missing_nflverse_data_error(exc):
+            raise
+        # Non-404 errors from parquet path (e.g. missing pyarrow) should surface.
+        if last_err is not None:
+            raise exc from last_err
+        raise
+
+
 def load_weekly_records_with_fallback(
     season: int, *, max_lookback: int = 3
 ) -> tuple[list[dict[str, Any]], int | None]:
@@ -800,14 +874,15 @@ def load_weekly_records_with_fallback(
     Early-season / preseason often 404s for the current season parquet (and
     sometimes the previous season until nflverse publishes). Walk back up to
     ``max_lookback`` years and return ``(records, source_season)``.
+
+    Prefers ``import_weekly_data``, then ``stats_player_week_{season}.parquet``.
     """
-    nfl = _import_nfl()
     last_err: BaseException | None = None
     for candidate in range(season, season - max_lookback - 1, -1):
         if candidate < 1999:
             break
         try:
-            records = records_from_dataframe(nfl.import_weekly_data([candidate]))
+            records = load_weekly_records_for_season(candidate)
         except Exception as exc:
             if not _is_missing_nflverse_data_error(exc):
                 raise
@@ -834,6 +909,30 @@ def load_weekly_records_with_fallback(
             last_err,
         )
     return [], None
+
+
+def probe_weekly_season_available(season: int) -> bool:
+    """True when weekly rows can be loaded for ``season`` (no prior-year fallback)."""
+    try:
+        records = load_weekly_records_for_season(int(season))
+    except Exception as exc:
+        if _is_missing_nflverse_data_error(exc):
+            return False
+        raise
+    return bool(records)
+
+
+def resolve_available_weekly_seasons(
+    candidates: Sequence[int],
+) -> tuple[int, ...]:
+    """Filter ``candidates`` to seasons with published weekly data."""
+    available: list[int] = []
+    for season in candidates:
+        if probe_weekly_season_available(int(season)):
+            available.append(int(season))
+        else:
+            logger.info("walk-forward skip season=%s — weekly not published", season)
+    return tuple(available)
 
 
 def fetch_player_usage_nflverse(season: int, week: int) -> dict[str, dict[str, Any]]:

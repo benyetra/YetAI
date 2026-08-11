@@ -233,8 +233,12 @@ def test_load_weekly_records_falls_back_after_404():
 
     nfl.import_weekly_data.side_effect = _import_weekly
 
-    with patch(
-        "app.services.etl.nfl.anytime_td_features._import_nfl", return_value=nfl
+    with (
+        patch("app.services.etl.nfl.anytime_td_features._import_nfl", return_value=nfl),
+        patch(
+            "app.services.etl.nfl.anytime_td_features._read_stats_player_week_parquet",
+            side_effect=err,
+        ),
     ):
         records, source = load_weekly_records_with_fallback(2026, max_lookback=3)
 

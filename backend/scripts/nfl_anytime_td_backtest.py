@@ -39,13 +39,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--walk-forward",
         action="store_true",
-        help="Walk-forward REG seasons (nflverse weekly+PBP; default 2023-2024)",
+        help="Walk-forward REG seasons (nflverse weekly+PBP; auto 2023-2025 when published)",
     )
     parser.add_argument(
         "--seasons",
         type=str,
         default=None,
-        help="Comma-separated seasons for --walk-forward (e.g. 2023,2024)",
+        help="Comma-separated seasons for --walk-forward (e.g. 2023,2024,2025)",
+    )
+    parser.add_argument(
+        "--no-gbm",
+        action="store_true",
+        help="Disable expanding-window residual GBM during --walk-forward",
     )
     parser.add_argument(
         "--season",
@@ -88,8 +93,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def run_backtest(args: argparse.Namespace) -> dict:
     from app.services.etl.nfl.anytime_td_backtest import (
         DEFAULT_GATE_BASELINES,
-        DEFAULT_WALK_FORWARD_SEASONS,
         passes_gate,
+        resolve_walk_forward_seasons,
         run_backtest_replay,
         run_quick_backtest,
         run_walk_forward_backtest,
@@ -97,16 +102,19 @@ def run_backtest(args: argparse.Namespace) -> dict:
     )
 
     if args.walk_forward:
-        seasons = DEFAULT_WALK_FORWARD_SEASONS
+        seasons = None
         if args.seasons:
             seasons = tuple(
                 int(s.strip()) for s in args.seasons.split(",") if s.strip()
             )
+        else:
+            seasons = resolve_walk_forward_seasons(load_live=True)
         payload = run_walk_forward_backtest(
             seasons=seasons,
             start_week=args.start_week,
             end_week=args.end_week,
             load_live=True,
+            use_gbm_calibration=not args.no_gbm,
         )
         result = {
             "preset": payload["preset"],
@@ -116,6 +124,8 @@ def run_backtest(args: argparse.Namespace) -> dict:
             "weeks_used": payload.get("weeks_used"),
             "rows_scored": payload.get("rows_scored"),
             "seasons": payload.get("seasons"),
+            "gbm_calibration": payload.get("gbm_calibration"),
+            "gbm_week_applications": payload.get("gbm_week_applications"),
         }
     else:
         use_quick = args.quick or args.season is None

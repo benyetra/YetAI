@@ -133,7 +133,6 @@ Artifacts: `backend/models/nfl/anytime_td_metrics.json` + offline/quick backtest
 
 ## Follow-ups
 
-- Light GBM residual/calibration on hierarchical residuals
 - Auto-pick source for +EV anytime TD
 - First/last TD markets
 - Midweek line refresh alignment with game-board Beat tune
