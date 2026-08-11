@@ -19,6 +19,7 @@ from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
     build_qb_features,
     feature_names as qb_feature_names,
+    resolve_yards_baseline,
 )
 
 logger = logging.getLogger(__name__)
@@ -73,6 +74,36 @@ def build_features_from_tier_prediction(
     )
 
 
+def _model_is_residual(metadata: Mapping[str, Any] | None) -> bool:
+    """True when artifact predicts residual (actual − baseline), the current default."""
+    if not metadata:
+        return True
+    target = str(metadata.get("target") or "").lower()
+    if "residual" in target:
+        return True
+    if target in {"actual_passing_yards", "passing_yards"}:
+        return False
+    # Prefer residual for unknown / new artifacts
+    return bool(metadata.get("residual_target", True))
+
+
+def baseline_yards_from_features(features: Mapping[str, float]) -> float:
+    """Market-aware baseline used for residual train/predict."""
+    tier = _float_or(features.get("tier_yards"), 210.0)
+    line = features.get("pass_yds_line")
+    line_f = _float_or(line, tier) if line is not None else None
+    # Prefer explicit line_minus_tier signal: non-zero ⇒ real line was present
+    lmt = features.get("line_minus_tier")
+    line_is_real = None
+    if lmt is not None and abs(_float_or(lmt, 0.0)) > 0.5:
+        line_is_real = True
+    return resolve_yards_baseline(
+        tier_yards=tier,
+        pass_yds_line=line_f,
+        line_is_real=line_is_real,
+    )
+
+
 def predict_yards_tier(features: Mapping[str, float]) -> float:
     return round(_float_or(features.get("tier_yards"), 210.0), 1)
 
@@ -85,26 +116,13 @@ def _feature_vector(
     return np.array([[float(features.get(name, 0.0)) for name in names]])
 
 
-def _model_is_residual(metadata: Mapping[str, Any] | None) -> bool:
-    """True when artifact predicts residual (actual − tier), the current default."""
-    if not metadata:
-        return True
-    target = str(metadata.get("target") or "").lower()
-    if "residual" in target:
-        return True
-    if target in {"actual_passing_yards", "passing_yards"}:
-        return False
-    # Prefer residual for unknown / new artifacts
-    return bool(metadata.get("residual_target", True))
-
-
 def predict_yards_residual(
     model: Any,
     features: Mapping[str, float],
     *,
     feature_order: list[str] | None = None,
 ) -> float:
-    """Raw residual prediction (actual − tier)."""
+    """Raw residual prediction (actual − baseline)."""
     vec = _feature_vector(features, feature_order)
     return float(model.predict(vec)[0])
 
@@ -117,12 +135,14 @@ def predict_yards_ml(
     residual_target: bool = True,
 ) -> float:
     """
-    GBM yards: ``tier + residual`` (default) or direct yards for legacy artifacts.
+    GBM yards: ``baseline + residual`` (default) or direct yards for legacy artifacts.
+
+    Baseline is ``0.5*(tier+line)`` when a real pass-yards line is present, else tier.
     """
     raw = predict_yards_residual(model, features, feature_order=feature_order)
     if residual_target:
-        tier = predict_yards_tier(features)
-        return round(tier + raw, 1)
+        baseline = baseline_yards_from_features(features)
+        return round(baseline + raw, 1)
     return round(float(raw), 1)
 
 
@@ -144,6 +164,14 @@ def _fill_missing_feature_columns(features_df: pd.DataFrame) -> pd.DataFrame:
             "pass_yds_line",
         ):
             features_df[col] = features_df.get("tier_yards", 220.0)
+        elif col == "rolling_attempts_l3":
+            features_df[col] = 34.0
+        elif col == "rolling_ypa_l3":
+            features_df[col] = 7.0
+        elif col == "rolling_comp_pct_l3":
+            features_df[col] = 0.65
+        elif col == "line_minus_tier":
+            features_df[col] = 0.0
         elif col == "opp_def_epa":
             features_df[col] = 0.0
         elif col == "opp_pressure_rate":
@@ -171,6 +199,24 @@ def _fill_missing_feature_columns(features_df: pd.DataFrame) -> pd.DataFrame:
     return features_df
 
 
+def _baselines_for_frame(features_df: pd.DataFrame) -> pd.Series:
+    """Market-aware baseline per row (tier, or 0.5*(tier+line) when real line)."""
+    return features_df.apply(
+        lambda row: baseline_yards_from_features(row.to_dict()), axis=1
+    )
+
+
+def _time_ordered_split_indices(
+    n: int, *, test_frac: float = 0.2
+) -> tuple[slice, slice]:
+    """Last ``test_frac`` rows as holdout (caller must pre-sort by season/week)."""
+    if n < 10:
+        cut = max(1, n - 1)
+    else:
+        cut = max(1, min(n - 1, int(round(n * (1.0 - test_frac)))))
+    return slice(0, cut), slice(cut, n)
+
+
 def train_qb_yards_model(
     dataset: tuple[pd.DataFrame, pd.Series],
     *,
@@ -178,14 +224,16 @@ def train_qb_yards_model(
     residual_target: bool = True,
 ) -> tuple[Any, dict[str, Any]]:
     """
-    Train GBM on residual ``actual − tier_yards`` (default) or direct yards.
+    Train GBM on residual ``actual − baseline`` (default) or direct yards.
 
-    When ``residual_target`` is True, ``dataset`` target must be actual yards;
-    residuals are derived from the ``tier_yards`` column.
+    Baseline is market-aware (``resolve_yards_baseline``): blend of dynamic tier
+    and real pass-yards line when present, else tier alone.
+
+    Holdout is **time-ordered** (last 20% after sorting by season, week) — never
+    a random shuffle — so CV stays leak-safe.
     """
     from sklearn.ensemble import GradientBoostingRegressor  # type: ignore
     from sklearn.metrics import mean_absolute_error, mean_squared_error  # type: ignore
-    from sklearn.model_selection import train_test_split  # type: ignore
 
     features_df, target = dataset
     if features_df.empty or len(features_df) < 30:
@@ -203,36 +251,46 @@ def train_qb_yards_model(
 
     order = feature_names()
     features_df = _fill_missing_feature_columns(features_df.copy())
+    target = pd.Series(target).astype(float).reset_index(drop=True)
+    features_df = features_df.reset_index(drop=True)
+
+    sort_cols = [c for c in ("season", "week") if c in features_df.columns]
+    if sort_cols:
+        sort_order = features_df.sort_values(sort_cols, kind="mergesort").index
+        features_df = features_df.loc[sort_order].reset_index(drop=True)
+        target = target.loc[sort_order].reset_index(drop=True)
+
     X = features_df[list(order)]
+    baselines = _baselines_for_frame(X)
     if residual_target:
-        tier = features_df["tier_yards"].astype(float)
-        y = (target.astype(float) - tier).astype(float)
+        y = (target.astype(float) - baselines.astype(float)).astype(float)
     else:
         y = target.astype(float)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42
-    )
+    train_sl, test_sl = _time_ordered_split_indices(len(X), test_frac=0.2)
+    X_train, X_test = X.iloc[train_sl], X.iloc[test_sl]
+    y_train, y_test = y.iloc[train_sl], y.iloc[test_sl]
+    base_train = baselines.iloc[train_sl].to_numpy()
+    base_test = baselines.iloc[test_sl].to_numpy()
+
     model = GradientBoostingRegressor(**hp)
     model.fit(X_train, y_train)
     y_pred_train = model.predict(X_train)
     y_pred_test = model.predict(X_test)
 
-    # Report MAE on yards scale (tier + residual) for residual models
+    # Report MAE on yards scale (baseline + residual) for residual models
     if residual_target:
-        tier_train = X_train["tier_yards"].to_numpy()
-        tier_test = X_test["tier_yards"].to_numpy()
         train_yards_mae = float(
-            mean_absolute_error(y_train + tier_train, y_pred_train + tier_train)
+            mean_absolute_error(y_train + base_train, y_pred_train + base_train)
         )
         test_yards_mae = float(
-            mean_absolute_error(y_test + tier_test, y_pred_test + tier_test)
+            mean_absolute_error(y_test + base_test, y_pred_test + base_test)
         )
         train_rmse = float(
-            np.sqrt(mean_squared_error(y_train + tier_train, y_pred_train + tier_train))
+            np.sqrt(mean_squared_error(y_train + base_train, y_pred_train + base_train))
         )
         test_rmse = float(
-            np.sqrt(mean_squared_error(y_test + tier_test, y_pred_test + tier_test))
+            np.sqrt(mean_squared_error(y_test + base_test, y_pred_test + base_test))
         )
     else:
         train_yards_mae = float(mean_absolute_error(y_train, y_pred_train))
@@ -244,9 +302,13 @@ def train_qb_yards_model(
     metadata: dict[str, Any] = {
         "model_key": MODEL_KEY,
         "target": (
-            "residual_actual_minus_tier" if residual_target else "actual_passing_yards"
+            "residual_actual_minus_baseline"
+            if residual_target
+            else "actual_passing_yards"
         ),
         "residual_target": bool(residual_target),
+        "baseline": "market_aware_tier_line_blend",
+        "cv_split": "time_ordered_last_20pct",
         "trained_at": datetime.utcnow().isoformat(),
         "train_date": train_date,
         "model_version": (
@@ -267,13 +329,27 @@ def train_qb_yards_model(
         "test_residual_mae": float(mean_absolute_error(y_test, y_pred_test)),
     }
     logger.info(
-        "trained %s: train_mae=%.3f test_mae=%.3f residual=%s",
+        "trained %s: train_mae=%.3f test_mae=%.3f residual=%s cv=time",
         MODEL_KEY,
         metadata["train_mae"],
         metadata["test_mae"],
         residual_target,
     )
     return model, metadata
+
+
+def reinject_pass_yds_line(
+    features: Mapping[str, float],
+    *,
+    ou_line: float,
+) -> dict[str, float]:
+    """Update feature vector after live odds attach (real prop line)."""
+    feats = {str(k): float(v) for k, v in features.items()}
+    tier = _float_or(feats.get("tier_yards"), 210.0)
+    line = float(ou_line)
+    feats["pass_yds_line"] = line
+    feats["line_minus_tier"] = line - tier
+    return feats
 
 
 def _bundled_model_paths() -> tuple[Path, Path]:

@@ -6,7 +6,7 @@
 |------|-----|------------------|-----------------|
 | Tier table (default) | — | Stable tier base (+ injury soft-downgrade) | `tier-v3` |
 | ML shadow | — | Tier (unchanged) | `tier-v3`; `feature_importance.ml_shadow_yards` |
-| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM (`tier + residual`) | `gbm-qb-residual-YYYYMMDD` |
+| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM (`baseline + residual`) | `gbm-qb-residual-YYYYMMDD` |
 
 **Tier v3:** No hash-based week noise. Uncertainty is
 `prediction_interval_lower/upper` + confidence. Opt-in legacy noise with
@@ -19,19 +19,38 @@ kickoff. Within 3h of KO, Questionable escalates to Out (backup promotion).
 Within 12h, Q risk/yard cuts escalate; live backups take an extra −20 yards
 (`NFL_QB_LATE_AVAILABILITY=0` to disable).
 
-**Features (v4 residual):** prior form + defense + weather, plus market
-(`total_line`, `spread_line`, `pass_yds_line`, `implied_team_total`) and curated
-scheme tags (`opp_cover_base`, `opp_man_zone`, `opp_scheme_pressure` from
-`defensive_schemes.yaml`).
+**Features (v5 lift levers):** prior form + volume (`rolling_attempts_l3`,
+`rolling_ypa_l3`, `rolling_comp_pct_l3`) + defense + weather, market
+(`total_line`, `spread_line`, `pass_yds_line`, `line_minus_tier`,
+`implied_team_total`), and curated scheme tags. **Dynamic tier** blends the
+static name table with leak-safe rolling form (`blend_tier_with_form`). Residual
+target is vs a **market-aware baseline** (`0.5*(tier+line)` when a real prop
+line is present). Training CV is time-ordered (last 20%). Live `qb_betting`
+reinjects `pass_yds_line` after odds attach and refreshes `ml_shadow_yards`.
 
 **O/U classifier:** `qb_ou_classifier` trains `gbm-qb-ou-*` alongside yards GBM.
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
 edge is strong (≥10%).
 
-Promotion gate: residual ML MAE ≥ **10%** better than tier on holdout.
+Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
+holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
 **Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears.**
 
-### Latest offline retrain (2026-08-11, residual GBM, nflverse 2023–2025)
+### Latest Railway promote-gate (2026-08-11, v5 lift levers)
+
+| Metric | Value |
+|--------|-------|
+| Rows | 1756 (2023–2025 actuals) |
+| Holdout | season_2025 (585) |
+| Real prop-line rate | 82.7% |
+| Dynamic-tier MAE | **65.5** |
+| Static-tier MAE | 66.7 |
+| Residual ML MAE | **65.0** |
+| Lift vs dynamic | **+0.9%** (need ≥10%) |
+| Lift vs static | +2.7% |
+| Promote | **No** — keep ML shadow-only |
+
+### Prior offline retrain (2026-08-11, residual GBM, nflverse 2023–2025)
 
 | Metric | Value |
 |--------|-------|

@@ -46,6 +46,9 @@ FEATURE_NAMES: tuple[str, ...] = (
     "rolling_yards_l3",
     "rolling_yards_l5",
     "season_avg_yards",
+    "rolling_attempts_l3",
+    "rolling_ypa_l3",
+    "rolling_comp_pct_l3",
     "opp_pass_yds_allowed",
     "opp_def_epa",
     "opp_pressure_rate",
@@ -60,11 +63,16 @@ FEATURE_NAMES: tuple[str, ...] = (
     "total_line",
     "spread_line",
     "pass_yds_line",
+    "line_minus_tier",
     # Curated opponent defensive scheme tags
     "opp_cover_base",
     "opp_man_zone",
     "opp_scheme_pressure",
 )
+
+_LEAGUE_AVG_ATTEMPTS = 34.0
+_LEAGUE_AVG_YPA = 7.0
+_LEAGUE_AVG_COMP_PCT = 0.65
 
 
 def feature_names() -> list[str]:
@@ -150,6 +158,143 @@ def form_features_from_prior_yards(
         "rolling_yards_l5": float(l5 if l5 is not None else tier),
         "season_avg_yards": float(season_avg if season_avg is not None else tier),
     }
+
+
+def prior_game_stats_for_player(
+    history: Iterable[Mapping[str, Any]],
+    *,
+    player_key: str,
+    season: int,
+    week: int,
+    player_id_key: str = "qb_player_id",
+    name_key: str = "qb_player_name",
+    season_key: str = "season",
+    week_key: str = "week",
+) -> list[dict[str, float]]:
+    """Leak-safe prior game stats (yards/attempts/completions) before ``(season, week)``."""
+    key_norm = str(player_key).strip().lower()
+    prior: list[tuple[int, int, dict[str, float]]] = []
+    for row in history:
+        pid = str(row.get(player_id_key) or "").strip().lower()
+        pname = str(row.get(name_key) or "").strip().lower()
+        if key_norm not in {pid, pname}:
+            continue
+        row_season = int(row.get(season_key) or 0)
+        row_week = int(row.get(week_key) or 0)
+        if row_season > season or (row_season == season and row_week >= week):
+            continue
+        yards = row.get("actual_passing_yards")
+        if yards is None:
+            yards = row.get("passing_yards")
+        if yards is None:
+            continue
+        try:
+            y = float(yards)
+        except (TypeError, ValueError):
+            continue
+        attempts = row.get("actual_attempts")
+        if attempts is None:
+            attempts = row.get("attempts") or row.get("passing_attempts")
+        completions = row.get("actual_completions")
+        if completions is None:
+            completions = row.get("completions") or row.get("passing_completions")
+        try:
+            att = float(attempts) if attempts is not None else None
+        except (TypeError, ValueError):
+            att = None
+        try:
+            comp = float(completions) if completions is not None else None
+        except (TypeError, ValueError):
+            comp = None
+        prior.append(
+            (
+                row_season,
+                row_week,
+                {
+                    "yards": y,
+                    "attempts": float(att) if att is not None and att > 0 else 0.0,
+                    "completions": float(comp) if comp is not None else 0.0,
+                },
+            )
+        )
+    prior.sort(key=lambda t: (t[0], t[1]))
+    return [stats for _, _, stats in prior]
+
+
+def form_volume_features_from_prior(
+    prior_stats: Sequence[Mapping[str, float]],
+) -> dict[str, float]:
+    """Rolling attempts / YPA / completion% from prior games (league fallback)."""
+    attempts = [float(r.get("attempts") or 0.0) for r in prior_stats]
+    yards = [float(r.get("yards") or 0.0) for r in prior_stats]
+    completions = [float(r.get("completions") or 0.0) for r in prior_stats]
+    att_l3 = rolling_mean([a for a in attempts if a > 0], window=3)
+    # YPA / comp% over last up to 3 games with attempts
+    ypa_vals: list[float] = []
+    comp_vals: list[float] = []
+    for a, y, c in zip(attempts, yards, completions):
+        if a and a > 0:
+            ypa_vals.append(y / a)
+            comp_vals.append(c / a)
+    ypa_l3 = rolling_mean(ypa_vals, window=3)
+    comp_l3 = rolling_mean(comp_vals, window=3)
+    return {
+        "rolling_attempts_l3": float(
+            att_l3 if att_l3 is not None else _LEAGUE_AVG_ATTEMPTS
+        ),
+        "rolling_ypa_l3": float(ypa_l3 if ypa_l3 is not None else _LEAGUE_AVG_YPA),
+        "rolling_comp_pct_l3": float(
+            comp_l3 if comp_l3 is not None else _LEAGUE_AVG_COMP_PCT
+        ),
+    }
+
+
+def blend_tier_with_form(
+    static_tier: float,
+    prior_yards: Sequence[float],
+    *,
+    min_games: int = 3,
+    form_weight: float = 0.40,
+) -> float:
+    """
+    Dynamic tier: blend static name table with leak-safe rolling form.
+
+    When fewer than ``min_games`` priors exist, returns static tier unchanged.
+    """
+    tier = _float_or(static_tier, _LEAGUE_AVG_PASS_YARDS)
+    if len(prior_yards) < min_games:
+        return round(tier, 1)
+    form = rolling_mean(prior_yards, window=min(5, len(prior_yards)))
+    if form is None:
+        return round(tier, 1)
+    w = _clamp(float(form_weight), 0.0, 0.75)
+    blended = (1.0 - w) * tier + w * float(form)
+    return round(_clamp(blended, 150.0, 350.0), 1)
+
+
+def resolve_yards_baseline(
+    *,
+    tier_yards: float,
+    pass_yds_line: float | None,
+    line_is_real: bool | None = None,
+) -> float:
+    """
+    Baseline for residual learning/prediction.
+
+    When a real market line is present (and differs from tier), use
+    ``0.5 * (tier + line)`` so the GBM learns residual vs a market-aware
+    anchor instead of chasing the raw line feature.
+    """
+    tier = _float_or(tier_yards, _LEAGUE_AVG_PASS_YARDS)
+    if pass_yds_line is None:
+        return round(tier, 1)
+    line = _float_or(pass_yds_line, tier)
+    real = line_is_real
+    if real is None:
+        real = abs(line - tier) > 0.5
+    if not real:
+        return round(tier, 1)
+    return round(0.5 * (tier + line), 1)
 
 
 def schedule_is_home(
@@ -251,14 +396,19 @@ def build_qb_features(
 
     ``context`` optional keys:
       rolling_yards_l3, rolling_yards_l5, season_avg_yards,
+      rolling_attempts_l3, rolling_ypa_l3, rolling_comp_pct_l3,
       opp_pass_yds_allowed, opp_def_epa, opp_pressure_rate, injury_risk,
       is_home, rest_days, implied_team_total, wind_speed, temperature, dome,
-      total_line, spread_line, pass_yds_line,
+      total_line, spread_line, pass_yds_line, line_minus_tier, line_is_real,
       opp_cover_base, opp_man_zone, opp_scheme_pressure,
       opponent_abbr / scheme tags
     """
     ctx = dict(context or {})
-    tier = _float_or(tier_yards, _LEAGUE_AVG_PASS_YARDS)
+    # Prefer dynamic (form-blended) tier when callers supply it
+    if ctx.get("dynamic_tier_yards") is not None:
+        tier = _float_or(ctx.get("dynamic_tier_yards"), _LEAGUE_AVG_PASS_YARDS)
+    else:
+        tier = _float_or(tier_yards, _LEAGUE_AVG_PASS_YARDS)
     form = form_features_from_prior_yards(
         [],
         tier_yards=tier,
@@ -267,6 +417,15 @@ def build_qb_features(
     for key in ("rolling_yards_l3", "rolling_yards_l5", "season_avg_yards"):
         if ctx.get(key) is not None:
             form[key] = _float_or(ctx.get(key), form[key])
+
+    volume = {
+        "rolling_attempts_l3": _LEAGUE_AVG_ATTEMPTS,
+        "rolling_ypa_l3": _LEAGUE_AVG_YPA,
+        "rolling_comp_pct_l3": _LEAGUE_AVG_COMP_PCT,
+    }
+    for key in ("rolling_attempts_l3", "rolling_ypa_l3", "rolling_comp_pct_l3"):
+        if ctx.get(key) is not None:
+            volume[key] = _float_or(ctx.get(key), volume[key])
 
     is_home = ctx.get("is_home")
     if is_home is None and ctx.get("home_team") is not None:
@@ -316,9 +475,19 @@ def build_qb_features(
         )
 
     # pass_yds_line: market prop when present; else anchor near tier
-    pass_line = ctx.get("pass_yds_line")
-    if pass_line is None:
+    pass_line_raw = ctx.get("pass_yds_line")
+    line_is_real = ctx.get("line_is_real")
+    if pass_line_raw is None:
         pass_line = tier
+        if line_is_real is None:
+            line_is_real = False
+    else:
+        pass_line = _float_or(pass_line_raw, tier)
+        if line_is_real is None:
+            line_is_real = abs(pass_line - tier) > 0.5
+    line_minus_tier = ctx.get("line_minus_tier")
+    if line_minus_tier is None:
+        line_minus_tier = float(pass_line) - float(tier) if line_is_real else 0.0
 
     return {
         "tier_yards": tier,
@@ -329,6 +498,9 @@ def build_qb_features(
         "rolling_yards_l3": form["rolling_yards_l3"],
         "rolling_yards_l5": form["rolling_yards_l5"],
         "season_avg_yards": form["season_avg_yards"],
+        "rolling_attempts_l3": volume["rolling_attempts_l3"],
+        "rolling_ypa_l3": volume["rolling_ypa_l3"],
+        "rolling_comp_pct_l3": volume["rolling_comp_pct_l3"],
         "opp_pass_yds_allowed": _float_or(
             ctx.get("opp_pass_yds_allowed"), _LEAGUE_AVG_OPP_PASS_ALLOWED
         ),
@@ -346,6 +518,7 @@ def build_qb_features(
         "total_line": _float_or(total_line, _LEAGUE_AVG_TOTAL_LINE),
         "spread_line": _float_or(spread_line, 0.0),
         "pass_yds_line": _float_or(pass_line, tier),
+        "line_minus_tier": float(line_minus_tier),
         "opp_cover_base": scheme["opp_cover_base"],
         "opp_man_zone": scheme["opp_man_zone"],
         "opp_scheme_pressure": scheme["opp_scheme_pressure"],
@@ -374,14 +547,21 @@ def enrich_context_from_actual_row(
     """Build context for training from a QBActuals-like row + prior history."""
     season = int(getattr(row, "season", 0) or 0)
     week = int(getattr(row, "week", 0) or 0)
-    prior = prior_yards_for_player(
+    prior_stats = prior_game_stats_for_player(
         history,
         player_key=player_key,
         season=season,
         week=week,
     )
-    form = form_features_from_prior_yards(prior, tier_yards=tier_yards)
-    ctx: dict[str, Any] = {**form}
+    prior_yards = [float(s["yards"]) for s in prior_stats]
+    form = form_features_from_prior_yards(prior_yards, tier_yards=tier_yards)
+    volume = form_volume_features_from_prior(prior_stats)
+    dynamic_tier = blend_tier_with_form(tier_yards, prior_yards)
+    ctx: dict[str, Any] = {
+        **form,
+        **volume,
+        "dynamic_tier_yards": dynamic_tier,
+    }
     temp = getattr(row, "game_temperature", None)
     wind = getattr(row, "game_wind_speed", None)
     if temp is not None:

@@ -52,16 +52,20 @@ def build(
         if not rows:
             return pd.DataFrame(columns=feature_names()), pd.Series(dtype=float)
 
-        history: list[dict[str, Any]] = [
-            {
+        history: list[dict[str, Any]] = []
+        for r in rows:
+            entry: dict[str, Any] = {
                 "qb_player_id": r.qb_player_id,
                 "qb_player_name": r.qb_player_name,
                 "season": int(r.season),
                 "week": int(r.week),
                 "actual_passing_yards": float(r.actual_passing_yards),
             }
-            for r in rows
-        ]
+            if getattr(r, "actual_attempts", None) is not None:
+                entry["actual_attempts"] = float(r.actual_attempts)
+            if getattr(r, "actual_completions", None) is not None:
+                entry["actual_completions"] = float(r.actual_completions)
+            history.append(entry)
 
         from app.services.etl.nfl.ml_training.build_qb_dataset_nflverse import (
             _schedule_market_index,
@@ -98,8 +102,11 @@ def build(
                 if context.get(key) is None and value is not None:
                     context[key] = value
 
+            dynamic_tier = float(context.get("dynamic_tier_yards") or tier_yards)
+            tier_pred_dyn = dict(tier_pred)
+            tier_pred_dyn["predicted_passing_yards"] = dynamic_tier
             feats = build_features_from_tier_prediction(
-                tier_pred,
+                tier_pred_dyn,
                 season=int(row.season),
                 week=int(row.week),
                 context=context,
@@ -168,12 +175,17 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             "rolling_yards_l3",
             "rolling_yards_l5",
             "season_avg_yards",
+            "rolling_attempts_l3",
+            "rolling_ypa_l3",
+            "rolling_comp_pct_l3",
             "opp_cover_base",
             "opp_man_zone",
             "opp_scheme_pressure",
             "total_line",
             "spread_line",
             "pass_yds_line",
+            "line_minus_tier",
+            "dynamic_tier_yards",
         ):
             if nested.get(key) is not None:
                 ctx[key] = nested[key]

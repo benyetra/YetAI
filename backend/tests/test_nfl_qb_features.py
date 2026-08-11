@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
+    blend_tier_with_form,
     build_qb_features,
     encode_scheme_tags,
     estimate_opp_defense_from_weekly,
     estimate_opp_pass_allowed_from_weekly,
     form_features_from_prior_yards,
+    form_volume_features_from_prior,
     injury_risk_from_status,
+    prior_game_stats_for_player,
     prior_yards_for_player,
+    resolve_yards_baseline,
     rolling_mean,
     schedule_is_home,
 )
@@ -20,6 +24,9 @@ def test_feature_names_include_matchup_form():
     names = set(FEATURE_NAMES)
     assert "tier_yards" in names
     assert "rolling_yards_l3" in names
+    assert "rolling_attempts_l3" in names
+    assert "rolling_ypa_l3" in names
+    assert "rolling_comp_pct_l3" in names
     assert "opp_pass_yds_allowed" in names
     assert "opp_def_epa" in names
     assert "opp_pressure_rate" in names
@@ -28,6 +35,7 @@ def test_feature_names_include_matchup_form():
     assert "total_line" in names
     assert "spread_line" in names
     assert "pass_yds_line" in names
+    assert "line_minus_tier" in names
     assert "opp_cover_base" in names
     assert "opp_man_zone" in names
     assert "opp_scheme_pressure" in names
@@ -183,3 +191,76 @@ def test_build_qb_features_market_and_scheme():
     assert feats["opp_cover_base"] == 2.0
     assert feats["opp_scheme_pressure"] == 0.75
     assert feats["implied_team_total"] == 25.75  # 48.5/2 - (-3)/2
+
+
+def test_volume_and_dynamic_tier_helpers():
+    history = [
+        {
+            "qb_player_id": "00-1",
+            "qb_player_name": "Josh Allen",
+            "season": 2024,
+            "week": 1,
+            "actual_passing_yards": 280,
+            "attempts": 40,
+            "completions": 28,
+        },
+        {
+            "qb_player_id": "00-1",
+            "qb_player_name": "Josh Allen",
+            "season": 2024,
+            "week": 2,
+            "actual_passing_yards": 300,
+            "attempts": 36,
+            "completions": 24,
+        },
+        {
+            "qb_player_id": "00-1",
+            "qb_player_name": "Josh Allen",
+            "season": 2024,
+            "week": 3,
+            "actual_passing_yards": 260,
+            "attempts": 32,
+            "completions": 20,
+        },
+    ]
+    stats = prior_game_stats_for_player(history, player_key="00-1", season=2024, week=4)
+    assert len(stats) == 3
+    vol = form_volume_features_from_prior(stats)
+    assert abs(vol["rolling_attempts_l3"] - 36.0) < 1e-9
+    assert vol["rolling_ypa_l3"] > 6.0
+    assert 0.5 < vol["rolling_comp_pct_l3"] < 0.8
+    blended = blend_tier_with_form(240.0, [280.0, 300.0, 260.0])
+    assert 240.0 < blended < 300.0
+    assert blend_tier_with_form(240.0, [280.0]) == 240.0  # thin history
+
+
+def test_resolve_yards_baseline_market_aware():
+    assert resolve_yards_baseline(tier_yards=250.0, pass_yds_line=None) == 250.0
+    assert (
+        resolve_yards_baseline(
+            tier_yards=250.0, pass_yds_line=250.0, line_is_real=False
+        )
+        == 250.0
+    )
+    assert (
+        resolve_yards_baseline(tier_yards=250.0, pass_yds_line=270.0, line_is_real=True)
+        == 260.0
+    )
+
+
+def test_build_qb_features_uses_dynamic_tier_and_line_edge():
+    feats = build_qb_features(
+        tier_yards=250.0,
+        season=2025,
+        week=5,
+        context={
+            "dynamic_tier_yards": 265.0,
+            "pass_yds_line": 275.0,
+            "line_is_real": True,
+            "rolling_attempts_l3": 38.0,
+        },
+    )
+    assert feats["tier_yards"] == 265.0
+    assert feats["pass_yds_line"] == 275.0
+    assert feats["line_minus_tier"] == 10.0
+    assert feats["rolling_attempts_l3"] == 38.0

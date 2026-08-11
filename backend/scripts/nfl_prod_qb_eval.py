@@ -86,16 +86,20 @@ def _build_with_meta(
             _schedule_market_index,
         )
 
-        history = [
-            {
+        history: list[dict[str, Any]] = []
+        for r in rows:
+            entry: dict[str, Any] = {
                 "qb_player_id": r.qb_player_id,
                 "qb_player_name": r.qb_player_name,
                 "season": int(r.season),
                 "week": int(r.week),
                 "actual_passing_yards": float(r.actual_passing_yards),
             }
-            for r in rows
-        ]
+            if getattr(r, "actual_attempts", None) is not None:
+                entry["actual_attempts"] = float(r.actual_attempts)
+            if getattr(r, "actual_completions", None) is not None:
+                entry["actual_completions"] = float(r.actual_completions)
+            history.append(entry)
         seasons = sorted({int(r.season) for r in rows})
         market = _schedule_market_index(seasons)
         records: list[dict[str, float]] = []
@@ -140,8 +144,11 @@ def _build_with_meta(
                 abbr = str(opp).strip().upper()
                 if len(abbr) <= 3:
                     context.update(scheme_features_for_opponent(abbr))
+            dynamic_tier = float(context.get("dynamic_tier_yards") or tier_yards)
+            tier_pred_dyn = dict(tier_pred)
+            tier_pred_dyn["predicted_passing_yards"] = dynamic_tier
             feats = build_features_from_tier_prediction(
-                tier_pred,
+                tier_pred_dyn,
                 season=int(row.season),
                 week=int(row.week),
                 context=context,
@@ -154,7 +161,9 @@ def _build_with_meta(
                     "qb_player_name": row.qb_player_name,
                     "season": int(row.season),
                     "week": int(row.week),
-                    "tier_yards": tier_yards,
+                    # Promote gate compares ML vs dynamic (form-blended) tier baseline
+                    "tier_yards": dynamic_tier,
+                    "static_tier_yards": tier_yards,
                     "actual_passing_yards": float(row.actual_passing_yards),
                     "pass_yds_line_real": real_pass_line,
                 }
@@ -200,6 +209,11 @@ def train_and_eval(
     X_test = features.iloc[test_idx]
     y_test = target.iloc[test_idx].to_numpy()
     tier_test = meta.iloc[test_idx]["tier_yards"].to_numpy()
+    static_tier_test = (
+        meta.iloc[test_idx]["static_tier_yards"].to_numpy()
+        if "static_tier_yards" in meta.columns
+        else tier_test
+    )
 
     model, metadata = train_qb_yards_model((X_train, y_train), residual_target=True)
     ml_pred = np.array(
@@ -209,8 +223,12 @@ def train_and_eval(
         ]
     )
     tier_mae = _mae(y_test, tier_test)
+    static_tier_mae = _mae(y_test, static_tier_test)
     ml_mae = _mae(y_test, ml_pred)
     lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
+    lift_vs_static = (
+        (static_tier_mae - ml_mae) / static_tier_mae if static_tier_mae > 0 else 0.0
+    )
     promote = lift >= _PROMOTE_LIFT
 
     report: dict[str, Any] = {
@@ -224,10 +242,12 @@ def train_and_eval(
         "rows_train": int(len(X_train)),
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
-        "model_family": "residual_gbm",
+        "model_family": "residual_gbm_market_aware",
         "tier_mae": round(tier_mae, 3),
+        "static_tier_mae": round(static_tier_mae, 3),
         "ml_mae": round(ml_mae, 3),
         "mae_lift": round(lift, 4),
+        "mae_lift_vs_static_tier": round(lift_vs_static, 4),
         "promote_gate": _PROMOTE_LIFT,
         "promote_recommended": promote,
         "model_version": metadata.get("model_version"),
@@ -235,7 +255,7 @@ def train_and_eval(
         "recommendation": (
             "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
             if promote
-            else "Keep tier-v3 production; residual ML stays shadow-only"
+            else "Keep dynamic-tier / shadow ML; residual ML stays off until ≥10% lift"
         ),
     }
 
