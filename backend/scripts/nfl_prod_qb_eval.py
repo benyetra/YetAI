@@ -37,6 +37,198 @@ def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs(y_true - y_pred)))
 
 
+def _market_baseline_row(feats: dict[str, Any], *, tier: float) -> float:
+    from app.services.etl.nfl.qb_passing_yards_ml import baseline_yards_from_features
+
+    row = dict(feats)
+    row.setdefault("tier_yards", tier)
+    return float(baseline_yards_from_features(row, baseline_mode="market"))
+
+
+def _line_pred_row(
+    feats: dict[str, Any], *, tier: float, real_line: float | None
+) -> float:
+    if real_line is not None and not (
+        isinstance(real_line, float) and np.isnan(real_line)
+    ):
+        return float(real_line)
+    line = feats.get("pass_yds_line")
+    line_is_real = feats.get("line_is_real")
+    try:
+        if line is not None and line_is_real is not None and float(line_is_real) >= 0.5:
+            return float(line)
+    except (TypeError, ValueError):
+        pass
+    return float(tier)
+
+
+def _predict_residual_holdout(
+    *,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    feature_order: list[str],
+    baseline_mode: str,
+) -> tuple[np.ndarray, dict[str, Any]]:
+    from app.services.etl.nfl.qb_passing_yards_ml import (
+        predict_yards_ml,
+        train_qb_yards_model,
+    )
+
+    model, metadata = train_qb_yards_model(
+        (X_train, y_train),
+        residual_target=True,
+        fit_full=True,
+        feature_order=feature_order,
+        baseline_mode=baseline_mode,
+    )
+    preds = np.array(
+        [
+            predict_yards_ml(
+                model,
+                X_test.iloc[i].to_dict(),
+                feature_order=feature_order,
+                residual_target=True,
+                baseline_mode=baseline_mode,
+            )
+            for i in range(len(X_test))
+        ]
+    )
+    return preds, metadata
+
+
+def run_holdout_ablations(
+    *,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+    X_test: pd.DataFrame,
+    y_test: np.ndarray,
+    meta_test: pd.DataFrame,
+    tier_test: np.ndarray,
+    static_tier_test: np.ndarray,
+) -> dict[str, Any]:
+    """Season-holdout MAE diagnostics for promote-path decision making."""
+    from app.services.etl.nfl.qb_features import (
+        FEATURE_NAMES,
+        TIER_ONLY_FEATURE_NAMES,
+        V5_FEATURE_NAMES,
+    )
+
+    real_lines: list[float | None] = []
+    if "pass_yds_line_real" in meta_test.columns:
+        for i in range(len(meta_test)):
+            val = meta_test.iloc[i].get("pass_yds_line_real")
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                real_lines.append(None)
+            else:
+                real_lines.append(float(val))
+    else:
+        real_lines = [None] * len(X_test)
+
+    market_preds = np.array(
+        [
+            _market_baseline_row(X_test.iloc[i].to_dict(), tier=float(tier_test[i]))
+            for i in range(len(X_test))
+        ]
+    )
+    line_preds = np.array(
+        [
+            _line_pred_row(
+                X_test.iloc[i].to_dict(),
+                tier=float(tier_test[i]),
+                real_line=real_lines[i],
+            )
+            for i in range(len(X_test))
+        ]
+    )
+
+    real_mask = np.array([v is not None for v in real_lines], dtype=bool)
+
+    ablations: dict[str, Any] = {
+        "dynamic_tier": {
+            "mae": round(_mae(y_test, tier_test), 3),
+            "n": int(len(y_test)),
+        },
+        "static_tier": {
+            "mae": round(_mae(y_test, static_tier_test), 3),
+            "n": int(len(y_test)),
+        },
+        "market_baseline_0_5_tier_line": {
+            "mae": round(_mae(y_test, market_preds), 3),
+            "n": int(len(y_test)),
+        },
+        "line_only": {
+            "mae": round(_mae(y_test, line_preds), 3),
+            "n": int(len(y_test)),
+            "note": "real prop line when present else dynamic tier",
+        },
+        "line_only_real_rows": {
+            "mae": (
+                round(_mae(y_test[real_mask], line_preds[real_mask]), 3)
+                if real_mask.any()
+                else None
+            ),
+            "n": int(real_mask.sum()),
+        },
+    }
+
+    residual_specs = (
+        ("v5_features_market_residual", list(V5_FEATURE_NAMES), "market"),
+        ("v6_features_market_residual", list(FEATURE_NAMES), "market"),
+        ("tier_only_residual", list(TIER_ONLY_FEATURE_NAMES), "tier"),
+    )
+    for key, order, baseline_mode in residual_specs:
+        try:
+            preds, meta = _predict_residual_holdout(
+                X_train=X_train,
+                y_train=y_train,
+                X_test=X_test,
+                feature_order=order,
+                baseline_mode=baseline_mode,
+            )
+            mae = _mae(y_test, preds)
+            tier_mae = ablations["dynamic_tier"]["mae"]
+            lift = (tier_mae - mae) / tier_mae if tier_mae else 0.0
+            entry: dict[str, Any] = {
+                "mae": round(mae, 3),
+                "mae_lift_vs_dynamic_tier": round(lift, 4),
+                "n": int(len(y_test)),
+                "n_features": len(order),
+                "n_train": meta.get("n_train"),
+                "fit_full": meta.get("fit_full"),
+                "baseline_mode": baseline_mode,
+            }
+            if real_mask.any():
+                # Diagnose market collapse: how close is ML to the line vs tier?
+                line_mae_vs_ml = _mae(preds[real_mask], line_preds[real_mask])
+                tier_mae_vs_ml = _mae(preds[real_mask], tier_test[real_mask])
+                entry["ml_vs_line_mae_real_rows"] = round(line_mae_vs_ml, 3)
+                entry["ml_vs_tier_mae_real_rows"] = round(tier_mae_vs_ml, 3)
+                entry["ml_closer_to_line_than_tier"] = bool(
+                    line_mae_vs_ml < tier_mae_vs_ml
+                )
+            ablations[key] = entry
+        except Exception as exc:
+            ablations[key] = {"status": "error", "error": str(exc)}
+
+    v5 = ablations.get("v5_features_market_residual") or {}
+    v6 = ablations.get("v6_features_market_residual") or {}
+    line_only = ablations.get("line_only") or {}
+    ablations["summary"] = {
+        "v5_lift_vs_dynamic_tier": v5.get("mae_lift_vs_dynamic_tier"),
+        "v6_lift_vs_dynamic_tier": v6.get("mae_lift_vs_dynamic_tier"),
+        "v6_ml_mae_near_line_only": (
+            abs(float(v6.get("mae") or 0) - float(line_only.get("mae") or 0)) < 3.0
+            if v6.get("mae") is not None and line_only.get("mae") is not None
+            else None
+        ),
+        "v5_still_non_negative_lift": bool(
+            (v5.get("mae_lift_vs_dynamic_tier") or -1.0) >= 0.0
+        ),
+    }
+    return ablations
+
+
 def _time_split(
     features: pd.DataFrame, meta: pd.DataFrame
 ) -> tuple[np.ndarray, np.ndarray, str]:
@@ -227,7 +419,11 @@ def train_and_eval(
         else tier_test
     )
 
-    model, metadata = train_qb_yards_model((X_train, y_train), residual_target=True)
+    model, metadata = train_qb_yards_model(
+        (X_train, y_train),
+        residual_target=True,
+        fit_full=True,
+    )
     ml_pred = np.array(
         [
             predict_yards_ml(model, X_test.iloc[i].to_dict(), residual_target=True)
@@ -243,6 +439,16 @@ def train_and_eval(
     )
     promote = lift >= _PROMOTE_LIFT
 
+    ablations = run_holdout_ablations(
+        X_train=X_train,
+        y_train=y_train,
+        X_test=X_test,
+        y_test=y_test,
+        meta_test=meta.iloc[test_idx].reset_index(drop=True),
+        tier_test=tier_test,
+        static_tier_test=static_tier_test,
+    )
+
     report: dict[str, Any] = {
         "status": "ok",
         "trained_at": datetime.utcnow().isoformat(),
@@ -255,6 +461,7 @@ def train_and_eval(
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
         "model_family": "residual_gbm_market_aware",
+        "fit_full": True,
         "tier_mae": round(tier_mae, 3),
         "static_tier_mae": round(static_tier_mae, 3),
         "ml_mae": round(ml_mae, 3),
@@ -264,6 +471,7 @@ def train_and_eval(
         "promote_recommended": promote,
         "model_version": metadata.get("model_version"),
         "train_metadata": metadata,
+        "ablations": ablations,
         "recommendation": (
             "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
             if promote

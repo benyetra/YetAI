@@ -78,6 +78,34 @@ FEATURE_NAMES: tuple[str, ...] = (
     "opp_scheme_pressure",
 )
 
+# Features added after the v5 promote-path floor (~+0.9% Railway lift).
+V6_ONLY_FEATURE_NAMES: tuple[str, ...] = (
+    "rolling_air_yards_l3",
+    "rolling_dropbacks_l3",
+    "rolling_sack_rate_l3",
+    "opp_air_yards_allowed",
+    "line_is_real",
+    "market_residual_l3",
+    "line_minus_rolling",
+)
+
+V5_FEATURE_NAMES: tuple[str, ...] = tuple(
+    name for name in FEATURE_NAMES if name not in V6_ONLY_FEATURE_NAMES
+)
+
+# Prop-line columns excluded for tier-only residual ablations.
+PASS_YDS_LINE_FEATURE_NAMES: tuple[str, ...] = (
+    "pass_yds_line",
+    "line_minus_tier",
+    "line_is_real",
+    "market_residual_l3",
+    "line_minus_rolling",
+)
+
+TIER_ONLY_FEATURE_NAMES: tuple[str, ...] = tuple(
+    name for name in FEATURE_NAMES if name not in PASS_YDS_LINE_FEATURE_NAMES
+)
+
 _LEAGUE_AVG_ATTEMPTS = 34.0
 _LEAGUE_AVG_YPA = 7.0
 _LEAGUE_AVG_COMP_PCT = 0.65

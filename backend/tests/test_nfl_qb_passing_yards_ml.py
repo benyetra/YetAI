@@ -152,8 +152,100 @@ def test_train_qb_yards_model_smoke():
     assert meta["residual_target"] is True
     assert "residual" in meta["target"]
     assert meta["cv_split"] == "time_ordered_last_20pct"
+    assert meta["fit_full"] is False
     assert meta["baseline"] == "market_aware_tier_line_blend"
     assert set(FEATURE_NAMES).issubset(set(meta["features"]))
+    assert meta["n_train"] < len(df)
+    assert meta["cv_n_train"] == meta["n_train"]
+
+
+def test_train_qb_yards_model_fit_full_uses_all_rows():
+    n = 50
+    rng = np.random.default_rng(7)
+    base = {
+        "tier_yards": np.linspace(200, 280, n),
+        "is_backup": np.zeros(n),
+        "week": np.arange(1, n + 1) % 18 + 1,
+        "confidence": np.full(n, 0.7),
+        "season": np.concatenate([np.full(25, 2024), np.full(25, 2025)]),
+        "rolling_yards_l3": np.linspace(195, 275, n),
+        "rolling_yards_l5": np.linspace(198, 278, n),
+        "season_avg_yards": np.linspace(200, 270, n),
+        "rolling_attempts_l3": np.full(n, 34.0),
+        "rolling_ypa_l3": np.full(n, 7.0),
+        "rolling_comp_pct_l3": np.full(n, 0.65),
+        "rolling_air_yards_l3": np.full(n, 7.5),
+        "rolling_dropbacks_l3": np.full(n, 36.0),
+        "rolling_sack_rate_l3": np.full(n, 0.07),
+        "opp_pass_yds_allowed": np.full(n, 220.0),
+        "opp_air_yards_allowed": np.full(n, 7.5),
+        "opp_def_epa": rng.normal(0, 0.1, n),
+        "opp_pressure_rate": np.full(n, 0.25),
+        "injury_risk": np.zeros(n),
+        "is_home": rng.integers(0, 2, n).astype(float),
+        "rest_days": np.full(n, 7.0),
+        "implied_team_total": np.full(n, 23.0),
+        "wind_speed": np.full(n, 8.0),
+        "temperature": np.full(n, 60.0),
+        "dome": np.zeros(n),
+        "total_line": np.full(n, 46.0),
+        "spread_line": np.zeros(n),
+        "pass_yds_line": np.linspace(200, 280, n),
+        "line_minus_tier": np.zeros(n),
+        "line_is_real": np.ones(n),
+        "market_residual_l3": np.zeros(n),
+        "line_minus_rolling": np.zeros(n),
+        "opp_cover_base": np.full(n, 3.0),
+        "opp_man_zone": np.zeros(n),
+        "opp_scheme_pressure": np.full(n, 0.5),
+    }
+    df = pd.DataFrame(base)
+    y = 0.6 * df["tier_yards"] + 0.2 * df["rolling_yards_l3"] + rng.normal(0, 10, n)
+    model, meta = train_qb_yards_model((df, y), residual_target=True, fit_full=True)
+    assert meta["fit_full"] is True
+    assert meta["n_train"] == n
+    assert meta["cv_n_train"] < n
+    assert meta["cv_split"] == "time_ordered_last_20pct_then_refit_full"
+    pred = predict_yards_ml(model, df.iloc[0].to_dict(), residual_target=True)
+    assert 150 <= pred <= 400
+
+
+def test_train_qb_yards_model_tier_baseline_and_v5_features():
+    from app.services.etl.nfl.qb_features import V5_FEATURE_NAMES
+
+    n = 40
+    rng = np.random.default_rng(3)
+    df = pd.DataFrame(
+        {
+            name: (
+                np.linspace(200, 260, n)
+                if name in ("tier_yards", "rolling_yards_l3", "pass_yds_line")
+                else np.full(n, 1.0 if name == "line_is_real" else 0.0)
+            )
+            for name in FEATURE_NAMES
+        }
+    )
+    df["season"] = np.concatenate([np.full(20, 2024), np.full(20, 2025)])
+    df["week"] = np.arange(1, n + 1)
+    y = df["tier_yards"] + rng.normal(0, 8, n)
+    model, meta = train_qb_yards_model(
+        (df, y),
+        residual_target=True,
+        fit_full=True,
+        feature_order=list(V5_FEATURE_NAMES),
+        baseline_mode="tier",
+    )
+    assert meta["baseline_mode"] == "tier"
+    assert meta["n_train"] == n
+    assert meta["features"] == list(V5_FEATURE_NAMES)
+    pred = predict_yards_ml(
+        model,
+        df.iloc[0].to_dict(),
+        feature_order=list(V5_FEATURE_NAMES),
+        residual_target=True,
+        baseline_mode="tier",
+    )
+    assert 150 <= pred <= 400
 
 
 def test_predict_yards_ml_uses_market_baseline():

@@ -15,11 +15,11 @@ on:
         description: Force-upload shadow QB artifacts to S3 even if promote=false
         required: true
         type: boolean
-        default: true
+        default: false
 
 jobs:
   eval:
-    name: Prod QB residual eval (v6 + real lines)
+    name: Prod QB residual eval (ablations + full-train)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -74,8 +74,10 @@ jobs:
           print("=== PROMOTE GATE ===")
           for k in (
               "status",
-              "rows",
+              "rows_total",
+              "rows_train",
               "holdout",
+              "fit_full",
               "tier_mae",
               "ml_mae",
               "mae_lift",
@@ -86,6 +88,28 @@ jobs:
               "recommendation",
           ):
               print(f"{k}: {report.get(k)}")
+          tm = report.get("train_metadata") or {}
+          print(
+              "n_train:",
+              tm.get("n_train"),
+              "cv_n_train:",
+              tm.get("cv_n_train"),
+              "fit_full_meta:",
+              tm.get("fit_full"),
+          )
+          print("n_train_equals_rows_train:", tm.get("n_train") == report.get("rows_train"))
+          print("=== ABLATIONS ===")
+          ab = report.get("ablations") or {}
+          for name, payload in ab.items():
+              if name == "summary":
+                  continue
+              if isinstance(payload, dict):
+                  print(
+                      f"{name}: mae={payload.get('mae')} "
+                      f"lift={payload.get('mae_lift_vs_dynamic_tier')} "
+                      f"ml_closer_to_line={payload.get('ml_closer_to_line_than_tier')}"
+                  )
+          print("summary:", ab.get("summary"))
           ou = report.get("ou_classifier") or {}
           meta = ou.get("metadata") or {}
           print("ou_status:", ou.get("status"), "acc:", meta.get("holdout_accuracy"), "brier:", meta.get("holdout_brier"))
@@ -94,7 +118,7 @@ jobs:
       - name: Upload eval artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nfl-prod-qb-eval-v6
+          name: nfl-prod-qb-eval-ablations
           path: |
             backend/models/nfl/qb_prod_retrain_report.json
             backend/models/nfl/qb_passing_yards.pkl
