@@ -184,6 +184,12 @@ class StatisticalKickerPredictor:
 
     def estimate_field_goal_attempts(self, team_data, weather_data=None):
         """Estimate number of field goal attempts per game"""
+        try:
+            from app.services.etl.nfl.kicker_volume import estimate_attempts_heuristic
+
+            return estimate_attempts_heuristic(team_data, weather_data)
+        except Exception:
+            pass
         base_attempts = 1.85  # More realistic NFL average
 
         # Team offensive efficiency (reduced multipliers)

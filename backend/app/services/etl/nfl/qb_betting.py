@@ -135,14 +135,28 @@ def get_best_line(player_lines: Dict) -> Dict:
 
 
 def generate_betting_recommendation(
-    prediction: float, ou_line: float, confidence: float
+    prediction: float,
+    ou_line: float,
+    confidence: float,
+    *,
+    over_probability: float | None = None,
 ) -> Dict:
-    """Generate betting recommendation based on prediction vs O/U line"""
+    """Generate betting recommendation based on prediction vs O/U line.
+
+    When ``over_probability`` from the QB O/U classifier is available, require
+    agreement with the yards-edge call (or a strong ML edge alone).
+    """
     edge = prediction - ou_line
     edge_percentage = (edge / ou_line) * 100 if ou_line > 0 else 0
 
     min_edge = 5.0
     min_confidence = 0.65
+
+    ml_rec = None
+    if over_probability is not None:
+        from app.services.etl.nfl.qb_ou_classifier import recommendation_from_over_prob
+
+        ml_rec = recommendation_from_over_prob(float(over_probability))
 
     if confidence < min_confidence:
         return {
@@ -150,14 +164,18 @@ def generate_betting_recommendation(
             "reason": f"Low confidence ({confidence:.1%})",
             "edge_percentage": edge_percentage,
             "bet_size": None,
+            "over_probability": over_probability,
         }
 
-    if abs(edge_percentage) < min_edge:
+    if abs(edge_percentage) < min_edge and (
+        ml_rec is None or ml_rec.get("recommendation") == "PASS"
+    ):
         return {
             "recommendation": "PASS",
             "reason": f"Insufficient edge ({edge_percentage:.1f}%)",
             "edge_percentage": edge_percentage,
             "bet_size": None,
+            "over_probability": over_probability,
         }
 
     strong_edge = 10.0
@@ -179,19 +197,46 @@ def generate_betting_recommendation(
         else:
             bet_size = "MEDIUM"
             reason = f"Good edge ({abs(edge_percentage):.1f}%)"
+    elif ml_rec and ml_rec.get("recommendation") in {"OVER", "UNDER"}:
+        bet_type = ml_rec["recommendation"]
+        bet_size = "SMALL"
+        reason = ml_rec.get("reason") or "ML O/U edge"
     else:
         return {
             "recommendation": "PASS",
             "reason": "No significant edge",
             "edge_percentage": edge_percentage,
             "bet_size": None,
+            "over_probability": over_probability,
         }
+
+    # If classifier disagrees with yards edge, pass unless yards edge is strong
+    if (
+        ml_rec
+        and ml_rec.get("recommendation") in {"OVER", "UNDER"}
+        and ml_rec["recommendation"] != bet_type
+        and abs(edge_percentage) < strong_edge
+    ):
+        return {
+            "recommendation": "PASS",
+            "reason": (
+                f"Yards edge ({bet_type}) disagrees with ML "
+                f"({ml_rec['recommendation']}, P(over)={over_probability:.1%})"
+            ),
+            "edge_percentage": edge_percentage,
+            "bet_size": None,
+            "over_probability": over_probability,
+        }
+
+    if ml_rec and ml_rec.get("recommendation") == bet_type:
+        reason = f"{reason}; ML agrees (P(over)={over_probability:.1%})"
 
     return {
         "recommendation": bet_type,
         "reason": reason,
         "edge_percentage": edge_percentage,
         "bet_size": bet_size,
+        "over_probability": over_probability,
     }
 
 
@@ -281,9 +326,29 @@ def _run_qb_betting_core():
             ou_line = best_lines["over"]["line"]
 
             if ou_line > 0:
-                # Generate recommendation
+                over_prob = None
+                fi = (
+                    qb.feature_importance
+                    if isinstance(qb.feature_importance, dict)
+                    else {}
+                )
+                feat_ctx = (
+                    fi.get("features") if isinstance(fi.get("features"), dict) else {}
+                )
+                try:
+                    from app.services.etl.nfl.qb_ou_classifier import (
+                        predict_over_probability_loaded,
+                    )
+
+                    over_prob = predict_over_probability_loaded(feat_ctx or {}, ou_line)
+                except Exception:
+                    over_prob = None
+
                 recommendation = generate_betting_recommendation(
-                    qb.predicted_passing_yards, ou_line, qb.model_confidence or 0.5
+                    qb.predicted_passing_yards,
+                    ou_line,
+                    qb.model_confidence or 0.5,
+                    over_probability=over_prob,
                 )
 
                 # Update QB prediction with betting data
@@ -296,6 +361,10 @@ def _run_qb_betting_core():
                 qb.bet_size = recommendation["bet_size"]
                 qb.edge_percentage = recommendation["edge_percentage"]
                 qb.recommendation_reason = recommendation["reason"]
+                if over_prob is not None and isinstance(fi, dict):
+                    fi = dict(fi)
+                    fi["ml_over_probability"] = round(float(over_prob), 3)
+                    qb.feature_importance = fi
 
                 db_session.commit()
                 updated_count += 1

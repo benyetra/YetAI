@@ -19,6 +19,7 @@ from app.services.etl.nfl.kicker_blend_tune import (
     impute_kick_distance,
     resolve_blend_weight,
 )
+from app.services.etl.nfl.kicker_volume import expected_fg_made
 from app.services.etl.nfl.ml_feature_mapping import get_feature_mapper
 
 logger = logging.getLogger(__name__)
@@ -136,6 +137,29 @@ def get_ml_kicker_ensemble(*, reload: bool = False) -> MLKickerEnsemble:
     return _ensemble
 
 
+def estimate_ml_field_goal_volume(
+    make_probability: float,
+    team_data: dict | None = None,
+    weather_data: dict | None = None,
+    *,
+    predicted_attempts: float | None = None,
+    kicker_make_rate: float | None = None,
+) -> tuple[float, float]:
+    """
+    Convert FG make probability into expected FG made via attempts × mixture.
+
+    Returns ``(projected_made, attempts_used)``.
+    """
+    projected, meta = expected_fg_made(
+        attempts=predicted_attempts,
+        team_data=team_data,
+        weather_data=weather_data,
+        kicker_make_rate=kicker_make_rate,
+        classifier_make_prob=make_probability,
+    )
+    return projected, float(meta["projected_attempts"])
+
+
 def blend_field_goal_projection(
     statistical_fgs: float,
     kicker_data: dict,
@@ -145,7 +169,7 @@ def blend_field_goal_projection(
     weight_ml: float | None = None,
 ) -> tuple[float, dict]:
     """
-    Blend statistical FG count with ML make probability at typical attempt distance.
+    Blend statistical FG count with attempts × distance-mixture make%.
 
     Returns (projected_fgs, metadata).
     """
@@ -167,14 +191,47 @@ def blend_field_goal_projection(
     if prob is None:
         return statistical_fgs, meta
 
-    ml_fgs = 1.2 + prob * 2.3
+    attempt_hint = None
+    for key in ("predicted_attempts", "fg_attempts", "projected_attempts"):
+        if ctx.get(key) is not None:
+            try:
+                attempt_hint = float(ctx[key])
+                break
+            except (TypeError, ValueError):
+                pass
+        if team_data.get(key) is not None:
+            try:
+                attempt_hint = float(team_data[key])
+                break
+            except (TypeError, ValueError):
+                pass
+
+    kicker_rate = None
+    for key in ("career_fg_percentage", "fg_percentage", "recent_form"):
+        if kicker_data.get(key) is not None:
+            try:
+                raw = float(kicker_data[key])
+                kicker_rate = raw / 100.0 if raw > 1.0 else raw
+                break
+            except (TypeError, ValueError):
+                pass
+
+    ml_fgs, attempts_used = estimate_ml_field_goal_volume(
+        prob,
+        team_data,
+        weather_data,
+        predicted_attempts=attempt_hint,
+        kicker_make_rate=kicker_rate,
+    )
     blended = (1.0 - weight_ml) * statistical_fgs + weight_ml * ml_fgs
     meta = {
         "ml_used": True,
         "model_source": ensemble.model_source,
         "ml_success_probability": round(prob, 3),
+        "ml_projected_attempts": attempts_used,
         "ml_projected_fgs": round(ml_fgs, 2),
         "statistical_fgs": round(statistical_fgs, 2),
         "blend_weight": weight_ml,
+        "volume_model": "attempts_x_distance_mixture",
     }
     return round(blended, 2), meta

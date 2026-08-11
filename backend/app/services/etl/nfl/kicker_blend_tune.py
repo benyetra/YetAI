@@ -113,7 +113,7 @@ def walk_forward_blend_weight(
 def resolve_blend_weight(
     tune_records: Sequence[Mapping[str, Any]] | None = None,
 ) -> float:
-    """Env override → walk-forward on records → default 0.35."""
+    """Env override → walk-forward on records → CSV-tuned default → 0.30."""
     tuned = os.getenv("NFL_KICKER_BLEND_TUNED_WEIGHT", "").strip()
     if tuned:
         try:
@@ -122,4 +122,13 @@ def resolve_blend_weight(
             pass
     if tune_records:
         return walk_forward_blend_weight(tune_records)
-    return float(os.getenv("NFL_KICKER_ML_BLEND_WEIGHT", "0.35"))
+    env_default = os.getenv("NFL_KICKER_ML_BLEND_WEIGHT", "").strip()
+    if env_default:
+        try:
+            return float(env_default)
+        except ValueError:
+            pass
+    # Prefer a slightly lower ML weight with the new volume model (less overfit
+    # to make-prob alone). Ops can pin NFL_KICKER_BLEND_TUNED_WEIGHT after
+    # prod walk-forward.
+    return 0.30
