@@ -212,6 +212,40 @@ def test_run_actuals_with_injected_stats_upserts():
     assert rows[0]["correct_prediction"] is True
 
 
+def test_fetch_player_td_stats_soft_skips_missing_season():
+    """Off-season 404 must not hard-fail the celery actuals phase."""
+    from urllib.error import HTTPError
+
+    from app.services.etl.nfl.anytime_td_actuals import fetch_player_td_stats_nflverse
+
+    missing = HTTPError(
+        "https://example/2026.parquet", 404, "Not Found", hdrs=None, fp=None
+    )
+    with patch(
+        "app.services.etl.nfl.anytime_td_features.load_weekly_records_for_season",
+        side_effect=missing,
+    ):
+        assert fetch_player_td_stats_nflverse(2026, 1) == []
+
+
+def test_run_actuals_skips_when_nflverse_missing():
+    from urllib.error import HTTPError
+
+    missing = HTTPError(
+        "https://example/2026.parquet", 404, "Not Found", hdrs=None, fp=None
+    )
+    with patch(
+        "app.services.etl.nfl.anytime_td_features.load_weekly_records_for_season",
+        side_effect=missing,
+    ):
+        result = run_actuals(season=2026, week=1)
+
+    assert result["status"] == "ok"
+    assert result["actuals"] == 0
+    assert result["season"] == 2026
+    assert result["week"] == 1
+
+
 def test_run_sync_schemes_delegates_to_loader():
     with patch(
         "app.services.etl.nfl.sync_defense_schemes.upsert_schemes_from_yaml",

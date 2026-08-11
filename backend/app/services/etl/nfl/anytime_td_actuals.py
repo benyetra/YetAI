@@ -126,35 +126,55 @@ def _normalize_player_stat(row: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def fetch_player_td_stats_nflverse(season: int, week: int) -> list[dict[str, Any]]:
-    """Fetch weekly offensive TD stats from nflverse (network I/O)."""
+    """Fetch weekly offensive TD stats from nflverse (network I/O).
+
+    Off-season / early-season often 404s for the current season parquet. Soft-
+    return ``[]`` so the celery pipeline can continue (projector still runs).
+    Does **not** fall back to a prior season — grading wrong weeks would be worse
+    than skipping.
+    """
+    from app.services.etl.nfl.anytime_td_features import (
+        _is_missing_nflverse_data_error,
+        load_weekly_records_for_season,
+    )
+
     try:
-        import nfl_data_py as nfl
-    except ImportError as exc:
-        raise RuntimeError("nfl_data_py not installed") from exc
-
-    weekly = nfl.import_weekly_data([season])
-    if weekly.empty:
-        return []
-
-    week_df = weekly[
-        (weekly["season"] == season)
-        & (weekly["week"] == week)
-        & (weekly["position"].isin(list(SKILL_POSITIONS)))
-    ]
-    if week_df.empty:
-        return []
+        records = load_weekly_records_for_season(int(season))
+    except Exception as exc:
+        if _is_missing_nflverse_data_error(exc):
+            logger.warning(
+                "nflverse weekly TD stats unavailable for season=%s week=%s (%s); "
+                "skipping actuals",
+                season,
+                week,
+                exc,
+            )
+            return []
+        raise
 
     stats: list[dict[str, Any]] = []
-    for _, row in week_df.iterrows():
-        opponent = row.get("opponent_team") or row.get("defteam") or ""
+    for row in records:
+        try:
+            row_season = int(row.get("season") or season)
+            row_week = int(row.get("week") or 0)
+        except (TypeError, ValueError):
+            continue
+        if row_season != season or row_week != week:
+            continue
+        position = str(row.get("position") or "").upper()
+        if position not in SKILL_POSITIONS:
+            continue
+        opponent = (
+            row.get("opponent_team") or row.get("opponent") or row.get("defteam") or ""
+        )
         stats.append(
             {
                 "player_id": row.get("player_id"),
                 "player_name": row.get("player_display_name") or row.get("player_name"),
-                "position": row.get("position"),
+                "position": position,
                 "team_name": row.get("recent_team") or row.get("team"),
                 "opponent_team_name": opponent,
-                "game_date": row.get("game_date"),
+                "game_date": row.get("game_date") or row.get("gameday"),
                 "passing_tds": row.get("passing_tds", 0),
                 "rushing_tds": row.get("rushing_tds", 0),
                 "receiving_tds": row.get("receiving_tds", 0),
