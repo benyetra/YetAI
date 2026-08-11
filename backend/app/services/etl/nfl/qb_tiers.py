@@ -2,13 +2,15 @@
 
 Kept free of DB/nflverse imports so unit tests and training builders can use it
 without loading the full ETL stack.
+
+Tier predictions are **stable** (no hash-based week noise). Uncertainty is
+expressed via prediction intervals and confidence, not fake yard variance.
 """
 
 from __future__ import annotations
 
-import hashlib
+import os
 from typing import Dict
-
 
 # Base yards calibrated for 2026 REG depth charts (OurLads / Yahoo Aug 2026).
 # Dual-threat QBs sit slightly lower on pure pass yards; pocket passers higher.
@@ -76,6 +78,7 @@ QB_YARDS_TIERS: dict[str, int] = {
 }
 
 _DEFAULT_BASE_YARDS = 210
+_TRUTHY = frozenset({"1", "true", "yes"})
 
 
 def normalize_qb_name_key(qb_name: str) -> str:
@@ -98,44 +101,82 @@ def lookup_tier_base_yards(qb_name: str) -> int:
     )
 
 
+def _tier_uncertainty(base_yards: float) -> tuple[float, float, float]:
+    """Return (half_width, base_confidence, interval_pad)."""
+    if base_yards >= 270:
+        return 28.0, 0.82, 35.0
+    if base_yards >= 240:
+        return 32.0, 0.75, 40.0
+    if base_yards >= 210:
+        return 36.0, 0.68, 45.0
+    return 40.0, 0.60, 50.0
+
+
+def _legacy_hash_variance_enabled() -> bool:
+    """Opt-in only — default is stable tiers (no seeded yard noise)."""
+    return os.getenv("NFL_QB_TIER_HASH_VARIANCE", "").strip().lower() in _TRUTHY
+
+
 def predict_qb_passing_yards(
-    qb_name: str, season: int, week: int, is_backup: bool = False
+    qb_name: str,
+    season: int,
+    week: int,
+    is_backup: bool = False,
+    *,
+    injury_status: str | None = None,
 ) -> Dict:
-    """Predict QB passing yards using realistic tier system with variance."""
-    base_yards = lookup_tier_base_yards(qb_name)
+    """
+    Predict QB passing yards from the name tier table.
+
+    Stable by default: predicted yards == tier base (backup/injury adjusted).
+    Set ``NFL_QB_TIER_HASH_VARIANCE=1`` to restore legacy seeded week noise.
+    """
+    base_yards = float(lookup_tier_base_yards(qb_name))
+    status = (injury_status or "").strip().lower()
 
     if is_backup:
-        base_yards = max(150, base_yards - 25)
+        base_yards = max(150.0, base_yards - 25.0)
+    elif status in {"questionable", "q"}:
+        # Soft downgrade: expect fewer dropbacks / conservative game plan
+        base_yards = max(150.0, base_yards - 12.0)
 
-    seed = int(hashlib.md5(f"{qb_name}_{season}_{week}".encode()).hexdigest()[:8], 16)
-
-    if base_yards >= 270:
-        variance_range = 30
-        base_confidence = 0.82
-    elif base_yards >= 240:
-        variance_range = 35
-        base_confidence = 0.75
-    elif base_yards >= 210:
-        variance_range = 40
-        base_confidence = 0.68
-    else:
-        variance_range = 45
-        base_confidence = 0.60
+    half_width, base_confidence, _ = _tier_uncertainty(base_yards)
 
     if is_backup:
         base_confidence = max(0.45, base_confidence - 0.15)
+    elif status in {"questionable", "q"}:
+        base_confidence = max(0.45, base_confidence - 0.10)
+    elif status in {"out", "ir", "doubtful"}:
+        base_confidence = max(0.40, base_confidence - 0.20)
 
-    variance = (seed % (variance_range * 2 + 1)) - variance_range
-    predicted_yards = max(150, min(350, base_yards + variance))
+    predicted_yards = base_yards
+    if _legacy_hash_variance_enabled():
+        import hashlib
 
-    confidence_variance = ((seed % 21) - 10) / 200
-    final_confidence = max(0.45, min(0.90, base_confidence + confidence_variance))
+        seed = int(
+            hashlib.md5(f"{qb_name}_{season}_{week}".encode()).hexdigest()[:8], 16
+        )
+        variance_range = int(half_width)
+        variance = (seed % (variance_range * 2 + 1)) - variance_range
+        predicted_yards = max(150.0, min(350.0, base_yards + variance))
 
-    method = "dynamic_backup" if is_backup else "dynamic_starter"
+    predicted_yards = round(max(150.0, min(350.0, predicted_yards)), 1)
+    lower = round(max(120.0, predicted_yards - half_width), 1)
+    upper = round(min(380.0, predicted_yards + half_width), 1)
+
+    if is_backup:
+        method = "dynamic_backup"
+    elif status in {"questionable", "q"}:
+        method = "dynamic_questionable"
+    else:
+        method = "dynamic_starter"
 
     return {
-        "predicted_passing_yards": round(predicted_yards, 1),
-        "confidence": round(final_confidence, 3),
+        "predicted_passing_yards": predicted_yards,
+        "confidence": round(base_confidence, 3),
         "prediction_method": method,
         "tier_base_yards": float(base_yards),
+        "prediction_interval_lower": lower,
+        "prediction_interval_upper": upper,
+        "injury_status": injury_status or "Healthy",
     }

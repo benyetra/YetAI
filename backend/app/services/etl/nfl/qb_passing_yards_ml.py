@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 S3_BUCKET = "yetibets"
 S3_PREFIX = "nfl/ml_models"
 MODEL_KEY = "qb_passing_yards"
-TIER_VERSION = "tier-v2"
+TIER_VERSION = "tier-v3"
 
 _MODEL: object | None = None
 _METADATA: dict[str, Any] | None = None
@@ -134,6 +134,12 @@ def train_qb_yards_model(
                 "season_avg_yards",
             ):
                 features_df[col] = features_df.get("tier_yards", 220.0)
+            elif col == "opp_def_epa":
+                features_df[col] = 0.0
+            elif col == "opp_pressure_rate":
+                features_df[col] = 0.25
+            elif col == "injury_risk":
+                features_df[col] = 0.0
             elif col == "implied_team_total":
                 features_df[col] = 22.5
             elif col == "temperature":
@@ -309,6 +315,19 @@ def enrich_qb_prediction_for_write(
         projected = ml_yards
         method = "gbm_qb_yards"
 
+    # Prediction intervals: prefer explicit tier intervals; widen slightly for ML
+    lower = prediction.get("prediction_interval_lower")
+    upper = prediction.get("prediction_interval_upper")
+    if lower is None or upper is None:
+        half = 35.0
+        lower = max(120.0, projected - half)
+        upper = min(380.0, projected + half)
+    elif qb_ml_enabled() and ml_yards is not None:
+        # Recenter interval on ML point estimate, keep width
+        width = (float(upper) - float(lower)) / 2.0
+        lower = max(120.0, projected - width)
+        upper = min(380.0, projected + width)
+
     return {
         "predicted_passing_yards": projected,
         "model_confidence": prediction.get("confidence"),
@@ -318,4 +337,6 @@ def enrich_qb_prediction_for_write(
         "tier_yards": tier_yards,
         "ml_shadow_yards": ml_yards,
         "feature_context": feats,
+        "prediction_interval_lower": round(float(lower), 1),
+        "prediction_interval_upper": round(float(upper), 1),
     }

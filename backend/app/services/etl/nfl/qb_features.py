@@ -12,6 +12,8 @@ from typing import Any, Iterable, Mapping, Sequence
 # League priors (REG, approximate)
 _LEAGUE_AVG_PASS_YARDS = 220.0
 _LEAGUE_AVG_OPP_PASS_ALLOWED = 220.0
+_LEAGUE_AVG_DEF_EPA = 0.0  # pass EPA allowed (higher = worse defense)
+_LEAGUE_AVG_PRESSURE = 0.25
 _LEAGUE_AVG_TEAM_TOTAL = 22.5
 _DEFAULT_REST_DAYS = 7.0
 _DEFAULT_TEMP_F = 65.0
@@ -27,6 +29,9 @@ FEATURE_NAMES: tuple[str, ...] = (
     "rolling_yards_l5",
     "season_avg_yards",
     "opp_pass_yds_allowed",
+    "opp_def_epa",
+    "opp_pressure_rate",
+    "injury_risk",
     "is_home",
     "rest_days",
     "implied_team_total",
@@ -154,8 +159,8 @@ def build_qb_features(
 
     ``context`` optional keys:
       rolling_yards_l3, rolling_yards_l5, season_avg_yards,
-      opp_pass_yds_allowed, is_home, rest_days, implied_team_total,
-      wind_speed, temperature, dome
+      opp_pass_yds_allowed, opp_def_epa, opp_pressure_rate, injury_risk,
+      is_home, rest_days, implied_team_total, wind_speed, temperature, dome
     """
     ctx = dict(context or {})
     tier = _float_or(tier_yards, _LEAGUE_AVG_PASS_YARDS)
@@ -182,6 +187,10 @@ def build_qb_features(
     else:
         rest_days = rest_days_from_bye(_float_or(rest_raw, _DEFAULT_REST_DAYS))
 
+    injury_risk = ctx.get("injury_risk")
+    if injury_risk is None:
+        injury_risk = injury_risk_from_status(ctx.get("injury_status"))
+
     return {
         "tier_yards": tier,
         "is_backup": 1.0 if is_backup else 0.0,
@@ -194,6 +203,11 @@ def build_qb_features(
         "opp_pass_yds_allowed": _float_or(
             ctx.get("opp_pass_yds_allowed"), _LEAGUE_AVG_OPP_PASS_ALLOWED
         ),
+        "opp_def_epa": _float_or(ctx.get("opp_def_epa"), _LEAGUE_AVG_DEF_EPA),
+        "opp_pressure_rate": _clamp(
+            _float_or(ctx.get("opp_pressure_rate"), _LEAGUE_AVG_PRESSURE), 0.05, 0.55
+        ),
+        "injury_risk": _clamp(_float_or(injury_risk, 0.0), 0.0, 1.0),
         "is_home": _float_or(is_home, 0.5),
         "rest_days": rest_days,
         "implied_team_total": _float_or(
@@ -203,6 +217,18 @@ def build_qb_features(
         "temperature": _float_or(ctx.get("temperature"), _DEFAULT_TEMP_F),
         "dome": 1.0 if bool(ctx.get("dome")) else 0.0,
     }
+
+
+def injury_risk_from_status(status: Any) -> float:
+    """Map injury report status → [0, 1] risk for the projected starter."""
+    s = str(status or "healthy").strip().lower()
+    if s in {"out", "ir", "doubtful"}:
+        return 1.0
+    if s in {"questionable", "q"}:
+        return 0.55
+    if s in {"probable"}:
+        return 0.2
+    return 0.0
 
 
 def enrich_context_from_actual_row(
@@ -233,6 +259,60 @@ def enrich_context_from_actual_row(
     if "dome" in weather or "indoor" in weather or "retractable" in weather:
         ctx["dome"] = True
     return ctx
+
+
+def estimate_opp_defense_from_weekly(
+    weekly_rows: Sequence[Mapping[str, Any]],
+    *,
+    opponent_abbr: str,
+    season: int,
+    week: int,
+) -> dict[str, float]:
+    """
+    Defense quality vs the pass from prior QB weekly rows facing ``opponent``.
+
+    Uses ``passing_epa`` when present (EPA allowed) and sack rate as a pressure
+    proxy. Falls back to empty dict when sample is thin.
+    """
+    opp = opponent_abbr.strip().upper()
+    if not opp:
+        return {}
+    epa_vals: list[float] = []
+    sack_rates: list[float] = []
+    for row in weekly_rows:
+        pos = str(row.get("position") or "").upper()
+        if pos and pos != "QB":
+            continue
+        row_opp = str(row.get("opponent_team") or row.get("opponent") or "").upper()
+        if row_opp != opp:
+            continue
+        try:
+            row_week = int(row.get("week") or 0)
+            row_season = int(row.get("season") or season)
+        except (TypeError, ValueError):
+            continue
+        if row_season != season or row_week >= week or row_week < 1:
+            continue
+        if row.get("passing_epa") is not None:
+            try:
+                epa_vals.append(float(row["passing_epa"]))
+            except (TypeError, ValueError):
+                pass
+        attempts = row.get("attempts") or row.get("passing_attempts")
+        sacks = row.get("sacks")
+        if attempts is not None and sacks is not None:
+            try:
+                att = float(attempts)
+                if att > 0:
+                    sack_rates.append(float(sacks) / att)
+            except (TypeError, ValueError):
+                pass
+    out: dict[str, float] = {}
+    if len(epa_vals) >= 2:
+        out["opp_def_epa"] = float(sum(epa_vals) / len(epa_vals))
+    if len(sack_rates) >= 2:
+        out["opp_pressure_rate"] = float(sum(sack_rates) / len(sack_rates))
+    return out
 
 
 def estimate_opp_pass_allowed_from_weekly(

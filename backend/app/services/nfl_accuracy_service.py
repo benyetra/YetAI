@@ -73,6 +73,7 @@ def _merge_actuals_qb_range(
                 "ou_line": p.ou_line,
                 "betting_recommendation": p.betting_recommendation,
                 "actual_passing_yards": a.actual_passing_yards if a else None,
+                "model_version": getattr(p, "model_version", None) or "unknown",
             }
         )
     return out
@@ -90,8 +91,55 @@ def _merge_actuals_qb(projections, actuals) -> list[dict[str, Any]]:
                 "ou_line": p.ou_line,
                 "betting_recommendation": p.betting_recommendation,
                 "actual_passing_yards": a.actual_passing_yards if a else None,
+                "model_version": getattr(p, "model_version", None) or "unknown",
             }
         )
+    return out
+
+
+def _merge_actuals_kicker(projections, actuals) -> list[dict[str, Any]]:
+    by_kid = {a.kicker_id: a for a in actuals}
+    out = []
+    for p in projections:
+        a = by_kid.get(p.kicker_player_id)
+        out.append(
+            {
+                "kicker_player_id": p.kicker_player_id,
+                "predicted_fg_made": getattr(p, "predicted_fg_made", None)
+                or getattr(p, "projected_field_goals", None),
+                "actual_field_goals_made": (a.actual_field_goals_made if a else None),
+                "model_version": getattr(p, "model_version", None) or "unknown",
+            }
+        )
+    return out
+
+
+def mae_by_model_version(
+    rows: list[dict[str, Any]],
+    *,
+    projected_field: str,
+    actual_field: str,
+    version_field: str = "model_version",
+) -> dict[str, dict[str, Any]]:
+    """Per-model_version MAE breakdown for graded rows."""
+    buckets: dict[str, list[float]] = {}
+    for row in rows:
+        actual = row.get(actual_field)
+        projected = row.get(projected_field)
+        if actual is None or projected is None:
+            continue
+        try:
+            err = abs(float(projected) - float(actual))
+        except (TypeError, ValueError):
+            continue
+        ver = str(row.get(version_field) or "unknown")
+        buckets.setdefault(ver, []).append(err)
+    out: dict[str, dict[str, Any]] = {}
+    for ver, errors in buckets.items():
+        out[ver] = {
+            "n": len(errors),
+            "mae": round(sum(errors) / len(errors), 3) if errors else None,
+        }
     return out
 
 
@@ -150,21 +198,6 @@ def _merge_actuals_totals(projections, actuals) -> list[dict[str, Any]]:
                 "market_total": p.market_total,
                 "recommendation": p.recommendation,
                 "actual_total": a.actual_total if a else None,
-            }
-        )
-    return out
-
-
-def _merge_actuals_kicker(projections, actuals) -> list[dict[str, Any]]:
-    by_pid = {a.kicker_id: a for a in actuals}
-    out = []
-    for p in projections:
-        a = by_pid.get(p.kicker_player_id)
-        out.append(
-            {
-                "kicker_id": p.kicker_player_id,
-                "predicted_fg_made": p.predicted_fg_made,
-                "actual_field_goals_made": a.actual_field_goals_made if a else None,
             }
         )
     return out
@@ -300,11 +333,24 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         ),
     ]
 
-    return assemble(
+    assembled = assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=bool(qb_rows or k_rows or spread_rows or totals_rows or anytime_rows),
     )
+    assembled["by_model_version"] = {
+        "qb_passing_mae": mae_by_model_version(
+            qb_rows,
+            projected_field="predicted_passing_yards",
+            actual_field="actual_passing_yards",
+        ),
+        "kicker_fg_mae": mae_by_model_version(
+            k_rows,
+            projected_field="predicted_fg_made",
+            actual_field="actual_field_goals_made",
+        ),
+    }
+    return assembled
 
 
 def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[str, Any]:

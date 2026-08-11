@@ -215,6 +215,23 @@ def _load_weekly_qb_history(season: int) -> list[dict]:
                 "opponent_team": str(row.get("opponent_team") or ""),
                 "position": "QB",
                 "passing_yards": float(row.get("passing_yards") or 0),
+                "passing_epa": (
+                    float(row["passing_epa"])
+                    if row.get("passing_epa") is not None
+                    and not pd.isna(row.get("passing_epa"))
+                    else None
+                ),
+                "attempts": (
+                    float(row["attempts"])
+                    if row.get("attempts") is not None
+                    and not pd.isna(row.get("attempts"))
+                    else None
+                ),
+                "sacks": (
+                    float(row["sacks"])
+                    if row.get("sacks") is not None and not pd.isna(row.get("sacks"))
+                    else None
+                ),
             }
         )
     return records
@@ -266,11 +283,15 @@ def build_qb_prediction_context(
     season: int,
     week: int,
     weekly_history: list[dict] | None = None,
+    injury_status: str | None = None,
+    is_backup: bool = False,
 ) -> dict:
     """Assemble matchup/form context for GBM features."""
     from app.services.etl.nfl.qb_features import (
+        estimate_opp_defense_from_weekly,
         estimate_opp_pass_allowed_from_weekly,
         form_features_from_prior_yards,
+        injury_risk_from_status,
         prior_yards_for_player,
     )
 
@@ -288,7 +309,6 @@ def build_qb_prediction_context(
             season=season,
             week=week,
         )
-    # Tier yards unknown here — form helpers use prior or caller fills later
     form = form_features_from_prior_yards(prior, tier_yards=210.0)
     opp_allowed = estimate_opp_pass_allowed_from_weekly(
         history,
@@ -296,17 +316,28 @@ def build_qb_prediction_context(
         season=season,
         week=week,
     )
+    defense = estimate_opp_defense_from_weekly(
+        history,
+        opponent_abbr=opponent_abbr or "",
+        season=season,
+        week=week,
+    )
     implied = _implied_team_total_for_team(team_abbr, season, week)
+    risk = injury_risk_from_status(injury_status)
+    if is_backup:
+        risk = max(risk, 0.85)
     ctx: dict = {
         **form,
+        **defense,
         "is_home": team_is_home(team_abbr, season, week),
         "team_abbr": team_abbr,
+        "injury_status": injury_status or "Healthy",
+        "injury_risk": risk,
     }
     if opp_allowed is not None:
         ctx["opp_pass_yds_allowed"] = opp_allowed
     if implied is not None:
         ctx["implied_team_total"] = implied
-    # Rest: bye weeks ≈ 14 days when no game prior week
     if week > 1 and history:
         played_prior = any(
             int(r.get("week") or 0) == week - 1
@@ -413,7 +444,8 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
                         ]
                         injury_status = latest_injury.get("report_status", "Unknown")
 
-                        # Consider QB unavailable if Out, IR, or Doubtful
+                        # Unavailable → promote backup; Questionable stays but
+                        # is flagged for confidence / yard soft-downgrade.
                         if injury_status in ["Out", "IR", "Doubtful"]:
                             is_injured = True
                             print(f"  ⚠️ {qb[name_field]} ({team}) - {injury_status}")
@@ -427,6 +459,11 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
                             if not backup.empty:
                                 qb = backup.iloc[0]
                                 print(f"    ↳ Using backup: {qb[name_field]}")
+                        elif str(injury_status).lower() in {"questionable", "q"}:
+                            print(
+                                f"  ⚡ {qb[name_field]} ({team}) - Questionable "
+                                "(soft downgrade)"
+                            )
 
                 # Add to starting QBs list
                 team_id = team_id_mapping.get(team, 99)
@@ -484,12 +521,19 @@ def _run_qb_dynamic_core():
             team_abbr = qb_data["team_abbr"]
             player_id = qb_data["player_id"]
             is_backup = qb_data["is_backup"]
+            injury_status = qb_data.get("injury_status") or "Healthy"
 
             # Get opponent team and scheduled kickoff
             opponent_abbr = get_team_opponent(team_abbr, season, week)
             game_date = _resolve_game_date(team_abbr, season, week)
 
-            tier_prediction = predict_qb_passing_yards(qb_name, season, week, is_backup)
+            tier_prediction = predict_qb_passing_yards(
+                qb_name,
+                season,
+                week,
+                is_backup,
+                injury_status=None if is_backup else injury_status,
+            )
             context = build_qb_prediction_context(
                 qb_name=qb_name,
                 player_id=str(player_id),
@@ -498,6 +542,8 @@ def _run_qb_dynamic_core():
                 season=season,
                 week=week,
                 weekly_history=weekly_history,
+                injury_status=injury_status,
+                is_backup=is_backup,
             )
             # If no prior games, anchor form features to this week's tier yards
             tier_yards = float(tier_prediction["predicted_passing_yards"])
@@ -534,6 +580,10 @@ def _run_qb_dynamic_core():
                 model_version=prediction.get("model_version"),
                 feature_importance=prediction.get("feature_importance"),
                 implied_team_total=context.get("implied_team_total"),
+                prediction_interval_lower=prediction.get("prediction_interval_lower")
+                or tier_prediction.get("prediction_interval_lower"),
+                prediction_interval_upper=prediction.get("prediction_interval_upper")
+                or tier_prediction.get("prediction_interval_upper"),
             )
 
             if not existing_prediction:
