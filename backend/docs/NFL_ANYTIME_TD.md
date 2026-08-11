@@ -17,7 +17,8 @@ Projector `run()` without injected `feature_rows` calls
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
 
 Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
-RZ trips / share are **weekly proxies** until PBP red-zone ETL lands.
+RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`
+≤ 20 / ≤ 5) when available, with weekly scoring proxies as fallback.
 
 ## Pipeline
 
@@ -37,29 +38,23 @@ Enqueue the anytime TD orchestrator for a midweek refresh without re-running QB/
 
 ## Backtest gate (required before UI)
 
-Walk-forward REG seasons (2023–2025 target in design spec). Offline CI uses a
-fixed synthetic sample — no DATABASE_URL or Odds credits.
+Walk-forward REG seasons (2023–2024 live; add 2025 when nflverse weekly exists).
+Offline CI still uses a fixed synthetic `--quick` sample — no DATABASE_URL or Odds.
 
 | Check | Gate |
 |-------|------|
-| Calibration | Model Brier ≤ `max_brier` (default 0.25) and ≤ baseline Brier + margin |
-| Sample size | `n_graded` ≥ `min_n_graded` (default 4) |
+| Calibration | Model Brier ≤ `max_brier` (0.25); beat baseline Brier only when market odds present (`require_beat_baseline_brier`) |
+| Sample size | `n_graded` ≥ `min_n_graded` (walk-forward default 200; quick default 4) |
+| Ranking | Top-20 weekly hit rate ≥ position-prior baseline (walk-forward) |
 | Baseline | Market implied when present; else position prior |
 
-Artifact: `backend/models/nfl/anytime_td_metrics.json`
+Artifact: `backend/models/nfl/anytime_td_metrics.json` (`preset: walk_forward` after live run)
 
 ```bash
 cd backend
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --write-metrics
-PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --check-gate
-```
-
-Offline regression: `tests/test_nfl_anytime_td_backtest.py`
-
-DB replay (when predictions + actuals exist):
-
-```bash
+PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --walk-forward --write-metrics --check-gate
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --season 2024 --start-week 1 --end-week 8
 ```
 

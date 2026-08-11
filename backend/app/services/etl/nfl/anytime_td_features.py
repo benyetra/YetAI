@@ -473,7 +473,7 @@ def _player_rz_share_from_usage(
     prior = _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
     td_season = float(usage.get("td_season") or 0.0)
     team_tds_pg = float((team_stats or {}).get("team_tds_per_game") or 0.0)
-    games = float(usage.get("game_count") or 0.0)
+    games = float(usage.get("games_count") or usage.get("game_count") or 0.0)
     team_tds = team_tds_pg * games
     if team_tds <= 0:
         return None
@@ -624,15 +624,22 @@ def build_weekly_feature_rows(
     weekly_records: list[dict[str, Any]] | None = None,
     schedule_records: list[dict[str, Any]] | None = None,
     depth_records: list[dict[str, Any]] | None = None,
+    pbp_records: list[dict[str, Any]] | None = None,
     schemes: dict[str, dict[str, Any]] | None = None,
     game_lines_by_team: dict[str, dict[str, Any]] | None = None,
     usage_as_of_week: int | None = None,
+    pbp_as_of_week: int | None = None,
 ) -> list[dict[str, Any]]:
     """Assemble projector feature rows for one REG week (injectable inputs).
 
     ``usage_as_of_week`` defaults to ``week`` (in-season lookback: weeks < week).
     Pass a large value (e.g. 99) when ``weekly_records`` are from a prior season
     so all prior-season weeks count as usage/defense priors.
+
+    When ``pbp_records`` is provided, team RZ trips/pass rate and player
+    RZ share / RZ targets / GL carries come from PBP (yardline ≤20 / ≤5);
+    weekly scoring proxies remain the fallback. ``pbp_as_of_week`` defaults to
+    ``usage_as_of_week`` / ``week``.
     """
     weekly_records = weekly_records if weekly_records is not None else []
     schedule_records = schedule_records if schedule_records is not None else []
@@ -643,8 +650,26 @@ def build_weekly_feature_rows(
         schemes = load_schemes_from_yaml()
 
     as_of = week if usage_as_of_week is None else usage_as_of_week
+    pbp_as_of = as_of if pbp_as_of_week is None else pbp_as_of_week
     usage = aggregate_player_usage_from_weekly(weekly_records, as_of_week=as_of)
     team_rz = aggregate_team_rz_from_weekly(weekly_records, as_of_week=as_of)
+    player_rz_pbp: dict[str, dict[str, Any]] = {}
+    if pbp_records:
+        from app.services.etl.nfl.anytime_td_pbp import (
+            aggregate_player_rz_from_pbp,
+            aggregate_team_rz_from_pbp,
+        )
+
+        pbp_team = aggregate_team_rz_from_pbp(pbp_records, as_of_week=pbp_as_of)
+        for team, stats in pbp_team.items():
+            merged = dict(team_rz.get(team) or {})
+            # Prefer PBP trips/pass rate; keep weekly tds_pg for TD-share fallback.
+            for key in ("team_rz_trips", "team_rz_pass_rate", "early_down_pass_pct"):
+                if stats.get(key) is not None:
+                    merged[key] = stats[key]
+            team_rz[team] = merged
+        player_rz_pbp = aggregate_player_rz_from_pbp(pbp_records, as_of_week=pbp_as_of)
+
     defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=as_of)
     matchups = _schedule_matchups(schedule_records, week=week)
     universe = select_skill_universe(
@@ -663,6 +688,7 @@ def build_weekly_feature_rows(
         player_usage = usage.get(player_id, {})
         team_stats = team_rz.get(team_abbr, {})
         def_stats = defense.get(opp_abbr, {})
+        pbp_player = player_rz_pbp.get(player_id, {})
 
         player_stats = {
             "targets_l3": player_usage.get("targets_l3"),
@@ -673,9 +699,17 @@ def build_weekly_feature_rows(
             "snap_pct": player_usage.get("snap_pct"),
             "conversion_rate": player_usage.get("conversion_rate"),
         }
-        rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
-        if rz_share is not None:
-            player_stats["player_rz_share"] = rz_share
+        if pbp_player.get("rz_targets") is not None:
+            player_stats["rz_targets"] = pbp_player["rz_targets"]
+        if pbp_player.get("gl_carries") is not None:
+            player_stats["gl_carries"] = pbp_player["gl_carries"]
+        # Prefer PBP RZ share; fall back to TD-share proxy from weekly usage.
+        if pbp_player.get("player_rz_share") is not None:
+            player_stats["player_rz_share"] = pbp_player["player_rz_share"]
+        else:
+            rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
+            if rz_share is not None:
+                player_stats["player_rz_share"] = rz_share
 
         tds_allowed = def_stats.get(pos)
         opponent_defense = {
@@ -873,12 +907,14 @@ def load_game_lines_by_team(season: int, week: int) -> dict[str, dict[str, Any]]
 
 
 def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, Any]:
-    """Fetch weekly / schedule / depth chart records from nflverse.
+    """Fetch weekly / schedule / depth / PBP records from nflverse.
 
     ``week`` is unused here; lookback/`usage_as_of_week` is applied in
     ``build_feature_rows_from_nflverse``. Schedules/depth stay on ``season``.
     """
     _ = week
+    from app.services.etl.nfl.anytime_td_pbp import load_pbp_records_with_fallback
+
     nfl = _import_nfl()
     weekly, weekly_season = load_weekly_records_with_fallback(season)
     schedules = records_from_dataframe(nfl.import_schedules([season]))
@@ -896,11 +932,14 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
                 "depth charts unavailable (%s); using weekly universe only", exc
             )
         depth = []
+    pbp, pbp_season = load_pbp_records_with_fallback(season)
     return {
         "weekly_records": weekly,
         "weekly_season": weekly_season,
         "schedule_records": schedules,
         "depth_records": depth,
+        "pbp_records": pbp,
+        "pbp_season": pbp_season,
     }
 
 
@@ -917,12 +956,18 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
         week=week,
         weekly_season=inputs.get("weekly_season"),
     )
+    pbp_season = inputs.get("pbp_season")
+    pbp_as_of = (
+        99 if pbp_season is not None and int(pbp_season) < season else usage_as_of
+    )
     return build_weekly_feature_rows(
         season,
         week,
         weekly_records=inputs["weekly_records"],
         schedule_records=inputs["schedule_records"],
         depth_records=inputs["depth_records"],
+        pbp_records=inputs.get("pbp_records") or None,
         game_lines_by_team=game_lines,
         usage_as_of_week=usage_as_of,
+        pbp_as_of_week=pbp_as_of,
     )

@@ -37,6 +37,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Use fixed synthetic sample (default when no season/week DB replay)",
     )
     parser.add_argument(
+        "--walk-forward",
+        action="store_true",
+        help="Walk-forward REG seasons (nflverse weekly+PBP; default 2023-2024)",
+    )
+    parser.add_argument(
+        "--seasons",
+        type=str,
+        default=None,
+        help="Comma-separated seasons for --walk-forward (e.g. 2023,2024)",
+    )
+    parser.add_argument(
         "--season",
         type=int,
         default=None,
@@ -77,50 +88,75 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 def run_backtest(args: argparse.Namespace) -> dict:
     from app.services.etl.nfl.anytime_td_backtest import (
         DEFAULT_GATE_BASELINES,
+        DEFAULT_WALK_FORWARD_SEASONS,
         passes_gate,
         run_backtest_replay,
         run_quick_backtest,
+        run_walk_forward_backtest,
         write_metrics_artifact,
     )
 
-    use_quick = args.quick or args.season is None
-
-    if use_quick and args.season is None:
-        payload = run_quick_backtest()
-        metrics = payload["metrics"]
-        gate = payload.get("gate", DEFAULT_GATE_BASELINES)
+    if args.walk_forward:
+        seasons = DEFAULT_WALK_FORWARD_SEASONS
+        if args.seasons:
+            seasons = tuple(
+                int(s.strip()) for s in args.seasons.split(",") if s.strip()
+            )
+        payload = run_walk_forward_backtest(
+            seasons=seasons,
+            start_week=args.start_week,
+            end_week=args.end_week,
+            load_live=True,
+        )
         result = {
             "preset": payload["preset"],
-            "metrics": metrics,
-            "gate": gate,
-            "passes_gate": payload.get("passes_gate", passes_gate(metrics, gate)),
+            "metrics": payload["metrics"],
+            "gate": payload["gate"],
+            "passes_gate": payload["passes_gate"],
+            "weeks_used": payload.get("weeks_used"),
+            "rows_scored": payload.get("rows_scored"),
+            "seasons": payload.get("seasons"),
         }
     else:
-        from app.core.database import SessionLocal
+        use_quick = args.quick or args.season is None
 
-        session = SessionLocal()
-        try:
-            replay = run_backtest_replay(
-                session=session,
-                season=args.season,
-                start_week=args.start_week,
-                end_week=args.end_week,
-                quick=args.quick,
-                max_weeks=args.max_weeks,
-            )
-        finally:
-            session.close()
-        metrics = replay.metrics
-        gate = dict(DEFAULT_GATE_BASELINES)
-        result = {
-            "preset": "db_replay",
-            "metrics": metrics,
-            "gate": gate,
-            "passes_gate": passes_gate(metrics, gate),
-            "weeks_used": replay.weeks_used,
-            "rows_scored": replay.rows_scored,
-        }
+        if use_quick and args.season is None:
+            payload = run_quick_backtest()
+            metrics = payload["metrics"]
+            gate = payload.get("gate", DEFAULT_GATE_BASELINES)
+            result = {
+                "preset": payload["preset"],
+                "metrics": metrics,
+                "gate": gate,
+                "passes_gate": payload.get("passes_gate", passes_gate(metrics, gate)),
+            }
+        else:
+            from app.core.database import SessionLocal
 
+            session = SessionLocal()
+            try:
+                replay = run_backtest_replay(
+                    session=session,
+                    season=args.season,
+                    start_week=args.start_week,
+                    end_week=args.end_week,
+                    quick=args.quick,
+                    max_weeks=args.max_weeks,
+                )
+            finally:
+                session.close()
+            metrics = replay.metrics
+            gate = dict(DEFAULT_GATE_BASELINES)
+            result = {
+                "preset": "db_replay",
+                "metrics": metrics,
+                "gate": gate,
+                "passes_gate": passes_gate(metrics, gate),
+                "weeks_used": replay.weeks_used,
+                "rows_scored": replay.rows_scored,
+            }
+
+    metrics = result.get("metrics") or {}
     if not metrics.get("n_graded"):
         logger.error("No graded anytime-TD rows; check DATABASE_URL or use --quick.")
     else:
@@ -133,16 +169,23 @@ def run_backtest(args: argparse.Namespace) -> dict:
         )
 
     if args.write_metrics and metrics.get("n_graded"):
+        desc = None
+        if result.get("preset") == "walk_forward":
+            desc = (
+                "NFL anytime-TD walk-forward REG backtest (prior weeks only). "
+                "Refresh after model or feature changes."
+            )
         path = write_metrics_artifact(
             metrics,
             path=args.metrics_path,
             preset=str(result.get("preset", "quick")),
             gate=result.get("gate"),
+            description=desc,
         )
         logger.info("Wrote metrics artifact to %s", path)
 
     if args.json:
-        print(json.dumps(result, indent=2))
+        print(json.dumps(result, indent=2, default=str))
 
     return result
 
