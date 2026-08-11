@@ -68,6 +68,10 @@ PYTHONPATH=. python scripts/nfl_prod_qb_eval.py --force-upload --upload-kickers
 Kicker ensemble lives at `s3://yetibets/nfl/` (`NFL_MODELS_S3_PREFIX=s3://yetibets/nfl/`).
 QB yards/O/U artifacts go under `s3://yetibets/nfl/ml_models/`.
 
+**S3 upload (2026-08-11):** refreshed kicker pickles + attempts model pushed to
+`s3://yetibets/nfl/`; residual QB + O/U shadow artifacts pushed to
+`s3://yetibets/nfl/ml_models/` (promote still **off**).
+
 **Do not enable `NFL_QB_ML_ENABLED=1` until holdout lift ≥10%.**
 
 Artifacts under `backend/models/nfl/` for shadow inference:

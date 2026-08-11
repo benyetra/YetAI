@@ -1,7 +1,7 @@
 {
   "model_key": "qb_pass_yds_ou",
   "target": "actual_over_ou_line",
-  "trained_at": "2026-08-11T11:44:42.971088",
+  "trained_at": "2026-08-11T11:58:04.776438",
   "train_date": "20260811",
   "model_version": "gbm-qb-ou-20260811",
   "n_train": 214,

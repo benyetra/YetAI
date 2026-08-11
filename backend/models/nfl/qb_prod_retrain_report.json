@@ -1,6 +1,6 @@
 {
   "status": "ok",
-  "trained_at": "2026-08-11T11:44:42.897168",
+  "trained_at": "2026-08-11T11:58:04.700553",
   "source": "pred_qb_actuals",
   "database": "railway",
   "season_start": "2025-09-01",
@@ -20,7 +20,7 @@
     "model_key": "qb_passing_yards",
     "target": "residual_actual_minus_tier",
     "residual_target": true,
-    "trained_at": "2026-08-11T11:44:42.886072",
+    "trained_at": "2026-08-11T11:58:04.689249",
     "train_date": "20260811",
     "model_version": "gbm-qb-residual-20260811",
     "n_train": 230,
@@ -73,7 +73,7 @@
     "metadata": {
       "model_key": "qb_pass_yds_ou",
       "target": "actual_over_ou_line",
-      "trained_at": "2026-08-11T11:44:42.971088",
+      "trained_at": "2026-08-11T11:58:04.776438",
       "train_date": "20260811",
       "model_version": "gbm-qb-ou-20260811",
       "n_train": 214,
@@ -125,6 +125,26 @@
     "ou_metadata": "/workspace/backend/models/nfl/qb_pass_yds_ou_metadata.json"
   },
   "report_path": "/workspace/backend/models/nfl/qb_prod_retrain_report.json",
-  "s3_upload_skipped": "promote_recommended=false; pass --force-upload to push shadow artifacts",
-  "kicker_s3_upload_error": "Unable to locate credentials"
+  "s3_uploaded": {
+    "qb_passing_yards": {
+      "model": "s3://yetibets/nfl/ml_models/qb_passing_yards.pkl",
+      "metadata": "s3://yetibets/nfl/ml_models/qb_passing_yards_metadata.json"
+    },
+    "qb_pass_yds_ou": {
+      "model": "s3://yetibets/nfl/ml_models/qb_pass_yds_ou.pkl",
+      "metadata": "s3://yetibets/nfl/ml_models/qb_pass_yds_ou_metadata.json"
+    }
+  },
+  "kicker_s3_uploaded": {
+    "logistic_model.pkl": "s3://yetibets/nfl/logistic_model.pkl",
+    "random_forest_model.pkl": "s3://yetibets/nfl/random_forest_model.pkl",
+    "gradient_boosting_model.pkl": "s3://yetibets/nfl/gradient_boosting_model.pkl",
+    "xgboost_model.pkl": "s3://yetibets/nfl/xgboost_model.pkl",
+    "main_scaler.pkl": "s3://yetibets/nfl/main_scaler.pkl",
+    "model_metrics.json": "s3://yetibets/nfl/model_metrics.json",
+    "kicker_attempts.pkl": "s3://yetibets/nfl/kicker_attempts.pkl",
+    "kicker_attempts_metadata.json": "s3://yetibets/nfl/kicker_attempts_metadata.json",
+    "kicker_blend_tune.json": "s3://yetibets/nfl/kicker_blend_tune.json",
+    "kicker_retrain_report.json": "s3://yetibets/nfl/kicker_retrain_report.json"
+  }
 }

@@ -2,7 +2,7 @@
   "model_key": "qb_passing_yards",
   "target": "residual_actual_minus_tier",
   "residual_target": true,
-  "trained_at": "2026-08-11T11:44:42.886072",
+  "trained_at": "2026-08-11T11:58:04.689249",
   "train_date": "20260811",
   "model_version": "gbm-qb-residual-20260811",
   "n_train": 230,
