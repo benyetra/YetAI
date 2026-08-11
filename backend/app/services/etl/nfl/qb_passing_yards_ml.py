@@ -10,7 +10,7 @@ import tempfile
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -21,6 +21,8 @@ from app.services.etl.nfl.qb_features import (
     feature_names as qb_feature_names,
     resolve_yards_baseline,
 )
+
+BaselineMode = str  # "market" | "tier"
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +89,15 @@ def _model_is_residual(metadata: Mapping[str, Any] | None) -> bool:
     return bool(metadata.get("residual_target", True))
 
 
-def baseline_yards_from_features(features: Mapping[str, float]) -> float:
-    """Market-aware baseline used for residual train/predict."""
+def baseline_yards_from_features(
+    features: Mapping[str, float],
+    *,
+    baseline_mode: BaselineMode = "market",
+) -> float:
+    """Baseline used for residual train/predict (market blend or tier-only)."""
     tier = _float_or(features.get("tier_yards"), 210.0)
+    if baseline_mode == "tier":
+        return round(tier, 1)
     line = features.get("pass_yds_line")
     line_f = _float_or(line, tier) if line is not None else None
     # Prefer explicit line_minus_tier signal: non-zero ⇒ real line was present
@@ -97,6 +105,12 @@ def baseline_yards_from_features(features: Mapping[str, float]) -> float:
     line_is_real = None
     if lmt is not None and abs(_float_or(lmt, 0.0)) > 0.5:
         line_is_real = True
+    # Explicit line_is_real flag when present (prod eval sets this)
+    if features.get("line_is_real") is not None:
+        try:
+            line_is_real = float(features.get("line_is_real")) >= 0.5
+        except (TypeError, ValueError):
+            pass
     return resolve_yards_baseline(
         tier_yards=tier,
         pass_yds_line=line_f,
@@ -133,15 +147,17 @@ def predict_yards_ml(
     *,
     feature_order: list[str] | None = None,
     residual_target: bool = True,
+    baseline_mode: BaselineMode = "market",
 ) -> float:
     """
     GBM yards: ``baseline + residual`` (default) or direct yards for legacy artifacts.
 
-    Baseline is ``0.5*(tier+line)`` when a real pass-yards line is present, else tier.
+    Baseline is ``0.5*(tier+line)`` when a real pass-yards line is present, else tier
+    (or always tier when ``baseline_mode='tier'``).
     """
     raw = predict_yards_residual(model, features, feature_order=feature_order)
     if residual_target:
-        baseline = baseline_yards_from_features(features)
+        baseline = baseline_yards_from_features(features, baseline_mode=baseline_mode)
         return round(baseline + raw, 1)
     return round(float(raw), 1)
 
@@ -209,10 +225,17 @@ def _fill_missing_feature_columns(features_df: pd.DataFrame) -> pd.DataFrame:
     return features_df
 
 
-def _baselines_for_frame(features_df: pd.DataFrame) -> pd.Series:
-    """Market-aware baseline per row (tier, or 0.5*(tier+line) when real line)."""
+def _baselines_for_frame(
+    features_df: pd.DataFrame,
+    *,
+    baseline_mode: BaselineMode = "market",
+) -> pd.Series:
+    """Baseline per row (market blend or tier-only)."""
     return features_df.apply(
-        lambda row: baseline_yards_from_features(row.to_dict()), axis=1
+        lambda row: baseline_yards_from_features(
+            row.to_dict(), baseline_mode=baseline_mode
+        ),
+        axis=1,
     )
 
 
@@ -232,15 +255,20 @@ def train_qb_yards_model(
     *,
     hyperparams: dict[str, Any] | None = None,
     residual_target: bool = True,
+    fit_full: bool = False,
+    feature_order: Sequence[str] | None = None,
+    baseline_mode: BaselineMode = "market",
 ) -> tuple[Any, dict[str, Any]]:
     """
     Train GBM on residual ``actual − baseline`` (default) or direct yards.
 
     Baseline is market-aware (``resolve_yards_baseline``): blend of dynamic tier
-    and real pass-yards line when present, else tier alone.
+    and real pass-yards line when present, else tier alone — or always tier when
+    ``baseline_mode='tier'``.
 
-    Holdout is **time-ordered** (last 20% after sorting by season, week) — never
-    a random shuffle — so CV stays leak-safe.
+    Holdout for CV metrics is **time-ordered** (last 20% after sorting by season,
+    week) — never a random shuffle. When ``fit_full=True``, that split is used
+    only for metadata; the returned model is refit on all rows.
     """
     from sklearn.ensemble import GradientBoostingRegressor  # type: ignore
     from sklearn.metrics import mean_absolute_error, mean_squared_error  # type: ignore
@@ -259,7 +287,7 @@ def train_qb_yards_model(
     }
     hp = {**default_hp, **(hyperparams or {})}
 
-    order = feature_names()
+    order = list(feature_order) if feature_order is not None else feature_names()
     features_df = _fill_missing_feature_columns(features_df.copy())
     target = pd.Series(target).astype(float).reset_index(drop=True)
     features_df = features_df.reset_index(drop=True)
@@ -270,44 +298,75 @@ def train_qb_yards_model(
         features_df = features_df.loc[sort_order].reset_index(drop=True)
         target = target.loc[sort_order].reset_index(drop=True)
 
+    # Baselines use full feature frame (needs pass_yds_line even if excluded from X)
+    baselines = _baselines_for_frame(features_df, baseline_mode=baseline_mode)
+    for col in order:
+        if col not in features_df.columns:
+            features_df[col] = 0.0
     X = features_df[list(order)]
-    baselines = _baselines_for_frame(X)
     if residual_target:
         y = (target.astype(float) - baselines.astype(float)).astype(float)
     else:
         y = target.astype(float)
 
     train_sl, test_sl = _time_ordered_split_indices(len(X), test_frac=0.2)
-    X_train, X_test = X.iloc[train_sl], X.iloc[test_sl]
-    y_train, y_test = y.iloc[train_sl], y.iloc[test_sl]
-    base_train = baselines.iloc[train_sl].to_numpy()
-    base_test = baselines.iloc[test_sl].to_numpy()
+    X_cv_train, X_cv_test = X.iloc[train_sl], X.iloc[test_sl]
+    y_cv_train, y_cv_test = y.iloc[train_sl], y.iloc[test_sl]
+    base_cv_train = baselines.iloc[train_sl].to_numpy()
+    base_cv_test = baselines.iloc[test_sl].to_numpy()
 
-    model = GradientBoostingRegressor(**hp)
-    model.fit(X_train, y_train)
-    y_pred_train = model.predict(X_train)
-    y_pred_test = model.predict(X_test)
+    cv_model = GradientBoostingRegressor(**hp)
+    cv_model.fit(X_cv_train, y_cv_train)
+    y_pred_cv_train = cv_model.predict(X_cv_train)
+    y_pred_cv_test = cv_model.predict(X_cv_test)
 
     # Report MAE on yards scale (baseline + residual) for residual models
     if residual_target:
         train_yards_mae = float(
-            mean_absolute_error(y_train + base_train, y_pred_train + base_train)
+            mean_absolute_error(
+                y_cv_train + base_cv_train, y_pred_cv_train + base_cv_train
+            )
         )
         test_yards_mae = float(
-            mean_absolute_error(y_test + base_test, y_pred_test + base_test)
+            mean_absolute_error(y_cv_test + base_cv_test, y_pred_cv_test + base_cv_test)
         )
         train_rmse = float(
-            np.sqrt(mean_squared_error(y_train + base_train, y_pred_train + base_train))
+            np.sqrt(
+                mean_squared_error(
+                    y_cv_train + base_cv_train, y_pred_cv_train + base_cv_train
+                )
+            )
         )
         test_rmse = float(
-            np.sqrt(mean_squared_error(y_test + base_test, y_pred_test + base_test))
+            np.sqrt(
+                mean_squared_error(
+                    y_cv_test + base_cv_test, y_pred_cv_test + base_cv_test
+                )
+            )
         )
+        train_residual_mae = float(mean_absolute_error(y_cv_train, y_pred_cv_train))
+        test_residual_mae = float(mean_absolute_error(y_cv_test, y_pred_cv_test))
     else:
-        train_yards_mae = float(mean_absolute_error(y_train, y_pred_train))
-        test_yards_mae = float(mean_absolute_error(y_test, y_pred_test))
-        train_rmse = float(np.sqrt(mean_squared_error(y_train, y_pred_train)))
-        test_rmse = float(np.sqrt(mean_squared_error(y_test, y_pred_test)))
+        train_yards_mae = float(mean_absolute_error(y_cv_train, y_pred_cv_train))
+        test_yards_mae = float(mean_absolute_error(y_cv_test, y_pred_cv_test))
+        train_rmse = float(np.sqrt(mean_squared_error(y_cv_train, y_pred_cv_train)))
+        test_rmse = float(np.sqrt(mean_squared_error(y_cv_test, y_pred_cv_test)))
+        train_residual_mae = train_yards_mae
+        test_residual_mae = test_yards_mae
 
+    if fit_full:
+        model = GradientBoostingRegressor(**hp)
+        model.fit(X, y)
+        n_train_final = int(len(X))
+        cv_split = "time_ordered_last_20pct_then_refit_full"
+    else:
+        model = cv_model
+        n_train_final = int(len(X_cv_train))
+        cv_split = "time_ordered_last_20pct"
+
+    baseline_label = (
+        "tier_only" if baseline_mode == "tier" else "market_aware_tier_line_blend"
+    )
     train_date = datetime.utcnow().strftime("%Y%m%d")
     metadata: dict[str, Any] = {
         "model_key": MODEL_KEY,
@@ -317,8 +376,10 @@ def train_qb_yards_model(
             else "actual_passing_yards"
         ),
         "residual_target": bool(residual_target),
-        "baseline": "market_aware_tier_line_blend",
-        "cv_split": "time_ordered_last_20pct",
+        "baseline": baseline_label,
+        "baseline_mode": baseline_mode,
+        "fit_full": bool(fit_full),
+        "cv_split": cv_split,
         "trained_at": datetime.utcnow().isoformat(),
         "train_date": train_date,
         "model_version": (
@@ -326,8 +387,10 @@ def train_qb_yards_model(
             if residual_target
             else f"gbm-qb-yards-{train_date}"
         ),
-        "n_train": int(len(X_train)),
-        "n_test": int(len(X_test)),
+        "n_train": n_train_final,
+        "n_test": int(len(X_cv_test)),
+        "cv_n_train": int(len(X_cv_train)),
+        "cv_n_test": int(len(X_cv_test)),
         "features": order,
         "hyperparams": hp,
         "train_mae": train_yards_mae,
@@ -335,15 +398,16 @@ def train_qb_yards_model(
         "holdout_mae": test_yards_mae,
         "train_rmse": train_rmse,
         "test_rmse": test_rmse,
-        "train_residual_mae": float(mean_absolute_error(y_train, y_pred_train)),
-        "test_residual_mae": float(mean_absolute_error(y_test, y_pred_test)),
+        "train_residual_mae": train_residual_mae,
+        "test_residual_mae": test_residual_mae,
     }
     logger.info(
-        "trained %s: train_mae=%.3f test_mae=%.3f residual=%s cv=time",
+        "trained %s: train_mae=%.3f test_mae=%.3f residual=%s fit_full=%s cv=time",
         MODEL_KEY,
         metadata["train_mae"],
         metadata["test_mae"],
         residual_target,
+        fit_full,
     )
     return model, metadata
 

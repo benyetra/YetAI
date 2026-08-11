@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
+    PASS_YDS_LINE_FEATURE_NAMES,
+    TIER_ONLY_FEATURE_NAMES,
+    V5_FEATURE_NAMES,
+    V6_ONLY_FEATURE_NAMES,
     blend_tier_with_form,
     build_qb_features,
     encode_scheme_tags,
@@ -38,6 +42,20 @@ def test_feature_names_include_matchup_form():
     assert "implied_team_total" in names
     assert "total_line" in names
     assert "spread_line" in names
+
+
+def test_v5_v6_feature_partitions():
+    assert set(V6_ONLY_FEATURE_NAMES).issubset(FEATURE_NAMES)
+    assert set(V5_FEATURE_NAMES) | set(V6_ONLY_FEATURE_NAMES) == set(FEATURE_NAMES)
+    assert len(V5_FEATURE_NAMES) == len(FEATURE_NAMES) - len(V6_ONLY_FEATURE_NAMES)
+    assert set(PASS_YDS_LINE_FEATURE_NAMES).isdisjoint(TIER_ONLY_FEATURE_NAMES)
+    assert set(TIER_ONLY_FEATURE_NAMES) | set(PASS_YDS_LINE_FEATURE_NAMES) == set(
+        FEATURE_NAMES
+    )
+
+
+def test_feature_names_include_market_and_scheme():
+    names = set(FEATURE_NAMES)
     assert "pass_yds_line" in names
     assert "line_minus_tier" in names
     assert "line_is_real" in names

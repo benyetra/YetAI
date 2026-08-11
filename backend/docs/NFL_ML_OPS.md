@@ -39,6 +39,16 @@ Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
 **Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears.**
 
+Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
+(Railway)**):
+- Promote model uses **`fit_full=True`** (inner time 20% CV for metadata, then
+  refit on all `rows_train`; expect `n_train == rows_train`).
+- Report includes **`ablations`**: dynamic/static tier, line-only, market
+  baseline `0.5*(tier+line)`, v5-feature residual, v6-feature residual, and
+  tier-only residual (no prop-line features/baseline). Use
+  `ml_closer_to_line_than_tier` / `summary.v6_ml_mae_near_line_only` to detect
+  market collapse.
+
 ### Latest Railway promote-gate (2026-08-11, v5 lift levers)
 
 | Metric | Value |
