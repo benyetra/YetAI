@@ -471,6 +471,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO)
+    # Keep DB credentials out of Actions / CI logs
+    logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+    logging.getLogger("app.core.database").setLevel(logging.WARNING)
 
     if not os.getenv("DATABASE_URL", "").strip():
         print(json.dumps({"status": "error", "error": "DATABASE_URL required"}))
