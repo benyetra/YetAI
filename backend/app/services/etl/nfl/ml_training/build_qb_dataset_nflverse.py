@@ -35,9 +35,12 @@ def _load_schemes() -> dict[str, dict[str, Any]]:
 
 def _schedule_market_index(seasons: list[int]) -> dict[tuple[int, int, str], dict]:
     """Map (season, week, team_abbr) → total_line / spread_for_team / is_home."""
-    import nfl_data_py as nfl
-
     out: dict[tuple[int, int, str], dict] = {}
+    try:
+        import nfl_data_py as nfl
+    except ImportError:
+        # Optional for prod DB-backed eval; callers tolerate empty market index.
+        return out
     try:
         schedules = nfl.import_schedules([int(s) for s in seasons])
     except Exception:
