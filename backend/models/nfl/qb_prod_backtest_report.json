@@ -1,0 +1,17 @@
+{
+  "source": "pred_qb_predictions vs pred_qb_actuals",
+  "season": 2025,
+  "weeks": "3-18",
+  "metrics": {
+    "n_qb": 332,
+    "qb_mae": 67.04,
+    "qb_ou_hit_rate": 0.472,
+    "qb_ou_n": 322,
+    "ou_hit_rate": 0.472,
+    "ou_n": 322
+  },
+  "notes": [
+    "kicker actuals table empty \u2014 no FG MAE",
+    "stored predictions are tier-v3 production yards"
+  ]
+}

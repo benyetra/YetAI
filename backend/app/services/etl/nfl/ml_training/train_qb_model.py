@@ -140,7 +140,7 @@ def run(
             "min_required": MIN_TRAINING_ROWS,
         }
 
-    model, metadata = train_qb_yards_model((features_df, target))
+    model, metadata = train_qb_yards_model((features_df, target), residual_target=True)
     result: dict[str, Any] = {
         "status": "ok",
         "metadata": metadata,

@@ -42,17 +42,41 @@ Promotion gate: residual ML MAE ≥ **10%** better than tier on holdout.
 | Lift | **+0.2%** (far below 10% gate) |
 | Promote? | **No** — keep `NFL_QB_ML_ENABLED` unset/0 |
 
-Artifacts under `backend/models/nfl/` for shadow inference:
-`qb_passing_yards.pkl` (residual), `qb_pass_yds_ou.pkl`, `qb_retrain_report.json`.
+### Prod DB retrain (2026-08-11, `pred_qb_actuals` 2025 W3–18)
 
-Prod DB backtest + S3 upload still require `DATABASE_URL` / AWS credentials.
+| Metric | Value |
+|--------|-------|
+| Rows | 360 (train 288 / holdout 72) |
+| Holdout | time 20% |
+| Tier MAE | **72.8** |
+| Residual ML MAE | **69.1** |
+| Lift | **+5.1%** (below 10% gate) |
+| Promote? | **No** |
 
-Re-run:
+Prod prediction replay (`scripts/nfl_backtest.py --season 2025`): QB MAE **67.0**
+on 332 graded rows; `pred_kicker_actuals` empty so no FG MAE.
 
 ```bash
+export DATABASE_URL=...   # Railway Postgres
 cd backend
-PYTHONPATH=. python scripts/nfl_retrain_qb_models.py --seasons 2023,2024,2025
+PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
+PYTHONPATH=. python scripts/nfl_backtest.py --season 2025 --start-week 3 --end-week 18 --json
+# S3 (needs AWS keys) — only force-upload shadow artifacts; promote still gated:
+PYTHONPATH=. python scripts/nfl_prod_qb_eval.py --force-upload --upload-kickers
 ```
+
+Kicker ensemble lives at `s3://yetibets/nfl/` (`NFL_MODELS_S3_PREFIX=s3://yetibets/nfl/`).
+QB yards/O/U artifacts go under `s3://yetibets/nfl/ml_models/`.
+
+**S3 upload (2026-08-11):** refreshed kicker pickles + attempts model pushed to
+`s3://yetibets/nfl/`; residual QB + O/U shadow artifacts pushed to
+`s3://yetibets/nfl/ml_models/` (promote still **off**).
+
+**Do not enable `NFL_QB_ML_ENABLED=1` until holdout lift ≥10%.**
+
+Artifacts under `backend/models/nfl/` for shadow inference:
+`qb_passing_yards.pkl` (residual), `qb_pass_yds_ou.pkl`,
+`qb_prod_retrain_report.json`, `qb_prod_backtest_report.json`.
 ## Kicker blend (Phase 4.4+)
 
 | Variable | Purpose |
