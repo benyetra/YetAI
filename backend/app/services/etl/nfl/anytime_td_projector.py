@@ -11,7 +11,6 @@ from app.models.predictions_models import NFLAnytimeTDPredictions
 from app.services.etl.nfl.anytime_td_calibration import (
     MODEL_VERSION_GBM,
     MODEL_VERSION_HIER,
-    calibrate_prediction_row,
 )
 from app.services.etl.nfl.anytime_td_model import expected_tds
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
@@ -42,16 +41,40 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
     """Pure: compute expected TDs and anytime probability from a feature row.
 
     Applies residual GBM calibration when the artifact is present and enabled.
+    ``availability_mult`` (injury) scales λ before probability / calibration.
     """
-    lam = expected_tds(
-        team_rz_trips=float(row["team_rz_trips"]),
-        player_rz_share=float(row["player_rz_share"]),
-        conversion_rate=float(row["conversion_rate"]),
-        defense_mult=float(row["defense_mult"]),
-        weather_mult=float(row["weather_mult"]),
-        script_mult=float(row["script_mult"]),
+    from app.services.etl.nfl.anytime_td_calibration import (
+        apply_calibrated_probability,
+        calibration_enabled,
+        load_calibration_model,
     )
-    td_prob, gbm_applied = calibrate_prediction_row(row)
+    from app.services.etl.nfl.anytime_td_model import anytime_td_probability
+
+    availability = max(0.0, min(1.0, float(row.get("availability_mult") or 1.0)))
+    lam = (
+        expected_tds(
+            team_rz_trips=float(row["team_rz_trips"]),
+            player_rz_share=float(row["player_rz_share"]),
+            conversion_rate=float(row["conversion_rate"]),
+            defense_mult=float(row["defense_mult"]),
+            weather_mult=float(row["weather_mult"]),
+            script_mult=float(row["script_mult"]),
+        )
+        * availability
+    )
+    hier_p = anytime_td_probability(lam)
+    enriched = dict(row)
+    enriched["expected_tds"] = lam
+    enriched["td_probability"] = hier_p
+
+    gbm_applied = False
+    td_prob = hier_p
+    if calibration_enabled():
+        model = load_calibration_model()
+        if model is not None:
+            td_prob = apply_calibrated_probability(enriched, model=model)
+            gbm_applied = True
+
     return {
         "expected_tds": lam,
         "td_probability": td_prob,

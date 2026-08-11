@@ -53,6 +53,20 @@ def test_project_prediction_from_features(monkeypatch):
     assert out["model_version"] == MODEL_VERSION
 
 
+def test_project_prediction_scales_for_questionable(monkeypatch):
+    monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
+    import app.services.etl.nfl.anytime_td_calibration as cal
+
+    cal._MODEL = None
+    cal._METADATA = None
+    cal._LOAD_FAILED = False
+
+    base = project_prediction_from_features(_sample_feature_row())
+    q = project_prediction_from_features(_sample_feature_row(availability_mult=0.75))
+    assert q["expected_tds"] < base["expected_tds"]
+    assert q["td_probability"] < base["td_probability"]
+
+
 def test_build_upsert_row_includes_metadata(monkeypatch):
     monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
     # Clear any cached calibrator from other tests / local artifact.

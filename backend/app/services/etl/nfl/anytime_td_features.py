@@ -235,9 +235,15 @@ def build_player_feature_row(
         "targets_l3": player_stats.get("targets_l3"),
         "carries_l3": player_stats.get("carries_l3"),
         "routes_l3": player_stats.get("routes_l3"),
+        "route_participation": player_stats.get("route_participation"),
+        "offense_snaps_l3": player_stats.get("offense_snaps_l3"),
+        "snap_pct_source": player_stats.get("snap_pct_source"),
         "td_l3": player_stats.get("td_l3"),
         "td_l5": player_stats.get("td_l5"),
         "td_season": player_stats.get("td_season"),
+        # availability
+        "injury_status": player_stats.get("injury_status"),
+        "availability_mult": float(player_stats.get("availability_mult") or 1.0),
         # red zone / goal line
         "gl_carries": player_stats.get("gl_carries"),
         "rz_targets": player_stats.get("rz_targets"),
@@ -363,6 +369,7 @@ def aggregate_player_usage_from_weekly(
             for r in last3
             if not _is_missing(r.get("target_share"))
         ]
+        # Fallback only — real offense_pct overwrites via merge_snaps_into_usage.
         snap_pct = sum(target_shares) / len(target_shares) if target_shares else None
         # RZ share proxy: player's TD share of team TDs in prior weeks
         team = _str(rows[-1], "recent_team", "team")
@@ -381,6 +388,7 @@ def aggregate_player_usage_from_weekly(
             "td_season": td_season,
             "conversion_rate": conversion,
             "snap_pct": snap_pct,
+            "snap_pct_source": "target_share" if snap_pct is not None else None,
             "touches_season": touches,
             "games_count": len(rows),
         }
@@ -670,6 +678,8 @@ def build_weekly_feature_rows(
     schedule_records: list[dict[str, Any]] | None = None,
     depth_records: list[dict[str, Any]] | None = None,
     pbp_records: list[dict[str, Any]] | None = None,
+    snap_records: list[dict[str, Any]] | None = None,
+    injury_records: list[dict[str, Any]] | None = None,
     schemes: dict[str, dict[str, Any]] | None = None,
     game_lines_by_team: dict[str, dict[str, Any]] | None = None,
     usage_as_of_week: int | None = None,
@@ -685,6 +695,10 @@ def build_weekly_feature_rows(
     RZ share / RZ targets / GL carries come from PBP (yardline ≤20 / ≤5);
     weekly scoring proxies remain the fallback. ``pbp_as_of_week`` defaults to
     ``usage_as_of_week`` / ``week``.
+
+    ``snap_records`` (offense_pct) replace target_share snap proxies when present.
+    ``injury_records`` drop Out/Doubtful starters (promote depth-2) and down-weight
+    Questionable players via ``availability_mult``.
     """
     weekly_records = weekly_records if weekly_records is not None else []
     schedule_records = schedule_records if schedule_records is not None else []
@@ -715,11 +729,43 @@ def build_weekly_feature_rows(
             team_rz[team] = merged
         player_rz_pbp = aggregate_player_rz_from_pbp(pbp_records, as_of_week=pbp_as_of)
 
+    if snap_records:
+        from app.services.etl.nfl.anytime_td_snaps import (
+            aggregate_player_snaps,
+            merge_snaps_into_usage,
+        )
+
+        team_pass = {
+            team: float(
+                stats.get("early_down_pass_pct")
+                or stats.get("team_rz_pass_rate")
+                or 0.55
+            )
+            for team, stats in team_rz.items()
+        }
+        snaps = aggregate_player_snaps(
+            snap_records, as_of_week=as_of, team_pass_rate_by_team=team_pass
+        )
+        usage = merge_snaps_into_usage(usage, snaps)
+
     defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=as_of)
     matchups = _schedule_matchups(schedule_records, week=week)
     universe = select_skill_universe(
         depth_records=depth_records, usage_by_player=usage, week=week
     )
+    if injury_records is not None:
+        from app.services.etl.nfl.anytime_td_availability import (
+            apply_availability_to_universe,
+            latest_injury_status_by_player,
+        )
+
+        injury_by_player = latest_injury_status_by_player(injury_records, week=week)
+        universe = apply_availability_to_universe(
+            universe,
+            injury_by_player=injury_by_player,
+            depth_records=depth_records,
+            week=week,
+        )
 
     rows: list[dict[str, Any]] = []
     for player in universe:
@@ -742,7 +788,13 @@ def build_weekly_feature_rows(
             "td_l5": player_usage.get("td_l5"),
             "td_season": player_usage.get("td_season"),
             "snap_pct": player_usage.get("snap_pct"),
+            "snap_pct_source": player_usage.get("snap_pct_source"),
+            "routes_l3": player_usage.get("routes_l3"),
+            "route_participation": player_usage.get("route_participation"),
+            "offense_snaps_l3": player_usage.get("offense_snaps_l3"),
             "conversion_rate": player_usage.get("conversion_rate"),
+            "injury_status": player.get("injury_status"),
+            "availability_mult": player.get("availability_mult", 1.0),
         }
         if pbp_player.get("rz_targets") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets"]
@@ -1077,6 +1129,24 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
             )
         depth = []
     pbp, pbp_season = load_pbp_records_with_fallback(season)
+
+    snap_season = weekly_season if weekly_season is not None else season
+    try:
+        from app.services.etl.nfl.anytime_td_snaps import load_snap_records
+
+        snaps = load_snap_records(int(snap_season))
+    except Exception as exc:
+        logger.warning("snap counts unavailable (%s); using target_share proxy", exc)
+        snaps = []
+
+    try:
+        from app.services.etl.nfl.anytime_td_availability import load_injury_records
+
+        injuries = load_injury_records(int(season))
+    except Exception as exc:
+        logger.warning("injuries unavailable (%s); skipping availability filter", exc)
+        injuries = []
+
     return {
         "weekly_records": weekly,
         "weekly_season": weekly_season,
@@ -1084,6 +1154,9 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
         "depth_records": depth,
         "pbp_records": pbp,
         "pbp_season": pbp_season,
+        "snap_records": snaps,
+        "snap_season": snap_season,
+        "injury_records": injuries,
     }
 
 
@@ -1104,6 +1177,13 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
     pbp_as_of = (
         99 if pbp_season is not None and int(pbp_season) < season else usage_as_of
     )
+    snap_season = inputs.get("snap_season")
+    snap_as_of = (
+        99 if snap_season is not None and int(snap_season) < season else usage_as_of
+    )
+    # When snaps come from a prior season, still aggregate with as_of=99 via
+    # usage_as_of; snap merge uses the same as_of inside build_weekly_feature_rows.
+    _ = snap_as_of
     return build_weekly_feature_rows(
         season,
         week,
@@ -1111,6 +1191,8 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
         schedule_records=inputs["schedule_records"],
         depth_records=inputs["depth_records"],
         pbp_records=inputs.get("pbp_records") or None,
+        snap_records=inputs.get("snap_records") or None,
+        injury_records=inputs.get("injury_records"),
         game_lines_by_team=game_lines,
         usage_as_of_week=usage_as_of,
         pbp_as_of_week=pbp_as_of,
