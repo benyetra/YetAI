@@ -1,381 +1,372 @@
-#!/usr/bin/env python3
-"""
-NFL Kicker Actuals Collection Script
-Collects actual field goal performance data and compares with predictions
+"""NFL kicker actuals — nflverse FG totals matched to stored predictions.
+
+Writes rows even when no prediction match exists (projected = league prior)
+so ``pred_kicker_actuals`` stays populated for blend tuning / backtests.
 """
 
-import pandas as pd
-from datetime import datetime, date, timedelta
+from __future__ import annotations
+
+from datetime import date, datetime, timedelta
+from typing import Any
+
 import nfl_data_py as nfl
-
-# Add parent directories to path
-
-from app.services.etl.nfl._db import db_session
-from app.models.predictions_models import Kickers, KickerActuals, KickerPredictions
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+import pandas as pd
 from sqlalchemy import and_
 
+from app.models.predictions_models import Kickers, KickerActuals, KickerPredictions
+from app.services.etl.nfl._db import db_session
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
 
-def get_weekly_field_goal_data(week=None, season=None):
-    """
-    Get field goal data for a specific week
+_LEAGUE_PRIOR_FG = 1.85
 
-    Args:
-        week (int): NFL week number (1-18), if None gets current week
-        season (int): NFL season year
 
-    Returns:
-        DataFrame: Field goal attempts and results
-    """
-    season = get_nfl_season() if season is None else season
+def get_weekly_field_goal_data(
+    week: int,
+    season: int,
+    *,
+    pbp_data: pd.DataFrame | None = None,
+) -> pd.DataFrame:
+    """Field-goal attempt aggregates for one REG week from nflverse PBP."""
+    print(f"Fetching NFL field goal data for week {week} of {season}...")
     try:
-        print(f"Fetching NFL field goal data for week {week} of {season}...")
-
-        # Get play-by-play data for the week
-        if week:
+        if pbp_data is None:
             pbp_data = nfl.import_pbp_data([season])
-            pbp_data = pbp_data[pbp_data["week"] == week]
-        else:
-            # Get current week data
-            pbp_data = nfl.import_pbp_data([season])
-            current_week = get_current_nfl_week(season)
-            pbp_data = pbp_data[pbp_data["week"] == current_week]
-
-        # Filter for field goal attempts
-        fg_data = pbp_data[pbp_data["field_goal_attempt"] == 1].copy()
-
-        if fg_data.empty:
-            print(f"No field goal data found for week {week}")
-            return pd.DataFrame()
-
-        print(f"Found {len(fg_data)} field goal attempts")
-
-        # Group by kicker and game to get weekly totals
-        weekly_stats = (
-            fg_data.groupby(
-                [
-                    "kicker_player_id",
-                    "kicker_player_name",
-                    "posteam",
-                    "defteam",
-                    "game_date",
-                ]
-            )
-            .agg(
-                {
-                    "field_goal_attempt": "sum",
-                    "field_goal_result": lambda x: (
-                        x == "made"
-                    ).sum(),  # Count made FGs
-                    "kick_distance": ["max", "mean"],
-                    "temp": "first",
-                    "wind": "first",
-                }
-            )
-            .reset_index()
-        )
-
-        # Flatten column names
-        weekly_stats.columns = [
-            "kicker_id",
-            "kicker_name",
-            "team",
-            "opponent",
-            "game_date",
-            "attempts",
-            "made",
-            "longest_fg",
-            "avg_distance",
-            "temperature",
-            "wind_speed",
-        ]
-
-        return weekly_stats
-
-    except Exception as e:
-        print(f"Error fetching field goal data: {e}")
+    except Exception as exc:
+        print(f"Error fetching field goal data: {exc}")
         return pd.DataFrame()
 
+    frame = pbp_data
+    if "season_type" in frame.columns:
+        frame = frame[frame["season_type"] == "REG"]
+    frame = frame[frame["week"] == week]
+    fg_data = frame[frame["field_goal_attempt"] == 1].copy()
+    if fg_data.empty:
+        print(f"No field goal data found for week {week}")
+        return pd.DataFrame()
 
-def match_predictions_with_actuals(week=None, season=None):
-    """
-    Match our predictions with actual results
-
-    Args:
-        week (int): NFL week number
-        season (int): NFL season year
-    """
-    season = get_nfl_season() if season is None else season
-    # Get actual results from nflverse
-    actuals_df = get_weekly_field_goal_data(week, season)
-
-    if actuals_df.empty:
-        print("No actual field goal data found")
-        return
-
-    # Get our historical predictions from the database for the game week
-    # First, try to get predictions from KickerPredictions (historical)
-    # Then fallback to current Kickers table if needed
-
-    # Calculate approximate date range for the week
-    if week:
-        # For historical data, look for predictions from that week
-        season_start = date(season, 9, 5)  # Approximate season start
-        week_start = season_start + timedelta(weeks=(week - 1))
-        week_end = week_start + timedelta(days=7)
-
-        historical_predictions = (
-            db_session.query(KickerPredictions)
-            .filter(
-                and_(
-                    KickerPredictions.game_date >= week_start,
-                    KickerPredictions.game_date <= week_end,
-                )
-            )
-            .all()
+    print(f"Found {len(fg_data)} field goal attempts")
+    weekly_stats = (
+        fg_data.groupby(
+            [
+                "kicker_player_id",
+                "kicker_player_name",
+                "posteam",
+                "defteam",
+                "game_date",
+            ]
         )
-
-        print(
-            f"📅 Found {len(historical_predictions)} historical predictions for week {week}"
+        .agg(
+            {
+                "field_goal_attempt": "sum",
+                "field_goal_result": lambda x: (x == "made").sum(),
+                "kick_distance": ["max", "mean"],
+                "temp": "first",
+                "wind": "first",
+            }
         )
+        .reset_index()
+    )
+    weekly_stats.columns = [
+        "kicker_id",
+        "kicker_name",
+        "team",
+        "opponent",
+        "game_date",
+        "attempts",
+        "made",
+        "longest_fg",
+        "avg_distance",
+        "temperature",
+        "wind_speed",
+    ]
+    return weekly_stats
 
-        # Also get current predictions as fallback
-        current_predictions = db_session.query(Kickers).all()
-        print(f"📋 Found {len(current_predictions)} current predictions as fallback")
 
-    else:
-        # For current week, use both historical and current
-        historical_predictions = db_session.query(KickerPredictions).all()
-        current_predictions = db_session.query(Kickers).all()
-        print(f"📅 Found {len(historical_predictions)} historical predictions total")
-        print(f"📋 Found {len(current_predictions)} current predictions as fallback")
+def _match_kicker_name(pred: Any, kicker_name_lower: str) -> bool:
+    pred_name_attr = (
+        "kicker_player_name" if hasattr(pred, "kicker_player_name") else "name"
+    )
+    pred_name = getattr(pred, pred_name_attr, "") or ""
+    pred_name = pred_name.lower()
 
-    results_processed = 0
+    if pred_name == kicker_name_lower:
+        return True
 
-    for _, actual in actuals_df.iterrows():
-        # Try to match with our predictions
-        kicker_name = actual["kicker_name"]
-        game_date = pd.to_datetime(actual["game_date"]).date()
-
-        # Find matching prediction - first try historical, then current
-        prediction = None
-        prediction_source = None
-
-        def match_kicker_name(pred, kicker_name_lower):
-            """Helper function to match kicker names with various formats"""
-            pred_name_attr = (
-                "kicker_player_name" if hasattr(pred, "kicker_player_name") else "name"
-            )
-            pred_name = getattr(pred, pred_name_attr, "").lower()
-
-            # Direct match
-            if pred_name == kicker_name_lower:
-                return True
-
-            # Handle abbreviated names in either direction
-            # Case 1: Actual name is abbreviated (e.g., "M.Prater" vs "Matt Prater")
-            if "." in kicker_name_lower:
-                # Split "M.Prater" into ["M", "Prater"]
-                actual_parts = kicker_name_lower.replace(".", "").split()
-                if len(actual_parts) >= 2:
-                    actual_initial = actual_parts[0][0]
-                    actual_last = actual_parts[1]
-
-                    # Check if prediction name starts with same initial and has same last name
-                    pred_parts = pred_name.split()
-                    if (
-                        len(pred_parts) >= 2
-                        and pred_parts[0][0] == actual_initial
-                        and pred_parts[-1] == actual_last
-                    ):
-                        return True
-
-            # Case 2: Prediction name is abbreviated (e.g., "M.Prater" in pred vs "Matt Prater" actual)
-            if "." in pred_name:
-                # Split prediction "M.Prater" into ["M", "Prater"]
-                pred_parts = pred_name.replace(".", "").split()
-                if len(pred_parts) >= 2:
-                    pred_initial = pred_parts[0][0]
-                    pred_last = pred_parts[1]
-
-                    # Check if actual name starts with same initial and has same last name
-                    actual_parts = kicker_name_lower.split()
-                    if (
-                        len(actual_parts) >= 2
-                        and actual_parts[0][0] == pred_initial
-                        and actual_parts[-1] == pred_last
-                    ):
-                        return True
-
-            # Case 3: Both names are full, check first initial + last name
+    if "." in kicker_name_lower:
+        actual_parts = kicker_name_lower.replace(".", " ").split()
+        if len(actual_parts) >= 2:
+            actual_initial = actual_parts[0][0]
+            actual_last = actual_parts[-1]
             pred_parts = pred_name.split()
-            actual_parts = kicker_name_lower.split()
             if (
                 len(pred_parts) >= 2
-                and len(actual_parts) >= 2
-                and pred_parts[0][0] == actual_parts[0][0]
-                and pred_parts[-1] == actual_parts[-1]
+                and pred_parts[0][0] == actual_initial
+                and pred_parts[-1] == actual_last
             ):
                 return True
 
-            # Fallback: check if last names match
-            pred_last = pred_name.split()[-1] if pred_name else ""
-            actual_last = kicker_name_lower.split()[-1] if kicker_name_lower else ""
-            if pred_last and actual_last and pred_last == actual_last:
+    if "." in pred_name:
+        pred_parts = pred_name.replace(".", " ").split()
+        if len(pred_parts) >= 2:
+            pred_initial = pred_parts[0][0]
+            pred_last = pred_parts[-1]
+            actual_parts = kicker_name_lower.split()
+            if (
+                len(actual_parts) >= 2
+                and actual_parts[0][0] == pred_initial
+                and actual_parts[-1] == pred_last
+            ):
                 return True
 
-            return False
+    pred_parts = pred_name.split()
+    actual_parts = kicker_name_lower.split()
+    if (
+        len(pred_parts) >= 2
+        and len(actual_parts) >= 2
+        and pred_parts[0][0] == actual_parts[0][0]
+        and pred_parts[-1] == actual_parts[-1]
+    ):
+        return True
 
-        kicker_name_lower = kicker_name.lower()
+    pred_last = pred_parts[-1] if pred_parts else ""
+    actual_last = actual_parts[-1] if actual_parts else ""
+    return bool(pred_last and actual_last and pred_last == actual_last)
 
-        # First, try to find in historical predictions (more accurate for specific dates)
-        for pred in historical_predictions:
-            if match_kicker_name(pred, kicker_name_lower):
-                # Additional date proximity check for historical predictions
-                pred_date = (
-                    pred.game_date.date()
-                    if isinstance(pred.game_date, datetime)
-                    else pred.game_date
-                )
-                date_diff = abs((pred_date - game_date).days)
-                if date_diff <= 7:  # Within a week
-                    prediction = pred
-                    prediction_source = "historical"
-                    break
 
-        # If no historical match, try current predictions
-        if not prediction:
-            for pred in current_predictions:
-                if match_kicker_name(pred, kicker_name_lower):
-                    prediction = pred
-                    prediction_source = "current"
-                    break
+def _pred_game_date(pred: Any) -> date | None:
+    gd = getattr(pred, "game_date", None)
+    if gd is None:
+        return None
+    if isinstance(gd, datetime):
+        return gd.date()
+    if isinstance(gd, date):
+        return gd
+    try:
+        return pd.to_datetime(gd).date()
+    except Exception:
+        return None
 
-        if not prediction:
-            print(f"❌ No prediction found for kicker: {kicker_name} on {game_date}")
+
+def _find_prediction(
+    *,
+    kicker_name: str,
+    kicker_id: str,
+    game_date: date,
+    historical: list[Any],
+    current: list[Any],
+) -> tuple[Any | None, str | None, float]:
+    """Return (prediction, source, projected_fgs)."""
+    name_l = kicker_name.lower()
+    # Prefer player-id match on historical rows
+    for pred in historical:
+        pid = str(getattr(pred, "kicker_player_id", "") or "")
+        if pid and pid == str(kicker_id):
+            pred_date = _pred_game_date(pred)
+            if pred_date is None or abs((pred_date - game_date).days) <= 10:
+                return pred, "historical", float(pred.predicted_fg_made)
+
+    for pred in historical:
+        if not _match_kicker_name(pred, name_l):
             continue
+        pred_date = _pred_game_date(pred)
+        if pred_date is None:
+            continue
+        if abs((pred_date - game_date).days) <= 10:
+            return pred, "historical", float(pred.predicted_fg_made)
 
-        print(f"✅ Found {prediction_source} prediction for {kicker_name}")
+    for pred in current:
+        if _match_kicker_name(pred, name_l):
+            projected = float(
+                getattr(pred, "projected_field_goals", None)
+                or getattr(pred, "predicted_fg_made", _LEAGUE_PRIOR_FG)
+            )
+            return pred, "current", projected
 
-        # Check if we already have this result
+    return None, None, _LEAGUE_PRIOR_FG
+
+
+def match_predictions_with_actuals(
+    week: int,
+    season: int,
+    *,
+    require_prediction: bool = False,
+    pbp_data: pd.DataFrame | None = None,
+) -> dict[str, int]:
+    """Grade one week into ``pred_kicker_actuals``. Returns counts."""
+    actuals_df = get_weekly_field_goal_data(week, season, pbp_data=pbp_data)
+    if actuals_df.empty:
+        return {"processed": 0, "skipped_existing": 0, "no_prediction": 0}
+
+    # Broad window: season kickoff through early February of next year
+    week_start = date(season, 9, 1) + timedelta(weeks=max(0, week - 2))
+    week_end = week_start + timedelta(days=21)
+    historical_predictions = (
+        db_session.query(KickerPredictions)
+        .filter(
+            and_(
+                KickerPredictions.game_date
+                >= datetime.combine(week_start, datetime.min.time()),
+                KickerPredictions.game_date
+                <= datetime.combine(week_end, datetime.max.time()),
+            )
+        )
+        .all()
+    )
+    # Fallback: all preds whose game_date falls on actual game dates this week
+    if len(historical_predictions) < 5:
+        historical_predictions = db_session.query(KickerPredictions).all()
+    current_predictions = db_session.query(Kickers).all()
+    print(
+        f"📅 week {week}: {len(historical_predictions)} hist preds, "
+        f"{len(current_predictions)} current"
+    )
+
+    processed = 0
+    skipped_existing = 0
+    no_prediction = 0
+
+    for _, actual in actuals_df.iterrows():
+        kicker_name = str(actual["kicker_name"])
+        game_date = pd.to_datetime(actual["game_date"]).date()
+        kicker_id = str(actual["kicker_id"])
+
         existing = (
             db_session.query(KickerActuals)
             .filter(
                 and_(
-                    KickerActuals.kicker_id == str(actual["kicker_id"]),
+                    KickerActuals.kicker_id == kicker_id,
                     KickerActuals.date == game_date,
                 )
             )
             .first()
         )
-
         if existing:
-            print(f"Result already exists for {kicker_name} on {game_date}")
+            skipped_existing += 1
             continue
 
-        # Calculate prediction accuracy
+        prediction, source, projected_fgs = _find_prediction(
+            kicker_name=kicker_name,
+            kicker_id=kicker_id,
+            game_date=game_date,
+            historical=historical_predictions,
+            current=current_predictions,
+        )
+        if prediction is None:
+            no_prediction += 1
+            if require_prediction:
+                print(f"❌ No prediction for {kicker_name} on {game_date}")
+                continue
+            source = "prior"
+            projected_fgs = _LEAGUE_PRIOR_FG
+
         actual_made = int(actual["made"])
-
-        # Extract projected field goals based on prediction source
-        if prediction_source == "historical":
-            projected_fgs = float(prediction.predicted_fg_made)
-        else:  # current prediction
-            projected_fgs = float(prediction.projected_field_goals)
-
-        # Determine if kicker hit over 1.5 made FGs (2 or more)
         hit_over_1_5 = actual_made >= 2
-
-        # Determine if our prediction was correct
-        # If we predicted >= 1.75, we were betting over 1.5
-        # If we predicted < 1.25, we were betting under 1.5
-        # In between is uncertain
         if projected_fgs >= 1.75:
-            our_bet = "over"
             correct_prediction = hit_over_1_5
         elif projected_fgs <= 1.25:
-            our_bet = "under"
             correct_prediction = not hit_over_1_5
         else:
-            our_bet = "uncertain"
             correct_prediction = None
-
-        # Calculate confidence based on distance from 1.5
         confidence = abs(projected_fgs - 1.5) / 1.5
 
-        # Create actual result record
-        kicker_actual = KickerActuals(
-            date=game_date,
-            kicker_id=str(actual["kicker_id"]),
-            kicker_name=kicker_name,
-            team_name=actual["team"],
-            opponent_name=actual["opponent"],
-            venue_name=f"{actual['team']} vs {actual['opponent']}",  # Simplified
-            actual_field_goals_made=actual_made,
-            actual_field_goals_attempted=int(actual["attempts"]),
-            actual_longest_fg=(
-                int(actual["longest_fg"]) if pd.notna(actual["longest_fg"]) else None
-            ),
-            game_temperature=(
-                float(actual["temperature"])
-                if pd.notna(actual["temperature"])
-                else None
-            ),
-            game_wind_speed=(
-                float(actual["wind_speed"]) if pd.notna(actual["wind_speed"]) else None
-            ),
-            projected_field_goals=projected_fgs,
-            hit_over_1_5=hit_over_1_5,
-            correct_prediction=correct_prediction,
-            prediction_confidence=confidence,
+        db_session.add(
+            KickerActuals(
+                date=game_date,
+                kicker_id=kicker_id,
+                kicker_name=kicker_name,
+                team_name=actual["team"],
+                opponent_name=actual["opponent"],
+                venue_name=f"{actual['team']} vs {actual['opponent']}",
+                actual_field_goals_made=actual_made,
+                actual_field_goals_attempted=int(actual["attempts"]),
+                actual_longest_fg=(
+                    int(actual["longest_fg"])
+                    if pd.notna(actual["longest_fg"])
+                    else None
+                ),
+                game_temperature=(
+                    float(actual["temperature"])
+                    if pd.notna(actual["temperature"])
+                    else None
+                ),
+                game_wind_speed=(
+                    float(actual["wind_speed"])
+                    if pd.notna(actual["wind_speed"])
+                    else None
+                ),
+                projected_field_goals=float(projected_fgs),
+                hit_over_1_5=hit_over_1_5,
+                correct_prediction=correct_prediction,
+                prediction_confidence=confidence,
+            )
         )
-
-        db_session.add(kicker_actual)
-        results_processed += 1
-
+        processed += 1
         print(
-            f"✅ {kicker_name}: {actual_made} FGs made, predicted {projected_fgs:.1f} ({our_bet}) [{prediction_source}]"
-        )
-        print(
-            f"   Over 1.5: {'✅' if hit_over_1_5 else '❌'}, Prediction: {'✅' if correct_prediction else '❌' if correct_prediction is not None else '❓'}"
+            f"✅ {kicker_name}: {actual_made}/{int(actual['attempts'])} "
+            f"proj={projected_fgs:.2f} [{source}]"
         )
 
     db_session.commit()
-    print(f"\n📊 Processed {results_processed} kicker results for week {week}")
+    print(
+        f"📊 week {week}: wrote {processed}, existing {skipped_existing}, no_pred {no_prediction}"
+    )
+    return {
+        "processed": processed,
+        "skipped_existing": skipped_existing,
+        "no_prediction": no_prediction,
+    }
 
 
-def update_kicker_actuals(week=None):
-    """
-    Main function to update kicker actuals for a specific week
-
-    Args:
-        week (int): NFL week number, if None uses current week
-    """
-    season = get_nfl_season()
-    if week is None:
-        week = get_current_nfl_week(season)
-
-    print(f"🏈 Updating kicker actuals for NFL Week {week} (season {season})")
-    match_predictions_with_actuals(week, season)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser(description="Collect NFL kicker actual results")
-    parser.add_argument("--week", type=int, help="NFL week number (1-18)")
-    parser.add_argument(
-        "--season",
-        type=int,
-        default=None,
-        help="NFL season year (default: NFL_SEASON env or nfl_common)",
+def update_kicker_actuals(
+    week: int | None = None,
+    season: int | None = None,
+    *,
+    require_prediction: bool = False,
+    pbp_data: pd.DataFrame | None = None,
+) -> dict[str, int]:
+    """Update kicker actuals for one week (defaults: env season / current week)."""
+    resolved_season = resolve_nfl_season(season)
+    resolved_week = week if week is not None else get_current_nfl_week(resolved_season)
+    print(
+        f"🏈 Updating kicker actuals for NFL Week {resolved_week} "
+        f"(season {resolved_season})"
+    )
+    return match_predictions_with_actuals(
+        resolved_week,
+        resolved_season,
+        require_prediction=require_prediction,
+        pbp_data=pbp_data,
     )
 
-    args = parser.parse_args()
 
-    if args.week:
-        update_kicker_actuals(args.week)
-    else:
-        update_kicker_actuals()
+def backfill_kicker_actuals(
+    *,
+    season: int,
+    start_week: int = 1,
+    end_week: int = 18,
+    require_prediction: bool = False,
+) -> dict[str, Any]:
+    """Backfill REG weeks into ``pred_kicker_actuals``."""
+    print(f"Loading PBP once for season {season}...")
+    try:
+        pbp_data = nfl.import_pbp_data([season])
+    except Exception as exc:
+        return {"processed": 0, "error": str(exc), "season": season}
+
+    totals = {"processed": 0, "skipped_existing": 0, "no_prediction": 0, "weeks": []}
+    for week in range(start_week, end_week + 1):
+        stats = update_kicker_actuals(
+            week,
+            season,
+            require_prediction=require_prediction,
+            pbp_data=pbp_data,
+        )
+        totals["processed"] += stats["processed"]
+        totals["skipped_existing"] += stats["skipped_existing"]
+        totals["no_prediction"] += stats["no_prediction"]
+        totals["weeks"].append({"week": week, **stats})
+    totals["season"] = season
+    return totals
 
 
 def run() -> dict:
@@ -383,7 +374,65 @@ def run() -> dict:
 
     init_session()
     try:
-        update_kicker_actuals()
-        return {"status": "ok", "task": "nfl_collect_kicker_actuals"}
+        # Prefer prior completed season when default calendar is pre-kickoff week 1
+        season = resolve_nfl_season(None)
+        week = get_current_nfl_week(season)
+        # In Aug before kickoff, grade the previous season's final week instead
+        today = date.today()
+        if today.month < 9 and week <= 1:
+            season = season - 1
+            week = 18
+        stats = update_kicker_actuals(week, season)
+        return {
+            "status": "ok",
+            "task": "nfl_collect_kicker_actuals",
+            "season": season,
+            "week": week,
+            **stats,
+        }
+    finally:
+        close_session()
+
+
+if __name__ == "__main__":
+    import argparse
+
+    from app.services.etl.nfl._db import close_session, init_session
+
+    parser = argparse.ArgumentParser(description="Collect NFL kicker actual results")
+    parser.add_argument("--week", type=int, help="NFL week number (1-18)")
+    parser.add_argument("--season", type=int, default=None)
+    parser.add_argument(
+        "--backfill",
+        action="store_true",
+        help="Backfill start_week..end_week for --season",
+    )
+    parser.add_argument("--start-week", type=int, default=1)
+    parser.add_argument("--end-week", type=int, default=18)
+    parser.add_argument(
+        "--require-prediction",
+        action="store_true",
+        help="Skip rows without a matching prediction",
+    )
+    args = parser.parse_args()
+
+    init_session()
+    try:
+        if args.backfill:
+            if args.season is None:
+                raise SystemExit("--season required with --backfill")
+            out = backfill_kicker_actuals(
+                season=args.season,
+                start_week=args.start_week,
+                end_week=args.end_week,
+                require_prediction=args.require_prediction,
+            )
+            print(out)
+        else:
+            update_kicker_actuals(
+                args.week,
+                args.season,
+                require_prediction=args.require_prediction,
+            )
     finally:
         close_session()

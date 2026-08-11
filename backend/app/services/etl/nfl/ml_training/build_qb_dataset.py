@@ -63,6 +63,13 @@ def build(
             for r in rows
         ]
 
+        from app.services.etl.nfl.ml_training.build_qb_dataset_nflverse import (
+            _schedule_market_index,
+        )
+
+        seasons = sorted({int(r.season) for r in rows})
+        market = _schedule_market_index(seasons)
+
         records: list[dict[str, float]] = []
         targets: list[float] = []
         for row in rows:
@@ -84,6 +91,12 @@ def build(
             pred_ctx = _prediction_context_for_actual(session, row)
             if pred_ctx:
                 context.update({k: v for k, v in pred_ctx.items() if v is not None})
+            # Real game lines from nflverse schedules when prediction context missing
+            team = str(getattr(row, "team_name", "") or "").upper()
+            mkt = market.get((int(row.season), int(row.week), team), {})
+            for key, value in mkt.items():
+                if context.get(key) is None and value is not None:
+                    context[key] = value
 
             feats = build_features_from_tier_prediction(
                 tier_pred,
@@ -101,7 +114,7 @@ def build(
 
 
 def _prediction_context_for_actual(session, row) -> dict[str, Any]:
-    """Pull implied total / home / weather from matching QBPredictions when present."""
+    """Pull implied total / home / weather / prop line from matching QBPredictions."""
     try:
         from app.models.predictions_models import QBPredictions
 
@@ -114,6 +127,17 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             )
             .first()
         )
+        if pred is None:
+            # Name fallback
+            pred = (
+                session.query(QBPredictions)
+                .filter(
+                    QBPredictions.qb_player_name == row.qb_player_name,
+                    QBPredictions.season == row.season,
+                    QBPredictions.week == row.week,
+                )
+                .first()
+            )
     except Exception:
         return {}
     if pred is None:
@@ -127,6 +151,13 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
         ctx["wind_speed"] = float(pred.weather_wind_speed)
     if pred.dome_game is not None:
         ctx["dome"] = bool(pred.dome_game)
+    if getattr(pred, "spread", None) is not None:
+        ctx["spread_line"] = float(pred.spread)
+    if getattr(pred, "total_points", None) is not None:
+        ctx["total_line"] = float(pred.total_points)
+    # Real pass-yards prop line when Odds attached it
+    if pred.ou_line is not None:
+        ctx["pass_yds_line"] = float(pred.ou_line)
     fi = pred.feature_importance if isinstance(pred.feature_importance, dict) else {}
     nested = fi.get("features") if isinstance(fi.get("features"), dict) else {}
     for key in (
@@ -136,6 +167,12 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
         "rolling_yards_l3",
         "rolling_yards_l5",
         "season_avg_yards",
+        "opp_cover_base",
+        "opp_man_zone",
+        "opp_scheme_pressure",
+        "total_line",
+        "spread_line",
+        "pass_yds_line",
     ):
         if nested.get(key) is not None:
             ctx[key] = nested[key]

@@ -82,6 +82,10 @@ def _build_with_meta(
         if not rows:
             return pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame()
 
+        from app.services.etl.nfl.ml_training.build_qb_dataset_nflverse import (
+            _schedule_market_index,
+        )
+
         history = [
             {
                 "qb_player_id": r.qb_player_id,
@@ -92,6 +96,8 @@ def _build_with_meta(
             }
             for r in rows
         ]
+        seasons = sorted({int(r.season) for r in rows})
+        market = _schedule_market_index(seasons)
         records: list[dict[str, float]] = []
         targets: list[float] = []
         meta_rows: list[dict[str, Any]] = []
@@ -111,8 +117,16 @@ def _build_with_meta(
                 tier_yards=tier_yards,
             )
             pred_ctx = _prediction_context_for_actual(session, row)
+            real_pass_line = None
             if pred_ctx:
                 context.update({k: v for k, v in pred_ctx.items() if v is not None})
+                if pred_ctx.get("pass_yds_line") is not None:
+                    real_pass_line = float(pred_ctx["pass_yds_line"])
+            team = str(getattr(row, "team_name", "") or "").upper()
+            mkt = market.get((int(row.season), int(row.week), team), {})
+            for key, value in mkt.items():
+                if context.get(key) is None and value is not None:
+                    context[key] = value
             opp = (
                 getattr(row, "opponent_team_name", None)
                 or context.get("opponent_abbr")
@@ -142,6 +156,7 @@ def _build_with_meta(
                     "week": int(row.week),
                     "tier_yards": tier_yards,
                     "actual_passing_yards": float(row.actual_passing_yards),
+                    "pass_yds_line_real": real_pass_line,
                 }
             )
         return (
@@ -224,15 +239,26 @@ def train_and_eval(
         ),
     }
 
-    # O/U from stored lines when present on features (pass_yds_line / tier proxy)
+    real_line_n = (
+        int(meta["pass_yds_line_real"].notna().sum())
+        if "pass_yds_line_real" in meta
+        else 0
+    )
+    report["pass_yds_line_real_n"] = real_line_n
+    report["pass_yds_line_real_rate"] = (
+        round(real_line_n / len(meta), 4) if len(meta) else 0.0
+    )
+
+    # O/U only on real stored prop lines (QBPredictions.ou_line) — no synthetic jitter
     ou_rows = []
     ou_labels = []
-    rng = np.random.default_rng(42)
     for i in train_idx:
         feats = features.iloc[i].to_dict()
         actual = float(target.iloc[i])
-        line = float(feats.get("pass_yds_line") or meta.iloc[i]["tier_yards"])
-        line = line + float(rng.normal(0, 3))
+        line = meta.iloc[i].get("pass_yds_line_real")
+        if line is None or (isinstance(line, float) and np.isnan(line)):
+            continue
+        line = float(line)
         if abs(actual - line) < 0.5:
             continue
         ou_rows.append(build_ou_feature_row(feats, line))
@@ -242,9 +268,19 @@ def train_and_eval(
         ou_model, ou_meta = train_qb_ou_classifier(
             pd.DataFrame(ou_rows), pd.Series(ou_labels)
         )
-        report["ou_classifier"] = {"status": "ok", "metadata": ou_meta}
+        report["ou_classifier"] = {
+            "status": "ok",
+            "metadata": ou_meta,
+            "source": "pred_qb_predictions.ou_line",
+            "rows": len(ou_rows),
+        }
     else:
-        report["ou_classifier"] = {"status": "skipped", "rows": len(ou_rows)}
+        report["ou_classifier"] = {
+            "status": "skipped",
+            "rows": len(ou_rows),
+            "source": "pred_qb_predictions.ou_line",
+            "note": "need ≥60 graded rows with real pass-yards prop lines",
+        }
 
     _MODELS_DIR.mkdir(parents=True, exist_ok=True)
     yards_path = _MODELS_DIR / f"{MODEL_KEY}.pkl"
@@ -353,8 +389,18 @@ def upload_kicker_bundle() -> dict[str, Any]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prod QB residual eval (Railway DB)")
-    parser.add_argument("--season-start", type=str, default="2025-09-01")
-    parser.add_argument("--season-end", type=str, default="2026-02-15")
+    parser.add_argument(
+        "--season-start",
+        type=str,
+        default="2023-09-01",
+        help="Inclusive start date on pred_qb_actuals.game_date",
+    )
+    parser.add_argument(
+        "--season-end",
+        type=str,
+        default="2026-02-15",
+        help="Inclusive end date on pred_qb_actuals.game_date",
+    )
     parser.add_argument(
         "--upload",
         action="store_true",
