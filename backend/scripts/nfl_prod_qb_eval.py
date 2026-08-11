@@ -1,0 +1,404 @@
+#!/usr/bin/env python3
+"""Prod NFL QB residual retrain + promote-gate eval from Railway Postgres.
+
+Requires DATABASE_URL. Optional --upload needs AWS credentials for
+s3://yetibets/nfl/ml_models/.
+
+Never recommends promote unless holdout MAE beats tier by ≥10%.
+
+Usage:
+  export DATABASE_URL=postgresql://...
+  PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
+  PYTHONPATH=. python scripts/nfl_prod_qb_eval.py --season-start 2025-09-01 --season-end 2026-02-15
+  PYTHONPATH=. python scripts/nfl_prod_qb_eval.py --upload
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import logging
+import os
+import pickle  # nosec B403 - own artifacts
+from datetime import date, datetime
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+logger = logging.getLogger(__name__)
+
+_MODELS_DIR = Path(__file__).resolve().parents[1] / "models" / "nfl"
+_PROMOTE_LIFT = 0.10
+
+
+def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
+    return float(np.mean(np.abs(y_true - y_pred)))
+
+
+def _time_split(
+    features: pd.DataFrame, meta: pd.DataFrame
+) -> tuple[np.ndarray, np.ndarray, str]:
+    """Prefer last season as holdout; else last 20% by (season, week)."""
+    if "season" in meta.columns and meta["season"].nunique() >= 2:
+        holdout_season = int(meta["season"].max())
+        mask = (meta["season"] == holdout_season).to_numpy()
+        if mask.sum() >= 40 and (~mask).sum() >= 40:
+            return np.where(~mask)[0], np.where(mask)[0], f"season_{holdout_season}"
+    n = len(features)
+    cut = int(n * 0.8)
+    return np.arange(n)[:cut], np.arange(n)[cut:], "time_20pct"
+
+
+def _build_with_meta(
+    season_start: date, season_end: date
+) -> tuple[pd.DataFrame, pd.Series, pd.DataFrame]:
+    from app.core.database import SessionLocal
+    from app.models.predictions_models import QBActuals
+    from app.services.etl.nfl.ml_training.build_qb_dataset import (
+        _prediction_context_for_actual,
+    )
+    from app.services.etl.nfl.qb_features import (
+        enrich_context_from_actual_row,
+        scheme_features_for_opponent,
+    )
+    from app.services.etl.nfl.qb_passing_yards_ml import (
+        build_features_from_tier_prediction,
+    )
+    from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
+
+    session = SessionLocal()
+    try:
+        rows = (
+            session.query(QBActuals)
+            .filter(
+                QBActuals.game_date >= season_start,
+                QBActuals.game_date <= season_end,
+            )
+            .order_by(QBActuals.season, QBActuals.week)
+            .all()
+        )
+        if not rows:
+            return pd.DataFrame(), pd.Series(dtype=float), pd.DataFrame()
+
+        history = [
+            {
+                "qb_player_id": r.qb_player_id,
+                "qb_player_name": r.qb_player_name,
+                "season": int(r.season),
+                "week": int(r.week),
+                "actual_passing_yards": float(r.actual_passing_yards),
+            }
+            for r in rows
+        ]
+        records: list[dict[str, float]] = []
+        targets: list[float] = []
+        meta_rows: list[dict[str, Any]] = []
+        for row in rows:
+            tier_pred = predict_qb_passing_yards(
+                row.qb_player_name,
+                int(row.season),
+                int(row.week),
+                is_backup=False,
+            )
+            tier_yards = float(tier_pred["predicted_passing_yards"])
+            player_key = row.qb_player_id or row.qb_player_name
+            context = enrich_context_from_actual_row(
+                row,
+                history=history,
+                player_key=str(player_key),
+                tier_yards=tier_yards,
+            )
+            pred_ctx = _prediction_context_for_actual(session, row)
+            if pred_ctx:
+                context.update({k: v for k, v in pred_ctx.items() if v is not None})
+            opp = (
+                getattr(row, "opponent_team_name", None)
+                or context.get("opponent_abbr")
+                or ""
+            )
+            if opp and not any(
+                context.get(k) is not None
+                for k in ("opp_cover_base", "opp_man_zone", "opp_scheme_pressure")
+            ):
+                # Best-effort: scheme lookup by abbr if present in opponent string
+                abbr = str(opp).strip().upper()
+                if len(abbr) <= 3:
+                    context.update(scheme_features_for_opponent(abbr))
+            feats = build_features_from_tier_prediction(
+                tier_pred,
+                season=int(row.season),
+                week=int(row.week),
+                context=context,
+            )
+            records.append(feats)
+            targets.append(float(row.actual_passing_yards))
+            meta_rows.append(
+                {
+                    "qb_player_id": row.qb_player_id,
+                    "qb_player_name": row.qb_player_name,
+                    "season": int(row.season),
+                    "week": int(row.week),
+                    "tier_yards": tier_yards,
+                    "actual_passing_yards": float(row.actual_passing_yards),
+                }
+            )
+        return (
+            pd.DataFrame(records),
+            pd.Series(targets, name="actual_passing_yards"),
+            pd.DataFrame(meta_rows),
+        )
+    finally:
+        session.close()
+
+
+def train_and_eval(
+    *,
+    season_start: date,
+    season_end: date,
+) -> dict[str, Any]:
+    from app.services.etl.nfl.qb_ou_classifier import (
+        MODEL_KEY as OU_KEY,
+        build_ou_feature_row,
+        train_qb_ou_classifier,
+    )
+    from app.services.etl.nfl.qb_passing_yards_ml import (
+        MODEL_KEY,
+        predict_yards_ml,
+        train_qb_yards_model,
+    )
+
+    features, target, meta = _build_with_meta(season_start, season_end)
+    if features.empty or len(features) < 80:
+        return {
+            "status": "insufficient_data",
+            "rows": int(len(features)),
+            "season_start": str(season_start),
+            "season_end": str(season_end),
+            "source": "pred_qb_actuals",
+        }
+
+    train_idx, test_idx, holdout_label = _time_split(features, meta)
+    X_train = features.iloc[train_idx].reset_index(drop=True)
+    y_train = target.iloc[train_idx].reset_index(drop=True)
+    X_test = features.iloc[test_idx]
+    y_test = target.iloc[test_idx].to_numpy()
+    tier_test = meta.iloc[test_idx]["tier_yards"].to_numpy()
+
+    model, metadata = train_qb_yards_model((X_train, y_train), residual_target=True)
+    ml_pred = np.array(
+        [
+            predict_yards_ml(model, X_test.iloc[i].to_dict(), residual_target=True)
+            for i in range(len(X_test))
+        ]
+    )
+    tier_mae = _mae(y_test, tier_test)
+    ml_mae = _mae(y_test, ml_pred)
+    lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
+    promote = lift >= _PROMOTE_LIFT
+
+    report: dict[str, Any] = {
+        "status": "ok",
+        "trained_at": datetime.utcnow().isoformat(),
+        "source": "pred_qb_actuals",
+        "database": "railway",
+        "season_start": str(season_start),
+        "season_end": str(season_end),
+        "rows_total": int(len(features)),
+        "rows_train": int(len(X_train)),
+        "rows_holdout": int(len(X_test)),
+        "holdout": holdout_label,
+        "model_family": "residual_gbm",
+        "tier_mae": round(tier_mae, 3),
+        "ml_mae": round(ml_mae, 3),
+        "mae_lift": round(lift, 4),
+        "promote_gate": _PROMOTE_LIFT,
+        "promote_recommended": promote,
+        "model_version": metadata.get("model_version"),
+        "train_metadata": metadata,
+        "recommendation": (
+            "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
+            if promote
+            else "Keep tier-v3 production; residual ML stays shadow-only"
+        ),
+    }
+
+    # O/U from stored lines when present on features (pass_yds_line / tier proxy)
+    ou_rows = []
+    ou_labels = []
+    rng = np.random.default_rng(42)
+    for i in train_idx:
+        feats = features.iloc[i].to_dict()
+        actual = float(target.iloc[i])
+        line = float(feats.get("pass_yds_line") or meta.iloc[i]["tier_yards"])
+        line = line + float(rng.normal(0, 3))
+        if abs(actual - line) < 0.5:
+            continue
+        ou_rows.append(build_ou_feature_row(feats, line))
+        ou_labels.append(1 if actual > line else 0)
+    ou_model = ou_meta = None
+    if len(ou_rows) >= 60 and len(set(ou_labels)) > 1:
+        ou_model, ou_meta = train_qb_ou_classifier(
+            pd.DataFrame(ou_rows), pd.Series(ou_labels)
+        )
+        report["ou_classifier"] = {"status": "ok", "metadata": ou_meta}
+    else:
+        report["ou_classifier"] = {"status": "skipped", "rows": len(ou_rows)}
+
+    _MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    yards_path = _MODELS_DIR / f"{MODEL_KEY}.pkl"
+    yards_meta_path = _MODELS_DIR / f"{MODEL_KEY}_metadata.json"
+    with yards_path.open("wb") as f:
+        pickle.dump(model, f)
+    metadata = {
+        **metadata,
+        "promote_recommended": promote,
+        "holdout_tier_mae": report["tier_mae"],
+        "holdout_ml_mae": report["ml_mae"],
+        "holdout_mae_lift": report["mae_lift"],
+        "training_source": "pred_qb_actuals",
+        "season_start": str(season_start),
+        "season_end": str(season_end),
+    }
+    yards_meta_path.write_text(json.dumps(metadata, indent=2, default=str))
+    report["local_artifacts"] = {
+        "model": str(yards_path),
+        "metadata": str(yards_meta_path),
+    }
+
+    if ou_model is not None and ou_meta is not None:
+        ou_path = _MODELS_DIR / f"{OU_KEY}.pkl"
+        ou_meta_path = _MODELS_DIR / f"{OU_KEY}_metadata.json"
+        with ou_path.open("wb") as f:
+            pickle.dump(ou_model, f)
+        ou_meta_path.write_text(json.dumps(ou_meta, indent=2, default=str))
+        report["local_artifacts"]["ou_model"] = str(ou_path)
+        report["local_artifacts"]["ou_metadata"] = str(ou_meta_path)
+
+    report_path = _MODELS_DIR / "qb_prod_retrain_report.json"
+    report_path.write_text(json.dumps(report, indent=2, default=str))
+    report["report_path"] = str(report_path)
+    return report
+
+
+def maybe_upload(report: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+    """Upload QB artifacts to s3://yetibets/nfl/ml_models/ when AWS creds exist."""
+    import boto3
+
+    from app.services.etl.nfl.qb_ou_classifier import MODEL_KEY as OU_KEY
+    from app.services.etl.nfl.qb_ou_classifier import S3_BUCKET, S3_PREFIX
+    from app.services.etl.nfl.qb_passing_yards_ml import MODEL_KEY
+
+    if not report.get("promote_recommended") and not force:
+        report["s3_upload_skipped"] = (
+            "promote_recommended=false; pass --force-upload to push shadow artifacts"
+        )
+        return report
+
+    s3 = boto3.client("s3")
+    uploaded = {}
+    mapping = {
+        MODEL_KEY: (
+            _MODELS_DIR / f"{MODEL_KEY}.pkl",
+            _MODELS_DIR / f"{MODEL_KEY}_metadata.json",
+        ),
+        OU_KEY: (
+            _MODELS_DIR / f"{OU_KEY}.pkl",
+            _MODELS_DIR / f"{OU_KEY}_metadata.json",
+        ),
+    }
+    for key, (model_path, meta_path) in mapping.items():
+        if not model_path.is_file() or not meta_path.is_file():
+            continue
+        s3.upload_file(str(model_path), S3_BUCKET, f"{S3_PREFIX}/{key}.pkl")
+        s3.upload_file(str(meta_path), S3_BUCKET, f"{S3_PREFIX}/{key}_metadata.json")
+        uploaded[key] = {
+            "model": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}.pkl",
+            "metadata": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}_metadata.json",
+        }
+    report["s3_uploaded"] = uploaded
+    return report
+
+
+def upload_kicker_bundle() -> dict[str, Any]:
+    """Push kicker make/miss + attempts artifacts to s3://yetibets/nfl/."""
+    import boto3
+
+    s3 = boto3.client("s3")
+    bucket = "yetibets"
+    prefix = "nfl"
+    files = [
+        "logistic_model.pkl",
+        "random_forest_model.pkl",
+        "gradient_boosting_model.pkl",
+        "xgboost_model.pkl",
+        "main_scaler.pkl",
+        "model_metrics.json",
+        "kicker_attempts.pkl",
+        "kicker_attempts_metadata.json",
+        "kicker_blend_tune.json",
+        "kicker_retrain_report.json",
+    ]
+    uploaded = {}
+    for name in files:
+        path = _MODELS_DIR / name
+        if not path.is_file():
+            continue
+        key = f"{prefix}/{name}"
+        s3.upload_file(str(path), bucket, key)
+        uploaded[name] = f"s3://{bucket}/{key}"
+    return uploaded
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Prod QB residual eval (Railway DB)")
+    parser.add_argument("--season-start", type=str, default="2025-09-01")
+    parser.add_argument("--season-end", type=str, default="2026-02-15")
+    parser.add_argument(
+        "--upload",
+        action="store_true",
+        help="Upload QB models to S3 only if promote gate clears",
+    )
+    parser.add_argument(
+        "--force-upload",
+        action="store_true",
+        help="Upload QB shadow artifacts even when promote=false",
+    )
+    parser.add_argument(
+        "--upload-kickers",
+        action="store_true",
+        help="Upload kicker ensemble to s3://yetibets/nfl/",
+    )
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO)
+
+    if not os.getenv("DATABASE_URL", "").strip():
+        print(json.dumps({"status": "error", "error": "DATABASE_URL required"}))
+        return 2
+
+    report = train_and_eval(
+        season_start=date.fromisoformat(args.season_start),
+        season_end=date.fromisoformat(args.season_end),
+    )
+    if args.upload or args.force_upload:
+        try:
+            report = maybe_upload(report, force=args.force_upload)
+        except Exception as exc:
+            report["s3_upload_error"] = str(exc)
+    if args.upload_kickers:
+        try:
+            report["kicker_s3_uploaded"] = upload_kicker_bundle()
+        except Exception as exc:
+            report["kicker_s3_upload_error"] = str(exc)
+
+    # Persist final report (includes upload status)
+    out = _MODELS_DIR / "qb_prod_retrain_report.json"
+    out.write_text(json.dumps(report, indent=2, default=str))
+    report["report_path"] = str(out)
+    print(json.dumps(report, indent=2, default=str))
+    return 0 if report.get("status") == "ok" else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
