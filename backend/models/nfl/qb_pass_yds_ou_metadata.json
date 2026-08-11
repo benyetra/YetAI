@@ -1,11 +1,11 @@
 {
   "model_key": "qb_pass_yds_ou",
   "target": "actual_over_ou_line",
-  "trained_at": "2026-08-11T12:31:51.302625",
+  "trained_at": "2026-08-11T13:35:58.762378",
   "train_date": "20260811",
   "model_version": "gbm-qb-ou-20260811",
-  "n_train": 231,
-  "n_test": 77,
+  "n_train": 871,
+  "n_test": 291,
   "features": [
     "tier_yards",
     "is_backup",
@@ -41,7 +41,7 @@
     "subsample": 0.85,
     "random_state": 42
   },
-  "holdout_accuracy": 0.6103896103896104,
-  "holdout_brier": 0.25585133315755715,
-  "holdout_log_loss": 0.7244458954167821
+  "holdout_accuracy": 0.4948453608247423,
+  "holdout_brier": 0.27317445265582047,
+  "holdout_log_loss": 0.7469980903273777
 }
