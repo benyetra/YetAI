@@ -3,6 +3,8 @@
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.services.etl.nfl import kickers
 
 
@@ -150,3 +152,77 @@ def test_process_kicker_data_survives_missing_team_stats(monkeypatch):
         == kickers._TEAM_STAT_PRIORS["opponent_red_zone_efficiency"]
     )
     assert "projected_field_goals" in saved
+
+
+def test_as_python_float_coerces_numpy_scalars():
+    np = pytest.importorskip("numpy")
+    assert kickers._as_python_float(None) is None
+    assert kickers._as_python_float(np.float64(1.75)) == 1.75
+    assert type(kickers._as_python_float(np.float64(1.75))) is float
+    assert kickers._as_python_float("bad") is None
+    assert kickers._sanitize_feature_importance(
+        {"a": np.float64(0.3), "b": "x", "c": 1}
+    ) == {"a": 0.3, "c": 1.0}
+
+
+def test_save_kicker_data_binds_plain_python_floats(monkeypatch):
+    """Regression: np.float64 in ORM fields made psycopg2 emit schema \"np\"."""
+    np = pytest.importorskip("numpy")
+
+    added = []
+    mock_session = MagicMock()
+    mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.add.side_effect = lambda obj: added.append(obj)
+    monkeypatch.setattr(kickers, "db_session", mock_session)
+
+    kickers.save_kicker_data(
+        {
+            "player_id": "42",
+            "name": "Justin Tucker",
+            "team_id": 33,
+            "team_name": "Ravens",
+            "venue_name": "M&T Bank Stadium",
+            "opponent_name": "Chiefs",
+            "game_time": datetime(2026, 9, 10, 20, 15, 0),
+            "team_red_zone_efficiency": np.float64(61.5),
+            "opponent_red_zone_efficiency": np.float64(55.0),
+            "third_down_conversion_rate": np.float64(40.2),
+            "redzone_touchdown_pct": np.float64(54.0),
+            "redzone_field_goal_pct": np.float64(82.0),
+            "projected_field_goals": np.float64(1.8),
+            "temperature": np.float64(68.0),
+            "wind_speed": np.float64(12.0),
+            "weather_conditions": "Clear",
+            "venue_type": "outdoor",
+            "surface_type": "grass",
+            "career_surface_stats": [],
+            "career_location_stats": [],
+            "career_field_position_stats": [],
+            "game_stats": [],
+        }
+    )
+
+    assert mock_session.commit.called
+    assert len(added) == 2
+    historical = next(o for o in added if o.__class__.__name__ == "KickerPredictions")
+    current = next(o for o in added if o.__class__.__name__ == "Kickers")
+
+    for attr in (
+        "predicted_fg_made",
+        "predicted_fg_attempts",
+        "predicted_success_rate",
+        "short_distance_prob",
+        "medium_distance_prob",
+        "long_distance_prob",
+        "temperature",
+        "wind_speed",
+    ):
+        value = getattr(historical, attr)
+        assert type(value) is float, f"{attr} is {type(value)}"
+        assert "np." not in repr(value)
+
+    assert type(current.projected_field_goals) is float
+    assert "np." not in repr(current.projected_field_goals)
+    for key, value in historical.feature_importance.items():
+        assert type(value) is float, key
+        assert "np." not in repr(value)
