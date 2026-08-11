@@ -99,6 +99,13 @@ def _build_with_meta(
                 entry["actual_attempts"] = float(r.actual_attempts)
             if getattr(r, "actual_completions", None) is not None:
                 entry["actual_completions"] = float(r.actual_completions)
+            # v6 residual levers from graded actuals when present
+            if getattr(r, "air_yards_per_attempt", None) is not None:
+                entry["air_yards_per_attempt"] = float(r.air_yards_per_attempt)
+            if getattr(r, "cpoe", None) is not None:
+                entry["cpoe"] = float(r.cpoe)
+            if getattr(r, "pressure_rate_faced", None) is not None:
+                entry["pressure_rate_faced"] = float(r.pressure_rate_faced)
             history.append(entry)
         seasons = sorted({int(r.season) for r in rows})
         market = _schedule_market_index(seasons)
@@ -126,6 +133,11 @@ def _build_with_meta(
                 context.update({k: v for k, v in pred_ctx.items() if v is not None})
                 if pred_ctx.get("pass_yds_line") is not None:
                     real_pass_line = float(pred_ctx["pass_yds_line"])
+                    context["line_is_real"] = True
+            if real_pass_line is None:
+                # Historical odds index may still be used inside pred_ctx; if missing,
+                # leave line_is_real unset so build_qb_features can infer.
+                pass
             team = str(getattr(row, "team_name", "") or "").upper()
             mkt = market.get((int(row.season), int(row.week), team), {})
             for key, value in mkt.items():

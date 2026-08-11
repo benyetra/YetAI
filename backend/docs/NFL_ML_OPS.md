@@ -112,6 +112,12 @@ PYTHONPATH=. python scripts/nfl_backtest.py --season 2025 --start-week 1 --end-w
 PYTHONPATH=. python scripts/nfl_tune_kicker_blend.py --write
 ```
 
+GitHub Actions (preferred when local `.env.production` is a placeholder):
+
+```bash
+gh workflow run nfl-prod-qb-eval.yml -f season_start=2023-09-01 -f season_end=2026-02-15 -f force_upload=true
+```
+
 **Do not enable `NFL_QB_ML_ENABLED=1` unless holdout lift ≥10%.** Real pass-yards
 prop lines come from `pred_qb_predictions.ou_line` and the historical Odds API
 index (`models/nfl/pass_yds_lines.json`).
