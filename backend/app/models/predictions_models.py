@@ -640,7 +640,8 @@ class NFLAnytimeTDPredictions(Base):
     recommendation = Column(String(20), nullable=True)
     confidence_score = Column(Float, nullable=True)
     features = Column(JSON, nullable=True)
-    model_version = Column(String(20), nullable=True)
+    # hierarchical_v1_gbm_pos and future tags exceed the original varchar(20)
+    model_version = Column(String(64), nullable=True)
     prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
