@@ -170,6 +170,7 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
         nested = fi.get("features") if isinstance(fi.get("features"), dict) else {}
         for key in (
             "opp_pass_yds_allowed",
+            "opp_air_yards_allowed",
             "is_home",
             "rest_days",
             "rolling_yards_l3",
@@ -178,6 +179,9 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             "rolling_attempts_l3",
             "rolling_ypa_l3",
             "rolling_comp_pct_l3",
+            "rolling_air_yards_l3",
+            "rolling_dropbacks_l3",
+            "rolling_sack_rate_l3",
             "opp_cover_base",
             "opp_man_zone",
             "opp_scheme_pressure",
@@ -185,6 +189,9 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             "spread_line",
             "pass_yds_line",
             "line_minus_tier",
+            "line_is_real",
+            "market_residual_l3",
+            "line_minus_rolling",
             "dynamic_tier_yards",
         ):
             if nested.get(key) is not None:
@@ -206,6 +213,10 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             )
             if hist is not None:
                 ctx["pass_yds_line"] = float(hist)
+                ctx["line_is_real"] = True
         except Exception:
             pass
+    elif ctx.get("line_is_real") is None and ctx.get("pass_yds_line") is not None:
+        # Stored ou_line / nested feature is treated as a real market prop.
+        ctx["line_is_real"] = True
     return ctx

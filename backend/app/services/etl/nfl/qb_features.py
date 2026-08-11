@@ -215,6 +215,7 @@ def prior_game_stats_for_player(
         if air_yards is None:
             air_yards = row.get("air_yards")
         aya = row.get("air_yards_per_attempt")
+        pressure = row.get("pressure_rate_faced")
         try:
             att = float(attempts) if attempts is not None else None
         except (TypeError, ValueError):
@@ -238,6 +239,11 @@ def prior_game_stats_for_player(
         att_f = float(att) if att is not None and att > 0 else 0.0
         dropbacks = att_f + sack_f if att_f > 0 else 0.0
         sack_rate = (sack_f / dropbacks) if dropbacks > 0 else 0.0
+        if sack_rate <= 0 and pressure is not None:
+            try:
+                sack_rate = float(pressure)
+            except (TypeError, ValueError):
+                pass
         prior.append(
             (
                 row_season,
