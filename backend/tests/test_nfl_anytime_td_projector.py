@@ -38,14 +38,44 @@ def _sample_feature_row(**overrides) -> dict:
     return row
 
 
-def test_project_prediction_from_features():
+def test_project_prediction_from_features(monkeypatch):
+    monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
+    import app.services.etl.nfl.anytime_td_calibration as cal
+
+    cal._MODEL = None
+    cal._METADATA = None
+    cal._LOAD_FAILED = False
+
     out = project_prediction_from_features(_sample_feature_row())
     lam = 3.2 * 0.20 * 0.30 * 1.0 * 1.0 * 1.0
     assert abs(out["expected_tds"] - lam) < 1e-9
     assert 0.0 < out["td_probability"] < 1.0
+    assert out["model_version"] == MODEL_VERSION
 
 
-def test_build_upsert_row_includes_metadata():
+def test_project_prediction_scales_for_questionable(monkeypatch):
+    monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
+    import app.services.etl.nfl.anytime_td_calibration as cal
+
+    cal._MODEL = None
+    cal._METADATA = None
+    cal._LOAD_FAILED = False
+
+    base = project_prediction_from_features(_sample_feature_row())
+    q = project_prediction_from_features(_sample_feature_row(availability_mult=0.75))
+    assert q["expected_tds"] < base["expected_tds"]
+    assert q["td_probability"] < base["td_probability"]
+
+
+def test_build_upsert_row_includes_metadata(monkeypatch):
+    monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
+    # Clear any cached calibrator from other tests / local artifact.
+    import app.services.etl.nfl.anytime_td_calibration as cal
+
+    cal._MODEL = None
+    cal._METADATA = None
+    cal._LOAD_FAILED = False
+
     now = datetime(2025, 10, 1, 12, 0, 0)
     row = build_upsert_row(
         _sample_feature_row(),

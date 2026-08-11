@@ -43,6 +43,7 @@ def test_anytime_td_pipeline_phases():
     flat = [t.name for _, tasks in NFL_ANYTIME_TD_PHASES for t in tasks]
     assert flat == [
         "app.tasks.etl_pipeline.nfl.anytime_td_actuals",
+        "app.tasks.etl_pipeline.nfl.update_game_lines",
         "app.tasks.etl_pipeline.nfl.sync_defense_schemes",
         "app.tasks.etl_pipeline.nfl.anytime_td_projector",
         "app.tasks.etl_pipeline.nfl.anytime_td_betting",

@@ -63,7 +63,9 @@ team scoring env (implied total, pace, weather)
 
 ### Player universe
 
-QB/RB/WR/TE with meaningful role (projected snaps ≥ threshold or depth-chart active). Exclude inactive/IR.
+QB/RB/WR/TE **starters only** (`depth_team=1`, excluding KR/PR/return slots).
+When depth charts are unavailable, fall back to top prior-usage players per team
+(QB1 / RB1 / WR1–3 / TE1).
 
 ---
 
@@ -133,7 +135,6 @@ Artifacts: `backend/models/nfl/anytime_td_metrics.json` + offline/quick backtest
 
 ## Follow-ups
 
-- Light GBM residual/calibration on hierarchical residuals
 - Auto-pick source for +EV anytime TD
 - First/last TD markets
 - Midweek line refresh alignment with game-board Beat tune

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -20,6 +20,22 @@ ODDS_BASE_URL = "https://api.the-odds-api.com/v4/sports"
 SPORT = "americanfootball_nfl"
 
 BOOKMAKER_PRIORITY = ["pinnacle", "fanduel", "draftkings", "betmgm"]
+
+# Cover a full NFL week from midweek refresh (Tue–Mon slate), not just today/tomorrow.
+GAME_LINES_HORIZON_DAYS = 14
+
+
+def game_date_in_refresh_window(
+    game_date: date,
+    *,
+    today: date | None = None,
+    horizon_days: int = GAME_LINES_HORIZON_DAYS,
+) -> bool:
+    """True when ``game_date`` is yesterday..today+horizon (late + upcoming slate)."""
+    anchor = today or now_eastern().date()
+    start = anchor - timedelta(days=1)
+    end = anchor + timedelta(days=int(horizon_days))
+    return start <= game_date <= end
 
 
 def normalize_game_teams(home_team: str, away_team: str) -> tuple[str, str]:
@@ -127,8 +143,6 @@ def run() -> dict:
         }
 
     today = now_eastern().date()
-    tomorrow = today + timedelta(days=1)
-
     processed = 0
     upserted = 0
 
@@ -146,7 +160,7 @@ def run() -> dict:
                 if game_dt.tzinfo is None:
                     game_dt = game_dt.replace(tzinfo=timezone.utc)
                 game_date = game_dt.astimezone(EASTERN).date()
-                if game_date not in (today, tomorrow):
+                if not game_date_in_refresh_window(game_date, today=today):
                     continue
 
                 processed += 1
@@ -191,7 +205,8 @@ def run() -> dict:
             "status": "ok",
             "sport": SPORT,
             "events_returned": len(events),
-            "processed_today_or_tomorrow": processed,
+            "horizon_days": GAME_LINES_HORIZON_DAYS,
+            "processed_in_window": processed,
             "upserted": upserted,
         }
     finally:

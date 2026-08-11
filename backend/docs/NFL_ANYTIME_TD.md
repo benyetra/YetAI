@@ -9,12 +9,23 @@ Projector `run()` without injected `feature_rows` calls
 `build_feature_rows_from_nflverse`:
 
 1. `import_weekly_data` — prior-week usage, team scoring proxies, defense TDs allowed.
-   If the current (or prior) season parquet 404s, fall back up to 3 seasons and use
-   all prior-season weeks as priors (needed for Week 1 / preseason).
+   If the current (or prior) season parquet 404s, try
+   `stats_player_week_{season}.parquet` (maps `team` → `recent_team`), then fall
+   back up to 3 seasons and use all prior-season weeks as priors (needed for Week 1).
 2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
-3. `import_depth_charts` — skill-position depth 1–2 (weekly contributors also included)
+3. `import_depth_charts` — skill-position **starters** only (`depth_team=1`;
+   excludes KR/PR). If depth is empty, top prior-usage QB/RB/WR×3/TE per team.
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
+6. **Injuries** — nflverse injury reports: drop Out/Doubtful (promote depth-2),
+   down-weight Questionable (`availability_mult=0.75`)
+7. **Snaps / routes** — nflverse `snap_counts` `offense_pct` (GSIS-mapped) replaces
+   target_share snap proxy; WR/TE route participation ≈ snap share (RB discounted)
+8. **Game lines / weather** — `update_game_lines` upserts the next 14 days of Odds
+   slate; projector joins week-matched `pred_nfl_game_lines` (+ optional
+   `pred_nfl_weather`) so every board row gets market totals/spreads and weather
+9. **Position GBM** — separate residual calibrators for RB / WR+TE / QB
+   (`hierarchical_v1_gbm_pos`); `NFL_ANYTIME_TD_GBM=0` disables
 
 Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
 RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`
@@ -38,7 +49,8 @@ Enqueue the anytime TD orchestrator for a midweek refresh without re-running QB/
 
 ## Backtest gate (required before UI)
 
-Walk-forward REG seasons (2023–2024 live; add 2025 when nflverse weekly exists).
+Walk-forward REG seasons (2023–2025 when nflverse weekly is published; auto via
+`stats_player_week_{season}.parquet` fallback when legacy `player_stats` 404s).
 Offline CI still uses a fixed synthetic `--quick` sample — no DATABASE_URL or Odds.
 
 | Check | Gate |
@@ -49,6 +61,13 @@ Offline CI still uses a fixed synthetic `--quick` sample — no DATABASE_URL or 
 | Baseline | Market implied when present; else position prior |
 
 Artifact: `backend/models/nfl/anytime_td_metrics.json` (`preset: walk_forward` after live run)
+
+Residual GBM calibrator (optional, on by default when artifact exists):
+
+```bash
+PYTHONPATH=. python scripts/nfl_anytime_td_train_calibration.py
+# Disable at inference: NFL_ANYTIME_TD_GBM=0
+```
 
 ```bash
 cd backend

@@ -108,7 +108,7 @@ def test_aggregate_team_and_defense():
     assert defense["BUF"]["WR"] >= 0
 
 
-def test_select_universe_includes_depth_and_usage():
+def test_select_universe_starters_only_from_depth():
     depth = [
         {
             "gsis_id": "rb1",
@@ -116,6 +116,16 @@ def test_select_universe_includes_depth_and_usage():
             "position": "RB",
             "club_code": "KC",
             "depth_team": 1,
+            "depth_position": "RB",
+            "week": 3,
+        },
+        {
+            "gsis_id": "rb2",
+            "full_name": "Backup RB",
+            "position": "RB",
+            "club_code": "KC",
+            "depth_team": 2,
+            "depth_position": "RB",
             "week": 3,
         },
         {
@@ -124,6 +134,25 @@ def test_select_universe_includes_depth_and_usage():
             "position": "QB",
             "club_code": "KC",
             "depth_team": 1,
+            "depth_position": "QB",
+            "week": 3,
+        },
+        {
+            "gsis_id": "wr_kr",
+            "full_name": "Return WR",
+            "position": "WR",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "KR",
+            "week": 3,
+        },
+        {
+            "gsis_id": "wr1",
+            "full_name": "Star WR",
+            "position": "WR",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "WR",
             "week": 3,
         },
     ]
@@ -132,7 +161,18 @@ def test_select_universe_includes_depth_and_usage():
     ids = {p["player_id"] for p in universe}
     assert "rb1" in ids
     assert "qb1" in ids
-    assert "wr1" in ids  # from usage touches
+    assert "wr1" in ids
+    assert "rb2" not in ids  # backup depth
+    assert "wr_kr" not in ids  # special teams depth_position
+
+
+def test_select_universe_usage_fallback_when_no_depth():
+    usage = aggregate_player_usage_from_weekly(_weekly_sample(), as_of_week=3)
+    universe = select_skill_universe(depth_records=[], usage_by_player=usage, week=3)
+    ids = {p["player_id"] for p in universe}
+    # Top usage starters only (no depth) — rb1/wr1 qualify; buf_rb may too.
+    assert "rb1" in ids
+    assert "wr1" in ids
 
 
 def test_build_weekly_feature_rows_end_to_end_offline():
@@ -233,8 +273,12 @@ def test_load_weekly_records_falls_back_after_404():
 
     nfl.import_weekly_data.side_effect = _import_weekly
 
-    with patch(
-        "app.services.etl.nfl.anytime_td_features._import_nfl", return_value=nfl
+    with (
+        patch("app.services.etl.nfl.anytime_td_features._import_nfl", return_value=nfl),
+        patch(
+            "app.services.etl.nfl.anytime_td_features._read_stats_player_week_parquet",
+            side_effect=err,
+        ),
     ):
         records, source = load_weekly_records_with_fallback(2026, max_lookback=3)
 

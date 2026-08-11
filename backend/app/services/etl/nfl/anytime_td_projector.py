@@ -8,13 +8,18 @@ from typing import Any
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import NFLAnytimeTDPredictions
-from app.services.etl.nfl.anytime_td_model import anytime_td_probability, expected_tds
+from app.services.etl.nfl.anytime_td_calibration import (
+    MODEL_VERSION_GBM,
+    MODEL_VERSION_HIER,
+)
+from app.services.etl.nfl.anytime_td_model import expected_tds
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
 
-MODEL_VERSION = "hierarchical_v1"
+# Default label when GBM artifact is absent; upserts stamp the applied version.
+MODEL_VERSION = MODEL_VERSION_HIER
 
 # Mutable columns on conflict; omit created_at (insert-only) and identity keys.
 ANYTIME_TD_UPSERT_UPDATE_KEYS = [
@@ -32,19 +37,48 @@ ANYTIME_TD_UPSERT_UPDATE_KEYS = [
 ]
 
 
-def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float]:
-    """Pure: compute expected TDs and anytime probability from a feature row."""
-    lam = expected_tds(
-        team_rz_trips=float(row["team_rz_trips"]),
-        player_rz_share=float(row["player_rz_share"]),
-        conversion_rate=float(row["conversion_rate"]),
-        defense_mult=float(row["defense_mult"]),
-        weather_mult=float(row["weather_mult"]),
-        script_mult=float(row["script_mult"]),
+def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | str]:
+    """Pure: compute expected TDs and anytime probability from a feature row.
+
+    Applies residual GBM calibration when the artifact is present and enabled.
+    ``availability_mult`` (injury) scales λ before probability / calibration.
+    """
+    from app.services.etl.nfl.anytime_td_calibration import (
+        apply_calibrated_probability,
+        calibration_enabled,
+        load_calibration_model,
     )
+    from app.services.etl.nfl.anytime_td_model import anytime_td_probability
+
+    availability = max(0.0, min(1.0, float(row.get("availability_mult") or 1.0)))
+    lam = (
+        expected_tds(
+            team_rz_trips=float(row["team_rz_trips"]),
+            player_rz_share=float(row["player_rz_share"]),
+            conversion_rate=float(row["conversion_rate"]),
+            defense_mult=float(row["defense_mult"]),
+            weather_mult=float(row["weather_mult"]),
+            script_mult=float(row["script_mult"]),
+        )
+        * availability
+    )
+    hier_p = anytime_td_probability(lam)
+    enriched = dict(row)
+    enriched["expected_tds"] = lam
+    enriched["td_probability"] = hier_p
+
+    gbm_applied = False
+    td_prob = hier_p
+    if calibration_enabled():
+        model = load_calibration_model()
+        if model is not None:
+            td_prob = apply_calibrated_probability(enriched, model=model)
+            gbm_applied = True
+
     return {
         "expected_tds": lam,
-        "td_probability": anytime_td_probability(lam),
+        "td_probability": td_prob,
+        "model_version": MODEL_VERSION_GBM if gbm_applied else MODEL_VERSION_HIER,
     }
 
 
@@ -97,7 +131,7 @@ def build_upsert_row(
         "confidence_score": confidence,
         # Feature rows carry Python date objects from schedules; JSONB needs ISO strings.
         "features": _json_safe(feature_row),
-        "model_version": MODEL_VERSION,
+        "model_version": str(proj.get("model_version") or MODEL_VERSION),
         "prediction_date": now,
         "created_at": now,
     }
