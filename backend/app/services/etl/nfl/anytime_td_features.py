@@ -236,6 +236,7 @@ def build_player_feature_row(
         "carries_l3": player_stats.get("carries_l3"),
         "routes_l3": player_stats.get("routes_l3"),
         "route_participation": player_stats.get("route_participation"),
+        "routes_source": player_stats.get("routes_source"),
         "offense_snaps_l3": player_stats.get("offense_snaps_l3"),
         "snap_pct_source": player_stats.get("snap_pct_source"),
         "td_l3": player_stats.get("td_l3"),
@@ -683,6 +684,7 @@ def build_weekly_feature_rows(
     depth_records: list[dict[str, Any]] | None = None,
     pbp_records: list[dict[str, Any]] | None = None,
     snap_records: list[dict[str, Any]] | None = None,
+    route_records: list[dict[str, Any]] | None = None,
     injury_records: list[dict[str, Any]] | None = None,
     weather_by_team: dict[str, dict[str, Any]] | None = None,
     schemes: dict[str, dict[str, Any]] | None = None,
@@ -702,6 +704,8 @@ def build_weekly_feature_rows(
     ``usage_as_of_week`` / ``week``.
 
     ``snap_records`` (offense_pct) replace target_share snap proxies when present.
+    ``route_records`` (pbp_participation on-field for dropbacks) overwrite
+    snap-based route proxies when present.
     ``injury_records`` drop Out/Doubtful starters (promote depth-2) and down-weight
     Questionable players via ``availability_mult``.
     """
@@ -753,6 +757,15 @@ def build_weekly_feature_rows(
         )
         usage = merge_snaps_into_usage(usage, snaps)
 
+    if route_records:
+        from app.services.etl.nfl.anytime_td_routes import (
+            aggregate_player_routes,
+            merge_routes_into_usage,
+        )
+
+        routes = aggregate_player_routes(route_records, as_of_week=as_of)
+        usage = merge_routes_into_usage(usage, routes)
+
     defense = aggregate_defense_allowed_from_weekly(weekly_records, as_of_week=as_of)
     matchups = _schedule_matchups(schedule_records, week=week)
     universe = select_skill_universe(
@@ -796,6 +809,7 @@ def build_weekly_feature_rows(
             "snap_pct_source": player_usage.get("snap_pct_source"),
             "routes_l3": player_usage.get("routes_l3"),
             "route_participation": player_usage.get("route_participation"),
+            "routes_source": player_usage.get("routes_source"),
             "offense_snaps_l3": player_usage.get("offense_snaps_l3"),
             "conversion_rate": player_usage.get("conversion_rate"),
             "injury_status": player.get("injury_status"),
@@ -1305,6 +1319,18 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
         logger.warning("snap counts unavailable (%s); using target_share proxy", exc)
         snaps = []
 
+    route_season = pbp_season if pbp_season is not None else snap_season
+    try:
+        from app.services.etl.nfl.anytime_td_routes import load_route_records
+
+        routes = load_route_records(int(route_season))
+    except Exception as exc:
+        logger.warning(
+            "pbp_participation routes unavailable (%s); keeping snap route proxy",
+            exc,
+        )
+        routes = []
+
     try:
         from app.services.etl.nfl.anytime_td_availability import load_injury_records
 
@@ -1322,6 +1348,8 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
         "pbp_season": pbp_season,
         "snap_records": snaps,
         "snap_season": snap_season,
+        "route_records": routes,
+        "route_season": route_season,
         "injury_records": injuries,
     }
 
@@ -1357,6 +1385,7 @@ def build_feature_rows_from_nflverse(season: int, week: int) -> list[dict[str, A
         depth_records=inputs["depth_records"],
         pbp_records=inputs.get("pbp_records") or None,
         snap_records=inputs.get("snap_records") or None,
+        route_records=inputs.get("route_records") or None,
         injury_records=inputs.get("injury_records"),
         weather_by_team=weather_by_team,
         game_lines_by_team=game_lines,

@@ -46,7 +46,7 @@ team scoring env (implied total, pace, weather)
 
 | Group | Sources | Examples |
 |-------|---------|----------|
-| Usage / prior weeks | nflverse weekly + PBP; fantasy `player_analytics` | snaps, targets, carries, routes, TD history L3/L5/season |
+| Usage / prior weeks | nflverse weekly + PBP + `pbp_participation` (routes); fantasy `player_analytics` | snaps, targets, carries, routes, TD history L3/L5/season |
 | Red zone / goal line | nflverse PBP (≤20, ≤5) | RZ share, GL carries, RZ targets, team RZ pass rate |
 | Offense tendencies | nflverse PBP + team weekly | early-down pass%, script from implied margin |
 | Opponent defense | nflverse aggregates | TDs allowed to QB/RB/WR/TE, RZ TD rate allowed, EPA |

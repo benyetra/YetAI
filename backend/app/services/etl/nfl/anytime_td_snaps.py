@@ -31,8 +31,8 @@ def route_participation_from_snaps(
 ) -> float:
     """Approximate route participation from offense snap share.
 
-    True NGS routes are not in public nflverse weekly; for WR/TE snap share is a
-    strong standing proxy. RBs on routes are discounted by team pass rate.
+    Fallback when pbp_participation routes are unavailable. For WR/TE snap share
+    is a standing proxy; RBs on routes are discounted by team pass rate.
     """
     pos = (position or "").upper()
     snap = min(1.0, max(0.0, float(snap_pct)))
@@ -102,6 +102,7 @@ def aggregate_player_snaps(
             "offense_snaps_l3": snaps_l3,
             "route_participation": route_part,
             "routes_l3": routes_l3,
+            "routes_source": "snap_proxy",
             "position": pos,
             "team_abbr": team,
         }
@@ -112,7 +113,11 @@ def merge_snaps_into_usage(
     usage_by_player: dict[str, dict[str, Any]],
     snaps_by_player: Mapping[str, Mapping[str, Any]],
 ) -> dict[str, dict[str, Any]]:
-    """Overwrite target_share snap proxy with real offense_pct when available."""
+    """Overwrite target_share snap proxy with real offense_pct when available.
+
+    Route fields here are snap-based proxies; prefer ``merge_routes_into_usage``
+    afterward when pbp_participation routes are available.
+    """
     merged = {pid: dict(u) for pid, u in usage_by_player.items()}
     for player_id, snap in snaps_by_player.items():
         row = merged.setdefault(player_id, {"player_id": player_id})
@@ -125,6 +130,10 @@ def merge_snaps_into_usage(
             row["route_participation"] = float(snap["route_participation"])
         if snap.get("routes_l3") is not None:
             row["routes_l3"] = float(snap["routes_l3"])
+        if snap.get("routes_source"):
+            row["routes_source"] = str(snap["routes_source"])
+        elif snap.get("routes_l3") is not None:
+            row["routes_source"] = "snap_proxy"
         if snap.get("position") and not row.get("position"):
             row["position"] = snap["position"]
         if snap.get("team_abbr") and not row.get("team_abbr"):

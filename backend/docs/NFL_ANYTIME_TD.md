@@ -20,7 +20,10 @@ Projector `run()` without injected `feature_rows` calls
 6. **Injuries** — nflverse injury reports: drop Out/Doubtful (promote depth-2),
    down-weight Questionable (`availability_mult=0.75`)
 7. **Snaps / routes** — nflverse `snap_counts` `offense_pct` (GSIS-mapped) replaces
-   target_share snap proxy; WR/TE route participation ≈ snap share (RB discounted)
+   target_share snap proxy. **Routes** prefer `pbp_participation` on-field counts
+   for WR/TE/RB on pass plays (`routes_source=pbp_participation`); snap-share
+   proxy remains the fallback (`routes_source=snap_proxy`) when participation is
+   missing.
 8. **Game lines / weather** — `update_game_lines` upserts the next 14 days of Odds
    slate; projector joins week-matched `pred_nfl_game_lines` (+ optional
    `pred_nfl_weather`) so every board row gets market totals/spreads and weather
