@@ -17,6 +17,20 @@ def test_build_from_nflverse_empty_when_no_weekly():
     assert meta.empty
 
 
+def test_schedule_market_index_soft_fails_without_nfl_data_py():
+    import builtins
+
+    real_import = builtins.__import__
+
+    def _block_nfl_data_py(name, *args, **kwargs):
+        if name == "nfl_data_py" or name.startswith("nfl_data_py."):
+            raise ImportError("blocked for test")
+        return real_import(name, *args, **kwargs)
+
+    with patch.object(builtins, "__import__", side_effect=_block_nfl_data_py):
+        assert mod._schedule_market_index([2024]) == {}
+
+
 def test_build_from_nflverse_leak_safe_form():
     history = [
         {

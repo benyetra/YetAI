@@ -43,6 +43,7 @@ jobs:
           # Match Dockerfile / backend-ci: nfl-data-py pins numpy<2; install with --no-deps
           pip install nfl-data-py==0.3.3 --no-deps
           pip install appdirs fastparquet
+          python -c "import nfl_data_py; print('nfl_data_py', getattr(nfl_data_py, '__version__', 'ok'))"
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
