@@ -406,12 +406,13 @@ def load_lines_index(path: Path | None = None) -> dict[str, Any]:
         payload = json.loads(p.read_text())
     except Exception:
         return {"version": 1, "lines": [], "by_key": {}}
-    if "by_key" not in payload:
-        payload["by_key"] = {}
-        for row in payload.get("lines") or []:
-            key = _line_key(row)
-            if key:
-                payload["by_key"][key] = row
+    # Always rebuild by_key (committed JSON may omit it to save space)
+    by_key: dict[str, Any] = {}
+    for row in payload.get("lines") or []:
+        key = _line_key(row)
+        if key:
+            by_key[key] = row
+    payload["by_key"] = by_key
     return payload
 
 
