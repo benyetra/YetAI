@@ -39,8 +39,10 @@ min confidence 70%.
 
 Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
-**Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears** (and after uploading
-artifacts from a promote-recommended run).
+Railway run **31555122122** cleared the gate (`promote_recommended=true`,
+**+12.53%**). Upload S3 artifacts from a promote-gated eval (`--upload`), then
+set `NFL_QB_ML_ENABLED=1` on Railway. Do not flip the flag before S3 has the
+matching `market_residual_v6` bundle.
 
 Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 (Railway)**):
@@ -51,7 +53,22 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 - Report includes **`ablations`** (v5/v6 market, tier-only HP variants, promote
   sweep) and `promote_hp_selected`.
 
-### Latest Railway promote-gate (2026-08-12, v6 market residual + 2025 lines)
+### Latest Railway promote-gate (2026-08-12, run 31555122122)
+
+| Metric | Value |
+|--------|-------|
+| Holdout | season_2025 (585); real lines **533/585 (91.1%)** |
+| Index | committed `pass_yds_lines.json` **1628** (backfill skipped) |
+| Dynamic-tier MAE | **65.5** |
+| Promote path | **`market_residual_v6`** + HP `strong_reg` (raw ML; no line blend) |
+| Residual ML MAE | **57.31** |
+| Lift vs dynamic | **+12.53%** (gate ≥10%) |
+| Lift vs static | **+14.13%** |
+| v5 / v6 ablations | +11.27% / +11.74% |
+| `promote_recommended` | **true** |
+| Next | Upload artifacts to S3 (`--upload`), then set `NFL_QB_ML_ENABLED=1` on Railway |
+
+### Prior Railway ablations (2026-08-12, pre-promote-path switch)
 
 | Metric | Value |
 |--------|-------|
@@ -62,8 +79,7 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 | v5 market residual | **58.14** (**+11.27%**) |
 | v6 market residual | **57.84** (**+11.74%**) |
 | Tier-only + blend w=0.25 | 60.58 (+7.55%) — ablation only |
-| Promote path | **`market_residual_v6`** (gate on raw ML) |
-| Promote | **Yes on ablations** — re-run eval after promote-path switch before enabling `NFL_QB_ML_ENABLED` |
+| Promote path (then) | still tier-only wire-up → switched in #103 |
 
 ### Prior Railway promote-gate (2026-08-12, tier-only + line blend, thin 2025 lines)
 
