@@ -176,6 +176,18 @@ export default function SportPredictionsPage({
     }, 0);
   }, [data, hasTopPlayGroups, resolvedGroups]);
 
+  const hasPropProjectionRows = useMemo(() => {
+    if (!data || !hasTopPlayGroups) return false;
+    return resolvedGroups.some((g) => {
+      if (!g.rowClassName) return false;
+      const rows = (data[g.responseKey] as Array<Record<string, unknown>>) ?? [];
+      return rows.length > 0;
+    });
+  }, [data, hasTopPlayGroups, resolvedGroups]);
+
+  /** Only hide non-edge rows when we actually have rated top plays to show. */
+  const applyTopPlaysFilter = topPlaysOnly && topPlayCount > 0;
+
   const discoverySections = useMemo(
     () => buildDiscoverySections(data, discoveryGroups ?? []),
     [data, discoveryGroups]
@@ -315,7 +327,19 @@ export default function SportPredictionsPage({
             </div>
           )}
 
-          {topPlaysOnly && !loading && topPlayCount === 0 && hasTopPlayGroups ? (
+          {topPlaysOnly && !loading && topPlayCount === 0 && hasPropProjectionRows ? (
+            <div className="card" style={{ padding: '16px 20px' }}>
+              <p className="dim" style={{ margin: 0, fontSize: 13 }}>
+                No rated betting edges for this slate yet. Showing all model projections.
+              </p>
+            </div>
+          ) : null}
+
+          {topPlaysOnly &&
+          !loading &&
+          topPlayCount === 0 &&
+          !hasPropProjectionRows &&
+          hasTopPlayGroups ? (
             <div className="card" style={{ padding: '16px 20px' }}>
               <p className="dim" style={{ margin: 0, fontSize: 13 }}>
                 No top plays for this date. Try another slate or turn off the filter.
@@ -326,16 +350,16 @@ export default function SportPredictionsPage({
           {resolvedGroups.map((g) => {
             const allRows = (data?.[g.responseKey] as Array<Record<string, unknown>>) ?? [];
             let rows =
-              topPlaysOnly && g.rowClassName ? allRows.filter(isTopPlay) : allRows;
+              applyTopPlaysFilter && g.rowClassName ? allRows.filter(isTopPlay) : allRows;
             if (searchActive) {
               rows = rows.filter((row) => rowMatchesPlayerSearch(row, playerSearch));
             }
-            if (topPlaysOnly && g.rowClassName && rows.length === 0 && !searchActive) {
+            if (applyTopPlaysFilter && g.rowClassName && rows.length === 0 && !searchActive) {
               return null;
             }
             const emptyMessage = searchActive
               ? 'No players match.'
-              : topPlaysOnly && g.rowClassName
+              : applyTopPlaysFilter && g.rowClassName
                 ? 'No top plays in this category for this date.'
                 : undefined;
             return (

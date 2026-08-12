@@ -73,15 +73,27 @@ def test_query_nfl_anytime_td_sorted_and_deduped(monkeypatch):
 
 
 def test_nfl_predictions_includes_anytime_td_key(monkeypatch):
-    def fake_query_recent(
-        db, model, date_col_name, target_date, limit, *, tz="UTC", dedupe_keys=None
+    def fake_query_recent_nfl_with_fallback(
+        db,
+        model,
+        date_col_name,
+        target_date,
+        limit,
+        *,
+        tz="UTC",
+        dedupe_keys=None,
+        latest_dedupe_keys=None,
     ):
         return []
 
     def fake_anytime_td(db, target_date, limit):
         return [{"player_id": "p1", "td_probability": 0.42}]
 
-    monkeypatch.setattr(predictions_module, "_query_recent", fake_query_recent)
+    monkeypatch.setattr(
+        predictions_module,
+        "_query_recent_nfl_with_fallback",
+        fake_query_recent_nfl_with_fallback,
+    )
     monkeypatch.setattr(
         predictions_module,
         "_query_nfl_anytime_td_predictions",
