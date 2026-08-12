@@ -68,6 +68,8 @@ PROMOTE_HYPERPARAM_CANDIDATES: tuple[dict[str, Any], ...] = (
 # Post-hoc inference blend: w·ml + (1−w)·line when a real prop line is present.
 # w=1 → pure ML; w=0 → pure line (else ML when line missing).
 LINE_BLEND_WEIGHT_CANDIDATES: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
+# Do not wire pure-line (w=0) into promote/shadow — that is market, not ML.
+LINE_BLEND_MIN_W_FOR_PROMOTE: float = 0.25
 
 logger = logging.getLogger(__name__)
 
@@ -288,16 +290,24 @@ def select_line_blend_weight(
     line_pred: np.ndarray,
     real_mask: np.ndarray,
     candidates: Sequence[float] | None = None,
+    min_w_for_promote: float | None = None,
 ) -> dict[str, Any]:
     """
     Pick ``w`` minimizing holdout MAE of ``w·ml + (1−w)·line`` (else ML).
 
-    Returns selected weight, per-candidate MAE, and blended predictions.
+    Full candidate grid is always reported. Promote/shadow selection ignores
+    weights below ``min_w_for_promote`` (default
+    ``LINE_BLEND_MIN_W_FOR_PROMOTE``) so pure-line (w=0) cannot be wired as ML.
     """
     weights = (
         list(candidates)
         if candidates is not None
         else list(LINE_BLEND_WEIGHT_CANDIDATES)
+    )
+    min_w = (
+        LINE_BLEND_MIN_W_FOR_PROMOTE
+        if min_w_for_promote is None
+        else float(min_w_for_promote)
     )
     y = np.asarray(y_true, dtype=float)
     ml = np.asarray(ml_pred, dtype=float)
@@ -306,11 +316,14 @@ def select_line_blend_weight(
     if len(y) == 0:
         return {
             "selected_w": 1.0,
+            "diagnostic_best_w": 1.0,
             "candidates": [],
             "blended_pred": ml,
         }
 
     rows: list[dict[str, Any]] = []
+    diag_w = 1.0
+    diag_mae = float("inf")
     best_w = 1.0
     best_mae = float("inf")
     best_pred = ml.copy()
@@ -325,8 +338,14 @@ def select_line_blend_weight(
             "mae": round(mae, 3),
             "n": int(len(y)),
             "n_real": int(real.sum()),
+            "eligible_for_promote": bool(w + 1e-12 >= min_w),
         }
         rows.append(entry)
+        if mae < diag_mae - 1e-12 or (abs(mae - diag_mae) <= 1e-12 and w > diag_w):
+            diag_mae = mae
+            diag_w = w
+        if w + 1e-12 < min_w:
+            continue
         if mae < best_mae - 1e-12 or (abs(mae - best_mae) <= 1e-12 and w > best_w):
             # Prefer higher w (more ML) on ties — keeps model signal when equal.
             best_mae = mae
@@ -335,6 +354,9 @@ def select_line_blend_weight(
     return {
         "selected_w": float(best_w),
         "selected_mae": round(best_mae, 3),
+        "diagnostic_best_w": float(diag_w),
+        "diagnostic_best_mae": round(diag_mae, 3),
+        "min_w_for_promote": float(min_w),
         "candidates": rows,
         "blended_pred": best_pred,
     }

@@ -53,7 +53,20 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 - Report includes **`ablations`** (market arms + tier-only HP variants +
   `line_blend_w_*`) and `promote_hp_selected`.
 
-### Latest Railway ablations (2026-08-11, post-#98)
+### Latest Railway promote-gate (2026-08-12, tier-only + line blend)
+
+| Metric | Value |
+|--------|-------|
+| Holdout | season_2025 (585); real lines n=386 |
+| Dynamic-tier MAE | **65.5** |
+| Tier-only residual (`shallow`) | 63.4 (**+3.25%**) |
+| Line blend grid (lift) | w=0 → **+7.42%**; w=0.25 → +6.85%; w=0.5 → +5.94%; w=0.75 → +4.76%; w=1 → +3.25% |
+| Diagnostic best | **w=0** (pure line when present + ML else) → MAE 60.7 |
+| Promote wire-up | **w≥0.25 only** (w=0 is market, not ML) |
+| Gap to 10% gate | ~1.7 yards at w=0; ~2.1 yards at w=0.25 |
+| Promote | **No** — keep `NFL_QB_ML_ENABLED` unset |
+
+### Prior Railway ablations (2026-08-11, post-#98)
 
 | Arm | MAE | Lift vs dynamic tier |
 |-----|----:|---------------------:|

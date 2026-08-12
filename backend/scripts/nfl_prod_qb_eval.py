@@ -532,7 +532,12 @@ def train_and_eval(
         **metadata,
         "line_blend_w": blend_w,
         "line_blend_candidates": blend_sel.get("candidates"),
-        "line_blend_note": "post-hoc w*ml+(1-w)*line when real prop line; else ml",
+        "line_blend_diagnostic_best_w": blend_sel.get("diagnostic_best_w"),
+        "line_blend_min_w_for_promote": blend_sel.get("min_w_for_promote"),
+        "line_blend_note": (
+            "post-hoc w*ml+(1-w)*line when real prop line; else ml; "
+            "promote excludes w=0 (pure line)"
+        ),
     }
 
     tier_mae = _mae(y_test, tier_test)
@@ -578,10 +583,19 @@ def train_and_eval(
             "w": w,
             "note": "promote-path tier-only ML blended with real prop line",
         }
+    diag_w = blend_sel.get("diagnostic_best_w")
+    diag_mae = blend_sel.get("diagnostic_best_mae")
+    diag_lift = None
+    if diag_mae is not None and tier_mae:
+        diag_lift = round((tier_mae - float(diag_mae)) / tier_mae, 4)
     ablations["line_blend"] = {
         "selected_w": blend_w,
         "selected_mae": float(blend_sel.get("selected_mae") or ml_mae),
         "selected_lift_vs_dynamic_tier": round(lift, 4),
+        "diagnostic_best_w": diag_w,
+        "diagnostic_best_mae": diag_mae,
+        "diagnostic_best_lift_vs_dynamic_tier": diag_lift,
+        "min_w_for_promote": blend_sel.get("min_w_for_promote"),
         "ml_mae_raw": round(ml_mae_raw, 3),
         "ml_lift_raw": round(lift_raw, 4),
         "candidates": blend_candidates_report,
@@ -589,6 +603,8 @@ def train_and_eval(
     summary = ablations.get("summary") or {}
     summary["line_blend_selected_w"] = blend_w
     summary["line_blend_lift_vs_dynamic_tier"] = round(lift, 4)
+    summary["line_blend_diagnostic_best_w"] = diag_w
+    summary["line_blend_diagnostic_best_lift"] = diag_lift
     ablations["summary"] = summary
 
     report: dict[str, Any] = {
