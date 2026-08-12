@@ -41,17 +41,40 @@ def test_evaluate_holdout_reports_full_total_mae():
     assert metrics["ml_full_total_mae"] <= metrics["heuristic_full_total_mae"]
 
 
-def test_validate_holdout_passes_when_under_gate():
-    meta = {"holdout": {"residual_mae": 0.8}}
+def test_validate_holdout_passes_when_ml_beats_heuristic():
+    meta = {
+        "holdout": {
+            "residual_mae": 14.1,
+            "ml_full_total_mae": 14.1,
+            "heuristic_full_total_mae": 15.0,
+            "ml_beats_heuristic": True,
+        }
+    }
     out = validate_holdout(meta)
     assert out["passes_gate"] is True
+    assert out["gate"] == "ml_beats_heuristic_full_total_mae"
+    assert out["reason"] is None
 
 
-def test_validate_holdout_fails_when_above_gate():
-    meta = {"holdout": {"residual_mae": 13.2}}
+def test_validate_holdout_fails_when_ml_worse_than_heuristic():
+    meta = {
+        "holdout": {
+            "residual_mae": 14.1,
+            "ml_full_total_mae": 15.5,
+            "heuristic_full_total_mae": 15.0,
+            "ml_beats_heuristic": False,
+        }
+    }
     out = validate_holdout(meta)
     assert out["passes_gate"] is False
-    assert out["reason"] == "holdout_mae_above_gate"
+    assert out["reason"] == "ml_full_total_mae_not_better_than_heuristic"
+
+
+def test_validate_holdout_fails_when_full_total_metrics_missing():
+    meta = {"holdout": {"residual_mae": 0.8}}
+    out = validate_holdout(meta)
+    assert out["passes_gate"] is False
+    assert out["reason"] == "missing_holdout_full_total_mae"
 
 
 def test_evaluate_holdout_with_segments_splits_on_market_total():

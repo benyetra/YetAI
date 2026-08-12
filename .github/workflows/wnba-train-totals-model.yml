@@ -17,7 +17,7 @@ on:
         type: boolean
         default: true
       skip_gate:
-        description: Upload even if holdout residual MAE exceeds gate (shadow/ops only; do not enable WNBA_TOTALS_ML_ENABLED)
+        description: Upload even if holdout ML full-total MAE does not beat heuristic (ops override)
         required: true
         type: boolean
         default: false
