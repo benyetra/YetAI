@@ -20,19 +20,16 @@ Within 12h, Q risk/yard cuts escalate; live backups take an extra −20 yards
 (`NFL_QB_LATE_AVAILABILITY=0` to disable).
 
 **Features:** form + volume + defense + weather + game market
-(`total_line` / `spread_line` / `implied_team_total`) + scheme tags. Full feature
-matrix still includes prop-line columns for O/U / diagnostics, but the
-**promote residual path is tier-only**: baseline = dynamic tier (no
-`0.5*(tier+line)`), and prop-line columns (`pass_yds_line`, `line_minus_tier`,
-`line_is_real`, `market_residual_l3`, `line_minus_rolling`) are dropped from the
-GBM. Railway ablations (2026-08-11) showed market-residual arms collapsing
-toward the line (−2% / −11% lift) while tier-only residual was **+3.0%**.
-Promote trainer sweeps a small regularized HP grid on inner time CV, then
-`fit_full` on all train rows. After training, holdout tunes a **post-hoc line
-blend** `w·ml + (1−w)·line` when a real prop line exists (`w∈{0,0.25,0.5,0.75,1}`);
-winning `line_blend_w` is stored in model metadata and applied in
-`predict_yards_ml_loaded` / shadow refresh after `reinject_pass_yds_line`.
-Promote gate MAE uses the blended prediction. Live `qb_betting` still reinjects
+(`total_line` / `spread_line` / `implied_team_total`) + scheme tags + prop-line
+columns (`pass_yds_line`, `line_minus_tier`, `line_is_real`,
+`market_residual_l3`, `line_minus_rolling`). **Promote residual path is v6
+market residual**: baseline = `0.5*(tier+line)` when a real prop line is
+present, full `FEATURE_NAMES`, HP sweep + `fit_full`. With 2025 Odds lines
+committed into `models/nfl/pass_yds_lines.json` (Railway run 31552960099),
+v6 cleared **+11.7%** vs dynamic tier on season_2025 holdout (v5 **+11.3%**).
+Earlier tier-only + post-hoc line blend peaked ~**+7.5%** and remains an
+ablation arm only — post-hoc `line_blend_w` is **not** applied to the market
+promote gate (would dilute toward the line). Live `qb_betting` still reinjects
 `pass_yds_line` for O/U / shadow context.
 
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
@@ -42,18 +39,33 @@ min confidence 70%.
 
 Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
-**Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears.**
+**Do not set `NFL_QB_ML_ENABLED=1` unless the gate clears** (and after uploading
+artifacts from a promote-recommended run).
 
 Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 (Railway)**):
-- Promote model = **tier-only residual** + HP sweep (`default` / `shallow` /
+- Promote model = **v6 market residual** + HP sweep (`default` / `shallow` /
   `strong_reg`) + **`fit_full=True`** (`n_train == rows_train`).
-- Holdout **line-blend** ablation selects `line_blend_w`; gate uses blended MAE
-  (`ml_mae` / `mae_lift`) and also reports raw residual (`ml_mae_raw`).
-- Report includes **`ablations`** (market arms + tier-only HP variants +
-  `line_blend_w_*`) and `promote_hp_selected`.
+- Gate MAE is **raw** residual ML (no post-hoc line blend). Blend grid stays
+  diagnostic in `ablations.line_blend_w_*`.
+- Report includes **`ablations`** (v5/v6 market, tier-only HP variants, promote
+  sweep) and `promote_hp_selected`.
 
-### Latest Railway promote-gate (2026-08-12, tier-only + line blend)
+### Latest Railway promote-gate (2026-08-12, v6 market residual + 2025 lines)
+
+| Metric | Value |
+|--------|-------|
+| Holdout | season_2025 (585); real lines **533/585 (91.1%)** |
+| Index | `pass_yds_lines.json` **1628** lines (2023:556, 2024:537, **2025:535**) |
+| Odds backfill | **2777** credits; `lines_added=535` |
+| Dynamic-tier MAE | **65.5** |
+| v5 market residual | **58.14** (**+11.27%**) |
+| v6 market residual | **57.84** (**+11.74%**) |
+| Tier-only + blend w=0.25 | 60.58 (+7.55%) — ablation only |
+| Promote path | **`market_residual_v6`** (gate on raw ML) |
+| Promote | **Yes on ablations** — re-run eval after promote-path switch before enabling `NFL_QB_ML_ENABLED` |
+
+### Prior Railway promote-gate (2026-08-12, tier-only + line blend, thin 2025 lines)
 
 | Metric | Value |
 |--------|-------|
@@ -167,27 +179,23 @@ Paid plan. Measured costs: **1 credit / gameday** (events slate) +
 `scripts/nfl_odds_cache.db` (gitignored `*.db`); derived lines land in
 `models/nfl/pass_yds_lines.json`.
 
-2023–24 REG pull (after cache-key fix): **540 games**, **1093** QB lines,
-**~5400 credits** for props (events already cached). Coverage on
-`pred_qb_actuals` 2023–24: **~91%**. Re-runs that hit SQLite cost **0**.
-
-**2025 holdout gap:** committed index is 2023–24 only. Season_2025 Railway
-holdout had ~386/585 real lines from `pred_qb_predictions.ou_line` and
-**~199 missing** (no index fallback). Filling 2025 REG into the index
-(~≤3000 credits) is the main lever to push blended MAE toward the real-row
-floor (~54.8).
+2023–25 REG: **1628** QB lines in committed `models/nfl/pass_yds_lines.json`
+(2023:556, 2024:537, **2025:535**). 2025 backfill (Actions run 31552960099)
+spent **2777** credits once; re-runs that hit the committed index / SQLite
+cost **0**. Season_2025 holdout real-line coverage: **533/585 (91%)**.
 
 ```bash
 export ODDS_API_KEY=...
 cd backend
-# Prefer GitHub Actions (has Railway + Odds secrets):
+# Prefer committed index; only backfill when seasons are missing:
+PYTHONPATH=. python scripts/nfl_pass_yds_line_coverage.py \
+  --season-start 2025-09-01 --season-end 2026-02-15
+# Optional refresh (paid Odds credits via Actions):
 #   NFL Prod QB Eval → backfill_pass_yds_lines=true, backfill_seasons=2025
 PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2025 --dry-run
 PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2025 --max-credits 3000
 export DATABASE_URL=...
 PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --assign-teams --seasons 2025
-PYTHONPATH=. python scripts/nfl_pass_yds_line_coverage.py \
-  --season-start 2025-09-01 --season-end 2026-02-15
 PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
 ```
 
