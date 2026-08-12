@@ -4,7 +4,8 @@ from app.models.predictions_models import WNBARecentGames
 from app.services.etl.wnba._feature_engineering import build_features
 from app.services.ml.config import LeagueMLConfig
 
-# Holdout residual MAE gate for totals GBM upload (time-based split).
+# Soft residual MAE ceiling (telemetry / stretch target only).
+# Upload gate is ``ml_beats_heuristic_full_total_mae`` in validate_totals_model.
 TOTALS_RESIDUAL_MAE_GATE = 1.0
 
 # Spread margin XGB upload gates (random 20% holdout from train_model).

@@ -202,9 +202,13 @@ def run(
         if not skip_gate and not validation["passes_gate"]:
             result["status"] = "gate_failed"
             logger.warning(
-                "totals upload blocked: holdout residual MAE %.3f > gate %.3f",
-                validation.get("mae"),
-                validation.get("gate_threshold"),
+                "totals upload blocked: %s (ml_full=%.3f heuristic_full=%.3f "
+                "residual=%.3f soft_residual_ceiling=%.3f)",
+                validation.get("reason") or validation.get("gate"),
+                validation.get("ml_full_total_mae") or float("nan"),
+                validation.get("heuristic_full_total_mae") or float("nan"),
+                validation.get("mae") or float("nan"),
+                validation.get("gate_threshold") or float("nan"),
             )
             return result
         keys = upload_totals_model(model, metadata)
@@ -223,7 +227,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--skip-gate",
         action="store_true",
-        help="Upload even when holdout residual MAE exceeds gate (ops override)",
+        help="Upload even when holdout ML full-total MAE does not beat heuristic",
     )
     args = parser.parse_args()
     out = run(
