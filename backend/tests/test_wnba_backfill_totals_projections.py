@@ -116,20 +116,13 @@ def test_sync_market_totals_updates_rows_with_lines():
 
     with patch.object(btp, "SessionLocal", return_value=mock_db):
         with patch.object(btp, "_preload_market_lines", return_value=lines):
-            with patch.object(btp, "upsert_many") as upsert:
-                out = btp.sync_market_totals_from_lines(
-                    season_start=date(2024, 5, 1),
-                    season_end=date(2024, 12, 31),
-                )
+            out = btp.sync_market_totals_from_lines(
+                season_start=date(2024, 5, 1),
+                season_end=date(2024, 12, 31),
+            )
 
-    upsert.assert_called_once()
-    batch = upsert.call_args[0][2]
-    assert batch[0]["market_total"] == 165.0
-    assert batch[0]["edge"] == 3.0
-    assert upsert.call_args.kwargs.get("update_keys") == [
-        "market_total",
-        "edge",
-        "recommendation",
-        "confidence_score",
-    ]
+    assert proj.market_total == 165.0
+    assert proj.edge == 3.0
+    assert proj.recommendation == "OVER"
+    mock_db.commit.assert_called()
     assert out["updated"] == 1
