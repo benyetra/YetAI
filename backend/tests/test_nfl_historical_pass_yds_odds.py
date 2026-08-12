@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from app.services.etl.nfl.historical_pass_yds_odds import (
     extract_pass_yds_lines,
+    lookup_pass_yds_line,
     match_event,
     normalize_player_key,
 )
@@ -13,6 +14,44 @@ def test_normalize_player_key_initial_last():
     assert normalize_player_key("Josh Allen") == "j|allen"
     assert normalize_player_key("J. Allen") == "j|allen"
     assert normalize_player_key("J.Allen") == "j|allen"
+
+
+def test_lookup_pass_yds_line_matches_full_team_name():
+    index = {
+        "by_key": {
+            "2025|3|j|allen|evt1": {
+                "season": 2025,
+                "week": 3,
+                "player_name": "Josh Allen",
+                "player_key": "j|allen",
+                "team_abbr": "BUF",
+                "home_abbr": "BUF",
+                "away_abbr": "MIA",
+                "event_id": "evt1",
+                "line": 268.5,
+            }
+        }
+    }
+    assert (
+        lookup_pass_yds_line(
+            season=2025,
+            week=3,
+            player_name="Josh Allen",
+            team_abbr="Buffalo Bills",
+            index=index,
+        )
+        == 268.5
+    )
+    assert (
+        lookup_pass_yds_line(
+            season=2025,
+            week=3,
+            player_name="Josh Allen",
+            team_abbr="BUF",
+            index=index,
+        )
+        == 268.5
+    )
 
 
 def test_extract_pass_yds_prefers_draftkings():

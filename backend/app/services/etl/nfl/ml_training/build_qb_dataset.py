@@ -164,6 +164,7 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             ctx["total_line"] = float(pred.total_points)
         if pred.ou_line is not None:
             ctx["pass_yds_line"] = float(pred.ou_line)
+            ctx["pass_yds_line_source"] = "ou_line"
         fi = (
             pred.feature_importance if isinstance(pred.feature_importance, dict) else {}
         )
@@ -194,10 +195,15 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             "line_minus_rolling",
             "dynamic_tier_yards",
         ):
-            if nested.get(key) is not None:
+            if nested.get(key) is not None and ctx.get(key) is None:
                 ctx[key] = nested[key]
-            elif fi.get(key) is not None:
+            elif fi.get(key) is not None and ctx.get(key) is None:
                 ctx[key] = fi[key]
+        if (
+            ctx.get("pass_yds_line") is not None
+            and ctx.get("pass_yds_line_source") is None
+        ):
+            ctx["pass_yds_line_source"] = "feature_importance"
 
     if ctx.get("pass_yds_line") is None:
         try:
@@ -214,6 +220,7 @@ def _prediction_context_for_actual(session, row) -> dict[str, Any]:
             if hist is not None:
                 ctx["pass_yds_line"] = float(hist)
                 ctx["line_is_real"] = True
+                ctx["pass_yds_line_source"] = "historical_index"
         except Exception:
             pass
     elif ctx.get("line_is_real") is None and ctx.get("pass_yds_line") is not None:

@@ -16,10 +16,23 @@ on:
         required: true
         type: boolean
         default: false
+      backfill_pass_yds_lines:
+        description: Prefetch missing historical player_pass_yds into pass_yds_lines.json before eval
+        required: true
+        type: boolean
+        default: true
+      backfill_seasons:
+        description: Comma-separated seasons for Odds historical backfill (holdout gap is 2025)
+        required: true
+        default: "2025"
+      backfill_max_credits:
+        description: Max Odds API credits for this backfill pass
+        required: true
+        default: "3000"
 
 jobs:
   eval:
-    name: Prod QB residual eval (tier-only + line blend)
+    name: Prod QB residual eval (line coverage + tier-only blend)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -47,6 +60,42 @@ jobs:
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli@latest
+
+      - name: Backfill historical pass-yds lines (Odds API)
+        if: ${{ inputs.backfill_pass_yds_lines == true || inputs.backfill_pass_yds_lines == 'true' }}
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+        run: |
+          set -euo pipefail
+          if [ -z "${ODDS_API_KEY:-}" ]; then
+            echo "ODDS_API_KEY secret missing — skipping Odds backfill"
+            exit 0
+          fi
+          echo "Dry-run plan for seasons=${{ inputs.backfill_seasons }}"
+          PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py \
+            --seasons "${{ inputs.backfill_seasons }}" \
+            --dry-run | tee /tmp/pass_yds_backfill_plan.json
+          PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py \
+            --seasons "${{ inputs.backfill_seasons }}" \
+            --max-credits "${{ inputs.backfill_max_credits }}" | tee /tmp/pass_yds_backfill.json
+          # Attach team_abbr from Railway actuals when possible (0 Odds credits)
+          if [ -n "${RAILWAY_TOKEN:-}" ]; then
+            export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+            PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py \
+              --assign-teams \
+              --seasons "${{ inputs.backfill_seasons }}" | tee /tmp/pass_yds_assign_teams.json || true
+          fi
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          idx = json.loads(Path("models/nfl/pass_yds_lines.json").read_text())
+          lines = idx.get("lines") or []
+          from collections import Counter
+          seasons = Counter(int(r.get("season") or 0) for r in lines)
+          print("index_lines", len(lines), "by_season", dict(seasons))
+          PY
 
       - name: Run nfl_prod_qb_eval.py
         env:
@@ -91,6 +140,8 @@ jobs:
               "mae_lift_vs_static_tier",
               "pass_yds_line_real_n",
               "pass_yds_line_real_rate",
+              "pass_yds_line_holdout",
+              "pass_yds_line_sources",
               "promote_recommended",
               "recommendation",
           ):
@@ -145,9 +196,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nfl-prod-qb-eval-ablations
+          if-no-files-found: warn
           path: |
             backend/models/nfl/qb_prod_retrain_report.json
             backend/models/nfl/qb_passing_yards.pkl
             backend/models/nfl/qb_passing_yards_metadata.json
             backend/models/nfl/qb_pass_yds_ou.pkl
             backend/models/nfl/qb_pass_yds_ou_metadata.json
+            backend/models/nfl/pass_yds_lines.json
+            /tmp/pass_yds_backfill.json
+            /tmp/pass_yds_backfill_plan.json
