@@ -1,4 +1,8 @@
-"""Generate per-player WNBA assists projections for today's slate."""
+"""WNBA PRA (points + rebounds + assists) combo projections.
+
+Derived from component projections (no separate XGB). Mirrors NBA
+``generate_pra_predictions`` with WNBA floors / tables.
+"""
 
 from __future__ import annotations
 
@@ -9,26 +13,65 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     WNBAAssistsProjections,
     WNBAPlayerInjuryStatus,
+    WNBAPointsProjections,
+    WNBAPRAProjections,
+    WNBARecentGames,
+    WNBAReboundsProjections,
     WNBATodayActivePlayers,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
-from app.services.etl.wnba._feature_engineering import (
-    apply_expected_minutes,
-    build_features,
-)
-from app.services.etl.wnba._ml_predict import predict
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
     resolve_wnba_event_id,
 )
 from app.services.etl.wnba._yetiwatch_news import attach_yetiwatch_news
-from app.services.etl.wnba.prop_calibration import maybe_attach_p_over
 
 logger = logging.getLogger(__name__)
 
 INJURY_SKIP = {"out", "ir", "doubtful"}
-STAT = "assists"
+CORRELATION_ADJUSTMENT = 0.98
+MIN_PRA = 12.0
+MIN_AVG_MINUTES = 15.0
+STAT = "pra"
+
+
+def _weighted_stat(recent_games: list, attr: str, min_games: int = 5) -> float | None:
+    values = []
+    for g in recent_games[:10]:
+        val = getattr(g, attr, None)
+        if val is not None and val >= 0:
+            values.append(float(val))
+    if len(values) < min_games:
+        return None
+    if len(values) >= 5:
+        weights = [0.25, 0.20, 0.18, 0.15, 0.12, 0.05, 0.03, 0.01, 0.005, 0.005]
+        weights = weights[: len(values)]
+        weight_sum = sum(weights)
+        weights = [w / weight_sum for w in weights]
+        return sum(v * w for v, w in zip(values, weights))
+    return sum(values) / len(values)
+
+
+def _get_component(
+    db,
+    model,
+    field: str,
+    player_id: int,
+    game_date,
+    recent_games: list,
+    recent_attr: str,
+) -> float | None:
+    row = (
+        db.query(model)
+        .filter(model.player_id == player_id, model.date == game_date)
+        .first()
+    )
+    if row:
+        val = getattr(row, field, None)
+        if val is not None:
+            return float(val)
+    return _weighted_stat(recent_games, recent_attr)
 
 
 def run() -> dict:
@@ -54,28 +97,71 @@ def run() -> dict:
             if inj and (inj.status or "").lower() in INJURY_SKIP:
                 skipped_injured += 1
                 continue
-            feats = build_features(
-                db,
-                stat_col=STAT,
-                player_id=p.player_id,
-                game_date=today,
-                opponent_team_id=p.opponent_team_id,
+
+            recent = (
+                db.query(WNBARecentGames)
+                .filter(
+                    WNBARecentGames.player_id == p.player_id,
+                    WNBARecentGames.minutes.isnot(None),
+                    WNBARecentGames.minutes > 0,
+                )
+                .order_by(WNBARecentGames.game_date.desc())
+                .limit(10)
+                .all()
             )
-            if feats is None:
+            if len(recent) < 5:
                 skipped_thin += 1
                 continue
-            feats = apply_expected_minutes(feats, p.expected_minutes)
-            try:
-                projected = predict(STAT, feats)
-            except Exception as exc:
-                logger.warning("predict failed for player %s: %s", p.player_id, exc)
+            avg_min = sum(float(g.minutes) for g in recent[:5]) / min(5, len(recent))
+            if avg_min < MIN_AVG_MINUTES:
+                skipped_thin += 1
                 continue
+
+            points = _get_component(
+                db,
+                WNBAPointsProjections,
+                "projected_points",
+                p.player_id,
+                today,
+                recent,
+                "points",
+            )
+            rebounds = _get_component(
+                db,
+                WNBAReboundsProjections,
+                "projected_rebounds",
+                p.player_id,
+                today,
+                recent,
+                "rebounds",
+            )
+            assists = _get_component(
+                db,
+                WNBAAssistsProjections,
+                "projected_assists",
+                p.player_id,
+                today,
+                recent,
+                "assists",
+            )
+            if None in (points, rebounds, assists):
+                skipped_thin += 1
+                continue
+
+            projected = max(
+                MIN_PRA,
+                min((points + rebounds + assists) * CORRELATION_ADJUSTMENT, 55.0),
+            )
+            if projected < MIN_PRA:
+                skipped_thin += 1
+                continue
+
             row = {
                 "date": today,
                 "player_id": p.player_id,
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
-                "projected_assists": projected,
+                "projected_pra": round(projected, 1),
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",
@@ -99,17 +185,12 @@ def run() -> dict:
                 event_id=event_ids[matchup],
             ):
                 lines_attached += 1
-            maybe_attach_p_over(
-                row,
-                stat=STAT,
-                projected=projected,
-                line=row.get("market_line"),
-            )
             attach_yetiwatch_news(row, db=db, player_id=p.player_id, game_date=today)
             upsert_rows.append(row)
+
         upsert_many(
             db,
-            WNBAAssistsProjections,
+            WNBAPRAProjections,
             upsert_rows,
             conflict_keys=["player_id", "date"],
         )

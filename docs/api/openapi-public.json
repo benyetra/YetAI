@@ -1259,7 +1259,7 @@
           "predictions"
         ],
         "summary": "Wnba Predictions",
-        "description": "WNBA: totals, spread/win-prob, and player props.\n\nSpread and totals rows include final scores and ml/spread/total grading when\npred_wnba_*_actuals exist for the requested date (same pattern as MLB games).\n\nPlayer props (points/assists/rebounds) return up to ``prop_limit`` rows for the\nrequested date, ordered by season-to-date minutes per game (not database id).",
+        "description": "WNBA: totals, spread/win-prob, and player props.\n\nSpread and totals rows include final scores and ml/spread/total grading when\npred_wnba_*_actuals exist for the requested date (same pattern as MLB games).\n\nPlayer props (points/assists/rebounds/3PM/PRA) return up to ``prop_limit`` rows\nfor the requested date, ordered by season-to-date minutes per game.",
         "operationId": "wnba_predictions_api_v1_predictions_wnba_get",
         "security": [
           {
@@ -14285,6 +14285,13 @@
           "type": {
             "type": "string",
             "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
           }
         },
         "type": "object",

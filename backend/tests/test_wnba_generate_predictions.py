@@ -14,6 +14,11 @@ import pytest
             "WNBAReboundsProjections",
             "projected_rebounds",
         ),
+        (
+            "generate_three_pt_made_predictions",
+            "WNBAThreePtMadeProjections",
+            "projected_three_pt_made",
+        ),
     ],
 )
 def test_inference_writes_projection_when_features_available(

@@ -32,7 +32,12 @@ def small_dataset():
 def test_wnba_config_fields():
     assert WNBA_ML_CONFIG.table_prefix == "wnba"
     assert WNBA_ML_CONFIG.s3_prefix == "wnba/ml_models"
-    assert WNBA_ML_CONFIG.supported_stats == ("points", "assists", "rebounds")
+    assert WNBA_ML_CONFIG.supported_stats == (
+        "points",
+        "assists",
+        "rebounds",
+        "three_pt_made",
+    )
     assert WNBA_ML_CONFIG.mae_gate["points"] == 4.5
 
 

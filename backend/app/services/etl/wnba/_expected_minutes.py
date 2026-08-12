@@ -7,6 +7,8 @@ from datetime import date
 
 LOOKBACK_GAMES = 30
 MIN_GAMES_REQUIRED = 5
+ROTATION_MINUTES_L5 = 26.0
+MAX_TEAMMATE_BOOST = 8.0
 
 # Recency weights for last 10 games (most recent first).
 RECENCY_WEIGHTS = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.05, 0.025, 0.025]
@@ -85,25 +87,67 @@ def apply_context_adjustments(
     return expected
 
 
+def redistribute_minutes_boost(
+    base_expected: float,
+    *,
+    freed_minutes: float,
+    active_pool_total: float,
+) -> float:
+    """Share of freed rotation minutes allocated to this player (capped)."""
+    if base_expected <= 0 or freed_minutes <= 0 or active_pool_total <= 0:
+        return 0.0
+    share = base_expected / active_pool_total
+    return min(MAX_TEAMMATE_BOOST, freed_minutes * share)
+
+
+def infer_historical_freed_minutes(
+    *,
+    player_id: int,
+    teammate_avg_minutes: dict[int, float],
+    teammate_played: dict[int, bool],
+) -> float:
+    """
+    Infer minutes freed by absent rotation teammates (box-score as-of).
+
+    A teammate is treated as out when their prior L5 average is at least
+    ``ROTATION_MINUTES_L5`` and they have no positive-minute box score on the
+    target game date. Used to align training with live teammate-out boost.
+    """
+    freed = 0.0
+    for tid, avg in teammate_avg_minutes.items():
+        if tid == player_id:
+            continue
+        if avg < ROTATION_MINUTES_L5:
+            continue
+        if teammate_played.get(tid, True):
+            continue
+        freed += float(avg)
+    return freed
+
+
 def historical_expected_minutes(
     games_before: list,
     *,
     game_date: date,
     home_game: bool | None,
+    freed_minutes: float = 0.0,
+    active_pool_total: float | None = None,
 ) -> float | None:
-    """Expected minutes for a past game using only prior box scores."""
+    """Expected minutes for a past game using only prior box scores (+ optional boost)."""
     metrics = calc_metrics(games_before)
     if metrics is None:
         return None
-    return round(
-        max(
-            0.0,
-            apply_context_adjustments(
-                metrics, game_date=game_date, home_game=home_game
-            ),
-        ),
-        1,
+    adjusted = apply_context_adjustments(
+        metrics, game_date=game_date, home_game=home_game
     )
+    boost = 0.0
+    if freed_minutes > 0 and active_pool_total is not None:
+        boost = redistribute_minutes_boost(
+            adjusted,
+            freed_minutes=freed_minutes,
+            active_pool_total=active_pool_total,
+        )
+    return round(max(0.0, adjusted + boost), 1)
 
 
 def is_home_bool(is_home_feature: float, *, team_name: str) -> bool | None:

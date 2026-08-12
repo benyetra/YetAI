@@ -23,6 +23,7 @@ def test_run_writes_actuals_for_each_prop_from_recent_games(monkeypatch):
         points=20,
         assists=5,
         rebounds=8,
+        three_pt_made=3,
     )
     mock_db.query.return_value.filter.return_value.all.return_value = [recent_row]
 
@@ -30,5 +31,5 @@ def test_run_writes_actuals_for_each_prop_from_recent_games(monkeypatch):
         result = cpa.run()
 
     assert result["status"] == "ok"
-    assert um.call_count == 3
+    assert um.call_count == 5
     assert len(um.call_args_list[0][0][2]) == 1

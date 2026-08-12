@@ -51,9 +51,11 @@ from app.models.predictions_models import (
     WNBAAssistsProjections,
     WNBAGameLines,
     WNBAPointsProjections,
+    WNBAPRAProjections,
     WNBARecentGames,
     WNBAReboundsProjections,
     WNBASpreadProjections,
+    WNBAThreePtMadeProjections,
     WNBATotalsProjections,
 )
 from app.services.etl.yetiwatch.news import attach_news_to_rows
@@ -857,8 +859,8 @@ def wnba_predictions(
     Spread and totals rows include final scores and ml/spread/total grading when
     pred_wnba_*_actuals exist for the requested date (same pattern as MLB games).
 
-    Player props (points/assists/rebounds) return up to ``prop_limit`` rows for the
-    requested date, ordered by season-to-date minutes per game (not database id).
+    Player props (points/assists/rebounds/3PM/PRA) return up to ``prop_limit`` rows
+    for the requested date, ordered by season-to-date minutes per game.
     """
     from app.services.wnba_game_picks import enrich_wnba_game_predictions
     from app.services.game_projection_schedule import attach_game_times_from_lines
@@ -900,6 +902,22 @@ def wnba_predictions(
             ),
             sport="wnba",
             stat="rebounds",
+            db=db,
+        ),
+        "three_point": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAThreePtMadeProjections, target_date, prop_limit, tz=tz
+            ),
+            sport="wnba",
+            stat="three_pt_made",
+            db=db,
+        ),
+        "pra": enrich_prop_rows(
+            _query_wnba_props_by_season_minutes(
+                db, WNBAPRAProjections, target_date, prop_limit, tz=tz
+            ),
+            sport="wnba",
+            stat="pra",
             db=db,
         ),
     }

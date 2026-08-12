@@ -27,7 +27,7 @@ def _mock_db(rows_by_model):
     return db
 
 
-def test_returns_six_wnba_buckets_in_order():
+def test_returns_eight_wnba_buckets_in_order():
     today = date(2026, 5, 23)
     tot_p = SimpleNamespace(
         game_date=today,
@@ -99,11 +99,23 @@ def test_returns_six_wnba_buckets_in_order():
         "player_points_ou",
         "player_assists_ou",
         "player_rebounds_ou",
+        "player_three_pt_made_ou",
+        "player_pra_ou",
     ]
     assert out["available"] is True
     # All three per-player picks won
-    for k in ("player_points_ou", "player_assists_ou", "player_rebounds_ou"):
+    for k in (
+        "player_points_ou",
+        "player_assists_ou",
+        "player_rebounds_ou",
+        "player_three_pt_made_ou",
+        "player_pra_ou",
+    ):
         bucket = next(b for b in out["buckets"] if b["key"] == k)
+        if k in ("player_three_pt_made_ou", "player_pra_ou"):
+            # New Phase 3 buckets may be empty in this fixture
+            assert bucket is not None
+            continue
         assert bucket["primary"] == "1/1 · 100%"
 
 
@@ -111,4 +123,4 @@ def test_unavailable_when_no_rows():
     db = _mock_db({})
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     assert out["available"] is False
-    assert len(out["buckets"]) == 6
+    assert len(out["buckets"]) == 8

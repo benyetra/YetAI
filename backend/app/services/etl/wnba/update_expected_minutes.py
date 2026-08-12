@@ -23,14 +23,13 @@ from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._expected_minutes import (
     LOOKBACK_GAMES,
     MIN_GAMES_REQUIRED,
+    ROTATION_MINUTES_L5,
     apply_context_adjustments,
     calc_metrics,
+    redistribute_minutes_boost,
 )
 
 logger = logging.getLogger(__name__)
-
-ROTATION_MINUTES_L5 = 26.0
-MAX_TEAMMATE_BOOST = 8.0
 
 INJURY_OUT = frozenset({"out", "ir", "doubtful"})
 INJURY_PROB = {
@@ -98,11 +97,9 @@ def _teammate_out_boost(
         return 0.0
 
     pool_total = sum(active_by_player.values())
-    if pool_total <= 0:
-        return 0.0
-
-    share = base_expected / pool_total
-    return min(MAX_TEAMMATE_BOOST, freed * share)
+    return redistribute_minutes_boost(
+        base_expected, freed_minutes=freed, active_pool_total=pool_total
+    )
 
 
 def _load_recent_games(db, player_id: int) -> list:

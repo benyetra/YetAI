@@ -16,6 +16,8 @@ _HOURLY_STEPS = [
     ("generate_points", ep._wnba_gen_points),
     ("generate_assists", ep._wnba_gen_assists),
     ("generate_rebounds", ep._wnba_gen_rebounds),
+    ("generate_three_pt_made", ep._wnba_gen_threes),
+    ("generate_pra", ep._wnba_gen_pra),
     ("store_actuals", ep._wnba_store_actuals),
     ("totals_accuracy", ep._wnba_totals_accuracy),
     ("spreads_accuracy", ep._wnba_spreads_accuracy),

@@ -6,6 +6,7 @@ import logging
 from datetime import date
 from typing import Any
 
+import numpy as np
 from sklearn.metrics import mean_absolute_error  # type: ignore
 from sklearn.model_selection import train_test_split  # type: ignore
 
@@ -16,6 +17,7 @@ from app.services.etl.wnba.ml_training import (
     validate_model,
 )
 from app.services.etl.wnba.ml_training.config import WNBA_ML_CONFIG
+from app.services.etl.wnba.prop_calibration import fit_residual_calibration
 from app.services.ml_model_version import model_version_from_metadata
 
 logger = logging.getLogger(__name__)
@@ -88,6 +90,13 @@ def run(
     holdout_preds = model.predict(X_hold)
     holdout_mae = float(mean_absolute_error(y_hold, holdout_preds))
     metadata["holdout_mae"] = holdout_mae
+
+    holdout_actuals = np.asarray(y_hold, dtype=float)
+    holdout_lines = np.round(holdout_actuals * 2) / 2
+    cal_params = fit_residual_calibration(
+        stat_col, holdout_preds, holdout_actuals, holdout_lines
+    )
+    metadata["prop_calibration"] = cal_params.to_dict()
 
     validation = validate_model.validate(stat_col, model, features_df, target)
     metadata["validation"] = validation

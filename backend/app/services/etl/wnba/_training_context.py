@@ -28,6 +28,7 @@ class TrainingContext:
     team_name_by_player: dict[int, str]
     games_by_player: dict[int, list[WNBARecentGames]]
     game_lines_by_date: dict[date, list[WNBAGameLines]]
+    players_by_team: dict[int, list[int]]
 
     def player_team_name(self, player_id: int) -> str:
         return self.team_name_by_player.get(player_id, "")
@@ -69,6 +70,78 @@ class TrainingContext:
                     return line
         return None
 
+    def teammate_out_boost_inputs(
+        self, player_id: int, game_date: date
+    ) -> tuple[float, float]:
+        """
+        Historical freed minutes + active pool for teammate-out boost.
+
+        Infers absences from missing box scores on ``game_date`` for rotation
+        teammates (aligns training with live ``_teammate_out_boost``).
+        """
+        from app.services.etl.wnba._expected_minutes import (
+            ROTATION_MINUTES_L5,
+            apply_context_adjustments,
+            calc_metrics,
+            infer_historical_freed_minutes,
+        )
+
+        roster = self.roster_by_player.get(player_id)
+        if roster is None:
+            return 0.0, 0.0
+        teammates = self.players_by_team.get(roster.team_id, [])
+        if not teammates:
+            return 0.0, 0.0
+
+        teammate_avg: dict[int, float] = {}
+        teammate_played: dict[int, bool] = {}
+        baselines: dict[int, float] = {}
+
+        for tid in teammates:
+            prior = self.recent_games_before(tid, game_date, limit=LOOKBACK_GAMES)
+            metrics = calc_metrics(prior)
+            if metrics is None:
+                continue
+            # L5 average for rotation threshold
+            l5 = [
+                float(g.minutes)
+                for g in prior
+                if getattr(g, "minutes", None) not in (None, 0)
+            ][:5]
+            if len(l5) < 3:
+                continue
+            avg_l5 = sum(l5) / len(l5)
+            teammate_avg[tid] = avg_l5
+
+            games_on_date = [
+                g
+                for g in self.games_by_player.get(tid, [])
+                if g.game_date == game_date
+                and getattr(g, "minutes", None) not in (None, 0)
+            ]
+            teammate_played[tid] = bool(games_on_date)
+
+            home_game = None
+            if games_on_date:
+                home_game = games_on_date[0].home_game
+            baselines[tid] = apply_context_adjustments(
+                metrics, game_date=game_date, home_game=home_game
+            )
+
+        freed = infer_historical_freed_minutes(
+            player_id=player_id,
+            teammate_avg_minutes=teammate_avg,
+            teammate_played=teammate_played,
+        )
+        # Pool = baselines of teammates who played (plus the player if present)
+        pool_ids = [
+            tid for tid, played in teammate_played.items() if played or tid == player_id
+        ]
+        if player_id in baselines and player_id not in pool_ids:
+            pool_ids.append(player_id)
+        pool = sum(baselines[tid] for tid in pool_ids if tid in baselines)
+        return freed, pool
+
 
 def load_training_context(db, season_start: date, season_end: date) -> TrainingContext:
     """Bulk-load tables used by build_features for one training window."""
@@ -95,6 +168,9 @@ def load_training_context(db, season_start: date, season_end: date) -> TrainingC
 
     rosters = db.query(WNBATeamRoster).all()
     roster_by_player = {r.player_id: r for r in rosters}
+    players_by_team: dict[int, list[int]] = {}
+    for r in rosters:
+        players_by_team.setdefault(r.team_id, []).append(r.player_id)
 
     offense_rows = db.query(WNBATeamOffenseStats).all()
     offense_by_team = {r.team_id: r for r in offense_rows}
@@ -131,4 +207,5 @@ def load_training_context(db, season_start: date, season_end: date) -> TrainingC
         team_name_by_player=team_name_by_player,
         games_by_player=games_by_player,
         game_lines_by_date=game_lines_by_date,
+        players_by_team=players_by_team,
     )

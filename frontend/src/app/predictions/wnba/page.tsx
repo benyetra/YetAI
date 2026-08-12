@@ -28,6 +28,18 @@ const PROP_GROUPS = [
     columns: WNBA_PROP_COLUMNS.rebounds,
     rowClassName: propRowClassName,
   },
+  {
+    title: '3-Pointers',
+    responseKey: 'three_point',
+    columns: WNBA_PROP_COLUMNS.three_point,
+    rowClassName: propRowClassName,
+  },
+  {
+    title: 'PRA',
+    responseKey: 'pra',
+    columns: WNBA_PROP_COLUMNS.pra,
+    rowClassName: propRowClassName,
+  },
 ];
 
 export default function WNBAPredictionsPage() {
@@ -36,7 +48,7 @@ export default function WNBAPredictionsPage() {
       sport="wnba"
       leagueLabel="WNBA"
       emoji="🏀"
-      subtitle="Game slate, spread/win-probability, totals O/U, and player props (points, assists, rebounds)."
+      subtitle="Game slate, spread/win-probability, totals O/U, and player props (points, assists, rebounds, 3PM, PRA)."
       topSection={({ data, loading, isPastDate }) => (
         <GameProjectionsSection
           variant="wnba"

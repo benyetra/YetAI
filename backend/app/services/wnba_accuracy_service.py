@@ -26,10 +26,14 @@ from app.models.predictions_models import (
     WNBAAssistsProjections,
     WNBAPointsActuals,
     WNBAPointsProjections,
+    WNBAPRAActuals,
+    WNBAPRAProjections,
     WNBAReboundsActuals,
     WNBAReboundsProjections,
     WNBASpreadActuals,
     WNBASpreadProjections,
+    WNBAThreePtMadeActuals,
+    WNBAThreePtMadeProjections,
     WNBATotalsActuals,
     WNBATotalsProjections,
 )
@@ -196,6 +200,22 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
         proj_field="projected_rebounds",
         actual_field="actual_rebounds",
     )
+    threes_rows = _player_prop_rows(
+        db,
+        target_date,
+        WNBAThreePtMadeProjections,
+        WNBAThreePtMadeActuals,
+        proj_field="projected_three_pt_made",
+        actual_field="actual_three_pt_made",
+    )
+    pra_rows = _player_prop_rows(
+        db,
+        target_date,
+        WNBAPRAProjections,
+        WNBAPRAActuals,
+        proj_field="projected_pra",
+        actual_field="actual_pra",
+    )
 
     buckets: list[AccuracyBucket] = [
         ou_call_bucket(
@@ -250,10 +270,34 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             label="Player Rebounds O/U",
             key="player_rebounds_ou",
         ),
+        ou_call_bucket(
+            threes_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_three_pt_made",
+            projected_field="projected_three_pt_made",
+            label="Player 3PM O/U",
+            key="player_three_pt_made_ou",
+        ),
+        ou_call_bucket(
+            pra_rows,
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_pra",
+            projected_field="projected_pra",
+            label="Player PRA O/U",
+            key="player_pra_ou",
+        ),
     ]
 
     available = bool(
-        totals_rows or spread_rows or points_rows or assists_rows or rebounds_rows
+        totals_rows
+        or spread_rows
+        or points_rows
+        or assists_rows
+        or rebounds_rows
+        or threes_rows
+        or pra_rows
     )
     return assemble(
         date_str=target_date.isoformat(),
@@ -322,11 +366,31 @@ def _wnba_season_overview_row_sets(
         proj_field="projected_rebounds",
         actual_field="actual_rebounds",
     )
+    threes_rows = _player_prop_rows_range(
+        db,
+        start,
+        end,
+        WNBAThreePtMadeProjections,
+        WNBAThreePtMadeActuals,
+        proj_field="projected_three_pt_made",
+        actual_field="actual_three_pt_made",
+    )
+    pra_rows = _player_prop_rows_range(
+        db,
+        start,
+        end,
+        WNBAPRAProjections,
+        WNBAPRAActuals,
+        proj_field="projected_pra",
+        actual_field="actual_pra",
+    )
     return {
         "totals": totals_rows,
         "points": points_rows,
         "assists": assists_rows,
         "rebounds": rebounds_rows,
+        "three_pt_made": threes_rows,
+        "pra": pra_rows,
     }
 
 
@@ -357,6 +421,18 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
             line_field="market_line",
             pick_field="recommendation",
             actual_field="actual_rebounds",
+        ),
+        ou_call_graded_counts(
+            r["three_pt_made"],
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_three_pt_made",
+        ),
+        ou_call_graded_counts(
+            r["pra"],
+            line_field="market_line",
+            pick_field="recommendation",
+            actual_field="actual_pra",
         ),
     ]
     correct = sum(p[0] for p in parts)
@@ -403,6 +479,22 @@ def season_overview_diagnostics(
             "market_line",
             "recommendation",
             "actual_rebounds",
+        ),
+        (
+            "three_pt_made_ou",
+            "3PM O/U",
+            "three_pt_made",
+            "market_line",
+            "recommendation",
+            "actual_three_pt_made",
+        ),
+        (
+            "pra_ou",
+            "PRA O/U",
+            "pra",
+            "market_line",
+            "recommendation",
+            "actual_pra",
         ),
     ]
     parts_out: list[dict[str, Any]] = []

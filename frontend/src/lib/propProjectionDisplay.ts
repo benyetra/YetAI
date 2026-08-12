@@ -188,6 +188,20 @@ export const WNBA_PROP_COLUMNS = {
     lineLabel: 'Line',
     confidenceKey: 'confidence_score',
   }),
+  three_point: buildBasketballPropColumns({
+    projectedKey: 'projected_three_pt_made',
+    projectedLabel: 'Proj 3PM',
+    lineKey: 'market_line',
+    lineLabel: 'Line',
+    confidenceKey: 'confidence_score',
+  }),
+  pra: buildBasketballPropColumns({
+    projectedKey: 'projected_pra',
+    projectedLabel: 'Proj PRA',
+    lineKey: 'market_line',
+    lineLabel: 'Line',
+    confidenceKey: 'confidence_score',
+  }),
 };
 
 export const NHL_GOALIE_COLUMNS: ColumnDef[] = [
