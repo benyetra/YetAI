@@ -5,6 +5,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from app.services.etl.nfl.qb_passing_yards_ml import select_line_blend_weight
 from scripts.nfl_prod_qb_eval import (
     _PROMOTE_LIFT,
     _line_pred_row,
@@ -20,6 +21,16 @@ def test_promote_gate_is_ten_percent():
 
 def test_mae_helper():
     assert abs(_mae(np.array([10.0, 20.0]), np.array([12.0, 18.0])) - 2.0) < 1e-9
+
+
+def test_select_line_blend_weight_prefers_better_mae():
+    y = np.array([100.0, 200.0, 300.0])
+    ml = np.array([140.0, 240.0, 340.0])
+    line = np.array([100.0, 200.0, 300.0])
+    real = np.array([True, True, True])
+    sel = select_line_blend_weight(y_true=y, ml_pred=ml, line_pred=line, real_mask=real)
+    assert sel["selected_w"] == 0.0
+    assert sel["selected_mae"] == 0.0
 
 
 def test_market_and_line_baseline_helpers():

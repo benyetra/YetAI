@@ -330,14 +330,89 @@ def test_predict_yards_ml_uses_market_baseline():
     assert predict_yards_ml(_Stub(), feats, residual_target=True) == 265.0
 
 
+def test_blend_ml_with_line_and_select_weight():
+    from app.services.etl.nfl.qb_passing_yards_ml import (
+        blend_ml_with_line,
+        blend_ml_with_line_from_features,
+        select_line_blend_weight,
+    )
+
+    assert blend_ml_with_line(260.0, pass_yds_line=280.0, w=0.5) == 270.0
+    assert blend_ml_with_line(260.0, pass_yds_line=280.0, w=1.0) == 260.0
+    assert blend_ml_with_line(260.0, pass_yds_line=280.0, w=0.0) == 280.0
+    assert (
+        blend_ml_with_line(260.0, pass_yds_line=280.0, w=0.5, line_is_real=False)
+        == 260.0
+    )
+    assert (
+        blend_ml_with_line_from_features(
+            260.0,
+            {
+                "tier_yards": 250.0,
+                "pass_yds_line": 280.0,
+                "line_is_real": 1.0,
+                "line_minus_tier": 30.0,
+            },
+            w=0.25,
+        )
+        == 275.0
+    )
+
+    y = np.array([200.0, 220.0, 240.0, 260.0])
+    ml = np.array([210.0, 230.0, 250.0, 270.0])
+    line = np.array([200.0, 220.0, 240.0, 260.0])  # perfect line
+    real = np.array([True, True, True, False])
+    sel = select_line_blend_weight(y_true=y, ml_pred=ml, line_pred=line, real_mask=real)
+    assert sel["selected_w"] == 0.0  # pure line best on real rows
+    assert len(sel["candidates"]) == 5
+
+
+def test_predict_yards_ml_loaded_applies_line_blend(monkeypatch):
+    class _Stub:
+        def predict(self, X):  # noqa: N803
+            return np.array([10.0])
+
+    monkeypatch.setattr(qbm, "_MODEL", _Stub())
+    monkeypatch.setattr(
+        qbm,
+        "_METADATA",
+        {
+            "features": ["tier_yards", "rolling_yards_l3"],
+            "residual_target": True,
+            "baseline_mode": "tier",
+            "line_blend_w": 0.5,
+            "target": "residual_actual_minus_baseline",
+        },
+    )
+    monkeypatch.setattr(qbm, "_LOAD_FAILED", False)
+    # tier baseline 250 + residual 10 = 260; blend 0.5 with line 280 → 270
+    out = qbm.predict_yards_ml_loaded(
+        {
+            "tier_yards": 250.0,
+            "rolling_yards_l3": 240.0,
+            "pass_yds_line": 280.0,
+            "line_is_real": 1.0,
+            "line_minus_tier": 30.0,
+        }
+    )
+    assert out == 270.0
+
+
 def test_reinject_pass_yds_line():
     from app.services.etl.nfl.qb_passing_yards_ml import reinject_pass_yds_line
 
     out = reinject_pass_yds_line(
-        {"tier_yards": 250.0, "pass_yds_line": 250.0, "line_minus_tier": 0.0},
+        {
+            "tier_yards": 250.0,
+            "pass_yds_line": 250.0,
+            "line_minus_tier": 0.0,
+            "rolling_yards_l3": 240.0,
+        },
         ou_line=275.5,
     )
     assert out["pass_yds_line"] == 275.5
+    assert out["line_is_real"] == 1.0
+    assert out["line_minus_rolling"] == 35.5
     assert out["line_minus_tier"] == 25.5
 
 

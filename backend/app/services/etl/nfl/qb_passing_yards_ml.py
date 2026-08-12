@@ -65,6 +65,10 @@ PROMOTE_HYPERPARAM_CANDIDATES: tuple[dict[str, Any], ...] = (
     },
 )
 
+# Post-hoc inference blend: w·ml + (1−w)·line when a real prop line is present.
+# w=1 → pure ML; w=0 → pure line (else ML when line missing).
+LINE_BLEND_WEIGHT_CANDIDATES: tuple[float, ...] = (0.0, 0.25, 0.5, 0.75, 1.0)
+
 logger = logging.getLogger(__name__)
 
 S3_BUCKET = "yetibets"
@@ -201,6 +205,139 @@ def predict_yards_ml(
         baseline = baseline_yards_from_features(features, baseline_mode=baseline_mode)
         return round(baseline + raw, 1)
     return round(float(raw), 1)
+
+
+def _line_is_real_from_features(features: Mapping[str, float]) -> bool:
+    """True when features carry a real pass-yards prop line (not tier anchor)."""
+    flag = features.get("line_is_real")
+    if flag is not None:
+        try:
+            return float(flag) >= 0.5
+        except (TypeError, ValueError):
+            pass
+    lmt = features.get("line_minus_tier")
+    if lmt is not None:
+        try:
+            return abs(float(lmt)) > 0.5
+        except (TypeError, ValueError):
+            pass
+    line = features.get("pass_yds_line")
+    tier = features.get("tier_yards")
+    if line is None or tier is None:
+        return False
+    try:
+        return abs(float(line) - float(tier)) > 0.5
+    except (TypeError, ValueError):
+        return False
+
+
+def blend_ml_with_line(
+    ml_yards: float,
+    *,
+    pass_yds_line: float | None,
+    w: float,
+    line_is_real: bool | None = None,
+) -> float:
+    """
+    Post-hoc blend: ``w * ml + (1 - w) * line`` when a real prop line exists.
+
+    ``w`` is the ML weight in ``[0, 1]``. Missing/non-real line → pure ML.
+    """
+    ml = float(ml_yards)
+    weight = min(1.0, max(0.0, float(w)))
+    if pass_yds_line is None:
+        return round(ml, 1)
+    try:
+        line = float(pass_yds_line)
+    except (TypeError, ValueError):
+        return round(ml, 1)
+    real = bool(line_is_real) if line_is_real is not None else True
+    if not real:
+        return round(ml, 1)
+    if weight >= 1.0 - 1e-12:
+        return round(ml, 1)
+    if weight <= 1e-12:
+        return round(line, 1)
+    return round(weight * ml + (1.0 - weight) * line, 1)
+
+
+def blend_ml_with_line_from_features(
+    ml_yards: float,
+    features: Mapping[str, float],
+    *,
+    w: float,
+) -> float:
+    """Apply ``blend_ml_with_line`` using prop-line fields on a feature row."""
+    line = features.get("pass_yds_line")
+    try:
+        line_f = float(line) if line is not None else None
+    except (TypeError, ValueError):
+        line_f = None
+    return blend_ml_with_line(
+        ml_yards,
+        pass_yds_line=line_f,
+        w=w,
+        line_is_real=_line_is_real_from_features(features),
+    )
+
+
+def select_line_blend_weight(
+    *,
+    y_true: np.ndarray,
+    ml_pred: np.ndarray,
+    line_pred: np.ndarray,
+    real_mask: np.ndarray,
+    candidates: Sequence[float] | None = None,
+) -> dict[str, Any]:
+    """
+    Pick ``w`` minimizing holdout MAE of ``w·ml + (1−w)·line`` (else ML).
+
+    Returns selected weight, per-candidate MAE, and blended predictions.
+    """
+    weights = (
+        list(candidates)
+        if candidates is not None
+        else list(LINE_BLEND_WEIGHT_CANDIDATES)
+    )
+    y = np.asarray(y_true, dtype=float)
+    ml = np.asarray(ml_pred, dtype=float)
+    line = np.asarray(line_pred, dtype=float)
+    real = np.asarray(real_mask, dtype=bool)
+    if len(y) == 0:
+        return {
+            "selected_w": 1.0,
+            "candidates": [],
+            "blended_pred": ml,
+        }
+
+    rows: list[dict[str, Any]] = []
+    best_w = 1.0
+    best_mae = float("inf")
+    best_pred = ml.copy()
+    for raw_w in weights:
+        w = float(raw_w)
+        pred = ml.copy()
+        if real.any():
+            pred[real] = w * ml[real] + (1.0 - w) * line[real]
+        mae = float(np.mean(np.abs(y - pred)))
+        entry = {
+            "w": w,
+            "mae": round(mae, 3),
+            "n": int(len(y)),
+            "n_real": int(real.sum()),
+        }
+        rows.append(entry)
+        if mae < best_mae - 1e-12 or (abs(mae - best_mae) <= 1e-12 and w > best_w):
+            # Prefer higher w (more ML) on ties — keeps model signal when equal.
+            best_mae = mae
+            best_w = w
+            best_pred = pred
+    return {
+        "selected_w": float(best_w),
+        "selected_mae": round(best_mae, 3),
+        "candidates": rows,
+        "blended_pred": best_pred,
+    }
 
 
 def _fill_missing_feature_columns(features_df: pd.DataFrame) -> pd.DataFrame:
@@ -525,6 +662,9 @@ def reinject_pass_yds_line(
     line = float(ou_line)
     feats["pass_yds_line"] = line
     feats["line_minus_tier"] = line - tier
+    feats["line_is_real"] = 1.0
+    rolling = _float_or(feats.get("rolling_yards_l3"), tier)
+    feats["line_minus_rolling"] = line - rolling
     return feats
 
 
@@ -606,13 +746,21 @@ def predict_yards_ml_loaded(features: Mapping[str, float]) -> float | None:
     baseline_mode = str(meta.get("baseline_mode") or "market")
     if baseline_mode not in {"market", "tier"}:
         baseline_mode = "market"
-    return predict_yards_ml(
+    ml = predict_yards_ml(
         _MODEL,
         features,
         feature_order=list(order),
         residual_target=residual,
         baseline_mode=baseline_mode,
     )
+    blend_w = meta.get("line_blend_w")
+    if blend_w is None:
+        return ml
+    try:
+        w = float(blend_w)
+    except (TypeError, ValueError):
+        return ml
+    return blend_ml_with_line_from_features(ml, features, w=w)
 
 
 def resolve_qb_model_version(*, ml_loaded: bool) -> str:
@@ -671,6 +819,11 @@ def enrich_qb_prediction_for_write(
         "prediction_method": prediction.get("prediction_method"),
         "features": {k: feats.get(k) for k in FEATURE_NAMES},
     }
+    if _METADATA and _METADATA.get("line_blend_w") is not None:
+        try:
+            feature_importance["line_blend_w"] = float(_METADATA["line_blend_w"])
+        except (TypeError, ValueError):
+            pass
     if ml_yards is not None and not qb_ml_enabled():
         feature_importance["ml_shadow_yards"] = ml_yards
 

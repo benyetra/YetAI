@@ -19,7 +19,7 @@ on:
 
 jobs:
   eval:
-    name: Prod QB residual eval (tier-only promote + ablations)
+    name: Prod QB residual eval (tier-only + line blend)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -80,9 +80,12 @@ jobs:
               "model_family",
               "promote_path",
               "promote_hp_selected",
+              "line_blend_w",
               "baseline_mode",
               "fit_full",
               "tier_mae",
+              "ml_mae_raw",
+              "mae_lift_raw",
               "ml_mae",
               "mae_lift",
               "mae_lift_vs_static_tier",
@@ -102,18 +105,22 @@ jobs:
               tm.get("fit_full"),
               "hp:",
               tm.get("promote_hp_selected"),
+              "line_blend_w:",
+              tm.get("line_blend_w"),
           )
           print("n_train_equals_rows_train:", tm.get("n_train") == report.get("rows_train"))
           print("promote_hp_sweep:", tm.get("promote_hp_sweep"))
+          print("line_blend:", report.get("line_blend"))
           print("=== ABLATIONS ===")
           ab = report.get("ablations") or {}
           for name, payload in ab.items():
-              if name == "summary":
+              if name in {"summary", "line_blend"}:
                   continue
-              if isinstance(payload, dict):
+              if isinstance(payload, dict) and "mae" in payload:
                   print(
                       f"{name}: mae={payload.get('mae')} "
                       f"lift={payload.get('mae_lift_vs_dynamic_tier')} "
+                      f"w={payload.get('w')} "
                       f"hp={payload.get('promote_hp_selected')} "
                       f"ml_closer_to_line={payload.get('ml_closer_to_line_than_tier')}"
                   )
