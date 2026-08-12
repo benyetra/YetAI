@@ -12,7 +12,9 @@ from sqlalchemy.orm import Session
 from app.models.predictions_models import (
     WNBAAssistsProjections,
     WNBAPointsProjections,
+    WNBAPRAProjections,
     WNBAReboundsProjections,
+    WNBAThreePtMadeProjections,
 )
 from app.services.auto_pick.candidate import DateRange
 
@@ -22,6 +24,8 @@ _WNBA_STAT_SPECS = [
     (WNBAPointsProjections, "points", "projected_points"),
     (WNBAAssistsProjections, "assists", "projected_assists"),
     (WNBAReboundsProjections, "rebounds", "projected_rebounds"),
+    (WNBAThreePtMadeProjections, "three_pt_made", "projected_three_pt_made"),
+    (WNBAPRAProjections, "pra", "projected_pra"),
 ]
 
 

@@ -1,4 +1,4 @@
-"""Generate per-player WNBA assists projections for today's slate."""
+"""Generate per-player WNBA three-pointers-made projections for today's slate."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ from datetime import datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import (
-    WNBAAssistsProjections,
     WNBAPlayerInjuryStatus,
+    WNBAThreePtMadeProjections,
     WNBATodayActivePlayers,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
@@ -28,7 +28,7 @@ from app.services.etl.wnba.prop_calibration import maybe_attach_p_over
 logger = logging.getLogger(__name__)
 
 INJURY_SKIP = {"out", "ir", "doubtful"}
-STAT = "assists"
+STAT = "three_pt_made"
 
 
 def run() -> dict:
@@ -54,6 +54,7 @@ def run() -> dict:
             if inj and (inj.status or "").lower() in INJURY_SKIP:
                 skipped_injured += 1
                 continue
+
             feats = build_features(
                 db,
                 stat_col=STAT,
@@ -70,12 +71,13 @@ def run() -> dict:
             except Exception as exc:
                 logger.warning("predict failed for player %s: %s", p.player_id, exc)
                 continue
+
             row = {
                 "date": today,
                 "player_id": p.player_id,
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
-                "projected_assists": projected,
+                "projected_three_pt_made": projected,
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",
@@ -109,7 +111,7 @@ def run() -> dict:
             upsert_rows.append(row)
         upsert_many(
             db,
-            WNBAAssistsProjections,
+            WNBAThreePtMadeProjections,
             upsert_rows,
             conflict_keys=["player_id", "date"],
         )

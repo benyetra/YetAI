@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 S3_BUCKET = "yetibets"
 S3_PREFIX = "wnba/ml_models"
-SUPPORTED_STATS: tuple[str, ...] = ("points", "assists", "rebounds")
+SUPPORTED_STATS: tuple[str, ...] = ("points", "assists", "rebounds", "three_pt_made")
 
 _MODELS: dict[str, object] = {}
 _METADATA: dict[str, dict] = {}

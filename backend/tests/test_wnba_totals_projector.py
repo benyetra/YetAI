@@ -49,8 +49,11 @@ def test_star_player_impacts_contain_wnba_stars():
     assert "a'ja wilson" in stars
     assert "caitlin clark" in stars
     assert "breanna stewart" in stars
-    # Impacts are scaled to ~60% of NBA values — all under 5.0
+    # Fallback impacts are scaled to ~60% of NBA values — all under 5.0
     assert all(v <= 5.0 for v in stars.values())
+    # Primary path is usage-weighted
+    assert tp.INJURY_MAX_TEAM_IMPACT == 12.0
+    assert tp.INJURY_ROTATION_MINUTES == 18.0
 
 
 def test_load_team_data_from_offense_defense_stats(mock_db):

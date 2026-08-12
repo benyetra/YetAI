@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import date
 from typing import Protocol, Sequence
 
 
@@ -16,10 +17,13 @@ class SpreadLeagueConfig:
     win_prob_logistic_scale: float = 7.0
     edge_threshold: float = 2.0
     pace_overlay_factor: float = 0.15
+    # Season reseed: new_elo = season_decay * prior + (1 - season_decay) * league_mean
+    season_decay: float = 0.75
+    season_start_month: int = 5
 
 
-WNBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5)
-NBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.8)
+WNBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, season_start_month=5)
+NBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.8, season_start_month=10)
 NFL_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, edge_threshold=3.0)
 
 
@@ -28,6 +32,28 @@ class SpreadActualRow(Protocol):
     away_team_name: str
     home_score: int
     away_score: int
+
+
+def season_id_for_date(
+    game_date: date, *, cfg: SpreadLeagueConfig = WNBA_CONFIG
+) -> int:
+    """Season identifier from calendar date (league-specific start month)."""
+    if game_date.month >= cfg.season_start_month:
+        return game_date.year
+    return game_date.year - 1
+
+
+def reseed_elos(
+    elos: dict[str, float], *, cfg: SpreadLeagueConfig = WNBA_CONFIG
+) -> dict[str, float]:
+    """Blend prior end-of-season ratings toward the league mean."""
+    if not elos:
+        return {}
+    mean = sum(elos.values()) / len(elos)
+    decay = cfg.season_decay
+    return {
+        team: decay * rating + (1.0 - decay) * mean for team, rating in elos.items()
+    }
 
 
 def expected_score(rating_a: float, rating_b: float) -> float:
@@ -82,8 +108,21 @@ def load_elos_from_actuals(
     *,
     cfg: SpreadLeagueConfig = WNBA_CONFIG,
 ) -> dict[str, float]:
+    """
+    Replay Elo through chronological actuals.
+
+    When ``game_date`` is present on rows, ratings are reseeded at season
+    boundaries: ``season_decay * prior + (1 - season_decay) * league_mean``.
+    """
     elos: dict[str, float] = {}
+    current_season: int | None = None
     for game in actuals:
+        game_date = getattr(game, "game_date", None)
+        if game_date is not None:
+            sid = season_id_for_date(game_date, cfg=cfg)
+            if current_season is not None and sid != current_season and elos:
+                elos = reseed_elos(elos, cfg=cfg)
+            current_season = sid
         h = elos.setdefault(game.home_team_name, cfg.initial_elo)
         a = elos.setdefault(game.away_team_name, cfg.initial_elo)
         new_h, new_a = update_elo(h, a, game.home_score, game.away_score, cfg=cfg)

@@ -55,7 +55,15 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
         db=None,
     )
 
-    assert set(result.keys()) == {"totals", "spreads", "points", "assists", "rebounds"}
+    assert set(result.keys()) == {
+        "totals",
+        "spreads",
+        "points",
+        "assists",
+        "rebounds",
+        "three_point",
+        "pra",
+    }
     assert all(v == [] for v in result.values())
     assert "WNBATotalsProjections" in captured_models
     assert "WNBASpreadProjections" in captured_models

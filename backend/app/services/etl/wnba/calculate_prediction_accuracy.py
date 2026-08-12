@@ -9,8 +9,10 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     WNBAAssistsActuals,
     WNBAPointsActuals,
+    WNBAPRAActuals,
     WNBARecentGames,
     WNBAReboundsActuals,
+    WNBAThreePtMadeActuals,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
@@ -24,6 +26,8 @@ def run() -> dict:
     points_rows: list[dict] = []
     assists_rows: list[dict] = []
     rebounds_rows: list[dict] = []
+    threes_rows: list[dict] = []
+    pra_rows: list[dict] = []
     try:
         rows = (
             db.query(WNBARecentGames)
@@ -62,6 +66,28 @@ def run() -> dict:
                         "created_at": now,
                     }
                 )
+            if r.three_pt_made is not None:
+                threes_rows.append(
+                    {
+                        "date": yesterday,
+                        "player_id": r.player_id,
+                        "player_name": None,
+                        "actual_three_pt_made": float(r.three_pt_made),
+                        "created_at": now,
+                    }
+                )
+            if None not in (r.points, r.rebounds, r.assists):
+                pra_rows.append(
+                    {
+                        "date": yesterday,
+                        "player_id": r.player_id,
+                        "player_name": None,
+                        "actual_pra": float(r.points)
+                        + float(r.rebounds)
+                        + float(r.assists),
+                        "created_at": now,
+                    }
+                )
         upsert_many(
             db, WNBAPointsActuals, points_rows, conflict_keys=["player_id", "date"]
         )
@@ -71,13 +97,24 @@ def run() -> dict:
         upsert_many(
             db, WNBAReboundsActuals, rebounds_rows, conflict_keys=["player_id", "date"]
         )
+        upsert_many(
+            db,
+            WNBAThreePtMadeActuals,
+            threes_rows,
+            conflict_keys=["player_id", "date"],
+        )
+        upsert_many(db, WNBAPRAActuals, pra_rows, conflict_keys=["player_id", "date"])
         db.commit()
         return {
             "status": "ok",
             "date": yesterday.isoformat(),
-            "actuals_written": len(points_rows)
-            + len(assists_rows)
-            + len(rebounds_rows),
+            "actuals_written": (
+                len(points_rows)
+                + len(assists_rows)
+                + len(rebounds_rows)
+                + len(threes_rows)
+                + len(pra_rows)
+            ),
         }
     finally:
         db.close()

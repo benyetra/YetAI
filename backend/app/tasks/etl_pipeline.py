@@ -1045,7 +1045,9 @@ from app.services.etl.wnba import (  # noqa: E402
     calculate_prediction_accuracy as _wnba_prop_accuracy,
     generate_assists_predictions as _wnba_gen_assists,
     generate_points_predictions as _wnba_gen_points,
+    generate_pra_predictions as _wnba_gen_pra,
     generate_rebounds_predictions as _wnba_gen_rebounds,
+    generate_three_pt_made_predictions as _wnba_gen_threes,
     today_active_players as _wnba_today_active,
     update_expected_minutes as _wnba_expected_minutes,
     update_recent_games as _wnba_update_recent,
@@ -1101,6 +1103,20 @@ def wnba_generate_rebounds():
     if not _wnba_in_season():
         return {"status": "out_of_season"}
     return _wnba_gen_rebounds.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.generate_three_pt_made")
+def wnba_generate_three_pt_made():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_gen_threes.run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.wnba.generate_pra")
+def wnba_generate_pra():
+    if not _wnba_in_season():
+        return {"status": "out_of_season"}
+    return _wnba_gen_pra.run()
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.wnba.prop_accuracy")
@@ -1160,6 +1176,8 @@ def run_wnba_update_pipeline(self) -> dict:
         ("generate_points", _wnba_gen_points),
         ("generate_assists", _wnba_gen_assists),
         ("generate_rebounds", _wnba_gen_rebounds),
+        ("generate_three_pt_made", _wnba_gen_threes),
+        ("generate_pra", _wnba_gen_pra),
         ("store_actuals", _wnba_store_actuals),
         ("totals_accuracy", _wnba_totals_accuracy),
         ("spreads_accuracy", _wnba_spreads_accuracy),

@@ -4,10 +4,11 @@ from unittest.mock import MagicMock, patch
 from app.services.etl.wnba import totals_accuracy_tracker as tat
 
 
-def _proj(total, market=None):
+def _proj(total, market=None, factors=None):
     p = MagicMock()
     p.projected_total = total
     p.market_total = market
+    p.factors = factors
     return p
 
 
@@ -47,7 +48,46 @@ def test_compute_window_returns_mae_and_rmse():
 def test_compute_window_handles_empty():
     db = _make_db([])
     stats = tat._compute_window(db, start=date(2026, 5, 1), end=date(2026, 5, 21))
-    assert stats == {"mae": None, "rmse": None, "directional": None, "total": 0}
+    assert stats["total"] == 0
+    assert stats["mae"] is None
+    assert stats["recommend_promote"] is False
+
+
+def test_compute_window_compares_heuristic_vs_ml_shadow():
+    factors = {
+        "ml_shadow": {
+            "heuristic_total": 160.0,
+            "ml_total": 155.0,
+        }
+    }
+    rows = [
+        (_proj(160.0, market=158.0, factors=factors), _actual(154)),
+        (_proj(170.0, market=165.0, factors=factors), _actual(156)),
+    ]
+    # Pad to MIN_GAMES_FOR_PROMOTE with same pattern so promote can fire
+    while len(rows) < tat.MIN_GAMES_FOR_PROMOTE:
+        rows.append((_proj(160.0, market=158.0, factors=factors), _actual(154)))
+    db = _make_db(rows)
+    stats = tat._compute_window(db, start=date(2026, 5, 1), end=date(2026, 8, 1))
+    assert stats["heuristic_mae"] is not None
+    assert stats["ml_mae"] is not None
+    assert stats["ml_mae"] < stats["heuristic_mae"]
+    assert stats["recommend_promote"] is True
+
+
+def test_should_promote_requires_min_games():
+    assert (
+        tat.should_promote_totals_ml(
+            heuristic_mae=5.0, ml_mae=4.0, ml_games=5, min_games=20
+        )
+        is False
+    )
+    assert (
+        tat.should_promote_totals_ml(
+            heuristic_mae=5.0, ml_mae=4.0, ml_games=20, min_games=20
+        )
+        is True
+    )
 
 
 def test_run_writes_one_row_per_nonempty_window(monkeypatch):
@@ -62,10 +102,16 @@ def test_run_writes_one_row_per_nonempty_window(monkeypatch):
             "rmse": 5.0,
             "directional": 0.6,
             "total": 10,
+            "heuristic_mae": 4.2,
+            "ml_mae": 3.8,
+            "ml_games": 10,
+            "recommend_promote": False,
         },
     )
     with patch("app.services.etl.wnba.totals_accuracy_tracker.replace_matching") as rm:
         result = tat.run()
-    assert result == {"status": "ok", "windows_written": 3}
+    assert result["status"] == "ok"
+    assert result["windows_written"] == 3
     assert rm.call_count == 1
     assert len(rm.call_args[0][2]) == 3
+    assert "heuristic_mean_absolute_error" in rm.call_args[0][2][0]

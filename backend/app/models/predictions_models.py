@@ -3489,6 +3489,8 @@ class WNBATotalsAccuracy(Base):
     mean_absolute_error = Column(Float, nullable=True)
     root_mean_square_error = Column(Float, nullable=True)
     directional_accuracy = Column(Float, nullable=True)
+    heuristic_mean_absolute_error = Column(Float, nullable=True)
+    ml_mean_absolute_error = Column(Float, nullable=True)
     created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
 
 
@@ -3629,9 +3631,10 @@ class YetiWatchSignal(Base):
 # Defined here so Phase 2 (Plan B) does not need new SQLAlchemy classes — only ETL code.
 
 
-def _make_prop_projection(prop: str):
+def _make_prop_projection(prop: str, *, class_stem: str | None = None):
     table_name = f"pred_wnba_{prop}_projections"
-    class_name = f"WNBA{prop.capitalize()}Projections"
+    stem = class_stem or prop.capitalize()
+    class_name = f"WNBA{stem}Projections"
     attrs = {
         "__tablename__": table_name,
         "id": Column(Integer, primary_key=True),
@@ -3645,6 +3648,7 @@ def _make_prop_projection(prop: str):
         "recommendation": Column(String(20), nullable=True),
         "confidence_score": Column(Float, nullable=True),
         "news": Column(String(160), nullable=True),
+        "factors": Column(JSON, nullable=True),
         "created_at": Column(DateTime, nullable=False, default=datetime.utcnow),
         "__table_args__": (
             UniqueConstraint(
@@ -3655,9 +3659,10 @@ def _make_prop_projection(prop: str):
     return type(class_name, (Base,), attrs)
 
 
-def _make_prop_actuals(prop: str):
+def _make_prop_actuals(prop: str, *, class_stem: str | None = None):
     table_name = f"pred_wnba_{prop}_actuals"
-    class_name = f"WNBA{prop.capitalize()}Actuals"
+    stem = class_stem or prop.capitalize()
+    class_name = f"WNBA{stem}Actuals"
     attrs = {
         "__tablename__": table_name,
         "id": Column(Integer, primary_key=True),
@@ -3679,6 +3684,12 @@ WNBAAssistsProjections = _make_prop_projection("assists")
 WNBAAssistsActuals = _make_prop_actuals("assists")
 WNBAReboundsProjections = _make_prop_projection("rebounds")
 WNBAReboundsActuals = _make_prop_actuals("rebounds")
+WNBAThreePtMadeProjections = _make_prop_projection(
+    "three_pt_made", class_stem="ThreePtMade"
+)
+WNBAThreePtMadeActuals = _make_prop_actuals("three_pt_made", class_stem="ThreePtMade")
+WNBAPRAProjections = _make_prop_projection("pra", class_stem="PRA")
+WNBAPRAActuals = _make_prop_actuals("pra", class_stem="PRA")
 
 
 class YetAIHits(Base):

@@ -35,9 +35,9 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | *(shared)* | `wnba/_boxscore_fetch.py` | ✅ traditional + BoxScoreAdvancedV2 merge |
 | *(one-shot)* | `scripts/backfill_wnba_shooting_columns.py` | ✅ SQL eFG/TS backfill on historical rows |
 | `update_expected_minutes.py` | `wnba/update_expected_minutes.py` | ✅ done (NBA-weighted recency + B2B/home + teammate-out boost) |
-| *(shared)* | `wnba/_expected_minutes.py` | ✅ `calc_metrics` + context adjustments (live + training) |
+| *(shared)* | `wnba/_expected_minutes.py` | ✅ `calc_metrics` + context + historical teammate-out (box-score absences) |
 | `today_active_players.py` | `wnba/today_active_players.py` | ✅ done |
-| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ✅ done (historical `expected_minutes` via `_expected_minutes`; no teammate-out in training) |
+| `_feature_engineering.py` | `wnba/_feature_engineering.py` | ✅ done (historical `expected_minutes` + teammate-out via `_training_context`) |
 | `_ml_predict.py` | `wnba/_ml_predict.py` | ✅ done |
 | `generate_points_predictions.py` | `wnba/generate_points_predictions.py` | ✅ done |
 | `generate_assists_predictions.py` | `wnba/generate_assists_predictions.py` | ✅ done |
@@ -46,6 +46,7 @@ Implementation status of WNBA ETL relative to the NBA pipeline.
 | *(one-shot)* | `wnba/backfill_wnba_history.py` | ✅ done |
 | *(one-shot)* | `wnba/backfill_wnba_sportsdataverse.py` + `cache_wnba_player_ids.py` | ✅ done (ESPN parquet; player-id cache in `app/data/wnba_player_id_cache/`) |
 | *(training)* | `wnba/_training_context.py` + optimized `ml_training/build_training_dataset.py` | ✅ done (bulk preload; ~3s vs ~90min per stat over Railway) |
+| Phase 3 props | `generate_three_pt_made_predictions` + `generate_pra_predictions` | ✅ 3PM XGB + PRA derived (P+R+A×0.98) |
 
 Phase 2 schema tables (7) were created up-front in the Plan A migration so Plan B
 needs no schema changes.
@@ -106,25 +107,28 @@ Spread margin model: `s3://yetibets/wnba/ml_models/xgb_spread.pkl`. Trained via
 `train_spread_model` on games with both `pred_wnba_spread_actuals` and matching
 `pred_wnba_game_lines` (includes `market_spread_home`, `market_total`).
 
-**Unlike prop models, spread training has no MAE gate** — `--upload` always pushes
-to S3 when training succeeds.
+**Unlike prop models, spread training has MAE + Brier upload gates** — `--upload`
+is blocked when holdout fails (`status: gate_failed`) unless `--skip-gate`.
+Runtime also refuses ML when metadata fails the gate (falls back to Elo+pace);
+override with `WNBA_SPREAD_ML_FORCE=1`.
+
+| Gate | Threshold |
+|---|---|
+| Holdout margin MAE | ≤ **9.0** |
+| Holdout win-prob Brier | ≤ **0.28** |
 
 | Run | Rows | Train MAE | Test MAE | Notes |
 |---|---|---|---|---|
-| 2026-06-06 (post lines backfill) | **602** | **1.68** | **11.42** | Uploaded; large train/test gap |
+| 2026-06-06 (post lines backfill) | **602** | **1.68** | **11.42** | Uploaded before gates; **fails gate** → Elo at runtime |
 | 2026-06-06 (first upload, partial lines) | 602 | 2.04 | 11.21 | Superseded |
 
-**Production behavior:** `spread_projector.py` uses the S3 model when loadable
-(`projection_method = "ml"`); otherwise falls back to **Elo + pace** overlay
-(`elo_pace`). There is no runtime MAE check — the model is used whenever S3 load
-succeeds.
+**Production behavior:** `spread_projector.py` uses the S3 model only when loadable
+**and** `passes_quality_gate()` (`projection_method = "ml"`); otherwise **Elo + pace**
+(`elo_pace`).
 
-**Quality assessment:** Test MAE ~**11.4 points** vs train ~**1.7** indicates
-severe overfitting and/or a difficult temporal split (only **602** games have
-full feature rows). Monitor spread picks via `wnba-spreads-accuracy-morning` before
-trusting ML over the Elo fallback. Future work: add a spread MAE gate, more
-training rows, or regularization — tracked informally alongside **YetAI-q9z**
-(NBA spread backport).
+**Quality assessment:** Test MAE ~**11.4** vs train ~**1.7** indicated severe
+overfitting on **602** games. Gates now block re-upload and force Elo until a
+passing model is trained.
 
 ```bash
 cd backend && PYTHONPATH=. .venv/bin/python -m app.services.etl.wnba.ml_training.train_spread_model \
@@ -329,6 +333,22 @@ T19 smoke against staging (2026-05-21):
 - Totals ML shadow is always attached when the model loads; set `WNBA_TOTALS_ML_ENABLED=1`
   on the API/worker to promote `ml_total` to production `projected_total`. Local override:
   `WNBA_TOTALS_MODEL_LOCAL=/path/to/dir` (expects `gbm_totals_residual.pkl` + metadata).
+  Live compare: `totals_accuracy_tracker` writes heuristic vs ML MAE and sets
+  `recommend_promote` when season ML MAE beats heuristic (≥20 games). CLI:
+  `PYTHONPATH=. .venv/bin/python scripts/wnba_totals_ml_promote_check.py`.
+- Prop P(over): train stores `prop_calibration` in XGB metadata; inference attaches
+  `factors.p_over` when `WNBA_PROP_CALIBRATION_ENABLED=1` and calibration passes gate.
+- Spread ML: upload gated by MAE≤9 / Brier≤0.28; runtime Elo fallback unless metadata
+  passes gate (override `WNBA_SPREAD_ML_FORCE=1`).
+- Season Elo reseeding: `load_elos_from_actuals` applies
+  `0.75 * prior + 0.25 * league_mean` at season boundaries (WNBA May / NBA Oct).
+- Backtest harness: `PYTHONPATH=. .venv/bin/python scripts/wnba_backtest.py --quick`
+  grades stored ATS / totals / prop ROI at -110.
+- Phase 3 props: 3PM (XGB, train `three_pt_made`) + PRA (derived). Tables
+  `pred_wnba_{three_pt_made,pra}_{projections,actuals}`. Enable after
+  `alembic upgrade head` and uploading `xgb_three_pt_made.pkl`.
+- Totals injury impact: usage-weighted from recent box scores (rotation players);
+  `STAR_PLAYER_IMPACTS` remains fallback for thin history.
 - `LeagueDashTeamStats` and `LeagueDashPlayerStats` in nba_api use the
   `league_id_nullable` kwarg (not `league_id`). Pinned to `"10"` for WNBA in
   `wnba/_wnba_stats.py`.

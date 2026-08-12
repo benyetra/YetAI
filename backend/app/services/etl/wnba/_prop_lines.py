@@ -37,6 +37,8 @@ EDGE_THRESHOLDS: dict[str, float] = {
     "points": 1.0,
     "assists": 0.5,
     "rebounds": 0.5,
+    "three_pt_made": 0.5,
+    "pra": 1.5,
 }
 
 

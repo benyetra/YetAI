@@ -33,6 +33,7 @@ LEAGUE_AVG_DRTG = 102.0
 LEAGUE_AVG_TOTAL = 164.0
 DENVER_ALTITUDE_BONUS = 0.0  # WNBA has no altitude venues
 
+# Fallback when a named star has thin recent history (expansion / early season).
 STAR_PLAYER_IMPACTS = {
     "a'ja wilson": 4.8,
     "caitlin clark": 4.8,
@@ -53,6 +54,14 @@ STAR_PLAYER_IMPACTS = {
     "angel reese": 3.3,
     "paige bueckers": 3.5,
 }
+
+# Usage-weighted injury impact (primary path).
+INJURY_LOOKBACK_GAMES = 10
+INJURY_MIN_GAMES = 5
+INJURY_ROTATION_MINUTES = 18.0
+INJURY_MAX_PLAYER_IMPACT = 6.0
+INJURY_MAX_TEAM_IMPACT = 12.0
+INJURY_DEFAULT_REPLACEABILITY = 0.55  # when usage% missing
 
 TEAM_NAME_TO_ID: dict[str, int] = {}
 TEAM_ID_TO_NAME: dict[int, str] = {}
@@ -239,67 +248,114 @@ def get_projected_starters(team_name: str, num_starters: int = 5) -> List[Dict]:
     return player_stats[:num_starters]
 
 
+def estimate_player_totals_impact_from_games(games: list) -> float | None:
+    """
+    Usage-weighted points impact when a rotation player is unavailable.
+
+    Higher usage ⇒ less replaceable ⇒ larger impact. Returns None for thin
+    history or bench minutes so callers can fall back to STAR_PLAYER_IMPACTS.
+    """
+    playable = [
+        g
+        for g in games
+        if getattr(g, "minutes", None) not in (None, 0)
+        and getattr(g, "points", None) is not None
+    ]
+    if len(playable) < INJURY_MIN_GAMES:
+        return None
+    sample = playable[:INJURY_LOOKBACK_GAMES]
+    avg_min = sum(float(g.minutes) for g in sample) / len(sample)
+    if avg_min < INJURY_ROTATION_MINUTES:
+        return None
+    avg_pts = sum(float(g.points) for g in sample) / len(sample)
+    usages = [
+        float(g.usage_percentage)
+        for g in sample
+        if getattr(g, "usage_percentage", None) is not None
+    ]
+    if usages:
+        avg_usg = sum(usages) / len(usages)
+        # usage 15% → ~0.62 replaceable; usage 35% → ~0.42 replaceable
+        replaceability = max(0.35, min(0.70, 0.75 - (avg_usg / 100.0) * 0.9))
+    else:
+        replaceability = INJURY_DEFAULT_REPLACEABILITY
+    impact = avg_pts * (1.0 - replaceability)
+    return min(float(impact), INJURY_MAX_PLAYER_IMPACT)
+
+
+def _load_recent_games_for_injury(player_id: int) -> list:
+    return (
+        db.query(WNBARecentGames)
+        .filter(
+            WNBARecentGames.player_id == player_id,
+            WNBARecentGames.minutes.isnot(None),
+            WNBARecentGames.minutes > 0,
+        )
+        .order_by(WNBARecentGames.game_date.desc())
+        .limit(INJURY_LOOKBACK_GAMES)
+        .all()
+    )
+
+
 def calculate_injury_impact(
     team_name: str, game_date: date
 ) -> Tuple[float, List[Dict]]:
     """
     Calculate total impact on expected score from injuries.
-    Returns adjustment amount and list of injured players with impacts.
 
-    Only counts star players explicitly listed in STAR_PLAYER_IMPACTS dictionary.
-    This prevents noise from role players and bench players.
+    Primary: usage-weighted impact from recent box scores for any rotation
+    player ruled out/doubtful/questionable. Fallback: STAR_PLAYER_IMPACTS when
+    history is thin (early season / expansion).
     """
     team_id = get_team_id_from_name(team_name)
     if not team_id:
         return 0.0, []
 
     total_impact = 0.0
-    injury_list = []
+    injury_list: List[Dict] = []
 
-    # Get roster for team
     roster = db.query(WNBATeamRoster).filter_by(team_id=team_id).all()
 
-    # Check each player's injury status
     for player in roster:
-        player_name_lower = player.player_name.lower()
-
-        # Only count star players with explicit impact values
-        if player_name_lower not in STAR_PLAYER_IMPACTS:
-            continue
-
         injury = (
             db.query(WNBAPlayerInjuryStatus)
             .filter_by(player_id=player.player_id)
             .first()
         )
+        if not injury or injury.status not in ("out", "doubtful", "questionable", "ir"):
+            continue
 
-        if injury and injury.status in ("out", "doubtful", "questionable", "ir"):
+        if injury.status in ("out", "ir"):
+            probability = 1.0
+        elif injury.status == "doubtful":
+            probability = 0.75
+        elif injury.status == "questionable":
+            probability = 0.50
+        else:
+            probability = 0.25
+
+        games = _load_recent_games_for_injury(player.player_id)
+        base_impact = estimate_player_totals_impact_from_games(games)
+        method = "usage"
+        if base_impact is None:
+            player_name_lower = (player.player_name or "").lower()
+            if player_name_lower not in STAR_PLAYER_IMPACTS:
+                continue
             base_impact = STAR_PLAYER_IMPACTS[player_name_lower]
+            method = "star_fallback"
 
-            # Adjust by injury status probability
-            if injury.status in ("out", "ir"):
-                probability = 1.0
-            elif injury.status == "doubtful":
-                probability = 0.75
-            elif injury.status == "questionable":
-                probability = 0.50
-            else:
-                probability = 0.25
+        adjusted_impact = base_impact * probability
+        total_impact += adjusted_impact
+        injury_list.append(
+            {
+                "player": player.player_name,
+                "status": injury.status.upper(),
+                "impact": round(-adjusted_impact, 1),
+                "method": method,
+            }
+        )
 
-            adjusted_impact = base_impact * probability
-            total_impact += adjusted_impact
-
-            injury_list.append(
-                {
-                    "player": player.player_name,
-                    "status": injury.status.upper(),
-                    "impact": round(-adjusted_impact, 1),
-                }
-            )
-
-    # Cap per-team injury impact (even losing multiple stars shouldn't exceed ~12 pts)
-    total_impact = min(total_impact, 12.0)
-
+    total_impact = min(total_impact, INJURY_MAX_TEAM_IMPACT)
     return -total_impact, sorted(injury_list, key=lambda x: x["impact"])
 
 

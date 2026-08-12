@@ -32,12 +32,13 @@ logger = logging.getLogger(__name__)
 LEAGUE_AVG_PACE = 80.0
 MIN_GAMES_REQUIRED = 5
 STARTER_MINUTES_L5 = 28.0
-SUPPORTED_STATS: tuple[str, ...] = ("points", "assists", "rebounds")
+SUPPORTED_STATS: tuple[str, ...] = ("points", "assists", "rebounds", "three_pt_made")
 
 _OPP_STAT_ALLOWED_COL: dict[str, str] = {
     "points": "points_allowed_per_game",
     "assists": "assists_allowed_per_game",
     "rebounds": "rebounds_allowed_per_game",
+    "three_pt_made": "three_pt_made_allowed_per_game",
 }
 
 _ADVANCED_AVG_COLS: tuple[str, ...] = (
@@ -270,8 +271,20 @@ def build_features(
             team_name=team_name,
         )
     home_game = is_home_bool(is_home, team_name=team_name)
+    freed_minutes = 0.0
+    active_pool_total: float | None = None
+    if ctx is not None:
+        freed_minutes, active_pool_total = ctx.teammate_out_boost_inputs(
+            player_id, game_date
+        )
+        if active_pool_total <= 0:
+            active_pool_total = None
     expected = historical_expected_minutes(
-        recent, game_date=game_date, home_game=home_game
+        recent,
+        game_date=game_date,
+        home_game=home_game,
+        freed_minutes=freed_minutes,
+        active_pool_total=active_pool_total,
     )
     if expected is None:
         expected = features["minutes_l5"]

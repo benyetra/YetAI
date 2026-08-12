@@ -302,6 +302,8 @@ _NEWS_ENTITY_KEYS: dict[tuple[str, str], tuple[str, str]] = {
     ("wnba", "points"): ("player_id", "date"),
     ("wnba", "assists"): ("player_id", "date"),
     ("wnba", "rebounds"): ("player_id", "date"),
+    ("wnba", "three_pt_made"): ("player_id", "date"),
+    ("wnba", "pra"): ("player_id", "date"),
     ("mlb", "strikeouts"): ("pitcher_id", "date"),
     ("nfl", "passing_yards"): ("qb_player_id", "game_date"),
     ("nhl", "saves"): ("goalie_id", "game_date"),

@@ -23,6 +23,7 @@ from app.services.etl.wnba._prop_lines import (
     resolve_wnba_event_id,
 )
 from app.services.etl.wnba._yetiwatch_news import attach_yetiwatch_news
+from app.services.etl.wnba.prop_calibration import maybe_attach_p_over
 
 logger = logging.getLogger(__name__)
 
@@ -107,6 +108,12 @@ def run() -> dict:
                 event_id=event_ids[matchup],
             ):
                 lines_attached += 1
+            maybe_attach_p_over(
+                row,
+                stat=STAT,
+                projected=projected,
+                line=row.get("market_line"),
+            )
             attach_yetiwatch_news(row, db=db, player_id=p.player_id, game_date=today)
             upsert_rows.append(row)
         upsert_many(
