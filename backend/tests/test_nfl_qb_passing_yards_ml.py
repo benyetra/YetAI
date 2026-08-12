@@ -363,7 +363,8 @@ def test_blend_ml_with_line_and_select_weight():
     line = np.array([200.0, 220.0, 240.0, 260.0])  # perfect line
     real = np.array([True, True, True, False])
     sel = select_line_blend_weight(y_true=y, ml_pred=ml, line_pred=line, real_mask=real)
-    assert sel["selected_w"] == 0.0  # pure line best on real rows
+    assert sel["diagnostic_best_w"] == 0.0  # pure line best diagnostically
+    assert sel["selected_w"] == 0.25  # promote excludes w=0
     assert len(sel["candidates"]) == 5
 
 

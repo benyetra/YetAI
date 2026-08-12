@@ -110,7 +110,18 @@ jobs:
           )
           print("n_train_equals_rows_train:", tm.get("n_train") == report.get("rows_train"))
           print("promote_hp_sweep:", tm.get("promote_hp_sweep"))
-          print("line_blend:", report.get("line_blend"))
+          lb = report.get("line_blend") or {}
+          print(
+              "line_blend: selected_w=",
+              lb.get("selected_w"),
+              "lift=",
+              lb.get("selected_lift_vs_dynamic_tier"),
+              "diagnostic_best_w=",
+              lb.get("diagnostic_best_w"),
+              "diagnostic_lift=",
+              lb.get("diagnostic_best_lift_vs_dynamic_tier"),
+          )
+          print("line_blend_candidates:", lb.get("candidates"))
           print("=== ABLATIONS ===")
           ab = report.get("ablations") or {}
           for name, payload in ab.items():

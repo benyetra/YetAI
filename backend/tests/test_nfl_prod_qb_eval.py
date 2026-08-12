@@ -29,8 +29,10 @@ def test_select_line_blend_weight_prefers_better_mae():
     line = np.array([100.0, 200.0, 300.0])
     real = np.array([True, True, True])
     sel = select_line_blend_weight(y_true=y, ml_pred=ml, line_pred=line, real_mask=real)
-    assert sel["selected_w"] == 0.0
-    assert sel["selected_mae"] == 0.0
+    # Diagnostic may pick pure line; promote wire-up excludes w=0.
+    assert sel["diagnostic_best_w"] == 0.0
+    assert sel["selected_w"] == 0.25
+    assert sel["min_w_for_promote"] == 0.25
 
 
 def test_market_and_line_baseline_helpers():
