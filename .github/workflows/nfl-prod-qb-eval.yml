@@ -108,7 +108,8 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
-          EXTRA=""
+          # Always attempt promote-gated S3 upload; force_upload bypasses the gate.
+          EXTRA="--upload"
           if [ "${{ inputs.force_upload }}" = "true" ]; then
             EXTRA="--force-upload"
           fi
@@ -144,6 +145,9 @@ jobs:
               "pass_yds_line_sources",
               "promote_recommended",
               "recommendation",
+              "s3_uploaded",
+              "s3_upload_skipped",
+              "s3_upload_error",
           ):
               print(f"{k}: {report.get(k)}")
           tm = report.get("train_metadata") or {}
