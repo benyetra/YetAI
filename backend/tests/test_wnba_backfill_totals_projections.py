@@ -126,4 +126,10 @@ def test_sync_market_totals_updates_rows_with_lines():
     batch = upsert.call_args[0][2]
     assert batch[0]["market_total"] == 165.0
     assert batch[0]["edge"] == 3.0
+    assert upsert.call_args.kwargs.get("update_keys") == [
+        "market_total",
+        "edge",
+        "recommendation",
+        "confidence_score",
+    ]
     assert out["updated"] == 1
