@@ -452,6 +452,7 @@ def train_and_eval(
         PROMOTE_BASELINE_MODE,
         PROMOTE_FEATURE_NAMES,
         predict_yards_ml,
+        select_line_blend_weight,
         train_promote_qb_yards_model,
     )
 
@@ -468,12 +469,13 @@ def train_and_eval(
     train_idx, test_idx, holdout_label = _time_split(features, meta)
     X_train = features.iloc[train_idx].reset_index(drop=True)
     y_train = target.iloc[train_idx].reset_index(drop=True)
-    X_test = features.iloc[test_idx]
+    X_test = features.iloc[test_idx].reset_index(drop=True)
     y_test = target.iloc[test_idx].to_numpy()
-    tier_test = meta.iloc[test_idx]["tier_yards"].to_numpy()
+    meta_test = meta.iloc[test_idx].reset_index(drop=True)
+    tier_test = meta_test["tier_yards"].to_numpy()
     static_tier_test = (
-        meta.iloc[test_idx]["static_tier_yards"].to_numpy()
-        if "static_tier_yards" in meta.columns
+        meta_test["static_tier_yards"].to_numpy()
+        if "static_tier_yards" in meta_test.columns
         else tier_test
     )
 
@@ -484,7 +486,7 @@ def train_and_eval(
         feature_order=promote_features,
         baseline_mode=PROMOTE_BASELINE_MODE,
     )
-    ml_pred = np.array(
+    ml_pred_raw = np.array(
         [
             predict_yards_ml(
                 model,
@@ -496,9 +498,48 @@ def train_and_eval(
             for i in range(len(X_test))
         ]
     )
+
+    real_lines: list[float | None] = []
+    if "pass_yds_line_real" in meta_test.columns:
+        for i in range(len(meta_test)):
+            val = meta_test.iloc[i].get("pass_yds_line_real")
+            if val is None or (isinstance(val, float) and np.isnan(val)):
+                real_lines.append(None)
+            else:
+                real_lines.append(float(val))
+    else:
+        real_lines = [None] * len(X_test)
+    line_pred = np.array(
+        [
+            _line_pred_row(
+                X_test.iloc[i].to_dict(),
+                tier=float(tier_test[i]),
+                real_line=real_lines[i],
+            )
+            for i in range(len(X_test))
+        ]
+    )
+    real_mask = np.array([v is not None for v in real_lines], dtype=bool)
+    blend_sel = select_line_blend_weight(
+        y_true=y_test,
+        ml_pred=ml_pred_raw,
+        line_pred=line_pred,
+        real_mask=real_mask,
+    )
+    blend_w = float(blend_sel["selected_w"])
+    ml_pred = np.asarray(blend_sel["blended_pred"], dtype=float)
+    metadata = {
+        **metadata,
+        "line_blend_w": blend_w,
+        "line_blend_candidates": blend_sel.get("candidates"),
+        "line_blend_note": "post-hoc w*ml+(1-w)*line when real prop line; else ml",
+    }
+
     tier_mae = _mae(y_test, tier_test)
     static_tier_mae = _mae(y_test, static_tier_test)
+    ml_mae_raw = _mae(y_test, ml_pred_raw)
     ml_mae = _mae(y_test, ml_pred)
+    lift_raw = (tier_mae - ml_mae_raw) / tier_mae if tier_mae > 0 else 0.0
     lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
     lift_vs_static = (
         (static_tier_mae - ml_mae) / static_tier_mae if static_tier_mae > 0 else 0.0
@@ -510,10 +551,45 @@ def train_and_eval(
         y_train=y_train,
         X_test=X_test,
         y_test=y_test,
-        meta_test=meta.iloc[test_idx].reset_index(drop=True),
+        meta_test=meta_test,
         tier_test=tier_test,
         static_tier_test=static_tier_test,
     )
+    # Attach promote-path line-blend grid (same ml_pred_raw / lines as gate).
+    blend_candidates_report: list[dict[str, Any]] = []
+    for row in blend_sel.get("candidates") or []:
+        w = float(row["w"])
+        mae = float(row["mae"])
+        blend_candidates_report.append(
+            {
+                **row,
+                "mae_lift_vs_dynamic_tier": round(
+                    (tier_mae - mae) / tier_mae if tier_mae else 0.0, 4
+                ),
+            }
+        )
+        ablations[f"line_blend_w_{w:g}"] = {
+            "mae": mae,
+            "mae_lift_vs_dynamic_tier": blend_candidates_report[-1][
+                "mae_lift_vs_dynamic_tier"
+            ],
+            "n": int(row.get("n") or len(y_test)),
+            "n_real": int(row.get("n_real") or 0),
+            "w": w,
+            "note": "promote-path tier-only ML blended with real prop line",
+        }
+    ablations["line_blend"] = {
+        "selected_w": blend_w,
+        "selected_mae": float(blend_sel.get("selected_mae") or ml_mae),
+        "selected_lift_vs_dynamic_tier": round(lift, 4),
+        "ml_mae_raw": round(ml_mae_raw, 3),
+        "ml_lift_raw": round(lift_raw, 4),
+        "candidates": blend_candidates_report,
+    }
+    summary = ablations.get("summary") or {}
+    summary["line_blend_selected_w"] = blend_w
+    summary["line_blend_lift_vs_dynamic_tier"] = round(lift, 4)
+    ablations["summary"] = summary
 
     report: dict[str, Any] = {
         "status": "ok",
@@ -526,14 +602,17 @@ def train_and_eval(
         "rows_train": int(len(X_train)),
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
-        "model_family": "residual_gbm_tier_only",
-        "promote_path": "tier_only_residual",
+        "model_family": "residual_gbm_tier_only_line_blend",
+        "promote_path": "tier_only_residual_line_blend",
         "promote_hp_selected": metadata.get("promote_hp_selected"),
+        "line_blend_w": blend_w,
         "fit_full": True,
         "baseline_mode": PROMOTE_BASELINE_MODE,
         "n_features": len(promote_features),
         "tier_mae": round(tier_mae, 3),
         "static_tier_mae": round(static_tier_mae, 3),
+        "ml_mae_raw": round(ml_mae_raw, 3),
+        "mae_lift_raw": round(lift_raw, 4),
         "ml_mae": round(ml_mae, 3),
         "mae_lift": round(lift, 4),
         "mae_lift_vs_static_tier": round(lift_vs_static, 4),
@@ -541,6 +620,7 @@ def train_and_eval(
         "promote_recommended": promote,
         "model_version": metadata.get("model_version"),
         "train_metadata": metadata,
+        "line_blend": ablations["line_blend"],
         "ablations": ablations,
         "recommendation": (
             "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"

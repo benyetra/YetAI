@@ -28,9 +28,12 @@ matrix still includes prop-line columns for O/U / diagnostics, but the
 GBM. Railway ablations (2026-08-11) showed market-residual arms collapsing
 toward the line (−2% / −11% lift) while tier-only residual was **+3.0%**.
 Promote trainer sweeps a small regularized HP grid on inner time CV, then
-`fit_full` on all train rows. Live `qb_betting` still reinjects `pass_yds_line`
-for O/U / shadow context; yards residual inference reads `baseline_mode` from
-model metadata.
+`fit_full` on all train rows. After training, holdout tunes a **post-hoc line
+blend** `w·ml + (1−w)·line` when a real prop line exists (`w∈{0,0.25,0.5,0.75,1}`);
+winning `line_blend_w` is stored in model metadata and applied in
+`predict_yards_ml_loaded` / shadow refresh after `reinject_pass_yds_line`.
+Promote gate MAE uses the blended prediction. Live `qb_betting` still reinjects
+`pass_yds_line` for O/U / shadow context.
 
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
@@ -45,8 +48,10 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 (Railway)**):
 - Promote model = **tier-only residual** + HP sweep (`default` / `shallow` /
   `strong_reg`) + **`fit_full=True`** (`n_train == rows_train`).
-- Report includes **`ablations`** (market arms + tier-only HP variants) and
-  `promote_hp_selected`.
+- Holdout **line-blend** ablation selects `line_blend_w`; gate uses blended MAE
+  (`ml_mae` / `mae_lift`) and also reports raw residual (`ml_mae_raw`).
+- Report includes **`ablations`** (market arms + tier-only HP variants +
+  `line_blend_w_*`) and `promote_hp_selected`.
 
 ### Latest Railway ablations (2026-08-11, post-#98)
 
