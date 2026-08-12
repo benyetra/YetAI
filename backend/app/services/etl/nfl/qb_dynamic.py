@@ -461,6 +461,11 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
         hours_until_kickoff,
         should_promote_backup,
     )
+    from app.services.etl.nfl.qb_starter_registry import (
+        filter_depth_charts_to_latest_snapshot,
+        get_starter_override,
+        resolve_qb_starter_for_team,
+    )
 
     print(f"🔍 Getting starting QBs for {season} Week {week}")
 
@@ -490,56 +495,67 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
         latest_week_per_team = qb_depth.groupby("club_code")["week"].max().reset_index()
         use_2025_format = False
     else:
-        # 2025 format
-        qb_depth = depth_charts[depth_charts["pos_abb"] == "QB"].copy()
-        print(f"📊 Found {len(qb_depth)} QB depth chart entries (2025 format)")
+        # 2025 format — many snapshots share one frame; keep latest only
+        qb_depth_raw = depth_charts[depth_charts["pos_abb"] == "QB"].copy()
+        print(
+            f"📊 Found {len(qb_depth_raw)} QB depth chart entries (2025 format, all snapshots)"
+        )
+        qb_depth = filter_depth_charts_to_latest_snapshot(qb_depth_raw)
+        if "dt" in qb_depth.columns and not qb_depth.empty:
+            print(
+                f"📊 Using latest snapshot ({qb_depth['dt'].iloc[0]}): "
+                f"{len(qb_depth)} QB rows"
+            )
 
-        # No week column in 2025 format - use current data for all teams
         teams = qb_depth["team"].unique()
         latest_week_per_team = pd.DataFrame(
             {
                 "team": teams,
-                "week": [week] * len(teams),  # Use current week for all teams
+                "week": [week] * len(teams),
             }
         )
         use_2025_format = True
 
     starting_qbs = []
     team_id_mapping = get_team_id_mapping()
+    depth_field = "pos_rank" if use_2025_format else "depth_team"
+    name_field = "player_name" if use_2025_format else "full_name"
 
     for _, team_week in latest_week_per_team.iterrows():
         if use_2025_format:
             team = team_week["team"]
             latest_week = team_week["week"]
-
-            # Get QBs for this team (2025 format)
             team_qbs = qb_depth[qb_depth["team"] == team].sort_values("pos_rank")
         else:
             team = team_week["club_code"]
             latest_week = team_week["week"]
-
-            # Get QBs for this team's latest week (2024 format)
             team_qbs = qb_depth[
                 (qb_depth["club_code"] == team) & (qb_depth["week"] == latest_week)
             ].sort_values("depth_team")
 
-        if team_qbs.empty:
+        override_name = get_starter_override(season, str(team))
+        qb_row = resolve_qb_starter_for_team(
+            team=str(team),
+            team_qbs=team_qbs,
+            full_qb_depth=qb_depth,
+            override_name=override_name,
+            use_2025_format=use_2025_format,
+        )
+        if qb_row is None:
             continue
 
-        # Get the starter (different field names for different formats)
-        if use_2025_format:
-            starter = team_qbs[team_qbs["pos_rank"] == 1]
-            depth_field = "pos_rank"
-            name_field = "player_name"
-        else:
-            starter = team_qbs[team_qbs["depth_team"] == "1"]
-            depth_field = "depth_team"
-            name_field = "full_name"
+        qb = qb_row
+        if override_name:
+            rank_one = 1 if use_2025_format else "1"
+            depth_starter = team_qbs[team_qbs[depth_field] == rank_one]
+            depth_name = (
+                str(depth_starter.iloc[0][name_field])
+                if not depth_starter.empty
+                else None
+            )
+            if depth_name and not _name_matches_starter(depth_name, override_name):
+                print(f"  🔧 Override {team}: {depth_name} → {override_name}")
 
-        if starter.empty:
-            continue
-
-        qb = starter.iloc[0]
         is_injured = False
         injury_status = "Healthy"
         kickoff = get_game_kickoff(str(team), season, week)
@@ -548,14 +564,13 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
         if not injuries.empty:
             qb_injuries = injuries[
                 (injuries["gsis_id"] == qb["gsis_id"])
-                & (injuries["week"] >= latest_week - 1)  # Recent injury reports
+                & (injuries["week"] >= latest_week - 1)
             ]
 
             if not qb_injuries.empty:
                 latest_injury = qb_injuries.sort_values("date_modified").iloc[-1]
                 injury_status = latest_injury.get("report_status", "Unknown")
 
-                # Unavailable or late-escalated Questionable → promote backup
                 promote = should_promote_backup(
                     injury_status, hours_to_kickoff=hours
                 ) or injury_status in ["Out", "IR", "Doubtful"]
@@ -593,7 +608,7 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
             "name": qb[name_field],
             "team_id": team_id,
             "team_name": get_team_full_name(team),
-            "team_abbr": team,  # Add team abbreviation
+            "team_abbr": team,
             "player_id": qb["gsis_id"],
             "depth": int(qb[depth_field]),
             "week": int(latest_week),
@@ -609,6 +624,12 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
 
     print(f"\n🎯 Found {len(starting_qbs)} starting QBs")
     return starting_qbs
+
+
+def _name_matches_starter(row_name: str, target_name: str) -> bool:
+    from app.services.etl.nfl.qb_tiers import normalize_qb_name_key
+
+    return normalize_qb_name_key(row_name) == normalize_qb_name_key(target_name)
 
 
 # predict_qb_passing_yards imported from qb_tiers (re-exported for callers)
