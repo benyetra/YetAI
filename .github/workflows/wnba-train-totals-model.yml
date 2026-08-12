@@ -16,6 +16,11 @@ on:
         required: true
         type: boolean
         default: true
+      skip_gate:
+        description: Upload even if holdout residual MAE exceeds gate (shadow/ops only; do not enable WNBA_TOTALS_ML_ENABLED)
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   train:
@@ -111,6 +116,9 @@ jobs:
           ARGS=(--start "${{ inputs.start }}" --end "${{ inputs.end }}")
           if [ "${{ inputs.upload }}" = "true" ]; then
             ARGS+=(--upload)
+          fi
+          if [ "${{ inputs.skip_gate }}" = "true" ]; then
+            ARGS+=(--skip-gate)
           fi
           OUT="$(python3 -m app.services.etl.wnba.ml_training.train_totals_model "${ARGS[@]}")"
           echo "$OUT"
