@@ -121,12 +121,16 @@ def sync_market_totals_from_lines(
     season_start: date,
     season_end: date,
 ) -> dict[str, Any]:
-    """Refresh ``market_total`` (and edge fields) on stored projections from game lines."""
+    """Refresh ``market_total`` (and edge fields) on stored projections from game lines.
+
+    Uses UPDATE only — never INSERT. Postgres still enforces NOT NULL on the
+    INSERT half of ``ON CONFLICT``, so market-only upserts fail even when the
+    conflict row exists.
+    """
     db = SessionLocal()
     updated = 0
     unchanged = 0
     still_missing = 0
-    batch: list[dict] = []
     try:
         market_lines = _preload_market_lines(db, season_start, season_end)
         projections = (
@@ -151,50 +155,18 @@ def sync_market_totals_from_lines(
                 unchanged += 1
                 continue
 
-            row = {
-                "game_date": proj.game_date,
-                "home_team_name": proj.home_team_name,
-                "away_team_name": proj.away_team_name,
-                **_market_fields_from_projected(
-                    float(proj.projected_total), market_total
-                ),
-            }
-            batch.append(row)
-            if len(batch) >= BATCH_SIZE:
-                upsert_many(
-                    db,
-                    WNBATotalsProjections,
-                    batch,
-                    conflict_keys=["game_date", "home_team_name", "away_team_name"],
-                    update_keys=[
-                        "market_total",
-                        "edge",
-                        "recommendation",
-                        "confidence_score",
-                    ],
-                )
-                db.commit()
-                updated += len(batch)
-                batch.clear()
-
-        if batch:
-            # Must pass update_keys: rows only carry market fields. Default
-            # upsert would INSERT without projected_total (NOT NULL).
-            upsert_many(
-                db,
-                WNBATotalsProjections,
-                batch,
-                conflict_keys=["game_date", "home_team_name", "away_team_name"],
-                update_keys=[
-                    "market_total",
-                    "edge",
-                    "recommendation",
-                    "confidence_score",
-                ],
+            fields = _market_fields_from_projected(
+                float(proj.projected_total), market_total
             )
-            db.commit()
-            updated += len(batch)
+            proj.market_total = fields["market_total"]
+            proj.edge = fields["edge"]
+            proj.recommendation = fields["recommendation"]
+            proj.confidence_score = fields["confidence_score"]
+            updated += 1
+            if updated % BATCH_SIZE == 0:
+                db.commit()
 
+        db.commit()
         result = {
             "status": "ok",
             "season_start": str(season_start),
