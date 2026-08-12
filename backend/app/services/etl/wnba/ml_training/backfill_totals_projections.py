@@ -178,11 +178,19 @@ def sync_market_totals_from_lines(
                 batch.clear()
 
         if batch:
+            # Must pass update_keys: rows only carry market fields. Default
+            # upsert would INSERT without projected_total (NOT NULL).
             upsert_many(
                 db,
                 WNBATotalsProjections,
                 batch,
                 conflict_keys=["game_date", "home_team_name", "away_team_name"],
+                update_keys=[
+                    "market_total",
+                    "edge",
+                    "recommendation",
+                    "confidence_score",
+                ],
             )
             db.commit()
             updated += len(batch)
