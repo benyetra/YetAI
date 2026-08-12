@@ -3,12 +3,16 @@
   "target": "residual_actual_minus_baseline",
   "residual_target": true,
   "baseline": "market_aware_tier_line_blend",
-  "cv_split": "time_ordered_last_20pct",
-  "trained_at": "2026-08-11T19:47:03.292783",
-  "train_date": "20260811",
-  "model_version": "gbm-qb-residual-20260811",
-  "n_train": 730,
-  "n_test": 182,
+  "baseline_mode": "market",
+  "fit_full": true,
+  "cv_split": "time_ordered_last_20pct_then_refit_full",
+  "trained_at": "2026-08-12T02:10:00.998271",
+  "train_date": "20260812",
+  "model_version": "gbm-qb-residual-20260812",
+  "n_train": 1171,
+  "n_test": 234,
+  "cv_n_train": 937,
+  "cv_n_test": 234,
   "features": [
     "tier_yards",
     "is_backup",
@@ -47,28 +51,113 @@
     "opp_scheme_pressure"
   ],
   "hyperparams": {
-    "n_estimators": 150,
-    "max_depth": 3,
-    "learning_rate": 0.06,
-    "subsample": 0.85,
+    "n_estimators": 80,
+    "max_depth": 2,
+    "learning_rate": 0.04,
+    "subsample": 0.7,
     "random_state": 42,
-    "min_samples_leaf": 8
+    "min_samples_leaf": 24
   },
-  "train_mae": 37.67375655415928,
-  "test_mae": 54.663873754681404,
-  "holdout_mae": 54.663873754681404,
-  "train_rmse": 48.11578153235487,
-  "test_rmse": 69.12073487155526,
-  "train_residual_mae": 37.67375655415928,
-  "test_residual_mae": 54.663873754681404,
-  "promote_recommended": false,
-  "holdout_tier_mae": 61.803,
-  "holdout_ml_mae": 62.655,
-  "holdout_mae_lift": -0.0138,
-  "training_source": "nflverse_weekly",
-  "seasons": [
-    2023,
-    2024,
-    2025
-  ]
+  "train_mae": 53.77071025830487,
+  "test_mae": 60.829799662060225,
+  "holdout_mae": 60.829799662060225,
+  "train_rmse": 67.63080832072946,
+  "test_rmse": 76.65235505025791,
+  "train_residual_mae": 53.77071025830487,
+  "test_residual_mae": 60.829799662060225,
+  "promote_path": "market_residual_v6",
+  "promote_hp_selected": "strong_reg",
+  "promote_hp_sweep": [
+    {
+      "name": "default",
+      "hyperparams": {
+        "n_estimators": 150,
+        "max_depth": 3,
+        "learning_rate": 0.06,
+        "subsample": 0.85,
+        "random_state": 42,
+        "min_samples_leaf": 8
+      },
+      "cv_holdout_mae": 61.922,
+      "cv_n_train": 937,
+      "cv_n_test": 234
+    },
+    {
+      "name": "shallow",
+      "hyperparams": {
+        "n_estimators": 100,
+        "max_depth": 2,
+        "learning_rate": 0.05,
+        "subsample": 0.75,
+        "random_state": 42,
+        "min_samples_leaf": 16
+      },
+      "cv_holdout_mae": 60.953,
+      "cv_n_train": 937,
+      "cv_n_test": 234
+    },
+    {
+      "name": "strong_reg",
+      "hyperparams": {
+        "n_estimators": 80,
+        "max_depth": 2,
+        "learning_rate": 0.04,
+        "subsample": 0.7,
+        "random_state": 42,
+        "min_samples_leaf": 24
+      },
+      "cv_holdout_mae": 60.83,
+      "cv_n_train": 937,
+      "cv_n_test": 234
+    }
+  ],
+  "model_family": "residual_gbm_market_v6",
+  "line_blend_w": null,
+  "line_blend_candidates": [
+    {
+      "w": 0.0,
+      "mae": 56.908,
+      "n": 585,
+      "n_real": 533,
+      "eligible_for_promote": false
+    },
+    {
+      "w": 0.25,
+      "mae": 56.965,
+      "n": 585,
+      "n_real": 533,
+      "eligible_for_promote": true
+    },
+    {
+      "w": 0.5,
+      "mae": 57.044,
+      "n": 585,
+      "n_real": 533,
+      "eligible_for_promote": true
+    },
+    {
+      "w": 0.75,
+      "mae": 57.155,
+      "n": 585,
+      "n_real": 533,
+      "eligible_for_promote": true
+    },
+    {
+      "w": 1.0,
+      "mae": 57.314,
+      "n": 585,
+      "n_real": 533,
+      "eligible_for_promote": true
+    }
+  ],
+  "line_blend_diagnostic_best_w": 0.0,
+  "line_blend_min_w_for_promote": 0.25,
+  "line_blend_note": "diagnostic only for market residual promote; gate uses raw ML",
+  "promote_recommended": true,
+  "holdout_tier_mae": 65.525,
+  "holdout_ml_mae": 57.314,
+  "holdout_mae_lift": 0.1253,
+  "training_source": "pred_qb_actuals",
+  "season_start": "2023-09-01",
+  "season_end": "2026-02-15"
 }

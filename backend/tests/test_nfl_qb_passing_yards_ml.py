@@ -94,7 +94,16 @@ def test_enrich_promotes_ml_when_enabled(monkeypatch):
             },
         ):
             with patch.object(qbm, "_MODEL", object()):
-                out = enrich_qb_prediction_for_write(_tier_pred(), season=2024, week=3)
+                out = enrich_qb_prediction_for_write(
+                    _tier_pred(),
+                    season=2024,
+                    week=3,
+                    context={
+                        "pass_yds_line": 255.0,
+                        "line_is_real": True,
+                        "dynamic_tier_yards": 245.0,
+                    },
+                )
     assert out["predicted_passing_yards"] == 260.0
     assert out["prediction_method"] == "gbm_qb_yards"
     assert out["prediction_interval_lower"] < 260.0
@@ -460,6 +469,19 @@ def test_reinject_pass_yds_line():
     assert out["line_is_real"] == 1.0
     assert out["line_minus_rolling"] == 35.5
     assert out["line_minus_tier"] == 25.5
+    assert out["market_residual_l3"] == -35.5
+
+
+def test_enrich_ml_without_real_line_stays_dynamic_tier(monkeypatch):
+    monkeypatch.setenv("NFL_QB_ML_ENABLED", "1")
+    with patch.object(qbm, "predict_yards_ml_loaded", return_value=160.0):
+        with patch.object(qbm, "_MODEL", object()):
+            with patch.object(
+                qbm, "_METADATA", {"target": "residual_actual_minus_baseline"}
+            ):
+                out = enrich_qb_prediction_for_write(_tier_pred(), season=2024, week=3)
+    assert out["predicted_passing_yards"] == 245.0
+    assert out["prediction_method"] == "dynamic_starter"
 
 
 def test_enrich_promotes_residual_method(monkeypatch):
@@ -474,6 +496,21 @@ def test_enrich_promotes_residual_method(monkeypatch):
             },
         ):
             with patch.object(qbm, "_MODEL", object()):
-                out = enrich_qb_prediction_for_write(_tier_pred(), season=2024, week=3)
+                out = enrich_qb_prediction_for_write(
+                    _tier_pred(),
+                    season=2024,
+                    week=3,
+                    context={
+                        "pass_yds_line": 255.0,
+                        "line_is_real": True,
+                        "dynamic_tier_yards": 245.0,
+                    },
+                )
     assert out["predicted_passing_yards"] == 260.0
     assert out["prediction_method"] == "gbm_qb_residual"
+
+
+def test_local_model_paths_skips_bundled_when_ml_enabled(monkeypatch):
+    monkeypatch.setenv("NFL_QB_ML_ENABLED", "1")
+    monkeypatch.delenv("NFL_QB_MODEL_LOCAL", raising=False)
+    assert qbm._local_model_paths() is None

@@ -32,6 +32,13 @@ ablation arm only — post-hoc `line_blend_w` is **not** applied to the market
 promote gate (would dilute toward the line). Live `qb_betting` still reinjects
 `pass_yds_line` for O/U / shadow context.
 
+**Production ML gating:** with `NFL_QB_ML_ENABLED=1`, published yards use the
+GBM only when a **real** prop line is on the feature row (`line_is_real`).
+`qb_dynamic` runs before odds attach — without this gate, market-residual ML
+without lines inverts the slate (mid-tier QBs above Allen/Mahomes). After
+`qb_betting` reinjects lines, ML applies. Promote bundle loads from **S3**
+(when ML is on); shipped `backend/models/nfl/` pickles are shadow-only.
+
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
 `qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
 edge is strong (≥12%). ML PASS unless `|P(over)−0.5| ≥ 10%`; yards min edge 7%,

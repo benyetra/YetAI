@@ -691,6 +691,8 @@ def reinject_pass_yds_line(
     ou_line: float,
 ) -> dict[str, float]:
     """Update feature vector after live odds attach (real prop line)."""
+    from app.services.etl.nfl.qb_features import market_residual_features
+
     feats = {str(k): float(v) for k, v in features.items()}
     tier = _float_or(feats.get("tier_yards"), 210.0)
     line = float(ou_line)
@@ -698,7 +700,13 @@ def reinject_pass_yds_line(
     feats["line_minus_tier"] = line - tier
     feats["line_is_real"] = 1.0
     rolling = _float_or(feats.get("rolling_yards_l3"), tier)
-    feats["line_minus_rolling"] = line - rolling
+    mr = market_residual_features(
+        rolling_yards_l3=rolling,
+        pass_yds_line=line,
+        line_is_real=True,
+    )
+    feats["market_residual_l3"] = mr["market_residual_l3"]
+    feats["line_minus_rolling"] = mr["line_minus_rolling"]
     return feats
 
 
@@ -708,11 +716,18 @@ def _bundled_model_paths() -> tuple[Path, Path]:
 
 
 def _local_model_paths() -> tuple[Path, Path] | None:
+    """
+    Explicit override or shadow-safe bundled artifacts.
+
+    When ``NFL_QB_ML_ENABLED=1``, production must load the promote bundle from
+    S3 — stale shipped pickles (pre-promote) invert tier ordering on slate.
+    """
     base = os.getenv("NFL_QB_MODEL_LOCAL", "").strip()
     if base:
         root = Path(base)
         return root / f"{MODEL_KEY}.pkl", root / f"{MODEL_KEY}_metadata.json"
-    # Fall back to shipped backend/models/nfl artifacts (same pattern as kickers)
+    if qb_ml_enabled():
+        return None
     model_path, meta_path = _bundled_model_paths()
     if model_path.is_file() and meta_path.is_file():
         return model_path, meta_path
@@ -864,7 +879,12 @@ def enrich_qb_prediction_for_write(
     projected = tier_yards
     version = resolve_qb_model_version(ml_loaded=ml_loaded)
     method = prediction.get("prediction_method") or "tier_table"
-    if qb_ml_enabled() and ml_yards is not None:
+    # Market-residual promote path needs a real prop line; without it ML crushes
+    # elite tiers and partial qb_betting updates can rank mid-tier QBs first.
+    use_ml_prod = (
+        qb_ml_enabled() and ml_yards is not None and _line_is_real_from_features(feats)
+    )
+    if use_ml_prod:
         projected = ml_yards
         method = "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
 
