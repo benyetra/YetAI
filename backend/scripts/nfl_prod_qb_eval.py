@@ -186,12 +186,22 @@ def run_holdout_ablations(
 
     from app.services.etl.nfl.qb_passing_yards_ml import (
         DEFAULT_HYPERPARAMS,
+        PROMOTE_BASELINE_MODE,
+        PROMOTE_FEATURE_NAMES,
         PROMOTE_HYPERPARAM_CANDIDATES,
+        PROMOTE_PATH_NAME,
     )
 
     residual_specs: list[tuple[str, list[str], str, dict[str, Any] | None, bool]] = [
         ("v5_features_market_residual", list(V5_FEATURE_NAMES), "market", None, False),
         ("v6_features_market_residual", list(FEATURE_NAMES), "market", None, False),
+        (
+            "market_residual_promote_sweep",
+            list(PROMOTE_FEATURE_NAMES),
+            PROMOTE_BASELINE_MODE,
+            None,
+            True,
+        ),
         (
             "tier_only_residual",
             list(TIER_ONLY_FEATURE_NAMES),
@@ -214,6 +224,15 @@ def run_holdout_ablations(
                 f"tier_only_residual_{cand.get('name', 'hp')}",
                 list(TIER_ONLY_FEATURE_NAMES),
                 "tier",
+                hp,
+                False,
+            )
+        )
+        residual_specs.append(
+            (
+                f"{PROMOTE_PATH_NAME}_{cand.get('name', 'hp')}",
+                list(PROMOTE_FEATURE_NAMES),
+                PROMOTE_BASELINE_MODE,
                 hp,
                 False,
             )
@@ -260,7 +279,8 @@ def run_holdout_ablations(
     v5 = ablations.get("v5_features_market_residual") or {}
     v6 = ablations.get("v6_features_market_residual") or {}
     tier_only = ablations.get("tier_only_residual") or {}
-    promote_arm = ablations.get("tier_only_promote_sweep") or {}
+    promote_arm = ablations.get("market_residual_promote_sweep") or {}
+    tier_promote = ablations.get("tier_only_promote_sweep") or {}
     line_only = ablations.get("line_only") or {}
     ablations["summary"] = {
         "v5_lift_vs_dynamic_tier": v5.get("mae_lift_vs_dynamic_tier"),
@@ -270,6 +290,9 @@ def run_holdout_ablations(
             "mae_lift_vs_dynamic_tier"
         ),
         "promote_hp_selected": promote_arm.get("promote_hp_selected"),
+        "tier_only_promote_sweep_lift_vs_dynamic_tier": tier_promote.get(
+            "mae_lift_vs_dynamic_tier"
+        ),
         "v6_ml_mae_near_line_only": (
             abs(float(v6.get("mae") or 0) - float(line_only.get("mae") or 0)) < 3.0
             if v6.get("mae") is not None and line_only.get("mae") is not None
@@ -281,6 +304,8 @@ def run_holdout_ablations(
         "tier_only_positive_lift": bool(
             (tier_only.get("mae_lift_vs_dynamic_tier") or -1.0) > 0.0
         ),
+        "promote_path": PROMOTE_PATH_NAME,
+        "promote_baseline_mode": PROMOTE_BASELINE_MODE,
     }
     return ablations
 
@@ -455,6 +480,7 @@ def train_and_eval(
         MODEL_KEY,
         PROMOTE_BASELINE_MODE,
         PROMOTE_FEATURE_NAMES,
+        PROMOTE_PATH_NAME,
         predict_yards_ml,
         select_line_blend_weight,
         train_promote_qb_yards_model,
@@ -530,19 +556,36 @@ def train_and_eval(
         line_pred=line_pred,
         real_mask=real_mask,
     )
-    blend_w = float(blend_sel["selected_w"])
-    ml_pred = np.asarray(blend_sel["blended_pred"], dtype=float)
-    metadata = {
-        **metadata,
-        "line_blend_w": blend_w,
-        "line_blend_candidates": blend_sel.get("candidates"),
-        "line_blend_diagnostic_best_w": blend_sel.get("diagnostic_best_w"),
-        "line_blend_min_w_for_promote": blend_sel.get("min_w_for_promote"),
-        "line_blend_note": (
-            "post-hoc w*ml+(1-w)*line when real prop line; else ml; "
-            "promote excludes w=0 (pure line)"
-        ),
-    }
+    # Market residual already conditions on the line in the baseline; post-hoc
+    # blend toward the line diluted the ≥10% Railway lift. Gate on raw ML.
+    use_line_blend = PROMOTE_BASELINE_MODE == "tier"
+    if use_line_blend:
+        blend_w = float(blend_sel["selected_w"])
+        ml_pred = np.asarray(blend_sel["blended_pred"], dtype=float)
+        metadata = {
+            **metadata,
+            "line_blend_w": blend_w,
+            "line_blend_candidates": blend_sel.get("candidates"),
+            "line_blend_diagnostic_best_w": blend_sel.get("diagnostic_best_w"),
+            "line_blend_min_w_for_promote": blend_sel.get("min_w_for_promote"),
+            "line_blend_note": (
+                "post-hoc w*ml+(1-w)*line when real prop line; else ml; "
+                "promote excludes w=0 (pure line)"
+            ),
+        }
+    else:
+        blend_w = 1.0
+        ml_pred = ml_pred_raw
+        metadata = {
+            **metadata,
+            "line_blend_w": None,
+            "line_blend_candidates": blend_sel.get("candidates"),
+            "line_blend_diagnostic_best_w": blend_sel.get("diagnostic_best_w"),
+            "line_blend_min_w_for_promote": blend_sel.get("min_w_for_promote"),
+            "line_blend_note": (
+                "diagnostic only for market residual promote; gate uses raw ML"
+            ),
+        }
 
     tier_mae = _mae(y_test, tier_test)
     static_tier_mae = _mae(y_test, static_tier_test)
@@ -585,16 +628,25 @@ def train_and_eval(
             "n": int(row.get("n") or len(y_test)),
             "n_real": int(row.get("n_real") or 0),
             "w": w,
-            "note": "promote-path tier-only ML blended with real prop line",
+            "note": (
+                "diagnostic blend of promote-path ML with real prop line"
+                if not use_line_blend
+                else "promote-path tier-only ML blended with real prop line"
+            ),
         }
     diag_w = blend_sel.get("diagnostic_best_w")
     diag_mae = blend_sel.get("diagnostic_best_mae")
     diag_lift = None
     if diag_mae is not None and tier_mae:
         diag_lift = round((tier_mae - float(diag_mae)) / tier_mae, 4)
+    selected_blend_mae = (
+        float(blend_sel.get("selected_mae") or ml_mae)
+        if use_line_blend
+        else round(ml_mae, 3)
+    )
     ablations["line_blend"] = {
-        "selected_w": blend_w,
-        "selected_mae": float(blend_sel.get("selected_mae") or ml_mae),
+        "selected_w": blend_w if use_line_blend else 1.0,
+        "selected_mae": selected_blend_mae,
         "selected_lift_vs_dynamic_tier": round(lift, 4),
         "diagnostic_best_w": diag_w,
         "diagnostic_best_mae": diag_mae,
@@ -602,13 +654,15 @@ def train_and_eval(
         "min_w_for_promote": blend_sel.get("min_w_for_promote"),
         "ml_mae_raw": round(ml_mae_raw, 3),
         "ml_lift_raw": round(lift_raw, 4),
+        "applied_to_gate": use_line_blend,
         "candidates": blend_candidates_report,
     }
     summary = ablations.get("summary") or {}
-    summary["line_blend_selected_w"] = blend_w
+    summary["line_blend_selected_w"] = blend_w if use_line_blend else 1.0
     summary["line_blend_lift_vs_dynamic_tier"] = round(lift, 4)
     summary["line_blend_diagnostic_best_w"] = diag_w
     summary["line_blend_diagnostic_best_lift"] = diag_lift
+    summary["line_blend_applied_to_gate"] = use_line_blend
     ablations["summary"] = summary
 
     report: dict[str, Any] = {
@@ -622,10 +676,10 @@ def train_and_eval(
         "rows_train": int(len(X_train)),
         "rows_holdout": int(len(X_test)),
         "holdout": holdout_label,
-        "model_family": "residual_gbm_tier_only_line_blend",
-        "promote_path": "tier_only_residual_line_blend",
+        "model_family": metadata.get("model_family") or "residual_gbm_market_v6",
+        "promote_path": metadata.get("promote_path") or PROMOTE_PATH_NAME,
         "promote_hp_selected": metadata.get("promote_hp_selected"),
-        "line_blend_w": blend_w,
+        "line_blend_w": metadata.get("line_blend_w"),
         "fit_full": True,
         "baseline_mode": PROMOTE_BASELINE_MODE,
         "n_features": len(promote_features),

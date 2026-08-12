@@ -17,10 +17,10 @@ on:
         type: boolean
         default: false
       backfill_pass_yds_lines:
-        description: Prefetch missing historical player_pass_yds into pass_yds_lines.json before eval
+        description: Prefetch missing historical player_pass_yds into pass_yds_lines.json before eval (2025 already committed; leave false unless refreshing)
         required: true
         type: boolean
-        default: true
+        default: false
       backfill_seasons:
         description: Comma-separated seasons for Odds historical backfill (holdout gap is 2025)
         required: true
@@ -32,7 +32,7 @@ on:
 
 jobs:
   eval:
-    name: Prod QB residual eval (line coverage + tier-only blend)
+    name: Prod QB residual eval (v6 market residual promote)
     runs-on: ubuntu-latest
     defaults:
       run:

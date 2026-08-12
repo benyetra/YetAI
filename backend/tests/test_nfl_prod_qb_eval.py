@@ -93,6 +93,7 @@ def test_run_holdout_ablations_smoke():
         "line_only",
         "v5_features_market_residual",
         "v6_features_market_residual",
+        "market_residual_promote_sweep",
         "tier_only_residual",
         "tier_only_promote_sweep",
         "tier_only_residual_shallow",
@@ -102,6 +103,9 @@ def test_run_holdout_ablations_smoke():
         assert key in out
     assert out["v6_features_market_residual"]["n_train"] == n_train
     assert out["v6_features_market_residual"]["fit_full"] is True
-    assert out["tier_only_promote_sweep"]["fit_full"] is True
+    assert out["market_residual_promote_sweep"]["fit_full"] is True
+    assert out["market_residual_promote_sweep"]["baseline_mode"] == "market"
     assert out["tier_only_promote_sweep"]["baseline_mode"] == "tier"
     assert out["summary"].get("tier_only_lift_vs_dynamic_tier") is not None
+    assert out["summary"].get("promote_path") == "market_residual_v6"
+    assert out["summary"].get("promote_baseline_mode") == "market"

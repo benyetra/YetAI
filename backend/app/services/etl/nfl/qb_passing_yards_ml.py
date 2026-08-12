@@ -17,7 +17,6 @@ import pandas as pd
 
 from app.services.etl.nfl.qb_features import (
     FEATURE_NAMES,
-    TIER_ONLY_FEATURE_NAMES,
     build_qb_features,
     feature_names as qb_feature_names,
     resolve_yards_baseline,
@@ -25,10 +24,12 @@ from app.services.etl.nfl.qb_features import (
 
 BaselineMode = str  # "market" | "tier"
 
-# Promote path (Railway gate): tier residual only — prop-line features/baseline
-# collapsed toward the market in ablations (2026-08-11).
-PROMOTE_BASELINE_MODE: BaselineMode = "tier"
-PROMOTE_FEATURE_NAMES: tuple[str, ...] = TIER_ONLY_FEATURE_NAMES
+# Promote path (Railway gate): v6 market residual once 2025 prop lines are
+# backfilled into pass_yds_lines.json (run 31552960099 → +11.7% vs dynamic tier).
+# Tier-only + post-hoc line blend peaked ~+7.5% and stays an ablation arm.
+PROMOTE_BASELINE_MODE: BaselineMode = "market"
+PROMOTE_FEATURE_NAMES: tuple[str, ...] = FEATURE_NAMES
+PROMOTE_PATH_NAME = "market_residual_v6"
 
 DEFAULT_HYPERPARAMS: dict[str, Any] = {
     "n_estimators": 150,
@@ -613,10 +614,11 @@ def train_promote_qb_yards_model(
     hyperparam_candidates: Sequence[Mapping[str, Any]] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """
-    Promote-path trainer: tier-only residual + fit_full, with a small HP sweep.
+    Promote-path trainer: market residual (v6 features) + fit_full, HP sweep.
 
     Selects the candidate with lowest inner time-ordered CV yards MAE, then
-    refits on all rows with that HP set.
+    refits on all rows with that HP set. Override ``baseline_mode`` /
+    ``feature_order`` for ablation arms (e.g. tier-only).
     """
     order = (
         list(feature_order)
@@ -663,12 +665,22 @@ def train_promote_qb_yards_model(
         baseline_mode=mode,
         hyperparams=best_hp,
     )
+    path_name = (
+        PROMOTE_PATH_NAME
+        if mode == "market" and order == list(PROMOTE_FEATURE_NAMES)
+        else ("tier_only_residual" if mode == "tier" else f"{mode}_residual")
+    )
+    family = (
+        "residual_gbm_market_v6"
+        if path_name == PROMOTE_PATH_NAME
+        else ("residual_gbm_tier_only" if mode == "tier" else f"residual_gbm_{mode}")
+    )
     metadata = {
         **metadata,
-        "promote_path": "tier_only_residual",
+        "promote_path": path_name,
         "promote_hp_selected": best_name,
         "promote_hp_sweep": sweep,
-        "model_family": "residual_gbm_tier_only",
+        "model_family": family,
     }
     return model, metadata
 
