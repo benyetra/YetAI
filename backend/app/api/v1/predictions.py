@@ -10,7 +10,7 @@ Today's auth path returns subscription_tier='pro' for any valid-looking JWT
 in dev; the guard will start enforcing real tiers once auth is fixed.
 """
 
-from datetime import date as date_type
+from datetime import date as date_type, timedelta
 from typing import Any, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -134,30 +134,185 @@ def _query_recent(
     return list(latest.values())[:limit]
 
 
+def _nfl_slate_season_week(
+    target_date: date_type | None,
+) -> tuple[int, int]:
+    """Resolve NFL season/week for API fallback when slate date has no rows."""
+    from app.services.etl.nfl.nfl_common import (
+        get_current_nfl_week,
+        resolve_nfl_season,
+    )
+
+    ref = target_date if target_date is not None else date_type.today()
+    season = resolve_nfl_season(None)
+    week = get_current_nfl_week(season, today=ref)
+    return season, week
+
+
+def _nfl_week_date_bounds(season: int, week: int) -> tuple[date_type, date_type]:
+    from app.services.etl.nfl.nfl_common import _first_regular_season_thursday
+
+    start = _first_regular_season_thursday(season) + timedelta(days=(week - 1) * 7)
+    return start, start + timedelta(days=6)
+
+
+def _query_nfl_by_season_week(
+    db: Session,
+    model: Any,
+    season: int,
+    week: int,
+    limit: int,
+    *,
+    dedupe_keys: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    q = db.query(model).filter(model.season == season, model.week == week)
+    if hasattr(model, "id"):
+        q = q.order_by(model.id.desc())
+    fetch_limit = limit * 5 if dedupe_keys else limit
+    rows = [_row_to_dict(r) for r in q.limit(fetch_limit).all()]
+    if not dedupe_keys:
+        return rows[:limit]
+    latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in dedupe_keys)
+        if key not in latest:
+            latest[key] = row
+    return list(latest.values())[:limit]
+
+
+def _query_nfl_by_game_date_range(
+    db: Session,
+    model: Any,
+    date_col_name: str,
+    start: date_type,
+    end: date_type,
+    limit: int,
+    *,
+    tz: str = "UTC",
+) -> list[dict[str, Any]]:
+    col = getattr(model, date_col_name)
+    q = db.query(model)
+    if isinstance(col.type, DateTime):
+        local_col = func.date(func.timezone(tz, func.timezone("UTC", col)))
+        q = q.filter(local_col >= start, local_col <= end)
+    else:
+        q = q.filter(col >= start, col <= end)
+    if hasattr(model, "id"):
+        q = q.order_by(model.id.desc())
+    return [_row_to_dict(r) for r in q.limit(limit).all()]
+
+
+def _query_nfl_latest_deduped(
+    db: Session,
+    model: Any,
+    limit: int,
+    *,
+    dedupe_keys: tuple[str, ...],
+) -> list[dict[str, Any]]:
+    """Latest row per dedupe key when models lack season/week (e.g. kickers)."""
+    q = db.query(model)
+    if hasattr(model, "id"):
+        q = q.order_by(model.id.desc())
+    fetch_limit = limit * 5
+    rows = [_row_to_dict(r) for r in q.limit(fetch_limit).all()]
+    latest: dict[tuple[Any, ...], dict[str, Any]] = {}
+    for row in rows:
+        key = tuple(row.get(k) for k in dedupe_keys)
+        if key not in latest:
+            latest[key] = row
+    return list(latest.values())[:limit]
+
+
+def _query_recent_nfl_with_fallback(
+    db: Session,
+    model: Any,
+    date_col_name: str | None,
+    target_date: date_type | None,
+    limit: int,
+    *,
+    tz: str = "UTC",
+    dedupe_keys: tuple[str, ...] | None = None,
+    latest_dedupe_keys: tuple[str, ...] | None = None,
+) -> list[dict[str, Any]]:
+    rows = _query_recent(
+        db,
+        model,
+        date_col_name,
+        target_date,
+        limit,
+        tz=tz,
+        dedupe_keys=dedupe_keys,
+    )
+    if rows or target_date is None:
+        return rows
+
+    season, week = _nfl_slate_season_week(target_date)
+    if hasattr(model, "season") and hasattr(model, "week"):
+        return _query_nfl_by_season_week(
+            db,
+            model,
+            season,
+            week,
+            limit,
+            dedupe_keys=dedupe_keys,
+        )
+    if date_col_name:
+        start, end = _nfl_week_date_bounds(season, week)
+        range_rows = _query_nfl_by_game_date_range(
+            db, model, date_col_name, start, end, limit, tz=tz
+        )
+        if range_rows:
+            return range_rows
+    if latest_dedupe_keys:
+        return _query_nfl_latest_deduped(
+            db, model, limit, dedupe_keys=latest_dedupe_keys
+        )
+    return []
+
+
 def _query_nfl_anytime_td_predictions(
     db: Session,
     target_date: date_type | None,
     limit: int,
 ) -> list[dict[str, Any]]:
     """Anytime-TD rows for skill positions, deduped and sorted by P(TD) desc."""
-    q = db.query(NFLAnytimeTDPredictions).filter(
-        NFLAnytimeTDPredictions.position.in_(ANYTIME_TD_POSITIONS)
-    )
-    if target_date is not None:
-        q = q.filter(NFLAnytimeTDPredictions.game_date == target_date)
-    fetch_limit = limit * 5
-    rows = (
-        q.order_by(NFLAnytimeTDPredictions.td_probability.desc())
-        .limit(fetch_limit)
-        .all()
-    )
-    latest: dict[tuple[Any, ...], Any] = {}
-    for row in rows:
-        key = (row.season, row.week, row.player_id)
-        if key not in latest:
-            latest[key] = row
-    deduped = sorted(latest.values(), key=lambda r: r.td_probability, reverse=True)
-    return [_row_to_dict(r) for r in deduped[:limit]]
+
+    def _fetch(*, season: int | None = None, week: int | None = None) -> list[Any]:
+        q = db.query(NFLAnytimeTDPredictions).filter(
+            NFLAnytimeTDPredictions.position.in_(ANYTIME_TD_POSITIONS)
+        )
+        if target_date is not None and season is None:
+            q = q.filter(NFLAnytimeTDPredictions.game_date == target_date)
+        if season is not None and week is not None:
+            q = q.filter(
+                NFLAnytimeTDPredictions.season == season,
+                NFLAnytimeTDPredictions.week == week,
+            )
+        fetch_limit = limit * 5
+        return (
+            q.order_by(NFLAnytimeTDPredictions.td_probability.desc())
+            .limit(fetch_limit)
+            .all()
+        )
+
+    def _dedupe_sort(raw: list[Any]) -> list[dict[str, Any]]:
+        latest: dict[tuple[Any, ...], Any] = {}
+        for row in raw:
+            key = (row.season, row.week, row.player_id)
+            if key not in latest:
+                latest[key] = row
+        deduped = sorted(latest.values(), key=lambda r: r.td_probability, reverse=True)
+        return [_row_to_dict(r) for r in deduped[:limit]]
+
+    if target_date is None:
+        return _dedupe_sort(_fetch())
+
+    rows = _dedupe_sort(_fetch())
+    if rows:
+        return rows
+
+    season, week = _nfl_slate_season_week(target_date)
+    return _dedupe_sort(_fetch(season=season, week=week))
 
 
 def _load_wnba_season_minutes_avg(
@@ -554,23 +709,39 @@ def nfl_predictions(
     from app.services.game_projection_schedule import attach_game_times_from_lines
 
     tz = _safe_tz(tz)
-    spreads = _query_recent(
+    spreads = _query_recent_nfl_with_fallback(
         db, NFLSpreadProjections, "game_date", target_date, limit, tz=tz
     )
-    totals = _query_recent(
+    totals = _query_recent_nfl_with_fallback(
         db, NFLTotalsProjections, "game_date", target_date, limit, tz=tz
     )
     spreads = attach_game_times_from_lines(db, spreads, NFLGameLines)
     totals = attach_game_times_from_lines(db, totals, NFLGameLines)
     return {
         "qb_predictions": enrich_prop_rows(
-            _query_recent(db, QBPredictions, "game_date", target_date, limit, tz=tz),
+            _query_recent_nfl_with_fallback(
+                db,
+                QBPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("season", "week", "qb_player_id"),
+            ),
             sport="nfl",
             stat="passing_yards",
             db=db,
         ),
         "kicker_predictions": attach_team_opponent_fields(
-            _query_recent(db, KickerPredictions, "game_date", target_date, limit, tz=tz)
+            _query_recent_nfl_with_fallback(
+                db,
+                KickerPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                latest_dedupe_keys=("kicker_player_id",),
+            )
         ),
         "anytime_td_predictions": _query_nfl_anytime_td_predictions(
             db, target_date, limit
