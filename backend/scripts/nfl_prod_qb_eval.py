@@ -377,16 +377,17 @@ def _build_with_meta(
             )
             pred_ctx = _prediction_context_for_actual(session, row)
             real_pass_line = None
+            line_source = "none"
             if pred_ctx:
                 context.update({k: v for k, v in pred_ctx.items() if v is not None})
                 if pred_ctx.get("pass_yds_line") is not None:
                     real_pass_line = float(pred_ctx["pass_yds_line"])
                     context["line_is_real"] = True
-            if real_pass_line is None:
-                # Historical odds index may still be used inside pred_ctx; if missing,
-                # leave line_is_real unset so build_qb_features can infer.
-                pass
-            team = str(getattr(row, "team_name", "") or "").upper()
+                    line_source = str(pred_ctx.get("pass_yds_line_source") or "unknown")
+            from app.services.etl.nfl.team_names import team_name_to_abbr
+
+            raw_team = str(getattr(row, "team_name", "") or "")
+            team = team_name_to_abbr(raw_team) or raw_team.strip().upper()
             mkt = market.get((int(row.season), int(row.week), team), {})
             for key, value in mkt.items():
                 if context.get(key) is None and value is not None:
@@ -401,7 +402,9 @@ def _build_with_meta(
                 for k in ("opp_cover_base", "opp_man_zone", "opp_scheme_pressure")
             ):
                 # Best-effort: scheme lookup by abbr if present in opponent string
-                abbr = str(opp).strip().upper()
+                from app.services.etl.nfl.team_names import team_name_to_abbr as _abbr
+
+                abbr = _abbr(str(opp)) or str(opp).strip().upper()
                 if len(abbr) <= 3:
                     context.update(scheme_features_for_opponent(abbr))
             dynamic_tier = float(context.get("dynamic_tier_yards") or tier_yards)
@@ -426,6 +429,7 @@ def _build_with_meta(
                     "static_tier_yards": tier_yards,
                     "actual_passing_yards": float(row.actual_passing_yards),
                     "pass_yds_line_real": real_pass_line,
+                    "pass_yds_line_source": line_source,
                 }
             )
         return (
@@ -654,6 +658,33 @@ def train_and_eval(
     report["pass_yds_line_real_rate"] = (
         round(real_line_n / len(meta), 4) if len(meta) else 0.0
     )
+    if "pass_yds_line_source" in meta.columns:
+        src_counts = {
+            str(k): int(v)
+            for k, v in meta["pass_yds_line_source"]
+            .fillna("none")
+            .value_counts()
+            .items()
+        }
+        holdout_meta = meta.iloc[test_idx]
+        holdout_src = {
+            str(k): int(v)
+            for k, v in holdout_meta["pass_yds_line_source"]
+            .fillna("none")
+            .value_counts()
+            .items()
+        }
+        holdout_real = int(holdout_meta["pass_yds_line_real"].notna().sum())
+        report["pass_yds_line_sources"] = src_counts
+        report["pass_yds_line_holdout"] = {
+            "n": int(len(holdout_meta)),
+            "real_n": holdout_real,
+            "real_rate": (
+                round(holdout_real / len(holdout_meta), 4) if len(holdout_meta) else 0.0
+            ),
+            "sources": holdout_src,
+            "missing_n": int(len(holdout_meta) - holdout_real),
+        }
 
     # O/U on real stored prop lines only. Lines live mostly on 2025 preds; when
     # holdout is season_2025, train_idx has none — so split within real-line rows.

@@ -29,7 +29,7 @@ from typing import Any, Iterable
 
 import requests
 
-from app.services.etl.nfl.team_names import normalize_team_name
+from app.services.etl.nfl.team_names import normalize_team_name, team_identity_tokens
 
 logger = logging.getLogger(__name__)
 
@@ -453,20 +453,19 @@ def lookup_pass_yds_line(
 ) -> float | None:
     idx = index if index is not None else load_lines_index()
     pkey = normalize_player_key(player_name)
-    team = str(team_abbr or "").upper()
+    team = str(team_abbr or "").strip()
     by_key = idx.get("by_key") or {}
     prefix = f"{season}|{week}|{pkey}|"
     candidates = [row for key, row in by_key.items() if key.startswith(prefix)]
     if not candidates:
         return None
     if team:
+        want = team_identity_tokens(team)
         for row in candidates:
-            sides = {
-                str(row.get("home_abbr") or "").upper(),
-                str(row.get("away_abbr") or "").upper(),
-                str(row.get("team_abbr") or "").upper(),
-            }
-            if team in sides and row.get("line") is not None:
+            sides: set[str] = set()
+            for key in ("home_abbr", "away_abbr", "team_abbr"):
+                sides |= team_identity_tokens(str(row.get(key) or ""))
+            if want & sides and row.get("line") is not None:
                 return float(row["line"])
     row = candidates[0]
     return float(row["line"]) if row.get("line") is not None else None
@@ -632,14 +631,19 @@ def backfill_pass_yds_odds(
             ):
                 uncached_days += 1
             for g in day_games:
-                # skip if we already have ≥1 line for this season/week/home or away
+                # skip if we already have ≥1 line for this season/week matchup
                 has = False
                 if skip_indexed:
-                    for key in existing_keys:
-                        if key.startswith(f"{g['season']}|{g['week']}|") and (
-                            key.endswith(f"|{g['home_abbr']}")
-                            or key.endswith(f"|{g['away_abbr']}")
-                        ):
+                    home = str(g.get("home_abbr") or "").upper()
+                    away = str(g.get("away_abbr") or "").upper()
+                    for row in index.get("lines") or []:
+                        if int(row.get("season") or 0) != int(g["season"]):
+                            continue
+                        if int(row.get("week") or 0) != int(g["week"]):
+                            continue
+                        rh = str(row.get("home_abbr") or "").upper()
+                        ra = str(row.get("away_abbr") or "").upper()
+                        if {home, away} == {rh, ra}:
                             has = True
                             break
                 if not has:

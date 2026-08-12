@@ -64,3 +64,40 @@ def normalize_team_name(name: str) -> str:
     if stripped in _CANONICAL_NAMES:
         return stripped
     return _ALIAS_TO_CANONICAL.get(stripped, stripped)
+
+
+def team_name_to_abbr(name: str) -> str | None:
+    """Map full name or abbr → preferred nflverse-style abbreviation."""
+    stripped = (name or "").strip()
+    if not stripped:
+        return None
+    upper = stripped.upper()
+    if upper in _CANONICAL_BY_ABBR:
+        # Prefer LAR over legacy LA for Rams
+        if upper == "LA":
+            return "LAR"
+        if upper in {"LAS", "WSH"}:
+            return {"LAS": "LV", "WSH": "WAS"}[upper]
+        return upper
+    canon = normalize_team_name(stripped)
+    for abbr, full in _CANONICAL_BY_ABBR.items():
+        if full == canon and abbr not in {"LA", "LAS", "WSH"}:
+            return abbr
+    return None
+
+
+def team_identity_tokens(name: str) -> set[str]:
+    """Abbr + canonical tokens for fuzzy team matching."""
+    stripped = (name or "").strip()
+    if not stripped:
+        return set()
+    tokens = {stripped, stripped.upper()}
+    canon = normalize_team_name(stripped)
+    tokens.add(canon)
+    tokens.add(canon.upper())
+    abbr = team_name_to_abbr(stripped)
+    if abbr:
+        tokens.add(abbr)
+        tokens.add(abbr.upper())
+        tokens.add(normalize_team_name(abbr))
+    return {t for t in tokens if t}

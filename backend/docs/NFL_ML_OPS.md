@@ -171,6 +171,26 @@ Paid plan. Measured costs: **1 credit / gameday** (events slate) +
 **~5400 credits** for props (events already cached). Coverage on
 `pred_qb_actuals` 2023–24: **~91%**. Re-runs that hit SQLite cost **0**.
 
+**2025 holdout gap:** committed index is 2023–24 only. Season_2025 Railway
+holdout had ~386/585 real lines from `pred_qb_predictions.ou_line` and
+**~199 missing** (no index fallback). Filling 2025 REG into the index
+(~≤3000 credits) is the main lever to push blended MAE toward the real-row
+floor (~54.8).
+
+```bash
+export ODDS_API_KEY=...
+cd backend
+# Prefer GitHub Actions (has Railway + Odds secrets):
+#   NFL Prod QB Eval → backfill_pass_yds_lines=true, backfill_seasons=2025
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2025 --dry-run
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --seasons 2025 --max-credits 3000
+export DATABASE_URL=...
+PYTHONPATH=. python scripts/nfl_backfill_pass_yds_odds.py --assign-teams --seasons 2025
+PYTHONPATH=. python scripts/nfl_pass_yds_line_coverage.py \
+  --season-start 2025-09-01 --season-end 2026-02-15
+PYTHONPATH=. python scripts/nfl_prod_qb_eval.py
+```
+
 ```bash
 export ODDS_API_KEY=...
 cd backend
