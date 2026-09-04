@@ -40,6 +40,17 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 
 Failures in non-critical tasks still yield `partial_failure` on the orchestrator; QB weekly + kickers are **critical**.
 
+### Gameday availability (`run_nfl_gameday_availability`)
+
+Beat (ET): Sun 10:00 / 12:30 / 15:30, Mon 18:00, **Thu 10:00 / 19:00**, **Sat 12:30**.
+
+Phases:
+
+1. **predictions** — `nfl_qb_weekly`, `nfl_kickers` (QB weekly first so backup flags exist)
+2. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
+
+Game projector window = `GAME_LINES_HORIZON_DAYS` (**14**), not today+1. QB-out spread adjustment is **3.5** home-perspective points (`QB_OUT_SPREAD_POINTS`: home QB out → −3.5; away QB out → +3.5; both → 0).
+
 ## Modules (ported)
 
 | Module | Tables / role |

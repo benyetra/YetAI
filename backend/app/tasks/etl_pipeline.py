@@ -798,7 +798,8 @@ def run_nfl_update_pipeline(self) -> dict:
     return _run_phases("nfl", NFL_PHASES)
 
 
-# Gameday slice — re-pull injuries and refresh QB + kicker boards near kickoff.
+# Gameday slice — re-pull injuries, refresh QB + kicker boards, then reprice
+# spreads/totals. QB weekly stays before spread so backup flags exist.
 NFL_GAMEDAY_AVAILABILITY_PHASES = [
     (
         "predictions",
@@ -807,14 +808,22 @@ NFL_GAMEDAY_AVAILABILITY_PHASES = [
             nfl_kickers,
         ],
     ),
+    (
+        "game_projections",
+        [
+            nfl_spread_projector,
+            nfl_totals_projector,
+        ],
+    ),
 ]
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_gameday_availability", bind=True)
 def run_nfl_gameday_availability(self) -> dict:
-    """Refresh QB/kicker props for late Questionable→Out / backup discounts.
+    """Refresh QB/kicker props and reprice the game board for late Out/backup.
 
-    Beat: Sun 10:00 / 12:30 / 15:30 ET and Mon 18:00 ET. See ``qb_late_availability``.
+    Beat: Sun 10:00 / 12:30 / 15:30, Mon 18:00, Thu 10:00 / 19:00, Sat 12:30 ET.
+    See ``qb_late_availability`` and ``qb_spread_adjustment``.
     """
     logger.info(
         "NFL gameday availability refresh starting (task_id=%s)", self.request.id
