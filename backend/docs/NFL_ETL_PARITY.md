@@ -87,14 +87,14 @@ Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG his
 | `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines, `player_anytime_td` |
 | `REDIS_URL` | Celery broker (worker) |
 | `NFL_SEASON` | Override season year (default **2026**) |
-| `NFL_ANYTIME_TD_UI` | Show anytime-TD UI group when `1`/`true` (default off; requires backtest gate) |
+| `NFL_ANYTIME_TD_UI` | Anytime-TD UI group (default **on** after 2026-09-04 walk-forward gate; `0` to hide) |
 
 Python: `nfl-data-py` (see `requirements.txt`).
 
 ## API / UI
 
 - `GET /api/v1/predictions/nfl` — `qb_predictions`, `kicker_predictions`, `spreads`, `totals`
-- `/predictions/nfl` — frontend QB + kicker tables + game projection cards
+- `/predictions/nfl` — frontend QB + kicker tables + game projection cards + anytime TD (hide with `NEXT_PUBLIC_NFL_ANYTIME_TD_UI=0`)
 
 ## Validation
 
@@ -139,9 +139,9 @@ PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --check-gate
 ```
 
 Artifact: `backend/models/nfl/anytime_td_metrics.json`. Offline CI:
-`tests/test_nfl_anytime_td_backtest.py`. Enable UI only when metrics pass gate
-and `NFL_ANYTIME_TD_UI` / `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` are set — see
-`backend/docs/NFL_ANYTIME_TD.md`.
+`tests/test_nfl_anytime_td_backtest.py`. UI defaults on after the 2026-09-04
+walk-forward gate (`passes_gate=true`). Hide with `NFL_ANYTIME_TD_UI=0` /
+`NEXT_PUBLIC_NFL_ANYTIME_TD_UI=0` — see `backend/docs/NFL_ANYTIME_TD.md`.
 
 ## Still deferred
 

@@ -139,6 +139,8 @@ jobs:
               "ml_mae",
               "mae_lift",
               "mae_lift_vs_static_tier",
+              "line_mae",
+              "mae_lift_vs_line",
               "pass_yds_line_real_n",
               "pass_yds_line_real_rate",
               "pass_yds_line_holdout",

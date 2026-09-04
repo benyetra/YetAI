@@ -1,6 +1,6 @@
 {
   "description": "NFL anytime-TD walk-forward REG backtest (prior weeks only). Refresh after model or feature changes.",
-  "updated_at": "2026-08-11",
+  "updated_at": "2026-09-04",
   "preset": "walk_forward",
   "gate": {
     "max_brier": 0.25,
@@ -12,9 +12,9 @@
   },
   "metrics": {
     "n_graded": 8914,
-    "brier": 0.1977,
+    "brier": 0.1979,
     "baseline_brier": 0.196,
-    "brier_delta_vs_baseline": 0.0018,
+    "brier_delta_vs_baseline": 0.002,
     "top20_hit_rate": 0.4676,
     "top20_weeks": 51,
     "top20_baseline_hit_rate": 0.3716,
@@ -25,7 +25,7 @@
       },
       "RB": {
         "n_graded": 2594,
-        "brier": 0.2218
+        "brier": 0.2225
       },
       "TE": {
         "n_graded": 1292,

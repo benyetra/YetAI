@@ -11,12 +11,31 @@ from scripts.nfl_prod_qb_eval import (
     _line_pred_row,
     _mae,
     _market_baseline_row,
+    promote_decision,
     run_holdout_ablations,
 )
 
 
 def test_promote_gate_is_ten_percent():
     assert _PROMOTE_LIFT == 0.10
+
+
+def test_promote_decision_requires_tier_lift_and_beating_line():
+    ok, reason = promote_decision(ml_mae=54.0, tier_mae=65.0, line_mae=56.0)
+    assert ok is True
+    assert "NFL_QB_ML_ENABLED=1" in reason
+
+    no_tier, _ = promote_decision(ml_mae=62.0, tier_mae=65.0, line_mae=56.0)
+    assert no_tier is False
+
+    beats_tier_loses_line, reason = promote_decision(
+        ml_mae=57.0, tier_mae=65.0, line_mae=54.8
+    )
+    assert beats_tier_loses_line is False
+    assert "market line" in reason
+
+    no_line, reason = promote_decision(ml_mae=54.0, tier_mae=65.0, line_mae=None)
+    assert no_line is True
 
 
 def test_mae_helper():
