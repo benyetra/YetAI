@@ -144,7 +144,7 @@ def generate_betting_recommendation(
     """Generate betting recommendation based on prediction vs O/U line.
 
     When ``over_probability`` from the QB O/U classifier is available, require
-    agreement with the yards-edge call (or a very strong yards edge alone).
+    agreement with the yards-edge call. Disagreement always yields PASS.
     """
     edge = prediction - ou_line
     edge_percentage = (edge / ou_line) * 100 if ou_line > 0 else 0
@@ -210,12 +210,11 @@ def generate_betting_recommendation(
             "over_probability": over_probability,
         }
 
-    # Classifier disagreement → PASS unless yards edge clears the strong bar.
+    # Classifier disagreement → always PASS (no strong-edge override).
     if (
         ml_rec
         and ml_rec.get("recommendation") in {"OVER", "UNDER"}
         and ml_rec["recommendation"] != bet_type
-        and abs(edge_percentage) < strong_edge
     ):
         return {
             "recommendation": "PASS",
@@ -338,25 +337,50 @@ def _run_qb_betting_core():
                 )
                 feat_ctx = dict(feat_ctx) if feat_ctx else {}
 
-                # Reinject real prop line into feature vector + refresh ML shadow
+                # Reinject real prop line into feature vector + publish yards
                 try:
                     from app.services.etl.nfl.qb_passing_yards_ml import (
+                        apply_published_yards_after_line,
                         predict_yards_ml_loaded,
+                        production_method_for_published,
                         qb_ml_enabled,
+                        recenter_qb_interval,
                         reinject_pass_yds_line,
                     )
 
+                    ml_yards = None
                     if feat_ctx:
                         feat_ctx = reinject_pass_yds_line(
                             feat_ctx, ou_line=float(ou_line)
                         )
                         fi["features"] = feat_ctx
                         ml_yards = predict_yards_ml_loaded(feat_ctx)
-                        if ml_yards is not None:
-                            fi["ml_shadow_yards"] = float(ml_yards)
-                            if qb_ml_enabled():
-                                qb.predicted_passing_yards = float(ml_yards)
-                        qb.feature_importance = fi
+                    tier_raw = fi.get("tier_yards")
+                    if tier_raw is None:
+                        tier_raw = feat_ctx.get("tier_yards")
+                    if tier_raw is None:
+                        tier_raw = qb.predicted_passing_yards
+                    yards, pub_method = apply_published_yards_after_line(
+                        tier_yards=float(tier_raw),
+                        ou_line=float(ou_line),
+                        ml_yards=ml_yards,
+                        ml_enabled=qb_ml_enabled(),
+                    )
+                    qb.predicted_passing_yards = float(yards)
+                    qb.prediction_interval_lower, qb.prediction_interval_upper = (
+                        recenter_qb_interval(
+                            float(yards),
+                            qb.prediction_interval_lower,
+                            qb.prediction_interval_upper,
+                        )
+                    )
+                    qb.prediction_method = production_method_for_published(
+                        pub_method,
+                        existing_method=qb.prediction_method,
+                    )
+                    if ml_yards is not None and pub_method != "gbm":
+                        fi["ml_shadow_yards"] = float(ml_yards)
+                    qb.feature_importance = fi
                 except Exception:
                     pass
 

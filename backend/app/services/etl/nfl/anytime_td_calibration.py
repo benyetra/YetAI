@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from app.services.etl.nfl.anytime_td_model import (
+    RB_TD_DISPERSION,
     anytime_td_probability,
     expected_tds,
 )
@@ -84,6 +85,7 @@ def hierarchical_probability(
     defense_mult: float = 1.0,
     weather_mult: float = 1.0,
     script_mult: float = 1.0,
+    position: str | None = None,
 ) -> float:
     lam = expected_tds(
         team_rz_trips=team_rz_trips,
@@ -93,7 +95,9 @@ def hierarchical_probability(
         weather_mult=weather_mult,
         script_mult=script_mult,
     )
-    return float(anytime_td_probability(lam))
+    pos = str(position or "").strip().upper()
+    dispersion = RB_TD_DISPERSION if pos == "RB" else None
+    return float(anytime_td_probability(lam, dispersion=dispersion))
 
 
 def _float(row: Mapping[str, Any], key: str, default: float = 0.0) -> float:
@@ -118,6 +122,7 @@ def build_calibration_feature_vector(row: Mapping[str, Any]) -> list[float]:
             defense_mult=_float(row, "defense_mult", 1.0),
             weather_mult=_float(row, "weather_mult", 1.0),
             script_mult=_float(row, "script_mult", 1.0),
+            position=pos,
         )
     expected = row.get("expected_tds")
     if expected is None:
@@ -284,6 +289,7 @@ def apply_calibrated_probability(
             defense_mult=_float(row, "defense_mult", 1.0),
             weather_mult=_float(row, "weather_mult", 1.0),
             script_mult=_float(row, "script_mult", 1.0),
+            position=str(row.get("position") or ""),
         )
     hier_f = float(hier)
     estimator = model_for_row(row, model)
@@ -384,6 +390,7 @@ def calibrate_prediction_row(row: Mapping[str, Any]) -> tuple[float, bool]:
         defense_mult=_float(row, "defense_mult", 1.0),
         weather_mult=_float(row, "weather_mult", 1.0),
         script_mult=_float(row, "script_mult", 1.0),
+        position=str(row.get("position") or ""),
     )
     enriched = dict(row)
     enriched["td_probability"] = hier

@@ -3,9 +3,9 @@ from app.tasks.etl_pipeline import NFL_PHASES
 EXPECTED_PHASE_ORDER = [
     "actuals",
     "game_lines",
+    "predictions",
     "game_projections",
     "anytime_td",
-    "predictions",
 ]
 SEED_ELO_TASK = "app.tasks.etl_pipeline.nfl.seed_elo_history"
 STORE_GAME_ACTUALS_TASK = "app.tasks.etl_pipeline.nfl.store_game_actuals"
@@ -36,3 +36,11 @@ def test_nfl_phases_include_game_board():
     assert "app.tasks.etl_pipeline.nfl.spread_projector" in flat
     assert "app.tasks.etl_pipeline.nfl.totals_projector" in flat
     assert STORE_GAME_ACTUALS_TASK in flat
+
+
+def test_nfl_phases_qb_weekly_before_spread_and_atd_after():
+    flat = [t.name for _, tasks in NFL_PHASES for t in tasks]
+    qb = flat.index("app.tasks.etl_pipeline.nfl.qb_weekly")
+    spread = flat.index("app.tasks.etl_pipeline.nfl.spread_projector")
+    atd = flat.index("app.tasks.etl_pipeline.nfl.anytime_td_projector")
+    assert qb < spread < atd

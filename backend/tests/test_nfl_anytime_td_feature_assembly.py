@@ -166,6 +166,63 @@ def test_select_universe_starters_only_from_depth():
     assert "wr_kr" not in ids  # special teams depth_position
 
 
+def test_select_universe_fills_wr_and_rb_slots_from_usage():
+    depth = [
+        {
+            "gsis_id": "qb1",
+            "full_name": "QB One",
+            "position": "QB",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 3,
+        },
+        {
+            "gsis_id": "rb1",
+            "full_name": "Star RB",
+            "position": "RB",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 3,
+        },
+        {
+            "gsis_id": "wr1",
+            "full_name": "Star WR",
+            "position": "WR",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "WR",
+            "week": 3,
+        },
+    ]
+    usage = aggregate_player_usage_from_weekly(_weekly_sample(), as_of_week=3)
+    usage["wr2"] = {
+        "player_id": "wr2",
+        "player_name": "WR Two",
+        "position": "WR",
+        "team_abbr": "KC",
+        "touches_season": 20.0,
+        "targets_l3": 18.0,
+        "carries_l3": 0.0,
+    }
+    usage["rb_committee"] = {
+        "player_id": "rb_committee",
+        "player_name": "RB Two",
+        "position": "RB",
+        "team_abbr": "KC",
+        "touches_season": 25.0,
+        "targets_l3": 4.0,
+        "carries_l3": 12.0,
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=3)
+    ids = {p["player_id"] for p in universe}
+    assert "wr1" in ids
+    assert "wr2" in ids
+    assert "rb1" in ids
+    assert "rb_committee" in ids
+
+
 def test_select_universe_usage_fallback_when_no_depth():
     usage = aggregate_player_usage_from_weekly(_weekly_sample(), as_of_week=3)
     universe = select_skill_universe(depth_records=[], usage_by_player=usage, week=3)

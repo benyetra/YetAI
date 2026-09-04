@@ -19,9 +19,9 @@ from app.tasks.etl_pipeline import NFL_PHASES
 EXPECTED_PHASE_ORDER = [
     "actuals",
     "game_lines",
+    "predictions",
     "game_projections",
     "anytime_td",
-    "predictions",
 ]
 
 ANYTIME_TD_ACTUALS_TASK = "app.tasks.etl_pipeline.nfl.anytime_td_actuals"

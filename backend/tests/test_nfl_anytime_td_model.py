@@ -1,4 +1,10 @@
-from app.services.etl.nfl.anytime_td_model import anytime_td_probability, expected_tds
+import math
+
+from app.services.etl.nfl.anytime_td_model import (
+    RB_TD_DISPERSION,
+    anytime_td_probability,
+    expected_tds,
+)
 
 
 def test_zero_lambda_zero_prob():
@@ -46,3 +52,17 @@ def test_rb_gl_share_raises_expected_tds_vs_low_gl_back():
     )
     assert high > low
     assert anytime_td_probability(high) > anytime_td_probability(low)
+
+
+def test_poisson_anytime_td_probability():
+    assert anytime_td_probability(0.0) == 0.0
+    p = anytime_td_probability(0.5)
+    assert abs(p - (1.0 - math.exp(-0.5))) < 1e-12
+
+
+def test_rb_negbin_is_below_poisson_for_same_lambda():
+    lam = 0.6
+    pois = anytime_td_probability(lam)
+    nb = anytime_td_probability(lam, dispersion=RB_TD_DISPERSION)
+    assert nb < pois
+    assert 0.0 < nb < 1.0

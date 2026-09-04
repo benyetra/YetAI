@@ -1,6 +1,8 @@
 # NFL Anytime Touchdown — ops notes
 
-Hierarchical λ → `P(TD) = 1 - exp(-λ)` for QB/RB/WR/TE. Predictions live in
+Hierarchical λ → Poisson `P(TD) = 1 - exp(-λ)` for QB/WR/TE; RBs use Negative
+Binomial `P(X≥1) = 1 - (r/(r+λ))^r` with `RB_TD_DISPERSION = 2.0`. Anytime TD
+counts rush + rec only (no passing TDs for the QB). Predictions live in
 `pred_nfl_anytime_td_predictions`; grading in `pred_nfl_anytime_td_actuals`.
 
 ## Feature build (nflverse)
@@ -13,8 +15,9 @@ Projector `run()` without injected `feature_rows` calls
    `stats_player_week_{season}.parquet` (maps `team` → `recent_team`), then fall
    back up to 3 seasons and use all prior-season weeks as priors (needed for Week 1).
 2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
-3. `import_depth_charts` — skill-position **starters** only (`depth_team=1`;
-   excludes KR/PR). If depth is empty, top prior-usage QB/RB/WR×3/TE per team.
+3. `import_depth_charts` — skill-position **starters** (`depth_team=1`; excludes
+   KR/PR). Remaining slots fill from prior usage up to `{QB:1, RB:2, WR:3, TE:1}`.
+   If depth is empty, usage top-N is the whole universe.
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
 6. **Injuries** — nflverse injury reports: drop Out/Doubtful (promote depth-2),
@@ -41,6 +44,8 @@ UI flags stay off until that gate clears on a fresh metrics write.
 See `backend/docs/NFL_ETL_PARITY.md` — Celery phase **anytime_td** runs scheme
 sync, projector, and Odds attach (`player_anytime_td`) inside the full NFL weekly
 pipeline (`run_nfl_update_pipeline`, Beat `nfl-update-pipeline-daily` @ 4:30 ET).
+Gameday availability (`run_nfl_gameday_availability`) rebuilds the anytime-TD
+slate after QB/kicker boards and spread/totals: schemes → projector → betting.
 
 Admin portal (`/admin/pipelines`):
 

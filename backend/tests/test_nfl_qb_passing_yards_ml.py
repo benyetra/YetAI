@@ -6,15 +6,19 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.services.etl.nfl import qb_passing_yards_ml as qbm
 from app.services.etl.nfl.qb_features import FEATURE_NAMES
 from app.services.etl.nfl.qb_passing_yards_ml import (
     PROMOTE_BASELINE_MODE,
     PROMOTE_FEATURE_NAMES,
+    apply_published_yards_after_line,
     build_features_from_tier_prediction,
     enrich_qb_prediction_for_write,
     predict_yards_ml,
+    published_qb_yards,
+    recenter_qb_interval,
     train_promote_qb_yards_model,
     train_qb_yards_model,
 )
@@ -80,6 +84,107 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
     assert out["feature_importance"]["ml_shadow_yards"] == 252.0
     assert out["predicted_passing_yards"] == 245.0
     assert "features" in out["feature_importance"]
+
+
+def test_published_qb_yards_uses_line_when_real_and_ml_off():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=268.5,
+        line_is_real=True,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 268.5
+    assert method == "market_line"
+
+
+def test_published_qb_yards_keeps_tier_without_real_line():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=None,
+        line_is_real=False,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 245.0
+    assert method == "tier"
+
+
+def test_published_qb_yards_promotes_ml_when_enabled_and_line_real():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=255.0,
+        line_is_real=True,
+        ml_yards=260.0,
+        ml_enabled=True,
+    )
+    assert yards == 260.0
+    assert method == "gbm"
+
+
+def test_apply_published_yards_after_line_uses_market_when_ml_off():
+    yards, method = apply_published_yards_after_line(
+        tier_yards=245.0,
+        ou_line=268.5,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 268.5
+    assert method == "market_line"
+
+
+def test_apply_published_yards_after_line_promotes_gbm_when_ml_on():
+    yards, method = apply_published_yards_after_line(
+        tier_yards=245.0,
+        ou_line=268.5,
+        ml_yards=260.0,
+        ml_enabled=True,
+    )
+    assert yards == 260.0
+    assert method == "gbm"
+
+
+def test_enrich_publishes_market_line_when_ml_disabled(monkeypatch):
+    monkeypatch.delenv("NFL_QB_ML_ENABLED", raising=False)
+    with patch.object(qbm, "predict_yards_ml_loaded", return_value=252.0):
+        out = enrich_qb_prediction_for_write(
+            _tier_pred(),
+            season=2024,
+            week=3,
+            context={
+                "pass_yds_line": 268.5,
+                "line_is_real": True,
+                "dynamic_tier_yards": 245.0,
+            },
+        )
+    assert out["predicted_passing_yards"] == 268.5
+    assert out["prediction_method"] == "market_line"
+    assert out["feature_importance"]["ml_shadow_yards"] == 252.0
+    assert out["prediction_interval_lower"] == pytest.approx(236.5)
+    assert out["prediction_interval_upper"] == pytest.approx(300.5)
+
+
+def test_recenter_qb_interval_keeps_width_on_new_mean():
+    lower, upper = recenter_qb_interval(268.5, 213.0, 277.0)
+    assert lower == 236.5
+    assert upper == 300.5
+
+
+def test_recenter_qb_interval_defaults_when_missing():
+    lower, upper = recenter_qb_interval(245.0, None, None)
+    assert lower == 210.0
+    assert upper == 280.0
+
+
+def test_qb_betting_applies_published_yards_after_line():
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1] / "app/services/etl/nfl/qb_betting.py"
+    ).read_text()
+    assert "apply_published_yards_after_line" in src
+    assert "recenter_qb_interval" in src
+    assert "qb.predicted_passing_yards = float(yards)" in src
 
 
 def test_enrich_promotes_ml_when_enabled(monkeypatch):

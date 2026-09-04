@@ -143,8 +143,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
         "schedule": crontab(hour=4, minute=30),
     },
-    # Gameday late availability — refresh QB/kicker boards as Q→Out locks in.
-    # Sun 10:00 / 12:30 / 15:30 ET covers early + afternoon windows; Mon 18:00 for MNF.
+    # Gameday late availability — refresh QB/kicker boards as Q→Out locks in,
+    # then reprice spreads/totals (QB-out ±3.5). Horizon matches game lines (14d).
+    # Sun 10:00 / 12:30 / 15:30 ET; Mon 18:00 MNF; Thu 10:00 / 19:00 TNF; Sat 12:30.
     "nfl-gameday-availability-sun-am": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=10, minute=0, day_of_week="0"),
@@ -163,6 +164,21 @@ celery_app.conf.beat_schedule = {
     "nfl-gameday-availability-mon": {
         "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
         "schedule": crontab(hour=18, minute=0, day_of_week="1"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-thu-am": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=10, minute=0, day_of_week="4"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-thu-pm": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=19, minute=0, day_of_week="4"),
+        "options": {"expires": 7200},
+    },
+    "nfl-gameday-availability-sat": {
+        "task": "app.tasks.etl_pipeline.run_nfl_gameday_availability",
+        "schedule": crontab(hour=12, minute=30, day_of_week="6"),
         "options": {"expires": 7200},
     },
     # Midweek anytime-TD refresh (Tue–Fri 11:00 ET) — Odds + board without full NFL run.

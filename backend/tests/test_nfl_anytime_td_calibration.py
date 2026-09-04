@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from app.services.etl.nfl.anytime_td_model import (
+    RB_TD_DISPERSION,
+    anytime_td_probability,
+)
 from app.services.etl.nfl.anytime_td_calibration import (
     CALIBRATION_FEATURE_NAMES,
     apply_calibrated_probability,
@@ -21,6 +25,23 @@ def test_hierarchical_probability_matches_model():
         script_mult=1.0,
     )
     assert 0.0 < p < 1.0
+
+
+def test_hierarchical_probability_rb_uses_negbin():
+    kwargs = dict(
+        team_rz_trips=3.2,
+        player_rz_share=0.2,
+        conversion_rate=0.3,
+        defense_mult=1.0,
+        weather_mult=1.0,
+        script_mult=1.0,
+    )
+    pois = hierarchical_probability(**kwargs)
+    rb = hierarchical_probability(**kwargs, position="RB")
+    lam = 3.2 * 0.2 * 0.3
+    assert abs(pois - anytime_td_probability(lam)) < 1e-12
+    assert rb < pois
+    assert abs(rb - anytime_td_probability(lam, dispersion=RB_TD_DISPERSION)) < 1e-12
 
 
 def test_build_calibration_feature_vector_length():

@@ -234,6 +234,74 @@ def _line_is_real_from_features(features: Mapping[str, float]) -> bool:
         return False
 
 
+def published_qb_yards(
+    *,
+    tier_yards: float,
+    pass_yds_line: float | None,
+    line_is_real: bool,
+    ml_yards: float | None,
+    ml_enabled: bool,
+) -> tuple[float, str]:
+    """Choose production yards: GBM (flag + real line), else market line, else tier."""
+    if ml_enabled and ml_yards is not None and line_is_real:
+        return float(ml_yards), "gbm"
+    if line_is_real and pass_yds_line is not None:
+        return float(pass_yds_line), "market_line"
+    return float(tier_yards), "tier"
+
+
+def apply_published_yards_after_line(
+    *,
+    tier_yards: float,
+    ou_line: float,
+    ml_yards: float | None,
+    ml_enabled: bool,
+) -> tuple[float, str]:
+    """Publish yards after a real prop line is attached (odds / qb_betting)."""
+    return published_qb_yards(
+        tier_yards=float(tier_yards),
+        pass_yds_line=float(ou_line),
+        line_is_real=True,
+        ml_yards=ml_yards,
+        ml_enabled=bool(ml_enabled),
+    )
+
+
+def recenter_qb_interval(
+    projected: float,
+    lower: float | None,
+    upper: float | None,
+    *,
+    floor: float = 120.0,
+    ceiling: float = 380.0,
+    default_half: float = 35.0,
+) -> tuple[float, float]:
+    """Keep interval width, center it on the published mean."""
+    if lower is None or upper is None:
+        half = default_half
+    else:
+        half = (float(upper) - float(lower)) / 2.0
+    return (
+        round(max(floor, float(projected) - half), 1),
+        round(min(ceiling, float(projected) + half), 1),
+    )
+
+
+def production_method_for_published(
+    pub_method: str,
+    *,
+    existing_method: str | None = None,
+) -> str:
+    """Map published_qb_yards suffix to stored ``prediction_method``."""
+    if pub_method == "market_line":
+        return "market_line"
+    if pub_method == "gbm":
+        if existing_method in {"gbm_qb_residual", "gbm_qb_yards"}:
+            return str(existing_method)
+        return "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
+    return existing_method or "tier_table"
+
+
 def blend_ml_with_line(
     ml_yards: float,
     *,
@@ -844,7 +912,8 @@ def enrich_qb_prediction_for_write(
     context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Shadow enrich: production yards stay tier table unless ``NFL_QB_ML_ENABLED=1``.
+    Publish production yards: GBM when ``NFL_QB_ML_ENABLED=1`` and a real prop
+    line is present, else the real ``pass_yds_line``, else the dynamic tier.
 
     ``context`` carries matchup/form features (rolling yards, opp pass D, home,
     rest, implied total, weather). See ``qb_features.build_qb_features``.
@@ -876,30 +945,34 @@ def enrich_qb_prediction_for_write(
     if ml_yards is not None and not qb_ml_enabled():
         feature_importance["ml_shadow_yards"] = ml_yards
 
-    projected = tier_yards
-    version = resolve_qb_model_version(ml_loaded=ml_loaded)
-    method = prediction.get("prediction_method") or "tier_table"
-    # Market-residual promote path needs a real prop line; without it ML crushes
-    # elite tiers and partial qb_betting updates can rank mid-tier QBs first.
-    use_ml_prod = (
-        qb_ml_enabled() and ml_yards is not None and _line_is_real_from_features(feats)
-    )
-    if use_ml_prod:
-        projected = ml_yards
-        method = "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
+    line_is_real = _line_is_real_from_features(feats)
+    raw_line = feats.get("pass_yds_line")
+    try:
+        pass_yds_line = float(raw_line) if raw_line is not None else None
+    except (TypeError, ValueError):
+        pass_yds_line = None
+    # Feature default 0.0 is not a line when line_is_real is false.
+    if not line_is_real and (pass_yds_line is None or pass_yds_line == 0.0):
+        pass_yds_line = None
 
-    # Prediction intervals: prefer explicit tier intervals; widen slightly for ML
-    lower = prediction.get("prediction_interval_lower")
-    upper = prediction.get("prediction_interval_upper")
-    if lower is None or upper is None:
-        half = 35.0
-        lower = max(120.0, projected - half)
-        upper = min(380.0, projected + half)
-    elif qb_ml_enabled() and ml_yards is not None:
-        # Recenter interval on ML point estimate, keep width
-        width = (float(upper) - float(lower)) / 2.0
-        lower = max(120.0, projected - width)
-        upper = min(380.0, projected + width)
+    projected, pub_method = published_qb_yards(
+        tier_yards=tier_yards,
+        pass_yds_line=pass_yds_line,
+        line_is_real=line_is_real,
+        ml_yards=ml_yards,
+        ml_enabled=qb_ml_enabled(),
+    )
+    version = resolve_qb_model_version(ml_loaded=ml_loaded)
+    method = production_method_for_published(
+        pub_method,
+        existing_method=prediction.get("prediction_method") or "tier_table",
+    )
+
+    lower, upper = recenter_qb_interval(
+        projected,
+        prediction.get("prediction_interval_lower"),
+        prediction.get("prediction_interval_upper"),
+    )
 
     return {
         "predicted_passing_yards": projected,
