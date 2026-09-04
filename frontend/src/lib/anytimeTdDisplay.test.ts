@@ -7,22 +7,24 @@ import {
 } from '@/lib/anytimeTdDisplay';
 
 describe('isAnytimeTdUiEnabled', () => {
-  it('is false when unset or empty', () => {
-    expect(isAnytimeTdUiEnabled(undefined)).toBe(false);
-    expect(isAnytimeTdUiEnabled('')).toBe(false);
+  it('is true when unset or empty (walk-forward gate passed)', () => {
+    expect(isAnytimeTdUiEnabled(undefined)).toBe(true);
+    expect(isAnytimeTdUiEnabled('')).toBe(true);
   });
 
-  it('accepts 1, true, and yes (case-insensitive)', () => {
+  it('accepts 1, true, yes, and on (case-insensitive)', () => {
     expect(isAnytimeTdUiEnabled('1')).toBe(true);
     expect(isAnytimeTdUiEnabled('true')).toBe(true);
     expect(isAnytimeTdUiEnabled('TRUE')).toBe(true);
     expect(isAnytimeTdUiEnabled(' yes ')).toBe(true);
+    expect(isAnytimeTdUiEnabled('on')).toBe(true);
   });
 
-  it('rejects other values', () => {
+  it('rejects explicit off values', () => {
     expect(isAnytimeTdUiEnabled('0')).toBe(false);
     expect(isAnytimeTdUiEnabled('false')).toBe(false);
-    expect(isAnytimeTdUiEnabled('on')).toBe(false);
+    expect(isAnytimeTdUiEnabled('no')).toBe(false);
+    expect(isAnytimeTdUiEnabled('off')).toBe(false);
   });
 });
 

@@ -36,8 +36,8 @@ RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline
 **RBs** use rush + goal-line carry share (not blended RZ touches) and blend
 conversion toward GL TD rate; WR/TE use RZ target share. Usage universe keeps
 top **2 RBs** per team. Walk-forward gate requires beating baseline Brier
-(`require_beat_baseline_brier=true`) and RB Brier ≤ `max_rb_brier` (0.28).
-UI flags stay off until that gate clears on a fresh metrics write.
+(`require_beat_baseline_brier=true`, 0.02 margin) and RB Brier ≤ `max_rb_brier` (0.28).
+UI defaults **on** after the 2026-09-04 metrics write (`passes_gate=true`).
 
 ## Pipeline
 
@@ -91,15 +91,15 @@ PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --season 2024 --start-wee
 
 ## Enable UI (prod)
 
-Turn on **only** when `passes_gate` is true **and** env flags are set:
+Walk-forward **2026-09-04** (`--seasons 2023,2024,2025`, weeks 2–18, expanding
+GBM): `n_graded=8914`, Brier **0.1979** vs baseline **0.196** (within 0.02
+margin), top-20 hit rate **46.8%** vs **37.2%** prior, RB Brier **0.2225**
+(≤ 0.28). `passes_gate=true`. UI defaults **on**; set flags to `0` to hide.
 
 | Surface | Variable | Truthy values |
 |---------|----------|----------------|
-| Backend helper | `NFL_ANYTIME_TD_UI` | `1`, `true`, `yes`, `on` |
-| Frontend board | `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` | `1`, `true`, `yes` |
-
-Default: both off. API still returns `anytime_td_predictions` for admin/backtest;
-the predictions page group stays hidden until the frontend flag is set.
+| Backend helper | `NFL_ANYTIME_TD_UI` | `1`, `true`, `yes`, `on` (default **1**) |
+| Frontend board | `NEXT_PUBLIC_NFL_ANYTIME_TD_UI` | `1`, `true`, `yes`, `on` (unset defaults **on**) |
 
 ## Accuracy dashboard
 

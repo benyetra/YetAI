@@ -11,14 +11,19 @@ import {
   TEAM_COLUMN,
 } from '@/lib/propProjectionDisplay';
 
-const TRUTHY_ENV = new Set(['1', 'true', 'yes']);
+const TRUTHY_ENV = new Set(['1', 'true', 'yes', 'on']);
+const FALSY_ENV = new Set(['0', 'false', 'no', 'off']);
 
-/** Client gate for NFL anytime TD board (`NEXT_PUBLIC_NFL_ANYTIME_TD_UI`). */
+/** Client gate for NFL anytime TD board (`NEXT_PUBLIC_NFL_ANYTIME_TD_UI`).
+ *  Default on after the 2026-09-04 walk-forward gate; set to `0` to hide.
+ */
 export function isAnytimeTdUiEnabled(
   envValue: string | undefined = process.env.NEXT_PUBLIC_NFL_ANYTIME_TD_UI,
 ): boolean {
-  if (envValue === undefined || envValue === '') return false;
-  return TRUTHY_ENV.has(envValue.trim().toLowerCase());
+  if (envValue === undefined || envValue === '') return true;
+  const normalized = envValue.trim().toLowerCase();
+  if (FALSY_ENV.has(normalized)) return false;
+  return TRUTHY_ENV.has(normalized);
 }
 
 /** Model P(anytime TD) as whole-percent display (0–1 or 0–100 inputs). */

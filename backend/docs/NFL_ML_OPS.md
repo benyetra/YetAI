@@ -48,11 +48,13 @@ requires the flag.
 ML PASS unless `|P(over)−0.5| ≥ 10%`; yards min edge 7%, min confidence 70%.
 
 Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
-holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).
-Railway run **31555122122** cleared the gate (`promote_recommended=true`,
-**+12.53%**). Upload S3 artifacts from a promote-gated eval (`--upload`), then
-set `NFL_QB_ML_ENABLED=1` on Railway. Do not flip the flag before S3 has the
-matching `market_residual_v6` bundle.
+holdout **and** strictly better MAE than the published **market line**
+(`line_only` / `line_mae`). After P0, production yards *are* the prop line when
+ML is off — beating the stale tier table is not enough to flip
+`NFL_QB_ML_ENABLED`. `nfl_prod_qb_eval.py` reports `mae_lift` (vs tier) and
+`mae_lift_vs_line`. Upload S3 artifacts from a promote-gated eval (`--upload`),
+then set `NFL_QB_ML_ENABLED=1` on Railway. Do not flip the flag before S3 has
+the matching `market_residual_v6` bundle.
 
 Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 (Railway)**):
@@ -72,11 +74,11 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 | Dynamic-tier MAE | **65.5** |
 | Promote path | **`market_residual_v6`** + HP `strong_reg` (raw ML; no line blend) |
 | Residual ML MAE | **57.31** |
-| Lift vs dynamic | **+12.53%** (gate ≥10%) |
+| Lift vs dynamic | **+12.53%** (then-gate ≥10% vs **tier only**) |
 | Lift vs static | **+14.13%** |
 | v5 / v6 ablations | +11.27% / +11.74% |
-| `promote_recommended` | **true** |
-| Next | Upload artifacts to S3 (`--upload`), then set `NFL_QB_ML_ENABLED=1` on Railway |
+| `promote_recommended` (old gate) | **true** (tier lift only; no `line_mae`) |
+| Next | Re-run **NFL Prod QB Eval** under the line-vs-ML gate. Do **not** set `NFL_QB_ML_ENABLED=1` from this run. |
 
 ### Prior Railway ablations (2026-08-12, pre-promote-path switch)
 
@@ -194,7 +196,8 @@ GitHub Actions (preferred when local `.env.production` is a placeholder):
 gh workflow run nfl-prod-qb-eval.yml -f season_start=2023-09-01 -f season_end=2026-02-15 -f force_upload=true
 ```
 
-**Do not enable `NFL_QB_ML_ENABLED=1` unless holdout lift ≥10%.** Real pass-yards
+**Do not enable `NFL_QB_ML_ENABLED=1` unless holdout lift ≥10% vs dynamic
+tier *and* ML MAE beats `line_only`.** Real pass-yards
 prop lines come from `pred_qb_predictions.ou_line` and the historical Odds API
 index (`models/nfl/pass_yds_lines.json`).
 
@@ -262,7 +265,8 @@ for `#89` ships the same bundled pickles under `backend/models/nfl/`.
 pushed to `s3://yetibets/nfl/`; earlier residual QB + O/U shadows under
 `s3://yetibets/nfl/ml_models/`.
 
-**Do not enable `NFL_QB_ML_ENABLED=1` until holdout lift ≥10%.**
+**Do not enable `NFL_QB_ML_ENABLED=1` until a new eval reports
+`promote_recommended: true` (tier lift ≥10% **and** ML MAE < `line_mae`).**
 
 Artifacts under `backend/models/nfl/` for shadow inference:
 `qb_passing_yards.pkl` (residual), `qb_pass_yds_ou.pkl`,

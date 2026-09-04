@@ -4,7 +4,8 @@
 Requires DATABASE_URL. Optional --upload needs AWS credentials for
 s3://yetibets/nfl/ml_models/.
 
-Never recommends promote unless holdout MAE beats tier by ≥10%.
+Never recommends promote unless holdout MAE beats dynamic tier by ≥10%
+*and* beats the published market-line path (real prop line when present).
 
 Usage:
   export DATABASE_URL=postgresql://...
@@ -35,6 +36,36 @@ _PROMOTE_LIFT = 0.10
 
 def _mae(y_true: np.ndarray, y_pred: np.ndarray) -> float:
     return float(np.mean(np.abs(y_true - y_pred)))
+
+
+def promote_decision(
+    *,
+    ml_mae: float,
+    tier_mae: float,
+    line_mae: float | None,
+    lift_gate: float = _PROMOTE_LIFT,
+) -> tuple[bool, str]:
+    """Promote only when ML beats dynamic tier by ``lift_gate`` *and* the line.
+
+    After P0, production yards are the real prop line when ML is off. Beating
+    the stale tier table is not enough to flip ``NFL_QB_ML_ENABLED``.
+    """
+    if tier_mae <= 0:
+        return False, "Keep market-line / shadow ML; invalid tier MAE"
+    lift_vs_tier = (tier_mae - float(ml_mae)) / float(tier_mae)
+    if lift_vs_tier < lift_gate:
+        return (
+            False,
+            "Keep market-line / shadow ML; residual ML stays off until "
+            "≥10% lift vs dynamic tier",
+        )
+    if line_mae is not None and float(ml_mae) >= float(line_mae):
+        return (
+            False,
+            "Beats dynamic tier but not the published market line; "
+            "keep NFL_QB_ML_ENABLED off",
+        )
+    return True, "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
 
 
 def _market_baseline_row(feats: dict[str, Any], *, tier: float) -> float:
@@ -591,12 +622,16 @@ def train_and_eval(
     static_tier_mae = _mae(y_test, static_tier_test)
     ml_mae_raw = _mae(y_test, ml_pred_raw)
     ml_mae = _mae(y_test, ml_pred)
+    line_mae = _mae(y_test, line_pred)
     lift_raw = (tier_mae - ml_mae_raw) / tier_mae if tier_mae > 0 else 0.0
     lift = (tier_mae - ml_mae) / tier_mae if tier_mae > 0 else 0.0
     lift_vs_static = (
         (static_tier_mae - ml_mae) / static_tier_mae if static_tier_mae > 0 else 0.0
     )
-    promote = lift >= _PROMOTE_LIFT
+    lift_vs_line = (line_mae - ml_mae) / line_mae if line_mae > 0 else 0.0
+    promote, recommendation = promote_decision(
+        ml_mae=ml_mae, tier_mae=tier_mae, line_mae=line_mae
+    )
 
     ablations = run_holdout_ablations(
         X_train=X_train,
@@ -690,17 +725,15 @@ def train_and_eval(
         "ml_mae": round(ml_mae, 3),
         "mae_lift": round(lift, 4),
         "mae_lift_vs_static_tier": round(lift_vs_static, 4),
+        "line_mae": round(line_mae, 3),
+        "mae_lift_vs_line": round(lift_vs_line, 4),
         "promote_gate": _PROMOTE_LIFT,
         "promote_recommended": promote,
         "model_version": metadata.get("model_version"),
         "train_metadata": metadata,
         "line_blend": ablations["line_blend"],
         "ablations": ablations,
-        "recommendation": (
-            "Enable NFL_QB_ML_ENABLED=1 after uploading artifacts"
-            if promote
-            else "Keep dynamic-tier / shadow ML; residual ML stays off until ≥10% lift"
-        ),
+        "recommendation": recommendation,
     }
 
     real_line_n = (
@@ -805,6 +838,8 @@ def train_and_eval(
         "holdout_tier_mae": report["tier_mae"],
         "holdout_ml_mae": report["ml_mae"],
         "holdout_mae_lift": report["mae_lift"],
+        "holdout_line_mae": report.get("line_mae"),
+        "holdout_mae_lift_vs_line": report.get("mae_lift_vs_line"),
         "training_source": "pred_qb_actuals",
         "season_start": str(season_start),
         "season_end": str(season_end),

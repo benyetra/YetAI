@@ -12,8 +12,14 @@ from app.api.v1 import predictions as predictions_module
 from app.services.etl.nfl.anytime_td_config import anytime_td_ui_enabled
 
 
-def test_anytime_td_ui_enabled_default_off(monkeypatch):
+def test_anytime_td_ui_enabled_default_on(monkeypatch):
     monkeypatch.delenv("NFL_ANYTIME_TD_UI", raising=False)
+    assert anytime_td_ui_enabled() is True
+
+
+@pytest.mark.parametrize("value", ["0", "false", "no", "off"])
+def test_anytime_td_ui_enabled_falsy(monkeypatch, value):
+    monkeypatch.setenv("NFL_ANYTIME_TD_UI", value)
     assert anytime_td_ui_enabled() is False
 
 
