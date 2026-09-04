@@ -250,6 +250,38 @@ def published_qb_yards(
     return float(tier_yards), "tier"
 
 
+def apply_published_yards_after_line(
+    *,
+    tier_yards: float,
+    ou_line: float,
+    ml_yards: float | None,
+    ml_enabled: bool,
+) -> tuple[float, str]:
+    """Publish yards after a real prop line is attached (odds / qb_betting)."""
+    return published_qb_yards(
+        tier_yards=float(tier_yards),
+        pass_yds_line=float(ou_line),
+        line_is_real=True,
+        ml_yards=ml_yards,
+        ml_enabled=bool(ml_enabled),
+    )
+
+
+def production_method_for_published(
+    pub_method: str,
+    *,
+    existing_method: str | None = None,
+) -> str:
+    """Map published_qb_yards suffix to stored ``prediction_method``."""
+    if pub_method == "market_line":
+        return "market_line"
+    if pub_method == "gbm":
+        if existing_method in {"gbm_qb_residual", "gbm_qb_yards"}:
+            return str(existing_method)
+        return "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
+    return existing_method or "tier_table"
+
+
 def blend_ml_with_line(
     ml_yards: float,
     *,
@@ -911,14 +943,10 @@ def enrich_qb_prediction_for_write(
         ml_enabled=qb_ml_enabled(),
     )
     version = resolve_qb_model_version(ml_loaded=ml_loaded)
-    method = prediction.get("prediction_method") or "tier_table"
-    if pub_method == "market_line":
-        method = "market_line"
-    elif pub_method == "gbm":
-        # Market-residual promote path needs a real prop line; without it ML
-        # crushes elite tiers and partial qb_betting updates can rank mid-tier
-        # QBs first. published_qb_yards already required line_is_real.
-        method = "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
+    method = production_method_for_published(
+        pub_method,
+        existing_method=prediction.get("prediction_method") or "tier_table",
+    )
 
     # Prediction intervals: prefer explicit tier intervals; widen slightly for ML
     lower = prediction.get("prediction_interval_lower")

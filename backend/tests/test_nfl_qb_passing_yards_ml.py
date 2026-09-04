@@ -12,6 +12,7 @@ from app.services.etl.nfl.qb_features import FEATURE_NAMES
 from app.services.etl.nfl.qb_passing_yards_ml import (
     PROMOTE_BASELINE_MODE,
     PROMOTE_FEATURE_NAMES,
+    apply_published_yards_after_line,
     build_features_from_tier_prediction,
     enrich_qb_prediction_for_write,
     predict_yards_ml,
@@ -112,6 +113,28 @@ def test_published_qb_yards_promotes_ml_when_enabled_and_line_real():
         tier_yards=245.0,
         pass_yds_line=255.0,
         line_is_real=True,
+        ml_yards=260.0,
+        ml_enabled=True,
+    )
+    assert yards == 260.0
+    assert method == "gbm"
+
+
+def test_apply_published_yards_after_line_uses_market_when_ml_off():
+    yards, method = apply_published_yards_after_line(
+        tier_yards=245.0,
+        ou_line=268.5,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 268.5
+    assert method == "market_line"
+
+
+def test_apply_published_yards_after_line_promotes_gbm_when_ml_on():
+    yards, method = apply_published_yards_after_line(
+        tier_yards=245.0,
+        ou_line=268.5,
         ml_yards=260.0,
         ml_enabled=True,
     )
