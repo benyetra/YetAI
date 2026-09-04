@@ -22,8 +22,8 @@ from app.services.etl._spread_model import (
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nfl._team_ppg import compute_team_ppg_stats, team_ppg_for
 from app.services.etl.nfl.qb_spread_adjustment import (
+    qb_out_map_from_rows,
     qb_out_margin_adjustment,
-    team_qb_is_out,
 )
 from app.services.etl.nfl.update_game_lines import GAME_LINES_HORIZON_DAYS
 from app.services.etl.wnba._db_upsert import upsert_many
@@ -39,17 +39,6 @@ def projection_end_date(today: date) -> date:
     return today + timedelta(days=GAME_LINES_HORIZON_DAYS)
 
 
-def _qb_status_from_prediction(row: QBPredictions) -> dict:
-    fi = row.feature_importance if isinstance(row.feature_importance, dict) else {}
-    features = fi.get("features") if isinstance(fi.get("features"), dict) else {}
-    return {
-        "injury_status": features.get("injury_status")
-        or fi.get("injury_status")
-        or "Healthy",
-        "is_backup": bool(features.get("is_backup") or fi.get("is_backup")),
-    }
-
-
 def _load_qb_out_by_team(db) -> dict[str, bool]:
     """Map team_name → starter QB is out, from current-week ``pred_qb_predictions``."""
     from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
@@ -61,10 +50,7 @@ def _load_qb_out_by_team(db) -> dict[str, bool]:
         .filter(QBPredictions.season == season, QBPredictions.week == week)
         .all()
     )
-    out: dict[str, bool] = {}
-    for row in rows:
-        out[row.team_name] = team_qb_is_out(_qb_status_from_prediction(row))
-    return out
+    return qb_out_map_from_rows(rows)
 
 
 def _load_elos(db) -> dict[str, float]:

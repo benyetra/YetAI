@@ -1,9 +1,11 @@
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
 
 from app.services.etl.nfl.qb_spread_adjustment import (
     QB_OUT_SPREAD_POINTS,
+    qb_out_map_from_rows,
     qb_out_margin_adjustment,
     team_qb_is_out,
 )
@@ -42,6 +44,44 @@ def test_team_qb_is_out_from_status_and_backup_flag():
     )
     assert team_qb_is_out({"injury_status": "Healthy", "is_backup": True}) is True
     assert team_qb_is_out({"injury_status": "Healthy", "is_backup": False}) is False
+
+
+def _qb_row(*, team_name: str, is_backup: bool, injury_status: str = "Healthy"):
+    return SimpleNamespace(
+        team_name=team_name,
+        feature_importance={"features": {"is_backup": float(is_backup)}},
+        injury_status=injury_status,
+    )
+
+
+def test_qb_out_map_starter_only_is_false():
+    rows = [
+        _qb_row(
+            team_name="Kansas City Chiefs", is_backup=False, injury_status="Healthy"
+        ),
+    ]
+    assert qb_out_map_from_rows(rows) == {"Kansas City Chiefs": False}
+
+
+def test_qb_out_map_backup_only_is_true():
+    rows = [
+        _qb_row(
+            team_name="Kansas City Chiefs", is_backup=True, injury_status="Healthy"
+        ),
+    ]
+    assert qb_out_map_from_rows(rows)["Kansas City Chiefs"] is True
+
+
+def test_qb_out_map_or_survives_starter_processed_last():
+    rows = [
+        _qb_row(
+            team_name="Kansas City Chiefs", is_backup=True, injury_status="Healthy"
+        ),
+        _qb_row(
+            team_name="Kansas City Chiefs", is_backup=False, injury_status="Healthy"
+        ),
+    ]
+    assert qb_out_map_from_rows(rows)["Kansas City Chiefs"] is True
 
 
 def test_projection_end_date_matches_game_lines_horizon():
