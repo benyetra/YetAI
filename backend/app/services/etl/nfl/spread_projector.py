@@ -21,6 +21,7 @@ from app.services.etl._spread_model import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nfl._team_ppg import compute_team_ppg_stats, team_ppg_for
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 from app.services.etl.nfl.qb_spread_adjustment import (
     qb_out_map_from_rows,
     qb_out_margin_adjustment,
@@ -39,12 +40,31 @@ def projection_end_date(today: date) -> date:
     return today + timedelta(days=GAME_LINES_HORIZON_DAYS)
 
 
-def _load_qb_out_by_team(db) -> dict[str, bool]:
-    """Map team_name → starter QB is out, from current-week ``pred_qb_predictions``."""
-    from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+def apply_qb_out_for_game(
+    game_date: date | datetime,
+    loaded_week: int,
+    season: int,
+    qb_out_by_team: dict[str, bool],
+    *,
+    home_team_name: str,
+    away_team_name: str,
+) -> tuple[bool, bool]:
+    """Return home/away QB-out flags only when the game is in ``loaded_week``."""
+    game_day = game_date.date() if isinstance(game_date, datetime) else game_date
+    if get_current_nfl_week(season, today=game_day) != loaded_week:
+        return False, False
+    return (
+        qb_out_by_team.get(home_team_name, False),
+        qb_out_by_team.get(away_team_name, False),
+    )
 
-    season = get_nfl_season()
-    week = get_current_nfl_week(season)
+
+def _load_qb_out_by_team(
+    db, *, season: int | None = None, week: int | None = None
+) -> dict[str, bool]:
+    """Map team_name → starter QB is out, from current-week ``pred_qb_predictions``."""
+    season = season if season is not None else get_nfl_season()
+    week = week if week is not None else get_current_nfl_week(season)
     rows = (
         db.query(QBPredictions)
         .filter(QBPredictions.season == season, QBPredictions.week == week)
@@ -129,7 +149,9 @@ def run() -> dict:
             db.query(NFLSpreadActuals).order_by(NFLSpreadActuals.game_date.asc()).all()
         )
         ppg_stats = compute_team_ppg_stats(actuals)
-        qb_out_by_team = _load_qb_out_by_team(db)
+        season = get_nfl_season()
+        loaded_week = get_current_nfl_week(season, today=today)
+        qb_out_by_team = _load_qb_out_by_team(db, season=season, week=loaded_week)
 
         games = (
             db.query(NFLGameLines)
@@ -138,14 +160,22 @@ def run() -> dict:
         )
 
         for g in games:
+            home_qb_out, away_qb_out = apply_qb_out_for_game(
+                g.game_date,
+                loaded_week,
+                season,
+                qb_out_by_team,
+                home_team_name=g.home_team_name,
+                away_team_name=g.away_team_name,
+            )
             projection = _project_spread_row(
                 home_team_name=g.home_team_name,
                 away_team_name=g.away_team_name,
                 spread_home=g.spread_home,
                 elos=elos,
                 ppg_stats=ppg_stats,
-                home_qb_out=qb_out_by_team.get(g.home_team_name, False),
-                away_qb_out=qb_out_by_team.get(g.away_team_name, False),
+                home_qb_out=home_qb_out,
+                away_qb_out=away_qb_out,
             )
             upsert_rows.append(
                 {
