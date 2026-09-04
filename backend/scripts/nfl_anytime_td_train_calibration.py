@@ -62,6 +62,7 @@ def main(argv: list[str] | None = None) -> int:
     from app.services.etl.nfl.anytime_td_features import (
         load_weekly_records_with_fallback,
     )
+    from app.services.etl.nfl.anytime_td_model import RB_TD_DISPERSION
     from app.services.etl.nfl.anytime_td_pbp import load_pbp_records_nflverse
 
     if args.seasons:
@@ -115,6 +116,8 @@ def main(argv: list[str] | None = None) -> int:
             if train_rows
             else 0.0
         ),
+        "hier_p_family": "poisson_except_rb_negbin",
+        "rb_td_dispersion": RB_TD_DISPERSION,
     }
     mpath, jpath = save_calibration_artifact(
         model,

@@ -65,6 +65,41 @@ def test_build_calibration_feature_vector_length():
     assert all(isinstance(x, float) for x in feats)
 
 
+def test_build_calibration_feature_vector_rb_omitted_p_is_negbin():
+    row = {
+        "position": "RB",
+        "team_rz_trips": 3.2,
+        "player_rz_share": 0.2,
+        "conversion_rate": 0.3,
+        "defense_mult": 1.0,
+        "weather_mult": 1.0,
+        "script_mult": 1.0,
+    }
+    feats = build_calibration_feature_vector(row)
+    hier_p = feats[CALIBRATION_FEATURE_NAMES.index("hier_p")]
+    lam = 3.2 * 0.2 * 0.3
+    assert (
+        abs(hier_p - anytime_td_probability(lam, dispersion=RB_TD_DISPERSION)) < 1e-12
+    )
+    assert hier_p < anytime_td_probability(lam)
+
+
+def test_residual_gbm_metadata_records_negbin_rb():
+    from pathlib import Path
+    import json
+
+    meta_path = (
+        Path(__file__).resolve().parents[1]
+        / "models"
+        / "nfl"
+        / "anytime_td_residual_gbm.json"
+    )
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    assert meta["hier_p_family"] == "poisson_except_rb_negbin"
+    assert meta["rb_td_dispersion"] == RB_TD_DISPERSION
+    assert "rb" in meta["groups"]
+
+
 def test_fit_and_apply_residual_gbm_improves_or_stays_valid():
     # Synthetic: high hierarchical p should track positives after fit.
     rows = []

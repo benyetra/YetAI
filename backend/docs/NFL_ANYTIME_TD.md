@@ -72,10 +72,12 @@ Offline CI still uses a fixed synthetic `--quick` sample — no DATABASE_URL or 
 
 Artifact: `backend/models/nfl/anytime_td_metrics.json` (`preset: walk_forward` after live run)
 
-Residual GBM calibrator (optional, on by default when artifact exists):
+Residual GBM calibrator (optional, on by default when artifact exists).
+Artifact `anytime_td_residual_gbm.pkl` retrained **2026-09-04** on NegBin
+`hier_p` for RBs (`RB_TD_DISPERSION=2.0`; Poisson for other positions):
 
 ```bash
-PYTHONPATH=. python scripts/nfl_anytime_td_train_calibration.py
+PYTHONPATH=. python scripts/nfl_anytime_td_train_calibration.py --seasons 2023,2024,2025
 # Disable at inference: NFL_ANYTIME_TD_GBM=0
 ```
 
