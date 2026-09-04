@@ -13,10 +13,12 @@ from app.models.predictions_models import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nfl._team_ppg import compute_team_ppg_stats, team_ppg_for
+from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 from app.services.etl.nfl.spread_projector import (
     _load_elos,
     _load_qb_out_by_team,
     _project_spread_row,
+    apply_qb_out_for_game,
     projection_end_date,
 )
 from app.services.etl.wnba._db_upsert import upsert_many
@@ -148,7 +150,9 @@ def run() -> dict:
             db.query(NFLSpreadActuals).order_by(NFLSpreadActuals.game_date.asc()).all()
         )
         ppg_stats = compute_team_ppg_stats(actuals)
-        qb_out_by_team = _load_qb_out_by_team(db)
+        season = get_nfl_season()
+        loaded_week = get_current_nfl_week(season, today=today)
+        qb_out_by_team = _load_qb_out_by_team(db, season=season, week=loaded_week)
 
         games = (
             db.query(NFLGameLines)
@@ -157,6 +161,14 @@ def run() -> dict:
         )
 
         for g in games:
+            home_qb_out, away_qb_out = apply_qb_out_for_game(
+                g.game_date,
+                loaded_week,
+                season,
+                qb_out_by_team,
+                home_team_name=g.home_team_name,
+                away_team_name=g.away_team_name,
+            )
             projection = _project_totals_row(
                 home_team_name=g.home_team_name,
                 away_team_name=g.away_team_name,
@@ -164,8 +176,8 @@ def run() -> dict:
                 market_total=g.total,
                 elos=elos,
                 ppg_stats=ppg_stats,
-                home_qb_out=qb_out_by_team.get(g.home_team_name, False),
-                away_qb_out=qb_out_by_team.get(g.away_team_name, False),
+                home_qb_out=home_qb_out,
+                away_qb_out=away_qb_out,
             )
             upsert_rows.append(
                 {

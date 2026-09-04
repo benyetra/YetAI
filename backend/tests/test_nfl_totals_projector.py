@@ -1,9 +1,29 @@
+from datetime import date
+
+import pytest
+
+from app.services.etl.nfl.nfl_common import get_current_nfl_week
+from app.services.etl.nfl.spread_projector import apply_qb_out_for_game
 from app.services.etl.nfl.totals_projector import (
     TOTALS_EDGE_THRESHOLD,
     _align_scores,
     _project_totals_row,
     _totals_recommendation,
 )
+
+
+def _totals_row_kwargs():
+    return dict(
+        home_team_name="Kansas City Chiefs",
+        away_team_name="Baltimore Ravens",
+        spread_home=-3.0,
+        market_total=47.0,
+        elos={"Kansas City Chiefs": 1550.0, "Baltimore Ravens": 1450.0},
+        ppg_stats={
+            "Kansas City Chiefs": (28.0, 20.0),
+            "Baltimore Ravens": (24.0, 22.0),
+        },
+    )
 
 
 def test_align_scores_satisfies_total_and_margin_identities():
@@ -34,20 +54,37 @@ def test_totals_recommendation_thresholds():
 
 
 def test_project_totals_row_aligns_scores():
-    row = _project_totals_row(
-        home_team_name="Kansas City Chiefs",
-        away_team_name="Baltimore Ravens",
-        spread_home=-3.0,
-        market_total=47.0,
-        elos={"Kansas City Chiefs": 1550.0, "Baltimore Ravens": 1450.0},
-        ppg_stats={
-            "Kansas City Chiefs": (28.0, 20.0),
-            "Baltimore Ravens": (24.0, 22.0),
-        },
-    )
+    row = _project_totals_row(**_totals_row_kwargs())
     home = row["home_projected_score"]
     away = row["away_projected_score"]
     total = row["projected_total"]
     margin = row["factors"]["projected_margin"]
     assert abs((home + away) - total) < 1e-6
     assert abs((home - away) - margin) < 1e-6
+
+
+def test_next_week_totals_row_ignores_qb_out_flags():
+    season = 2026
+    current_week_date = date(2026, 9, 13)
+    next_week_date = date(2026, 9, 20)
+    loaded_week = get_current_nfl_week(season, today=current_week_date)
+    assert get_current_nfl_week(season, today=next_week_date) == loaded_week + 1
+    home_out, away_out = apply_qb_out_for_game(
+        next_week_date,
+        loaded_week,
+        season,
+        {"Kansas City Chiefs": True},
+        home_team_name="Kansas City Chiefs",
+        away_team_name="Baltimore Ravens",
+    )
+    assert (home_out, away_out) == (False, False)
+    gated = _project_totals_row(
+        **_totals_row_kwargs(), home_qb_out=home_out, away_qb_out=away_out
+    )
+    no_out = _project_totals_row(**_totals_row_kwargs())
+    assert gated["home_projected_score"] == pytest.approx(
+        no_out["home_projected_score"]
+    )
+    assert gated["away_projected_score"] == pytest.approx(
+        no_out["away_projected_score"]
+    )
