@@ -38,11 +38,13 @@ GBM only when a **real** prop line is on the feature row (`line_is_real`).
 without lines inverts the slate (mid-tier QBs above Allen/Mahomes). After
 `qb_betting` reinjects lines, ML applies. Promote bundle loads from **S3**
 (when ML is on); shipped `backend/models/nfl/` pickles are shadow-only.
+When `NFL_QB_ML_ENABLED` is unset, a real `pass_yds_line` is published as
+`predicted_passing_yards` (`prediction_method=market_line`); GBM still
+requires the flag.
 
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
-`qb_betting` blends yards-edge with `P(over)`; disagreement → PASS unless yards
-edge is strong (≥12%). ML PASS unless `|P(over)−0.5| ≥ 10%`; yards min edge 7%,
-min confidence 70%.
+`qb_betting` blends yards-edge with `P(over)`; disagreement → always PASS.
+ML PASS unless `|P(over)−0.5| ≥ 10%`; yards min edge 7%, min confidence 70%.
 
 Promotion gate: residual ML MAE ≥ **10%** better than **dynamic tier** on
 holdout (`nfl_prod_qb_eval.py` also reports lift vs static tier).

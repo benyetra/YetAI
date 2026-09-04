@@ -95,6 +95,13 @@ def test_betting_recommendation_ml_disagreement_passes():
     assert out["recommendation"] == "PASS"
 
 
+def test_betting_recommendation_ml_disagreement_passes_even_on_strong_yards_edge():
+    # ~16.7% yards OVER vs ML UNDER — previously leaked OVER when |edge| >= 12
+    out = generate_betting_recommendation(280.0, 240.0, 0.8, over_probability=0.35)
+    assert out["recommendation"] == "PASS"
+    assert "disagrees" in out["reason"].lower() or "disagree" in out["reason"].lower()
+
+
 def test_betting_recommendation_ml_agreement():
     out = generate_betting_recommendation(270.0, 240.0, 0.8, over_probability=0.7)
     assert out["recommendation"] == "OVER"

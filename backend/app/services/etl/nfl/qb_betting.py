@@ -144,7 +144,7 @@ def generate_betting_recommendation(
     """Generate betting recommendation based on prediction vs O/U line.
 
     When ``over_probability`` from the QB O/U classifier is available, require
-    agreement with the yards-edge call (or a very strong yards edge alone).
+    agreement with the yards-edge call. Disagreement always yields PASS.
     """
     edge = prediction - ou_line
     edge_percentage = (edge / ou_line) * 100 if ou_line > 0 else 0
@@ -210,12 +210,11 @@ def generate_betting_recommendation(
             "over_probability": over_probability,
         }
 
-    # Classifier disagreement → PASS unless yards edge clears the strong bar.
+    # Classifier disagreement → always PASS (no strong-edge override).
     if (
         ml_rec
         and ml_rec.get("recommendation") in {"OVER", "UNDER"}
         and ml_rec["recommendation"] != bet_type
-        and abs(edge_percentage) < strong_edge
     ):
         return {
             "recommendation": "PASS",

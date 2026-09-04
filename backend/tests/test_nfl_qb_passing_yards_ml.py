@@ -15,6 +15,7 @@ from app.services.etl.nfl.qb_passing_yards_ml import (
     build_features_from_tier_prediction,
     enrich_qb_prediction_for_write,
     predict_yards_ml,
+    published_qb_yards,
     train_promote_qb_yards_model,
     train_qb_yards_model,
 )
@@ -80,6 +81,60 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
     assert out["feature_importance"]["ml_shadow_yards"] == 252.0
     assert out["predicted_passing_yards"] == 245.0
     assert "features" in out["feature_importance"]
+
+
+def test_published_qb_yards_uses_line_when_real_and_ml_off():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=268.5,
+        line_is_real=True,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 268.5
+    assert method == "market_line"
+
+
+def test_published_qb_yards_keeps_tier_without_real_line():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=None,
+        line_is_real=False,
+        ml_yards=252.0,
+        ml_enabled=False,
+    )
+    assert yards == 245.0
+    assert method == "tier"
+
+
+def test_published_qb_yards_promotes_ml_when_enabled_and_line_real():
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=255.0,
+        line_is_real=True,
+        ml_yards=260.0,
+        ml_enabled=True,
+    )
+    assert yards == 260.0
+    assert method == "gbm"
+
+
+def test_enrich_publishes_market_line_when_ml_disabled(monkeypatch):
+    monkeypatch.delenv("NFL_QB_ML_ENABLED", raising=False)
+    with patch.object(qbm, "predict_yards_ml_loaded", return_value=252.0):
+        out = enrich_qb_prediction_for_write(
+            _tier_pred(),
+            season=2024,
+            week=3,
+            context={
+                "pass_yds_line": 268.5,
+                "line_is_real": True,
+                "dynamic_tier_yards": 245.0,
+            },
+        )
+    assert out["predicted_passing_yards"] == 268.5
+    assert out["prediction_method"] == "market_line"
+    assert out["feature_importance"]["ml_shadow_yards"] == 252.0
 
 
 def test_enrich_promotes_ml_when_enabled(monkeypatch):

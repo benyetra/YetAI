@@ -234,6 +234,22 @@ def _line_is_real_from_features(features: Mapping[str, float]) -> bool:
         return False
 
 
+def published_qb_yards(
+    *,
+    tier_yards: float,
+    pass_yds_line: float | None,
+    line_is_real: bool,
+    ml_yards: float | None,
+    ml_enabled: bool,
+) -> tuple[float, str]:
+    """Choose production yards: GBM (flag + real line), else market line, else tier."""
+    if ml_enabled and ml_yards is not None and line_is_real:
+        return float(ml_yards), "gbm"
+    if line_is_real and pass_yds_line is not None:
+        return float(pass_yds_line), "market_line"
+    return float(tier_yards), "tier"
+
+
 def blend_ml_with_line(
     ml_yards: float,
     *,
@@ -844,7 +860,8 @@ def enrich_qb_prediction_for_write(
     context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """
-    Shadow enrich: production yards stay tier table unless ``NFL_QB_ML_ENABLED=1``.
+    Publish production yards: GBM when ``NFL_QB_ML_ENABLED=1`` and a real prop
+    line is present, else the real ``pass_yds_line``, else the dynamic tier.
 
     ``context`` carries matchup/form features (rolling yards, opp pass D, home,
     rest, implied total, weather). See ``qb_features.build_qb_features``.
@@ -876,16 +893,31 @@ def enrich_qb_prediction_for_write(
     if ml_yards is not None and not qb_ml_enabled():
         feature_importance["ml_shadow_yards"] = ml_yards
 
-    projected = tier_yards
+    line_is_real = _line_is_real_from_features(feats)
+    raw_line = feats.get("pass_yds_line")
+    try:
+        pass_yds_line = float(raw_line) if raw_line is not None else None
+    except (TypeError, ValueError):
+        pass_yds_line = None
+    # Feature default 0.0 is not a line when line_is_real is false.
+    if not line_is_real and (pass_yds_line is None or pass_yds_line == 0.0):
+        pass_yds_line = None
+
+    projected, pub_method = published_qb_yards(
+        tier_yards=tier_yards,
+        pass_yds_line=pass_yds_line,
+        line_is_real=line_is_real,
+        ml_yards=ml_yards,
+        ml_enabled=qb_ml_enabled(),
+    )
     version = resolve_qb_model_version(ml_loaded=ml_loaded)
     method = prediction.get("prediction_method") or "tier_table"
-    # Market-residual promote path needs a real prop line; without it ML crushes
-    # elite tiers and partial qb_betting updates can rank mid-tier QBs first.
-    use_ml_prod = (
-        qb_ml_enabled() and ml_yards is not None and _line_is_real_from_features(feats)
-    )
-    if use_ml_prod:
-        projected = ml_yards
+    if pub_method == "market_line":
+        method = "market_line"
+    elif pub_method == "gbm":
+        # Market-residual promote path needs a real prop line; without it ML
+        # crushes elite tiers and partial qb_betting updates can rank mid-tier
+        # QBs first. published_qb_yards already required line_is_real.
         method = "gbm_qb_residual" if _model_is_residual(_METADATA) else "gbm_qb_yards"
 
     # Prediction intervals: prefer explicit tier intervals; widen slightly for ML
