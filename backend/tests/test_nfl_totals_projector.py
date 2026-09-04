@@ -88,3 +88,14 @@ def test_next_week_totals_row_ignores_qb_out_flags():
     assert gated["away_projected_score"] == pytest.approx(
         no_out["away_projected_score"]
     )
+
+
+def test_totals_projector_run_uses_apply_qb_out_for_game():
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1] / "app/services/etl/nfl/totals_projector.py"
+    ).read_text()
+    assert "apply_qb_out_for_game" in src
+    assert "home_qb_out=home_qb_out" in src
+    assert "away_qb_out=away_qb_out" in src

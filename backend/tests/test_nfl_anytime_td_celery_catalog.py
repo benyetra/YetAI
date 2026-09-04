@@ -81,3 +81,15 @@ def test_gameday_availability_beat_and_catalog():
     assert "app.tasks.etl_pipeline.nfl.totals_projector" in flat
     assert "app.tasks.etl_pipeline.nfl.anytime_td_projector" in flat
     assert "app.tasks.etl_pipeline.nfl.anytime_td_betting" in flat
+    phase_names = [p for p, _ in NFL_GAMEDAY_AVAILABILITY_PHASES]
+    assert phase_names == ["predictions", "game_projections", "anytime_td"]
+    qb = flat.index("app.tasks.etl_pipeline.nfl.qb_weekly")
+    spread = flat.index("app.tasks.etl_pipeline.nfl.spread_projector")
+    atd = flat.index("app.tasks.etl_pipeline.nfl.anytime_td_projector")
+    assert qb < spread < atd
+    thu_am = beat["nfl-gameday-availability-thu-am"]["schedule"]
+    assert thu_am.hour == {10} and thu_am.minute == {0} and thu_am.day_of_week == {4}
+    thu_pm = beat["nfl-gameday-availability-thu-pm"]["schedule"]
+    assert thu_pm.hour == {19} and thu_pm.minute == {0} and thu_pm.day_of_week == {4}
+    sat = beat["nfl-gameday-availability-sat"]["schedule"]
+    assert sat.hour == {12} and sat.minute == {30} and sat.day_of_week == {6}

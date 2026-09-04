@@ -75,3 +75,40 @@ def test_kickers_module_does_not_import_weather_integration():
     )
     text = kickers_path.read_text()
     assert "weather_integration" not in text
+    assert "weather_mult" not in text
+
+
+def test_extract_espn_kicker_fg_stats_from_named_splits():
+    from app.services.etl.nfl.kickers import _extract_espn_kicker_fg_stats
+
+    stats = {
+        "names": ["fieldGoalPct", "fieldGoalAttempts", "fieldGoalsMade"],
+        "splitCategories": [
+            {
+                "splits": [
+                    {
+                        "displayName": "All Splits",
+                        "stats": ["87.5%", "40", "35"],
+                    }
+                ]
+            }
+        ],
+    }
+    out = _extract_espn_kicker_fg_stats(stats)
+    assert out["fg_percentage"] == 87.5
+    assert out["fg_attempts"] == 40.0
+    assert out["made"] == 35.0
+
+
+def test_extract_espn_kicker_fg_stats_parses_made_attempts_pair():
+    from app.services.etl.nfl.kickers import _extract_espn_kicker_fg_stats
+
+    stats = {
+        "names": ["fieldGoalsMade-fieldGoalAttempts"],
+        "splitCategories": [
+            {"splits": [{"displayName": "Overall", "stats": ["28-33"]}]}
+        ],
+    }
+    out = _extract_espn_kicker_fg_stats(stats)
+    assert out["made"] == 28.0
+    assert out["fg_attempts"] == 33.0

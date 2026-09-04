@@ -344,6 +344,7 @@ def _run_qb_betting_core():
                         predict_yards_ml_loaded,
                         production_method_for_published,
                         qb_ml_enabled,
+                        recenter_qb_interval,
                         reinject_pass_yds_line,
                     )
 
@@ -366,6 +367,13 @@ def _run_qb_betting_core():
                         ml_enabled=qb_ml_enabled(),
                     )
                     qb.predicted_passing_yards = float(yards)
+                    qb.prediction_interval_lower, qb.prediction_interval_upper = (
+                        recenter_qb_interval(
+                            float(yards),
+                            qb.prediction_interval_lower,
+                            qb.prediction_interval_upper,
+                        )
+                    )
                     qb.prediction_method = production_method_for_published(
                         pub_method,
                         existing_method=qb.prediction_method,

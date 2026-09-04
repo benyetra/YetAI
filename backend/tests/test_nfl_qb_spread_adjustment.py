@@ -138,6 +138,24 @@ def test_qb_out_map_same_date_backup_and_starter_is_out_either_order():
     assert qb_out_map_from_rows([starter, backup])["Kansas City Chiefs"] is True
 
 
+def test_qb_out_map_dated_healthy_starter_beats_undated_leftover_backup():
+    rows = [
+        _qb_row(
+            team_name="Kansas City Chiefs",
+            is_backup=True,
+            injury_status="Healthy",
+            prediction_date=None,
+        ),
+        _qb_row(
+            team_name="Kansas City Chiefs",
+            is_backup=False,
+            injury_status="Healthy",
+            prediction_date=datetime(2026, 9, 10, 12, 0, 0),
+        ),
+    ]
+    assert qb_out_map_from_rows(rows)["Kansas City Chiefs"] is False
+
+
 def _spread_row_kwargs():
     return dict(
         home_team_name="Kansas City Chiefs",

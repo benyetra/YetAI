@@ -8,7 +8,6 @@ from app.services.etl.nfl.kicker_prediction import calculate_combined_score
 from app.services.etl.nfl.kicker_weather import (
     kicker_stat_inputs,
     weather_dict_from_nfl_row,
-    weather_make_multiplier,
 )
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
@@ -603,18 +602,8 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
             "team_red_zone_efficiency": kicker_data["team_red_zone_efficiency"],
             "third_down_conversion_rate": kicker_data["third_down_conversion_rate"],
             "venue_type": venue_type,
+            "surface_type": surface_type,
         }
-
-        weather_mult = weather_make_multiplier(
-            wind_speed=(weather_data or {}).get("wind_speed"),
-            temperature=(weather_data or {}).get("temperature"),
-            is_dome=venue_type == "dome",
-        )
-        enhanced_team_data["weather_mult"] = weather_mult
-
-        # Update team data with venue info
-        enhanced_team_data["venue_type"] = venue_type
-        enhanced_team_data["surface_type"] = surface_type
 
         # Game context
         game_context = {

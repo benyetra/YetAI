@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from app.services.etl.nfl import qb_passing_yards_ml as qbm
 from app.services.etl.nfl.qb_features import FEATURE_NAMES
@@ -17,6 +18,7 @@ from app.services.etl.nfl.qb_passing_yards_ml import (
     enrich_qb_prediction_for_write,
     predict_yards_ml,
     published_qb_yards,
+    recenter_qb_interval,
     train_promote_qb_yards_model,
     train_qb_yards_model,
 )
@@ -158,6 +160,31 @@ def test_enrich_publishes_market_line_when_ml_disabled(monkeypatch):
     assert out["predicted_passing_yards"] == 268.5
     assert out["prediction_method"] == "market_line"
     assert out["feature_importance"]["ml_shadow_yards"] == 252.0
+    assert out["prediction_interval_lower"] == pytest.approx(236.5)
+    assert out["prediction_interval_upper"] == pytest.approx(300.5)
+
+
+def test_recenter_qb_interval_keeps_width_on_new_mean():
+    lower, upper = recenter_qb_interval(268.5, 213.0, 277.0)
+    assert lower == 236.5
+    assert upper == 300.5
+
+
+def test_recenter_qb_interval_defaults_when_missing():
+    lower, upper = recenter_qb_interval(245.0, None, None)
+    assert lower == 210.0
+    assert upper == 280.0
+
+
+def test_qb_betting_applies_published_yards_after_line():
+    from pathlib import Path
+
+    src = (
+        Path(__file__).resolve().parents[1] / "app/services/etl/nfl/qb_betting.py"
+    ).read_text()
+    assert "apply_published_yards_after_line" in src
+    assert "recenter_qb_interval" in src
+    assert "qb.predicted_passing_yards = float(yards)" in src
 
 
 def test_enrich_promotes_ml_when_enabled(monkeypatch):

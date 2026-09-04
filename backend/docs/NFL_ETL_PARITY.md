@@ -27,9 +27,9 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 
 1. **actuals** — `nfl_collect_qb_actuals`, `nfl_collect_kicker_actuals`, `nfl_store_game_actuals`, `nfl_anytime_td_actuals`
 2. **game_lines** — `nfl_update_game_lines`
-3. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
-4. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
-5. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers`
+3. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers` (QB weekly first so backup flags exist before spread reprice)
+4. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
+5. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
 
 ### Anytime TD admin slice
 

@@ -4,9 +4,9 @@
 
 | Mode | Env | Production yards | `model_version` |
 |------|-----|------------------|-----------------|
-| Dynamic tier (default) | — | Static name table blended with rolling form | `tier-v3` (+ form blend) |
-| ML shadow | — | Dynamic tier (unchanged) | `tier-v3`; `feature_importance.ml_shadow_yards` |
-| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM (`baseline + residual`) | `gbm-qb-residual-YYYYMMDD` |
+| Market line (default) | — | Real `pass_yds_line` when attached; else dynamic tier | `market_line` or `tier-v3` |
+| ML shadow | — | Same as default; GBM stored as `ml_shadow_yards` | `tier-v3` / `market_line`; `feature_importance.ml_shadow_yards` |
+| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM when `line_is_real`; else market line / tier | `gbm-qb-residual-YYYYMMDD` |
 
 **Tier v3:** No hash-based week noise. Uncertainty is
 `prediction_interval_lower/upper` + confidence. Opt-in legacy noise with
@@ -14,8 +14,9 @@
 (Out/IR/Doubtful still promote backup).
 
 **Late availability:** Beat jobs
-`nfl-gameday-availability-{sun-am,sun-mid,sun-pm,mon}` re-run QB + kickers near
-kickoff. Within 3h of KO, Questionable escalates to Out (backup promotion).
+`nfl-gameday-availability-{sun-am,sun-mid,sun-pm,mon,thu-am,thu-pm,sat}` re-run
+QB + kickers near kickoff (then spread/totals + ATD). Within 3h of KO,
+Questionable escalates to Out (backup promotion).
 Within 12h, Q risk/yard cuts escalate; live backups take an extra −20 yards
 (`NFL_QB_LATE_AVAILABILITY=0` to disable).
 

@@ -267,6 +267,26 @@ def apply_published_yards_after_line(
     )
 
 
+def recenter_qb_interval(
+    projected: float,
+    lower: float | None,
+    upper: float | None,
+    *,
+    floor: float = 120.0,
+    ceiling: float = 380.0,
+    default_half: float = 35.0,
+) -> tuple[float, float]:
+    """Keep interval width, center it on the published mean."""
+    if lower is None or upper is None:
+        half = default_half
+    else:
+        half = (float(upper) - float(lower)) / 2.0
+    return (
+        round(max(floor, float(projected) - half), 1),
+        round(min(ceiling, float(projected) + half), 1),
+    )
+
+
 def production_method_for_published(
     pub_method: str,
     *,
@@ -948,18 +968,11 @@ def enrich_qb_prediction_for_write(
         existing_method=prediction.get("prediction_method") or "tier_table",
     )
 
-    # Prediction intervals: prefer explicit tier intervals; widen slightly for ML
-    lower = prediction.get("prediction_interval_lower")
-    upper = prediction.get("prediction_interval_upper")
-    if lower is None or upper is None:
-        half = 35.0
-        lower = max(120.0, projected - half)
-        upper = min(380.0, projected + half)
-    elif qb_ml_enabled() and ml_yards is not None:
-        # Recenter interval on ML point estimate, keep width
-        width = (float(upper) - float(lower)) / 2.0
-        lower = max(120.0, projected - width)
-        upper = min(380.0, projected + width)
+    lower, upper = recenter_qb_interval(
+        projected,
+        prediction.get("prediction_interval_lower"),
+        prediction.get("prediction_interval_upper"),
+    )
 
     return {
         "predicted_passing_yards": projected,

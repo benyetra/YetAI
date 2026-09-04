@@ -744,7 +744,8 @@ def nfl_anytime_td_actuals():
     return run()
 
 
-# Grade last week, refresh game board, then current-week props.
+# Grade last week, attach lines, refresh QB/kicker boards, then reprice
+# spreads/totals (QB-out uses qb_weekly backup flags) and rebuild ATD.
 NFL_PHASES = [
     (
         "actuals",
@@ -762,6 +763,14 @@ NFL_PHASES = [
         ],
     ),
     (
+        "predictions",
+        [
+            nfl_yetiwatch,
+            nfl_qb_weekly,
+            nfl_kickers,
+        ],
+    ),
+    (
         "game_projections",
         [
             nfl_spread_projector,
@@ -776,22 +785,14 @@ NFL_PHASES = [
             nfl_anytime_td_betting,
         ],
     ),
-    (
-        "predictions",
-        [
-            nfl_yetiwatch,
-            nfl_qb_weekly,
-            nfl_kickers,
-        ],
-    ),
 ]
 
 
 @celery_app.task(name="app.tasks.etl_pipeline.run_nfl_update_pipeline", bind=True)
 def run_nfl_update_pipeline(self) -> dict:
-    """NFL weekly pipeline — actuals, game lines/projections, anytime TD, QB + kicker props.
+    """NFL weekly pipeline — actuals, lines, QB/kicker boards, then spread/totals + ATD.
 
-    Phases: actuals → game_lines → game_projections → anytime_td → predictions.
+    Phases: actuals → game_lines → predictions → game_projections → anytime_td.
     Scheduled on Beat as ``nfl-update-pipeline-daily`` (4:30 ET). See ``NFL_ETL_PARITY.md``.
     """
     logger.info("NFL update pipeline starting (task_id=%s)", self.request.id)
