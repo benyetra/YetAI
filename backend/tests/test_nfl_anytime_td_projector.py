@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from app.services.etl.nfl.anytime_td_model import (
+    RB_TD_DISPERSION,
+    anytime_td_probability,
+)
 from app.services.etl.nfl.anytime_td_projector import (
     ANYTIME_TD_UPSERT_UPDATE_KEYS,
     MODEL_VERSION,
@@ -51,6 +55,22 @@ def test_project_prediction_from_features(monkeypatch):
     assert abs(out["expected_tds"] - lam) < 1e-9
     assert 0.0 < out["td_probability"] < 1.0
     assert out["model_version"] == MODEL_VERSION
+
+
+def test_project_prediction_rb_probability_below_poisson(monkeypatch):
+    monkeypatch.setenv("NFL_ANYTIME_TD_GBM", "0")
+    import app.services.etl.nfl.anytime_td_calibration as cal
+
+    cal._MODEL = None
+    cal._METADATA = None
+    cal._LOAD_FAILED = False
+
+    out = project_prediction_from_features(_sample_feature_row(position="RB"))
+    lam = float(out["expected_tds"])
+    pois = anytime_td_probability(lam)
+    nb = anytime_td_probability(lam, dispersion=RB_TD_DISPERSION)
+    assert out["td_probability"] < pois
+    assert abs(float(out["td_probability"]) - nb) < 1e-12
 
 
 def test_project_prediction_scales_for_questionable(monkeypatch):

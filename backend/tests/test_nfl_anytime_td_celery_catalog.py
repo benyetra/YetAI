@@ -79,3 +79,5 @@ def test_gameday_availability_beat_and_catalog():
     assert "app.tasks.etl_pipeline.nfl.kickers" in flat
     assert "app.tasks.etl_pipeline.nfl.spread_projector" in flat
     assert "app.tasks.etl_pipeline.nfl.totals_projector" in flat
+    assert "app.tasks.etl_pipeline.nfl.anytime_td_projector" in flat
+    assert "app.tasks.etl_pipeline.nfl.anytime_td_betting" in flat

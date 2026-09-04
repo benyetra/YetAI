@@ -48,7 +48,10 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
         calibration_enabled,
         load_calibration_model,
     )
-    from app.services.etl.nfl.anytime_td_model import anytime_td_probability
+    from app.services.etl.nfl.anytime_td_model import (
+        RB_TD_DISPERSION,
+        anytime_td_probability,
+    )
 
     availability = max(0.0, min(1.0, float(row.get("availability_mult") or 1.0)))
     lam = (
@@ -62,7 +65,9 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
         )
         * availability
     )
-    hier_p = anytime_td_probability(lam)
+    pos = str(row.get("position") or "").strip().upper()
+    dispersion = RB_TD_DISPERSION if pos == "RB" else None
+    hier_p = anytime_td_probability(lam, dispersion=dispersion)
     enriched = dict(row)
     enriched["expected_tds"] = lam
     enriched["td_probability"] = hier_p

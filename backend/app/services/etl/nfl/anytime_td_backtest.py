@@ -356,6 +356,7 @@ def _score_feature_row_probability(feature_row: Mapping[str, Any]) -> float:
         defense_mult=float(feature_row.get("defense_mult") or 1.0),
         weather_mult=float(feature_row.get("weather_mult") or 1.0),
         script_mult=float(feature_row.get("script_mult") or 1.0),
+        position=str(feature_row.get("position") or ""),
     )
 
 

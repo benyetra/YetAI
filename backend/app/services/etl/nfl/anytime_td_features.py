@@ -522,6 +522,16 @@ def _offensive_starter_depth_ok(raw: dict[str, Any]) -> bool:
     return pos in SKILL_POSITIONS
 
 
+def _usage_starter_score(usage: Mapping[str, Any], pos: str) -> float:
+    """Role-relevant volume: RB carries, WR/TE targets, else season touches."""
+    touches = float(usage.get("touches_season") or 0.0)
+    if pos == "RB":
+        return float(usage.get("carries_l3") or 0.0) * 10.0 + touches
+    if pos in {"WR", "TE"}:
+        return float(usage.get("targets_l3") or 0.0) * 10.0 + touches
+    return touches
+
+
 def starter_ids_from_usage(
     usage_by_player: dict[str, dict[str, Any]],
     *,
@@ -540,13 +550,7 @@ def starter_ids_from_usage(
         touches = float(usage.get("touches_season") or 0.0)
         if touches < _MIN_PRIOR_TOUCHES:
             continue
-        # Prefer role-relevant volume when present.
-        if pos == "RB":
-            score = float(usage.get("carries_l3") or 0.0) * 10.0 + touches
-        elif pos in {"WR", "TE"}:
-            score = float(usage.get("targets_l3") or 0.0) * 10.0 + touches
-        else:
-            score = touches
+        score = _usage_starter_score(usage, pos)
         by_team_pos.setdefault((team, pos), []).append((score, player_id))
 
     out: set[str] = set()
@@ -563,7 +567,12 @@ def select_skill_universe(
     usage_by_player: dict[str, dict[str, Any]],
     week: int,
 ) -> list[dict[str, Any]]:
-    """Active QB/RB/WR/TE starters only (depth_team=1; usage top-N if no depth)."""
+    """Active QB/RB/WR/TE starters (depth_team=1) plus usage slot-fill.
+
+    After depth starters, remaining per-team slots are filled from prior usage
+    up to ``_USAGE_STARTER_SLOTS`` (QB:1, RB:2, WR:3, TE:1). Special-teams
+    depth slots stay excluded. If depth is empty, usage top-N is the universe.
+    """
     universe: dict[str, dict[str, Any]] = {}
 
     # Depth chart starters for latest week <= target (all WR1/RB1/… rows, not ST).
@@ -607,7 +616,7 @@ def select_skill_universe(
                 "depth_week": week,
             }
     else:
-        # Enrich names/teams from usage; do not add non-starters.
+        # Enrich names/teams from usage, then fill remaining starter slots.
         for player_id, player in list(universe.items()):
             usage = usage_by_player.get(player_id) or {}
             if usage.get("team_abbr"):
@@ -616,8 +625,61 @@ def select_skill_universe(
                 player["player_name"] = usage["player_name"]
             if usage.get("position"):
                 player["position"] = usage["position"]
+        _fill_remaining_slots_from_usage(universe, usage_by_player, week=week)
 
     return list(universe.values())
+
+
+def _fill_remaining_slots_from_usage(
+    universe: dict[str, dict[str, Any]],
+    usage_by_player: dict[str, dict[str, Any]],
+    *,
+    week: int,
+) -> None:
+    """Add usage-ranked skill players until per-team `_USAGE_STARTER_SLOTS` fill."""
+    teams_in_universe = {
+        str(p.get("team_abbr") or "").upper()
+        for p in universe.values()
+        if p.get("team_abbr")
+    }
+    counts: dict[tuple[str, str], int] = {}
+    for player in universe.values():
+        team = str(player.get("team_abbr") or "").upper()
+        pos = str(player.get("position") or "").upper()
+        if team and pos in SKILL_POSITIONS:
+            counts[(team, pos)] = counts.get((team, pos), 0) + 1
+
+    by_team_pos: dict[tuple[str, str], list[tuple[float, str]]] = {}
+    for player_id, usage in usage_by_player.items():
+        if player_id in universe:
+            continue
+        pos = str(usage.get("position") or "").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        team = str(usage.get("team_abbr") or "").upper()
+        if not team or team not in teams_in_universe:
+            continue
+        touches = float(usage.get("touches_season") or 0.0)
+        if touches < _MIN_PRIOR_TOUCHES:
+            continue
+        score = _usage_starter_score(usage, pos)
+        by_team_pos.setdefault((team, pos), []).append((score, player_id))
+
+    for (team, pos), ranked in by_team_pos.items():
+        need = _USAGE_STARTER_SLOTS.get(pos, 1) - counts.get((team, pos), 0)
+        if need <= 0:
+            continue
+        ranked.sort(key=lambda t: (-t[0], t[1]))
+        for _, player_id in ranked[:need]:
+            usage = usage_by_player[player_id]
+            universe[player_id] = {
+                "player_id": player_id,
+                "player_name": usage.get("player_name") or player_id,
+                "position": usage.get("position"),
+                "team_abbr": usage.get("team_abbr"),
+                "depth_team": _STARTER_DEPTH_TEAM,
+                "depth_week": week,
+            }
 
 
 def _schedule_matchups(

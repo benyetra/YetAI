@@ -1,8 +1,10 @@
-"""Poisson anytime-TD probability from expected TD rate λ."""
+"""Anytime-TD probability from expected TD rate λ (Poisson or NegBin)."""
 
 from __future__ import annotations
 
 import math
+
+RB_TD_DISPERSION = 2.0
 
 
 def expected_tds(
@@ -24,7 +26,13 @@ def expected_tds(
     )
 
 
-def anytime_td_probability(expected_tds: float) -> float:
-    lam = max(0.0, expected_tds)
-    prob = 1.0 - math.exp(-lam)
+def anytime_td_probability(
+    expected_tds: float, *, dispersion: float | None = None
+) -> float:
+    lam = max(0.0, float(expected_tds))
+    if dispersion is not None and dispersion > 0:
+        r = float(dispersion)
+        prob = 1.0 - (r / (r + lam)) ** r
+    else:
+        prob = 1.0 - math.exp(-lam)
     return min(1.0, max(0.0, prob))

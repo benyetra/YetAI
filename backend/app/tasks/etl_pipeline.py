@@ -798,8 +798,8 @@ def run_nfl_update_pipeline(self) -> dict:
     return _run_phases("nfl", NFL_PHASES)
 
 
-# Gameday slice — re-pull injuries, refresh QB + kicker boards, then reprice
-# spreads/totals. QB weekly stays before spread so backup flags exist.
+# Gameday slice — re-pull injuries, refresh QB + kicker boards, reprice
+# spreads/totals, then rebuild the anytime-TD slate after QB status locks.
 NFL_GAMEDAY_AVAILABILITY_PHASES = [
     (
         "predictions",
@@ -813,6 +813,14 @@ NFL_GAMEDAY_AVAILABILITY_PHASES = [
         [
             nfl_spread_projector,
             nfl_totals_projector,
+        ],
+    ),
+    (
+        "anytime_td",
+        [
+            nfl_sync_defense_schemes,
+            nfl_anytime_td_projector,
+            nfl_anytime_td_betting,
         ],
     ),
 ]
