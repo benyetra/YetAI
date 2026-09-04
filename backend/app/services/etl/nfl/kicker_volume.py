@@ -9,6 +9,8 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from app.services.etl.nfl.kicker_weather import weather_make_multiplier
+
 logger = logging.getLogger(__name__)
 
 _NFL_DATA_DIR = Path(__file__).resolve().parents[4] / "data" / "nfl"
@@ -197,10 +199,22 @@ def expected_fg_made(
     if weather_data:
         wind = weather_data.get("wind_speed")
         temp = weather_data.get("temperature")
-        if wind is not None and float(wind) > 15:
-            weather_mult *= 0.94
-        if temp is not None and float(temp) < 32:
-            weather_mult *= 0.96
+        is_dome = False
+        if team_data:
+            is_dome = str(team_data.get("venue_type") or "").lower() == "dome"
+        try:
+            wind_f = float(wind) if wind is not None else None
+        except (TypeError, ValueError):
+            wind_f = None
+        try:
+            temp_f = float(temp) if temp is not None else None
+        except (TypeError, ValueError):
+            temp_f = None
+        weather_mult = weather_make_multiplier(
+            wind_speed=wind_f,
+            temperature=temp_f,
+            is_dome=is_dome,
+        )
 
     mixture = mixture_make_probability(
         kicker_make_rate=kicker_make_rate,

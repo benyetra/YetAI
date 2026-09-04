@@ -276,7 +276,8 @@ Artifacts under `backend/models/nfl/` for shadow inference:
 
 ML FG count uses **attempts × distance-mixture make%** (`kicker_volume.py`).
 Attempts prefer GBM `kicker_attempts.pkl` (from `field_goal_data.csv`), else
-heuristic.
+heuristic. Live weather (`temperature`, `wind_speed`) comes from
+`pred_nfl_weather`; kickers never import `weather_integration`.
 
 Refresh make/miss ensemble + attempts:
 

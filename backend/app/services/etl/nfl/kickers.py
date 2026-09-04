@@ -3,8 +3,13 @@ from datetime import datetime, timedelta
 from typing import Dict, Optional
 import requests
 
-from app.models.predictions_models import Kickers, KickerPredictions
+from app.models.predictions_models import Kickers, KickerPredictions, NFLWeather
 from app.services.etl.nfl.kicker_prediction import calculate_combined_score
+from app.services.etl.nfl.kicker_weather import (
+    kicker_stat_inputs,
+    weather_dict_from_nfl_row,
+    weather_make_multiplier,
+)
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
 
@@ -269,6 +274,90 @@ def _as_python_float(value) -> Optional[float]:
         return None
 
 
+def _coerce_stat_number(value) -> Optional[float]:
+    """Parse ESPN split stat values such as 87.5, '87.5', or '87.5%'."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().rstrip("%")
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def _extract_espn_kicker_fg_stats(kicker_stats) -> Dict[str, float]:
+    """Pull fg% / attempts from ESPN athlete splits when present."""
+    out: Dict[str, float] = {}
+    if not isinstance(kicker_stats, dict):
+        return out
+    names = kicker_stats.get("names")
+    categories = kicker_stats.get("splitCategories") or []
+    preferred = None
+    fallback = None
+    for category in categories:
+        if not isinstance(category, dict):
+            continue
+        for split in category.get("splits") or []:
+            if not isinstance(split, dict):
+                continue
+            row = split.get("stats")
+            if not isinstance(row, list):
+                continue
+            display = str(split.get("displayName") or "").lower()
+            if display in {"all splits", "career", "overall"}:
+                preferred = row
+                break
+            if fallback is None:
+                fallback = row
+        if preferred is not None:
+            break
+    stats_row = preferred or fallback
+    if not isinstance(names, list) or not isinstance(stats_row, list):
+        return out
+    by_name = {
+        str(names[i]): stats_row[i] for i in range(min(len(names), len(stats_row)))
+    }
+    pct = _coerce_stat_number(by_name.get("fieldGoalPct"))
+    att = _coerce_stat_number(
+        by_name.get("fieldGoalAttempts") or by_name.get("fieldGoalsAttempted")
+    )
+    made = _coerce_stat_number(by_name.get("fieldGoalsMade"))
+    made_att = by_name.get("fieldGoalsMade-fieldGoalAttempts")
+    if made_att is not None and (made is None or att is None):
+        text = str(made_att)
+        if "-" in text:
+            left, right = text.split("-", 1)
+            if made is None:
+                made = _coerce_stat_number(left)
+            if att is None:
+                att = _coerce_stat_number(right)
+    if pct is not None:
+        out["fg_percentage"] = pct
+    if att is not None:
+        out["fg_attempts"] = att
+    if made is not None:
+        out["made"] = made
+    return out
+
+
+def _load_venue_weather(venue_name: Optional[str]):
+    """Best-effort weather from pred_nfl_weather; None when DB is unavailable."""
+    if not venue_name:
+        return None
+    try:
+        row = (
+            db_session.query(NFLWeather)
+            .filter(NFLWeather.venue_name == venue_name)
+            .order_by(NFLWeather.game_time.desc())
+            .first()
+        )
+    except Exception:
+        return None
+    return weather_dict_from_nfl_row(row)
+
+
 def _sanitize_feature_importance(raw) -> Dict[str, float]:
     """Ensure feature_importance JSON is JSON/DB-safe (no numpy scalars)."""
     if not isinstance(raw, dict):
@@ -485,12 +574,22 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
         "career_field_position_stats": career_field_position_stats,
         "game_stats": game_stats,
     }
+    kicker_data.update(_extract_espn_kicker_fg_stats(kicker_stats))
 
-    # Defaults so ImportError / missing weather never leaves unbound locals
-    weather_data = None
+    weather_data = _load_venue_weather(venue_name)
     weather_info = {}
     venue_type = "dome" if "dome" in (venue_name or "").lower() else "outdoor"
     surface_type = "turf" if "turf" in (venue_name or "").lower() else "grass"
+    if weather_data:
+        print(
+            f"🌡️ Weather for {venue_name}: {weather_data['temperature']}°F, "
+            f"{weather_data['wind_speed']}mph wind (pred_nfl_weather)"
+        )
+        weather_info = {
+            "temperature": weather_data.get("temperature"),
+            "wind_speed": weather_data.get("wind_speed"),
+            "conditions": "unknown",
+        }
 
     # Enhanced prediction with weather and game context
     try:
@@ -498,12 +597,7 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
             calculate_enhanced_statistical_score,
         )
 
-        # Format data for enhanced prediction system (more realistic defaults)
-        enhanced_kicker_data = {
-            "career_fg_percentage": 82,  # More realistic NFL average
-            "total_attempts": 35,  # Average experience level
-            "recent_form": 0.80,  # Average recent performance
-        }
+        enhanced_kicker_data = kicker_stat_inputs(kicker_data)
 
         enhanced_team_data = {
             "team_red_zone_efficiency": kicker_data["team_red_zone_efficiency"],
@@ -511,30 +605,12 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
             "venue_type": venue_type,
         }
 
-        # Get live weather data for the venue
-        try:
-            from weather_integration import (
-                get_live_weather_for_venue,
-                get_venue_type,
-                get_surface_type,
-            )
-
-            weather_info = get_live_weather_for_venue(venue_name, game_time)
-            venue_type = get_venue_type(venue_name)
-            surface_type = get_surface_type(venue_name)
-
-            weather_data = {
-                "temperature": weather_info["temperature"],
-                "wind_speed": weather_info["wind_speed"],
-            }
-
-            print(
-                f"🌡️ Weather for {venue_name}: {weather_info['temperature']}°F, {weather_info['wind_speed']}mph wind ({weather_info['source']})"
-            )
-
-        except ImportError:
-            print("⚠️ Weather integration not available")
-            weather_data = None
+        weather_mult = weather_make_multiplier(
+            wind_speed=(weather_data or {}).get("wind_speed"),
+            temperature=(weather_data or {}).get("temperature"),
+            is_dome=venue_type == "dome",
+        )
+        enhanced_team_data["weather_mult"] = weather_mult
 
         # Update team data with venue info
         enhanced_team_data["venue_type"] = venue_type
