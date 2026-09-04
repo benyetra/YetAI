@@ -22,8 +22,8 @@
     "qb",
     "rb"
   ],
-  "trained_at": "2026-08-11T00:43:11.066417+00:00",
-  "n_train": 7680,
+  "trained_at": "2026-09-04T17:18:01.176691+00:00",
+  "n_train": 8914,
   "seasons": [
     2023,
     2024,
@@ -32,9 +32,11 @@
   "start_week": 2,
   "end_week": 18,
   "group_counts": {
-    "rb": 1360,
+    "rb": 2594,
     "pass": 5110,
     "qb": 1210
   },
-  "positive_rate": 0.27682291666666664
+  "positive_rate": 0.27159524343728964,
+  "hier_p_family": "poisson_except_rb_negbin",
+  "rb_td_dispersion": 2.0
 }
