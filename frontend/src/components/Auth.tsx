@@ -12,6 +12,7 @@ import {
   registerSessionEndHandler,
   scheduleTokenExpiryLogout,
 } from '@/lib/auth-session';
+import { readLoginFormValues } from '@/lib/login-form';
 
 // Auth Context
 const AuthContext = createContext<any>(null);
@@ -160,7 +161,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(async (emailOrUsername: string, password: string) => {
     try {
-      const response = await authAPI.post('/api/auth/login', { email_or_username: emailOrUsername, password });
+      const identifier = (emailOrUsername || '').trim();
+      if (!identifier || !password) {
+        return { success: false, message: 'Enter your email/username and password.' };
+      }
+      const response = await authAPI.post('/api/auth/login', {
+        email_or_username: identifier,
+        password,
+      });
       
       if (response.status === 'success') {
         const { user: userData, access_token } = response;
@@ -274,24 +282,23 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
   onSuccess?: () => void, 
   onSwitchToSignup?: () => void 
 }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   
   const { login } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    submitLogin();
+    const values = readLoginFormValues(e.currentTarget);
+    submitLogin(values.emailOrUsername, values.password);
   };
 
-  const submitLogin = async () => {
+  const submitLogin = async (emailOrUsername: string, passwordValue: string) => {
     setLoading(true);
     setError('');
 
-    const result = await login(email, password);
+    const result = await login(emailOrUsername, passwordValue);
     
     if (result.success) {
       onSuccess?.();
@@ -328,7 +335,7 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
           </div>
         )}
 
-        <div className="space-y-4">
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Email
@@ -337,8 +344,9 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
               <Mail className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
               <input
                 type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                name="emailOrUsername"
+                autoComplete="username"
+                defaultValue=""
                 className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
@@ -354,8 +362,9 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
               <Lock className="w-5 h-5 text-gray-400 absolute left-3 top-3" />
               <input
                 type={showPassword ? 'text' : 'password'}
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
+                name="password"
+                autoComplete="current-password"
+                defaultValue=""
                 className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Password"
                 required
@@ -371,14 +380,14 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
           </div>
 
           <button
-            onClick={submitLogin}
+            type="submit"
             disabled={loading}
             className="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
             style={{ color: 'white', backgroundColor: '#2563eb' }}
           >
             {loading ? 'Signing In...' : 'Sign In'}
           </button>
-        </div>
+        </form>
 
         <div className="mt-6">
           <div className="relative">

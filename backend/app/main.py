@@ -22,7 +22,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import List, Optional, Dict, Any
 
 # Import core configuration and service loader
@@ -96,8 +96,16 @@ class UserSignup(BaseModel):
 
 
 class UserLogin(BaseModel):
-    email_or_username: str
-    password: str
+    email_or_username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+    @field_validator("email_or_username")
+    @classmethod
+    def strip_identifier(cls, value: str) -> str:
+        ident = value.strip()
+        if not ident:
+            raise ValueError("email_or_username is required")
+        return ident
 
 
 class UserPreferences(BaseModel):
@@ -1453,7 +1461,7 @@ async def register(user_data: UserSignup):
 
 
 @app.post("/api/auth/login")
-async def login(credentials: dict):
+async def login(credentials: UserLogin):
     """Login user"""
     if not is_service_available("auth_service"):
         raise HTTPException(
@@ -1463,8 +1471,8 @@ async def login(credentials: dict):
     try:
         auth_service = get_service("auth_service")
         result = await auth_service.authenticate_user(
-            email_or_username=credentials.get("email_or_username"),
-            password=credentials.get("password"),
+            email_or_username=credentials.email_or_username,
+            password=credentials.password,
         )
 
         if not result.get("success"):
