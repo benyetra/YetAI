@@ -59,10 +59,9 @@ function getApiConfig(): ApiConfig {
   const environment = getCurrentEnvironment();
   
   // Always check environment variable first
-  const envApiUrl = process.env.NEXT_PUBLIC_API_URL;
+  const envApiUrl = process.env.NEXT_PUBLIC_API_URL?.trim();
   
   if (envApiUrl) {
-    // If environment variable is set, use it
     const wsUrl = envApiUrl.replace(/^https?:\/\//, '').replace(/^http:\/\//, 'ws://').replace(/^https:\/\//, 'wss://');
     return {
       baseURL: envApiUrl,
