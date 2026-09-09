@@ -16,6 +16,7 @@ import Script from 'next/script';
 import ForgotPasswordModal from '@/components/ForgotPasswordModal';
 import { AuthShell } from '@/components/yetai/auth/AuthShell';
 import AppLoading from '@/components/yetai/AppLoading';
+import { readLoginFormValues } from '@/lib/login-form';
 
 declare global {
   interface Window {
@@ -36,11 +37,7 @@ function LoginPageContent() {
   const searchParams = useSearchParams();
   const nextParam = searchParams.get('next');
   const { login, isAuthenticated, loading } = useAuth();
-  const [formData, setFormData] = useState({
-    emailOrUsername: '',
-    password: '',
-    rememberMe: false,
-  });
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -52,17 +49,17 @@ function LoginPageContent() {
     if (isAuthenticated) router.push(postLoginPath);
   }, [isAuthenticated, router, postLoginPath]);
 
-  const handleInputChange = (field: string, value: string | boolean) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
-    setError('');
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const { emailOrUsername, password } = readLoginFormValues(e.currentTarget);
+    if (!emailOrUsername || !password) {
+      setError('Enter your email/username and password.');
+      return;
+    }
     setIsLoading(true);
     setError('');
     try {
-      const result = await login(formData.emailOrUsername, formData.password);
+      const result = await login(emailOrUsername, password);
       if (result.success) router.push(postLoginPath);
       else setError(result.message || 'Login failed. Please check your credentials.');
     } catch {
@@ -171,12 +168,13 @@ function LoginPageContent() {
               <Mail className="field-icon" size={18} />
               <input
                 id="emailOrUsername"
+                name="emailOrUsername"
                 className="input has-toggle"
                 type="text"
-                autoComplete="username email"
+                autoComplete="username"
                 required
-                value={formData.emailOrUsername}
-                onChange={(e) => handleInputChange('emailOrUsername', e.target.value)}
+                defaultValue=""
+                onChange={() => setError('')}
                 placeholder="john@example.com"
               />
             </div>
@@ -188,12 +186,13 @@ function LoginPageContent() {
               <Lock className="field-icon" size={18} />
               <input
                 id="password"
+                name="password"
                 className="input has-toggle"
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
-                value={formData.password}
-                onChange={(e) => handleInputChange('password', e.target.value)}
+                defaultValue=""
+                onChange={() => setError('')}
                 placeholder="••••••••"
               />
               <button
@@ -211,8 +210,8 @@ function LoginPageContent() {
             <label style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--text-2)' }}>
               <input
                 type="checkbox"
-                checked={formData.rememberMe}
-                onChange={(e) => handleInputChange('rememberMe', e.target.checked)}
+                checked={rememberMe}
+                onChange={(e) => setRememberMe(e.target.checked)}
               />
               Remember me
             </label>

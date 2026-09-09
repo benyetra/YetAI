@@ -141,7 +141,11 @@ export async function apiRequest(
 
   // Add auth token if available
   const token = getStoredAuthToken();
-  if (token) {
+  const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const skipAuthHeader = AUTH_ENDPOINTS_WITHOUT_SESSION.some((path) =>
+    normalizedEndpoint.startsWith(path),
+  );
+  if (token && !skipAuthHeader) {
     (defaultHeaders as Record<string, string>).Authorization = `Bearer ${token}`;
   }
 

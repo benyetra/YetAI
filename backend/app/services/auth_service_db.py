@@ -10,7 +10,7 @@ from typing import Dict, Optional, List
 import jwt
 import bcrypt
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, desc
+from sqlalchemy import and_, or_, desc, func
 from app.core.config import settings
 from app.core.database import SessionLocal
 from app.models.database_models import User, UserSession
@@ -234,15 +234,23 @@ class AuthServiceDB:
     async def authenticate_user(self, email_or_username: str, password: str) -> Dict:
         """Authenticate user login with email or username"""
         try:
+            ident = (email_or_username or "").strip()
+            if not ident or password is None or password == "":
+                return {
+                    "success": False,
+                    "error": "Invalid email/username or password",
+                }
+
             db = SessionLocal()
             try:
-                # Try to find user by email or username
+                lowered = ident.lower()
+                # Case-insensitive match so stored emails like Ben@YetAI.app still log in.
                 user = (
                     db.query(User)
                     .filter(
                         or_(
-                            User.email == email_or_username,
-                            User.username == email_or_username,
+                            func.lower(User.email) == lowered,
+                            func.lower(User.username) == lowered,
                         )
                     )
                     .first()
