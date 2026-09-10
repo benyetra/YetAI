@@ -62,6 +62,7 @@ README.md
 docs/
 
 # Large local data — not needed in production image (statcast CSVs ~15 GB).
+app/graphify-out/
 app/services/etl/mlb/dingerParlay/data/
 scripts/*.db
 data/

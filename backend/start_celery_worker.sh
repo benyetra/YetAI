@@ -8,4 +8,5 @@
 # launching celery so the import resolution works regardless.
 set -e
 cd /app
-exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2
+exec celery -A app.celery_app worker --beat --loglevel=info \
+    --concurrency=1 --max-memory-per-child=800000 --max-tasks-per-child=8

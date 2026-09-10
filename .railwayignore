@@ -7,3 +7,4 @@ design/
 node_modules/
 .git/
 .github/
+backend/app/graphify-out/

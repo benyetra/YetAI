@@ -74,20 +74,27 @@ def _load_elos(db) -> dict[str, float]:
 def run() -> dict:
     today = now_eastern().date()
     end = today + timedelta(days=1)
-    use_ml = model_available()
 
     db = SessionLocal()
     upsert_rows: list[dict] = []
     try:
-        elos = _load_elos(db)
-        offense_by_name = {o.team_name: o for o in db.query(WNBATeamOffenseStats).all()}
-        defense_by_name = {d.team_name: d for d in db.query(WNBATeamDefenseStats).all()}
-
         games = (
             db.query(WNBAGameLines)
             .filter(WNBAGameLines.game_date >= today, WNBAGameLines.game_date <= end)
             .all()
         )
+        if not games:
+            return {
+                "status": "ok",
+                "games": 0,
+                "projection_method": "skipped_empty_slate",
+            }
+
+        # Load S3/sklearn artifacts only when there is a slate.
+        use_ml = model_available()
+        elos = _load_elos(db)
+        offense_by_name = {o.team_name: o for o in db.query(WNBATeamOffenseStats).all()}
+        defense_by_name = {d.team_name: d for d in db.query(WNBATeamDefenseStats).all()}
 
         for g in games:
             home_elo = elos.get(g.home_team_name, INITIAL_ELO)

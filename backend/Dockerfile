@@ -52,7 +52,11 @@ RUN mkdir -p /app/scripts && \
     if [ ! -f /app/scripts/railway-celery.sh ] && [ -f /app/backend/scripts/railway-celery.sh ]; then \
       cp /app/backend/scripts/railway-celery.sh /app/scripts/railway-celery.sh; \
     fi && \
-    if [ -f /app/scripts/railway-celery.sh ]; then chmod +x /app/scripts/railway-celery.sh; fi
+    if [ -f /app/scripts/railway-celery.sh ]; then chmod +x /app/scripts/railway-celery.sh; fi && \
+    if [ ! -f /app/scripts/railway_mlb_rebuild.sh ] && [ -f /app/backend/scripts/railway_mlb_rebuild.sh ]; then \
+      cp /app/backend/scripts/railway_mlb_rebuild.sh /app/scripts/railway_mlb_rebuild.sh; \
+    fi && \
+    if [ -f /app/scripts/railway_mlb_rebuild.sh ]; then chmod +x /app/scripts/railway_mlb_rebuild.sh; fi
 
 # Create non-root user for security
 RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app

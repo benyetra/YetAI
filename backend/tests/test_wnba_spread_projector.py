@@ -74,3 +74,19 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
     assert row["away_elo"] == 1580.0
     assert row["market_spread_home"] == -2.5
     assert row["recommendation"] in {"HOME", "AWAY", "NO_PLAY"}
+
+
+def test_run_skips_ml_load_when_slate_empty(monkeypatch):
+    mock_db = MagicMock(name="Session")
+    mock_db.query.return_value.filter.return_value.all.return_value = []
+    monkeypatch.setattr(
+        "app.services.etl.wnba.spread_projector.SessionLocal", lambda: mock_db
+    )
+    with patch("app.services.etl.wnba.spread_projector.model_available") as avail:
+        result = sp.run()
+    assert result == {
+        "status": "ok",
+        "games": 0,
+        "projection_method": "skipped_empty_slate",
+    }
+    avail.assert_not_called()

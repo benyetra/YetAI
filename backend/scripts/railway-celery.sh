@@ -74,6 +74,7 @@ except Exception as exc:
     sys.exit(1)
 PY
 
-# concurrency=2: one slot for long maintenance (profile rebuild, retrain) and one
-# for interactive/admin pipeline enqueues without hour-long queue stalls.
-exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2 "$@"
+# concurrency=1 + child recycle: a second slot doubled Railway RSS. Recycle
+# flags match celery_app.py so a start-command override cannot forget them.
+exec celery -A app.celery_app worker --beat --loglevel=info \
+    --concurrency=1 --max-memory-per-child=800000 --max-tasks-per-child=8 "$@"

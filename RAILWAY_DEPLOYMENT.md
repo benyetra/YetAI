@@ -113,6 +113,7 @@ Health check configuration:
 |---------|------|-----|
 | API (`api.yetai.app`) | `YetAI` | `9fe8f0dc-96ac-408f-9960-950768e6eb49` |
 | Celery + Beat | `celery-worker` | `9b9982f4-82b7-4e0f-88a0-3212221fecf4` |
+| MLB profile rebuild (cron) | `mlb-rebuild-cron` | `b114fc9a-3e43-43c0-9cdf-94fcea9af5d4` |
 | Postgres | `Postgres` | `421f0104-94c9-478a-8f11-d19955df0d37` (do not use for `railway up`) |
 
 Copy IDs: Railway project → Cmd+K → copy service/environment ID.
@@ -152,7 +153,7 @@ After deploy includes `scripts/railway-celery.sh`:
 **Immediate workaround** (repo-root context, no new deploy):
 
 ```text
-bash -c 'cd /app/backend && PYTHONPATH=/app/backend exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=2'
+bash -c 'cd /app/backend && PYTHONPATH=/app/backend exec celery -A app.celery_app worker --beat --loglevel=info --concurrency=1 --max-memory-per-child=800000 --max-tasks-per-child=8'
 ```
 
 Do not use bare `celery -A app.celery_app ...` without resolving `APP_ROOT` first.

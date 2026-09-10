@@ -256,7 +256,7 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "timeout_s": ADMIN_FIREABLE_TASKS[
             "app.tasks.etl_pipeline.mlb.rebuild_profiles"
         ],
-        "description": "Rebuild batter/pitcher profile snapshots from S3 parquet for as_of_date.",
+        "description": "Rebuild batter/pitcher profile snapshots from S3 parquet. Nightly run is Railway cron mlb-rebuild-cron (09:00 UTC); this enqueue is manual.",
     },
     {
         "task_name": "app.tasks.etl_pipeline.nhl.daily_predictions",

@@ -78,6 +78,12 @@ jobs:
         run: |
           railway up --detach --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4
 
+      - name: Deploy mlb-rebuild-cron (profile rebuild, exits)
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up --detach --service b114fc9a-3e43-43c0-9cdf-94fcea9af5d4
+
       # --detach returns after upload; wait for the new image to boot before probing.
       - name: Wait for production health
         run: |

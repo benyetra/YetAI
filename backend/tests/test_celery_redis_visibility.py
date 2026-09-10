@@ -9,11 +9,18 @@ def test_redis_visibility_timeout_covers_profile_rebuild():
     assert opts.get("visibility_timeout", 3600) >= 43200
 
 
-def test_mlb_profile_rebuild_scheduled_before_projections():
-    schedule = celery_app.conf.beat_schedule
-    rebuild_hour = min(schedule["mlb-profile-rebuild"]["schedule"].hour)
-    projections_hour = min(schedule["mlb-projections-daily"]["schedule"].hour)
-    assert rebuild_hour < projections_hour
+def test_mlb_profile_rebuild_is_not_on_beat():
+    """Always-on worker must not hold the 5 GB rebuild; Railway cron owns it."""
+    assert "mlb-profile-rebuild" not in celery_app.conf.beat_schedule
+
+
+def test_expire_pending_is_not_on_beat():
+    assert "expire_pending_yetai_picks" not in celery_app.conf.beat_schedule
+
+
+def test_worker_recycles_after_heavy_rss():
+    assert celery_app.conf.worker_max_memory_per_child == 800000
+    assert celery_app.conf.worker_max_tasks_per_child == 8
 
 
 def test_mlb_rebuild_profiles_time_limits():

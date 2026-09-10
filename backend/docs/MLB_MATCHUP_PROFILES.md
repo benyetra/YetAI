@@ -34,7 +34,7 @@ PYTHONPATH=. .venv/bin/python scripts/mlb_rebuild_profiles.py --as-of 2025-05-25
 - `app.tasks.etl_pipeline.mlb.statcast_incremental`
 - `app.tasks.etl_pipeline.mlb.rebuild_profiles`
 
-Beat (ET): statcast incremental 09:30, profile rebuild 05:00 (finishes before projections), `mlb-projections-daily` 14:00.
+Beat (ET): statcast incremental 09:30, `mlb-projections-daily` 14:00. Profile rebuild is Railway cron `mlb-rebuild-cron` at 09:00 UTC (05:00 ET in daylight time), not Beat.
 
 ## Phase 3 — Strikeouts
 

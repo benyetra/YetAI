@@ -39,10 +39,15 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Recycle prefork children after heavy ETL so Railway RSS returns to the
+    # ~0.5 GB idle floor instead of sitting at 3–5 GB until the next deploy.
+    # worker_max_memory_per_child is KiB (Celery). 800000 KiB ≈ 781 MiB.
+    worker_max_memory_per_child=800000,
+    worker_max_tasks_per_child=8,
     # Redis redelivers unacked messages after visibility_timeout (default 1h).
-    # mlb.rebuild_profiles routinely runs 2–3h; without a higher timeout the
-    # same task_id is re-queued while still executing and blocks concurrency=1
-    # workers from picking up run_mlb_update_pipeline (manual or beat).
+    # mlb.rebuild_profiles routinely runs 2–3h when fired on this worker;
+    # without a higher timeout the same task_id is re-queued while still
+    # executing and blocks concurrency=1 workers from picking up pipelines.
     broker_transport_options={"visibility_timeout": 86400},
     broker_connection_retry_on_startup=True,
     broker_connection_timeout=15,
@@ -119,12 +124,9 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.mlb.statcast_incremental",
         "schedule": crontab(hour=9, minute=30),
     },
-    # Overnight so ~3h rebuild finishes before morning statcast + projections.
-    "mlb-profile-rebuild": {
-        "task": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
-        "schedule": crontab(hour=5, minute=0),
-        "options": {"expires": 21600},
-    },
+    # mlb.rebuild_profiles is a Railway cron (mlb-rebuild-cron, 09:00 UTC)
+    # so the always-on worker does not hold the 5 GB peak. Task stays
+    # registered for admin enqueue.
     "mlb-projections-daily": {
         "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
         "schedule": crontab(hour=14, minute=0),
@@ -217,7 +219,5 @@ if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
         "task": "auto_pick.yetai_bets",
         "schedule": crontab(hour=13, minute=0),  # 9:00 AM ET
     }
-    celery_app.conf.beat_schedule["expire_pending_yetai_picks"] = {
-        "task": "auto_pick.expire_pending",
-        "schedule": crontab(minute="*/5"),
-    }
+    # expire_pending runs on the API process (see expire_pending_scheduler),
+    # not Beat — a 5-min SQL job must not pin the fat ETL child 24/7.

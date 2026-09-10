@@ -10,7 +10,7 @@ Celery beat fires `auto_pick.yetai_bets` at 9:00 AM ET → orchestrator pulls ca
 
 | Flag | Default | Effect |
 |---|---|---|
-| `AUTO_YETAI_PICKS_ENABLED` (backend env) | `false` | When `true`, the daily auto-pick job and the every-5-min expiry job are added to the Celery beat schedule. Set on **both** `celery-worker` and **YetAI API** so beat runs and `/admin/pipelines` shows the tasks. |
+| `AUTO_YETAI_PICKS_ENABLED` (backend env) | `false` | When `true`, Beat adds the daily auto-pick job on **celery-worker**, and the **YetAI API** runs expire-pending every 5 minutes in-process. Set on both services. |
 | `NEXT_PUBLIC_AUTO_YETAI_PICKS_ENABLED` (frontend env) | `false` | When `true`, the `/admin/yetai-picks` route renders. Otherwise it redirects to `/dashboard`. |
 
 Set in production via the existing env management (Railway / Vercel / wherever).
@@ -38,7 +38,7 @@ Goal: Let the orchestrator run daily, write to the DB, but keep subscribers unaw
    ```bash
    psql $DATABASE_URL -c "SELECT * FROM scoring_config;"
    ```
-3. Set `AUTO_YETAI_PICKS_ENABLED=true` on **celery-worker** and **YetAI API**, then redeploy both.
+3. Set `AUTO_YETAI_PICKS_ENABLED=true` on **celery-worker** and **YetAI API**, then redeploy both. Expiry runs on the API, not Beat.
 4. Leave `NEXT_PUBLIC_AUTO_YETAI_PICKS_ENABLED=false` (or unset) — admin route stays redirected; subscribers see nothing new.
 5. Inspect `auto_pick_runs` and `yetai_bets WHERE source='auto'` daily for ~1 week.
 6. Verify picks land with `status="pending_approval"` and have a `confidence_score`, `score_breakdown`, and `reasoning`.
@@ -71,6 +71,6 @@ After 2–3 weeks of live data:
 
 If something goes wrong:
 
-1. Set `AUTO_YETAI_PICKS_ENABLED=false` and restart Celery — stops new auto-picks.
+1. Set `AUTO_YETAI_PICKS_ENABLED=false` and restart Celery **and** the API — stops new auto-picks and the API expire loop.
 2. Optionally mark in-flight pending picks as rejected via the admin API or SQL.
 3. Worst case, roll the migration down: `alembic downgrade -1` (drops `auto_pick_runs`, `scoring_config`, and the new columns on `yetai_bets`; the new enum values stay because Postgres doesn't support `DROP VALUE`).

@@ -1080,6 +1080,28 @@ class _YetiWatchRunner:
 
 _wnba_yetiwatch = _YetiWatchRunner()
 
+# Projectors / props load S3 sklearn artifacts. Skip when ESPN reports 0 games
+# (today_active_players keeps yesterday's rows, so generate_* would still fire).
+_WNBA_SLATE_ML_STEPS: list[tuple[str, object]] = [
+    ("update_expected_minutes", _wnba_expected_minutes),
+    ("yetiwatch", _wnba_yetiwatch),
+    ("totals_projector", _wnba_totals_projector),
+    ("spread_projector", _wnba_spread_projector),
+    ("generate_points", _wnba_gen_points),
+    ("generate_assists", _wnba_gen_assists),
+    ("generate_rebounds", _wnba_gen_rebounds),
+    ("generate_three_pt_made", _wnba_gen_threes),
+    ("generate_pra", _wnba_gen_pra),
+    ("store_actuals", _wnba_store_actuals),
+    ("totals_accuracy", _wnba_totals_accuracy),
+    ("spreads_accuracy", _wnba_spreads_accuracy),
+    ("prop_accuracy", _wnba_prop_accuracy),
+]
+
+
+def _wnba_slate_is_empty(result: object) -> bool:
+    return isinstance(result, dict) and result.get("games") == 0
+
 
 @celery_app.task(name="app.tasks.etl_pipeline.wnba.update_recent_games")
 def wnba_update_recent_games():
@@ -1187,20 +1209,22 @@ def run_wnba_update_pipeline(self) -> dict:
         ("update_injury_status", _wnba_update_injury),
         ("update_recent_games", _wnba_update_recent),
         ("today_active_players", _wnba_today_active),
-        ("update_expected_minutes", _wnba_expected_minutes),
-        ("yetiwatch", _wnba_yetiwatch),
-        ("totals_projector", _wnba_totals_projector),
-        ("spread_projector", _wnba_spread_projector),
-        ("generate_points", _wnba_gen_points),
-        ("generate_assists", _wnba_gen_assists),
-        ("generate_rebounds", _wnba_gen_rebounds),
-        ("generate_three_pt_made", _wnba_gen_threes),
-        ("generate_pra", _wnba_gen_pra),
-        ("store_actuals", _wnba_store_actuals),
-        ("totals_accuracy", _wnba_totals_accuracy),
-        ("spreads_accuracy", _wnba_spreads_accuracy),
-        ("prop_accuracy", _wnba_prop_accuracy),
     ]:
+        try:
+            results[label] = mod.run()
+        except Exception as exc:
+            logger.exception("WNBA pipeline step %s failed", label)
+            results[label] = {"status": "error", "error": str(exc)}
+
+    if _wnba_slate_is_empty(results.get("today_active_players")):
+        logger.info(
+            "WNBA update pipeline skipping ML steps (empty slate, task_id=%s)",
+            self.request.id,
+        )
+        results["slate"] = {"status": "ok", "reason": "empty_slate", "ml_steps": False}
+        return {"status": "ok", "results": results}
+
+    for label, mod in _WNBA_SLATE_ML_STEPS:
         try:
             results[label] = mod.run()
         except Exception as exc:

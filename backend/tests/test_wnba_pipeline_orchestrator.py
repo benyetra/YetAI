@@ -49,6 +49,33 @@ def test_hourly_pipeline_excludes_team_stats_refresh_steps():
     assert list(out["results"].keys()) == [label for label, _ in _HOURLY_STEPS]
 
 
+def test_hourly_pipeline_skips_ml_steps_on_empty_slate():
+    def fake_active(*_args, **_kwargs):
+        return {"status": "ok", "games": 0, "kept_stale": True}
+
+    with patch.object(ep, "_wnba_in_season", return_value=True):
+        with ExitStack() as stack:
+            stack.enter_context(
+                patch.object(ep._wnba_update_injury, "run", side_effect=_fake_run)
+            )
+            stack.enter_context(
+                patch.object(ep._wnba_update_recent, "run", side_effect=_fake_run)
+            )
+            stack.enter_context(
+                patch.object(ep._wnba_today_active, "run", side_effect=fake_active)
+            )
+            for _label, mod in ep._WNBA_SLATE_ML_STEPS:
+                stack.enter_context(
+                    patch.object(mod, "run", side_effect=AssertionError("ml step ran"))
+                )
+            out = ep.run_wnba_update_pipeline.run()
+
+    assert out["status"] == "ok"
+    assert out["results"]["slate"]["reason"] == "empty_slate"
+    assert "spread_projector" not in out["results"]
+    assert "generate_points" not in out["results"]
+
+
 def test_daily_team_stats_pipeline_includes_dashboard_steps():
     def fake_run_with_profile(*_args, profile=None, **_kwargs):
         return {"status": "ok", "profile": profile}

@@ -44,6 +44,10 @@ from app.services.bet_scheduler_service import (
     init_scheduler,
     cleanup_scheduler,
 )
+from app.services.expire_pending_scheduler import (
+    cleanup_expire_pending_scheduler,
+    init_expire_pending_scheduler,
+)
 from app.services.unified_bet_verification_service import (
     unified_bet_verification_service,
 )
@@ -221,6 +225,12 @@ async def lifespan(_app: FastAPI):
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler initialization failed: {e}")
 
+    try:
+        init_expire_pending_scheduler()
+        logger.info("✅ Expire-pending scheduler started")
+    except Exception as e:
+        logger.warning(f"⚠️  Expire-pending scheduler initialization failed: {e}")
+
     # Start the admin pipeline notification Redis subscriber. Bridges Celery
     # worker pipeline lifecycle events → WebSocket fan-out to connected admins.
     try:
@@ -308,6 +318,12 @@ async def lifespan(_app: FastAPI):
         logger.info("✅ Bet verification scheduler stopped")
     except Exception as e:
         logger.warning(f"⚠️  Bet verification scheduler cleanup failed: {e}")
+
+    try:
+        await cleanup_expire_pending_scheduler()
+        logger.info("✅ Expire-pending scheduler stopped")
+    except Exception as e:
+        logger.warning(f"⚠️  Expire-pending scheduler cleanup failed: {e}")
 
     # Stop the admin notification subscriber
     sub = getattr(_app.state, "admin_notification_subscriber", None)
