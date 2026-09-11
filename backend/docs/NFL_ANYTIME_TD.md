@@ -16,8 +16,12 @@ Projector `run()` without injected `feature_rows` calls
    back up to 3 seasons and use all prior-season weeks as priors (needed for Week 1).
 2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
 3. `import_depth_charts` — skill-position **starters** (`depth_team=1`; excludes
-   KR/PR). Remaining slots fill from prior usage up to `{QB:1, RB:2, WR:3, TE:1}`.
-   If depth is empty, usage top-N is the whole universe.
+   KR/PR). Filtered to the latest ``dt`` snapshot (same approach as QB starters).
+   Depth ``club_code`` is the TEAM source of truth; usage may enrich name/position
+   but does **not** overwrite depth team (avoids stale ``recent_team`` from
+   prior-season weekly fallback / pre-trade games). Remaining slots fill from
+   prior usage up to `{QB:1, RB:2, WR:3, TE:1}`. If depth is empty, usage top-N
+   is the whole universe.
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
 6. **Injuries** — nflverse injury reports: drop Out/Doubtful (promote depth-2),
@@ -88,6 +92,22 @@ PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --quick --write-metrics
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --walk-forward --write-metrics --check-gate
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --season 2024 --start-week 1 --end-week 8
 ```
+
+## Refresh prod board after TEAM logic changes
+
+TEAM / OPP are denormalized onto `pred_nfl_anytime_td_predictions` at project
+time. Deploying this code alone does **not** rewrite existing rows — Odds attach
+also preserves team fields.
+
+After merge + backend deploy, re-run the ATD projector (schemes → projector →
+Odds), e.g.:
+
+- Admin portal → **NFL anytime TD pipeline** (`run_nfl_anytime_td_pipeline`), or
+- Wait for Beat: `nfl-update-pipeline-daily` @ 4:30 ET (includes ATD) or
+  `nfl-anytime-td-pipeline-midweek` Tue–Fri 11:00 ET
+
+Confirm a previously wrong-team player updates `team_name` /
+`opponent_team_name` on the next successful projector upsert.
 
 ## Enable UI (prod)
 

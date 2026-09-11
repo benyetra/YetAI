@@ -12,6 +12,7 @@ from app.services.etl.nfl.anytime_td_features import (
     aggregate_player_usage_from_weekly,
     aggregate_team_rz_from_weekly,
     build_weekly_feature_rows,
+    filter_depth_records_to_latest_snapshot,
     load_weekly_records_with_fallback,
     select_skill_universe,
 )
@@ -230,6 +231,99 @@ def test_select_universe_usage_fallback_when_no_depth():
     # Top usage starters only (no depth) — rb1/wr1 qualify; buf_rb may too.
     assert "rb1" in ids
     assert "wr1" in ids
+
+
+def test_select_universe_prefers_depth_team_over_stale_usage():
+    """Depth club_code wins when prior-week usage still has the old team."""
+    depth = [
+        {
+            "gsis_id": "dowdle",
+            "full_name": "Rico Dowdle",
+            "position": "RB",
+            "club_code": "CAR",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "mason",
+            "full_name": "Jordan Mason",
+            "position": "RB",
+            "club_code": "MIN",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+    ]
+    usage = {
+        "dowdle": {
+            "player_id": "dowdle",
+            "player_name": "Rico Dowdle",
+            "position": "RB",
+            "team_abbr": "DAL",  # stale prior-team from weekly
+            "touches_season": 120.0,
+            "targets_l3": 4.0,
+            "carries_l3": 50.0,
+        },
+        "mason": {
+            "player_id": "mason",
+            "player_name": "Jordan Mason",
+            "position": "RB",
+            "team_abbr": "SF",  # stale prior-team from weekly
+            "touches_season": 90.0,
+            "targets_l3": 2.0,
+            "carries_l3": 40.0,
+        },
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    by_id = {p["player_id"]: p for p in universe}
+    assert by_id["dowdle"]["team_abbr"] == "CAR"
+    assert by_id["mason"]["team_abbr"] == "MIN"
+    # Usage may still enrich the display name.
+    assert by_id["dowdle"]["player_name"] == "Rico Dowdle"
+
+
+def test_filter_depth_records_keeps_latest_dt_snapshot_only():
+    depth = [
+        {
+            "gsis_id": "rb1",
+            "full_name": "Old Snap RB",
+            "position": "RB",
+            "club_code": "DAL",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+            "dt": "2024-08-01",
+        },
+        {
+            "gsis_id": "rb1",
+            "full_name": "New Snap RB",
+            "position": "RB",
+            "club_code": "CAR",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+            "dt": "2025-09-01",
+        },
+    ]
+    filtered = filter_depth_records_to_latest_snapshot(depth)
+    assert len(filtered) == 1
+    assert filtered[0]["club_code"] == "CAR"
+
+    usage = {
+        "rb1": {
+            "player_id": "rb1",
+            "player_name": "Rico Dowdle",
+            "position": "RB",
+            "team_abbr": "DAL",
+            "touches_season": 100.0,
+            "targets_l3": 3.0,
+            "carries_l3": 40.0,
+        }
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    assert len(universe) == 1
+    assert universe[0]["team_abbr"] == "CAR"
 
 
 def test_build_weekly_feature_rows_end_to_end_offline():

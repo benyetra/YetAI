@@ -561,6 +561,26 @@ def starter_ids_from_usage(
     return out
 
 
+def filter_depth_records_to_latest_snapshot(
+    depth_records: Iterable[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Keep depth rows from the newest ``dt`` snapshot when present.
+
+    Mirrors ``qb_starter_registry.filter_depth_charts_to_latest_snapshot`` for
+    plain record lists so ATD does not mix historical depth snapshots.
+    """
+    rows = [dict(r) for r in depth_records]
+    dts = [
+        r.get("dt")
+        for r in rows
+        if r.get("dt") is not None and not _is_missing(r.get("dt"))
+    ]
+    if not dts:
+        return rows
+    latest = max(dts)
+    return [r for r in rows if r.get("dt") == latest]
+
+
 def select_skill_universe(
     *,
     depth_records: Iterable[dict[str, Any]],
@@ -572,12 +592,18 @@ def select_skill_universe(
     After depth starters, remaining per-team slots are filled from prior usage
     up to ``_USAGE_STARTER_SLOTS`` (QB:1, RB:2, WR:3, TE:1). Special-teams
     depth slots stay excluded. If depth is empty, usage top-N is the universe.
+
+    Depth ``club_code`` / ``team`` is the source of truth for TEAM when a player
+    appears on the depth chart. Prior-week usage may enrich name/position but
+    must not overwrite depth team (stale ``recent_team`` from prior-season
+    weekly fallback or pre-trade games caused wrong ATD board teams).
     """
     universe: dict[str, dict[str, Any]] = {}
+    depth_rows = filter_depth_records_to_latest_snapshot(depth_records)
 
     # Depth chart starters for latest week <= target (all WR1/RB1/… rows, not ST).
     by_player_best: dict[str, dict[str, Any]] = {}
-    for raw in depth_records:
+    for raw in depth_rows:
         if not _offensive_starter_depth_ok(raw):
             continue
         team = _str(raw, "club_code", "team").upper()
@@ -616,10 +642,10 @@ def select_skill_universe(
                 "depth_week": week,
             }
     else:
-        # Enrich names/teams from usage, then fill remaining starter slots.
+        # Enrich names/positions from usage; keep depth team_abbr.
         for player_id, player in list(universe.items()):
             usage = usage_by_player.get(player_id) or {}
-            if usage.get("team_abbr"):
+            if not player.get("team_abbr") and usage.get("team_abbr"):
                 player["team_abbr"] = usage["team_abbr"]
             if usage.get("player_name"):
                 player["player_name"] = usage["player_name"]
@@ -1379,7 +1405,13 @@ def fetch_weekly_feature_inputs_nflverse(season: int, week: int) -> dict[str, An
     weekly, weekly_season = load_weekly_records_with_fallback(season)
     schedules = records_from_dataframe(nfl.import_schedules([season]))
     try:
-        depth = records_from_dataframe(nfl.import_depth_charts([season]))
+        from app.services.etl.nfl.qb_starter_registry import (
+            filter_depth_charts_to_latest_snapshot,
+        )
+
+        depth_frame = nfl.import_depth_charts([season])
+        depth_frame = filter_depth_charts_to_latest_snapshot(depth_frame)
+        depth = records_from_dataframe(depth_frame)
     except Exception as exc:
         if _is_missing_nflverse_data_error(exc):
             logger.warning(
