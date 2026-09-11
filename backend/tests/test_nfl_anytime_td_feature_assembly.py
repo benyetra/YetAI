@@ -7,10 +7,18 @@ from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 from app.services.etl.nfl.anytime_td_features import (
+    _CONVERSION_RATE_PRIOR,
+    _DEF_EPA_PRIOR,
+    _PLAYER_RZ_SHARE_PRIOR,
+    _RZ_TD_RATE_ALLOWED_PRIOR,
+    _TEAM_RZ_PASS_RATE_PRIOR,
+    _TEAM_RZ_TRIPS_PRIOR,
+    _TDS_ALLOWED_PRIOR,
     _usage_as_of_week_for_priors,
     aggregate_defense_allowed_from_weekly,
     aggregate_player_usage_from_weekly,
     aggregate_team_rz_from_weekly,
+    build_player_feature_row,
     build_weekly_feature_rows,
     filter_depth_records_to_latest_snapshot,
     load_weekly_records_with_fallback,
@@ -107,6 +115,111 @@ def test_aggregate_team_and_defense():
     # BUF allowed KC TDs in week 1 (RB 1 + WR 1)
     assert defense["BUF"]["RB"] >= 0
     assert defense["BUF"]["WR"] >= 0
+
+
+def test_build_player_feature_row_tolerates_none_numeric_fields():
+    """Week-1 / missing-defense path sets explicit None values; must not float(None)."""
+    row = build_player_feature_row(
+        player_id="00-0036139",
+        player_name="Rico Dowdle",
+        position="RB",
+        team_name="PIT",
+        opponent_team_name="NYJ",
+        season=2026,
+        week=1,
+        player_stats={
+            "player_rz_share": None,
+            "conversion_rate": None,
+            "snap_pct": None,
+            "availability_mult": None,
+            "gl_td_rate": None,
+            "rz_rush_share": None,
+            "gl_carry_share": None,
+        },
+        team_stats={
+            "team_rz_trips": None,
+            "team_rz_pass_rate": None,
+            "early_down_pass_pct": None,
+        },
+        # Mirrors build_weekly_feature_rows when defense.get(opp) is {}.
+        opponent_defense={
+            "tds_allowed_vs_pos": None,
+            "rz_td_rate_allowed": None,
+            "def_epa": None,
+        },
+        weather={"outdoor": True, "wind_mph": None, "precip": False},
+        game_env={
+            "implied_team_total": None,
+            "implied_total": None,
+            "spread": None,
+        },
+    )
+    assert row["team_name"] == "Pittsburgh Steelers"
+    assert row["team_rz_trips"] == _TEAM_RZ_TRIPS_PRIOR
+    assert row["player_rz_share"] == _PLAYER_RZ_SHARE_PRIOR["RB"]
+    assert row["conversion_rate"] == _CONVERSION_RATE_PRIOR["RB"]
+    assert row["tds_allowed_vs_pos"] == _TDS_ALLOWED_PRIOR["RB"]
+    assert row["rz_td_rate_allowed"] == _RZ_TD_RATE_ALLOWED_PRIOR
+    assert row["def_epa"] == _DEF_EPA_PRIOR
+    assert row["team_rz_pass_rate"] == _TEAM_RZ_PASS_RATE_PRIOR
+    assert row["availability_mult"] == 1.0
+    assert row["wind_mph"] is None
+    assert row["implied_total"] is None
+    assert row["spread"] is None
+    assert isinstance(row["defense_mult"], float)
+    assert isinstance(row["script_mult"], float)
+
+
+def test_build_weekly_feature_rows_week1_with_empty_defense_stats():
+    """End-to-end assembly must not crash when opponent has no prior defense rows."""
+    weekly = _weekly_sample()
+    depth = [
+        {
+            "gsis_id": "rb1",
+            "full_name": "Star RB",
+            "position": "RB",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+            "dt": "2026-09-01",
+        },
+        {
+            "gsis_id": "wr1",
+            "full_name": "Star WR",
+            "position": "WR",
+            "club_code": "KC",
+            "depth_team": 1,
+            "depth_position": "WR",
+            "week": 1,
+            "dt": "2026-09-01",
+        },
+    ]
+    schedules = [
+        {
+            "week": 1,
+            "game_type": "REG",
+            "home_team": "KC",
+            "away_team": "BUF",
+            "gameday": "2026-09-07",
+            "roof": "outdoors",
+            "temp": None,
+            "wind": None,
+        }
+    ]
+    # as_of_week=1 ⇒ no prior weeks ⇒ empty defense / team_rz for everyone.
+    rows = build_weekly_feature_rows(
+        2026,
+        1,
+        weekly_records=weekly,
+        schedule_records=schedules,
+        depth_records=depth,
+        usage_as_of_week=1,
+        pbp_as_of_week=1,
+    )
+    assert rows
+    assert all(isinstance(r["rz_td_rate_allowed"], float) for r in rows)
+    assert all(r["team_name"] for r in rows)
 
 
 def test_select_universe_starters_only_from_depth():
