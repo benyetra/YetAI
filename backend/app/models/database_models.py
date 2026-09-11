@@ -76,6 +76,9 @@ class User(Base):
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(50), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    # False for Google-OAuth-created accounts until the user sets a password
+    # (register / forgot-password / admin reset). Default True for email signups.
+    password_set = Column(Boolean, default=True, nullable=False)
     first_name = Column(String(100))
     last_name = Column(String(100))
     subscription_tier = Column(Enum(SubscriptionTier), default=SubscriptionTier.FREE)
