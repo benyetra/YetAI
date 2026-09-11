@@ -27,9 +27,24 @@ logger = logging.getLogger(__name__)
 class AuthServiceDB:
     """Database-powered user authentication and session management"""
 
+    # Fields only admins (or privileged internal callers) may set via update_user.
+    PRIVILEGED_UPDATE_FIELDS = frozenset(
+        {
+            "is_admin",
+            "subscription_tier",
+            "is_verified",
+            "is_hidden",
+            "totp_enabled",
+            "password_hash",
+        }
+    )
+
     def __init__(self):
-        # Create demo users on initialization if they don't exist
-        self._create_demo_users()
+        # Demo users are for local/dev only — never auto-seed known admins in prod.
+        if (settings.ENVIRONMENT or "").lower() != "production":
+            self._create_demo_users()
+        else:
+            logger.info("Skipping demo user seed in production environment")
 
     def hash_password(self, password: str) -> str:
         """Hash a password securely using bcrypt directly"""
@@ -558,7 +573,7 @@ class AuthServiceDB:
         user = await self.get_user_by_id(user_id)
         if not user or user.get("is_verified"):
             return user
-        await self.update_user(user_id, {"is_verified": True})
+        await self.update_user(user_id, {"is_verified": True}, allow_privileged=True)
         user["is_verified"] = True
         return user
 
@@ -822,10 +837,26 @@ class AuthServiceDB:
             logger.error(f"Error getting 2FA status: {e}")
             return {"success": False, "error": "Failed to get 2FA status"}
 
-    async def update_user(self, user_id: int, update_data: Dict) -> Optional[Dict]:
-        """Update user information"""
+    async def update_user(
+        self,
+        user_id: int,
+        update_data: Dict,
+        *,
+        allow_privileged: bool = False,
+    ) -> Optional[Dict]:
+        """Update user information.
+
+        Privilege fields (is_admin, subscription_tier, is_verified, is_hidden,
+        totp_enabled, password_hash) are ignored unless allow_privileged=True.
+        Self-service profile updates must never pass allow_privileged.
+        """
         try:
-            logger.info(f"Attempting to update user {user_id} with data: {update_data}")
+            safe_keys = [
+                k
+                for k in update_data.keys()
+                if k not in ("password", "current_password", "new_password")
+            ]
+            logger.info(f"Attempting to update user {user_id} with fields: {safe_keys}")
             db = SessionLocal()
             try:
                 # Get the user
@@ -835,6 +866,24 @@ class AuthServiceDB:
                     return None
 
                 logger.info(f"Found user: {user.email} (ID: {user.id})")
+
+                if not allow_privileged:
+                    blocked = sorted(
+                        self.PRIVILEGED_UPDATE_FIELDS.intersection(update_data.keys())
+                    )
+                    if blocked:
+                        logger.warning(
+                            "Rejected privilege fields on non-privileged update "
+                            "for user %s: %s",
+                            user_id,
+                            blocked,
+                        )
+                        # Drop privilege keys; do not apply them.
+                        update_data = {
+                            k: v
+                            for k, v in update_data.items()
+                            if k not in self.PRIVILEGED_UPDATE_FIELDS
+                        }
 
                 # Update fields if provided
                 if "email" in update_data:
@@ -872,7 +921,7 @@ class AuthServiceDB:
                     user.password_hash = self.hash_password(update_data["password"])
                     user.password_set = True
 
-                if "subscription_tier" in update_data:
+                if allow_privileged and "subscription_tier" in update_data:
                     # Validate subscription tier
                     valid_tiers = ["free", "pro", "elite"]
                     if update_data["subscription_tier"] not in valid_tiers:
@@ -881,16 +930,16 @@ class AuthServiceDB:
                         )
                     user.subscription_tier = update_data["subscription_tier"]
 
-                if "is_admin" in update_data:
+                if allow_privileged and "is_admin" in update_data:
                     user.is_admin = update_data["is_admin"]
 
-                if "is_verified" in update_data:
+                if allow_privileged and "is_verified" in update_data:
                     user.is_verified = update_data["is_verified"]
 
-                if "is_hidden" in update_data:
+                if allow_privileged and "is_hidden" in update_data:
                     user.is_hidden = update_data["is_hidden"]
 
-                if "totp_enabled" in update_data:
+                if allow_privileged and "totp_enabled" in update_data:
                     user.totp_enabled = update_data["totp_enabled"]
                     if not update_data["totp_enabled"]:
                         # If disabling 2FA, clear related fields

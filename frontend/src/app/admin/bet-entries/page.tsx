@@ -108,7 +108,12 @@ export default function AdminBetEntriesPage() {
   // Featured Games Functions
   const loadFeaturedGames = async () => {
     try {
-      const response = await fetch(getApiUrl('/api/admin/featured-games'));
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(getApiUrl('/api/admin/featured-games'), {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      });
       if (response.ok) {
         const data = await response.json();
         setFeaturedGames(data.featured_games || []);
@@ -126,10 +131,12 @@ export default function AdminBetEntriesPage() {
         game.game_id && game.home_team && game.away_team
       );
 
+      const token = localStorage.getItem('auth_token');
       const response = await fetch(getApiUrl('/api/admin/featured-games'), {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({
           featured_games: updatedGames
