@@ -45,7 +45,9 @@ async def promote_admin(email: str, *, verify: bool = True) -> int:
         if verify:
             update_data["is_verified"] = True
 
-        updated = await auth_service_db.update_user(user.id, update_data)
+        updated = await auth_service_db.update_user(
+            user.id, update_data, allow_privileged=True
+        )
         if not updated:
             print(f"Error: Failed to update user {user.id}", file=sys.stderr)
             return 1

@@ -264,8 +264,8 @@ export default function ProfilePage() {
       });
       return false;
     }
-    if (profileData.new_password && profileData.new_password.length < 6) {
-      setMessage({ type: 'error', text: 'New password must be at least 6 characters' });
+    if (profileData.new_password && profileData.new_password.length < 8) {
+      setMessage({ type: 'error', text: 'New password must be at least 8 characters' });
       return false;
     }
     if (profileData.new_password && profileData.new_password !== profileData.confirm_password) {

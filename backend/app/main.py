@@ -8,6 +8,7 @@ from fastapi import (
     FastAPI,
     HTTPException,
     Depends,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     Query,
@@ -22,7 +23,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator, ConfigDict
 from typing import List, Optional, Dict, Any
 
 # Import core configuration and service loader
@@ -89,10 +90,23 @@ security = HTTPBearer()
 # Auth Request/Response models
 class UserSignup(BaseModel):
     email: EmailStr
-    username: str
-    password: str
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
+    username: str = Field(min_length=3, max_length=50)
+    password: str = Field(min_length=8, max_length=128)
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    last_name: Optional[str] = Field(default=None, max_length=100)
+
+    @field_validator("first_name", "last_name")
+    @classmethod
+    def strip_names(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+    @field_validator("username")
+    @classmethod
+    def strip_username(cls, value: str) -> str:
+        return value.strip()
 
 
 class UserLogin(BaseModel):
@@ -108,6 +122,27 @@ class UserLogin(BaseModel):
         return ident
 
 
+class ProfileUpdate(BaseModel):
+    """Self-service profile fields only — never includes privilege flags."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: Optional[EmailStr] = None
+    username: Optional[str] = Field(default=None, min_length=3, max_length=50)
+    first_name: Optional[str] = Field(default=None, max_length=100)
+    last_name: Optional[str] = Field(default=None, max_length=100)
+    current_password: Optional[str] = None
+    new_password: Optional[str] = Field(default=None, min_length=8, max_length=128)
+
+    @field_validator("first_name", "last_name", "username")
+    @classmethod
+    def strip_optional_text(cls, value: Optional[str]) -> Optional[str]:
+        if value is None:
+            return value
+        cleaned = value.strip()
+        return cleaned or None
+
+
 class UserPreferences(BaseModel):
     favorite_teams: Optional[list] = None
     preferred_sports: Optional[list] = None
@@ -115,6 +150,40 @@ class UserPreferences(BaseModel):
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     username: Optional[str] = None
+
+
+# Simple in-memory registration rate limit (per-process; Railway single-worker OK).
+_REGISTER_ATTEMPTS: Dict[str, list] = {}
+_REGISTER_WINDOW_SECONDS = 3600
+_REGISTER_MAX_PER_WINDOW = 10
+
+
+def _client_ip(request) -> str:
+    forwarded = request.headers.get("x-forwarded-for") if request else None
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request and request.client:
+        return request.client.host or "unknown"
+    return "unknown"
+
+
+def _check_register_rate_limit(client_key: str) -> None:
+    now = time.time()
+    window_start = now - _REGISTER_WINDOW_SECONDS
+    attempts = [t for t in _REGISTER_ATTEMPTS.get(client_key, []) if t >= window_start]
+    if len(attempts) >= _REGISTER_MAX_PER_WINDOW:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration attempts. Please try again later.",
+        )
+    attempts.append(now)
+    _REGISTER_ATTEMPTS[client_key] = attempts
+
+
+def _reject_if_production_debug() -> None:
+    """Block unauthenticated debug/test routes in production."""
+    if (settings.ENVIRONMENT or "").lower() == "production":
+        raise HTTPException(status_code=404, detail="Not found")
 
 
 # Betting Models
@@ -391,8 +460,9 @@ app.include_router(vault_router)
 
 # Debug endpoint to check avatar files
 @app.get("/debug/avatar/{user_id}")
-async def debug_avatar(user_id: int):
-    """Debug endpoint to check avatar files and paths"""
+async def debug_avatar(user_id: int, _admin: dict = Depends(require_admin)):
+    """Debug endpoint to check avatar files and paths (admin only)."""
+    _reject_if_production_debug()
     uploads_dir = Path(__file__).parent / "uploads" / "avatars"
     logger.info(f"Checking avatar directory: {uploads_dir}")
     logger.info(f"Directory exists: {uploads_dir.exists()}")
@@ -441,8 +511,9 @@ async def serve_avatar_debug(filename: str):
 
 # Debug endpoint to check S3 configuration
 @app.get("/debug/s3-config")
-async def debug_s3_config():
-    """Debug endpoint to check S3 configuration status"""
+async def debug_s3_config(_admin: dict = Depends(require_admin)):
+    """Debug endpoint to check S3 configuration status (admin only; disabled in prod)."""
+    _reject_if_production_debug()
     import os
     from app.services.avatar_service import avatar_service
 
@@ -545,8 +616,9 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
 
 
 @app.get("/api/test/smtp")
-async def test_smtp_connection():
-    """Test email provider configuration (Brevo API + legacy SMTP socket checks)."""
+async def test_smtp_connection(_admin: dict = Depends(require_admin)):
+    """Test email provider configuration (admin only; disabled in prod)."""
+    _reject_if_production_debug()
     import smtplib
     import socket
 
@@ -1373,35 +1445,62 @@ async def get_api_status():
 
 @app.put("/api/auth/profile")
 async def update_profile(
-    profile_data: dict, current_user: dict = Depends(get_current_user)
+    profile_data: ProfileUpdate, current_user: dict = Depends(get_current_user)
 ):
-    """Update user profile including email and password"""
+    """Update user profile including email and password (no privilege fields)."""
     try:
         if not is_service_available("auth_service"):
             raise HTTPException(status_code=503, detail="Auth service unavailable")
 
         auth_service = get_service("auth_service")
+        update_payload = profile_data.model_dump(exclude_unset=True)
 
         # If changing password, verify current password first
-        if "current_password" in profile_data and "new_password" in profile_data:
+        if "current_password" in update_payload or "new_password" in update_payload:
+            if not update_payload.get("current_password") or not update_payload.get(
+                "new_password"
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Both current_password and new_password are required",
+                )
             user = await auth_service.get_user_by_id(
                 current_user.get("id") or current_user.get("user_id")
             )
-            if not user or not auth_service.verify_password(
-                profile_data["current_password"], user["password_hash"]
+            password_hash = (user or {}).get("password_hash")
+            if not user or not password_hash:
+                # get_user_by_id may omit hash — fetch via authenticate path / dedicated check
+                from app.core.database import SessionLocal
+                from app.models.database_models import User as DbUser
+
+                db = SessionLocal()
+                try:
+                    db_user = (
+                        db.query(DbUser)
+                        .filter(
+                            DbUser.id
+                            == (current_user.get("id") or current_user.get("user_id"))
+                        )
+                        .first()
+                    )
+                    password_hash = db_user.password_hash if db_user else None
+                finally:
+                    db.close()
+            if not password_hash or not auth_service.verify_password(
+                update_payload["current_password"], password_hash
             ):
                 raise HTTPException(
                     status_code=400, detail="Current password is incorrect"
                 )
 
-            # Update password
-            profile_data["password"] = profile_data["new_password"]
-            del profile_data["current_password"]
-            del profile_data["new_password"]
+            update_payload["password"] = update_payload.pop("new_password")
+            update_payload.pop("current_password", None)
 
-        # Update user
+        # Self-service only — privilege fields cannot be set here
         updated_user = await auth_service.update_user(
-            current_user.get("id") or current_user.get("user_id"), profile_data
+            current_user.get("id") or current_user.get("user_id"),
+            update_payload,
+            allow_privileged=False,
         )
 
         if updated_user:
@@ -1435,12 +1534,14 @@ async def auth_status():
 
 
 @app.post("/api/auth/register")
-async def register(user_data: UserSignup):
+async def register(user_data: UserSignup, request: Request):
     """Register a new user"""
     if not is_service_available("auth_service"):
         raise HTTPException(
             status_code=503, detail="Authentication service is currently unavailable"
         )
+
+    _check_register_rate_limit(_client_ip(request))
 
     try:
         auth_service = get_service("auth_service")
@@ -2341,7 +2442,9 @@ async def update_admin_user(
         if is_service_available("auth_service"):
             from app.services.auth_service_db import auth_service_db
 
-            updated_user = await auth_service_db.update_user(user_id, update_data)
+            updated_user = await auth_service_db.update_user(
+                user_id, update_data, allow_privileged=True
+            )
 
             if updated_user:
                 return {
@@ -2416,7 +2519,9 @@ async def create_admin_user(user_data: dict, admin_user: dict = Depends(require_
                         update_data["is_verified"] = is_verified
 
                     if update_data:
-                        await auth_service_db.update_user(user_id, update_data)
+                        await auth_service_db.update_user(
+                            user_id, update_data, allow_privileged=True
+                        )
 
                 return {
                     "status": "success",
@@ -4534,8 +4639,8 @@ async def options_simulate_bet():
 
 
 @app.post("/api/bets/simulate")
-async def simulate_bet():
-    """Simulate bet results for development/testing"""
+async def simulate_bet(_admin: dict = Depends(require_admin)):
+    """Simulate bet results for development/testing (admin only)."""
     if is_service_available("bet_service"):
         try:
             bet_service = get_service("bet_service")
@@ -5877,8 +5982,10 @@ async def get_chat_suggestions():
 
 
 @app.get("/api/admin/featured-games")
-async def get_featured_games(db=Depends(get_db)):
-    """Get admin-selected featured games"""
+async def get_featured_games(
+    admin_user: dict = Depends(require_admin), db=Depends(get_db)
+):
+    """Get admin-selected featured games (admin only; includes admin_notes)."""
     from sqlalchemy import text
 
     from app.db.featured_games import ensure_featured_games_table, row_to_featured_game
@@ -5981,7 +6088,9 @@ async def cleanup_expired_featured_games(
 
 
 @app.post("/api/admin/featured-games")
-async def set_featured_games(request: dict, db=Depends(get_db)):
+async def set_featured_games(
+    request: dict, admin_user: dict = Depends(require_admin), db=Depends(get_db)
+):
     """Set admin-selected featured games with explanations"""
     from sqlalchemy import text
 
@@ -6295,8 +6404,9 @@ async def endpoint_health_check():
 
 # Test endpoint for database connectivity
 @app.get("/test-db")
-async def test_database():
-    """Test database connection with detailed debugging"""
+async def test_database(_admin: dict = Depends(require_admin)):
+    """Test database connection with detailed debugging (admin only; disabled in prod)."""
+    _reject_if_production_debug()
     debug_info = {
         "environment": settings.ENVIRONMENT,
         "database_url": (
@@ -6351,8 +6461,8 @@ async def test_database():
 
 # Scheduler status endpoint for debugging
 @app.get("/scheduler-status")
-async def get_scheduler_status():
-    """Get bet verification scheduler status (for debugging)"""
+async def get_scheduler_status(_admin: dict = Depends(require_admin)):
+    """Get bet verification scheduler status (admin only)."""
     try:
         stats = bet_scheduler.get_stats()
         return {
@@ -6371,8 +6481,8 @@ async def get_scheduler_status():
 
 # Manual scheduler restart endpoint
 @app.post("/restart-scheduler")
-async def restart_scheduler():
-    """Restart the bet verification scheduler (for debugging)"""
+async def restart_scheduler(_admin: dict = Depends(require_admin)):
+    """Restart the bet verification scheduler (admin only)."""
     try:
         # Stop current scheduler if running
         bet_scheduler.stop()
@@ -6466,8 +6576,11 @@ async def websocket_endpoint(websocket: WebSocket, user_id: int):
 
 
 @app.get("/api/debug/analytics-status")
-async def debug_analytics_status(db=Depends(get_db)):
-    """Debug endpoint to check analytics table status in production"""
+async def debug_analytics_status(
+    _admin: dict = Depends(require_admin), db=Depends(get_db)
+):
+    """Debug endpoint to check analytics table status (admin only; disabled in prod)."""
+    _reject_if_production_debug()
     from sqlalchemy import text
     from datetime import datetime
 
@@ -6553,7 +6666,9 @@ async def debug_analytics_status(db=Depends(get_db)):
 
 
 @app.post("/api/admin/setup-featured-games")
-async def setup_featured_games_table(db=Depends(get_db)):
+async def setup_featured_games_table(
+    admin_user: dict = Depends(require_admin), db=Depends(get_db)
+):
     """Create featured_games table for admin curation"""
     from app.db.featured_games import ensure_featured_games_table
 
@@ -6570,7 +6685,9 @@ async def setup_featured_games_table(db=Depends(get_db)):
 
 
 @app.post("/api/admin/migrate-data")
-async def migrate_production_data(db=Depends(get_db)):
+async def migrate_production_data(
+    admin_user: dict = Depends(require_admin), db=Depends(get_db)
+):
     """Migration endpoint to populate production database with fantasy players and analytics data"""
     from sqlalchemy import text
     from datetime import datetime

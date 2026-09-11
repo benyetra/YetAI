@@ -576,9 +576,9 @@ export function SignupForm({ onSuccess, onSwitchToLogin }: {
                 value={formData.password}
                 onChange={handleChange}
                 className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Password (min 6 characters)"
+                placeholder="Password (min 8 characters)"
                 required
-                minLength={6}
+                minLength={8}
               />
               <button
                 type="button"

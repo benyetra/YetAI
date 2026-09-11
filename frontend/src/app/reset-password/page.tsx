@@ -28,7 +28,7 @@ function ResetPasswordContent() {
   }, [token]);
 
   const validatePassword = (password: string) => {
-    if (password.length < 6) return 'Password must be at least 6 characters long';
+    if (password.length < 8) return 'Password must be at least 8 characters long';
     return null;
   };
 
@@ -110,7 +110,7 @@ function ResetPasswordContent() {
                 value={formData.newPassword}
                 onChange={(e) => setFormData({ ...formData, newPassword: e.target.value })}
                 required
-                minLength={6}
+                minLength={8}
                 disabled={loading}
               />
               <button type="button" className="field-toggle" onClick={() => setShowPassword(!showPassword)}>

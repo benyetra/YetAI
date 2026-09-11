@@ -41,7 +41,7 @@ export default function SignUpPage() {
     if (formData.username.length < 3) return setError('Username must be at least 3 characters'), false;
     if (!/^[a-zA-Z0-9_-]+$/.test(formData.username))
       return setError('Username can only contain letters, numbers, underscores, and hyphens'), false;
-    if (formData.password.length < 6) return setError('Password must be at least 6 characters'), false;
+    if (formData.password.length < 8) return setError('Password must be at least 8 characters'), false;
     if (formData.password !== formData.confirmPassword) return setError('Passwords do not match'), false;
     if (!formData.agreeToTerms) return setError('You must agree to the terms'), false;
     return true;

@@ -8,10 +8,28 @@ on:
         required: false
         type: boolean
         default: true
+      target:
+        description: "What to clean: bets (default) or pentest_users"
+        required: false
+        type: choice
+        options:
+          - bets
+          - pentest_users
+        default: bets
+      pentest_mode:
+        description: "When target=pentest_users: revoke | deactivate | delete | revoke_then_delete"
+        required: false
+        type: choice
+        options:
+          - revoke
+          - deactivate
+          - delete
+          - revoke_then_delete
+        default: revoke_then_delete
 
 jobs:
   cleanup:
-    name: Reject demo bets and repair prop matchups
+    name: Production cleanup
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,13 +58,68 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL host: ${DATABASE_URL#*@}"
-          ARGS=""
-          if [ "${{ inputs.dry_run }}" = "true" ]; then
-            ARGS="--dry-run"
+          TARGET="${{ inputs.target }}"
+          DRY="${{ inputs.dry_run }}"
+          MODE="${{ inputs.pentest_mode }}"
+
+          if [ "${TARGET}" = "bets" ]; then
+            ARGS=""
+            if [ "${DRY}" = "true" ]; then
+              ARGS="--dry-run"
+            fi
+            PYTHONPATH=. python3 scripts/cleanup_yetai_bets_prod.py $ARGS | tee cleanup.log
+            exit 0
           fi
-          PYTHONPATH=. python3 scripts/cleanup_yetai_bets_prod.py $ARGS | tee cleanup.log
+
+          # pentest_users
+          {
+            if [ "${DRY}" = "true" ]; then
+              echo "=== DRY RUN (${MODE}) ==="
+              case "${MODE}" in
+                revoke)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --dry-run
+                  ;;
+                deactivate)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --deactivate --dry-run
+                  ;;
+                delete)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --delete --dry-run
+                  ;;
+                revoke_then_delete)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --dry-run
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --delete --dry-run
+                  ;;
+              esac
+            else
+              case "${MODE}" in
+                revoke)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --confirm
+                  ;;
+                deactivate)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --deactivate --confirm
+                  ;;
+                delete)
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --delete --confirm-delete
+                  ;;
+                revoke_then_delete)
+                  echo "=== REVOKE ==="
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --confirm
+                  echo "=== DELETE ==="
+                  set +e
+                  PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --delete --confirm-delete
+                  del_rc=$?
+                  set -e
+                  if [ "$del_rc" -ne 0 ]; then
+                    echo "Hard delete failed; ensuring deactivate fallback"
+                    PYTHONPATH=. python3 scripts/cleanup_pentest_fake_users.py --revoke-privileges --deactivate --confirm
+                  fi
+                  ;;
+              esac
+            fi
+          } | tee cleanup.log
 
       - name: Upload log
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: yetai-bets-cleanup-log

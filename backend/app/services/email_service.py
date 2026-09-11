@@ -1,6 +1,7 @@
 # app/services/email_service.py
 """Email service for sending verification emails, password resets, etc."""
 
+import html
 import os
 import requests
 from typing import Optional
@@ -10,6 +11,13 @@ import secrets
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_display_name(first_name: Optional[str]) -> str:
+    """Escape user-controlled names before interpolating into HTML email bodies."""
+    if not first_name:
+        return "there"
+    return html.escape(first_name.strip(), quote=True) or "there"
 
 
 class EmailService:
@@ -133,6 +141,7 @@ class EmailService:
     ) -> bool:
         """Send email verification link"""
         verification_link = f"{self.app_url}/verify-email?token={verification_token}"
+        display_name = _safe_display_name(first_name)
 
         subject = "Verify Your YetAI Account"
 
@@ -155,7 +164,7 @@ class EmailService:
                     <h1>Welcome to YetAI!</h1>
                 </div>
                 <div class="content">
-                    <h2>Hi {first_name or 'there'},</h2>
+                    <h2>Hi {display_name},</h2>
                     <p>Thanks for signing up for YetAI Sports Betting Platform! Please verify your email address to activate your account and start using our AI-powered betting insights.</p>
                     <p style="text-align: center;">
                         <a href="{verification_link}" class="button">Verify Email Address</a>
@@ -177,7 +186,7 @@ class EmailService:
         text_body = f"""
         Welcome to YetAI!
         
-        Hi {first_name or 'there'},
+        Hi {display_name},
         
         Thanks for signing up for YetAI Sports Betting Platform! Please verify your email address to activate your account.
         
@@ -198,6 +207,7 @@ class EmailService:
     ) -> bool:
         """Send password reset email"""
         reset_link = f"{self.app_url}/reset-password?token={reset_token}"
+        display_name = _safe_display_name(first_name)
 
         subject = "Reset Your YetAI Password"
 
@@ -221,7 +231,7 @@ class EmailService:
                     <h1>Password Reset Request</h1>
                 </div>
                 <div class="content">
-                    <h2>Hi {first_name or 'there'},</h2>
+                    <h2>Hi {display_name},</h2>
                     <p>We received a request to reset your YetAI account password. Click the button below to create a new password:</p>
                     <p style="text-align: center;">
                         <a href="{reset_link}" class="button">Reset Password</a>
@@ -244,7 +254,7 @@ class EmailService:
         text_body = f"""
         Password Reset Request
         
-        Hi {first_name or 'there'},
+        Hi {display_name},
         
         We received a request to reset your YetAI account password.
         
@@ -265,8 +275,14 @@ class EmailService:
     ) -> bool:
         """Send 2FA backup codes via email"""
         subject = "Your YetAI 2FA Backup Codes"
+        display_name = _safe_display_name(first_name)
 
-        codes_html = "<br>".join([f"<code>{code}</code>" for code in backup_codes])
+        codes_html = "<br>".join(
+            [
+                f"<code>{html.escape(str(code), quote=True)}</code>"
+                for code in backup_codes
+            ]
+        )
         codes_text = "\n".join([f"  • {code}" for code in backup_codes])
 
         html_body = f"""
@@ -290,7 +306,7 @@ class EmailService:
                     <h1>2FA Backup Codes</h1>
                 </div>
                 <div class="content">
-                    <h2>Hi {first_name or 'there'},</h2>
+                    <h2>Hi {display_name},</h2>
                     <p>You've successfully enabled Two-Factor Authentication on your YetAI account. Here are your backup codes:</p>
                     <div class="codes">
                         {codes_html}
@@ -317,7 +333,7 @@ class EmailService:
         text_body = f"""
         2FA Backup Codes for YetAI
         
-        Hi {first_name or 'there'},
+        Hi {display_name},
         
         You've successfully enabled Two-Factor Authentication. Here are your backup codes:
         
