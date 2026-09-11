@@ -55,14 +55,10 @@ class AuthServiceDB:
 
     @staticmethod
     def _invalid_credentials_error() -> Dict:
-        """Shared login failure message (includes Google signup guidance)."""
+        """Shared login failure for unknown user or wrong password."""
         return {
             "success": False,
-            "error": (
-                "Invalid email/username or password. "
-                "If you signed up with Google, use Google Sign-In or "
-                "Forgot password to set a password."
-            ),
+            "error": "Invalid email/username or password",
         }
 
     @staticmethod
@@ -160,14 +156,21 @@ class AuthServiceDB:
 
             db = SessionLocal()
             try:
-                # Check if user already exists by email or username
+                # Case-insensitive uniqueness (Postgres unique on email is case-sensitive).
+                email_l = (email or "").strip().lower()
+                username_l = (username or "").strip().lower()
                 existing_user = (
                     db.query(User)
-                    .filter(or_(User.email == email, User.username == username))
+                    .filter(
+                        or_(
+                            func.lower(User.email) == email_l,
+                            func.lower(User.username) == username_l,
+                        )
+                    )
                     .first()
                 )
                 if existing_user:
-                    if existing_user.email == email:
+                    if (existing_user.email or "").lower() == email_l:
                         return {"success": False, "error": "Email already registered"}
                     else:
                         return {"success": False, "error": "Username already taken"}
@@ -266,7 +269,14 @@ class AuthServiceDB:
             return {"success": False, "error": "Failed to create account"}
 
     async def authenticate_user(self, email_or_username: str, password: str) -> Dict:
-        """Authenticate user login with email or username"""
+        """Authenticate user login with email or username.
+
+        Looks up *all* case-insensitive email/username matches. Pre-#118 Google
+        OAuth used exact-case email lookup, so a password account and a later
+        Google account can coexist as case variants (e.g. Ben@x vs ben@x).
+        Trying only ``.first()`` can bind the Google row (random hash) and
+        401 a still-valid password on the other row.
+        """
         try:
             ident = (email_or_username or "").strip()
             if not ident or password is None or password == "":
@@ -275,8 +285,7 @@ class AuthServiceDB:
             db = SessionLocal()
             try:
                 lowered = ident.lower()
-                # Case-insensitive match so stored emails like Ben@YetAI.app still log in.
-                user = (
+                candidates = (
                     db.query(User)
                     .filter(
                         or_(
@@ -284,46 +293,63 @@ class AuthServiceDB:
                             func.lower(User.username) == lowered,
                         )
                     )
-                    .first()
+                    .order_by(User.id.asc())
+                    .all()
                 )
 
-                if not user:
+                if not candidates:
                     return self._invalid_credentials_error()
 
-                # Google OAuth accounts are created with a random placeholder hash.
-                if getattr(user, "password_set", True) is False:
-                    return self._google_only_password_error()
-
-                if not self.verify_password(password, user.password_hash):
-                    return self._invalid_credentials_error()
-
-                if not user.is_active:
+                active = [u for u in candidates if u.is_active]
+                if not active:
                     return {"success": False, "error": "Account is deactivated"}
 
-                # Update last login
-                user.last_login = datetime.utcnow()
+                # Prefer rows that claim a user-chosen password, then oldest id.
+                ordered = sorted(
+                    active,
+                    key=lambda u: (
+                        0 if getattr(u, "password_set", True) is not False else 1,
+                        u.id or 0,
+                    ),
+                )
+
+                matched = None
+                for user in ordered:
+                    if getattr(user, "password_set", True) is False:
+                        continue
+                    if self.verify_password(password, user.password_hash):
+                        matched = user
+                        break
+
+                if matched is None:
+                    if all(getattr(u, "password_set", True) is False for u in active):
+                        return self._google_only_password_error()
+                    return self._invalid_credentials_error()
+
+                matched.last_login = datetime.utcnow()
                 db.commit()
 
-                # Generate access token
-                access_token = self.generate_token(user.id)
+                access_token = self.generate_token(matched.id)
 
                 return {
                     "success": True,
                     "user": {
-                        "id": user.id,
-                        "email": user.email,
-                        "username": user.username,
-                        "first_name": user.first_name,
-                        "last_name": user.last_name,
-                        "subscription_tier": user.subscription_tier,
-                        "is_verified": user.is_verified,
-                        "is_admin": user.is_admin,
+                        "id": matched.id,
+                        "email": matched.email,
+                        "username": matched.username,
+                        "first_name": matched.first_name,
+                        "last_name": matched.last_name,
+                        "subscription_tier": matched.subscription_tier,
+                        "is_verified": matched.is_verified,
+                        "is_admin": matched.is_admin,
                         "last_login": (
-                            user.last_login.isoformat() if user.last_login else None
+                            matched.last_login.isoformat()
+                            if matched.last_login
+                            else None
                         ),
-                        "avatar_url": user.avatar_url,
-                        "avatar_thumbnail": user.avatar_thumbnail,
-                        "password_set": bool(getattr(user, "password_set", True)),
+                        "avatar_url": matched.avatar_url,
+                        "avatar_thumbnail": matched.avatar_thumbnail,
+                        "password_set": bool(getattr(matched, "password_set", True)),
                     },
                     "access_token": access_token,
                     "token_type": "bearer",
