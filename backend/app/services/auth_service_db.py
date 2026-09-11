@@ -1051,17 +1051,56 @@ class AuthServiceDB:
             return {"success": False, "error": "Failed to resend verification email"}
 
     async def request_password_reset(self, email: str) -> Dict:
-        """Request password reset for user"""
+        """Request password reset for user.
+
+        Email lookup is case-insensitive (login already is). Always returns a
+        generic success payload to the caller for enumeration safety when the
+        address is unknown; returns success=False only when the user exists but
+        the mail provider fails so the API can surface a soft outage.
+        """
         try:
+            normalized = (email or "").strip()
+            if not normalized or "@" not in normalized:
+                return {
+                    "success": True,
+                    "message": "If the email exists, a reset link has been sent",
+                }
+
+            if not email_service.is_configured():
+                logger.error(
+                    "Password reset requested but email provider is not configured "
+                    "(set BREVO_API_KEY / FROM_EMAIL)"
+                )
+                return {
+                    "success": False,
+                    "error": "email_provider_unavailable",
+                }
+
             db = SessionLocal()
             try:
-                user = db.query(User).filter(User.email == email).first()
-                if not user:
+                lowered = normalized.lower()
+                # Match every case variant; prefer oldest account (password signup).
+                candidates = (
+                    db.query(User)
+                    .filter(func.lower(User.email) == lowered)
+                    .order_by(User.id.asc())
+                    .all()
+                )
+                if not candidates:
                     # Don't reveal if email exists for security
                     return {
                         "success": True,
                         "message": "If the email exists, a reset link has been sent",
                     }
+
+                user = candidates[0]
+                if len(candidates) > 1:
+                    logger.warning(
+                        "Password reset: %s case-variant rows for %s; using id=%s",
+                        len(candidates),
+                        lowered,
+                        user.id,
+                    )
 
                 # Generate reset token with 1 hour expiry
                 reset_token = secrets.token_urlsafe(32)
@@ -1071,10 +1110,10 @@ class AuthServiceDB:
                 user.reset_token_expires = reset_expires
                 db.commit()
 
-                # Send password reset email
+                # Send to the canonical stored address (not the typed casing).
                 try:
                     sent = email_service.send_password_reset_email(
-                        to_email=email,
+                        to_email=user.email,
                         reset_token=reset_token,
                         first_name=user.first_name,
                     )
@@ -1083,15 +1122,18 @@ class AuthServiceDB:
                             "success": True,
                             "message": "If the email exists, a reset link has been sent",
                         }
+                    logger.error(
+                        "Password reset email failed to send for user_id=%s", user.id
+                    )
                     return {
                         "success": False,
-                        "error": "Failed to send password reset email",
+                        "error": "email_send_failed",
                     }
                 except Exception as email_error:
                     logger.error(f"Failed to send password reset email: {email_error}")
                     return {
                         "success": False,
-                        "error": "Failed to send password reset email",
+                        "error": "email_send_failed",
                     }
 
             finally:

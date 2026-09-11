@@ -17,7 +17,15 @@ export default function ForgotPasswordPage() {
     setIsSubmitting(true);
     setError('');
     try {
-      await apiClient.post('/api/auth/forgot-password', { email });
+      const result = await apiClient.post('/api/auth/forgot-password', { email });
+      if (result?.status === 'error') {
+        setError(
+          typeof result.detail === 'string'
+            ? result.detail
+            : 'Failed to send reset email'
+        );
+        return;
+      }
       setSubmitted(true);
     } catch (err: unknown) {
       const detail = (err as { detail?: string })?.detail;
