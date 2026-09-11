@@ -346,7 +346,6 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
                 type="email"
                 name="emailOrUsername"
                 autoComplete="username"
-                defaultValue=""
                 className="w-full pl-14 pr-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="your@email.com"
                 required
@@ -364,7 +363,6 @@ export function LoginForm({ onSuccess, onSwitchToSignup }: {
                 type={showPassword ? 'text' : 'password'}
                 name="password"
                 autoComplete="current-password"
-                defaultValue=""
                 className="w-full pl-14 pr-12 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 placeholder="Password"
                 required

@@ -177,7 +177,6 @@ function LoginPageContent() {
                 type="text"
                 autoComplete="username"
                 required
-                defaultValue=""
                 onChange={() => setError('')}
                 placeholder="john@example.com"
               />
@@ -195,7 +194,6 @@ function LoginPageContent() {
                 type={showPassword ? 'text' : 'password'}
                 autoComplete="current-password"
                 required
-                defaultValue=""
                 onChange={() => setError('')}
                 placeholder="••••••••"
               />
@@ -233,13 +231,13 @@ function LoginPageContent() {
           </button>
 
           <p className="dim" style={{ textAlign: 'center', fontSize: 13, margin: 0 }}>
-            Signed up with Google? Use the button above, or{' '}
+            Use Google above if that&apos;s how you usually sign in. Need a password?{' '}
             <button
               type="button"
               onClick={() => setShowForgotPasswordModal(true)}
               style={{ color: 'var(--accent)', fontSize: 13, background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
             >
-              set a password
+              Reset it here
             </button>
             .
           </p>
