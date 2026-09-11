@@ -42,10 +42,38 @@ class AuthServiceDB:
 
     def verify_password(self, plain_password: str, hashed_password: str) -> bool:
         """Verify a password against its hash using bcrypt directly"""
-        # Apply same truncation as hash_password for consistency
-        password_bytes = plain_password.encode("utf-8")[:72]
-        hashed_bytes = hashed_password.encode("utf-8")
-        return bcrypt.checkpw(password_bytes, hashed_bytes)
+        if not hashed_password:
+            return False
+        try:
+            # Apply same truncation as hash_password for consistency
+            password_bytes = plain_password.encode("utf-8")[:72]
+            hashed_bytes = hashed_password.encode("utf-8")
+            return bcrypt.checkpw(password_bytes, hashed_bytes)
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Password hash verification error: {e}")
+            return False
+
+    @staticmethod
+    def _invalid_credentials_error() -> Dict:
+        """Shared login failure message (includes Google signup guidance)."""
+        return {
+            "success": False,
+            "error": (
+                "Invalid email/username or password. "
+                "If you signed up with Google, use Google Sign-In or "
+                "Forgot password to set a password."
+            ),
+        }
+
+    @staticmethod
+    def _google_only_password_error() -> Dict:
+        return {
+            "success": False,
+            "error": (
+                "This account uses Google Sign-In. Continue with Google, "
+                "or use Forgot password to set a password."
+            ),
+        }
 
     def validate_username(self, username: str) -> Dict[str, str]:
         """Validate username format and availability"""
@@ -117,8 +145,13 @@ class AuthServiceDB:
         first_name: str = None,
         last_name: str = None,
         is_verified: bool = False,
+        password_set: bool = True,
     ) -> Dict:
-        """Create a new user account"""
+        """Create a new user account.
+
+        password_set=False is used for Google OAuth signups where the stored
+        hash is a random placeholder the user never chose.
+        """
         try:
             # Validate username format
             username_validation = self.validate_username(username)
@@ -147,6 +180,7 @@ class AuthServiceDB:
                     email=email,
                     username=username,
                     password_hash=hashed_password,
+                    password_set=password_set,
                     first_name=first_name,
                     last_name=last_name,
                     subscription_tier="free",
@@ -236,10 +270,7 @@ class AuthServiceDB:
         try:
             ident = (email_or_username or "").strip()
             if not ident or password is None or password == "":
-                return {
-                    "success": False,
-                    "error": "Invalid email/username or password",
-                }
+                return self._invalid_credentials_error()
 
             db = SessionLocal()
             try:
@@ -257,16 +288,14 @@ class AuthServiceDB:
                 )
 
                 if not user:
-                    return {
-                        "success": False,
-                        "error": "Invalid email/username or password",
-                    }
+                    return self._invalid_credentials_error()
+
+                # Google OAuth accounts are created with a random placeholder hash.
+                if getattr(user, "password_set", True) is False:
+                    return self._google_only_password_error()
 
                 if not self.verify_password(password, user.password_hash):
-                    return {
-                        "success": False,
-                        "error": "Invalid email/username or password",
-                    }
+                    return self._invalid_credentials_error()
 
                 if not user.is_active:
                     return {"success": False, "error": "Account is deactivated"}
@@ -294,6 +323,7 @@ class AuthServiceDB:
                         ),
                         "avatar_url": user.avatar_url,
                         "avatar_thumbnail": user.avatar_thumbnail,
+                        "password_set": bool(getattr(user, "password_set", True)),
                     },
                     "access_token": access_token,
                     "token_type": "bearer",
@@ -507,11 +537,14 @@ class AuthServiceDB:
         return user
 
     async def get_user_by_email(self, email: str) -> Optional[Dict]:
-        """Get user by email address"""
+        """Get user by email address (case-insensitive)."""
         try:
             db = SessionLocal()
             try:
-                user = db.query(User).filter(User.email == email).first()
+                lowered = (email or "").strip().lower()
+                if not lowered:
+                    return None
+                user = db.query(User).filter(func.lower(User.email) == lowered).first()
                 if user:
                     return {
                         "id": user.id,
@@ -522,6 +555,7 @@ class AuthServiceDB:
                         "is_verified": user.is_verified,
                         "is_admin": user.is_admin,
                         "password_hash": user.password_hash,
+                        "password_set": bool(getattr(user, "password_set", True)),
                         "verification_token": user.verification_token,
                         "reset_token": user.reset_token,
                         "reset_token_expires": user.reset_token_expires,
@@ -810,6 +844,7 @@ class AuthServiceDB:
 
                 if "password" in update_data:
                     user.password_hash = self.hash_password(update_data["password"])
+                    user.password_set = True
 
                 if "subscription_tier" in update_data:
                     # Validate subscription tier
@@ -1061,6 +1096,7 @@ class AuthServiceDB:
 
                 # Reset password
                 user.password_hash = self.hash_password(new_password)
+                user.password_set = True
                 user.reset_token = None  # Clear reset token
                 user.reset_token_expires = None
                 db.commit()

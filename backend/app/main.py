@@ -1708,7 +1708,9 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
             if not username:
                 username = f"user_{sec.token_hex(4)}"
 
-            # Since OAuth users don't have passwords, we'll generate a random one
+            # OAuth users do not choose a password; mark password_set=False so
+            # email/password login can return a clear "use Google / forgot password"
+            # error instead of a generic 401 against a random hash.
             random_password = sec.token_urlsafe(32)
 
             result = await auth_service_db.create_user(
@@ -1718,6 +1720,7 @@ async def google_oauth_callback(code: str, state: str, db: Session = Depends(get
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
                 is_verified=user_info.get("email_verified", False),
+                password_set=False,
             )
 
             if not result["success"]:
@@ -1800,7 +1803,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
             if not username:
                 username = f"user_{sec.token_hex(4)}"
 
-            # Since OAuth users don't have passwords, we'll generate a random one
+            # OAuth users do not choose a password; mark password_set=False.
             random_password = sec.token_urlsafe(32)
 
             result = await auth_service_db.create_user(
@@ -1810,6 +1813,7 @@ async def verify_google_token(data: dict, db: Session = Depends(get_db)):
                 first_name=user_info.get("first_name", ""),
                 last_name=user_info.get("last_name", ""),
                 is_verified=user_info.get("email_verified", False),
+                password_set=False,
             )
 
             if not result["success"]:
@@ -2456,6 +2460,7 @@ async def reset_user_password(user_id: int, admin_user: dict = Depends(require_a
                     )
 
                 user.password_hash = hashed_password
+                user.password_set = True
                 db.commit()
 
                 return {

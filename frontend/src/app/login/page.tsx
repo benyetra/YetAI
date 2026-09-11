@@ -60,8 +60,12 @@ function LoginPageContent() {
     setError('');
     try {
       const result = await login(emailOrUsername, password);
-      if (result.success) router.push(postLoginPath);
-      else setError(result.message || 'Login failed. Please check your credentials.');
+      if (result.success) {
+        // Full reload so AuthProvider bootstraps from localStorage (same as Google OAuth).
+        window.location.href = postLoginPath;
+        return;
+      }
+      setError(result.message || 'Login failed. Please check your credentials.');
     } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
@@ -227,6 +231,18 @@ function LoginPageContent() {
           <button type="submit" className="btn btn-primary" disabled={isLoading} style={{ width: '100%' }}>
             {isLoading ? 'Signing in…' : 'Log in'}
           </button>
+
+          <p className="dim" style={{ textAlign: 'center', fontSize: 13, margin: 0 }}>
+            Signed up with Google? Use the button above, or{' '}
+            <button
+              type="button"
+              onClick={() => setShowForgotPasswordModal(true)}
+              style={{ color: 'var(--accent)', fontSize: 13, background: 'none', border: 0, padding: 0, cursor: 'pointer' }}
+            >
+              set a password
+            </button>
+            .
+          </p>
 
           <p className="dim" style={{ textAlign: 'center', fontSize: 13, margin: 0 }}>
             Not registered?{' '}
