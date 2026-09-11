@@ -15,13 +15,14 @@ Projector `run()` without injected `feature_rows` calls
    `stats_player_week_{season}.parquet` (maps `team` → `recent_team`), then fall
    back up to 3 seasons and use all prior-season weeks as priors (needed for Week 1).
 2. `import_schedules` — REG matchups, kickoff date, roof/wind (requested season)
-3. `import_depth_charts` — skill-position **starters** (`depth_team=1`; excludes
-   KR/PR). Filtered to the latest ``dt`` snapshot (same approach as QB starters).
-   Depth ``club_code`` is the TEAM source of truth; usage may enrich name/position
-   but does **not** overwrite depth team (avoids stale ``recent_team`` from
-   prior-season weekly fallback / pre-trade games). Remaining slots fill from
-   prior usage up to `{QB:1, RB:2, WR:3, TE:1}`. If depth is empty, usage top-N
-   is the whole universe.
+3. `import_depth_charts` — offensive skill depth through board caps
+   (`QB:1, RB:2, WR:3, TE:1`; excludes KR/PR). Filtered to the latest ``dt``
+   snapshot (same approach as QB starters). Depth ``club_code`` is the TEAM
+   source of truth; usage may enrich name/position but does **not** overwrite
+   depth team (avoids stale ``recent_team`` from prior-season weekly fallback /
+   pre-trade games). Remaining slots fill from prior usage up to the same caps,
+   remapping filled players to depth club when present. If depth is empty,
+   usage top-N is the whole universe.
 4. YAML schemes — opponent cover / man-zone / pressure tags
 5. Optional `pred_nfl_game_lines` — implied totals / script multiplier
 6. **Injuries** — nflverse injury reports: drop Out/Doubtful (promote depth-2),
@@ -99,6 +100,10 @@ TEAM / OPP are denormalized onto `pred_nfl_anytime_td_predictions` at project
 time. Deploying this code alone does **not** rewrite existing rows — Odds attach
 also preserves team fields.
 
+A successful projector run **upserts** the new slate and **deletes** same
+`season`/`week` rows whose `player_id` is not on that slate (`deleted_stale` in
+the Celery result). Empty feature builds do **not** purge.
+
 After merge + backend deploy, re-run the ATD projector (schemes → projector →
 Odds), e.g.:
 
@@ -107,7 +112,37 @@ Odds), e.g.:
   `nfl-anytime-td-pipeline-midweek` Tue–Fri 11:00 ET
 
 Confirm a previously wrong-team player updates `team_name` /
-`opponent_team_name` on the next successful projector upsert.
+`opponent_team_name` on the next successful projector upsert (or is removed if
+no longer on the slate).
+
+### Manual purge (immediate prod relief)
+
+If stale week rows remain before the slate-replace deploy lands, purge rows
+older than the latest `prediction_date` for that season/week:
+
+```sql
+-- Preview
+SELECT player_name, team_name, prediction_date
+FROM pred_nfl_anytime_td_predictions
+WHERE season = 2026 AND week = 1
+  AND prediction_date < (
+    SELECT MAX(prediction_date)
+    FROM pred_nfl_anytime_td_predictions
+    WHERE season = 2026 AND week = 1
+  )
+ORDER BY player_name;
+
+-- Apply
+DELETE FROM pred_nfl_anytime_td_predictions
+WHERE season = 2026 AND week = 1
+  AND prediction_date < (
+    SELECT MAX(prediction_date)
+    FROM pred_nfl_anytime_td_predictions
+    WHERE season = 2026 AND week = 1
+  );
+```
+
+Or: `PYTHONPATH=. python scripts/purge_stale_nfl_anytime_td_week.py --season 2026 --week 1 --dry-run`.
 
 If Celery logs show `anytime TD feature build failed` with
 `float() argument must be a string or a real number, not 'NoneType'`, the

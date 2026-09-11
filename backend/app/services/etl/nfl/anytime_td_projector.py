@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Iterable
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import NFLAnytimeTDPredictions
@@ -142,6 +142,34 @@ def build_upsert_row(
     }
 
 
+def delete_stale_week_predictions(
+    db: Any,
+    *,
+    season: int,
+    week: int,
+    keep_player_ids: Iterable[str],
+) -> int:
+    """Delete same-season/week ATD rows whose player_id is not on the new slate.
+
+    Upsert alone leaves prior-run players (wrong TEAM after trades/depth
+    changes) on the board because conflict keys are (season, week, player_id).
+    Only call after a successful non-empty project for that season/week.
+    """
+    keep = {str(pid) for pid in keep_player_ids if pid}
+    if not keep:
+        return 0
+    deleted = (
+        db.query(NFLAnytimeTDPredictions)
+        .filter(
+            NFLAnytimeTDPredictions.season == season,
+            NFLAnytimeTDPredictions.week == week,
+            NFLAnytimeTDPredictions.player_id.notin_(keep),
+        )
+        .delete(synchronize_session=False)
+    )
+    return int(deleted or 0)
+
+
 def _try_build_feature_rows(season: int, week: int) -> list[dict[str, Any]]:
     """Build feature rows from nflverse weekly/schedules/depth + YAML schemes."""
     from app.services.etl.nfl.anytime_td_features import (
@@ -190,6 +218,9 @@ def run(
 
     Pass ``feature_rows`` in tests. When ``feature_rows`` is None, builds rows
     from nflverse weekly/schedules/depth charts plus YAML scheme tags.
+
+    After a non-empty upsert, deletes same-season/week rows whose player_id is
+    not in the new slate so stale wrong-team players leave the board.
     """
     resolved_season = resolve_nfl_season(season)
     resolved_week = week if week is not None else get_current_nfl_week(resolved_season)
@@ -204,6 +235,7 @@ def run(
         return {
             "status": "ok",
             "predictions": 0,
+            "deleted_stale": 0,
             "season": resolved_season,
             "week": resolved_week,
         }
@@ -213,6 +245,7 @@ def run(
         build_upsert_row(r, season=resolved_season, week=resolved_week, now=now)
         for r in rows
     ]
+    keep_ids = {str(r["player_id"]) for r in upsert_rows if r.get("player_id")}
 
     db = SessionLocal()
     try:
@@ -223,10 +256,24 @@ def run(
             conflict_keys=["season", "week", "player_id"],
             update_keys=ANYTIME_TD_UPSERT_UPDATE_KEYS,
         )
+        deleted = delete_stale_week_predictions(
+            db,
+            season=resolved_season,
+            week=resolved_week,
+            keep_player_ids=keep_ids,
+        )
         db.commit()
+        if deleted:
+            logger.info(
+                "anytime TD purged %s stale row(s) for season=%s week=%s",
+                deleted,
+                resolved_season,
+                resolved_week,
+            )
         return {
             "status": "ok",
             "predictions": len(upsert_rows),
+            "deleted_stale": deleted,
             "season": resolved_season,
             "week": resolved_week,
         }

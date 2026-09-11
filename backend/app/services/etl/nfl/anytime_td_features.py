@@ -12,7 +12,7 @@ from app.services.etl.nfl.team_names import _CANONICAL_BY_ABBR, normalize_team_n
 logger = logging.getLogger(__name__)
 
 SKILL_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
-# Starters only: depth_team == 1 (exclude backups / depth 2+)
+# Canonical depth_team for usage-only fallbacks (no depth row).
 _STARTER_DEPTH_TEAM = 1
 # Special-teams depth slots often tagged depth_team=1; exclude from TD board.
 _SPECIAL_TEAMS_DEPTH_POSITIONS = frozenset(
@@ -20,6 +20,9 @@ _SPECIAL_TEAMS_DEPTH_POSITIONS = frozenset(
 )
 # When depth charts are missing, keep top-N prior-usage players per team/pos.
 _USAGE_STARTER_SLOTS: dict[str, int] = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
+# Include depth chart rows through this depth_team (aligned with usage slots)
+# so RB2 / WR2–3 land on the board with the correct club (not prior-team usage).
+_DEPTH_TEAM_CAP: dict[str, int] = {"QB": 1, "RB": 2, "WR": 3, "TE": 1}
 _MIN_PRIOR_TOUCHES = 3.0  # touches floor for usage-based starter fallback
 # League-average priors (REG season, per-game unless noted)
 _TEAM_RZ_TRIPS_PRIOR = 3.2
@@ -522,16 +525,66 @@ def _player_rz_share_from_usage(
     return _clamp(0.55 * share + 0.45 * prior, 0.02, 0.55)
 
 
-def _offensive_starter_depth_ok(raw: dict[str, Any]) -> bool:
-    """True when depth chart row is an offensive starter (not ST/return)."""
-    depth_team = int(_num(raw, "depth_team", "pos_rank", default=99))
-    if depth_team != _STARTER_DEPTH_TEAM:
+def _offensive_depth_ok(raw: dict[str, Any]) -> bool:
+    """True when depth chart row is offensive skill within board depth caps.
+
+    Includes RB2 / WR2–3 (see ``_DEPTH_TEAM_CAP``) so usage-stale trades like
+    an RB2 still enter the universe under the depth club. Excludes ST/return
+    slots even when tagged depth_team=1.
+    """
+    pos = _str(raw, "position", "pos_abb").upper()
+    if pos not in SKILL_POSITIONS:
         return False
     depth_pos = _str(raw, "depth_position", "pos_abb", "position").upper()
     if depth_pos in _SPECIAL_TEAMS_DEPTH_POSITIONS:
         return False
-    pos = _str(raw, "position", "pos_abb").upper()
-    return pos in SKILL_POSITIONS
+    depth_team = int(_num(raw, "depth_team", "pos_rank", default=99))
+    cap = _DEPTH_TEAM_CAP.get(pos, _STARTER_DEPTH_TEAM)
+    return 1 <= depth_team <= cap
+
+
+def _offensive_starter_depth_ok(raw: dict[str, Any]) -> bool:
+    """Backward-compatible alias for ``_offensive_depth_ok``."""
+    return _offensive_depth_ok(raw)
+
+
+def _depth_club_by_player(
+    depth_rows: Iterable[dict[str, Any]],
+    *,
+    week: int,
+) -> dict[str, str]:
+    """Map GSIS id → depth ``club_code`` for offensive skill rows (any depth_team).
+
+    Used so usage slot-fill assigns the current depth club when prior-week
+    ``recent_team`` is stale (trades / Week-1 prior-season fallback).
+    """
+    best: dict[str, tuple[int, int, str]] = {}
+    for raw in depth_rows:
+        pos = _str(raw, "position", "pos_abb").upper()
+        if pos not in SKILL_POSITIONS:
+            continue
+        depth_pos = _str(raw, "depth_position", "pos_abb", "position").upper()
+        if depth_pos in _SPECIAL_TEAMS_DEPTH_POSITIONS:
+            continue
+        team = _str(raw, "club_code", "team").upper()
+        player_id = _str(raw, "gsis_id", "player_id")
+        if not team or not player_id:
+            continue
+        depth_week = int(_num(raw, "week", default=week))
+        if depth_week > week:
+            continue
+        depth_team = int(_num(raw, "depth_team", "pos_rank", default=99))
+        if depth_team < 1:
+            continue
+        prev = best.get(player_id)
+        # Prefer later week; within a week prefer lower depth_team (closer to starter).
+        if (
+            prev is None
+            or depth_week > prev[0]
+            or (depth_week == prev[0] and depth_team < prev[1])
+        ):
+            best[player_id] = (depth_week, depth_team, team)
+    return {pid: team for pid, (_w, _d, team) in best.items()}
 
 
 def _usage_starter_score(usage: Mapping[str, Any], pos: str) -> float:
@@ -599,11 +652,14 @@ def select_skill_universe(
     usage_by_player: dict[str, dict[str, Any]],
     week: int,
 ) -> list[dict[str, Any]]:
-    """Active QB/RB/WR/TE starters (depth_team=1) plus usage slot-fill.
+    """Active QB/RB/WR/TE depth board plus usage slot-fill.
 
-    After depth starters, remaining per-team slots are filled from prior usage
-    up to ``_USAGE_STARTER_SLOTS`` (QB:1, RB:2, WR:3, TE:1). Special-teams
-    depth slots stay excluded. If depth is empty, usage top-N is the universe.
+    Depth includes offensive rows through ``_DEPTH_TEAM_CAP`` (QB1, RB1–2,
+    WR1–3, TE1), excluding special-teams slots. After depth, remaining
+    per-team slots fill from prior usage up to ``_USAGE_STARTER_SLOTS``.
+    Usage-filled players remap to depth club when present so stale
+    ``recent_team`` does not put them on the wrong TEAM. If depth is empty,
+    usage top-N is the universe.
 
     Depth ``club_code`` / ``team`` is the source of truth for TEAM when a player
     appears on the depth chart. Prior-week usage may enrich name/position but
@@ -612,11 +668,12 @@ def select_skill_universe(
     """
     universe: dict[str, dict[str, Any]] = {}
     depth_rows = filter_depth_records_to_latest_snapshot(depth_records)
+    depth_clubs = _depth_club_by_player(depth_rows, week=week)
 
-    # Depth chart starters for latest week <= target (all WR1/RB1/… rows, not ST).
+    # Depth chart skill rows for latest week <= target (not ST).
     by_player_best: dict[str, dict[str, Any]] = {}
     for raw in depth_rows:
-        if not _offensive_starter_depth_ok(raw):
+        if not _offensive_depth_ok(raw):
             continue
         team = _str(raw, "club_code", "team").upper()
         player_id = _str(raw, "gsis_id", "player_id")
@@ -626,17 +683,27 @@ def select_skill_universe(
         if depth_week > week:
             continue
         pos = _str(raw, "position", "pos_abb").upper()
+        depth_team = int(
+            _num(raw, "depth_team", "pos_rank", default=_STARTER_DEPTH_TEAM)
+        )
         candidate = {
             "player_id": player_id,
             "player_name": _str(raw, "full_name", "football_name", "player_name"),
             "position": pos,
             "team_abbr": team,
-            "depth_team": _STARTER_DEPTH_TEAM,
+            "depth_team": depth_team,
             "depth_week": depth_week,
             "depth_position": _str(raw, "depth_position", default=pos),
         }
         prev = by_player_best.get(player_id)
-        if prev is None or candidate["depth_week"] >= prev["depth_week"]:
+        if (
+            prev is None
+            or candidate["depth_week"] > prev["depth_week"]
+            or (
+                candidate["depth_week"] == prev["depth_week"]
+                and candidate["depth_team"] < prev["depth_team"]
+            )
+        ):
             by_player_best[player_id] = candidate
 
     universe.update(by_player_best)
@@ -645,11 +712,12 @@ def select_skill_universe(
         # No depth published yet — approximate starters from prior usage.
         for player_id in starter_ids_from_usage(usage_by_player):
             usage = usage_by_player[player_id]
+            team = depth_clubs.get(player_id) or usage.get("team_abbr")
             universe[player_id] = {
                 "player_id": player_id,
                 "player_name": usage.get("player_name") or player_id,
                 "position": usage.get("position"),
-                "team_abbr": usage.get("team_abbr"),
+                "team_abbr": team,
                 "depth_team": _STARTER_DEPTH_TEAM,
                 "depth_week": week,
             }
@@ -663,7 +731,12 @@ def select_skill_universe(
                 player["player_name"] = usage["player_name"]
             if usage.get("position"):
                 player["position"] = usage["position"]
-        _fill_remaining_slots_from_usage(universe, usage_by_player, week=week)
+        _fill_remaining_slots_from_usage(
+            universe,
+            usage_by_player,
+            week=week,
+            depth_club_by_player=depth_clubs,
+        )
 
     return list(universe.values())
 
@@ -673,8 +746,14 @@ def _fill_remaining_slots_from_usage(
     usage_by_player: dict[str, dict[str, Any]],
     *,
     week: int,
+    depth_club_by_player: Mapping[str, str] | None = None,
 ) -> None:
-    """Add usage-ranked skill players until per-team `_USAGE_STARTER_SLOTS` fill."""
+    """Add usage-ranked skill players until per-team `_USAGE_STARTER_SLOTS` fill.
+
+    When ``depth_club_by_player`` has a club for the player, that club wins over
+    usage ``team_abbr`` (trades / Week-1 prior-season weekly fallback).
+    """
+    clubs = depth_club_by_player or {}
     teams_in_universe = {
         str(p.get("team_abbr") or "").upper()
         for p in universe.values()
@@ -694,7 +773,7 @@ def _fill_remaining_slots_from_usage(
         pos = str(usage.get("position") or "").upper()
         if pos not in SKILL_POSITIONS:
             continue
-        team = str(usage.get("team_abbr") or "").upper()
+        team = str(clubs.get(player_id) or usage.get("team_abbr") or "").upper()
         if not team or team not in teams_in_universe:
             continue
         touches = float(usage.get("touches_season") or 0.0)
@@ -714,7 +793,7 @@ def _fill_remaining_slots_from_usage(
                 "player_id": player_id,
                 "player_name": usage.get("player_name") or player_id,
                 "position": usage.get("position"),
-                "team_abbr": usage.get("team_abbr"),
+                "team_abbr": team,
                 "depth_team": _STARTER_DEPTH_TEAM,
                 "depth_week": week,
             }
