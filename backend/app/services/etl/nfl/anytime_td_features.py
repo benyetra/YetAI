@@ -166,39 +166,42 @@ def build_player_feature_row(
     team = normalize_team_name(team_name)
     opponent = normalize_team_name(opponent_team_name)
 
-    team_rz_trips = float(team_stats.get("team_rz_trips", _TEAM_RZ_TRIPS_PRIOR))
-    player_rz_share_raw = player_stats.get("player_rz_share")
-    player_rz_share = float(
-        player_rz_share_raw
-        if player_rz_share_raw is not None
-        else _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
+    # Use _num so explicit None values (common for week-1 / missing defense) fall
+    # back to priors — dict.get(key, default) still returns None when the key is set.
+    team_rz_trips = _num(team_stats, "team_rz_trips", default=_TEAM_RZ_TRIPS_PRIOR)
+    player_rz_share = _num(
+        player_stats,
+        "player_rz_share",
+        default=_PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18),
     )
-    conversion_raw = player_stats.get("conversion_rate")
-    conversion_rate = float(
-        conversion_raw
-        if conversion_raw is not None
-        else _CONVERSION_RATE_PRIOR.get(pos, 0.22)
+    conversion_rate = _num(
+        player_stats,
+        "conversion_rate",
+        default=_CONVERSION_RATE_PRIOR.get(pos, 0.22),
     )
     # RB goal-line role: blend conversion toward GL TD rate when available.
-    if pos == "RB" and player_stats.get("gl_td_rate") is not None:
-        gl_td = float(player_stats["gl_td_rate"])
+    if pos == "RB" and not _is_missing(player_stats.get("gl_td_rate")):
+        gl_td = _num(player_stats, "gl_td_rate")
         conversion_rate = _clamp(0.65 * conversion_rate + 0.35 * gl_td, 0.15, 0.65)
     # Prefer position-specific RZ/GL shares when PBP provided them.
-    if pos == "RB" and player_stats.get("rz_rush_share") is not None:
-        rush = float(player_stats["rz_rush_share"])
-        gl_s = player_stats.get("gl_carry_share")
-        if gl_s is not None:
-            player_rz_share = _clamp(0.70 * rush + 0.30 * float(gl_s), 0.02, 0.55)
+    if pos == "RB" and not _is_missing(player_stats.get("rz_rush_share")):
+        rush = _num(player_stats, "rz_rush_share")
+        if not _is_missing(player_stats.get("gl_carry_share")):
+            gl_s = _num(player_stats, "gl_carry_share")
+            player_rz_share = _clamp(0.70 * rush + 0.30 * gl_s, 0.02, 0.55)
         else:
             player_rz_share = _clamp(rush, 0.02, 0.55)
-    elif pos in {"WR", "TE"} and player_stats.get("rz_target_share") is not None:
-        player_rz_share = _clamp(float(player_stats["rz_target_share"]), 0.02, 0.55)
+    elif pos in {"WR", "TE"} and not _is_missing(player_stats.get("rz_target_share")):
+        player_rz_share = _clamp(
+            _num(player_stats, "rz_target_share"),
+            0.02,
+            0.55,
+        )
 
-    tds_allowed_raw = opponent_defense.get("tds_allowed_vs_pos")
-    tds_allowed = float(
-        tds_allowed_raw
-        if tds_allowed_raw is not None
-        else _TDS_ALLOWED_PRIOR.get(pos, 0.45)
+    tds_allowed = _num(
+        opponent_defense,
+        "tds_allowed_vs_pos",
+        default=_TDS_ALLOWED_PRIOR.get(pos, 0.45),
     )
     league_avg_tds = _TDS_ALLOWED_PRIOR.get(pos, 0.45)
     scheme_for_def = dict(scheme) if scheme else {}
@@ -206,15 +209,11 @@ def build_player_feature_row(
     defense_mult = defense_multiplier(scheme_for_def, tds_allowed, league_avg_tds)
 
     outdoor = bool(weather.get("outdoor", False))
-    wind_mph = weather.get("wind_mph")
-    wind_val = float(wind_mph) if wind_mph is not None else None
+    wind_val = _optional_float(weather.get("wind_mph"))
     precip = bool(weather.get("precip", False))
     weather_mult = weather_multiplier(outdoor=outdoor, wind_mph=wind_val, precip=precip)
 
-    implied_team_total = game_env.get("implied_team_total")
-    implied_team_total_f = (
-        float(implied_team_total) if implied_team_total is not None else None
-    )
+    implied_team_total_f = _optional_float(game_env.get("implied_team_total"))
     script_mult = script_multiplier(implied_team_total=implied_team_total_f)
 
     cover_base = (scheme or {}).get("cover_base")
@@ -224,9 +223,10 @@ def build_player_feature_row(
         cover_base, man_zone_lean, pressure_lean, pos
     )
 
-    spread = game_env.get("spread")
-    implied_total = game_env.get("implied_total")
-    implied_margin = float(spread) if spread is not None else None
+    implied_margin = _optional_float(game_env.get("spread"))
+    implied_total_f = _optional_float(game_env.get("implied_total"))
+
+    snap_pct = _num(player_stats, "snap_pct", default=_SNAP_PCT_PRIOR)
 
     return {
         # metadata
@@ -245,7 +245,7 @@ def build_player_feature_row(
         "weather_mult": weather_mult,
         "script_mult": script_mult,
         # usage
-        "snap_pct": player_stats.get("snap_pct", _SNAP_PCT_PRIOR),
+        "snap_pct": snap_pct,
         "targets_l3": player_stats.get("targets_l3"),
         "carries_l3": player_stats.get("carries_l3"),
         "routes_l3": player_stats.get("routes_l3"),
@@ -257,24 +257,26 @@ def build_player_feature_row(
         "td_season": player_stats.get("td_season"),
         # availability
         "injury_status": player_stats.get("injury_status"),
-        "availability_mult": float(player_stats.get("availability_mult") or 1.0),
+        "availability_mult": _num(player_stats, "availability_mult", default=1.0),
         # red zone / goal line
         "gl_carries": player_stats.get("gl_carries"),
         "rz_targets": player_stats.get("rz_targets"),
-        "team_rz_pass_rate": float(
-            team_stats.get("team_rz_pass_rate", _TEAM_RZ_PASS_RATE_PRIOR)
+        "team_rz_pass_rate": _num(
+            team_stats, "team_rz_pass_rate", default=_TEAM_RZ_PASS_RATE_PRIOR
         ),
         # offense tendencies
-        "early_down_pass_pct": float(
-            team_stats.get("early_down_pass_pct", _EARLY_DOWN_PASS_PRIOR)
+        "early_down_pass_pct": _num(
+            team_stats, "early_down_pass_pct", default=_EARLY_DOWN_PASS_PRIOR
         ),
         "implied_margin": implied_margin,
         # opponent defense aggregates
         "tds_allowed_vs_pos": tds_allowed,
-        "rz_td_rate_allowed": float(
-            opponent_defense.get("rz_td_rate_allowed", _RZ_TD_RATE_ALLOWED_PRIOR)
+        "rz_td_rate_allowed": _num(
+            opponent_defense,
+            "rz_td_rate_allowed",
+            default=_RZ_TD_RATE_ALLOWED_PRIOR,
         ),
-        "def_epa": float(opponent_defense.get("def_epa", _DEF_EPA_PRIOR)),
+        "def_epa": _num(opponent_defense, "def_epa", default=_DEF_EPA_PRIOR),
         # scheme tags
         "cover_base": cover_base,
         "man_zone_lean": man_zone_lean,
@@ -285,7 +287,7 @@ def build_player_feature_row(
         "wind_mph": wind_val,
         "precip": precip,
         # game environment
-        "implied_total": float(implied_total) if implied_total is not None else None,
+        "implied_total": implied_total_f,
         "spread": implied_margin,
         "implied_team_total": implied_team_total_f,
     }
@@ -298,6 +300,16 @@ def _is_missing(value: Any) -> bool:
         return bool(math.isnan(float(value)))
     except (TypeError, ValueError):
         return False
+
+
+def _optional_float(value: Any) -> float | None:
+    """Coerce to float, or None when missing / non-numeric (never raises)."""
+    if _is_missing(value):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _num(row: dict[str, Any], *keys: str, default: float = 0.0) -> float:

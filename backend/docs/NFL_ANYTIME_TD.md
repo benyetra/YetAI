@@ -109,6 +109,12 @@ Odds), e.g.:
 Confirm a previously wrong-team player updates `team_name` /
 `opponent_team_name` on the next successful projector upsert.
 
+If Celery logs show `anytime TD feature build failed` with
+`float() argument must be a string or a real number, not 'NoneType'`, the
+projector wrote **zero** rows and left stale teams. That crash is fixed by
+coercing explicit ``None`` defense/team numerics to priors in
+`build_player_feature_row` — redeploy before re-enqueueing.
+
 ## Enable UI (prod)
 
 Walk-forward **2026-09-04** (`--seasons 2023,2024,2025`, weeks 2–18, expanding
