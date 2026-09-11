@@ -222,7 +222,7 @@ def test_build_weekly_feature_rows_week1_with_empty_defense_stats():
     assert all(r["team_name"] for r in rows)
 
 
-def test_select_universe_starters_only_from_depth():
+def test_select_universe_includes_rb2_excludes_st_and_deep_backups():
     depth = [
         {
             "gsis_id": "rb1",
@@ -243,11 +243,29 @@ def test_select_universe_starters_only_from_depth():
             "week": 3,
         },
         {
+            "gsis_id": "rb3",
+            "full_name": "Third RB",
+            "position": "RB",
+            "club_code": "KC",
+            "depth_team": 3,
+            "depth_position": "RB",
+            "week": 3,
+        },
+        {
             "gsis_id": "qb1",
             "full_name": "QB One",
             "position": "QB",
             "club_code": "KC",
             "depth_team": 1,
+            "depth_position": "QB",
+            "week": 3,
+        },
+        {
+            "gsis_id": "qb2",
+            "full_name": "Backup QB",
+            "position": "QB",
+            "club_code": "KC",
+            "depth_team": 2,
             "depth_position": "QB",
             "week": 3,
         },
@@ -274,9 +292,11 @@ def test_select_universe_starters_only_from_depth():
     universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=3)
     ids = {p["player_id"] for p in universe}
     assert "rb1" in ids
+    assert "rb2" in ids  # RB2 on board with depth club
     assert "qb1" in ids
     assert "wr1" in ids
-    assert "rb2" not in ids  # backup depth
+    assert "rb3" not in ids  # beyond RB depth cap
+    assert "qb2" not in ids  # QB backups stay off the board
     assert "wr_kr" not in ids  # special teams depth_position
 
 
@@ -394,6 +414,122 @@ def test_select_universe_prefers_depth_team_over_stale_usage():
     assert by_id["mason"]["team_abbr"] == "MIN"
     # Usage may still enrich the display name.
     assert by_id["dowdle"]["player_name"] == "Rico Dowdle"
+
+
+def test_select_universe_includes_rb2_with_depth_club_over_stale_usage():
+    """PIT RB2 Dowdle enters the slate as PIT even when usage still says CAR."""
+    depth = [
+        {
+            "gsis_id": "warren",
+            "full_name": "Jaylen Warren",
+            "position": "RB",
+            "club_code": "PIT",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "dowdle",
+            "full_name": "Rico Dowdle",
+            "position": "RB",
+            "club_code": "PIT",
+            "depth_team": 2,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "dowdle",
+            "full_name": "Rico Dowdle",
+            "position": "RB",
+            "club_code": "PIT",
+            "depth_team": 1,
+            "depth_position": "KR",
+            "week": 1,
+        },
+        {
+            "gsis_id": "rodgers",
+            "full_name": "Aaron Rodgers",
+            "position": "QB",
+            "club_code": "PIT",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 1,
+        },
+    ]
+    usage = {
+        "dowdle": {
+            "player_id": "dowdle",
+            "player_name": "Rico Dowdle",
+            "position": "RB",
+            "team_abbr": "CAR",  # stale prior club from weekly fallback
+            "touches_season": 200.0,
+            "targets_l3": 6.0,
+            "carries_l3": 80.0,
+        },
+        "warren": {
+            "player_id": "warren",
+            "player_name": "Jaylen Warren",
+            "position": "RB",
+            "team_abbr": "PIT",
+            "touches_season": 150.0,
+            "targets_l3": 8.0,
+            "carries_l3": 60.0,
+        },
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    by_id = {p["player_id"]: p for p in universe}
+    assert "dowdle" in by_id
+    assert by_id["dowdle"]["team_abbr"] == "PIT"
+    assert by_id["dowdle"]["depth_team"] == 2
+    assert by_id["warren"]["team_abbr"] == "PIT"
+
+
+def test_usage_fill_remaps_team_via_depth_club():
+    """Usage slot-fill uses depth club when the player is only depth_team>cap elsewhere."""
+    depth = [
+        {
+            "gsis_id": "rb1",
+            "full_name": "Star RB",
+            "position": "RB",
+            "club_code": "PIT",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "qb1",
+            "full_name": "QB One",
+            "position": "QB",
+            "club_code": "PIT",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 1,
+        },
+        # Player is on depth as RB3 only — not auto-included, but club map still applies.
+        {
+            "gsis_id": "rb_fill",
+            "full_name": "Usage RB",
+            "position": "RB",
+            "club_code": "PIT",
+            "depth_team": 3,
+            "depth_position": "RB",
+            "week": 1,
+        },
+    ]
+    usage = {
+        "rb_fill": {
+            "player_id": "rb_fill",
+            "player_name": "Usage RB",
+            "position": "RB",
+            "team_abbr": "CAR",
+            "touches_season": 80.0,
+            "targets_l3": 2.0,
+            "carries_l3": 40.0,
+        },
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    by_id = {p["player_id"]: p for p in universe}
+    assert by_id["rb_fill"]["team_abbr"] == "PIT"
 
 
 def test_filter_depth_records_keeps_latest_dt_snapshot_only():

@@ -15,6 +15,7 @@ from app.services.etl.nfl.anytime_td_projector import (
     ANYTIME_TD_UPSERT_UPDATE_KEYS,
     MODEL_VERSION,
     build_upsert_row,
+    delete_stale_week_predictions,
     project_prediction_from_features,
     run,
 )
@@ -140,18 +141,79 @@ def test_run_with_injected_feature_rows_upserts():
             return_value=mock_db,
         ),
         patch("app.services.etl.nfl.anytime_td_projector.upsert_many") as um,
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.delete_stale_week_predictions",
+            return_value=0,
+        ) as purge,
     ):
         um.return_value = 1
         result = run(season=2025, week=5, feature_rows=feature_rows)
 
     assert result["status"] == "ok"
     assert result["predictions"] == 1
+    assert result["deleted_stale"] == 0
     um.assert_called_once()
     _, kwargs = um.call_args
     assert kwargs["update_keys"] == ANYTIME_TD_UPSERT_UPDATE_KEYS
     assert "created_at" not in kwargs["update_keys"]
+    purge.assert_called_once()
+    purge_kwargs = purge.call_args.kwargs
+    assert purge_kwargs["season"] == 2025
+    assert purge_kwargs["week"] == 5
+    assert purge_kwargs["keep_player_ids"] == {"p1"}
     mock_db.commit.assert_called_once()
     mock_db.close.assert_called_once()
+
+
+def test_run_purges_stale_same_week_players():
+    feature_rows = [_sample_feature_row(player_id="p_new")]
+    mock_db = MagicMock()
+
+    with (
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch("app.services.etl.nfl.anytime_td_projector.upsert_many") as um,
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.delete_stale_week_predictions",
+            return_value=3,
+        ) as purge,
+    ):
+        um.return_value = 1
+        result = run(season=2026, week=1, feature_rows=feature_rows)
+
+    assert result["predictions"] == 1
+    assert result["deleted_stale"] == 3
+    purge.assert_called_once()
+    assert purge.call_args.kwargs["keep_player_ids"] == {"p_new"}
+
+
+def test_delete_stale_week_predictions_filters_notin_keep():
+    mock_db = MagicMock()
+    mock_query = MagicMock()
+    mock_db.query.return_value = mock_query
+    mock_query.filter.return_value = mock_query
+    mock_query.delete.return_value = 2
+
+    deleted = delete_stale_week_predictions(
+        mock_db,
+        season=2026,
+        week=1,
+        keep_player_ids=["keep1", "keep2"],
+    )
+    assert deleted == 2
+    mock_db.query.assert_called_once()
+    mock_query.delete.assert_called_once_with(synchronize_session=False)
+
+
+def test_delete_stale_week_predictions_noop_when_keep_empty():
+    mock_db = MagicMock()
+    assert (
+        delete_stale_week_predictions(mock_db, season=2026, week=1, keep_player_ids=[])
+        == 0
+    )
+    mock_db.query.assert_not_called()
 
 
 def test_run_without_rows_when_feature_build_empty():
@@ -163,6 +225,7 @@ def test_run_without_rows_when_feature_build_empty():
 
     assert result["status"] == "ok"
     assert result["predictions"] == 0
+    assert result["deleted_stale"] == 0
 
 
 def test_try_build_feature_rows_delegates_to_nflverse_builder():
