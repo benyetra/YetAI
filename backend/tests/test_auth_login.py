@@ -150,3 +150,95 @@ class TestAuthServicePasswordSet:
         assert result["user"]["id"] == 2
         assert result["access_token"] == "tok"
         svc.generate_token.assert_called_once_with(2)
+
+
+class TestForgotPasswordReset:
+    @patch("app.services.auth_service_db.email_service")
+    @patch("app.services.auth_service_db.SessionLocal")
+    def test_request_reset_is_case_insensitive(self, mock_session_local, mock_email):
+        user = MagicMock()
+        user.id = 1
+        user.email = "Ben@YetAI.app"
+        user.first_name = "Ben"
+        mock_session_local.return_value = _mock_db_with_users([user])
+        mock_email.is_configured.return_value = True
+        mock_email.send_password_reset_email.return_value = True
+
+        svc = AuthServiceDB.__new__(AuthServiceDB)
+        result = asyncio.get_event_loop().run_until_complete(
+            svc.request_password_reset("ben@yetai.app")
+        )
+        assert result["success"] is True
+        mock_email.send_password_reset_email.assert_called_once()
+        kwargs = mock_email.send_password_reset_email.call_args.kwargs
+        assert kwargs["to_email"] == "Ben@YetAI.app"
+        assert kwargs["reset_token"]
+
+    @patch("app.services.auth_service_db.email_service")
+    @patch("app.services.auth_service_db.SessionLocal")
+    def test_request_reset_surfaces_send_failure(self, mock_session_local, mock_email):
+        user = MagicMock()
+        user.id = 1
+        user.email = "ben@yetai.app"
+        user.first_name = "Ben"
+        mock_session_local.return_value = _mock_db_with_users([user])
+        mock_email.is_configured.return_value = True
+        mock_email.send_password_reset_email.return_value = False
+
+        svc = AuthServiceDB.__new__(AuthServiceDB)
+        result = asyncio.get_event_loop().run_until_complete(
+            svc.request_password_reset("ben@yetai.app")
+        )
+        assert result["success"] is False
+        assert result["error"] == "email_send_failed"
+
+    @patch("app.services.auth_service_db.email_service")
+    def test_request_reset_surfaces_unconfigured_provider(self, mock_email):
+        mock_email.is_configured.return_value = False
+        svc = AuthServiceDB.__new__(AuthServiceDB)
+        result = asyncio.get_event_loop().run_until_complete(
+            svc.request_password_reset("ben@yetai.app")
+        )
+        assert result["success"] is False
+        assert result["error"] == "email_provider_unavailable"
+
+    @patch("app.main.is_service_available", return_value=True)
+    @patch("app.main.get_service")
+    def test_forgot_password_endpoint_returns_503_on_send_failure(
+        self, mock_get_service, _available
+    ):
+        auth = MagicMock()
+        auth.request_password_reset = AsyncMock(
+            return_value={"success": False, "error": "email_send_failed"}
+        )
+        mock_get_service.return_value = auth
+        client = TestClient(production_app)
+
+        response = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "ben@yetai.app"},
+        )
+        assert response.status_code == 503
+        assert "Unable to send password reset email" in response.json()["detail"]
+
+    @patch("app.main.is_service_available", return_value=True)
+    @patch("app.main.get_service")
+    def test_forgot_password_endpoint_stays_opaque_for_unknown_email(
+        self, mock_get_service, _available
+    ):
+        auth = MagicMock()
+        auth.request_password_reset = AsyncMock(
+            return_value={
+                "success": True,
+                "message": "If the email exists, a reset link has been sent",
+            }
+        )
+        mock_get_service.return_value = auth
+        client = TestClient(production_app)
+
+        response = client.post(
+            "/api/auth/forgot-password",
+            json={"email": "nobody@yetai.app"},
+        )
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"

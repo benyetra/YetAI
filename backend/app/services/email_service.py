@@ -17,14 +17,16 @@ class EmailService:
 
     def __init__(self):
         # Brevo API configuration
-        self.api_key = os.getenv("BREVO_API_KEY", "")
-        self.from_email = os.getenv("FROM_EMAIL", "noreply@yetai.com")
+        self.api_key = (os.getenv("BREVO_API_KEY") or "").strip()
+        # Default must be a Brevo-verified sender on the yetai.app domain.
+        self.from_email = (
+            os.getenv("FROM_EMAIL") or "noreply@yetai.app"
+        ).strip() or "noreply@yetai.app"
         self.from_name = "YetAI Sports Betting"
         self.api_url = "https://api.brevo.com/v3/smtp/email"
 
-        # Use environment-aware frontend URL
-        frontend_urls = settings.get_frontend_urls()
-        self.app_url = frontend_urls[0] if frontend_urls else "http://localhost:3000"
+        # Prefer explicit FRONTEND_URL — ALLOWED_ORIGINS[0] can be a non-app origin.
+        self.app_url = self._resolve_app_url()
 
         # Log-only mode when API key missing in non-production only
         self.dev_mode = not self.api_key and settings.ENVIRONMENT != "production"
@@ -32,7 +34,7 @@ class EmailService:
         if not self.api_key:
             if settings.ENVIRONMENT == "production":
                 logger.error(
-                    "BREVO_API_KEY is not set in production — verification emails will fail"
+                    "BREVO_API_KEY is not set in production — verification/reset emails will fail"
                 )
             else:
                 logger.info(
@@ -40,8 +42,28 @@ class EmailService:
                 )
         else:
             logger.info(
-                f"Email service initialized with Brevo API for {self.from_email}"
+                f"Email service initialized with Brevo API for {self.from_email} "
+                f"(reset links → {self.app_url})"
             )
+
+    @staticmethod
+    def _resolve_app_url() -> str:
+        """Canonical web app origin for links in outbound email."""
+        if settings.FRONTEND_URL:
+            return settings.FRONTEND_URL.rstrip("/")
+        if settings.ENVIRONMENT == "production":
+            return "https://yetai.app"
+        if settings.ENVIRONMENT == "staging":
+            return "https://staging.yetai.app"
+        frontend_urls = settings.get_frontend_urls()
+        for url in frontend_urls:
+            if "localhost" in url or "127.0.0.1" in url:
+                return url.rstrip("/")
+        return "http://localhost:3000"
+
+    def is_configured(self) -> bool:
+        """True when production sends are possible (or dev log-only mode)."""
+        return bool(self.api_key) or self.dev_mode
 
     def send_email(
         self,

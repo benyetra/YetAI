@@ -30,7 +30,7 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
         body: JSON.stringify({ email }),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => ({}));
 
       if (response.ok) {
         setStatus('success');
@@ -43,9 +43,20 @@ export default function ForgotPasswordModal({ isOpen, onClose }: ForgotPasswordM
           setStatus('idle');
           setMessage('');
         }, 3000);
+      } else if (response.status === 503) {
+        setStatus('error');
+        setMessage(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Password reset email is temporarily unavailable. Please try again later or contact support.'
+        );
       } else {
         setStatus('error');
-        setMessage(data.detail || 'Failed to send reset email. Please try again.');
+        setMessage(
+          typeof data.detail === 'string'
+            ? data.detail
+            : 'Failed to send reset email. Please try again.'
+        );
       }
     } catch (error) {
       setStatus('error');

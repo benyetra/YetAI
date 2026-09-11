@@ -546,7 +546,7 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
 
 @app.get("/api/test/smtp")
 async def test_smtp_connection():
-    """Test SMTP connection to debug email issues"""
+    """Test email provider configuration (Brevo API + legacy SMTP socket checks)."""
     import smtplib
     import socket
 
@@ -554,10 +554,20 @@ async def test_smtp_connection():
     smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER", "")
 
+    from app.services.email_service import email_service
+
     results = {
         "smtp_host": smtp_host,
         "smtp_port": smtp_port,
         "smtp_user_set": bool(smtp_user),
+        "brevo": {
+            "api_key_set": bool(email_service.api_key),
+            "configured": email_service.is_configured(),
+            "from_email": email_service.from_email,
+            "app_url": email_service.app_url,
+            "environment": settings.ENVIRONMENT,
+            "dev_mode": email_service.dev_mode,
+        },
         "tests": {},
     }
 
@@ -1578,14 +1588,24 @@ async def forgot_password(request: dict):
         )
 
     try:
-        email = request.get("email")
+        email = (request.get("email") or "").strip()
         if not email:
             raise HTTPException(status_code=400, detail="Email is required")
 
         auth_service = get_service("auth_service")
         result = await auth_service.request_password_reset(email)
 
-        # Always return success to prevent email enumeration
+        # Provider/send failure: do not pretend a reset email was sent.
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "Unable to send password reset email right now. "
+                    "Please try again shortly or contact support."
+                ),
+            )
+
+        # Unknown address (and successful sends): same message to prevent enumeration.
         return {
             "status": "success",
             "message": "If the email exists, a password reset link has been sent",
