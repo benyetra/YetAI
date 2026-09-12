@@ -118,6 +118,9 @@ def main(argv: list[str] | None = None) -> int:
         ),
         "hier_p_family": "poisson_except_rb_negbin",
         "rb_td_dispersion": RB_TD_DISPERSION,
+        # Must match anytime_td_calibration.CONVERSION_RATE_FAMILY_RZ_GL so
+        # inference will blend this artifact (post-#125 RZ/GL λ semantics).
+        "conversion_rate_family": "rz_gl",
     }
     mpath, jpath = save_calibration_artifact(
         model,

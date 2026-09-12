@@ -3,6 +3,12 @@
 Hierarchical λ → P is the primary model. When a calibrated artifact is present
 (or a model is injected), a HistGradientBoostingClassifier maps hierarchical
 probability + usage/RZ features → calibrated P(anytime TD).
+
+The on-disk artifact is applied only when metadata stamps
+``conversion_rate_family == "rz_gl"`` (post-#125 λ semantics). Artifacts trained
+on overall TD/touch conversion are OOD for RZ/GL rates and crush high-λ RBs
+while boosting low-λ TEs toward the train base rate (~27%). Week-1 / thin rows
+(missing ``gl_carries`` / ``rz_targets``) also skip GBM and keep hierarchical P.
 """
 
 from __future__ import annotations
@@ -29,6 +35,10 @@ DEFAULT_META_PATH = BACKEND_ROOT / "models" / "nfl" / "anytime_td_residual_gbm.j
 
 MODEL_VERSION_HIER = "hierarchical_v1"
 MODEL_VERSION_GBM = "hierarchical_v1_gbm_pos"
+
+# λ conversion_rate is RZ/GL (priors + PBP), not overall TD/touch. Artifacts
+# must declare this family before inference will blend GBM output.
+CONVERSION_RATE_FAMILY_RZ_GL = "rz_gl"
 
 CALIBRATION_FEATURE_NAMES: tuple[str, ...] = (
     "hier_p",
@@ -58,6 +68,8 @@ _MODEL: Any | None = None
 _METADATA: dict[str, Any] | None = None
 _LOAD_FAILED = False
 _LOCK = threading.Lock()
+_INCOMPATIBLE_LOGGED = False
+_THIN_SKIP_LOGGED = False
 
 
 def calibration_group_for_position(position: str | None) -> str:
@@ -75,6 +87,30 @@ def calibration_enabled() -> bool:
     if raw in {"0", "false", "no", "off"}:
         return False
     return raw in _TRUTHY or raw == ""
+
+
+def artifact_supports_current_lambda(metadata: Mapping[str, Any] | None) -> bool:
+    """True when the pickled calibrator was trained on RZ/GL conversion_rate."""
+    if not metadata:
+        return False
+    family = str(metadata.get("conversion_rate_family") or "").strip().lower()
+    return family == CONVERSION_RATE_FAMILY_RZ_GL
+
+
+def row_missing_form_for_calibration(row: Mapping[str, Any]) -> bool:
+    """True when position-critical form inputs are missing (week-1 / thin slate).
+
+    Missing values are coerced to 0.0 in the GBM vector, which the residual
+    models treat as "no GL/RZ work" and systematically mis-rank vs hierarchical λ.
+    """
+    pos = str(row.get("position") or "").strip().upper()
+    if pos == "RB":
+        return row.get("gl_carries") is None
+    if pos in {"WR", "TE"}:
+        return row.get("rz_targets") is None
+    if pos == "QB":
+        return False
+    return row.get("gl_carries") is None and row.get("rz_targets") is None
 
 
 def hierarchical_probability(
@@ -338,6 +374,7 @@ def save_calibration_artifact(
         ),
         **dict(metadata or {}),
     }
+    payload.setdefault("conversion_rate_family", CONVERSION_RATE_FAMILY_RZ_GL)
     jpath.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return mpath, jpath
 
@@ -377,12 +414,58 @@ def load_calibration_model(
             return None
 
 
+def get_calibration_metadata(
+    *,
+    force: bool = False,
+) -> dict[str, Any] | None:
+    """Return artifact metadata (loads the pickle side-effect if needed)."""
+    load_calibration_model(force=force)
+    return dict(_METADATA) if _METADATA is not None else None
+
+
 def resolve_model_version(*, gbm_applied: bool) -> str:
     return MODEL_VERSION_GBM if gbm_applied else MODEL_VERSION_HIER
 
 
+def should_apply_disk_calibration(
+    row: Mapping[str, Any],
+    *,
+    metadata: Mapping[str, Any] | None = None,
+) -> bool:
+    """Whether the on-disk residual GBM should blend this row.
+
+    Requires env enabled, RZ/GL-compatible artifact metadata, and non-thin form
+    features. Injected models in tests / walk-forward backtests bypass this via
+    ``apply_calibrated_probability`` directly.
+    """
+    global _INCOMPATIBLE_LOGGED, _THIN_SKIP_LOGGED
+    if not calibration_enabled():
+        return False
+    meta = metadata if metadata is not None else get_calibration_metadata()
+    if not artifact_supports_current_lambda(meta):
+        if not _INCOMPATIBLE_LOGGED:
+            family = (meta or {}).get("conversion_rate_family")
+            logger.warning(
+                "anytime-TD residual GBM skipped — artifact conversion_rate_family=%r "
+                "requires %r (retrain with scripts/nfl_anytime_td_train_calibration.py)",
+                family,
+                CONVERSION_RATE_FAMILY_RZ_GL,
+            )
+            _INCOMPATIBLE_LOGGED = True
+        return False
+    if row_missing_form_for_calibration(row):
+        if not _THIN_SKIP_LOGGED:
+            logger.info(
+                "anytime-TD residual GBM skipped for thin/missing form features "
+                "(e.g. week-1 null gl_carries/rz_targets); using hierarchical P"
+            )
+            _THIN_SKIP_LOGGED = True
+        return False
+    return True
+
+
 def calibrate_prediction_row(row: Mapping[str, Any]) -> tuple[float, bool]:
-    """Apply loaded GBM when enabled; returns (probability, gbm_applied)."""
+    """Apply loaded GBM when enabled and compatible; returns (probability, gbm_applied)."""
     hier = hierarchical_probability(
         team_rz_trips=_float(row, "team_rz_trips", 3.2),
         player_rz_share=_float(row, "player_rz_share", 0.15),
@@ -394,7 +477,7 @@ def calibrate_prediction_row(row: Mapping[str, Any]) -> tuple[float, bool]:
     )
     enriched = dict(row)
     enriched["td_probability"] = hier
-    if not calibration_enabled():
+    if not should_apply_disk_calibration(enriched):
         return hier, False
     bundle = load_calibration_model()
     if bundle is None:

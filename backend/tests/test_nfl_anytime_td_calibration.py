@@ -98,6 +98,8 @@ def test_residual_gbm_metadata_records_negbin_rb():
     assert meta["hier_p_family"] == "poisson_except_rb_negbin"
     assert meta["rb_td_dispersion"] == RB_TD_DISPERSION
     assert "rb" in meta["groups"]
+    # Committed artifact is pre-#125 (TD/touch); must not claim rz_gl until retrain.
+    assert meta.get("conversion_rate_family") != "rz_gl"
 
 
 def test_fit_and_apply_residual_gbm_improves_or_stays_valid():

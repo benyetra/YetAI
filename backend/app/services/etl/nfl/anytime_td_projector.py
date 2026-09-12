@@ -45,8 +45,9 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
     """
     from app.services.etl.nfl.anytime_td_calibration import (
         apply_calibrated_probability,
-        calibration_enabled,
         load_calibration_model,
+        model_for_row,
+        should_apply_disk_calibration,
     )
     from app.services.etl.nfl.anytime_td_model import (
         RB_TD_DISPERSION,
@@ -74,9 +75,9 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
 
     gbm_applied = False
     td_prob = hier_p
-    if calibration_enabled():
+    if should_apply_disk_calibration(enriched):
         model = load_calibration_model()
-        if model is not None:
+        if model is not None and model_for_row(enriched, model) is not None:
             td_prob = apply_calibrated_probability(enriched, model=model)
             gbm_applied = True
 

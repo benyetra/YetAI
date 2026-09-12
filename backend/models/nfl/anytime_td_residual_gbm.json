@@ -38,5 +38,7 @@
   },
   "positive_rate": 0.27159524343728964,
   "hier_p_family": "poisson_except_rb_negbin",
-  "rb_td_dispersion": 2.0
+  "rb_td_dispersion": 2.0,
+  "conversion_rate_family": "td_per_touch_pre_125",
+  "calibration_disabled_reason": "Trained on overall TD/touch conversion_rate; post-#125 λ uses RZ/GL rates. Retrain with scripts/nfl_anytime_td_train_calibration.py to stamp conversion_rate_family=rz_gl before re-enabling inference blend."
 }

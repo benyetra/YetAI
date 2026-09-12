@@ -33,7 +33,9 @@ Projector `run()` without injected `feature_rows` calls
    slate; projector joins week-matched `pred_nfl_game_lines` (+ optional
    `pred_nfl_weather`) so every board row gets market totals/spreads and weather
 9. **Position GBM** — separate residual calibrators for RB / WR+TE / QB
-   (`hierarchical_v1_gbm_pos`); `NFL_ANYTIME_TD_GBM=0` disables
+   (`hierarchical_v1_gbm_pos`) when artifact metadata has
+   `conversion_rate_family=rz_gl`; otherwise hierarchical only.
+   `NFL_ANYTIME_TD_GBM=0` disables; thin week-1 form also skips GBM.
 
 Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembly.py`.
 RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`
@@ -82,9 +84,13 @@ Offline CI still uses a fixed synthetic `--quick` sample — no DATABASE_URL or 
 
 Artifact: `backend/models/nfl/anytime_td_metrics.json` (`preset: walk_forward` after live run)
 
-Residual GBM calibrator (optional, on by default when artifact exists).
-Artifact `anytime_td_residual_gbm.pkl` retrained **2026-09-04** on NegBin
-`hier_p` for RBs (`RB_TD_DISPERSION=2.0`; Poisson for other positions):
+Residual GBM calibrator (optional). Inference applies the on-disk artifact
+**only** when metadata stamps `conversion_rate_family=rz_gl` (post-#125 RZ/GL
+λ semantics). The 2026-09-04 pickle was trained on overall TD/touch conversion
+and is **gated off** until retrain — otherwise it crushes high-λ RBs (OOD
+`conversion_rate≈0.38`) and lifts TEs toward the ~27% train base rate. Thin
+week-1 rows (null `gl_carries` / `rz_targets`) also skip GBM. Env
+`NFL_ANYTIME_TD_GBM=0` disables regardless.
 
 ```bash
 PYTHONPATH=. python scripts/nfl_anytime_td_train_calibration.py --seasons 2023,2024,2025
