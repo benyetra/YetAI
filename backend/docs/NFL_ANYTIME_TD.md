@@ -45,9 +45,14 @@ conversion toward PBP `gl_td_rate`; WR/TE use RZ target share and blend toward
 PBP `rz_td_rate` when present. **Do not** feed overall season TD/touch into λ
 `conversion_rate` — that unit mismatch crushed high-volume RBs (~0.03–0.08) while
 leaving sparse TEs near 0.10–0.25 and produced TE-heavy boards capped near ~25%.
-Usage stores `td_per_touch` as a diagnostic only; λ conversion uses position
-priors (RB 0.38 / TE 0.24 / WR 0.20) plus PBP RZ/GL rates. Usage universe keeps
-top **2 RBs** per team. Walk-forward gate requires beating baseline Brier
+Usage stores `td_per_touch` as a diagnostic only; λ conversion uses **depth-
+conditioned** RZ/GL priors (RB1 share 0.30 / conv 0.40; RB2 share 0.12 / conv
+0.28) plus PBP RZ/GL rates. Missing shares fall back to depth priors so backups
+cannot inherit starter-like λ after hierarchical-only inference (#126). Observed
+PBP/usage shares for depth≥2 are soft-capped toward the backup prior. Usage
+universe keeps top **2 RBs** per team; usage slot-fill assigns `depth_team` by
+open slot (not always 1). Depth-club remaps ignore out-of-cap slots (RB3+) to
+avoid wrong-team attributions. Walk-forward gate requires beating baseline Brier
 (`require_beat_baseline_brier=true`, 0.02 margin) and RB Brier ≤ `max_rb_brier` (0.28).
 UI defaults **on** after the 2026-09-04 metrics write (`passes_gate=true`).
 
@@ -136,8 +141,15 @@ with corrected `conversion_rate` / P(TD). Odds attach is optional for ranking
 but do not reorder the board.
 
 Expected after re-run: starting RBs generally lead by P(TD) (often ~25–40% for
-featured backs); featured TEs mid-board (~10–20%); max P(TD) no longer clustered
-on TEs near a ~25% ceiling from prior×inflated-share.
+featured backs); **RB2 / clear backups clearly below RB1** (not twin ~30%
+clusters like Gibbs≈Vaki or Henry≈Hill); featured TEs mid-board (~10–20%); max
+P(TD) no longer clustered on TEs near a ~25% ceiling from prior×inflated-share.
+
+### After depth-prior / backup-RB fixes
+
+Deploying depth-conditioned RZ share + conversion priors does **not** rewrite
+existing rows. **Re-run `run_nfl_anytime_td_pipeline` after deploy** so RB1/RB2
+separation and corrected teams land on the board.
 
 Optional follow-up: retrain residual GBM
 (`scripts/nfl_anytime_td_train_calibration.py`) so calibrators see RZ/GL

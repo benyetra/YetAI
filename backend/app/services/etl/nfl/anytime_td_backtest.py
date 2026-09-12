@@ -418,6 +418,7 @@ def grade_week_from_weekly_records(
         _player_rz_share_from_usage,
         _scheme_for_team,
         _str,
+        _usage_starter_score,
         aggregate_defense_allowed_from_weekly,
         aggregate_player_usage_from_weekly,
         aggregate_team_rz_from_weekly,
@@ -456,6 +457,21 @@ def grade_week_from_weekly_records(
 
     # Match live board: starters only (usage top-N proxy when depth charts absent).
     starter_ids = starter_ids_from_usage(usage)
+    # Approximate depth_team from usage rank within team/pos so RB2 ≠ RB1 priors.
+    depth_by_player: dict[str, int] = {}
+    by_team_pos: dict[tuple[str, str], list[tuple[float, str]]] = {}
+    for pid in starter_ids:
+        u = usage.get(pid) or {}
+        pos_u = str(u.get("position") or "").upper()
+        team_u = str(u.get("team_abbr") or "").upper()
+        if not pos_u or not team_u:
+            continue
+        score = _usage_starter_score(u, pos_u)
+        by_team_pos.setdefault((team_u, pos_u), []).append((score, pid))
+    for ranked in by_team_pos.values():
+        ranked.sort(key=lambda t: (-t[0], t[1]))
+        for rank, (_score, pid) in enumerate(ranked, start=1):
+            depth_by_player[pid] = rank
 
     graded: list[dict[str, Any]] = []
     for raw in weekly_list:
@@ -481,6 +497,7 @@ def grade_week_from_weekly_records(
         team_stats = team_rz.get(team, {})
         def_stats = defense.get(opp, {})
         pbp_player = player_rz_pbp.get(player_id, {})
+        depth_team = depth_by_player.get(player_id, 1)
 
         player_stats: dict[str, Any] = {
             "targets_l3": player_usage.get("targets_l3"),
@@ -492,6 +509,7 @@ def grade_week_from_weekly_records(
             # Do not pass usage TD/touch as conversion_rate (wrong units for λ).
             "conversion_rate": None,
             "td_per_touch": player_usage.get("td_per_touch"),
+            "depth_team": depth_team,
         }
         if pbp_player.get("rz_targets_pg") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets_pg"]
@@ -523,7 +541,9 @@ def grade_week_from_weekly_records(
         if pos_share is not None:
             player_stats["player_rz_share"] = pos_share
         else:
-            rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
+            rz_share = _player_rz_share_from_usage(
+                player_usage, team_stats, pos, depth_team=depth_team
+            )
             if rz_share is not None:
                 player_stats["player_rz_share"] = rz_share
 
@@ -547,6 +567,7 @@ def grade_week_from_weekly_records(
             scheme=_scheme_for_team(schemes, opp),
             weather={"outdoor": True, "wind_mph": 0.0, "precip": False},
             game_env={},
+            depth_team=depth_team,
         )
         td_count = int(_anytime_tds(raw))
         graded.append(
