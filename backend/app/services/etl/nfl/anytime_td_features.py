@@ -50,6 +50,14 @@ _DEF_EPA_PRIOR = 0.0
 _EARLY_DOWN_PASS_PRIOR = 0.48
 _TEAM_RZ_PASS_RATE_PRIOR = 0.52
 _SNAP_PCT_PRIOR = 0.55
+# Overall TD/touch (season) is typically ~0.03–0.10. λ expects RZ/GL conversion
+# (~0.14–0.38). Reject rates below these floors so usage TD/touch never enters λ.
+_CONVERSION_TD_PER_TOUCH_FLOOR: dict[str, float] = {
+    "QB": 0.08,
+    "RB": 0.12,
+    "WR": 0.10,
+    "TE": 0.10,
+}
 
 _COVER_ADJ: dict[str, dict[str, float]] = {
     "cover_1": {"QB": 0.98, "RB": 0.95, "WR": 1.08, "TE": 1.06},
@@ -177,15 +185,7 @@ def build_player_feature_row(
         "player_rz_share",
         default=_PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18),
     )
-    conversion_rate = _num(
-        player_stats,
-        "conversion_rate",
-        default=_CONVERSION_RATE_PRIOR.get(pos, 0.22),
-    )
-    # RB goal-line role: blend conversion toward GL TD rate when available.
-    if pos == "RB" and not _is_missing(player_stats.get("gl_td_rate")):
-        gl_td = _num(player_stats, "gl_td_rate")
-        conversion_rate = _clamp(0.65 * conversion_rate + 0.35 * gl_td, 0.15, 0.65)
+    conversion_rate = _resolve_conversion_rate(pos, player_stats)
     # Prefer position-specific RZ/GL shares when PBP provided them.
     if pos == "RB" and not _is_missing(player_stats.get("rz_rush_share")):
         rush = _num(player_stats, "rz_rush_share")
@@ -258,6 +258,10 @@ def build_player_feature_row(
         "td_l3": player_stats.get("td_l3"),
         "td_l5": player_stats.get("td_l5"),
         "td_season": player_stats.get("td_season"),
+        # Diagnostic only — overall TD/touch; never used as λ conversion.
+        "td_per_touch": _optional_float(player_stats.get("td_per_touch")),
+        "gl_td_rate": _optional_float(player_stats.get("gl_td_rate")),
+        "rz_td_rate": _optional_float(player_stats.get("rz_td_rate")),
         # availability
         "injury_status": player_stats.get("injury_status"),
         "availability_mult": _num(player_stats, "availability_mult", default=1.0),
@@ -303,6 +307,42 @@ def _is_missing(value: Any) -> bool:
         return bool(math.isnan(float(value)))
     except (TypeError, ValueError):
         return False
+
+
+def _looks_like_overall_td_per_touch(position: str, rate: float) -> bool:
+    """True when ``rate`` is in the overall TD/touch band, not RZ/GL conversion."""
+    floor = _CONVERSION_TD_PER_TOUCH_FLOOR.get(_pos(position), 0.10)
+    return rate < floor
+
+
+def _resolve_conversion_rate(position: str, player_stats: Mapping[str, Any]) -> float:
+    """RZ/GL conversion for λ — never overall season TD/touch.
+
+    Priority:
+    1. Explicit ``conversion_rate`` when it looks like RZ/GL conversion
+    2. Position prior
+    3. Blend toward PBP ``gl_td_rate`` (RB) or ``rz_td_rate`` (WR/TE)
+    """
+    pos = _pos(position)
+    prior = _CONVERSION_RATE_PRIOR.get(pos, 0.22)
+    raw = player_stats.get("conversion_rate")
+    if not _is_missing(raw):
+        cand = float(raw)  # type: ignore[arg-type]
+        if not _looks_like_overall_td_per_touch(pos, cand):
+            conversion = cand
+        else:
+            conversion = prior
+    else:
+        conversion = prior
+
+    if pos == "RB" and not _is_missing(player_stats.get("gl_td_rate")):
+        gl_td = _num(player_stats, "gl_td_rate")
+        # Weight true GL conversion over prior / explicit RZ rate.
+        conversion = _clamp(0.45 * conversion + 0.55 * gl_td, 0.15, 0.65)
+    elif pos in {"WR", "TE"} and not _is_missing(player_stats.get("rz_td_rate")):
+        rz_td = _num(player_stats, "rz_td_rate")
+        conversion = _clamp(0.55 * conversion + 0.45 * rz_td, 0.10, 0.55)
+    return conversion
 
 
 def _optional_float(value: Any) -> float | None:
@@ -392,7 +432,10 @@ def aggregate_player_usage_from_weekly(
         td_l5 = sum(_anytime_tds(r) for r in last5)
         td_season = sum(_anytime_tds(r) for r in rows)
         touches = sum(_num(r, "targets") + _num(r, "carries") for r in rows)
-        conversion = (td_season / touches) if touches > 0 else None
+        # Overall TD/touch is a volume diagnostic only — NOT λ conversion
+        # (λ expects RZ/GL conversion ~0.14–0.38; TD/touch is typically ~0.03–0.10
+        # and would crush high-volume RBs while inflating sparse TEs).
+        td_per_touch = (td_season / touches) if touches > 0 else None
         target_shares = [
             _num(r, "target_share")
             for r in last3
@@ -415,7 +458,10 @@ def aggregate_player_usage_from_weekly(
             "td_l3": td_l3,
             "td_l5": td_l5,
             "td_season": td_season,
-            "conversion_rate": conversion,
+            # Leave conversion_rate unset so build_player_feature_row uses
+            # RZ/GL priors (+ PBP gl_td_rate / rz_td_rate).
+            "conversion_rate": None,
+            "td_per_touch": td_per_touch,
             "snap_pct": snap_pct,
             "snap_pct_source": "target_share" if snap_pct is not None else None,
             "touches_season": touches,
@@ -990,7 +1036,9 @@ def build_weekly_feature_rows(
             "routes_l3": player_usage.get("routes_l3"),
             "route_participation": player_usage.get("route_participation"),
             "offense_snaps_l3": player_usage.get("offense_snaps_l3"),
-            "conversion_rate": player_usage.get("conversion_rate"),
+            # Do not pass usage TD/touch as conversion_rate (wrong units for λ).
+            "conversion_rate": None,
+            "td_per_touch": player_usage.get("td_per_touch"),
             "injury_status": player.get("injury_status"),
             "availability_mult": player.get("availability_mult", 1.0),
         }
@@ -1007,6 +1055,7 @@ def build_weekly_feature_rows(
             "rz_target_share",
             "gl_carry_share",
             "gl_td_rate",
+            "rz_td_rate",
             "rz_carries",
         ):
             if pbp_player.get(key) is not None:
