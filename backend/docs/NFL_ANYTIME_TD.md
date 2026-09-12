@@ -151,6 +151,17 @@ Deploying depth-conditioned RZ share + conversion priors does **not** rewrite
 existing rows. **Re-run `run_nfl_anytime_td_pipeline` after deploy** so RB1/RB2
 separation and corrected teams land on the board.
 
+### After WR anytime-TD prior floor fixes
+
+Post-#128 hierarchical boards left WR1 near ~11% (share 0.18 × conversion 0.20)
+while RB1 sat ~30% — under market (~20–35% implied for elite WRs). WR depth
+share/conversion priors were raised so WR1 is competitive with (not identical
+to) RB1; WR2/WR3 and TE stay below; RB1/RB2 separation from #128 is unchanged.
+
+Deploying these priors does **not** rewrite existing rows. **Re-run
+`run_nfl_anytime_td_pipeline` after deploy** so top WRs land in the ~20–28%
+neutral band (higher with script/defense).
+
 Optional follow-up: retrain residual GBM
 (`scripts/nfl_anytime_td_train_calibration.py`) so calibrators see RZ/GL
 `conversion_rate` instead of historical TD/touch values.

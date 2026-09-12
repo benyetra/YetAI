@@ -687,6 +687,120 @@ def test_rb1_outranks_rb2_under_depth_priors():
     assert p2 < 0.18
 
 
+def test_wr1_competitive_with_rb1_under_depth_priors():
+    """WR1 hierarchical prior must clear ~20% — not TE-like teens after #128.
+
+    Market elite WR anytime often implies ~20–35%. Post-#128 RB1 ~30% with
+    WR1 stuck near ~11% (0.18×0.20) is under-calibrated. WR1 should sit
+    competitive with (not identical to) RB1; WR depth and TE stay below WR1.
+    """
+    from app.services.etl.nfl.anytime_td_model import (
+        RB_TD_DISPERSION,
+        anytime_td_probability,
+        expected_tds,
+    )
+
+    def _p(row: dict, *, rb: bool = False) -> float:
+        return anytime_td_probability(
+            expected_tds(
+                team_rz_trips=row["team_rz_trips"],
+                player_rz_share=row["player_rz_share"],
+                conversion_rate=row["conversion_rate"],
+                defense_mult=1.0,
+                weather_mult=1.0,
+                script_mult=1.0,
+            ),
+            dispersion=RB_TD_DISPERSION if rb else None,
+        )
+
+    rb1 = build_player_feature_row(
+        player_id="gibbs",
+        player_name="Jahmyr Gibbs",
+        position="RB",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=1,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    wr1 = build_player_feature_row(
+        player_id="stbrown",
+        player_name="Amon-Ra St. Brown",
+        position="WR",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=1,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    wr2 = build_player_feature_row(
+        player_id="williams",
+        player_name="Jameson Williams",
+        position="WR",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=2,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    wr3 = build_player_feature_row(
+        player_id="reynolds",
+        player_name="Josh Reynolds",
+        position="WR",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=3,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    te1 = build_player_feature_row(
+        player_id="laporta",
+        player_name="Sam LaPorta",
+        position="TE",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=1,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    rb2 = build_player_feature_row(
+        player_id="vaki",
+        player_name="Sione Vaki",
+        position="RB",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=2,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+
+    p_rb1 = _p(rb1, rb=True)
+    p_wr1 = _p(wr1)
+    p_wr2 = _p(wr2)
+    p_wr3 = _p(wr3)
+    p_te1 = _p(te1)
+    p_rb2 = _p(rb2, rb=True)
+
+    assert wr1["player_rz_share"] == _PLAYER_RZ_SHARE_PRIOR["WR"]
+    assert wr1["conversion_rate"] == _CONVERSION_RATE_PRIOR["WR"]
+    # WR1 clears market-like floor; not collapsed to TE teens.
+    assert p_wr1 >= 0.20
+    assert p_wr1 < p_rb1  # competitive with, not above, featured RB1 at neutral
+    assert p_wr1 > p_te1 + 0.05
+    assert p_wr1 > p_wr2 > p_wr3  # depth differentiation
+    assert p_wr2 < 0.16
+    # Backup RB / TE stay below WR1 — no TE-led board, no backup-RB twins.
+    assert p_rb2 < p_wr1
+    assert p_te1 < 0.16
+    assert p_rb1 > 0.25
+
+
 def test_backup_pbp_share_soft_capped_vs_starter():
     """Even with starter-like PBP rush share, RB2 cannot match RB1 λ."""
     from app.services.etl.nfl.anytime_td_model import (

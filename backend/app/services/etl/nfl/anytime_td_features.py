@@ -31,17 +31,23 @@ _LEAGUE_AVG_TEAM_TOTAL = 22.5
 # assign every RB the same share×conversion prior → Gibbs ≈ Vaki ≈ Hill ~30%.
 # Flat ``_PLAYER_RZ_SHARE_PRIOR`` / ``_CONVERSION_RATE_PRIOR`` mirror depth_team=1
 # for backward-compatible tests and callers that omit depth.
+#
+# WR share×conversion must clear market-like anytime floors (~20–30% for WR1).
+# Post-#128 RB1 priors (~0.30×0.40 → ~30%) left WR1 at 0.18×0.20 → ~11% —
+# TE-like teens while elite WR markets imply ~20–35%. Priors are all-trips
+# opportunity share (not among-pass target share); PBP rz_target_share is
+# already in a higher band and lands similarly once conversion is raised.
 _PLAYER_RZ_SHARE_PRIOR_BY_DEPTH: dict[str, dict[int, float]] = {
     "QB": {1: 0.07},
     "RB": {1: 0.30, 2: 0.12},
-    "WR": {1: 0.18, 2: 0.12, 3: 0.08},
-    "TE": {1: 0.14, 2: 0.07},
+    "WR": {1: 0.26, 2: 0.16, 3: 0.10},
+    "TE": {1: 0.15, 2: 0.08},
 }
 _CONVERSION_RATE_PRIOR_BY_DEPTH: dict[str, dict[int, float]] = {
     "QB": {1: 0.14},
     "RB": {1: 0.40, 2: 0.28},  # GL work concentrates on RB1
-    "WR": {1: 0.20, 2: 0.18, 3: 0.16},
-    "TE": {1: 0.24, 2: 0.18},
+    "WR": {1: 0.28, 2: 0.24, 3: 0.20},
+    "TE": {1: 0.26, 2: 0.20},
 }
 _CONVERSION_RATE_PRIOR: dict[str, float] = {
     pos: by_depth[1] for pos, by_depth in _CONVERSION_RATE_PRIOR_BY_DEPTH.items()
