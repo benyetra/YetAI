@@ -27,18 +27,31 @@ _MIN_PRIOR_TOUCHES = 3.0  # touches floor for usage-based starter fallback
 # League-average priors (REG season, per-game unless noted)
 _TEAM_RZ_TRIPS_PRIOR = 3.2
 _LEAGUE_AVG_TEAM_TOTAL = 22.5
+# Depth-conditioned λ priors. Without these, #125/#126 hierarchical-only boards
+# assign every RB the same share×conversion prior → Gibbs ≈ Vaki ≈ Hill ~30%.
+# Flat ``_PLAYER_RZ_SHARE_PRIOR`` / ``_CONVERSION_RATE_PRIOR`` mirror depth_team=1
+# for backward-compatible tests and callers that omit depth.
+_PLAYER_RZ_SHARE_PRIOR_BY_DEPTH: dict[str, dict[int, float]] = {
+    "QB": {1: 0.07},
+    "RB": {1: 0.30, 2: 0.12},
+    "WR": {1: 0.18, 2: 0.12, 3: 0.08},
+    "TE": {1: 0.14, 2: 0.07},
+}
+_CONVERSION_RATE_PRIOR_BY_DEPTH: dict[str, dict[int, float]] = {
+    "QB": {1: 0.14},
+    "RB": {1: 0.40, 2: 0.28},  # GL work concentrates on RB1
+    "WR": {1: 0.20, 2: 0.18, 3: 0.16},
+    "TE": {1: 0.24, 2: 0.18},
+}
 _CONVERSION_RATE_PRIOR: dict[str, float] = {
-    "QB": 0.14,
-    "RB": 0.38,  # goal-line / short-yardage conversion
-    "WR": 0.20,
-    "TE": 0.24,
+    pos: by_depth[1] for pos, by_depth in _CONVERSION_RATE_PRIOR_BY_DEPTH.items()
 }
 _PLAYER_RZ_SHARE_PRIOR: dict[str, float] = {
-    "QB": 0.07,
-    "RB": 0.28,
-    "WR": 0.16,
-    "TE": 0.14,
+    pos: by_depth[1] for pos, by_depth in _PLAYER_RZ_SHARE_PRIOR_BY_DEPTH.items()
 }
+# Soft-cap observed PBP/usage shares for depth≥2 so a thin prior-season sample
+# cannot make a backup look like the featured back (GL vultures still clear ~15%).
+_BACKUP_RZ_SHARE_CAP_MULT = 1.25
 _TDS_ALLOWED_PRIOR: dict[str, float] = {
     "QB": 0.25,
     "RB": 0.55,
@@ -84,6 +97,65 @@ def _clamp(value: float, low: float, high: float) -> float:
 def _pos(position: str) -> str:
     p = position.strip().upper()
     return p if p in _CONVERSION_RATE_PRIOR else "WR"
+
+
+def _depth_rank(depth_team: int | None) -> int:
+    """Normalize depth_team to a positive int (default starter)."""
+    if depth_team is None:
+        return _STARTER_DEPTH_TEAM
+    try:
+        rank = int(depth_team)
+    except (TypeError, ValueError):
+        return _STARTER_DEPTH_TEAM
+    return rank if rank >= 1 else _STARTER_DEPTH_TEAM
+
+
+def _rz_share_prior(position: str, depth_team: int | None = None) -> float:
+    """Position × depth RZ/GL opportunity share prior for λ."""
+    pos = _pos(position)
+    rank = _depth_rank(depth_team)
+    by_depth = _PLAYER_RZ_SHARE_PRIOR_BY_DEPTH.get(pos) or {}
+    if rank in by_depth:
+        return by_depth[rank]
+    # Deeper than charted: use the deepest known prior (never starter).
+    if by_depth:
+        deepest = max(by_depth)
+        if rank > deepest:
+            return by_depth[deepest]
+    return _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
+
+
+def _conversion_prior(position: str, depth_team: int | None = None) -> float:
+    """Position × depth RZ/GL conversion prior for λ."""
+    pos = _pos(position)
+    rank = _depth_rank(depth_team)
+    by_depth = _CONVERSION_RATE_PRIOR_BY_DEPTH.get(pos) or {}
+    if rank in by_depth:
+        return by_depth[rank]
+    if by_depth:
+        deepest = max(by_depth)
+        if rank > deepest:
+            return by_depth[deepest]
+    return _CONVERSION_RATE_PRIOR.get(pos, 0.22)
+
+
+def _apply_depth_share_guard(
+    share: float, *, position: str, depth_team: int | None
+) -> float:
+    """Keep backup observed shares from matching starter-like λ.
+
+    Depth-1 is unchanged. Depth≥2 blends toward the depth prior and soft-caps
+    above ``prior * _BACKUP_RZ_SHARE_CAP_MULT`` so thin PBP/usage cannot make
+    Justice Hill / Sione Vaki inherit Derrick Henry / Jahmyr Gibbs rates.
+    """
+    rank = _depth_rank(depth_team)
+    share = _clamp(float(share), 0.02, 0.55)
+    if rank <= 1:
+        return share
+    prior = _rz_share_prior(position, rank)
+    blended = 0.55 * share + 0.45 * prior
+    cap = prior * _BACKUP_RZ_SHARE_CAP_MULT
+    return _clamp(min(blended, cap), 0.02, 0.55)
 
 
 def scheme_defense_adjustment(
@@ -165,14 +237,23 @@ def build_player_feature_row(
     scheme: dict[str, Any] | None = None,
     weather: dict[str, Any] | None = None,
     game_env: dict[str, Any] | None = None,
+    depth_team: int | None = None,
 ) -> dict[str, Any]:
-    """Build a feature dict for the anytime-TD projector (injected data only)."""
+    """Build a feature dict for the anytime-TD projector (injected data only).
+
+    ``depth_team`` (1=starter) selects RZ-share and conversion priors so backups
+    do not inherit starter-like λ when PBP/usage shares are missing.
+    """
     pos = _pos(position)
     player_stats = player_stats or {}
     team_stats = team_stats or {}
     opponent_defense = opponent_defense or {}
     weather = weather or {}
     game_env = game_env or {}
+    # Prefer explicit arg; else player_stats (assembly passes depth on the dict).
+    if depth_team is None and not _is_missing(player_stats.get("depth_team")):
+        depth_team = int(_num(player_stats, "depth_team", default=_STARTER_DEPTH_TEAM))
+    depth_team = _depth_rank(depth_team)
 
     team = normalize_team_name(team_name)
     opponent = normalize_team_name(opponent_team_name)
@@ -180,12 +261,13 @@ def build_player_feature_row(
     # Use _num so explicit None values (common for week-1 / missing defense) fall
     # back to priors — dict.get(key, default) still returns None when the key is set.
     team_rz_trips = _num(team_stats, "team_rz_trips", default=_TEAM_RZ_TRIPS_PRIOR)
+    share_prior = _rz_share_prior(pos, depth_team)
     player_rz_share = _num(
         player_stats,
         "player_rz_share",
-        default=_PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18),
+        default=share_prior,
     )
-    conversion_rate = _resolve_conversion_rate(pos, player_stats)
+    conversion_rate = _resolve_conversion_rate(pos, player_stats, depth_team=depth_team)
     # Prefer position-specific RZ/GL shares when PBP provided them.
     if pos == "RB" and not _is_missing(player_stats.get("rz_rush_share")):
         rush = _num(player_stats, "rz_rush_share")
@@ -200,6 +282,9 @@ def build_player_feature_row(
             0.02,
             0.55,
         )
+    player_rz_share = _apply_depth_share_guard(
+        player_rz_share, position=pos, depth_team=depth_team
+    )
 
     tds_allowed = _num(
         opponent_defense,
@@ -240,6 +325,7 @@ def build_player_feature_row(
         "opponent_team_name": opponent,
         "season": season,
         "week": week,
+        "depth_team": depth_team,
         # projector inputs
         "team_rz_trips": team_rz_trips,
         "player_rz_share": player_rz_share,
@@ -315,16 +401,21 @@ def _looks_like_overall_td_per_touch(position: str, rate: float) -> bool:
     return rate < floor
 
 
-def _resolve_conversion_rate(position: str, player_stats: Mapping[str, Any]) -> float:
+def _resolve_conversion_rate(
+    position: str,
+    player_stats: Mapping[str, Any],
+    *,
+    depth_team: int | None = None,
+) -> float:
     """RZ/GL conversion for λ — never overall season TD/touch.
 
     Priority:
     1. Explicit ``conversion_rate`` when it looks like RZ/GL conversion
-    2. Position prior
+    2. Position × depth prior (RB2 below RB1)
     3. Blend toward PBP ``gl_td_rate`` (RB) or ``rz_td_rate`` (WR/TE)
     """
     pos = _pos(position)
-    prior = _CONVERSION_RATE_PRIOR.get(pos, 0.22)
+    prior = _conversion_prior(pos, depth_team)
     raw = player_stats.get("conversion_rate")
     if not _is_missing(raw):
         cand = float(raw)  # type: ignore[arg-type]
@@ -558,9 +649,11 @@ def _player_rz_share_from_usage(
     usage: dict[str, Any],
     team_stats: dict[str, Any] | None,
     position: str,
+    *,
+    depth_team: int | None = None,
 ) -> float | None:
     pos = _pos(position)
-    prior = _PLAYER_RZ_SHARE_PRIOR.get(pos, 0.18)
+    prior = _rz_share_prior(pos, depth_team)
     td_season = float(usage.get("td_season") or 0.0)
     team_tds_pg = float((team_stats or {}).get("team_tds_per_game") or 0.0)
     games = float(usage.get("games_count") or usage.get("game_count") or 0.0)
@@ -568,7 +661,8 @@ def _player_rz_share_from_usage(
     if team_tds <= 0:
         return None
     share = td_season / team_tds
-    return _clamp(0.55 * share + 0.45 * prior, 0.02, 0.55)
+    blended = _clamp(0.55 * share + 0.45 * prior, 0.02, 0.55)
+    return _apply_depth_share_guard(blended, position=pos, depth_team=depth_team)
 
 
 def _offensive_depth_ok(raw: dict[str, Any]) -> bool:
@@ -599,18 +693,15 @@ def _depth_club_by_player(
     *,
     week: int,
 ) -> dict[str, str]:
-    """Map GSIS id → depth ``club_code`` for offensive skill rows (any depth_team).
+    """Map GSIS id → depth ``club_code`` for board-cap offensive skill rows.
 
-    Used so usage slot-fill assigns the current depth club when prior-week
-    ``recent_team`` is stale (trades / Week-1 prior-season fallback).
+    Only depth_team within ``_DEPTH_TEAM_CAP`` counts. Deeper / stale slots on
+    another club (e.g. RB3 on a wrong team) must not remap usage fill and put
+    Keaton Mitchell on LAC while he is BAL RB2.
     """
     best: dict[str, tuple[int, int, str]] = {}
     for raw in depth_rows:
-        pos = _str(raw, "position", "pos_abb").upper()
-        if pos not in SKILL_POSITIONS:
-            continue
-        depth_pos = _str(raw, "depth_position", "pos_abb", "position").upper()
-        if depth_pos in _SPECIAL_TEAMS_DEPTH_POSITIONS:
+        if not _offensive_depth_ok(raw):
             continue
         team = _str(raw, "club_code", "team").upper()
         player_id = _str(raw, "gsis_id", "player_id")
@@ -620,8 +711,6 @@ def _depth_club_by_player(
         if depth_week > week:
             continue
         depth_team = int(_num(raw, "depth_team", "pos_rank", default=99))
-        if depth_team < 1:
-            continue
         prev = best.get(player_id)
         # Prefer later week; within a week prefer lower depth_team (closer to starter).
         if (
@@ -833,6 +922,9 @@ def _fill_remaining_slots_from_usage(
         if need <= 0:
             continue
         ranked.sort(key=lambda t: (-t[0], t[1]))
+        # Assign depth_team as the next open slot (not always starter=1) so
+        # usage-filled RB2s get backup λ priors.
+        next_depth = counts.get((team, pos), 0) + 1
         for _, player_id in ranked[:need]:
             usage = usage_by_player[player_id]
             universe[player_id] = {
@@ -840,9 +932,11 @@ def _fill_remaining_slots_from_usage(
                 "player_name": usage.get("player_name") or player_id,
                 "position": usage.get("position"),
                 "team_abbr": team,
-                "depth_team": _STARTER_DEPTH_TEAM,
+                "depth_team": next_depth,
                 "depth_week": week,
             }
+            next_depth += 1
+            counts[(team, pos)] = counts.get((team, pos), 0) + 1
 
 
 def _schedule_matchups(
@@ -1024,6 +1118,7 @@ def build_weekly_feature_rows(
         team_stats = team_rz.get(team_abbr, {})
         def_stats = defense.get(opp_abbr, {})
         pbp_player = player_rz_pbp.get(player_id, {})
+        depth_team = int(_num(player, "depth_team", default=_STARTER_DEPTH_TEAM))
 
         player_stats = {
             "targets_l3": player_usage.get("targets_l3"),
@@ -1041,6 +1136,7 @@ def build_weekly_feature_rows(
             "td_per_touch": player_usage.get("td_per_touch"),
             "injury_status": player.get("injury_status"),
             "availability_mult": player.get("availability_mult", 1.0),
+            "depth_team": depth_team,
         }
         if pbp_player.get("rz_targets_pg") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets_pg"]
@@ -1073,7 +1169,9 @@ def build_weekly_feature_rows(
         if pos_share is not None:
             player_stats["player_rz_share"] = pos_share
         else:
-            rz_share = _player_rz_share_from_usage(player_usage, team_stats, pos)
+            rz_share = _player_rz_share_from_usage(
+                player_usage, team_stats, pos, depth_team=depth_team
+            )
             if rz_share is not None:
                 player_stats["player_rz_share"] = rz_share
 
@@ -1118,6 +1216,7 @@ def build_weekly_feature_rows(
             scheme=_scheme_for_team(schemes, opp_abbr),
             weather=weather,
             game_env=game_env,
+            depth_team=depth_team,
         )
         if match.get("game_date") is not None:
             row["game_date"] = match["game_date"]

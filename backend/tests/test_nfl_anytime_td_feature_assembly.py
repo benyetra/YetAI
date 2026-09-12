@@ -589,8 +589,162 @@ def test_select_universe_includes_rb2_with_depth_club_over_stale_usage():
     assert by_id["warren"]["team_abbr"] == "PIT"
 
 
-def test_usage_fill_remaps_team_via_depth_club():
-    """Usage slot-fill uses depth club when the player is only depth_team>cap elsewhere."""
+def test_usage_fill_assigns_depth_team_by_slot():
+    """Usage-filled RB2 gets depth_team=2 (backup λ priors), not starter=1."""
+    depth = [
+        {
+            "gsis_id": "rb1",
+            "full_name": "Star RB",
+            "position": "RB",
+            "club_code": "BAL",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "qb1",
+            "full_name": "QB One",
+            "position": "QB",
+            "club_code": "BAL",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 1,
+        },
+    ]
+    usage = {
+        "hill": {
+            "player_id": "hill",
+            "player_name": "Justice Hill",
+            "position": "RB",
+            "team_abbr": "BAL",
+            "touches_season": 50.0,
+            "targets_l3": 2.0,
+            "carries_l3": 25.0,
+        },
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    by_id = {p["player_id"]: p for p in universe}
+    assert by_id["hill"]["depth_team"] == 2
+    assert by_id["rb1"]["depth_team"] == 1
+
+
+def test_rb1_outranks_rb2_under_depth_priors():
+    """Hierarchical-only: starting RB clearly above backup when shares missing."""
+    from app.services.etl.nfl.anytime_td_model import (
+        RB_TD_DISPERSION,
+        anytime_td_probability,
+        expected_tds,
+    )
+
+    rb1 = build_player_feature_row(
+        player_id="henry",
+        player_name="Derrick Henry",
+        position="RB",
+        team_name="BAL",
+        opponent_team_name="BUF",
+        season=2026,
+        week=1,
+        depth_team=1,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    rb2 = build_player_feature_row(
+        player_id="hill",
+        player_name="Justice Hill",
+        position="RB",
+        team_name="BAL",
+        opponent_team_name="BUF",
+        season=2026,
+        week=1,
+        depth_team=2,
+        player_stats={"player_rz_share": None, "conversion_rate": None},
+    )
+    assert rb1["player_rz_share"] > rb2["player_rz_share"]
+    assert rb1["conversion_rate"] > rb2["conversion_rate"]
+    p1 = anytime_td_probability(
+        expected_tds(
+            team_rz_trips=rb1["team_rz_trips"],
+            player_rz_share=rb1["player_rz_share"],
+            conversion_rate=rb1["conversion_rate"],
+            defense_mult=1.0,
+            weather_mult=1.0,
+            script_mult=1.0,
+        ),
+        dispersion=RB_TD_DISPERSION,
+    )
+    p2 = anytime_td_probability(
+        expected_tds(
+            team_rz_trips=rb2["team_rz_trips"],
+            player_rz_share=rb2["player_rz_share"],
+            conversion_rate=rb2["conversion_rate"],
+            defense_mult=1.0,
+            weather_mult=1.0,
+            script_mult=1.0,
+        ),
+        dispersion=RB_TD_DISPERSION,
+    )
+    assert p1 > p2 + 0.08  # clear separation (not ~30% twin)
+    assert p1 > 0.22
+    assert p2 < 0.18
+
+
+def test_backup_pbp_share_soft_capped_vs_starter():
+    """Even with starter-like PBP rush share, RB2 cannot match RB1 λ."""
+    from app.services.etl.nfl.anytime_td_model import (
+        RB_TD_DISPERSION,
+        anytime_td_probability,
+        expected_tds,
+    )
+
+    starter = build_player_feature_row(
+        player_id="gibbs",
+        player_name="Jahmyr Gibbs",
+        position="RB",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=1,
+        player_stats={"rz_rush_share": 0.45, "gl_carry_share": 0.50},
+    )
+    backup = build_player_feature_row(
+        player_id="vaki",
+        player_name="Sione Vaki",
+        position="RB",
+        team_name="DET",
+        opponent_team_name="GB",
+        season=2026,
+        week=1,
+        depth_team=2,
+        player_stats={"rz_rush_share": 0.45, "gl_carry_share": 0.50},
+    )
+    assert starter["player_rz_share"] > backup["player_rz_share"]
+    p_s = anytime_td_probability(
+        expected_tds(
+            team_rz_trips=3.2,
+            player_rz_share=starter["player_rz_share"],
+            conversion_rate=starter["conversion_rate"],
+            defense_mult=1.0,
+            weather_mult=1.0,
+            script_mult=1.0,
+        ),
+        dispersion=RB_TD_DISPERSION,
+    )
+    p_b = anytime_td_probability(
+        expected_tds(
+            team_rz_trips=3.2,
+            player_rz_share=backup["player_rz_share"],
+            conversion_rate=backup["conversion_rate"],
+            defense_mult=1.0,
+            weather_mult=1.0,
+            script_mult=1.0,
+        ),
+        dispersion=RB_TD_DISPERSION,
+    )
+    assert p_s > p_b
+
+
+def test_usage_fill_remaps_team_via_depth_club_within_cap():
+    """Within-cap depth club wins over stale usage recent_team (RB2 on board)."""
     depth = [
         {
             "gsis_id": "rb1",
@@ -610,13 +764,13 @@ def test_usage_fill_remaps_team_via_depth_club():
             "depth_position": "QB",
             "week": 1,
         },
-        # Player is on depth as RB3 only — not auto-included, but club map still applies.
+        # Within-cap depth on PIT while usage still says CAR → depth club wins.
         {
             "gsis_id": "rb_fill",
             "full_name": "Usage RB",
             "position": "RB",
             "club_code": "PIT",
-            "depth_team": 3,
+            "depth_team": 2,
             "depth_position": "RB",
             "week": 1,
         },
@@ -635,6 +789,75 @@ def test_usage_fill_remaps_team_via_depth_club():
     universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
     by_id = {p["player_id"]: p for p in universe}
     assert by_id["rb_fill"]["team_abbr"] == "PIT"
+    assert by_id["rb_fill"]["depth_team"] == 2
+
+
+def test_usage_fill_ignores_out_of_cap_depth_club():
+    """Deep depth slots on a wrong club must not pull a usage player onto that team."""
+    depth = [
+        {
+            "gsis_id": "rb1",
+            "full_name": "Star RB",
+            "position": "RB",
+            "club_code": "LAC",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "qb1",
+            "full_name": "QB One",
+            "position": "QB",
+            "club_code": "LAC",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "qb_bal",
+            "full_name": "BAL QB",
+            "position": "QB",
+            "club_code": "BAL",
+            "depth_team": 1,
+            "depth_position": "QB",
+            "week": 1,
+        },
+        {
+            "gsis_id": "rb_bal",
+            "full_name": "BAL RB1",
+            "position": "RB",
+            "club_code": "BAL",
+            "depth_team": 1,
+            "depth_position": "RB",
+            "week": 1,
+        },
+        # Stale RB3 on LAC for a BAL player — must not remap Mitchell→LAC.
+        {
+            "gsis_id": "mitchell",
+            "full_name": "Keaton Mitchell",
+            "position": "RB",
+            "club_code": "LAC",
+            "depth_team": 3,
+            "depth_position": "RB",
+            "week": 1,
+        },
+    ]
+    usage = {
+        "mitchell": {
+            "player_id": "mitchell",
+            "player_name": "Keaton Mitchell",
+            "position": "RB",
+            "team_abbr": "BAL",
+            "touches_season": 40.0,
+            "targets_l3": 1.0,
+            "carries_l3": 20.0,
+        },
+    }
+    universe = select_skill_universe(depth_records=depth, usage_by_player=usage, week=1)
+    by_id = {p["player_id"]: p for p in universe}
+    assert "mitchell" in by_id
+    assert by_id["mitchell"]["team_abbr"] == "BAL"
+    assert by_id["mitchell"]["depth_team"] == 2  # usage-filled as BAL RB2
 
 
 def test_filter_depth_records_keeps_latest_dt_snapshot_only():
