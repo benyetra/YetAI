@@ -81,9 +81,13 @@ def project_prediction_from_features(row: dict[str, Any]) -> dict[str, float | s
             td_prob = apply_calibrated_probability(enriched, model=model)
             gbm_applied = True
 
+    # Stamp raw model probs for market-anchor attach (Option B). Board
+    # ``td_probability`` may later become P_publish; keep P_model here.
     return {
         "expected_tds": lam,
         "td_probability": td_prob,
+        "p_hier": hier_p,
+        "p_model": td_prob,
         "model_version": MODEL_VERSION_GBM if gbm_applied else MODEL_VERSION_HIER,
     }
 
@@ -123,6 +127,10 @@ def build_upsert_row(
     snap = feature_row.get("snap_pct")
     confidence = min(1.0, float(snap) * td_prob * 1.2) if snap is not None else td_prob
 
+    features_out = dict(feature_row)
+    features_out["p_hier"] = float(proj.get("p_hier", td_prob))
+    features_out["p_model"] = float(proj.get("p_model", td_prob))
+
     return {
         "season": season,
         "week": week,
@@ -136,7 +144,7 @@ def build_upsert_row(
         "td_probability": td_prob,
         "confidence_score": confidence,
         # Feature rows carry Python date objects from schedules; JSONB needs ISO strings.
-        "features": _json_safe(feature_row),
+        "features": _json_safe(features_out),
         "model_version": str(proj.get("model_version") or MODEL_VERSION),
         "prediction_date": now,
         "created_at": now,

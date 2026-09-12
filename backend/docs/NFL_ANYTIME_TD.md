@@ -110,6 +110,50 @@ PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --walk-forward --write-me
 PYTHONPATH=. python scripts/nfl_anytime_td_backtest.py --season 2024 --start-week 1 --end-week 8
 ```
 
+## Market-anchor v1 (Option B / criterion #3)
+
+Board ``td_probability`` is **published** probability after Odds attach:
+
+```text
+P_fair    = vig-free Yes/No (Pinnacle preferred; else median FD/DK/BetMGM)
+P_model   = hierarchical λ (± gated GBM) stamped in features.p_model
+signal    = week/thin-form + injury + script + RZ/GL sample + depth
+shrink_w  = 0.05 + 0.85·signal  (capped at 0.9)
+P_publish = (1 − shrink_w)·P_fair + shrink_w·P_model
+edge      = P_publish − P_fair
+pick      = OVER if edge ≥ 5pp and EV(Yes) > 0;
+            UNDER if edge ≤ −5pp; else NO_PLAY
+```
+
+Week-1 / thin form → near-full market anchor (edges ≈ 0). Strong injury/script
+signal allows larger deviation. ``market_implied_prob`` stores **fair** P (not
+juiced Yes). Failed or empty Odds attach **clears** market/edge/pick and restores
+``td_probability`` from ``features.p_model`` (no stale −40% edges).
+
+``model_version`` gains ``_mkt`` after a successful attach (e.g.
+``hierarchical_v1_mkt``). API sorts by **edge DESC** (nulls last), then P(TD).
+
+Out of scope for v1: OC coach models, full residual GBM retrain.
+
+### After market-anchor deploy
+
+Deploying this code alone does **not** rewrite existing rows. **Re-run
+`run_nfl_anytime_td_pipeline` after deploy**:
+
+1. Merge + Railway Production Deploy (``backend/**`` paths).
+2. Admin portal → **NFL anytime TD pipeline**, or Celery:
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/celery -A app.celery_app call \
+  app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline
+```
+
+3. Expect week-1 chalk P near vig-free fair; |edge| small without shock; failed
+   Odds attach clears betting columns.
+
+---
+
 ## Refresh prod board after TEAM logic changes
 
 TEAM / OPP are denormalized onto `pred_nfl_anytime_td_predictions` at project
