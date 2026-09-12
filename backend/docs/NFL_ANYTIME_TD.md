@@ -39,7 +39,12 @@ Pure aggregators are unit-tested offline in `test_nfl_anytime_td_feature_assembl
 RZ trips / share / RZ targets / GL carries come from nflverse **PBP** (`yardline_100`
 ≤ 20 / ≤ 5) when available, with weekly scoring proxies as fallback.
 **RBs** use rush + goal-line carry share (not blended RZ touches) and blend
-conversion toward GL TD rate; WR/TE use RZ target share. Usage universe keeps
+conversion toward PBP `gl_td_rate`; WR/TE use RZ target share and blend toward
+PBP `rz_td_rate` when present. **Do not** feed overall season TD/touch into λ
+`conversion_rate` — that unit mismatch crushed high-volume RBs (~0.03–0.08) while
+leaving sparse TEs near 0.10–0.25 and produced TE-heavy boards capped near ~25%.
+Usage stores `td_per_touch` as a diagnostic only; λ conversion uses position
+priors (RB 0.38 / TE 0.24 / WR 0.20) plus PBP RZ/GL rates. Usage universe keeps
 top **2 RBs** per team. Walk-forward gate requires beating baseline Brier
 (`require_beat_baseline_brier=true`, 0.02 margin) and RB Brier ≤ `max_rb_brier` (0.28).
 UI defaults **on** after the 2026-09-04 metrics write (`passes_gate=true`).
@@ -114,6 +119,23 @@ Odds), e.g.:
 Confirm a previously wrong-team player updates `team_name` /
 `opponent_team_name` on the next successful projector upsert (or is removed if
 no longer on the slate).
+
+### After conversion-rate / ranking fixes
+
+Deploying λ conversion fixes (reject overall TD/touch, use RZ/GL priors + PBP
+rates) does **not** rewrite existing `pred_nfl_anytime_td_predictions` rows.
+**Re-run `run_nfl_anytime_td_pipeline` after deploy** so the board re-projects
+with corrected `conversion_rate` / P(TD). Odds attach is optional for ranking
+(API sorts by `td_probability` only); missing odds leave edges empty/NO_PLAY
+but do not reorder the board.
+
+Expected after re-run: starting RBs generally lead by P(TD) (often ~25–40% for
+featured backs); featured TEs mid-board (~10–20%); max P(TD) no longer clustered
+on TEs near a ~25% ceiling from prior×inflated-share.
+
+Optional follow-up: retrain residual GBM
+(`scripts/nfl_anytime_td_train_calibration.py`) so calibrators see RZ/GL
+`conversion_rate` instead of historical TD/touch values.
 
 ### Manual purge (immediate prod relief)
 

@@ -231,6 +231,7 @@ def aggregate_player_rz_from_pbp(
     player_team: dict[str, str] = {}
     player_weeks: dict[str, set[int]] = {}
     gl_tds: dict[str, float] = {}
+    rz_tds: dict[str, float] = {}
 
     for play in rz:
         week = int(_num(play, "week", default=0))
@@ -241,12 +242,16 @@ def aggregate_player_rz_from_pbp(
                 targets[pid] = targets.get(pid, 0.0) + 1.0
                 player_team[pid] = team
                 player_weeks.setdefault(pid, set()).add(week)
+                if _is_flag(play, "touchdown"):
+                    rz_tds[pid] = rz_tds.get(pid, 0.0) + 1.0
         if _is_flag(play, "rush"):
             pid = _str(play, "rusher_player_id")
             if pid:
                 carries[pid] = carries.get(pid, 0.0) + 1.0
                 player_team[pid] = team
                 player_weeks.setdefault(pid, set()).add(week)
+                if _is_flag(play, "touchdown"):
+                    rz_tds[pid] = rz_tds.get(pid, 0.0) + 1.0
 
     gl_carries: dict[str, float] = {}
     for play in gl:
@@ -289,6 +294,9 @@ def aggregate_player_rz_from_pbp(
         gl_td_rate = None
         if gl_c > 0:
             gl_td_rate = gl_tds.get(pid, 0.0) / gl_c
+        rz_td_rate = None
+        if touches > 0:
+            rz_td_rate = rz_tds.get(pid, 0.0) / touches
 
         # Default blended share kept for backward compatibility.
         default_share = (
@@ -318,6 +326,11 @@ def aggregate_player_rz_from_pbp(
             "gl_td_rate": (
                 _clamp(float(gl_td_rate), 0.05, 0.85)
                 if gl_td_rate is not None
+                else None
+            ),
+            "rz_td_rate": (
+                _clamp(float(rz_td_rate), 0.05, 0.85)
+                if rz_td_rate is not None
                 else None
             ),
             "player_rz_share": default_share,

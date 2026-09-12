@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from app.services.etl.nfl.anytime_td_features import _player_rz_share_from_usage
 from app.services.etl.nfl.anytime_td_pbp import (
     aggregate_player_rz_from_pbp,
@@ -109,6 +111,27 @@ def test_aggregate_player_rz_from_pbp():
     assert players["rb1"]["rz_rush_share"] is not None
     assert players["rb1"]["gl_carry_share"] is not None
     assert players["rb1"]["gl_carries_pg"] is not None
+    assert players["wr1"]["rz_td_rate"] is not None
+    assert 0.05 <= players["wr1"]["rz_td_rate"] <= 0.85
+
+
+def test_aggregate_player_rz_td_rate_from_touchdowns():
+    plays = _pbp_sample() + [
+        {
+            "week": 1,
+            "posteam": "KC",
+            "yardline_100": 8,
+            "pass": 1,
+            "rush": 0,
+            "touchdown": 1,
+            "receiver_player_id": "wr1",
+            "rusher_player_id": None,
+            "drive": 5,
+        },
+    ]
+    players = aggregate_player_rz_from_pbp(plays, as_of_week=3)
+    # wr1: 3 RZ targets, 1 TD → rate 1/3 before clamp
+    assert players["wr1"]["rz_td_rate"] == pytest.approx(1.0 / 3.0, rel=1e-6)
 
 
 def test_aggregate_team_early_down_pass_pct():

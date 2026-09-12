@@ -101,10 +101,115 @@ def test_aggregate_player_usage_prior_weeks_only():
     assert "rb1" in usage
     assert usage["rb1"]["td_season"] == 3.0
     assert usage["rb1"]["targets_l3"] > 0
-    assert usage["rb1"]["conversion_rate"] is not None
+    # Overall TD/touch is diagnostic only — must not feed λ as conversion_rate.
+    assert usage["rb1"]["conversion_rate"] is None
+    assert usage["rb1"]["td_per_touch"] is not None
+    assert usage["rb1"]["td_per_touch"] < 0.12  # typical overall TD/touch band
     # week 3 row absent — as_of_week=3 excludes week>=3
     usage_w2 = aggregate_player_usage_from_weekly(_weekly_sample(), as_of_week=2)
     assert usage_w2["rb1"]["td_season"] == 1.0
+
+
+def test_build_player_feature_row_rejects_overall_td_per_touch_as_conversion():
+    """Usage TD/touch (~0.05) must not crush RB λ conversion (prior ~0.38)."""
+    from app.services.etl.nfl.anytime_td_features import _CONVERSION_RATE_PRIOR
+
+    row = build_player_feature_row(
+        player_id="rb1",
+        player_name="Star RB",
+        position="RB",
+        team_name="KC",
+        opponent_team_name="BUF",
+        season=2026,
+        week=1,
+        player_stats={
+            "player_rz_share": 0.35,
+            "conversion_rate": 0.05,  # overall TD/touch — wrong units
+            "td_per_touch": 0.05,
+        },
+    )
+    assert row["conversion_rate"] == _CONVERSION_RATE_PRIOR["RB"]
+    assert row["td_per_touch"] == 0.05
+
+
+def test_build_player_feature_row_rb_blends_gl_td_with_prior():
+    from app.services.etl.nfl.anytime_td_features import _CONVERSION_RATE_PRIOR
+
+    row = build_player_feature_row(
+        player_id="rb1",
+        player_name="Star RB",
+        position="RB",
+        team_name="KC",
+        opponent_team_name="BUF",
+        season=2026,
+        week=1,
+        player_stats={
+            "player_rz_share": 0.40,
+            "conversion_rate": None,
+            "gl_td_rate": 0.50,
+        },
+    )
+    prior = _CONVERSION_RATE_PRIOR["RB"]
+    expected = 0.45 * prior + 0.55 * 0.50
+    assert abs(row["conversion_rate"] - expected) < 1e-9
+
+
+def test_starting_rb_outranks_featured_te_with_usage_td_per_touch():
+    """Regression: board should be RB-led when only overall TD/touch is available."""
+    from app.services.etl.nfl.anytime_td_model import (
+        RB_TD_DISPERSION,
+        anytime_td_probability,
+        expected_tds,
+    )
+
+    rb = build_player_feature_row(
+        player_id="rb1",
+        player_name="Starting RB",
+        position="RB",
+        team_name="MIN",
+        opponent_team_name="CHI",
+        season=2026,
+        week=1,
+        player_stats={
+            "player_rz_share": 0.32,
+            "conversion_rate": 0.045,  # would have crushed λ pre-fix
+            "td_per_touch": 0.045,
+        },
+    )
+    te = build_player_feature_row(
+        player_id="te1",
+        player_name="Featured TE",
+        position="TE",
+        team_name="MIN",
+        opponent_team_name="CHI",
+        season=2026,
+        week=1,
+        player_stats={
+            "player_rz_share": 0.18,
+            "conversion_rate": 0.11,  # sparse-touch TD/touch near TE floor
+            "td_per_touch": 0.11,
+        },
+    )
+    rb_lam = expected_tds(
+        team_rz_trips=rb["team_rz_trips"],
+        player_rz_share=rb["player_rz_share"],
+        conversion_rate=rb["conversion_rate"],
+        defense_mult=1.0,
+        weather_mult=1.0,
+        script_mult=1.0,
+    )
+    te_lam = expected_tds(
+        team_rz_trips=te["team_rz_trips"],
+        player_rz_share=te["player_rz_share"],
+        conversion_rate=te["conversion_rate"],
+        defense_mult=1.0,
+        weather_mult=1.0,
+        script_mult=1.0,
+    )
+    rb_p = anytime_td_probability(rb_lam, dispersion=RB_TD_DISPERSION)
+    te_p = anytime_td_probability(te_lam, dispersion=None)
+    assert rb_p > te_p
+    assert rb_p > 0.20  # starting RBs should clear the ~25% TE-board ceiling
 
 
 def test_aggregate_team_and_defense():

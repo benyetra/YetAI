@@ -204,7 +204,7 @@ def compute_brier_score(
 
 
 def compute_baseline_brier(
-    rows: Sequence[Mapping[str, Any]]
+    rows: Sequence[Mapping[str, Any]],
 ) -> tuple[float | None, int]:
     scores: list[float] = []
     for row in rows:
@@ -489,7 +489,9 @@ def grade_week_from_weekly_records(
             "td_l5": player_usage.get("td_l5"),
             "td_season": player_usage.get("td_season"),
             "snap_pct": player_usage.get("snap_pct"),
-            "conversion_rate": player_usage.get("conversion_rate"),
+            # Do not pass usage TD/touch as conversion_rate (wrong units for λ).
+            "conversion_rate": None,
+            "td_per_touch": player_usage.get("td_per_touch"),
         }
         if pbp_player.get("rz_targets_pg") is not None:
             player_stats["rz_targets"] = pbp_player["rz_targets_pg"]
@@ -504,6 +506,7 @@ def grade_week_from_weekly_records(
             "rz_target_share",
             "gl_carry_share",
             "gl_td_rate",
+            "rz_td_rate",
             "rz_carries",
         ):
             if pbp_player.get(key) is not None:
