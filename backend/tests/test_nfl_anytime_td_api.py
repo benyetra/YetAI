@@ -35,28 +35,38 @@ def test_anytime_td_positions():
     )
 
 
-def _make_td_row(*, player_id: str, td_probability: float, row_id: int = 1):
+def _make_td_row(
+    *,
+    player_id: str,
+    td_probability: float,
+    edge: float | None = None,
+    row_id: int = 1,
+):
     return SimpleNamespace(
         id=row_id,
         season=2026,
         week=1,
         player_id=player_id,
         td_probability=td_probability,
+        edge=edge,
     )
 
 
 def test_query_nfl_anytime_td_sorted_and_deduped(monkeypatch):
     rows = [
-        _make_td_row(player_id="p1", td_probability=0.35, row_id=1),
-        _make_td_row(player_id="p1", td_probability=0.55, row_id=2),
-        _make_td_row(player_id="p2", td_probability=0.40, row_id=3),
+        _make_td_row(player_id="p1", td_probability=0.35, edge=0.01, row_id=1),
+        _make_td_row(player_id="p1", td_probability=0.55, edge=0.06, row_id=2),
+        _make_td_row(player_id="p2", td_probability=0.40, edge=0.02, row_id=3),
     ]
 
     mock_q = MagicMock()
     mock_q.filter.return_value = mock_q
     mock_q.order_by.return_value = mock_q
     mock_q.limit.return_value = mock_q
-    mock_q.all.return_value = sorted(rows, key=lambda r: r.td_probability, reverse=True)
+    mock_q.all.return_value = sorted(
+        rows,
+        key=lambda r: (r.edge is None, -(r.edge or 0), -r.td_probability),
+    )
 
     mock_db = MagicMock()
     mock_db.query.return_value = mock_q
@@ -67,6 +77,7 @@ def test_query_nfl_anytime_td_sorted_and_deduped(monkeypatch):
         lambda row: {
             "player_id": row.player_id,
             "td_probability": row.td_probability,
+            "edge": row.edge,
         },
     )
 
@@ -75,7 +86,40 @@ def test_query_nfl_anytime_td_sorted_and_deduped(monkeypatch):
     )
     assert [r["player_id"] for r in out] == ["p1", "p2"]
     assert out[0]["td_probability"] == 0.55
+    assert out[0]["edge"] == 0.06
     assert out[1]["td_probability"] == 0.40
+
+
+def test_query_nfl_anytime_td_sorts_by_edge_nulls_last(monkeypatch):
+    rows = [
+        _make_td_row(player_id="high_p", td_probability=0.70, edge=None, row_id=1),
+        _make_td_row(player_id="best_edge", td_probability=0.40, edge=0.08, row_id=2),
+        _make_td_row(player_id="mid_edge", td_probability=0.50, edge=0.03, row_id=3),
+    ]
+
+    mock_q = MagicMock()
+    mock_q.filter.return_value = mock_q
+    mock_q.order_by.return_value = mock_q
+    mock_q.limit.return_value = mock_q
+    mock_q.all.return_value = rows
+
+    mock_db = MagicMock()
+    mock_db.query.return_value = mock_q
+
+    monkeypatch.setattr(
+        predictions_module,
+        "_row_to_dict",
+        lambda row: {
+            "player_id": row.player_id,
+            "td_probability": row.td_probability,
+            "edge": row.edge,
+        },
+    )
+
+    out = predictions_module._query_nfl_anytime_td_predictions(
+        mock_db, target_date=date(2026, 9, 7), limit=50
+    )
+    assert [r["player_id"] for r in out] == ["best_edge", "mid_edge", "high_p"]
 
 
 def test_nfl_predictions_includes_anytime_td_key(monkeypatch):

@@ -277,7 +277,8 @@ def _query_nfl_anytime_td_predictions(
     target_date: date_type | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    """Anytime-TD rows for skill positions, deduped and sorted by P(TD) desc."""
+    """Anytime-TD rows for skill positions, deduped; edge DESC then P(TD) DESC."""
+    from sqlalchemy import nullslast
 
     def _fetch(*, season: int | None = None, week: int | None = None) -> list[Any]:
         q = db.query(NFLAnytimeTDPredictions).filter(
@@ -292,9 +293,20 @@ def _query_nfl_anytime_td_predictions(
             )
         fetch_limit = limit * 5
         return (
-            q.order_by(NFLAnytimeTDPredictions.td_probability.desc())
+            q.order_by(
+                nullslast(NFLAnytimeTDPredictions.edge.desc()),
+                NFLAnytimeTDPredictions.td_probability.desc(),
+            )
             .limit(fetch_limit)
             .all()
+        )
+
+    def _sort_key(row: Any) -> tuple:
+        edge = getattr(row, "edge", None)
+        return (
+            edge is None,
+            -(float(edge) if edge is not None else 0.0),
+            -float(row.td_probability),
         )
 
     def _dedupe_sort(raw: list[Any]) -> list[dict[str, Any]]:
@@ -303,7 +315,7 @@ def _query_nfl_anytime_td_predictions(
             key = (row.season, row.week, row.player_id)
             if key not in latest:
                 latest[key] = row
-        deduped = sorted(latest.values(), key=lambda r: r.td_probability, reverse=True)
+        deduped = sorted(latest.values(), key=_sort_key)
         return [_row_to_dict(r) for r in deduped[:limit]]
 
     if target_date is None:
