@@ -455,6 +455,20 @@ def build_qb_prediction_context(
     return ctx
 
 
+def _pick_latest_injury_row(qb_injuries: pd.DataFrame) -> pd.Series:
+    """Most recent injury report for one QB.
+
+    nflverse injury feeds no longer ship ``date_modified`` (KeyError crashed
+    every ``qb_weekly`` run). Prefer that column when present, else ``week``.
+    """
+    if qb_injuries.empty:
+        raise ValueError("qb_injuries is empty")
+    for col in ("date_modified", "week"):
+        if col in qb_injuries.columns:
+            return qb_injuries.sort_values(col).iloc[-1]
+    return qb_injuries.iloc[-1]
+
+
 def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
     """Get current starting QBs using depth charts and injury data"""
     from app.services.etl.nfl.qb_late_availability import (
@@ -568,8 +582,12 @@ def get_dynamic_starting_qbs(season: int, week: int) -> List[Dict]:
             ]
 
             if not qb_injuries.empty:
-                latest_injury = qb_injuries.sort_values("date_modified").iloc[-1]
+                latest_injury = _pick_latest_injury_row(qb_injuries)
                 injury_status = latest_injury.get("report_status", "Unknown")
+                if injury_status is None or (
+                    isinstance(injury_status, float) and pd.isna(injury_status)
+                ):
+                    injury_status = "Unknown"
 
                 promote = should_promote_backup(
                     injury_status, hours_to_kickoff=hours

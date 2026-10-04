@@ -150,3 +150,70 @@ def test_get_dynamic_starting_qbs_applies_overrides(monkeypatch):
     assert by_team["MIA"]["name"] == "Tua Tagovailoa"
     assert by_team["MIA"]["team_name"] == "Miami Dolphins"
     assert by_team["NE"]["name"] == "Drake Maye"
+
+
+def test_get_dynamic_starting_qbs_tolerates_injuries_without_date_modified(
+    monkeypatch,
+):
+    """nflverse injury parquet no longer includes date_modified (prod crash)."""
+    depth = pd.concat(
+        [
+            _sample_2025_format_depth(),
+            pd.DataFrame(
+                [
+                    {
+                        "dt": "2026-08-12T00:00:00Z",
+                        "team": "NE",
+                        "player_name": "Joshua Dobbs",
+                        "gsis_id": "00-0033949",
+                        "pos_abb": "QB",
+                        "pos_rank": 2,
+                    }
+                ]
+            ),
+        ],
+        ignore_index=True,
+    )
+    # Current nflverse schema: week + report_status, no date_modified.
+    injuries = pd.DataFrame(
+        [
+            {
+                "season": 2026,
+                "week": 1,
+                "gsis_id": "00-0039337",  # Drake Maye
+                "team": "NE",
+                "report_status": "Out",
+                "practice_status": None,
+            },
+            {
+                "season": 2026,
+                "week": 1,
+                "gsis_id": "00-0039917",  # Penix (ATL override starter)
+                "team": "ATL",
+                "report_status": None,
+                "practice_status": "Full Participation in Practice",
+            },
+        ]
+    )
+
+    monkeypatch.setattr(
+        "app.services.etl.nfl.qb_dynamic.nfl.import_depth_charts",
+        lambda seasons: depth,
+    )
+    monkeypatch.setattr(
+        "app.services.etl.nfl.qb_dynamic.nfl.import_injuries",
+        lambda seasons: injuries,
+    )
+    monkeypatch.setattr(
+        "app.services.etl.nfl.qb_dynamic.get_game_kickoff",
+        lambda team, season, week: None,
+    )
+
+    qbs = get_dynamic_starting_qbs(2026, 1)
+    by_team = {q["team_abbr"]: q for q in qbs}
+
+    assert by_team["NE"]["name"] == "Joshua Dobbs"
+    assert by_team["NE"]["is_backup"] is True
+    assert by_team["NE"]["injury_status"] == "Out"
+    assert by_team["ATL"]["name"] == "Michael Penix Jr."
+    assert by_team["ATL"]["injury_status"] == "Unknown"
