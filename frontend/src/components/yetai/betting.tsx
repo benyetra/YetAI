@@ -7,6 +7,8 @@ import { calcPayout, fmtMoney, fmtOdds } from '@/lib/yetai-format';
 import { teamColorStyle } from '@/lib/team-colors';
 import { parlayAmericanOdds, parlayToWin } from '@/lib/slip-to-bet';
 import { spreadLabel } from '@/lib/yetai-odds';
+import { gamblyLegFromSlipItem } from '@/lib/gambly';
+import GambleItButton from './GambleItButton';
 import type { BetSlipPlaceContext, DesignGame, SlipItem } from './types';
 
 function SlipRow({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
@@ -319,6 +321,13 @@ export function BetSlipPanel({
             >
               {placing ? 'Placing…' : `Place ${mode === 'parlay' ? 'parlay' : `${slip.length} bet${slip.length > 1 ? 's' : ''}`}`}
             </button>
+            <GambleItButton
+              legs={slip.map(gamblyLegFromSlipItem)}
+              parlay={mode === 'parlay'}
+              label={`Gamble It — send ${mode === 'parlay' && slip.length > 1 ? 'parlay' : 'slip'} to sportsbook`}
+              className="btn btn-gambly"
+              block
+            />
           </div>
         </>
       )}

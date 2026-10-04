@@ -12,6 +12,8 @@ import {
   spreadMarketEdge,
 } from '@/lib/spreadTotalsProjectionDisplay';
 import { teamColorStyle, teamPrimaryColor } from '@/lib/team-colors';
+import { gamblyLegFromProjection } from '@/lib/gambly';
+import GambleItButton from './GambleItButton';
 import { TeamGlyph } from './primitives';
 
 type GameRow = Record<string, unknown>;
@@ -420,6 +422,12 @@ function GameCard({
         scoreUnit={cfg.scoreUnit}
         showResults={showResults}
         grade={pick && showResults ? pickGrade(proj, pick.kind) : null}
+        matchup={`${away} @ ${home}`}
+        pickOdds={
+          pick?.kind === 'ml' && pick.side
+            ? num(pick.side === 'HOME' ? proj.market_home_ml : proj.market_away_ml)
+            : null
+        }
         pickTeamColors={
           pick && pick.kind !== 'total'
             ? teamColorStyle(pick.team, {
@@ -605,6 +613,8 @@ function ModelPickModule({
   showResults,
   grade,
   pickTeamColors,
+  matchup,
+  pickOdds,
   onAdd,
 }: {
   pick: PrimaryPick | null;
@@ -624,6 +634,8 @@ function ModelPickModule({
   showResults: boolean;
   grade: boolean | null;
   pickTeamColors?: Record<string, string>;
+  matchup: string;
+  pickOdds: number | null;
   onAdd?: () => void;
 }) {
   if (!pick) {
@@ -728,15 +740,35 @@ function ModelPickModule({
         ) : null}
       </div>
       <div className="proj-pick-why">{whyCopy}</div>
-      <button
-        type="button"
-        className="proj-pick-add"
-        onClick={onAdd}
-        disabled={!onAdd}
-        style={!onAdd ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
-      >
-        + Add to slip
-      </button>
+      <div className="proj-pick-actions">
+        <button
+          type="button"
+          className="proj-pick-add"
+          onClick={onAdd}
+          disabled={!onAdd}
+          style={!onAdd ? { opacity: 0.55, cursor: 'not-allowed' } : undefined}
+        >
+          + Add to slip
+        </button>
+        {showResults ? null : (
+          <GambleItButton
+            legs={[
+              gamblyLegFromProjection({
+                kind: pick.kind,
+                team: pick.team,
+                line:
+                  pick.kind === 'total'
+                    ? marketTotal?.toFixed(1)
+                    : pick.kind === 'spread'
+                      ? marketLine
+                      : null,
+                odds: pickOdds,
+                matchup,
+              }),
+            ]}
+          />
+        )}
+      </div>
     </div>
   );
 }

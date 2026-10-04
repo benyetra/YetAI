@@ -231,7 +231,7 @@ export default function SportPredictionsPage({
       ) : (
         <div className="predictions-stack">
           {(discoveryGroups?.length ?? 0) > 0 ? (
-            <BestEdgesDiscovery sections={discoverySections} loading={loading} />
+            <BestEdgesDiscovery sections={discoverySections} loading={loading} gambleIt={!isPastDate} />
           ) : null}
 
           {topSection ? topSection({ data, loading, isPastDate }) : null}

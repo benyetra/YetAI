@@ -392,6 +392,15 @@ input { font: inherit; }
 .btn-ghost:hover { background: var(--surface); color: var(--text); border-color: var(--border); }
 .btn-sm { padding: 5px 10px; font-size: 12px; border-radius: 7px; }
 .btn-block { width: 100%; justify-content: center; }
+/* Gambly "Gamble It" hand-off (one-click sportsbook betslip) */
+.btn-gambly {
+  text-decoration: none;
+  color: var(--win);
+  background: var(--win-soft);
+  border-color: color-mix(in oklab, var(--win) 35%, transparent);
+  white-space: nowrap;
+}
+.btn-gambly:hover { background: var(--win); border-color: transparent; color: white; }
 
 /* Chips */
 .chip-row { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -810,6 +819,13 @@ input { font: inherit; }
   background: var(--accent);
   color: white;
 }
+.proj-pick-actions {
+  grid-area: add;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-self: center;
+}
 .proj-foot {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -844,6 +860,10 @@ input { font: inherit; }
   }
   .proj-pick-add {
     justify-self: start;
+  }
+  .proj-pick-actions {
+    justify-self: start;
+    flex-direction: row;
   }
 }
 
@@ -1328,6 +1348,20 @@ input { font: inherit; }
 .predictions-discovery-pick {
   text-transform: uppercase;
   letter-spacing: 0.03em;
+}
+.predictions-discovery-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.predictions-discovery-group-head h3 {
+  margin: 0;
+}
+.predictions-discovery-gamble {
+  padding: 3px 8px;
+  font-size: 11px;
 }
 .predictions-chip {
   font-size: 12px;
