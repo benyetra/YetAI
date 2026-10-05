@@ -6,7 +6,15 @@ import { ConfidenceBar, LeagueChip, TeamGlyph } from './primitives';
 import { fmtOdds, teamAbbr } from '@/lib/yetai-format';
 import { teamColorStyle } from '@/lib/team-colors';
 import { hasRealMatchup, isPlayerPropDisplay } from '@/lib/yetai-matchup';
+import { gamblyLegFromPick } from '@/lib/gambly';
+import GambleItButton from './GambleItButton';
 import type { DesignPick } from './types';
+
+/** Settled picks can't be bet anymore. */
+function isOpenPick(pick: DesignPick): boolean {
+  const s = (pick.status ?? '').toLowerCase();
+  return !s || s === 'pending' || s === 'open' || s === 'active';
+}
 
 function splitMatchup(matchup: string): [string, string] {
   if (matchup.includes('@')) {
@@ -83,6 +91,7 @@ export function PickCard({ pick, onAdd }: { pick: DesignPick; onAdd?: () => void
               <Plus size={13} /> Add to slip
             </button>
           )}
+          {isOpenPick(pick) && <GambleItButton legs={[gamblyLegFromPick(pick)]} />}
           <button type="button" className="btn btn-sm" style={{ minWidth: 36, justifyContent: 'center' }} title="Why this pick?">
             <Eye size={13} />
           </button>
@@ -191,6 +200,14 @@ export function HeroAIPick({
               <Plus size={14} /> Add to bet slip
             </button>
           )}
+          {isOpenPick(pick) && (
+            <GambleItButton
+              legs={[gamblyLegFromPick(pick)]}
+              label="Gamble It on Gambly"
+              className="btn btn-gambly"
+              block
+            />
+          )}
         </div>
       </div>
     </div>
@@ -226,11 +243,14 @@ export function DetailedPick({ pick, onAdd }: { pick: DesignPick; onAdd?: () => 
             <span className="dim">Edge</span> <span className="mono" style={{ color: 'var(--win)' }}> {pick.edge}</span>
           </div>
         )}
-        {onAdd && (
-          <div style={{ marginLeft: 'auto' }}>
-            <button type="button" className="btn btn-sm" onClick={onAdd}>
-              <Plus size={12} /> Add
-            </button>
+        {(onAdd || isOpenPick(pick)) && (
+          <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            {isOpenPick(pick) && <GambleItButton legs={[gamblyLegFromPick(pick)]} />}
+            {onAdd && (
+              <button type="button" className="btn btn-sm" onClick={onAdd}>
+                <Plus size={12} /> Add
+              </button>
+            )}
           </div>
         )}
       </div>

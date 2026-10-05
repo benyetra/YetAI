@@ -96,6 +96,10 @@ cd backend && PYTHONPATH=. python3 scripts/sync_team_colors.py
 
 Refreshes `frontend/src/lib/team-colors-registry.generated.ts`. UI lookups: `frontend/src/lib/team-colors.ts`.
 
+## Gambly "Gamble It" (one-click betslips)
+
+Projection/pick/bet-slip surfaces link to Gambly's Ask-Gambly entry (`https://gambly.com/chat?entry=ask-gambly&prompt=…&autoSubmit=1`), which turns the leg text into a one-click sportsbook betslip. Frontend-only URL hand-off (no API key). Builders: `frontend/src/lib/gambly.ts`; button: `frontend/src/components/yetai/GambleItButton.tsx`. Disable with `NEXT_PUBLIC_GAMBLY_ENABLED=0`.
+
 ## League Vault auto-sync
 
 Public vault sites refresh on a **Tuesday 07:15 ET** Celery Beat job (`league-vault-weekly-sync` → re-ingest + force recompute). Snapshot GET also recomputes when `last_synced` is newer than the record book. Disable with `LEAGUE_VAULT_AUTO_SYNC=false`. Manual: `PYTHONPATH=. python3 scripts/league_vault/refresh_pilot.py`.

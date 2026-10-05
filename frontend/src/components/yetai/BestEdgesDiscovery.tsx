@@ -11,6 +11,8 @@ import {
   asNumber,
   type DiscoveryGroupConfig,
 } from '@/lib/propDiscovery';
+import { gamblyLegFromDiscoveryRow } from '@/lib/gambly';
+import GambleItButton from '@/components/yetai/GambleItButton';
 import { Sparkles } from 'lucide-react';
 
 export type DiscoverySection = DiscoveryGroupConfig & {
@@ -43,9 +45,11 @@ function pickLabel(row: Record<string, unknown>, pickKey?: string): string {
 function DiscoveryRow({
   row,
   group,
+  gambleIt,
 }: {
   row: Record<string, unknown>;
   group: DiscoveryGroupConfig;
+  gambleIt: boolean;
 }) {
   const edgeKey = group.edgeKey ?? 'edge';
   const projectedKey = group.projectedKey;
@@ -82,6 +86,13 @@ function DiscoveryRow({
           </span>
         )}
         <span className="predictions-discovery-pick">{pickLabel(row, group.pickKey)}</span>
+        {gambleIt ? (
+          <GambleItButton
+            legs={[gamblyLegFromDiscoveryRow(row, group)]}
+            className="btn btn-sm btn-gambly predictions-discovery-gamble"
+            iconOnly
+          />
+        ) : null}
       </div>
     </li>
   );
@@ -90,9 +101,12 @@ function DiscoveryRow({
 export default function BestEdgesDiscovery({
   sections,
   loading,
+  gambleIt = true,
 }: {
   sections: DiscoverySection[];
   loading?: boolean;
+  /** Show Gambly one-click betslip buttons (off for past dates). */
+  gambleIt?: boolean;
 }) {
   if (loading) {
     return (
@@ -124,13 +138,23 @@ export default function BestEdgesDiscovery({
       <div className="predictions-discovery-grid">
         {sections.map((section) => (
           <div key={section.responseKey} className="predictions-discovery-group">
-            <h3>{section.title}</h3>
+            <div className="predictions-discovery-group-head">
+              <h3>{section.title}</h3>
+              {gambleIt && section.rows.length > 1 ? (
+                <GambleItButton
+                  legs={section.rows.map((row) => gamblyLegFromDiscoveryRow(row, section))}
+                  label="Parlay all"
+                  className="btn btn-sm btn-gambly predictions-discovery-gamble"
+                />
+              ) : null}
+            </div>
             <ol className="predictions-discovery-list">
               {section.rows.map((row, i) => (
                 <DiscoveryRow
                   key={`${section.responseKey}-${String(row.id ?? i)}`}
                   row={row}
                   group={section}
+                  gambleIt={gambleIt}
                 />
               ))}
             </ol>
