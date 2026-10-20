@@ -84,6 +84,9 @@ MANUAL_PLAYER_IDS: dict[str, int] = {
     "amen thompson": 1641708,
     "ausar thompson": 1641709,
     "gradey dick": 1641711,
+    # API-Sports spellings that don't match NBA.com's.
+    "r rupert": 1641712,  # Rayan Rupert
+    "jamie jaquez": 1631170,  # Jaime Jaquez Jr. (duplicate, misspelled entry)
 }
 
 # Players with no NBA.com id we can resolve (mostly rookies newer than the
@@ -132,21 +135,30 @@ def _get_static_players() -> list[dict]:
 
 
 _NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+# API-Sports files suffixes under the first name ("Jaime Jr." + "Jaquez"),
+# so these are dropped wherever they follow the first token. "v" only counts
+# at the end.
+_MID_NAME_SUFFIXES = _NAME_SUFFIXES - {"v"}
 
 
 def normalize_player_name(name: str | None, strip_suffix: bool = True) -> str:
     """Accent-, case-, punctuation- and suffix-insensitive name key.
 
     "Luka Dončić" / "Luka Doncic" -> "luka doncic";
-    "Jaime Jaquez Jr." -> "jaime jaquez"; "Ja'Kobi Gillespie" -> "jakobi gillespie".
+    "Jaime Jaquez Jr." / "Jaime Jr. Jaquez" -> "jaime jaquez";
+    "Ja'Kobi Gillespie" -> "jakobi gillespie".
     """
     text = unicodedata.normalize("NFKD", name or "")
     text = "".join(c for c in text if not unicodedata.combining(c)).lower()
     text = re.sub(r"[.'’`]", "", text)
     text = re.sub(r"[^a-z0-9]+", " ", text)
     tokens = text.split()
-    while strip_suffix and len(tokens) > 2 and tokens[-1] in _NAME_SUFFIXES:
-        tokens.pop()
+    if strip_suffix and len(tokens) > 2:
+        kept = tokens[:1] + [t for t in tokens[1:] if t not in _MID_NAME_SUFFIXES]
+        if len(kept) >= 2:
+            tokens = kept
+        while len(tokens) > 2 and tokens[-1] in _NAME_SUFFIXES:
+            tokens.pop()
     return " ".join(tokens)
 
 

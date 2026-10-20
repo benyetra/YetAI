@@ -84,7 +84,7 @@ def _wire(monkeypatch, repair, *, api_ok=True, stats_ok=True, players=None):
         repair, "affected_players", lambda: players or {MILLER: "Brandon Miller"}
     )
     # Name search finds nobody: ids must come from the team rosters.
-    monkeypatch.setattr(repair, "_find_api_player_id", lambda name: None)
+    monkeypatch.setattr(repair, "_find_api_player_id", lambda name, pid=None: None)
     monkeypatch.setattr(repair, "run_career_data", lambda **kw: {"status": "ok"})
     monkeypatch.setattr(repair.time, "sleep", lambda s: None)
 

@@ -89,3 +89,27 @@ def test_real_roster_names_resolve():
         "Anthony Davis": 203076,
     }.items():
         assert resolve_nba_player_id(name) == pid, name
+
+
+@pytest.mark.parametrize(
+    "api_sports_name, pid",
+    [
+        # API-Sports files the suffix under the first name.
+        ("Jaime Jr. Jaquez", 1631170),
+        ("Dereck II Lively", 1641726),
+        ("Jaren Jr. Jackson", 1628991),
+        # API-Sports spellings pinned in MANUAL_PLAYER_IDS.
+        ("R. Rupert", 1641712),
+        ("Jamie Jr. Jaquez", 1631170),
+    ],
+)
+def test_api_sports_name_formats_resolve(api_sports_name, pid):
+    assert resolve_nba_player_id(api_sports_name, api_sports_id=1) == pid
+
+
+def test_mid_name_suffix_normalization():
+    assert normalize_player_name("Jaime Jr. Jaquez") == "jaime jaquez"
+    assert normalize_player_name("Trey III Murphy") == "trey murphy"
+    assert normalize_player_name("Jaime Jr. Jaquez", strip_suffix=False) == (
+        "jaime jr jaquez"
+    )

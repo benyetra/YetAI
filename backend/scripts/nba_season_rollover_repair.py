@@ -208,16 +208,18 @@ def _api_key_works() -> bool:
     return bool(data and data.get("response"))
 
 
-def _season_player_ids(season: int) -> dict[str, int]:
-    """Normalized name -> API-Sports player id from every team's roster that
-    season (the same /players?team= lists update_team_roster reads)."""
-    ids: dict[str, int] = {}
+def _season_player_ids(season: int) -> dict[int, int]:
+    """NBA.com id -> API-Sports player id from every team's roster that season
+    (the same /players?team= lists update_team_roster reads), matched with the
+    pipeline's own resolver so pins and suffix handling apply."""
+    ids: dict[int, int] = {}
     for api_team_id in sorted(set(API_SPORTS_TO_NBA)):
         data = api_request("players", params={"team": api_team_id, "season": season})
         for p in (data or {}).get("response") or []:
             name = f"{p.get('firstname') or ''} {p.get('lastname') or ''}"
-            if p.get("id") and normalize_player_name(name):
-                ids.setdefault(normalize_player_name(name), p["id"])
+            nba_id = resolve_nba_player_id(name)
+            if p.get("id") and nba_id:
+                ids.setdefault(nba_id, p["id"])
         time.sleep(0.2)
     return ids
 
@@ -238,9 +240,7 @@ def _collect_player_games(
             raise SystemExit(f"no schedule returned for season {season}; aborting")
         roster_ids = _season_player_ids(season)
         for pid, name in players.items():
-            api_id = roster_ids.get(normalize_player_name(name)) or (
-                _find_api_player_id(name)
-            )
+            api_id = roster_ids.get(pid) or _find_api_player_id(name, pid)
             if not api_id:
                 not_found.append(f"{name} ({season})")
                 continue
