@@ -5,7 +5,8 @@ Stores NBA.com player ids in pred_team_roster so downstream tables
 ids and NBA.com ids are mapped via API_SPORTS_TO_NBA in `_api_sports.py`.
 
 ESPN's live team rosters settle which team a player is on: API-Sports can lag
-on trades and list a moved player under both teams. Players ESPN lists that
+on trades and list a moved player under both teams, or keep listing a player
+who is on no roster any more (those are dropped). Players ESPN lists that
 API-Sports doesn't yet are added when they resolve to a real NBA.com id.
 
 The table is replaced in one transaction, and only when the new roster looks
@@ -74,6 +75,7 @@ def merge_rosters(
         "espn_used": use_espn,
         "espn_team_overrides": 0,
         "espn_only_added": 0,
+        "not_on_espn_dropped": 0,
         "synthetic_ids": 0,
         "players_unmatched": 0,
     }
@@ -91,6 +93,11 @@ def merge_rosters(
             stats["players_unmatched"] += 1
             continue
         espn_team = espn_team_by_name.get(key)
+        if use_espn and not espn_team:
+            # On no ESPN roster: traded away, waived or retired. API-Sports
+            # keeps listing them under last season's team.
+            stats["not_on_espn_dropped"] += 1
+            continue
         if player_id in entries:
             # Listed under two teams (traded) — ESPN decides, else first wins.
             if espn_team and entries[player_id].team_id != espn_team:

@@ -221,9 +221,10 @@ def test_merge_espn_overrides_stale_team_and_dedupes_trades(fake_resolver):
         (LAL, "Austin Reaves", 11, "G"),
         (CLE, "Austin Reaves", 11, "G"),  # listed twice
         (LAL, "Rookie Guy", 12, "F"),
+        (CLE, "Gone Guy", 13, "F"),  # on no ESPN roster any more
     ]
     espn = _espn(**{str(LAL): []})
-    espn[LAL] = ["Luka Doncic", "Austin Reaves", "LeBron James"]
+    espn[LAL] = ["Luka Doncic", "Austin Reaves", "LeBron James", "Rookie Guy"]
     entries, stats = utr.merge_rosters(api_players, espn)
     by_id = {e.player_id: e for e in entries}
 
@@ -233,6 +234,7 @@ def test_merge_espn_overrides_stale_team_and_dedupes_trades(fake_resolver):
     assert by_id[2544].team_id == LAL  # ESPN-only, real NBA.com id
     assert stats["espn_used"] and stats["espn_team_overrides"] == 1
     assert stats["espn_only_added"] == 1 and stats["synthetic_ids"] == 1
+    assert 900_000_013 not in by_id and stats["not_on_espn_dropped"] == 1
 
 
 def test_merge_ignores_partial_espn(fake_resolver):
