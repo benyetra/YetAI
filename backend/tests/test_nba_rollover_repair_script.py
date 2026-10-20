@@ -49,7 +49,7 @@ for g in GAMES:
     g["teams"] = {"home": {"id": HOME}, "visitors": {"id": AWAY}}
 
 
-def _wire(monkeypatch, repair, *, api_ok=True):
+def _wire(monkeypatch, repair, *, api_ok=True, stats_ok=True, players=None):
     def fake_api(endpoint, params=None):
         if not api_ok:
             return None
@@ -57,7 +57,12 @@ def _wire(monkeypatch, repair, *, api_ok=True):
             return {"response": [2025]}
         if endpoint == "games":
             return {"response": GAMES if params["team"] == HOME else []}
+        if endpoint == "players":
+            roster = [{"id": 77, "firstname": "Brandon", "lastname": "Miller"}]
+            return {"response": roster if params["team"] == HOME else []}
         if endpoint == "players/statistics":
+            if not stats_ok:
+                return None
             if params["id"] != 77:
                 return {"response": []}
             line = {"team": {"id": HOME}, "points": 20, "min": "30"}
@@ -72,10 +77,11 @@ def _wire(monkeypatch, repair, *, api_ok=True):
         raise AssertionError(endpoint)
 
     monkeypatch.setattr(repair, "api_request", fake_api)
-    monkeypatch.setattr(repair, "affected_players", lambda: {MILLER: "Brandon Miller"})
     monkeypatch.setattr(
-        repair, "_find_api_player_id", lambda name: 77 if api_ok else None
+        repair, "affected_players", lambda: players or {MILLER: "Brandon Miller"}
     )
+    # Name search finds nobody: ids must come from the team rosters.
+    monkeypatch.setattr(repair, "_find_api_player_id", lambda name: None)
     monkeypatch.setattr(repair, "run_career_data", lambda **kw: {"status": "ok"})
     monkeypatch.setattr(repair.time, "sleep", lambda s: None)
 
@@ -113,3 +119,31 @@ def test_rebuild_is_rerunnable(monkeypatch, repair, db):
     assert repair.cmd_rebuild(db, [2025], apply=True) == 0
     assert repair.cmd_rebuild(db, [2025], apply=True) == 0
     assert db.query(RecentGames).filter_by(player_id=MILLER).count() == 2
+
+
+def test_rebuild_skips_players_unknown_to_api_sports(monkeypatch, repair, db, capsys):
+    rupert = 1641712
+    db.add(
+        RecentGames(player_id=rupert, game_date=date(2025, 1, 1), opponent_team_id=1)
+    )
+    db.commit()
+    _wire(
+        monkeypatch, repair, players={MILLER: "Brandon Miller", rupert: "Rayan Rupert"}
+    )
+
+    assert repair.cmd_rebuild(db, [2025], apply=True) == 0
+
+    assert db.query(RecentGames).filter_by(player_id=MILLER).count() == 2
+    assert db.query(RecentGames).filter_by(player_id=rupert).count() == 0
+    assert "Rayan Rupert (2025)" in capsys.readouterr().out
+
+
+def test_rebuild_aborts_when_a_stats_fetch_fails(monkeypatch, repair, db):
+    db.add(
+        RecentGames(player_id=MILLER, game_date=date(2025, 1, 1), opponent_team_id=1)
+    )
+    db.commit()
+    _wire(monkeypatch, repair, stats_ok=False)
+
+    assert repair.cmd_rebuild(db, [2025], apply=True) == 1
+    assert db.query(RecentGames).filter_by(player_id=MILLER).count() == 1
