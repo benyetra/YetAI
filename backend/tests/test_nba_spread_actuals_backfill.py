@@ -71,3 +71,26 @@ def test_collect_skips_offseason_and_reports_failures():
     assert {d for d in calls} == {date(2025, 6, d) for d in range(19, 31)}
     assert all(r["actual_margin"] == -3 and r["home_won"] is False for r in rows)
     assert season_counts(rows) == {2024: len(rows)}
+
+
+def test_store_spread_actuals_writes_every_espn_final(monkeypatch):
+    from unittest.mock import MagicMock, patch
+
+    from app.services.etl.nba import store_spread_actuals as ssa
+
+    finals = [
+        {
+            "home_team_name": "Los Angeles Clippers",
+            "away_team_name": "Utah Jazz",
+            "home_score": 101,
+            "away_score": 99,
+        }
+    ]
+    monkeypatch.setattr(ssa, "fetch_final_scores", lambda d: finals)
+    monkeypatch.setattr(ssa, "SessionLocal", lambda: MagicMock())
+    with patch.object(ssa, "upsert_many") as um:
+        out = ssa.run(date(2026, 10, 21))
+    assert out["spreads_written"] == 1
+    (row,) = um.call_args[0][2]
+    assert row["actual_margin"] == 2 and row["home_won"] is True
+    assert row["game_date"] == date(2026, 10, 21)

@@ -67,6 +67,15 @@ See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
      --from 2024-10-22 --to 2026-06-30 --apply
    ```
 
+**Spread model gate.** The spread XGBoost replaces the Elo margin entirely,
+so `train_spread_model` uploads only when its holdout MAE beats Elo on the
+same split (`baseline_test_mae` in the metadata; status `below_baseline`
+otherwise), and `_spread_ml_predict` ignores any S3 model whose metadata
+lacks that win. Features are point-in-time from `pred_nba_spread_actuals`
+(Elo, last-10 form, rest/back-to-back) plus the market line (NaN when
+missing), so past seasons train on what the projector sees live. Daily
+actuals come from ESPN (`store_spread_actuals`).
+
 **Player ids.** `resolve_nba_player_id` matches accent-, case- and
 suffix-insensitively against nba_api's static list (stale for each new draft
 class — NBA.com blocks cloud IPs, so there is no live lookup). Unmatched

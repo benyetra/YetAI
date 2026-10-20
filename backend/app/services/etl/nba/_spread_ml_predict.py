@@ -25,6 +25,15 @@ _LOAD_FAILED = False
 _LOCK = threading.Lock()
 
 
+def beats_baseline(metadata: dict) -> bool:
+    """Only models whose metadata shows a holdout win over Elo may replace it
+    (older uploads predate the check and carry no baseline)."""
+    try:
+        return float(metadata["test_mae"]) < float(metadata["baseline_test_mae"])
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
 def _download_artifact(s3_key: str, local_path: Path) -> None:
     s3 = boto3.client("s3")
     s3.download_file(S3_BUCKET, s3_key, str(local_path))
@@ -51,6 +60,15 @@ def _ensure_loaded() -> bool:
                 with model_local.open("rb") as f:
                     _MODEL = pickle.load(f)  # nosec B301
                 _METADATA = json.loads(meta_local.read_text())
+            if not beats_baseline(_METADATA):
+                logger.warning(
+                    "NBA spread ML model ignored (no Elo holdout win): "
+                    "test_mae=%s baseline=%s",
+                    _METADATA.get("test_mae"),
+                    _METADATA.get("baseline_test_mae"),
+                )
+                _MODEL, _METADATA, _LOAD_FAILED = None, None, True
+                return False
             return True
         except Exception as exc:
             logger.info("NBA spread ML model unavailable, using Elo+pace: %s", exc)
@@ -73,5 +91,12 @@ def predict_margin(features_dict: dict[str, float]) -> float | None:
     if not _ensure_loaded() or _MODEL is None or _METADATA is None:
         return None
     feature_order = _METADATA["features"]
-    vec = np.array([[float(features_dict.get(f, 0.0)) for f in feature_order]])
+    vec = np.array(
+        [
+            [
+                np.nan if features_dict.get(f) is None else float(features_dict[f])
+                for f in feature_order
+            ]
+        ]
+    )
     return float(_MODEL.predict(vec)[0])
