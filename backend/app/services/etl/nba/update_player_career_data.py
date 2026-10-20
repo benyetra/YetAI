@@ -22,6 +22,7 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import PlayerCareerData, TeamRoster
 from app.services.etl.nba._api_sports import (
     api_request,
+    expand_player_name,
     get_current_season,
     normalize_player_name,
     resolve_nba_player_id,
@@ -103,6 +104,14 @@ def _find_api_player_id(
         for pid, full in names:
             if full == target:
                 return pid
+        # API-Sports may list "C. Flagg" for roster name "Cooper Flagg".
+        expanded = [
+            pid
+            for pid, full in names
+            if normalize_player_name(expand_player_name(full, [player_name])) == target
+        ]
+        if len(expanded) == 1:
+            return expanded[0]
         if nba_player_id:
             for p in candidates:
                 name = f"{p.get('firstname', '')} {p.get('lastname', '')}"

@@ -241,3 +241,56 @@ def resolve_nba_player_id(
         )
         return SYNTHETIC_ID_BASE + int(api_sports_id)
     return None
+
+
+def _abbreviated_key(name: str | None) -> str:
+    """ "C. Flagg" / "Cooper Flagg" -> "c flagg" (first initial + rest)."""
+    tokens = normalize_player_name(name).split()
+    if len(tokens) < 2:
+        return ""
+    return f"{tokens[0][0]} {' '.join(tokens[1:])}"
+
+
+def _is_abbreviated(name: str | None) -> bool:
+    tokens = normalize_player_name(name).split()
+    return len(tokens) >= 2 and len(tokens[0]) == 1
+
+
+def _unique_match(name: str, candidates: list[str]) -> str | None:
+    norm = normalize_player_name(name)
+    tokens = norm.split()
+    exact = {c for c in candidates if normalize_player_name(c) == norm}
+    if len(exact) == 1:
+        return exact.pop()
+    if _is_abbreviated(name):
+        key = _abbreviated_key(name)
+        hits = {
+            c
+            for c in candidates
+            if not _is_abbreviated(c) and _abbreviated_key(c) == key
+        }
+        if len(hits) == 1:
+            return hits.pop()
+    if len(tokens) == 2:  # API-Sports sometimes swaps them: "Demin Egor"
+        swapped = f"{tokens[1]} {tokens[0]}"
+        hits = {c for c in candidates if normalize_player_name(c) == swapped}
+        if len(hits) == 1:
+            return hits.pop()
+    return None
+
+
+def expand_player_name(
+    name: str, team_names: list[str], league_names: list[str] | None = None
+) -> str:
+    """Full name for an API-Sports name like "C. Flagg" or "Demin Egor".
+
+    Matches against the player's own team roster first (so "C. Johnson" on
+    Brooklyn is Chaney, never Denver's Cameron), then the whole league only
+    when the match there is unique. Returns `name` unchanged when nothing
+    matches uniquely.
+    """
+    for pool in (team_names, league_names or []):
+        hit = _unique_match(name, pool)
+        if hit:
+            return hit
+    return name

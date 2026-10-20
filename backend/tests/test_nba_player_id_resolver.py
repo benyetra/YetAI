@@ -113,3 +113,24 @@ def test_mid_name_suffix_normalization():
     assert normalize_player_name("Jaime Jr. Jaquez", strip_suffix=False) == (
         "jaime jr jaquez"
     )
+
+
+from app.services.etl.nba._api_sports import expand_player_name  # noqa: E402
+
+
+@pytest.mark.parametrize(
+    "name, team, league, expected",
+    [
+        ("C. Flagg", ["Cooper Flagg", "Kyrie Irving"], [], "Cooper Flagg"),
+        ("Demin Egor", ["Egor Demin"], [], "Egor Demin"),
+        ("Jaime Jr. Jaquez", ["Jaime Jaquez Jr."], [], "Jaime Jaquez Jr."),
+        # Team roster wins: Brooklyn's C. Johnson is Chaney, not Cameron.
+        ("C. Johnson", ["Chaney Johnson"], ["Cameron Johnson"], "Chaney Johnson"),
+        # League-wide only when unique.
+        ("C. Johnson", [], ["Cameron Johnson", "Chaney Johnson"], "C. Johnson"),
+        ("K. Knueppel", [], ["Kon Knueppel"], "Kon Knueppel"),
+        ("Nobody Here", ["Cooper Flagg"], [], "Nobody Here"),
+    ],
+)
+def test_expand_player_name(name, team, league, expected):
+    assert expand_player_name(name, team, league) == expected
