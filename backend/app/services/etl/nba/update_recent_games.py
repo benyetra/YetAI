@@ -37,33 +37,59 @@ def is_nba_league_game(game: dict) -> bool:
     return league is None or str(league).lower() == "standard"
 
 
+def _num(value) -> float | None:
+    """API-Sports stat value -> float. Missing / DNP placeholders ("--", "")
+    become None; minutes may come as "32:15"."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace("+", "")
+    if ":" in text:
+        mins, _, secs = text.partition(":")
+        try:
+            return int(mins) + int(secs or 0) / 60
+        except ValueError:
+            return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+_STAT_FIELDS = {
+    "points": "points",
+    "minutes": "min",
+    "field_goals_made": "fgm",
+    "fg_attempts": "fga",
+    "fg_percentage": "fgp",
+    "three_pt_made": "tpm",
+    "three_pt_attempts": "tpa",
+    "three_pt_percentage": "tpp",
+    "free_throws_made": "ftm",
+    "ft_attempts": "fta",
+    "ft_percentage": "ftp",
+    "offensive_rebounds": "offReb",
+    "defensive_rebounds": "defReb",
+    "rebounds": "totReb",
+    "assists": "assists",
+    "steals": "steals",
+    "blocks": "blocks",
+    "turnovers": "turnovers",
+    "personal_fouls": "pFouls",
+}
+
+
 def stat_line_fields(ps: dict, home_api_id, away_api_id) -> dict:
     """Map one API-Sports players/statistics line to RecentGames columns
     (minus player_id / game_date)."""
     player_team_api_id = (ps.get("team") or {}).get("id")
     is_home = player_team_api_id == home_api_id
     opponent_api_id = away_api_id if is_home else home_api_id
+    fields = {column: _num(ps.get(key)) for column, key in _STAT_FIELDS.items()}
     return {
         "opponent_team_id": API_SPORTS_TO_NBA.get(opponent_api_id, 0),
-        "points": ps.get("points"),
-        "minutes": ps.get("min"),
-        "field_goals_made": ps.get("fgm"),
-        "fg_attempts": ps.get("fga"),
-        "fg_percentage": ps.get("fgp"),
-        "three_pt_made": ps.get("tpm"),
-        "three_pt_attempts": ps.get("tpa"),
-        "three_pt_percentage": ps.get("tpp"),
-        "free_throws_made": ps.get("ftm"),
-        "ft_attempts": ps.get("fta"),
-        "ft_percentage": ps.get("ftp"),
-        "offensive_rebounds": ps.get("offReb"),
-        "defensive_rebounds": ps.get("defReb"),
-        "rebounds": ps.get("totReb"),
-        "assists": ps.get("assists"),
-        "steals": ps.get("steals"),
-        "blocks": ps.get("blocks"),
-        "turnovers": ps.get("turnovers"),
-        "personal_fouls": ps.get("pFouls"),
+        **fields,
         "home_game": is_home,
     }
 
@@ -109,6 +135,8 @@ def _process_day(target_date: date) -> tuple[int, int]:
                         continue
 
                     stats = stat_line_fields(ps, home_api_id, away_api_id)
+                    if stats["minutes"] is None:
+                        continue  # did not play
 
                     existing = (
                         db.query(RecentGames)

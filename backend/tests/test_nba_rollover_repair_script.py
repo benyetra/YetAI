@@ -40,6 +40,8 @@ MILLER = 1641706
 HOME, AWAY = 5, 2  # API-Sports Hornets, Celtics
 
 GAMES = [
+    # Did-not-play game: must be skipped, not stored as "--".
+    {"id": 3, "league": "standard", "date": {"start": "2025-12-02T00:00:00.000Z"}},
     # 10:30pm ET Nov 28 == Nov 29 UTC — must land on Nov 28.
     {"id": 1, "league": "standard", "date": {"start": "2025-11-29T03:30:00.000Z"}},
     # 3:30pm ET Nov 29 (same UTC date as the game above).
@@ -66,12 +68,13 @@ def _wire(monkeypatch, repair, *, api_ok=True, stats_ok=True, players=None):
             if params["id"] != 77:
                 return {"response": []}
             line = {"team": {"id": HOME}, "points": 20, "min": "30"}
-            # Game 1 twice (API duplicate) + game 2.
+            # Game 1 twice (API duplicate) + game 2 + a DNP line ("--").
             return {
                 "response": [
                     {**line, "game": {"id": 1}},
                     {**line, "game": {"id": 1}},
                     {**line, "game": {"id": 2}, "points": 31},
+                    {**line, "game": {"id": 3}, "min": "--", "points": "--"},
                 ]
             }
         raise AssertionError(endpoint)

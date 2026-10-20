@@ -257,11 +257,13 @@ def _collect_player_games(
                 game_date = _game_date(game)
                 if not game_date or is_offseason_date(game_date):
                     continue
-                rows[(pid, game_date)] = stat_line_fields(
+                fields = stat_line_fields(
                     line,
                     (game.get("teams", {}).get("home") or {}).get("id"),
                     (game.get("teams", {}).get("visitors") or {}).get("id"),
                 )
+                if fields["minutes"] is not None:  # skip did-not-play lines
+                    rows[(pid, game_date)] = fields
             time.sleep(0.2)
     return rows, failed, not_found
 

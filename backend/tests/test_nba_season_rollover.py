@@ -285,3 +285,27 @@ def test_find_api_player_id_searches_last_name_first(monkeypatch):
     calls.clear()
     assert upcd._find_api_player_id("Nobody Here") is None
     assert calls == ["Here", "nobody"]
+
+
+@pytest.mark.parametrize(
+    "raw, expected",
+    [
+        ("--", None),
+        ("", None),
+        (None, None),
+        ("31", 31.0),
+        ("32:30", 32.5),
+        ("42.1", 42.1),
+        ("+5", 5.0),
+        (7, 7.0),
+    ],
+)
+def test_stat_values_are_numeric_or_none(raw, expected):
+    assert urg._num(raw) == expected
+
+
+def test_stat_line_fields_handles_dnp_placeholders():
+    line = {"team": {"id": 17}, "min": "--", "points": "--", "fgp": "--"}
+    fields = urg.stat_line_fields(line, home_api_id=17, away_api_id=2)
+    assert fields["minutes"] is None and fields["points"] is None
+    assert fields["fg_percentage"] is None
