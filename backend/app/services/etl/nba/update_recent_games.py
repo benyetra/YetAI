@@ -18,10 +18,11 @@ import time
 from datetime import date, datetime, timedelta
 
 from app.core.database import SessionLocal
-from app.models.predictions_models import RecentGames
+from app.models.predictions_models import RecentGames, TeamRoster
 from app.services.etl.nba._api_sports import (
     API_SPORTS_TO_NBA,
     api_request,
+    expand_player_name,
     resolve_nba_player_id,
 )
 from app.services.etl.nba._espn import now_eastern
@@ -113,6 +114,15 @@ def _process_day(target_date: date) -> tuple[int, int]:
 
     db = SessionLocal()
     try:
+        # Roster names (full names, from update_team_roster) let us expand
+        # API-Sports box-score names like "C. Flagg" to the same player.
+        roster_by_team: dict[int, list[str]] = {}
+        for team_id, roster_name in db.query(
+            TeamRoster.team_id, TeamRoster.player_name
+        ):
+            roster_by_team.setdefault(team_id, []).append(roster_name)
+        league_names = [n for names in roster_by_team.values() for n in names]
+
         for game in games:
             if not is_nba_league_game(game):
                 continue
@@ -128,6 +138,12 @@ def _process_day(target_date: date) -> tuple[int, int]:
                 try:
                     player = ps.get("player") or {}
                     name = f"{(player.get('firstname') or '').strip()} {(player.get('lastname') or '').strip()}".strip()
+                    team_nba_id = API_SPORTS_TO_NBA.get(
+                        (ps.get("team") or {}).get("id")
+                    )
+                    name = expand_player_name(
+                        name, roster_by_team.get(team_nba_id, []), league_names
+                    )
                     nba_player_id = resolve_nba_player_id(
                         name, api_sports_id=player.get("id")
                     )

@@ -25,6 +25,7 @@ from app.services.etl.nba._api_sports import (
     API_SPORTS_TO_NBA,
     SYNTHETIC_ID_BASE,
     api_request,
+    expand_player_name,
     get_current_season,
     normalize_player_name,
     resolve_nba_player_id,
@@ -62,8 +63,10 @@ def merge_rosters(
     """
     use_espn = len(espn_rosters) >= MIN_ESPN_TEAMS
     espn_team_by_name: dict[str, int] = {}
+    league_names: list[str] = []
     if use_espn:
         for team_id, names in espn_rosters.items():
+            league_names.extend(names)
             for name in names:
                 espn_team_by_name[normalize_player_name(name)] = team_id
 
@@ -78,6 +81,10 @@ def merge_rosters(
     seen_names: set[str] = set()
 
     for team_id, name, api_id, position in api_players:
+        # API-Sports abbreviates some names ("C. Flagg") or swaps them
+        # ("Demin Egor"); take ESPN's full name from the same team.
+        if use_espn:
+            name = expand_player_name(name, espn_rosters.get(team_id, []), league_names)
         key = normalize_player_name(name)
         player_id = resolve_nba_player_id(name, api_sports_id=api_id)
         if not player_id:

@@ -309,3 +309,97 @@ def test_stat_line_fields_handles_dnp_placeholders():
     fields = urg.stat_line_fields(line, home_api_id=17, away_api_id=2)
     assert fields["minutes"] is None and fields["points"] is None
     assert fields["fg_percentage"] is None
+
+
+def test_merge_expands_abbreviated_api_sports_names(monkeypatch):
+    flagg = 1642843
+    ids = {"cooper flagg": flagg}
+
+    def resolve(name, static_players=None, api_sports_id=None):
+        key = utr.normalize_player_name(name)
+        if key in ids:
+            return ids[key]
+        return 900_000_000 + api_sports_id if api_sports_id else None
+
+    monkeypatch.setattr(utr, "resolve_nba_player_id", resolve)
+    espn = _espn()
+    espn[DAL] = ["Cooper Flagg", "Chaney Johnson"]
+    entries, stats = utr.merge_rosters(
+        [(DAL, "C. Flagg", 10, "F"), (DAL, "C. Johnson", 11, "F")], espn
+    )
+    by_name = {e.player_name: e.player_id for e in entries}
+    # One Cooper Flagg under his real id, no duplicate synthetic "C. Flagg".
+    assert by_name["Cooper Flagg"] == flagg
+    assert "C. Flagg" not in by_name
+    assert by_name["Chaney Johnson"] == 900_000_011
+    assert stats["espn_only_added"] == 0
+
+
+def test_process_day_expands_box_score_names_from_roster(monkeypatch):
+    class FakeQuery:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __iter__(self):
+            return iter(self.rows)
+
+        def filter_by(self, **kw):
+            return self
+
+        def first(self):
+            return None
+
+    added = []
+
+    class FakeDB:
+        def query(self, *cols):
+            if cols and cols[0] is RecentGames:
+                return FakeQuery([])
+            return FakeQuery([(1610612742, "Cooper Flagg")])
+
+        def add(self, row):
+            added.append(row)
+
+        def commit(self):
+            pass
+
+        def rollback(self):
+            pass
+
+        def close(self):
+            pass
+
+    def fake_api(endpoint, params=None):
+        if endpoint == "games":
+            return {
+                "response": [
+                    {
+                        "id": 1,
+                        "league": "standard",
+                        "teams": {"home": {"id": 8}, "visitors": {"id": 2}},
+                    }
+                ]
+            }
+        return {
+            "response": [
+                {
+                    "player": {"id": 55, "firstname": "C.", "lastname": "Flagg"},
+                    "team": {"id": 8},
+                    "min": "34",
+                    "points": 22,
+                }
+            ]
+        }
+
+    monkeypatch.setattr(urg, "api_request", fake_api)
+    monkeypatch.setattr(urg, "SessionLocal", FakeDB)
+    monkeypatch.setattr(urg.time, "sleep", lambda s: None)
+    monkeypatch.setattr(
+        urg,
+        "resolve_nba_player_id",
+        lambda name, api_sports_id=None: (
+            1642843 if name == "Cooper Flagg" else 900_000_000 + api_sports_id
+        ),
+    )
+    assert urg._process_day(date(2026, 11, 1)) == (1, 0)
+    assert added[0].player_id == 1642843
