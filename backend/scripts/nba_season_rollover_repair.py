@@ -208,27 +208,44 @@ def _api_key_works() -> bool:
     return bool(data and data.get("response"))
 
 
+def _season_player_ids(season: int) -> dict[str, int]:
+    """Normalized name -> API-Sports player id from every team's roster that
+    season (the same /players?team= lists update_team_roster reads)."""
+    ids: dict[str, int] = {}
+    for api_team_id in sorted(set(API_SPORTS_TO_NBA)):
+        data = api_request("players", params={"team": api_team_id, "season": season})
+        for p in (data or {}).get("response") or []:
+            name = f"{p.get('firstname') or ''} {p.get('lastname') or ''}"
+            if p.get("id") and normalize_player_name(name):
+                ids.setdefault(normalize_player_name(name), p["id"])
+        time.sleep(0.2)
+    return ids
+
+
 def _collect_player_games(
     players: dict[int, str], seasons: list[int]
-) -> tuple[dict[tuple[int, date], dict], list[str]]:
+) -> tuple[dict[tuple[int, date], dict], list[str], list[str]]:
     """Fetch every affected player's regular-season box scores. Returns
-    ({(player_id, game_date): fields}, names that could not be fetched).
-    Keyed by (player, date), so duplicate lines collapse instead of colliding."""
+    ({(player_id, game_date): fields}, fetch failures, players API-Sports
+    doesn't know). Keyed by (player, date), so duplicate lines collapse."""
     rows: dict[tuple[int, date], dict] = {}
     failed: list[str] = []
+    not_found: list[str] = []
     for season in seasons:
-        print(f"season {season}: indexing schedules…")
+        print(f"season {season}: indexing schedules and rosters…")
         games = _season_game_index(season)
         if not games:
             raise SystemExit(f"no schedule returned for season {season}; aborting")
+        roster_ids = _season_player_ids(season)
         for pid, name in players.items():
-            api_id = _find_api_player_id(name)
-            data = (
-                api_request(
-                    "players/statistics", params={"id": api_id, "season": season}
-                )
-                if api_id
-                else None
+            api_id = roster_ids.get(normalize_player_name(name)) or (
+                _find_api_player_id(name)
+            )
+            if not api_id:
+                not_found.append(f"{name} ({season})")
+                continue
+            data = api_request(
+                "players/statistics", params={"id": api_id, "season": season}
             )
             if data is None:
                 failed.append(f"{name} ({season})")
@@ -240,13 +257,15 @@ def _collect_player_games(
                 game_date = _game_date(game)
                 if not game_date or is_offseason_date(game_date):
                     continue
-                rows[(pid, game_date)] = stat_line_fields(
+                fields = stat_line_fields(
                     line,
                     (game.get("teams", {}).get("home") or {}).get("id"),
                     (game.get("teams", {}).get("visitors") or {}).get("id"),
                 )
+                if fields["minutes"] is not None:  # skip did-not-play lines
+                    rows[(pid, game_date)] = fields
             time.sleep(0.2)
-    return rows, failed
+    return rows, failed, not_found
 
 
 def cmd_rebuild(db, seasons: list[int], apply: bool) -> int:
@@ -297,10 +316,14 @@ def cmd_rebuild(db, seasons: list[int], apply: bool) -> int:
         pid: name for pid, name in affected.items() if not name.startswith("(unknown")
     }
     # Fetch everything before touching the table; then swap in one transaction.
-    rows, failed = _collect_player_games(rebuildable, seasons)
+    rows, failed, not_found = _collect_player_games(rebuildable, seasons)
     if failed:
         print(f"ERROR: could not fetch {failed}. Nothing changed.")
         return 1
+    if not_found:
+        # Can't be rebuilt from API-Sports; their misattributed rows are
+        # still removed and history regrows from the daily ingest.
+        print(f"WARNING: not found in API-Sports, skipped: {not_found}")
     print(f"fetched {len(rows)} games for {len(rebuildable)} players")
 
     try:
