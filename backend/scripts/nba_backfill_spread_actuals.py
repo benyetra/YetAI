@@ -18,33 +18,15 @@ import argparse
 import sys
 import time
 from collections import Counter
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from typing import Callable
 
 from app.services.etl.nba._espn import fetch_final_scores
 from app.services.etl.nba._season import is_offseason_date
+from app.services.etl.nba.store_spread_actuals import actual_rows
 
 # A full NBA season is 1,230 regular-season games plus ~80 play-in/playoff.
 MIN_GAMES_PER_SEASON = 1200
-
-
-def actual_rows(game_date: date, finals: list[dict]) -> list[dict]:
-    rows = []
-    for g in finals:
-        margin = g["home_score"] - g["away_score"]
-        rows.append(
-            {
-                "game_date": game_date,
-                "home_team_name": g["home_team_name"],
-                "away_team_name": g["away_team_name"],
-                "home_score": g["home_score"],
-                "away_score": g["away_score"],
-                "actual_margin": margin,
-                "home_won": margin > 0,
-                "created_at": datetime.utcnow(),
-            }
-        )
-    return rows
 
 
 def collect(

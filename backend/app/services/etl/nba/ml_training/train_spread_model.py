@@ -1,9 +1,18 @@
-"""Train NBA spread margin XGBoost and optionally upload to S3."""
+"""Train NBA spread margin XGBoost and optionally upload to S3.
+
+The model replaces the Elo margin in spread_projector, so it is only uploaded
+when it beats Elo on the same 20% holdout; the metadata records both MAEs and
+_spread_ml_predict refuses any model whose metadata doesn't show the win.
+"""
 
 from __future__ import annotations
 
 import logging
 from datetime import date
+from typing import Any
+
+import numpy as np
+from sklearn.model_selection import train_test_split  # type: ignore
 
 from app.services.etl.nba._spread_ml_predict import MIN_TRAINING_ROWS
 from app.services.etl.nba.ml_training.build_spread_dataset import build
@@ -11,6 +20,30 @@ from app.services.etl.nba.ml_training.train_model import train
 from app.services.etl.nba.ml_training.upload_to_s3 import upload_spread_model
 
 logger = logging.getLogger(__name__)
+
+# Shallow and regularized: ~2.6k games of a noisy target overfit the prop
+# defaults (train MAE 5.4 vs test 11.6).
+SPREAD_HYPERPARAMS = {
+    "n_estimators": 200,
+    "max_depth": 2,
+    "learning_rate": 0.03,
+    "min_child_weight": 20,
+}
+
+# Margins the projector falls back to without a model.
+BASELINE_COLUMNS = ("base_margin", "elo_pace_margin")
+
+
+def baseline_holdout_mae(features_df, target) -> float:
+    """Best Elo-only MAE on the same 20% holdout ``train`` uses."""
+    _, X_test, _, y_test = train_test_split(
+        features_df, target, test_size=0.2, random_state=42
+    )
+    y = np.asarray(y_test, dtype=float)
+    return min(
+        float(np.mean(np.abs(np.asarray(X_test[c], dtype=float) - y)))
+        for c in BASELINE_COLUMNS
+    )
 
 
 def run(
@@ -27,11 +60,27 @@ def run(
             "min_required": MIN_TRAINING_ROWS,
         }
 
-    model, metadata = train("spread", features_df, target)
-    result = {"status": "ok", "metadata": metadata, "rows": len(features_df)}
+    model, metadata = train(
+        "spread", features_df, target, hyperparams=SPREAD_HYPERPARAMS
+    )
+    metadata = dict(metadata)
+    metadata["baseline_test_mae"] = baseline_holdout_mae(features_df, target)
+    metadata["beats_baseline"] = metadata["test_mae"] < metadata["baseline_test_mae"]
+    result: dict[str, Any] = {
+        "status": "ok",
+        "metadata": metadata,
+        "rows": len(features_df),
+    }
+    if not metadata["beats_baseline"]:
+        logger.warning(
+            "NBA spread model does not beat Elo: test_mae=%.3f baseline=%.3f",
+            metadata["test_mae"],
+            metadata["baseline_test_mae"],
+        )
+        result["status"] = "below_baseline"
+        return result
     if upload:
-        keys = upload_spread_model(model, metadata)
-        result["s3_keys"] = keys
+        result["s3_keys"] = upload_spread_model(model, metadata)
     return result
 
 

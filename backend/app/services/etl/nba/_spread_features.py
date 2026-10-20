@@ -1,58 +1,128 @@
-"""Game-level features for NBA spread ML (player availability + team ratings)."""
+"""Game-level features for NBA spread ML.
+
+Every feature is computed point-in-time from pred_nba_spread_actuals (games
+before ``game_date``) plus that game's market line, so the training rows for
+past seasons look exactly like what the projector feeds the model tonight.
+Current-only tables (injuries, expected minutes, season team stats) have no
+history and would skew training against serving, so they are not used.
+"""
 
 from __future__ import annotations
 
+import math
+from collections import defaultdict
 from datetime import date
+from typing import Sequence
 
-from app.models.predictions_models import (
-    PlayerExpectedMinutes,
-    PlayerInjuryStatus,
-    TeamDefenseStats,
-    TeamOffenseStats,
-    TodayActivePlayers,
-)
 from app.services.etl._spread_model import (
     NBA_CONFIG,
     expected_margin,
     load_elos_from_actuals,
     pace_overlay_adjustment,
 )
-from app.services.etl.nba._espn import now_eastern
 
-INJURY_OUT_STATUSES = frozenset({"out", "ir", "doubtful"})
+FORM_GAMES = 10
+MAX_REST_DAYS = 7
+
+# Feature order the model is trained on (stored in its metadata).
+SPREAD_MODEL_FEATURES = [
+    "elo_diff",
+    "base_margin",
+    "pace_adj",
+    "elo_pace_margin",
+    "home_ppg_l10",
+    "away_ppg_l10",
+    "home_papg_l10",
+    "away_papg_l10",
+    "home_margin_l10",
+    "away_margin_l10",
+    "home_rest_days",
+    "away_rest_days",
+    "rest_diff",
+    "home_b2b",
+    "away_b2b",
+    "market_spread_home",
+    "market_total",
+]
 
 
-def _team_minutes_and_injuries(
-    db, *, team_name: str, game_date: date
-) -> tuple[float, int, int]:
-    """Sum expected minutes, count active, count ruled-out on roster."""
-    active = (
-        db.query(TodayActivePlayers)
-        .filter(
-            TodayActivePlayers.game_date == game_date,
-            TodayActivePlayers.team_name == team_name,
-        )
-        .all()
+def team_form(prior_actuals: Sequence, game_date: date) -> dict[str, dict]:
+    """Per team: last-N points for/against, average margin and last game date."""
+    games: dict[str, list[tuple[date, int, int]]] = defaultdict(list)
+    for a in prior_actuals:
+        games[a.home_team_name].append((a.game_date, a.home_score, a.away_score))
+        games[a.away_team_name].append((a.game_date, a.away_score, a.home_score))
+    form: dict[str, dict] = {}
+    for team, rows in games.items():
+        recent = rows[-FORM_GAMES:]
+        n = len(recent)
+        form[team] = {
+            "ppg": sum(r[1] for r in recent) / n,
+            "papg": sum(r[2] for r in recent) / n,
+            "margin": sum(r[1] - r[2] for r in recent) / n,
+            "last_game": rows[-1][0],
+        }
+    return form
+
+
+def _rest_days(team_form_row: dict | None, game_date: date) -> float:
+    if not team_form_row:
+        return float(MAX_REST_DAYS)
+    return float(min((game_date - team_form_row["last_game"]).days, MAX_REST_DAYS))
+
+
+def _nan_if_none(value: float | None) -> float:
+    return math.nan if value is None else float(value)
+
+
+def compute_game_features(
+    prior_actuals: Sequence,
+    *,
+    game_date: date,
+    home_team_name: str,
+    away_team_name: str,
+    market_spread_home: float | None,
+    market_total: float | None,
+) -> dict[str, float]:
+    """Pure feature vector; ``prior_actuals`` must be games before ``game_date``
+    in date order. Missing market lines are NaN (XGBoost treats them as missing),
+    never 0, which would read as a pick'em."""
+    elos = load_elos_from_actuals(prior_actuals, cfg=NBA_CONFIG)
+    home_elo = elos.get(home_team_name, NBA_CONFIG.initial_elo)
+    away_elo = elos.get(away_team_name, NBA_CONFIG.initial_elo)
+    base_margin = expected_margin(home_elo, away_elo, cfg=NBA_CONFIG)
+
+    form = team_form(prior_actuals, game_date)
+    home, away = form.get(home_team_name), form.get(away_team_name)
+    pace_adj = pace_overlay_adjustment(
+        home["ppg"] if home else None,
+        home["papg"] if home else None,
+        away["ppg"] if away else None,
+        away["papg"] if away else None,
+        cfg=NBA_CONFIG,
     )
-    minutes_sum = 0.0
-    out_count = 0
-    for row in active:
-        inj = (
-            db.query(PlayerInjuryStatus)
-            .filter(PlayerInjuryStatus.player_id == row.player_id)
-            .first()
-        )
-        status = (inj.status or "").lower() if inj else ""
-        if status in INJURY_OUT_STATUSES:
-            out_count += 1
-            continue
-        pem = (
-            db.query(PlayerExpectedMinutes)
-            .filter(PlayerExpectedMinutes.player_id == row.player_id)
-            .first()
-        )
-        minutes_sum += float(pem.expected_minutes_today or 0.0) if pem else 0.0
-    return minutes_sum, len(active), out_count
+    home_rest = _rest_days(home, game_date)
+    away_rest = _rest_days(away, game_date)
+
+    return {
+        "elo_diff": home_elo - away_elo,
+        "base_margin": base_margin,
+        "pace_adj": pace_adj,
+        "elo_pace_margin": base_margin + pace_adj,
+        "home_ppg_l10": home["ppg"] if home else math.nan,
+        "away_ppg_l10": away["ppg"] if away else math.nan,
+        "home_papg_l10": home["papg"] if home else math.nan,
+        "away_papg_l10": away["papg"] if away else math.nan,
+        "home_margin_l10": home["margin"] if home else math.nan,
+        "away_margin_l10": away["margin"] if away else math.nan,
+        "home_rest_days": home_rest,
+        "away_rest_days": away_rest,
+        "rest_diff": home_rest - away_rest,
+        "home_b2b": 1.0 if home_rest <= 1 else 0.0,
+        "away_b2b": 1.0 if away_rest <= 1 else 0.0,
+        "market_spread_home": _nan_if_none(market_spread_home),
+        "market_total": _nan_if_none(market_total),
+    }
 
 
 def build_game_features(
@@ -67,64 +137,18 @@ def build_game_features(
     market_total: float | None,
     spread_actuals_model,
 ) -> dict[str, float] | None:
-    """Feature vector for one game; None if Elo history is empty."""
+    """Feature vector for one game, loading prior actuals from the database."""
     actuals = (
         db.query(spread_actuals_model)
         .filter(spread_actuals_model.game_date < game_date)
         .order_by(spread_actuals_model.game_date.asc())
         .all()
     )
-    elos = load_elos_from_actuals(actuals, cfg=NBA_CONFIG)
-    home_elo = elos.get(home_team_name, NBA_CONFIG.initial_elo)
-    away_elo = elos.get(away_team_name, NBA_CONFIG.initial_elo)
-    base_margin = expected_margin(home_elo, away_elo, cfg=NBA_CONFIG)
-
-    offense_by_name = {o.team_name: o for o in db.query(TeamOffenseStats).all()}
-    defense_by_name = {d.team_name: d for d in db.query(TeamDefenseStats).all()}
-    home_off = offense_by_name.get(home_team_name)
-    home_def = defense_by_name.get(home_team_name)
-    away_off = offense_by_name.get(away_team_name)
-    away_def = defense_by_name.get(away_team_name)
-    pace_adj = pace_overlay_adjustment(
-        home_off.points_per_game if home_off else None,
-        home_def.points_allowed_per_game if home_def else None,
-        away_off.points_per_game if away_off else None,
-        away_def.points_allowed_per_game if away_def else None,
-        cfg=NBA_CONFIG,
+    return compute_game_features(
+        actuals,
+        game_date=game_date,
+        home_team_name=home_team_name,
+        away_team_name=away_team_name,
+        market_spread_home=market_spread_home,
+        market_total=market_total,
     )
-
-    home_mins, home_active, home_out = _team_minutes_and_injuries(
-        db, team_name=home_team_name, game_date=game_date
-    )
-    away_mins, away_active, away_out = _team_minutes_and_injuries(
-        db, team_name=away_team_name, game_date=game_date
-    )
-
-    return {
-        "elo_diff": home_elo - away_elo,
-        "base_margin": base_margin,
-        "pace_adj": pace_adj,
-        "elo_pace_margin": base_margin + pace_adj,
-        "home_expected_minutes": home_mins,
-        "away_expected_minutes": away_mins,
-        "minutes_diff": home_mins - away_mins,
-        "home_active_count": float(home_active),
-        "away_active_count": float(away_active),
-        "home_out_count": float(home_out),
-        "away_out_count": float(away_out),
-        "injury_diff": float(away_out - home_out),
-        "home_ppg": float(home_off.points_per_game or 0.0) if home_off else 0.0,
-        "away_ppg": float(away_off.points_per_game or 0.0) if away_off else 0.0,
-        "home_papg": (
-            float(home_def.points_allowed_per_game or 0.0) if home_def else 0.0
-        ),
-        "away_papg": (
-            float(away_def.points_allowed_per_game or 0.0) if away_def else 0.0
-        ),
-        "market_spread_home": float(market_spread_home or 0.0),
-        "market_total": float(market_total or 0.0),
-        "home_team_id": float(home_team_id or 0),
-        "away_team_id": float(away_team_id or 0),
-        "day_of_year": float(game_date.timetuple().tm_yday),
-        "is_today": 1.0 if game_date == now_eastern().date() else 0.0,
-    }
