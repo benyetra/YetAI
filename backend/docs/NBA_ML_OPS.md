@@ -57,7 +57,15 @@ See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
    players, wrong teams, synthetic ids) and counts offseason rows.
 3. Retrain on the last two full seasons once the data is clean (workflow
    defaults: `--start 2024-10-01 --end 2026-06-30`) via **NBA Train Prop
-   Models** / **NBA Train Spread Model**.
+   Models** / **NBA Train Spread Model**. The spread model and spread Elo
+   both read `pred_nba_spread_actuals`; if a season is missing there,
+   backfill it from ESPN first (dry run without `--apply`, or the
+   `backfill-spread-actuals` action of **NBA Season Ops**):
+
+   ```bash
+   PYTHONPATH=. .venv/bin/python scripts/nba_backfill_spread_actuals.py \
+     --from 2024-10-22 --to 2026-06-30 --apply
+   ```
 
 **Player ids.** `resolve_nba_player_id` matches accent-, case- and
 suffix-insensitively against nba_api's static list (stale for each new draft
