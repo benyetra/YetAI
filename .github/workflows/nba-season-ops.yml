@@ -4,6 +4,8 @@ name: NBA Season Ops
 # enqueue-pipeline: queue run_nba_update_pipeline on the celery worker.
 # backfill-spread-actuals: ESPN final scores -> pred_nba_spread_actuals
 #   (dry run unless apply is checked).
+# refresh-roster-projections: update_team_roster + totals/spread projectors run
+#   from the runner against prod (no worker deploy needed).
 # Same secrets/services as enqueue-wnba-pipeline.yml and nba-train-props.yml.
 
 on:
@@ -17,6 +19,7 @@ on:
           - verify
           - enqueue-pipeline
           - backfill-spread-actuals
+          - refresh-roster-projections
         default: verify
       start:
         description: Backfill start (YYYY-MM-DD)
@@ -88,6 +91,22 @@ jobs:
             export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
           fi
           PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
+
+      - name: Refresh roster and re-project totals/spreads
+        if: inputs.action == 'refresh-roster-projections'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          export NBA_API_KEY="$(python3 scripts/resolve_railway_variable.py NBA_API_KEY)"
+          PYTHONPATH=. python3 scripts/nba_refresh_roster_projections.py
 
       - name: Backfill spread actuals
         if: inputs.action == 'backfill-spread-actuals'
