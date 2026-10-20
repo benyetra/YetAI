@@ -1,0 +1,81 @@
+name: NBA Season Ops
+
+# verify: read-only prod check (roster vs ESPN, offseason rows, misattributed ids).
+# enqueue-pipeline: queue run_nba_update_pipeline on the celery worker.
+# Same secrets/services as enqueue-wnba-pipeline.yml and nba-train-props.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to run
+        required: true
+        type: choice
+        options:
+          - verify
+          - enqueue-pipeline
+        default: verify
+
+jobs:
+  ops:
+    name: NBA ${{ inputs.action }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Verify NBA data
+        if: inputs.action == 'verify'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -uo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          # Non-zero exit just means verify found issues; the log is the result.
+          PYTHONPATH=. python3 scripts/nba_season_rollover_repair.py verify | tee verify.log || true
+
+      - name: Enqueue NBA daily pipeline
+        if: inputs.action == 'enqueue-pipeline'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          CELERY_SERVICE_ID: 9b9982f4-82b7-4e0f-88a0-3212221fecf4
+          API_SERVICE_ID: 9fe8f0dc-96ac-408f-9960-950768e6eb49
+        run: |
+          set -euo pipefail
+          if REDIS_URL="$(python3 scripts/resolve_redis_public_url.py 2>/dev/null)"; then
+            export REDIS_URL
+          else
+            echo "No public Redis URL; will try YetAI admin API"
+          fi
+          export YETAI_ADMIN_EMAIL="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_EMAIL 2>/dev/null || true)"
+          export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
+          if [ -z "${YETAI_ADMIN_EMAIL:-}" ] || [ -z "${YETAI_ADMIN_PASSWORD:-}" ]; then
+            export RAILWAY_SERVICE_ID="$API_SERVICE_ID"
+            export YETAI_ADMIN_EMAIL="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_EMAIL 2>/dev/null || true)"
+            export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
+          fi
+          PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
+
+      - name: Upload verify log
+        if: inputs.action == 'verify'
+        uses: actions/upload-artifact@v4
+        with:
+          name: nba-verify-log
+          path: backend/verify.log

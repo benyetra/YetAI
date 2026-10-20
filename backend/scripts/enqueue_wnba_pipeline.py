@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-"""Enqueue run_wnba_update_pipeline via Celery broker or YetAI admin API."""
+"""Enqueue a sport's daily pipeline via Celery broker or YetAI admin API.
+
+    PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py            # WNBA
+    PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 import os
 import urllib.error
@@ -10,7 +15,10 @@ import urllib.request
 
 from app.celery_app import celery_app
 
-TASK = "app.tasks.etl_pipeline.run_wnba_update_pipeline"
+TASKS = {
+    "wnba": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+    "nba": "app.tasks.etl_pipeline.run_nba_update_pipeline",
+}
 DEFAULT_API = os.getenv("YETAI_API", "https://api.yetai.app")
 
 
@@ -39,9 +47,9 @@ def _admin_token(api: str) -> str:
     return token
 
 
-def _enqueue_via_admin_api(api: str) -> str:
+def _enqueue_via_admin_api(api: str, task: str) -> str:
     token = _admin_token(api)
-    body = json.dumps({"task_name": TASK}).encode()
+    body = json.dumps({"task_name": task}).encode()
     req = urllib.request.Request(
         f"{api.rstrip('/')}/api/admin/celery/enqueue-task",
         data=body,
@@ -60,16 +68,20 @@ def _enqueue_via_admin_api(api: str) -> str:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
+    parser.add_argument("--sport", choices=sorted(TASKS), default="wnba")
+    task = TASKS[parser.parse_args().sport]
+
     redis_url = (os.getenv("REDIS_URL") or "").strip()
     if redis_url and "railway.internal" not in redis_url:
         try:
-            result = celery_app.send_task(TASK)
+            result = celery_app.send_task(task)
             print(f"enqueued {result.id}")
             return
         except Exception as exc:
             print(f"celery enqueue failed ({exc}); trying admin API")
 
-    task_id = _enqueue_via_admin_api(DEFAULT_API)
+    task_id = _enqueue_via_admin_api(DEFAULT_API, task)
     print(f"enqueued {task_id} via admin API")
 
 
