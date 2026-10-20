@@ -149,3 +149,33 @@ def test_predictor_passes_missing_values_as_nan(monkeypatch):
     )
     smp.predict_margin({"elo_diff": 2.0, "market_spread_home": None})
     assert seen["vec"][0][0] == 2.0 and math.isnan(seen["vec"][0][1])
+
+
+def test_totals_blend_uses_last_season_then_shifts_to_this_one():
+    from types import SimpleNamespace as G
+
+    from app.services.etl.nba.totals_projector import (
+        CURRENT_SEASON_PRIOR_GAMES,
+        MIN_FORM_GAMES,
+        blended_scoring,
+    )
+
+    def games(n, scored, allowed):
+        return [
+            G(
+                home_team_name="A",
+                away_team_name="B",
+                home_score=scored,
+                away_score=allowed,
+            )
+            for _ in range(n)
+        ]
+
+    last = games(40, 112, 108)
+    assert blended_scoring(last, [], "A") == (112, 108)  # this season ignored
+    n = CURRENT_SEASON_PRIOR_GAMES
+    scored, allowed = blended_scoring(last, games(n, 122, 118), "A")
+    assert (round(scored, 1), round(allowed, 1)) == (117.0, 113.0)  # 50/50
+    assert blended_scoring(games(3, 100, 100), [], "A") is None  # no history
+    cur = games(MIN_FORM_GAMES, 120, 110)
+    assert blended_scoring([], cur, "A") == (120, 110)
