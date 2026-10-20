@@ -6,11 +6,18 @@ import logging
 from datetime import date
 
 import pandas as pd
+from sqlalchemy.exc import OperationalError
 
 from app.core.database import SessionLocal
 from app.services.ml.config import LeagueMLConfig
 
 logger = logging.getLogger(__name__)
+
+# Features take several queries per row, so a two-season build runs for hours.
+# End the read transaction every RELEASE_EVERY rows so the connection goes back
+# to the (pre-pinged) pool instead of one transaction held open for the whole
+# build, which the server eventually drops.
+RELEASE_EVERY = 500
 
 
 def build(
@@ -30,29 +37,51 @@ def build(
     rows_target: list[float] = []
     model = config.recent_games_model
     try:
-        all_rows = (
-            db.query(model)
+        candidates = [
+            (r.player_id, r.game_date, r.opponent_team_id, getattr(r, stat_col))
+            for r in db.query(model)
             .filter(model.game_date >= season_start)
             .filter(model.game_date <= season_end)
             .order_by(model.game_date.asc())
             .all()
-        )
+        ]
+        db.rollback()
         logger.info(
             "build_training_dataset[%s]: %d candidate rows in window",
             config.table_prefix,
-            len(all_rows),
+            len(candidates),
         )
-        for row in all_rows:
-            target_value = getattr(row, stat_col)
+        for i, (player_id, game_date, opponent_team_id, target_value) in enumerate(
+            candidates, 1
+        ):
             if target_value is None:
                 continue
-            feats = config.feature_builder(
-                db,
+            kwargs = dict(
                 stat_col=stat_col,
-                player_id=row.player_id,
-                game_date=row.game_date,
-                opponent_team_id=row.opponent_team_id,
+                player_id=player_id,
+                game_date=game_date,
+                opponent_team_id=opponent_team_id,
             )
+            try:
+                feats = config.feature_builder(db, **kwargs)
+            except OperationalError:
+                logger.warning(
+                    "build_training_dataset[%s]: connection lost at row %d; "
+                    "reconnecting",
+                    config.table_prefix,
+                    i,
+                )
+                db.close()
+                db = SessionLocal()
+                feats = config.feature_builder(db, **kwargs)
+            if i % RELEASE_EVERY == 0:
+                db.rollback()
+                logger.info(
+                    "build_training_dataset[%s]: %d/%d rows",
+                    config.table_prefix,
+                    i,
+                    len(candidates),
+                )
             if feats is None:
                 continue
             rows_features.append(feats)

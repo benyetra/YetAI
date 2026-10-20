@@ -100,3 +100,58 @@ def test_wnba_wrapper_mae_gate_patch_still_works(small_dataset):
     with patch.dict(wnba_validate.MAE_GATE, {"points": 0.01}):
         result = wnba_validate.validate("points", model, feats, target)
     assert result["passes_gate"] is False
+
+
+def test_build_releases_and_reconnects_on_dropped_connection(monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import column
+    from sqlalchemy.exc import OperationalError
+
+    from app.services.ml import build_training_dataset as btd
+
+    rows = [
+        SimpleNamespace(
+            player_id=i, game_date=date(2025, 1, 1), opponent_team_id=1, points=i
+        )
+        for i in range(1, 6)
+    ]
+    sessions = []
+
+    def make_session():
+        s = MagicMock()
+        s.query.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            rows
+        )
+        sessions.append(s)
+        return s
+
+    calls = []
+
+    def features(db, *, stat_col, player_id, game_date, opponent_team_id):
+        calls.append((db, player_id))
+        if player_id == 3 and db is sessions[0]:
+            raise OperationalError("SELECT 1", {}, Exception("server closed"))
+        return {"points_l5": float(player_id)}
+
+    cfg = LeagueMLConfig(
+        table_prefix="test",
+        s3_prefix="test/ml_models",
+        feature_builder_path="test.build_features",
+        feature_builder=features,
+        recent_games_model=SimpleNamespace(game_date=column("game_date")),
+        mae_gate={"points": 5.0},
+        supported_stats=("points",),
+    )
+    monkeypatch.setattr(btd, "SessionLocal", make_session)
+    monkeypatch.setattr(btd, "RELEASE_EVERY", 2)
+
+    feats, target = btd.build(cfg, "points", date(2025, 1, 1), date(2025, 1, 2))
+
+    assert list(target) == [1.0, 2.0, 3.0, 4.0, 5.0]
+    assert len(sessions) == 2  # reconnected once
+    assert (sessions[1], 3) in calls
+    sessions[0].close.assert_called()
+    assert sessions[1].rollback.call_count >= 1  # released at row 4
