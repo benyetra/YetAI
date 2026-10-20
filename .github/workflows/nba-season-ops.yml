@@ -20,6 +20,7 @@ on:
           - enqueue-pipeline
           - backfill-spread-actuals
           - refresh-roster-projections
+          - debug-totals
         default: verify
       start:
         description: Backfill start (YYYY-MM-DD)
@@ -107,6 +108,17 @@ jobs:
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           export NBA_API_KEY="$(python3 scripts/resolve_railway_variable.py NBA_API_KEY)"
           PYTHONPATH=. python3 scripts/nba_refresh_roster_projections.py
+
+      - name: Print totals inputs (read-only)
+        if: inputs.action == 'debug-totals'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          PYTHONPATH=. python3 scripts/nba_totals_debug.py
 
       - name: Backfill spread actuals
         if: inputs.action == 'backfill-spread-actuals'
