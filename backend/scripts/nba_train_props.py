@@ -5,8 +5,8 @@ Prod: prefer workflow_dispatch (``.github/workflows/nba-train-props.yml``).
 
 Usage (from ``backend/``, needs ``DATABASE_URL`` for real training):
 
-    PYTHONPATH=. python scripts/nba_train_props.py --stat points --start 2024-10-01 --end 2025-04-30 --dry-run
-    PYTHONPATH=. python scripts/nba_train_props.py --stat points --start 2024-10-01 --end 2025-04-30 --upload
+    PYTHONPATH=. python scripts/nba_train_props.py --stat points --start 2024-10-01 --end 2026-06-30 --dry-run
+    PYTHONPATH=. python scripts/nba_train_props.py --stat points --start 2024-10-01 --end 2026-06-30 --upload
 """
 
 from __future__ import annotations

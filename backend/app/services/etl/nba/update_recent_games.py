@@ -25,12 +25,56 @@ from app.services.etl.nba._api_sports import (
     resolve_nba_player_id,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._season import is_offseason_date
 
 logger = logging.getLogger(__name__)
 
 
+def is_nba_league_game(game: dict) -> bool:
+    """API-Sports also carries Summer League leagues (vegas, utah, sacramento,
+    orlando) and Africa games; keep only the NBA proper ("standard")."""
+    league = game.get("league")
+    return league is None or str(league).lower() == "standard"
+
+
+def stat_line_fields(ps: dict, home_api_id, away_api_id) -> dict:
+    """Map one API-Sports players/statistics line to RecentGames columns
+    (minus player_id / game_date)."""
+    player_team_api_id = (ps.get("team") or {}).get("id")
+    is_home = player_team_api_id == home_api_id
+    opponent_api_id = away_api_id if is_home else home_api_id
+    return {
+        "opponent_team_id": API_SPORTS_TO_NBA.get(opponent_api_id, 0),
+        "points": ps.get("points"),
+        "minutes": ps.get("min"),
+        "field_goals_made": ps.get("fgm"),
+        "fg_attempts": ps.get("fga"),
+        "fg_percentage": ps.get("fgp"),
+        "three_pt_made": ps.get("tpm"),
+        "three_pt_attempts": ps.get("tpa"),
+        "three_pt_percentage": ps.get("tpp"),
+        "free_throws_made": ps.get("ftm"),
+        "ft_attempts": ps.get("fta"),
+        "ft_percentage": ps.get("ftp"),
+        "offensive_rebounds": ps.get("offReb"),
+        "defensive_rebounds": ps.get("defReb"),
+        "rebounds": ps.get("totReb"),
+        "assists": ps.get("assists"),
+        "steals": ps.get("steals"),
+        "blocks": ps.get("blocks"),
+        "turnovers": ps.get("turnovers"),
+        "personal_fouls": ps.get("pFouls"),
+        "home_game": is_home,
+    }
+
+
 def _process_day(target_date: date) -> tuple[int, int]:
     """Fetch games for a date, upsert stat lines. Returns (added, updated)."""
+    if is_offseason_date(target_date):
+        # Summer League / preseason box scores would poison every rolling
+        # average (preseason starters play ~15-20 min) — never store them.
+        logger.info("update_recent_games: %s is offseason, skipping", target_date)
+        return 0, 0
     date_str = target_date.strftime("%Y-%m-%d")
     games_data = api_request("games", params={"date": date_str})
     if not games_data or not games_data.get("response"):
@@ -44,6 +88,8 @@ def _process_day(target_date: date) -> tuple[int, int]:
     db = SessionLocal()
     try:
         for game in games:
+            if not is_nba_league_game(game):
+                continue
             game_id = game["id"]
             home_api_id = (game.get("teams", {}).get("home") or {}).get("id")
             away_api_id = (game.get("teams", {}).get("visitors") or {}).get("id")
@@ -56,38 +102,13 @@ def _process_day(target_date: date) -> tuple[int, int]:
                 try:
                     player = ps.get("player") or {}
                     name = f"{(player.get('firstname') or '').strip()} {(player.get('lastname') or '').strip()}".strip()
-                    nba_player_id = resolve_nba_player_id(name)
+                    nba_player_id = resolve_nba_player_id(
+                        name, api_sports_id=player.get("id")
+                    )
                     if not nba_player_id:
                         continue
 
-                    player_team_api_id = (ps.get("team") or {}).get("id")
-                    is_home = player_team_api_id == home_api_id
-                    opponent_api_id = away_api_id if is_home else home_api_id
-                    opponent_nba_id = API_SPORTS_TO_NBA.get(opponent_api_id, 0)
-
-                    stats = {
-                        "opponent_team_id": opponent_nba_id,
-                        "points": ps.get("points"),
-                        "minutes": ps.get("min"),
-                        "field_goals_made": ps.get("fgm"),
-                        "fg_attempts": ps.get("fga"),
-                        "fg_percentage": ps.get("fgp"),
-                        "three_pt_made": ps.get("tpm"),
-                        "three_pt_attempts": ps.get("tpa"),
-                        "three_pt_percentage": ps.get("tpp"),
-                        "free_throws_made": ps.get("ftm"),
-                        "ft_attempts": ps.get("fta"),
-                        "ft_percentage": ps.get("ftp"),
-                        "offensive_rebounds": ps.get("offReb"),
-                        "defensive_rebounds": ps.get("defReb"),
-                        "rebounds": ps.get("totReb"),
-                        "assists": ps.get("assists"),
-                        "steals": ps.get("steals"),
-                        "blocks": ps.get("blocks"),
-                        "turnovers": ps.get("turnovers"),
-                        "personal_fouls": ps.get("pFouls"),
-                        "home_game": is_home,
-                    }
+                    stats = stat_line_fields(ps, home_api_id, away_api_id)
 
                     existing = (
                         db.query(RecentGames)

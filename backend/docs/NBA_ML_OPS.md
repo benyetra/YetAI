@@ -27,7 +27,7 @@ exists; otherwise attachment is a no-op until a column is added.
 ```bash
 cd backend
 PYTHONPATH=. .venv/bin/python -m app.services.etl.nba.ml_training.run_train_props \
-  --stat points --season-start 2024-10-01 --season-end 2025-04-15 --upload
+  --stat points --season-start 2024-10-01 --season-end 2026-06-30 --upload
 ```
 
 **Tests:**
@@ -37,3 +37,35 @@ cd backend && PYTHONPATH=. .venv/bin/python -m pytest tests/test_nba_prop_calibr
 ```
 
 See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
+
+## Season rollover (each October)
+
+1. Add the new opening night to `REGULAR_SEASON_START` in
+   `app/services/etl/nba/_season.py` (fallback: Tuesday on/after Oct 18).
+   July 1 → the day before opening night is treated as offseason:
+   `update_recent_games` never stores those box scores (Summer League,
+   preseason), so rolling averages carry over from last season's games.
+2. Verify production data, then repair anything it flags:
+
+   ```bash
+   cd backend
+   PYTHONPATH=. .venv/bin/python scripts/nba_season_rollover_repair.py verify
+   PYTHONPATH=. .venv/bin/python scripts/nba_season_rollover_repair.py purge-offseason --apply
+   ```
+
+   `verify` diffs `pred_team_roster` against ESPN's live rosters (missing
+   players, wrong teams, synthetic ids) and counts offseason rows.
+3. Retrain on the last two full seasons once the data is clean (workflow
+   defaults: `--start 2024-10-01 --end 2026-06-30`) via **NBA Train Prop
+   Models** / **NBA Train Spread Model**.
+
+**Player ids.** `resolve_nba_player_id` matches accent-, case- and
+suffix-insensitively against nba_api's static list (stale for each new draft
+class — NBA.com blocks cloud IPs, so there is no live lookup). Unmatched
+players get `SYNTHETIC_ID_BASE + api_sports_id` so rookies still flow
+through the pipeline; pin real ids in `MANUAL_PLAYER_IDS` when known (the
+test suite checks every pin against nba_api).
+
+**Rosters.** `update_team_roster` uses ESPN's live rosters as the
+tie-breaker for team assignment (trades, signings) and refuses to replace
+the table with an incomplete roster (< 300 players or < 25 teams).

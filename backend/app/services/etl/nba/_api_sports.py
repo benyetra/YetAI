@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
+import unicodedata
 from typing import Optional
 
 import requests
@@ -71,26 +73,25 @@ API_SPORTS_TO_NBA: dict[int, int] = {
     41: 1610612764,
 }
 
-# Players missing from nba_api's static list — usually recent draftees.
+# Pins for players nba_api's static list lacks (or names it can't match).
+# Every id here MUST be the player's real NBA.com PERSON_ID: a wrong id files
+# that player's box scores under someone else (see
+# tests/test_nba_player_id_resolver.py, which checks entries against
+# nba_api). Keys are normalized with `normalize_player_name`.
 MANUAL_PLAYER_IDS: dict[str, int] = {
-    "nikola jokic": 203999,
     "victor wembanyama": 1641705,
     "chet holmgren": 1631096,
-    "scoot henderson": 1641706,
-    "jaime jaquez jr": 1641707,
     "amen thompson": 1641708,
     "ausar thompson": 1641709,
-    "brandon miller": 1641710,
     "gradey dick": 1641711,
-    "cam whitmore": 1631170,
-    "keyonte george": 1641712,
-    "bilal coulibaly": 1641713,
-    "dereck lively ii": 1641714,
-    "jordan hawkins": 1641715,
-    "jett howard": 1641716,
-    "taylor hendricks": 1641717,
-    "kobe bufkin": 1641718,
 }
+
+# Players with no NBA.com id we can resolve (mostly rookies newer than the
+# pinned nba_api release; NBA.com blocks cloud IPs, so no live lookup) get a
+# stable synthetic id derived from their API-Sports id. NBA.com ids are
+# < 2M, so this range never collides. Pin the real id in MANUAL_PLAYER_IDS
+# once known — the synthetic id's history does not carry over.
+SYNTHETIC_ID_BASE = 900_000_000
 
 
 def api_request(endpoint: str, params: dict | None = None) -> dict | None:
@@ -130,28 +131,101 @@ def _get_static_players() -> list[dict]:
     return _STATIC_PLAYERS_CACHE
 
 
+_NAME_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
+def normalize_player_name(name: str | None, strip_suffix: bool = True) -> str:
+    """Accent-, case-, punctuation- and suffix-insensitive name key.
+
+    "Luka Dončić" / "Luka Doncic" -> "luka doncic";
+    "Jaime Jaquez Jr." -> "jaime jaquez"; "Ja'Kobi Gillespie" -> "jakobi gillespie".
+    """
+    text = unicodedata.normalize("NFKD", name or "")
+    text = "".join(c for c in text if not unicodedata.combining(c)).lower()
+    text = re.sub(r"[.'’`]", "", text)
+    text = re.sub(r"[^a-z0-9]+", " ", text)
+    tokens = text.split()
+    while strip_suffix and len(tokens) > 2 and tokens[-1] in _NAME_SUFFIXES:
+        tokens.pop()
+    return " ".join(tokens)
+
+
+_NameIndex = dict[str, list[dict]]
+_NAME_INDEX_CACHE: tuple[list[dict], _NameIndex, _NameIndex] | None = None
+
+
+def _name_indexes(static_players: list[dict]) -> tuple[_NameIndex, _NameIndex]:
+    """(with-suffix, suffix-stripped) normalized name -> players, cached for
+    the (cached) static list."""
+    global _NAME_INDEX_CACHE
+    if _NAME_INDEX_CACHE is not None and _NAME_INDEX_CACHE[0] is static_players:
+        return _NAME_INDEX_CACHE[1], _NAME_INDEX_CACHE[2]
+    full: _NameIndex = {}
+    stripped: _NameIndex = {}
+    for p in static_players:
+        full.setdefault(normalize_player_name(p["full_name"], False), []).append(p)
+        stripped.setdefault(normalize_player_name(p["full_name"]), []).append(p)
+    _NAME_INDEX_CACHE = (static_players, full, stripped)
+    return full, stripped
+
+
+def _pick(candidates: list[dict]) -> Optional[int]:
+    """Single match wins; among several namesakes prefer the one active player."""
+    if len(candidates) == 1:
+        return candidates[0]["id"]
+    active = [p for p in candidates if p.get("is_active")]
+    if len(active) == 1:
+        return active[0]["id"]
+    return None
+
+
 def resolve_nba_player_id(
-    player_name: str, static_players: list[dict] | None = None
+    player_name: str,
+    static_players: list[dict] | None = None,
+    api_sports_id: int | None = None,
 ) -> Optional[int]:
     """Match a player name to an NBA.com player_id.
 
     Order:
-      1. MANUAL_PLAYER_IDS (lowercase exact match)
-      2. nba_api static list — exact name match (case-insensitive)
-      3. nba_api static list — substring match either direction
+      1. MANUAL_PLAYER_IDS (normalized exact match)
+      2. nba_api static list — normalized exact match (suffixes kept, then
+         stripped, so "Gary Payton II" never folds into his father)
+      3. nba_api static list — unambiguous whole-word substring match
+         ("Nic Claxton" never matches "Nicolas Claxton"; that needs a pin)
+      4. SYNTHETIC_ID_BASE + api_sports_id, when the caller has one
+    Ambiguous namesakes resolve to the single active player, else fall through.
     """
-    search = (player_name or "").lower().strip()
+    search = normalize_player_name(player_name)
     if not search:
         return None
     if search in MANUAL_PLAYER_IDS:
         return MANUAL_PLAYER_IDS[search]
     if static_players is None:
         static_players = _get_static_players()
-    for p in static_players:
-        if p["full_name"].lower() == search:
-            return p["id"]
-    for p in static_players:
-        full = p["full_name"].lower()
-        if search in full or full in search:
-            return p["id"]
+
+    full_index, stripped_index = _name_indexes(static_players)
+    exact = full_index.get(normalize_player_name(player_name, False), [])
+    if not any(p.get("is_active") for p in exact):
+        # Feeds only carry current players: "Gary Payton" from a box score is
+        # the active Gary Payton II, not his retired father.
+        exact = exact + [p for p in stripped_index.get(search, []) if p not in exact]
+    pid = _pick(exact)
+    if pid is None and not exact:
+        padded = f" {search} "
+        partial = [
+            p
+            for name, players in stripped_index.items()
+            if padded in f" {name} " or f" {name} " in padded
+            for p in players
+        ]
+        pid = _pick(partial)
+    if pid is not None:
+        return pid
+
+    if api_sports_id:
+        logger.info(
+            "resolve_nba_player_id: no NBA.com id for %r; using synthetic id",
+            player_name,
+        )
+        return SYNTHETIC_ID_BASE + int(api_sports_id)
     return None

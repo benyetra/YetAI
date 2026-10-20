@@ -19,6 +19,7 @@ from app.models.predictions_models import (
     TeamRoster,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._season import api_basketball_season
 from app.services.etl.nba.totals_ml import shadow_from_factors
 
 logger = logging.getLogger(__name__)
@@ -49,7 +50,7 @@ def fetch_game_scores_from_api(game_date: date) -> List[Dict]:
         params = {
             "date": game_date.strftime("%Y-%m-%d"),
             "league": "12",  # NBA
-            "season": "2024-2025",
+            "season": api_basketball_season(game_date),
         }
 
         response = requests.get(url, headers=headers, params=params, timeout=30)

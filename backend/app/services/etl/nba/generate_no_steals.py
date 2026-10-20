@@ -18,10 +18,56 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._season import (
+    regular_season_start,
+    season_label,
+    season_start_year,
+)
 
 logger = logging.getLogger(__name__)
 
 db = None
+
+
+# Regular-season games needed before the current season's career line
+# replaces last season's.
+MIN_CURRENT_SEASON_GAMES = 5
+
+
+def _career_row_for(
+    db,
+    player_id: int,
+    current_season: str,
+    previous_season: str,
+    season_open: date,
+    today: date,
+):
+    """Current-season PlayerCareerData once the player has
+    MIN_CURRENT_SEASON_GAMES this season, otherwise last season's row
+    (falling back to whichever exists)."""
+    rows = {
+        r.season: r
+        for r in db.query(PlayerCareerData)
+        .filter(
+            PlayerCareerData.player_id == player_id,
+            PlayerCareerData.season.in_([current_season, previous_season]),
+        )
+        .all()
+    }
+    current = rows.get(current_season)
+    previous = rows.get(previous_season)
+    if current and previous:
+        games_this_season = (
+            db.query(RecentGames)
+            .filter(
+                RecentGames.player_id == player_id,
+                RecentGames.game_date >= season_open,
+                RecentGames.game_date < today,
+            )
+            .count()
+        )
+        return current if games_this_season >= MIN_CURRENT_SEASON_GAMES else previous
+    return current or previous
 
 
 def _today():
@@ -567,34 +613,33 @@ def project_no_steals():
         logger.error(f"Error fetching today's active players: {e}")
         return
 
-    # Determine current season (e.g., "2024-25")
-    current_year = today.year
-    current_month = today.month
-    if current_month >= 10:  # NBA season starts in October
-        current_season = f"{current_year}-{str(current_year + 1)[-2:]}"
-    else:
-        current_season = f"{current_year - 1}-{str(current_year)[-2:]}"
+    # Current season (e.g. "2026-27"); early in the season fall back to last
+    # season's career line until the player has a meaningful sample.
+    season_year = season_start_year(today)
+    current_season = season_label(season_year)
+    previous_season = season_label(season_year - 1)
+    season_open = regular_season_start(season_year)
 
     projections = []
     for player in players:
         try:
-            # Fetch career data for current season only
-            player_career = (
-                db.query(PlayerCareerData)
-                .filter_by(player_id=player.player_id, season=current_season)
-                .first()
+            player_career = _career_row_for(
+                db,
+                player.player_id,
+                current_season,
+                previous_season,
+                season_open,
+                today,
             )
             if not player_career:
                 logger.warning(
-                    f"No current season ({current_season}) career data found for player {player.player_id}. Skipping."
+                    f"No {current_season} or {previous_season} career data found for player {player.player_id}. Skipping."
                 )
                 continue
 
             # Validate career data freshness (updated within last 7 days)
             if player_career.last_updated:
-                days_since_update = (
-                    datetime.datetime.now() - player_career.last_updated
-                ).days
+                days_since_update = (datetime.now() - player_career.last_updated).days
                 if days_since_update > 7:
                     logger.warning(
                         f"Player {player.player_id} career data is {days_since_update} days old. Proceeding with caution."
@@ -610,7 +655,11 @@ def project_no_steals():
 
             # Validate recent games are actually recent (within last 30 days)
             most_recent_game_date = max(game.game_date for game in recent_games)
-            days_since_last_game = (today - most_recent_game_date).days
+            # A last game from before opening night is the offseason, not
+            # inactivity — measure from opening night instead.
+            days_since_last_game = (
+                today - max(most_recent_game_date, season_open)
+            ).days
             if days_since_last_game > 30:
                 logger.warning(
                     f"Player {player.player_id} hasn't played in {days_since_last_game} days. Skipping."

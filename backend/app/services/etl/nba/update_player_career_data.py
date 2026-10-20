@@ -20,7 +20,11 @@ from datetime import datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import PlayerCareerData, TeamRoster
-from app.services.etl.nba._api_sports import api_request, get_current_season
+from app.services.etl.nba._api_sports import (
+    api_request,
+    get_current_season,
+    normalize_player_name,
+)
 from app.services.etl.nba._espn import EASTERN
 
 logger = logging.getLogger(__name__)
@@ -59,40 +63,65 @@ def _format_season(year: int) -> str:
     return f"{year}-{str(year + 1)[-2:]}"
 
 
+_SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
+
+
 def _find_api_player_id(player_name: str) -> int | None:
-    parts = player_name.split()
-    if not parts:
+    """API-Sports player id for a roster name.
+
+    /players?search= matches on last name, so search the last name first and
+    only then the first name; compare accent- and suffix-insensitively.
+    """
+    target = normalize_player_name(player_name)
+    tokens = target.split()
+    if not tokens:
         return None
-    # Search by first name first (api-sports's /players?search= matches by lastname).
-    search = api_request("players", params={"search": parts[0]})
-    if not search or not search.get("response"):
-        # Fallback: try last name.
-        if len(parts) > 1:
-            search = api_request("players", params={"search": parts[-1]})
-            if not search or not search.get("response"):
-                return None
-        else:
-            return None
-    name_lower = player_name.lower()
-    candidates = search["response"]
-    for p in candidates:
-        full = f"{p.get('firstname', '')} {p.get('lastname', '')}".strip().lower()
-        if full == name_lower:
-            return p["id"]
-    for p in candidates:
-        full = f"{p.get('firstname', '')} {p.get('lastname', '')}".strip().lower()
-        if name_lower in full or full in name_lower:
-            return p["id"]
+    # Raw last name first ("Gilgeous-Alexander" as stored), then the
+    # normalized last token, then the first name.
+    raw = [t for t in player_name.split() if normalize_player_name(t) not in _SUFFIXES]
+    seen: set[str] = set()
+    for term in (raw[-1] if raw else "", tokens[-1], tokens[0]):
+        if len(term) < 3 or term.lower() in seen:
+            continue
+        seen.add(term.lower())
+        search = api_request("players", params={"search": term})
+        candidates = (search or {}).get("response") or []
+        names = [
+            (
+                p["id"],
+                normalize_player_name(
+                    f"{p.get('firstname', '')} {p.get('lastname', '')}"
+                ),
+            )
+            for p in candidates
+        ]
+        for pid, full in names:
+            if full == target:
+                return pid
+        padded = f" {target} "
+        partial = [
+            pid for pid, full in names if f" {full} " in padded or padded in f" {full} "
+        ]
+        if len(partial) == 1:
+            return partial[0]
     return None
 
 
-def run() -> dict:
-    season = get_current_season()
+def run(
+    season: int | None = None, players: list[tuple[int, str]] | None = None
+) -> dict:
+    """Upsert season totals for every roster player (or just `players`, as
+    (nba_player_id, name) pairs — used by the season-rollover repair script)."""
+    season = season or get_current_season()
     season_str = _format_season(season)
 
     db = SessionLocal()
     try:
-        roster = db.query(TeamRoster.player_id, TeamRoster.player_name).distinct().all()
+        roster = (
+            players
+            if players is not None
+            else db.query(TeamRoster.player_id, TeamRoster.player_name).distinct().all()
+        )
         logger.info(
             "update_player_career_data: %d roster players to process", len(roster)
         )

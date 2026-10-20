@@ -8,11 +8,14 @@ NBA.com IDs.
 
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime
 from typing import Iterable
 from zoneinfo import ZoneInfo
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 ESPN_SCOREBOARD = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard"
@@ -130,6 +133,33 @@ def fetch_games_for_date(target_date: date | None = None) -> list[dict]:
             }
         )
     return games
+
+
+ESPN_TEAM_ROSTER = (
+    "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{}/roster"
+)
+
+
+def fetch_team_rosters() -> dict[int, list[str]]:
+    """Current ESPN roster per team: NBA.com team_id -> player full names.
+
+    ESPN reflects signings, trades and waivers the same day, so it is the
+    tie-breaker for which team a player is on. Teams whose roster call fails
+    are omitted; callers should check coverage before trusting the result.
+    """
+    rosters: dict[int, list[str]] = {}
+    for espn_id, nba_team_id in ESPN_TO_NBA_TEAM_ID.items():
+        try:
+            response = requests.get(ESPN_TEAM_ROSTER.format(espn_id), timeout=10)
+            response.raise_for_status()
+            athletes = response.json().get("athletes") or []
+        except (requests.RequestException, ValueError) as exc:
+            logger.warning("ESPN roster fetch failed for team %s: %s", espn_id, exc)
+            continue
+        names = [a.get("fullName") for a in athletes if a.get("fullName")]
+        if names:
+            rosters[nba_team_id] = names
+    return rosters
 
 
 def build_matchups(games: Iterable[dict]) -> tuple[set[int], dict[int, int]]:

@@ -71,6 +71,15 @@ PYTHONPATH=. .venv/bin/python scripts/prod_verify_mlb_profiles.py
 
 See `backend/docs/MLB_MATCHUP_PROFILES.md`.
 
+## NBA season rollover (no deploy)
+
+```bash
+cd backend
+PYTHONPATH=. .venv/bin/python scripts/nba_season_rollover_repair.py verify
+```
+
+Roster vs ESPN, offseason rows, misattributed ids. Each October add opening night to `app/services/etl/nba/_season.py`. See `backend/docs/NBA_ML_OPS.md`.
+
 ## NFL backtest (no deploy)
 
 ```bash
