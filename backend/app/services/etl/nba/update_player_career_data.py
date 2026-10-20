@@ -24,6 +24,7 @@ from app.services.etl.nba._api_sports import (
     api_request,
     get_current_season,
     normalize_player_name,
+    resolve_nba_player_id,
 )
 from app.services.etl.nba._espn import EASTERN
 
@@ -66,11 +67,15 @@ def _format_season(year: int) -> str:
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
 
-def _find_api_player_id(player_name: str) -> int | None:
+def _find_api_player_id(
+    player_name: str, nba_player_id: int | None = None
+) -> int | None:
     """API-Sports player id for a roster name.
 
     /players?search= matches on last name, so search the last name first and
-    only then the first name; compare accent- and suffix-insensitively.
+    only then the first name; compare accent- and suffix-insensitively. With
+    `nba_player_id`, a candidate that resolves to the same NBA.com id also
+    matches (API-Sports spells some names differently, e.g. "R. Rupert").
     """
     target = normalize_player_name(player_name)
     tokens = target.split()
@@ -98,6 +103,11 @@ def _find_api_player_id(player_name: str) -> int | None:
         for pid, full in names:
             if full == target:
                 return pid
+        if nba_player_id:
+            for p in candidates:
+                name = f"{p.get('firstname', '')} {p.get('lastname', '')}"
+                if resolve_nba_player_id(name) == nba_player_id:
+                    return p["id"]
         padded = f" {target} "
         partial = [
             pid for pid, full in names if f" {full} " in padded or padded in f" {full} "
@@ -134,7 +144,7 @@ def run(
             if not nba_player_id or not player_name:
                 continue
             try:
-                api_player_id = _find_api_player_id(player_name)
+                api_player_id = _find_api_player_id(player_name, nba_player_id)
                 if not api_player_id:
                     skipped_no_api_id += 1
                     continue
