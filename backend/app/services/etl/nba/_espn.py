@@ -135,6 +135,58 @@ def fetch_games_for_date(target_date: date | None = None) -> list[dict]:
     return games
 
 
+# ESPN season types that count as real games: regular season, playoffs, play-in.
+# Preseason (1) and the All-Star break (4) are excluded.
+COMPETITIVE_SEASON_TYPES = frozenset({2, 3, 5})
+
+
+def parse_final_scores(data: dict) -> list[dict]:
+    """Completed competitive games from an ESPN scoreboard payload.
+
+    Team names come from NBA_TEAM_NAMES (the Odds API spelling that
+    pred_nba_game_lines uses), not ESPN's "LA Clippers" display name.
+    """
+    finals: list[dict] = []
+    for event in data.get("events", []) or []:
+        if (event.get("season") or {}).get("type") not in COMPETITIVE_SEASON_TYPES:
+            continue
+        competition = (event.get("competitions") or [{}])[0]
+        if not ((competition.get("status") or {}).get("type") or {}).get("completed"):
+            continue
+        sides = {c.get("homeAway"): c for c in competition.get("competitors") or []}
+        home, away = sides.get("home"), sides.get("away")
+        if not (home and away):
+            continue
+        home_id = ESPN_TO_NBA_TEAM_ID.get(str(home["team"]["id"]))
+        away_id = ESPN_TO_NBA_TEAM_ID.get(str(away["team"]["id"]))
+        if not (home_id and away_id):
+            continue
+        try:
+            home_score, away_score = int(home["score"]), int(away["score"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        finals.append(
+            {
+                "home_team_name": NBA_TEAM_NAMES[home_id],
+                "away_team_name": NBA_TEAM_NAMES[away_id],
+                "home_score": home_score,
+                "away_score": away_score,
+            }
+        )
+    return finals
+
+
+def fetch_final_scores(target_date: date) -> list[dict]:
+    """parse_final_scores for one Eastern calendar date."""
+    response = requests.get(
+        ESPN_SCOREBOARD,
+        params={"dates": target_date.strftime("%Y%m%d")},
+        timeout=15,
+    )
+    response.raise_for_status()
+    return parse_final_scores(response.json())
+
+
 ESPN_TEAM_ROSTER = (
     "https://site.api.espn.com/apis/site/v2/sports/basketball/nba/teams/{}/roster"
 )

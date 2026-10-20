@@ -2,6 +2,8 @@ name: NBA Season Ops
 
 # verify: read-only prod check (roster vs ESPN, offseason rows, misattributed ids).
 # enqueue-pipeline: queue run_nba_update_pipeline on the celery worker.
+# backfill-spread-actuals: ESPN final scores -> pred_nba_spread_actuals
+#   (dry run unless apply is checked).
 # Same secrets/services as enqueue-wnba-pipeline.yml and nba-train-props.yml.
 
 on:
@@ -14,7 +16,21 @@ on:
         options:
           - verify
           - enqueue-pipeline
+          - backfill-spread-actuals
         default: verify
+      start:
+        description: Backfill start (YYYY-MM-DD)
+        required: false
+        default: "2024-10-22"
+      end:
+        description: Backfill end (YYYY-MM-DD)
+        required: false
+        default: "2026-06-30"
+      apply:
+        description: Write changes (backfill only; otherwise dry run)
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   ops:
@@ -72,6 +88,20 @@ jobs:
             export YETAI_ADMIN_PASSWORD="$(python3 scripts/resolve_railway_variable.py YETAI_ADMIN_PASSWORD 2>/dev/null || true)"
           fi
           PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
+
+      - name: Backfill spread actuals
+        if: inputs.action == 'backfill-spread-actuals'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+          APPLY: ${{ inputs.apply && '--apply' || '' }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          PYTHONPATH=. python3 scripts/nba_backfill_spread_actuals.py --from "$START" --to "$END" $APPLY
 
       - name: Upload verify log
         if: inputs.action == 'verify'
