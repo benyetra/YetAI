@@ -36,7 +36,7 @@ from __future__ import annotations
 import argparse
 import sys
 import time
-from datetime import date
+from datetime import date, datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import PlayerCareerData, RecentGames, TeamRoster
@@ -48,7 +48,7 @@ from app.services.etl.nba._api_sports import (
     normalize_player_name,
     resolve_nba_player_id,
 )
-from app.services.etl.nba._espn import NBA_TEAM_NAMES, fetch_team_rosters
+from app.services.etl.nba._espn import EASTERN, NBA_TEAM_NAMES, fetch_team_rosters
 from app.services.etl.nba._season import (
     is_offseason_date,
     offseason_window,
@@ -194,8 +194,59 @@ def _season_game_index(season: int) -> dict[int, dict]:
 
 
 def _game_date(game: dict) -> date | None:
+    """Eastern calendar date of tip-off. API-Sports gives UTC, which puts a
+    late ET game on the next day and can collide with that player's next game."""
     start = (game.get("date") or {}).get("start")
-    return date.fromisoformat(start[:10]) if start else None
+    if not start:
+        return None
+    utc = datetime.fromisoformat(start.replace("Z", "+00:00"))
+    return utc.astimezone(EASTERN).date()
+
+
+def _api_key_works() -> bool:
+    data = api_request("seasons")
+    return bool(data and data.get("response"))
+
+
+def _collect_player_games(
+    players: dict[int, str], seasons: list[int]
+) -> tuple[dict[tuple[int, date], dict], list[str]]:
+    """Fetch every affected player's regular-season box scores. Returns
+    ({(player_id, game_date): fields}, names that could not be fetched).
+    Keyed by (player, date), so duplicate lines collapse instead of colliding."""
+    rows: dict[tuple[int, date], dict] = {}
+    failed: list[str] = []
+    for season in seasons:
+        print(f"season {season}: indexing schedules…")
+        games = _season_game_index(season)
+        if not games:
+            raise SystemExit(f"no schedule returned for season {season}; aborting")
+        for pid, name in players.items():
+            api_id = _find_api_player_id(name)
+            data = (
+                api_request(
+                    "players/statistics", params={"id": api_id, "season": season}
+                )
+                if api_id
+                else None
+            )
+            if data is None:
+                failed.append(f"{name} ({season})")
+                continue
+            for line in data.get("response") or []:
+                game = games.get((line.get("game") or {}).get("id"))
+                if not game or not is_nba_league_game(game):
+                    continue
+                game_date = _game_date(game)
+                if not game_date or is_offseason_date(game_date):
+                    continue
+                rows[(pid, game_date)] = stat_line_fields(
+                    line,
+                    (game.get("teams", {}).get("home") or {}).get("id"),
+                    (game.get("teams", {}).get("visitors") or {}).get("id"),
+                )
+            time.sleep(0.2)
+    return rows, failed
 
 
 def cmd_rebuild(db, seasons: list[int], apply: bool) -> int:
@@ -238,57 +289,40 @@ def cmd_rebuild(db, seasons: list[int], apply: bool) -> int:
         print("dry run — pass --apply to delete and re-pull from API-Sports")
         return 0
 
-    db.query(RecentGames).filter(RecentGames.player_id.in_(ids)).delete(
-        synchronize_session=False
-    )
-    db.query(PlayerCareerData).filter(
-        PlayerCareerData.player_id.in_(ids), PlayerCareerData.season.in_(labels)
-    ).delete(synchronize_session=False)
-    db.commit()
+    if not _api_key_works():
+        print("ERROR: API-Sports request failed — check NBA_API_KEY. Nothing changed.")
+        return 1
 
     rebuildable = {
         pid: name for pid, name in affected.items() if not name.startswith("(unknown")
     }
+    # Fetch everything before touching the table; then swap in one transaction.
+    rows, failed = _collect_player_games(rebuildable, seasons)
+    if failed:
+        print(f"ERROR: could not fetch {failed}. Nothing changed.")
+        return 1
+    print(f"fetched {len(rows)} games for {len(rebuildable)} players")
+
+    try:
+        db.query(RecentGames).filter(RecentGames.player_id.in_(ids)).delete(
+            synchronize_session=False
+        )
+        db.query(PlayerCareerData).filter(
+            PlayerCareerData.player_id.in_(ids), PlayerCareerData.season.in_(labels)
+        ).delete(synchronize_session=False)
+        db.add_all(
+            RecentGames(player_id=pid, game_date=game_date, **fields)
+            for (pid, game_date), fields in rows.items()
+        )
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    print(f"replaced rows for {len(ids)} ids with {len(rows)} rebuilt games")
+
     for season in seasons:
-        print(f"season {season}: indexing schedules…")
-        games = _season_game_index(season)
-        added = 0
-        for pid, name in rebuildable.items():
-            api_id = _find_api_player_id(name)
-            if not api_id:
-                print(f"  {name}: no API-Sports id, skipped")
-                continue
-            data = api_request(
-                "players/statistics", params={"id": api_id, "season": season}
-            )
-            for line in (data or {}).get("response") or []:
-                game = games.get((line.get("game") or {}).get("id"))
-                if not game or not is_nba_league_game(game):
-                    continue
-                game_date = _game_date(game)
-                if not game_date or is_offseason_date(game_date):
-                    continue
-                fields = stat_line_fields(
-                    line,
-                    (game.get("teams", {}).get("home") or {}).get("id"),
-                    (game.get("teams", {}).get("visitors") or {}).get("id"),
-                )
-                existing = (
-                    db.query(RecentGames)
-                    .filter_by(player_id=pid, game_date=game_date)
-                    .first()
-                )
-                if existing:
-                    for k, v in fields.items():
-                        setattr(existing, k, v)
-                else:
-                    db.add(RecentGames(player_id=pid, game_date=game_date, **fields))
-                    added += 1
-            db.commit()
-            time.sleep(0.2)
-        print(f"  added {added} games")
         result = run_career_data(season=season, players=list(rebuildable.items()))
-        print(f"  career data: {result}")
+        print(f"career data {season}: {result}")
     return 0
 
 
