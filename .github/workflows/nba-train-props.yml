@@ -24,7 +24,7 @@ on:
       end:
         description: Training window end (YYYY-MM-DD)
         required: true
-        default: "2025-04-30"
+        default: "2026-06-30"
       upload:
         description: Upload artifacts to S3 after MAE gate passes
         required: true
