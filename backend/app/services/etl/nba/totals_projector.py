@@ -8,12 +8,13 @@ import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
-from sqlalchemy import func, or_
+from sqlalchemy import func
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import (
     NBAGameLines,
     NBASpreadActuals,
+    NBATotalsActuals,
     NBATotalsProjections,
     PlayerInjuryStatus,
     RecentGames,
@@ -23,7 +24,20 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._season import regular_season_start, season_start_year
+from app.services.etl.nba._season import season_start_year
+from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
+    CALIBRATION_START,
+    CURRENT_SEASON_DELAY_DAYS,
+    CURRENT_SEASON_PRIOR_GAMES,
+    MIN_FORM_GAMES,
+    Final,
+    baseline_scores,
+    blended_scoring,
+    pick_record,
+    recent_bias,
+    recommend,
+    scoring_averages,
+)
 from app.services.etl.nba.totals_ml import enrich_projection
 
 logger = logging.getLogger(__name__)
@@ -472,83 +486,52 @@ def calculate_form_adjustment(home_team: str, away_team: str) -> float:
     return total_form
 
 
-# The pace/ORtg/DRtg inputs above are unreliable: offense stats come from
-# API-Sports' current-season count (a handful of preseason games in October) and
-# defense is scaled from tracked players' points only, so ratings swing
-# 80-116 on noise and totals landed ~40 under the market. Final scores are
-# complete, so project each side from points scored and allowed: last season
-# carries the weight, and this season is ignored for its first two weeks, then
-# blended in as games accumulate.
-MIN_FORM_GAMES = 10
-CURRENT_SEASON_DELAY_DAYS = 14
-CURRENT_SEASON_PRIOR_GAMES = 20  # current-season weight = n / (n + this)
-
-
-def scoring_averages(games, team_name: str) -> Tuple[float, float, int]:
-    """(points scored, points allowed) per game and game count for a team.
-
-    games: NBASpreadActuals-like rows. (0, 0, 0) when the team has none."""
-    scored: List[float] = []
-    allowed: List[float] = []
-    for g in games:
-        if g.home_team_name == team_name:
-            scored.append(g.home_score)
-            allowed.append(g.away_score)
-        elif g.away_team_name == team_name:
-            scored.append(g.away_score)
-            allowed.append(g.home_score)
-    n = len(scored)
-    if not n:
-        return 0.0, 0.0, 0
-    return sum(scored) / n, sum(allowed) / n, n
-
-
-def blended_scoring(
-    prior_games, current_games, team_name: str
-) -> Optional[Tuple[float, float]]:
-    """Last season's scoring, shifted toward this season as its games pile up."""
-    p_for, p_against, p_n = scoring_averages(prior_games, team_name)
-    c_for, c_against, c_n = scoring_averages(current_games, team_name)
-    if p_n < MIN_FORM_GAMES:
-        # No usable history (new franchise data gap): wait for this season.
-        return (c_for, c_against) if c_n >= MIN_FORM_GAMES else None
-    w = c_n / (c_n + CURRENT_SEASON_PRIOR_GAMES)
-    return (1 - w) * p_for + w * c_for, (1 - w) * p_against + w * c_against
-
-
-def project_scores_from_actuals(
-    home_team: str, away_team: str, game_date: date
-) -> Optional[Tuple[float, float]]:
-    """(home, away) projected points from last season and, later, this one."""
+def _load_finals(game_date: date) -> List:
+    """Final scores from last season's start through the day before game_date."""
     year = season_start_year(game_date)
-    opener = regular_season_start(year)
-    prior_start, prior_end = date(year - 1, 7, 1), opener
-    use_current = game_date >= opener + timedelta(days=CURRENT_SEASON_DELAY_DAYS)
-
-    def team_games(team: str, start: date, end: date):
-        return (
-            db.query(NBASpreadActuals)
-            .filter(
-                NBASpreadActuals.game_date >= start,
-                NBASpreadActuals.game_date < min(end, game_date),
-                or_(
-                    NBASpreadActuals.home_team_name == team,
-                    NBASpreadActuals.away_team_name == team,
-                ),
-            )
-            .all()
+    rows = (
+        db.query(NBASpreadActuals)
+        .filter(
+            NBASpreadActuals.game_date >= date(year - 1, 7, 1),
+            NBASpreadActuals.game_date < game_date,
         )
-
-    rates = {}
-    for team in (home_team, away_team):
-        current = team_games(team, opener, game_date) if use_current else []
-        rates[team] = blended_scoring(
-            team_games(team, prior_start, prior_end), current, team
+        .all()
+    )
+    # Plain tuples: ORM rows expire on the commits that save projections.
+    return [
+        Final(
+            r.game_date,
+            r.home_team_name,
+            r.away_team_name,
+            r.home_score,
+            r.away_score,
         )
-    home, away = rates[home_team], rates[away_team]
-    if home is None or away is None:
-        return None
-    return (home[0] + away[1]) / 2, (away[0] + home[1]) / 2
+        for r in rows
+    ]
+
+
+_finals_cache: Dict[date, List] = {}
+
+
+def finals_for(game_date: date) -> List:
+    """Final scores for a run date, loaded once per date (one query per run)."""
+    if game_date not in _finals_cache:
+        _finals_cache.clear()
+        _finals_cache[game_date] = _load_finals(game_date)
+    return _finals_cache[game_date]
+
+
+def current_pick_record(game_date: date) -> Tuple[int, int]:
+    """Hits and picks of the model's would-be calls since calibration began."""
+    start = max(CALIBRATION_START, game_date - timedelta(days=60))
+    rows = (
+        db.query(NBATotalsActuals)
+        .filter(
+            NBATotalsActuals.game_date >= start, NBATotalsActuals.game_date < game_date
+        )
+        .all()
+    )
+    return pick_record(rows)
 
 
 def generate_projection(
@@ -595,9 +578,12 @@ def generate_projection(
     home_projected = project_team_score(home_adj_ortg, expected_pace)
     away_projected = project_team_score(away_adj_ortg, expected_pace)
 
-    from_actuals = project_scores_from_actuals(home_team, away_team, game_date)
+    finals = finals_for(game_date)
+    from_actuals = baseline_scores(finals, home_team, away_team, game_date)
+    bias, bias_games = 0.0, 0
     if from_actuals:
         home_projected, away_projected = from_actuals
+        bias, bias_games = recent_bias(finals, game_date)
     base_projection = home_projected + away_projected
     logger.info(
         f"Base Projection: {base_projection:.1f} (Home: {home_projected:.1f}, Away: {away_projected:.1f})"
@@ -628,28 +614,23 @@ def generate_projection(
     logger.info(f"  Total Adjustment: {total_adjustment:+.1f}")
 
     # Final projection
-    projected_total = base_projection + total_adjustment
+    projected_total = base_projection + total_adjustment + bias
     logger.info(f"PROJECTED TOTAL: {projected_total:.1f}")
 
     # Market comparison
     edge = None
     recommendation = "NO_PLAY"
     confidence = 0.5
+    rec_note = "no market line"
 
     if market_total:
         edge = projected_total - market_total
         logger.info(f"Market Total: {market_total}")
         logger.info(f"Edge: {edge:+.1f}")
 
-        if edge > 2:
-            recommendation = "OVER"
-            confidence = min(0.5 + (abs(edge) * 0.05), 0.85)
-        elif edge < -2:
-            recommendation = "UNDER"
-            confidence = min(0.5 + (abs(edge) * 0.05), 0.85)
-        else:
-            recommendation = "NO_PLAY"
-            confidence = 0.5
+        recommendation, confidence, rec_note = recommend(
+            edge, current_pick_record(game_date)
+        )
 
         logger.info(f"Recommendation: {recommendation} (Confidence: {confidence:.0%})")
 
@@ -666,6 +647,8 @@ def generate_projection(
         "defensive_matchup": f"Home DRtg: {home_stats['defensive_rating']:.1f}, Away DRtg: {away_stats['defensive_rating']:.1f}",
         "key_absence": None,
         "situational": None,
+        "bias_correction": {"points": round(bias, 2), "games": bias_games},
+        "recommendation_note": rec_note,
     }
 
     # Note key absences
