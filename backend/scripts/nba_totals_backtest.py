@@ -72,7 +72,7 @@ def main() -> None:
     for season in seasons:
         print(f"\n######## season {season}")
         opener = regular_season_start(season)
-        season = sorted(
+        games_in = sorted(
             (
                 g
                 for g in finals
@@ -81,7 +81,7 @@ def main() -> None:
             key=lambda g: g.game_date,
         )
         run = []
-        for g in season:
+        for g in games_in:
             s = baseline_scores(finals, g.home_team_name, g.away_team_name, g.game_date)
             if s is not None:
                 run.append((g, sum(s)))
