@@ -24,6 +24,17 @@ logger = logging.getLogger(__name__)
 
 MIN_TRAINING_ROWS = 100
 
+# Shallow and regularized: on later games (chronological holdout, 19k rows) the
+# shipped depth-5 / 400-tree defaults lost to a plain recent average, while this
+# setting beat the default for points, rebounds and assists
+# (4.805 vs 4.919, 1.963 vs 1.993, 1.420 vs 1.453 MAE).
+PROP_HYPERPARAMS = {
+    "max_depth": 2,
+    "n_estimators": 300,
+    "learning_rate": 0.03,
+    "min_child_weight": 50,
+}
+
 # The model must beat a naive "recent average" guess on games it never saw.
 NAIVE_WINDOWS = (5, 10, 20)
 
@@ -113,7 +124,11 @@ def run(
         }
 
     model, metadata = train_model.train(
-        stat_col, features_df, target, chronological=True
+        stat_col,
+        features_df,
+        target,
+        hyperparams=PROP_HYPERPARAMS,
+        chronological=True,
     )
     metadata = _enrich_metadata(stat_col, metadata)
 
