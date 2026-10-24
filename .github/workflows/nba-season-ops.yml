@@ -22,6 +22,8 @@ on:
           - refresh-roster-projections
           - debug-totals
           - backtest-totals
+          - audit-props
+          - props-experiment
         default: verify
       start:
         description: Backfill start (YYYY-MM-DD)
@@ -31,6 +33,10 @@ on:
         description: Backfill end (YYYY-MM-DD)
         required: false
         default: "2026-06-30"
+      stat:
+        description: Prop stat (props-experiment only)
+        required: false
+        default: points
       apply:
         description: Write changes (backfill only; otherwise dry run)
         required: false
@@ -131,6 +137,35 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           PYTHONPATH=. python3 scripts/nba_totals_backtest.py
+
+      - name: Audit prop projections (read-only)
+        if: inputs.action == 'audit-props'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          PYTHONPATH=. python3 scripts/nba_props_audit.py
+
+      - name: Prop model experiments (read-only; caches the dataset in S3)
+        if: inputs.action == 'props-experiment'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          DEBUG: "false"
+          STAT: ${{ inputs.stat }}
+          START: ${{ inputs.start }}
+          END: ${{ inputs.end }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          python3 -m app.services.etl.nba.ml_training.experiments \
+            --stat "$STAT" --start "$START" --end "$END"
 
       - name: Backfill spread actuals
         if: inputs.action == 'backfill-spread-actuals'
