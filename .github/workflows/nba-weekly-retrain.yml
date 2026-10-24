@@ -1,0 +1,71 @@
+name: NBA Weekly Retrain
+
+# Keeps the NBA models learning from new games. Each model retrains on the last
+# two seasons plus the current one and uploads only if it passes its own gate
+# (props: MAE limit; spread: must beat Elo on the same holdout). A model that
+# fails its gate is reported as a warning and the live model stays as it is.
+# Requires the same secrets as nba-train-props.yml (RAILWAY_TOKEN, AWS_*).
+
+on:
+  schedule:
+    - cron: "0 11 * * 1" # Mondays 11:00 UTC, after the 3:30 ET pipeline is done
+  workflow_dispatch:
+
+jobs:
+  retrain:
+    name: Retrain NBA ${{ matrix.model }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 1 # one heavy read of the production DB at a time
+      matrix:
+        model: [spread, points, rebounds, assists]
+    defaults:
+      run:
+        working-directory: backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Train and upload if the gate passes
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          MODEL: ${{ matrix.model }}
+        run: |
+          set -uo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          # League year starts in October; train on the previous and current ones.
+          month=$(date -u +%m); year=$(date -u +%Y)
+          if [ "$((10#$month))" -ge 10 ]; then season=$year; else season=$((year - 1)); fi
+          START="$((season - 1))-10-01"; END="$(date -u +%F)"
+          echo "window $START .. $END"
+          if [ "$MODEL" = "spread" ]; then
+            python3 -m app.services.etl.nba.ml_training.train_spread_model \
+              --start "$START" --end "$END" --upload | tee train.log
+          else
+            python3 -m app.services.etl.nba.ml_training \
+              --stat "$MODEL" --start "$START" --end "$END" --upload | tee train.log
+          fi
+          # Gate outcomes are not failures: the live model is simply kept.
+          if grep -Eq "below_baseline|gate_failed|insufficient_data" train.log; then
+            echo "::warning::$MODEL did not pass its gate; kept the live model"
+            exit 0
+          fi
+          grep -Eq "\"status\": \"ok\"|'status': 'ok'" train.log

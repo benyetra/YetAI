@@ -179,3 +179,54 @@ def test_totals_blend_uses_last_season_then_shifts_to_this_one():
     assert blended_scoring(games(3, 100, 100), [], "A") is None  # no history
     cur = games(MIN_FORM_GAMES, 120, 110)
     assert blended_scoring([], cur, "A") == (120, 110)
+
+
+def _final(d, home, away, hs, as_):
+    from app.services.etl.nba.totals_baseline import Final
+
+    return Final(d, home, away, hs, as_)
+
+
+def test_totals_baseline_bias_recommend_and_record():
+    from datetime import date, timedelta
+    from types import SimpleNamespace as R
+
+    from app.services.etl.nba import totals_baseline as tb
+
+    # Last season: A and B each score/allow 110. This season they score 120.
+    last = [
+        _final(date(2026, 1, 1) + timedelta(days=i), "A", "B", 110, 110)
+        for i in range(12)
+    ]
+    cur = [
+        _final(date(2026, 10, 21) + timedelta(days=i), "A", "B", 125, 125)
+        for i in range(6)
+    ]
+    finals = last + cur
+
+    # Early in the season (inside the 14-day delay) the baseline is last season's.
+    s = tb.baseline_scores(finals, "A", "B", date(2026, 10, 25))
+    assert s == (110, 110)
+    # ...so it under-projects by 30 total; the correction adds a shrunk share.
+    bias, n = tb.recent_bias(finals, date(2026, 10, 25))
+    # four errors of +30, shrunk by 10: 120 / 14.
+    assert n == 4 and abs(bias - 120 / 14) < 1e-9
+    assert tb.recent_bias(last, date(2026, 10, 25)) == (0.0, 0)
+
+    # Calls: small edges are NO_PLAY; unproven calls carry 50% confidence.
+    assert tb.recommend(2.0, (0, 0))[0] == "NO_PLAY"
+    rec, conf, note = tb.recommend(-6.0, (0, 0))
+    assert (rec, conf) == ("UNDER", 0.5) and "unproven" in note
+    # A long losing record withholds calls; a winning one reports its rate.
+    assert tb.recommend(-6.0, (40, 100))[0] == "NO_PLAY"
+    rec, conf, _ = tb.recommend(6.0, (70, 100))
+    assert rec == "OVER" and 0.58 <= conf <= 0.65
+
+    # The record uses the edge's sign (not the shown call) and skips pushes.
+    rows = [
+        R(projected_total=220, market_total=226, actual_total=215),  # under, hit
+        R(projected_total=232, market_total=226, actual_total=220),  # over, miss
+        R(projected_total=224, market_total=226, actual_total=230),  # small edge
+        R(projected_total=220, market_total=226, actual_total=226),  # push
+    ]
+    assert tb.pick_record(rows) == (1, 2)

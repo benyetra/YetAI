@@ -91,6 +91,23 @@ def fetch_game_scores_from_api(game_date: date) -> List[Dict]:
         return []
 
 
+def final_scores_from_actuals(game_date: date) -> List[Dict]:
+    """Final scores for a date from pred_nba_spread_actuals (ESPN)."""
+    from app.models.predictions_models import NBASpreadActuals
+
+    rows = db.query(NBASpreadActuals).filter_by(game_date=game_date).all()
+    return [
+        {
+            "home_team": r.home_team_name,
+            "away_team": r.away_team_name,
+            "home_score": r.home_score,
+            "away_score": r.away_score,
+            "total": r.home_score + r.away_score,
+        }
+        for r in rows
+    ]
+
+
 def calculate_totals_from_player_data(game_date: date) -> List[Dict]:
     """
     Calculate game totals from RecentGames player data.
@@ -218,11 +235,16 @@ def store_actual_result(projection: NBATotalsProjections, actual: Dict):
         market_error = actual_total - market_total if market_total else None
 
         # Determine if over/under was correct
-        was_over = actual_total > market_total if market_total else None
+        # A push (total == line) is neither over nor under.
+        was_over = (
+            actual_total > market_total
+            if market_total and actual_total != market_total
+            else None
+        )
 
         # Did our prediction hit?
         correct_prediction = None
-        if projection.recommendation and market_total:
+        if projection.recommendation and market_total and was_over is not None:
             if projection.recommendation == "OVER" and was_over:
                 correct_prediction = True
             elif projection.recommendation == "UNDER" and not was_over:
@@ -537,8 +559,11 @@ def update_yesterdays_results():
         logger.info("No projections found for yesterday")
         return
 
-    # Fetch actual scores
-    actuals = fetch_game_scores_from_api(yesterday)
+    # ESPN finals stored by store_spread_actuals use our team names exactly;
+    # the third-party scores feed is only a fallback.
+    actuals = final_scores_from_actuals(yesterday) or fetch_game_scores_from_api(
+        yesterday
+    )
 
     if not actuals:
         logger.warning("Could not fetch game scores from API")
