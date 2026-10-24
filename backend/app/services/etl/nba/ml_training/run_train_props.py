@@ -16,6 +16,7 @@ from app.services.etl.nba.ml_training import (
 )
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.etl.nba.prop_calibration import fit_residual_calibration
+from app.services.ml import dataset_cache
 from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
 
@@ -65,6 +66,7 @@ def run(
     season_end: date,
     upload: bool = False,
     dry_run: bool = False,
+    cache: bool = False,
 ) -> dict[str, Any]:
     """Build dataset, train, validate MAE gate, optionally upload to S3."""
     if stat_col not in NBA_ML_CONFIG.supported_stats:
@@ -73,9 +75,20 @@ def run(
             f"choose from {NBA_ML_CONFIG.supported_stats}"
         )
 
-    features_df, target = build_training_dataset.build(
-        stat_col, season_start, season_end
-    )
+    features_df = None
+    if cache:
+        key = dataset_cache.cache_key(
+            NBA_ML_CONFIG.s3_prefix, stat_col, season_start, season_end
+        )
+        hit = dataset_cache.load(key)
+        if hit is not None:
+            features_df, target = hit
+    if features_df is None:
+        features_df, target = build_training_dataset.build(
+            stat_col, season_start, season_end
+        )
+        if cache:
+            dataset_cache.save(key, features_df, target)
     row_count = len(features_df)
 
     if dry_run:

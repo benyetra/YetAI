@@ -1,0 +1,61 @@
+name: NBA Props Experiment
+
+# Read-only. Builds (or loads from S3) the prop training dataset, then compares
+# model variants against a player's recent average on a chronological holdout.
+# The first run for a window builds the dataset; later runs take minutes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      stat:
+        description: Prop stat
+        required: true
+        type: choice
+        options: [points, rebounds, assists]
+        default: points
+      start:
+        description: Window start (YYYY-MM-DD)
+        required: true
+        default: "2024-10-01"
+      end:
+        description: Window end (YYYY-MM-DD)
+        required: true
+        default: "2026-10-23"
+
+jobs:
+  experiment:
+    name: Experiment ${{ inputs.stat }} (${{ inputs.start }} – ${{ inputs.end }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Run experiments
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          python3 -m app.services.etl.nba.ml_training.experiments \
+            --stat "${{ inputs.stat }}" --start "${{ inputs.start }}" --end "${{ inputs.end }}" \
+            | tee experiment.txt >> "$GITHUB_STEP_SUMMARY"

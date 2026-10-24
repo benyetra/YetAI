@@ -35,6 +35,11 @@ on:
         required: true
         type: boolean
         default: false
+      cache:
+        description: Reuse/save the built dataset in S3 (nba/ml_datasets/)
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   train:
@@ -77,5 +82,8 @@ jobs:
           fi
           if [ "${{ inputs.dry_run }}" = "true" ]; then
             ARGS+=(--dry-run)
+          fi
+          if [ "${{ inputs.cache }}" = "true" ]; then
+            ARGS+=(--cache)
           fi
           python3 -m app.services.etl.nba.ml_training "${ARGS[@]}"
