@@ -282,3 +282,17 @@ def test_dataset_cache_roundtrip(monkeypatch, small_dataset):
     loaded, loaded_target = dataset_cache.load(key)
     assert list(loaded.columns) == list(feats.columns)
     assert list(loaded_target) == list(target)
+
+
+def test_props_train_with_the_shallow_setting(small_dataset, monkeypatch):
+    feats, target = small_dataset
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
+        lambda stat, start, end: (feats, target),
+    )
+    out = run_train_props.run(
+        "points", season_start=date(2024, 10, 1), season_end=date(2025, 4, 30)
+    )
+    hp = out["metadata"]["hyperparams"]
+    assert hp["max_depth"] == 2 and hp["n_estimators"] == 300
+    assert hp["min_child_weight"] == 50
