@@ -86,3 +86,27 @@ test suite checks every pin against nba_api).
 **Rosters.** `update_team_roster` uses ESPN's live rosters as the
 tie-breaker for team assignment (trades, signings) and refuses to replace
 the table with an incomplete roster (< 300 players or < 25 teams).
+
+## Honest evaluation and the daily loop
+
+- **Holdout is chronological.** Prop and spread models train on the first 80% of
+  rows (builders emit them in date order) and are judged only on the last 20%.
+  The old check scored the model on every row, including the ones it trained
+  on, and used a random split; that is why retrain reported a 4.1 points MAE
+  while live points were 5.2. Props must also beat a player's recent average
+  (5/10/20-game) on the same holdout; the spread must beat Elo. The spread
+  predictor ignores any uploaded model that was not validated chronologically.
+- **Totals** are projected from final scores (`totals_baseline.py`): last
+  season weighted, this season blended in after two weeks, plus a shrunk
+  average of the baseline's last 30 errors. Calls need 4+ points of edge and
+  their confidence is the measured hit rate; calls stop if that record is
+  below -110 breakeven after 30 graded picks.
+- **Refresh before tip-off.** `nba-pregame-refresh` (12:00 and 17:00 ET) updates
+  injuries and lines and re-runs every projector, since books post props after
+  the 3:30 ET run. Set `NBA_PREGAME_REFRESH_ENABLED=0` to stop it (it spends
+  Odds API credits).
+- **Scorecard.** `NBA Daily Scorecard` (9:30 ET) posts the totals backtest and
+  the prop audit to its run summary. `NBA Weekly Retrain` (Mon 11:00 UTC)
+  retrains spread and points/rebounds/assists; a model that fails its gate is
+  a warning and the live model stays.
+- Read-only checks: Season Ops `backtest-totals`, `audit-props`, `debug-totals`.

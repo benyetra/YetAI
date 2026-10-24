@@ -31,17 +31,30 @@ DEFAULT_HYPERPARAMS = {
 }
 
 
+def split(features_df: pd.DataFrame, target: pd.Series, *, chronological: bool = False):
+    """80/20 train/holdout split shared by training, gating and calibration.
+
+    chronological=True holds out the last 20% of rows. Builders emit rows in
+    date order, so this tests the model on games after the ones it learned
+    from; a random split lets a player's neighbouring games sit on both sides
+    and flatters the error."""
+    if chronological:
+        return train_test_split(features_df, target, test_size=0.2, shuffle=False)
+    return train_test_split(features_df, target, test_size=0.2, random_state=42)
+
+
 def train(
     stat_col: str,
     features_df: pd.DataFrame,
     target: pd.Series,
     *,
     hyperparams: dict | None = None,
+    chronological: bool = False,
 ) -> tuple[xgb.XGBRegressor, dict[str, Any]]:
     hyperparams = {**DEFAULT_HYPERPARAMS, **(hyperparams or {})}
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        features_df, target, test_size=0.2, random_state=42
+    X_train, X_test, y_train, y_test = split(
+        features_df, target, chronological=chronological
     )
 
     model = xgb.XGBRegressor(**hyperparams)
@@ -53,6 +66,7 @@ def train(
     metadata = {
         "stat": stat_col,
         "trained_at": datetime.utcnow().isoformat(),
+        "split": "chronological" if chronological else "random",
         "n_train": int(len(X_train)),
         "n_test": int(len(X_test)),
         "features": list(features_df.columns),
