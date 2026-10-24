@@ -26,9 +26,12 @@ _LOCK = threading.Lock()
 
 
 def beats_baseline(metadata: dict) -> bool:
-    """Only models whose metadata shows a holdout win over Elo may replace it
-    (older uploads predate the check and carry no baseline)."""
+    """Only models whose metadata shows a win over Elo on games after their
+    training window may replace it. Older uploads carry no baseline, and ones
+    validated on a random split flatter the model, so both are ignored."""
     try:
+        if metadata.get("split") != "chronological":
+            return False
         return float(metadata["test_mae"]) < float(metadata["baseline_test_mae"])
     except (KeyError, TypeError, ValueError):
         return False

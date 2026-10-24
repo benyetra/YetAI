@@ -1,0 +1,50 @@
+name: NBA Daily Scorecard
+
+# Read-only. Replays this season's NBA totals against final scores and the
+# lines, and audits stored player-prop projections against results, then posts
+# the numbers to the run summary so drift shows up without anyone asking.
+
+on:
+  schedule:
+    - cron: "30 13 * * *" # 9:30 ET, after the overnight run and grading
+  workflow_dispatch:
+
+jobs:
+  scorecard:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@latest
+
+      - name: Totals and props scorecard
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          {
+            echo "## NBA totals vs final scores and lines"
+            echo '```'
+            PYTHONPATH=. python3 scripts/nba_totals_backtest.py
+            echo '```'
+            echo "## NBA props vs results and lines"
+            echo '```'
+            PYTHONPATH=. python3 scripts/nba_props_audit.py
+            echo '```'
+          } | tee scorecard.md >> "$GITHUB_STEP_SUMMARY"

@@ -12,11 +12,11 @@ from datetime import date
 from typing import Any
 
 import numpy as np
-from sklearn.model_selection import train_test_split  # type: ignore
 
 from app.services.etl.nba._spread_ml_predict import MIN_TRAINING_ROWS
 from app.services.etl.nba.ml_training.build_spread_dataset import build
 from app.services.etl.nba.ml_training.train_model import train
+from app.services.ml.train_model import split
 from app.services.etl.nba.ml_training.upload_to_s3 import upload_spread_model
 
 logger = logging.getLogger(__name__)
@@ -36,9 +36,7 @@ BASELINE_COLUMNS = ("base_margin", "elo_pace_margin")
 
 def baseline_holdout_mae(features_df, target) -> float:
     """Best Elo-only MAE on the same 20% holdout ``train`` uses."""
-    _, X_test, _, y_test = train_test_split(
-        features_df, target, test_size=0.2, random_state=42
-    )
+    _, X_test, _, y_test = split(features_df, target, chronological=True)
     y = np.asarray(y_test, dtype=float)
     return min(
         float(np.mean(np.abs(np.asarray(X_test[c], dtype=float) - y)))
@@ -61,7 +59,11 @@ def run(
         }
 
     model, metadata = train(
-        "spread", features_df, target, hyperparams=SPREAD_HYPERPARAMS
+        "spread",
+        features_df,
+        target,
+        hyperparams=SPREAD_HYPERPARAMS,
+        chronological=True,
     )
     metadata = dict(metadata)
     metadata["baseline_test_mae"] = baseline_holdout_mae(features_df, target)

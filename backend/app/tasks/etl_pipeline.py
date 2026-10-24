@@ -520,6 +520,29 @@ NBA_PHASES = [
 ]
 
 
+# Books post player props after the 3:30 ET run, so the overnight projections
+# have lines for only a fraction of players, and game lines move through the day.
+# Refresh injuries + lines and re-run the projectors before tip-off. Disable
+# with NBA_PREGAME_REFRESH_ENABLED=0 (each run spends Odds API credits).
+NBA_PREGAME_PHASES = [
+    ("pre_prediction", [nba_update_injury_status, nba_update_game_lines]),
+    ("predictions", dict(NBA_PHASES)["predictions"]),
+]
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.run_nba_pregame_refresh", bind=True)
+def run_nba_pregame_refresh(self) -> dict:
+    """Midday/afternoon NBA lines + projections refresh (see NBA_PREGAME_PHASES)."""
+    if os.getenv("NBA_PREGAME_REFRESH_ENABLED", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
+        return {"status": "disabled"}
+    logger.info("NBA pregame refresh starting (task_id=%s)", self.request.id)
+    return _run_phases("nba", NBA_PREGAME_PHASES)
+
+
 # YetiBets mlb_daily_projections.yml — strikeouts before archiving K projections.
 def _mlb_projection_phases():
     """Build MLB projection phases; optional HR ML after weather when enabled."""

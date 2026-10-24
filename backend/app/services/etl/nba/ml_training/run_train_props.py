@@ -7,7 +7,6 @@ from datetime import date
 from typing import Any
 
 import numpy as np
-from sklearn.model_selection import train_test_split  # type: ignore
 
 from app.services.etl.nba.ml_training import (
     build_training_dataset,
@@ -17,11 +16,31 @@ from app.services.etl.nba.ml_training import (
 )
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.etl.nba.prop_calibration import fit_residual_calibration
+from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
 
 logger = logging.getLogger(__name__)
 
 MIN_TRAINING_ROWS = 100
+
+# The model must beat a naive "recent average" guess on games it never saw.
+NAIVE_WINDOWS = (5, 10, 20)
+
+
+def naive_holdout_mae(stat_col: str, X_hold, y_hold) -> float | None:
+    """Best MAE of a player's 5/10/20-game average on the holdout rows where
+    all three averages exist (0 means too little history)."""
+    cols = [f"{stat_col}_avg_{w}" for w in NAIVE_WINDOWS]
+    if any(c not in X_hold.columns for c in cols):
+        return None
+    usable = (X_hold[cols] > 0).all(axis=1)
+    if not usable.any():
+        return None
+    y = np.asarray(y_hold, dtype=float)[usable.to_numpy()]
+    return min(
+        float(np.mean(np.abs(np.asarray(X_hold.loc[usable, c], dtype=float) - y)))
+        for c in cols
+    )
 
 
 def _enrich_metadata(stat_col: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -80,12 +99,12 @@ def run(
             "season_end": season_end.isoformat(),
         }
 
-    model, metadata = train_model.train(stat_col, features_df, target)
+    model, metadata = train_model.train(
+        stat_col, features_df, target, chronological=True
+    )
     metadata = _enrich_metadata(stat_col, metadata)
 
-    _, X_hold, _, y_hold = train_test_split(
-        features_df, target, test_size=0.2, random_state=42
-    )
+    _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
     holdout_actuals = y_hold.values
     holdout_lines = np.round(holdout_actuals.astype(float) * 2) / 2
@@ -94,8 +113,44 @@ def run(
     )
     metadata["prop_calibration"] = cal_params.to_dict()
 
-    validation = validate_model.validate(stat_col, model, features_df, target)
+    # Judge on the holdout only: validating on every row would include the 80%
+    # the model trained on.
+    validation = validate_model.validate(stat_col, model, X_hold, y_hold)
     metadata["validation"] = validation
+    naive_mae = naive_holdout_mae(stat_col, X_hold, y_hold)
+    if naive_mae is not None:
+        usable = (X_hold[[f"{stat_col}_avg_{w}" for w in NAIVE_WINDOWS]] > 0).all(
+            axis=1
+        )
+        model_mae = float(
+            np.mean(
+                np.abs(
+                    model.predict(X_hold[usable])
+                    - np.asarray(y_hold)[usable.to_numpy()]
+                )
+            )
+        )
+        metadata["naive_holdout_mae"] = naive_mae
+        metadata["model_mae_vs_naive"] = model_mae
+        metadata["beats_naive"] = model_mae < naive_mae
+    else:
+        metadata["beats_naive"] = True  # no baseline columns to compare against
+
+    if not metadata["beats_naive"]:
+        logger.warning(
+            "NBA %s model does not beat the recent-average baseline: %.3f vs %.3f",
+            stat_col,
+            metadata["model_mae_vs_naive"],
+            metadata["naive_holdout_mae"],
+        )
+        return {
+            "status": "gate_failed",
+            "stat": stat_col,
+            "rows": row_count,
+            "metadata": metadata,
+            "validation": validation,
+            "reason": "does_not_beat_naive_baseline",
+        }
 
     if not validation["passes_gate"]:
         logger.warning(

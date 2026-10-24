@@ -80,7 +80,9 @@ def _dataset(signal_from_market: bool, n=400):
     if signal_from_market:
         y = -10 * df["market_spread_home"] + rng.normal(scale=0.5, size=n)
     else:
-        y = pd.Series(rng.normal(scale=10, size=n))
+        # Elo is almost exact here, which a shallow regularized model can't match.
+        df["base_margin"] = rng.normal(scale=10, size=n)
+        y = pd.Series(df["base_margin"] + rng.normal(scale=0.5, size=n))
     return df, pd.Series(y, dtype=float)
 
 
@@ -106,13 +108,18 @@ def test_gate_uploads_model_that_beats_elo(monkeypatch):
     out, uploads = _run(monkeypatch, signal_from_market=True)
     assert out["status"] == "ok"
     assert uploads and uploads[0]["beats_baseline"] is True
+    assert uploads[0]["split"] == "chronological"
     assert uploads[0]["test_mae"] < uploads[0]["baseline_test_mae"]
 
 
 def test_predictor_refuses_models_without_baseline_win():
     assert not smp.beats_baseline({"test_mae": 11.7})  # pre-gate upload
     assert not smp.beats_baseline({"test_mae": 11.7, "baseline_test_mae": 11.2})
-    assert smp.beats_baseline({"test_mae": 10.1, "baseline_test_mae": 11.2})
+    win = {"test_mae": 10.1, "baseline_test_mae": 11.2}
+    # A random-split win flatters the model, so only chronological ones count.
+    assert not smp.beats_baseline(win)
+    assert not smp.beats_baseline({**win, "split": "random"})
+    assert smp.beats_baseline({**win, "split": "chronological"})
 
 
 def test_predictor_ignores_ungated_model_on_load(monkeypatch):

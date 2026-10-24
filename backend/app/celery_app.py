@@ -68,6 +68,11 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
         "schedule": crontab(hour=3, minute=30),
     },
+    "nba-pregame-refresh": {
+        "task": "app.tasks.etl_pipeline.run_nba_pregame_refresh",
+        "schedule": crontab(hour=[12, 17], minute=0),  # ET (celery tz)
+        "options": {"expires": 7200},
+    },
     "nba-spreads-accuracy-morning": {
         "task": "app.tasks.etl_pipeline.nba.spreads_accuracy",
         "schedule": crontab(hour=5, minute=5),

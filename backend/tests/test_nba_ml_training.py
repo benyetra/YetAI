@@ -174,3 +174,67 @@ def test_run_insufficient_data():
             season_end=date(2025, 4, 30),
         )
     assert out["status"] == "insufficient_data"
+
+
+def _with_naive_columns(feats, target, *, naive_is_exact):
+    out = feats.copy()
+    y = target.to_numpy()
+    for w in run_train_props.NAIVE_WINDOWS:
+        out[f"points_avg_{w}"] = y + 0.01 if naive_is_exact else 15.0
+    return out
+
+
+def test_chronological_split_holds_out_the_latest_rows(small_dataset):
+    feats, target = small_dataset
+    X_train, X_test, _, _ = train_model.split(feats, target, chronological=True)
+    assert list(X_test.index) == list(feats.index[-len(X_test) :])
+    assert X_train.index.max() < X_test.index.min()
+
+
+def test_run_requires_beating_the_recent_average(small_dataset, monkeypatch):
+    feats, target = small_dataset
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
+        lambda *a, **k: pytest.fail("must not upload"),
+    )
+    # A recent average that is almost exactly the answer can't be beaten.
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
+        lambda stat, start, end: (
+            _with_naive_columns(feats, target, naive_is_exact=True),
+            target,
+        ),
+    )
+    out = run_train_props.run(
+        "points",
+        season_start=date(2024, 10, 1),
+        season_end=date(2025, 4, 30),
+        upload=True,
+    )
+    assert out["status"] == "gate_failed"
+    assert out["reason"] == "does_not_beat_naive_baseline"
+    assert out["metadata"]["split"] == "chronological"
+    assert out["metadata"]["beats_naive"] is False
+
+    # A flat guess is easy to beat, and the validation covers the holdout only.
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.build_training_dataset.build",
+        lambda stat, start, end: (
+            _with_naive_columns(feats, target, naive_is_exact=False),
+            target,
+        ),
+    )
+    uploads = []
+    monkeypatch.setattr(
+        "app.services.etl.nba.ml_training.run_train_props.upload_to_s3.upload",
+        lambda stat, model, meta: uploads.append(stat) or {"model_key": "k"},
+    )
+    out = run_train_props.run(
+        "points",
+        season_start=date(2024, 10, 1),
+        season_end=date(2025, 4, 30),
+        upload=True,
+    )
+    assert out["status"] == "ok" and out["metadata"]["beats_naive"] is True
+    assert out["validation"]["n_validation_rows"] == out["metadata"]["n_test"]
+    assert uploads == ["points"]
