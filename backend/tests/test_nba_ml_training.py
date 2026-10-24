@@ -238,3 +238,47 @@ def test_run_requires_beating_the_recent_average(small_dataset, monkeypatch):
     assert out["status"] == "ok" and out["metadata"]["beats_naive"] is True
     assert out["validation"]["n_validation_rows"] == out["metadata"]["n_test"]
     assert uploads == ["points"]
+
+
+def test_experiments_rank_models_on_the_chronological_holdout(small_dataset):
+    from app.services.etl.nba.ml_training import experiments
+
+    feats, target = small_dataset
+    feats = _with_naive_columns(feats, target, naive_is_exact=False)
+    rows = experiments.run_experiments("points", feats, target)
+    maes = [r["mae_usable"] for r in rows]
+    assert maes == sorted(maes)
+    names = {r["name"] for r in rows}
+    assert {"naive avg_10", "xgb default", "xgb depth2 on avg_10 residual"} <= names
+    # The flat naive guess is beaten by a model that can see the signal.
+    naive = next(r for r in rows if r["name"] == "naive avg_10")
+    best_model = min(r["mae_usable"] for r in rows if r["name"].startswith("xgb"))
+    assert best_model < naive["mae_usable"]
+
+
+def test_dataset_cache_roundtrip(monkeypatch, small_dataset):
+    import io
+
+    from app.services.ml import dataset_cache
+
+    feats, target = small_dataset
+    store = {}
+
+    class FakeS3:
+        def put_object(self, Bucket, Key, Body):
+            store[Key] = Body
+
+        def get_object(self, Bucket, Key):
+            return {"Body": io.BytesIO(store[Key])}
+
+    import boto3
+
+    monkeypatch.setattr(boto3, "client", lambda *_a, **_k: FakeS3())
+    key = dataset_cache.cache_key(
+        "nba/ml_models", "points", date(2024, 10, 1), date(2026, 6, 30)
+    )
+    assert key == "nba/ml_datasets/points_2024-10-01_2026-06-30.pkl"
+    dataset_cache.save(key, feats, target)
+    loaded, loaded_target = dataset_cache.load(key)
+    assert list(loaded.columns) == list(feats.columns)
+    assert list(loaded_target) == list(target)

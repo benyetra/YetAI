@@ -29,6 +29,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Upload to s3://yetibets/nba/ml_models/ after MAE gate passes",
     )
     parser.add_argument(
+        "--cache",
+        action="store_true",
+        help="Reuse/save the built dataset in S3 (nba/ml_datasets/)",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Build dataset and report row counts only",
@@ -42,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
             season_end=date.fromisoformat(args.end),
             upload=args.upload,
             dry_run=args.dry_run,
+            cache=args.cache,
         )
     except ValueError as exc:
         print(json.dumps({"status": "error", "error": str(exc)}), file=sys.stderr)

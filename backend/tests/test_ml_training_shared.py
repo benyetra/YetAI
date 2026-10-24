@@ -155,3 +155,48 @@ def test_build_releases_and_reconnects_on_dropped_connection(monkeypatch):
     assert (sessions[1], 3) in calls
     sessions[0].close.assert_called()
     assert sessions[1].rollback.call_count >= 1  # released at row 4
+
+
+def test_parallel_build_keeps_date_order(monkeypatch):
+    from datetime import date
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from sqlalchemy import column
+
+    from app.services.ml import build_training_dataset as btd
+
+    rows = [
+        SimpleNamespace(
+            player_id=i, game_date=date(2025, 1, 1), opponent_team_id=1, points=i
+        )
+        for i in range(1, 41)
+    ]
+
+    def make_session():
+        s = MagicMock()
+        s.query.return_value.filter.return_value.filter.return_value.order_by.return_value.all.return_value = (
+            rows
+        )
+        return s
+
+    def features(db, *, stat_col, player_id, game_date, opponent_team_id):
+        return None if player_id % 7 == 0 else {"id": float(player_id)}
+
+    cfg = LeagueMLConfig(
+        table_prefix="test",
+        s3_prefix="test/ml_models",
+        feature_builder_path="test.build_features",
+        feature_builder=features,
+        recent_games_model=SimpleNamespace(game_date=column("game_date")),
+        mae_gate={"points": 5.0},
+        supported_stats=("points",),
+    )
+    monkeypatch.setattr(btd, "SessionLocal", make_session)
+    monkeypatch.setattr(btd, "PARALLEL_MIN_ROWS", 10)
+    monkeypatch.setattr(btd, "WORKERS", 3)
+
+    feats, target = btd.build(cfg, "points", date(2025, 1, 1), date(2025, 1, 2))
+
+    expected = [float(i) for i in range(1, 41) if i % 7]
+    assert list(feats["id"]) == expected and list(target) == expected
