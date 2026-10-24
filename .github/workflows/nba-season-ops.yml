@@ -22,6 +22,7 @@ on:
           - refresh-roster-projections
           - debug-totals
           - backtest-totals
+          - audit-props
         default: verify
       start:
         description: Backfill start (YYYY-MM-DD)
@@ -131,6 +132,17 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           PYTHONPATH=. python3 scripts/nba_totals_backtest.py
+
+      - name: Audit prop projections (read-only)
+        if: inputs.action == 'audit-props'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          PYTHONPATH=. python3 scripts/nba_props_audit.py
 
       - name: Backfill spread actuals
         if: inputs.action == 'backfill-spread-actuals'
