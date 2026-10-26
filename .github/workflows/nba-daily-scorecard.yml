@@ -47,4 +47,4 @@ jobs:
             echo '```'
             PYTHONPATH=. python3 scripts/nba_props_audit.py
             echo '```'
-          } | tee scorecard.md >> "$GITHUB_STEP_SUMMARY"
+          } | tee scorecard.md | tee -a "$GITHUB_STEP_SUMMARY"
