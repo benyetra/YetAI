@@ -79,6 +79,56 @@ def test_apply_fanduel_to_projection_sets_orm_fields():
     assert row.fanduel_over_under == "u"
 
 
+def test_apply_fanduel_keeps_existing_line_when_refetch_finds_none():
+    row = SimpleNamespace(fanduel_line=21.5, fanduel_over_under="o")
+    with patch(
+        "app.services.etl.nba._fanduel_lines.fetch_fanduel_prop_for_player",
+        return_value=(None, None),
+    ):
+        attached = apply_fanduel_to_projection(
+            row,
+            team_name="Celtics",
+            opponent_team_name="Lakers",
+            player_name="Jayson Tatum",
+            market=PROP_MARKETS["points"],
+            projection=25.0,
+        )
+    assert attached is False
+    assert row.fanduel_line == 21.5
+    assert row.fanduel_over_under == "o"
+
+
+def test_line_diagnostics_reports_and_resets_miss_reasons():
+    fdl.line_diagnostics()
+    with (
+        patch(
+            "app.services.etl.nba._fanduel_lines.get_event_id_for_game",
+            return_value=None,
+        ),
+        patch("app.services.odds_api_budget.get_daily_usage_sync", return_value=240),
+    ):
+        fetch_fanduel_prop_for_player(
+            "Boston Celtics", "Los Angeles Lakers", "A", PROP_MARKETS["points"], 1.0
+        )
+        fetch_fanduel_prop_for_player(
+            "Boston Celtics", "Los Angeles Lakers", "B", PROP_MARKETS["points"], 1.0
+        )
+        first = fdl.line_diagnostics()
+        second = fdl.line_diagnostics()
+    assert first["miss_reasons"] == {"no_event_match": 2}
+    assert first["odds_credits_used_today"] == 240
+    assert second["miss_reasons"] == {}
+
+
+def test_missing_api_key_is_recorded():
+    fdl.clear_cache()
+    fdl.line_diagnostics()
+    with patch.object(fdl.settings, "ODDS_API_KEY", None):
+        assert fdl.get_event_id_for_game("basketball_nba", "A", "B") is None
+    with patch("app.services.odds_api_budget.get_daily_usage_sync", return_value=0):
+        assert fdl.line_diagnostics()["miss_reasons"] == {"no_api_key": 1}
+
+
 def _run_generator_with_fd_mock(module, *, projected: float, market_key: str):
     today = date(2026, 5, 24)
     player = SimpleNamespace(
@@ -105,6 +155,7 @@ def _run_generator_with_fd_mock(module, *, projected: float, market_key: str):
         fd = stack.enter_context(
             patch.object(module, "apply_fanduel_to_projection", return_value=True)
         )
+        stack.enter_context(patch.object(module, "line_diagnostics", return_value={}))
         if module is pts_mod:
             stack.enter_context(
                 patch.object(module, "build_points_features", return_value={"x": 1})
