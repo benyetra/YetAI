@@ -20,6 +20,7 @@ from app.services.etl.nba._feature_engineering import build_points_features
 from app.services.etl.nba._fanduel_lines import (
     PROP_MARKETS,
     apply_fanduel_to_projection,
+    line_diagnostics,
 )
 from app.services.etl.nba.prop_calibration import maybe_attach_p_over
 from app.services.etl.nba._ml_predict import get_metadata, predict_points
@@ -161,11 +162,13 @@ def run() -> dict:
         coverage = (
             round(100.0 * lines_attached / rows_written, 1) if rows_written else None
         )
+        diagnostics = line_diagnostics()
         logger.info(
-            "generate_points_predictions: fanduel_line coverage %s%% (%s/%s)",
+            "generate_points_predictions: fanduel_line coverage %s%% (%s/%s) %s",
             coverage,
             lines_attached,
             rows_written,
+            diagnostics,
         )
         return {
             "status": "ok",
@@ -180,6 +183,7 @@ def run() -> dict:
             "errors": errors,
             "fanduel_lines_attached": lines_attached,
             "fanduel_line_coverage_pct": coverage,
+            "fanduel_diagnostics": diagnostics,
         }
     finally:
         db.close()

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from typing import Any, Tuple
 
 from app.core.config import settings
@@ -31,6 +32,22 @@ _CACHE_TTL_SECONDS = 600
 
 # key -> (expires_at_monotonic, value)
 _cache: dict[Any, Tuple[float, Any]] = {}
+
+# Why a player's line was not attached, since the last ``line_diagnostics()``.
+_miss_reasons: Counter = Counter()
+
+
+def line_diagnostics() -> dict:
+    """Return and reset miss reasons plus today's Odds API credit usage."""
+    from app.services.odds_api_budget import DAILY_CREDIT_BUDGET, get_daily_usage_sync
+
+    reasons = dict(_miss_reasons)
+    _miss_reasons.clear()
+    return {
+        "miss_reasons": reasons,
+        "odds_credits_used_today": get_daily_usage_sync(),
+        "odds_daily_budget": DAILY_CREDIT_BUDGET,
+    }
 
 
 def _cache_get(key: Any) -> Any | None:
@@ -61,6 +78,7 @@ def _get_events(sport: str) -> list[dict]:
         return cached
     api_key = settings.ODDS_API_KEY
     if not api_key:
+        _miss_reasons["no_api_key"] += 1
         return []
     try:
         resp = sync_odds_get(
@@ -72,13 +90,15 @@ def _get_events(sport: str) -> list[dict]:
         )
         if resp is None or resp.status_code != 200:
             code = resp.status_code if resp is not None else "blocked"
-            logger.debug("Odds API events %s: HTTP %s", sport, code)
+            logger.warning("Odds API events %s: HTTP %s", sport, code)
+            _miss_reasons[f"events_unavailable_{code}"] += 1
             return []
         events = resp.json() or []
         _cache_set(cache_key, events)
         return events
     except Exception as exc:
-        logger.debug("get_events failed: %s", exc)
+        logger.warning("get_events failed: %s", exc)
+        _miss_reasons["events_error"] += 1
         return []
 
 
@@ -121,6 +141,7 @@ def _get_event_market_odds(
         return cached
     api_key = settings.ODDS_API_KEY
     if not api_key:
+        _miss_reasons["no_api_key"] += 1
         return {}
     try:
         resp = sync_odds_get(
@@ -137,12 +158,16 @@ def _get_event_market_odds(
             raise_for_status=False,
         )
         if resp is None or resp.status_code != 200:
+            code = resp.status_code if resp is not None else "blocked"
+            logger.warning("Odds API %s odds %s: HTTP %s", market, event_id, code)
+            _miss_reasons[f"market_unavailable_{code}"] += 1
             return {}
         data = resp.json() or {}
         _cache_set(cache_key, data)
         return data
     except Exception as exc:
-        logger.debug("get_event_market_odds %s/%s: %s", event_id, market, exc)
+        logger.warning("get_event_market_odds %s/%s: %s", event_id, market, exc)
+        _miss_reasons["market_error"] += 1
         return {}
 
 
@@ -190,6 +215,7 @@ def get_fanduel_line(
                     )
     except Exception as exc:
         logger.debug("get_fanduel_line for %s: %s", player_name, exc)
+    _miss_reasons["player_not_in_market"] += 1
     return 0.0, 0.0, "n"
 
 
@@ -220,6 +246,7 @@ def fetch_fanduel_prop_for_player(
     if not event_id:
         event_id = get_event_id_for_game(sport, team_name, opponent_team_name)
     if not event_id:
+        _miss_reasons["no_event_match"] += 1
         return None, None
     line, _price, flag = get_fanduel_line(
         sport,
@@ -245,11 +272,15 @@ def apply_fanduel_to_projection(
 ) -> bool:
     """Set ``fanduel_line`` / ``fanduel_over_under`` on a projection ORM row.
 
-    Returns True when a line was stored.
+    Returns True when a line was stored; an existing line is left untouched
+    when no fresh one can be fetched.
     """
     line, flag = fetch_fanduel_prop_for_player(
         team_name, opponent_team_name, player_name, market, projection
     )
+    if line is None:
+        # A rerun that finds nothing must not wipe a line stored by an earlier run.
+        return False
     row.fanduel_line = line
     row.fanduel_over_under = flag
-    return line is not None
+    return True
