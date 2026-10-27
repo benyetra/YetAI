@@ -16,7 +16,12 @@ from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
 from app.core.database import SessionLocal
-from app.models.predictions_models import NBASpreadProjections, NBATotalsProjections
+from app.models.predictions_models import (
+    NBAGameLines,
+    NBASpreadProjections,
+    NBATotalsProjections,
+    TodayActivePlayers,
+)
 from app.services.etl.nba.calculate_prediction_accuracy import STAT_CONFIGS
 
 PROP_STATS = ("points", "rebounds", "assists")
@@ -42,6 +47,25 @@ def prop_report(db, stat):
     print(f"  {stat}: {len(rows)} projections, {lined} with a line ({pct})")
 
 
+def name_match_report(db):
+    """Do the team names on today's active players match the Odds API game names?"""
+    games = db.query(NBAGameLines).filter(NBAGameLines.game_date == ARGS_DATE).all()
+    odds_names = {n for g in games for n in (g.home_team_name, g.away_team_name)}
+    players = db.query(TodayActivePlayers).filter(
+        TodayActivePlayers.game_date == ARGS_DATE
+    )
+    per_pair = Counter((p.team_name, p.opponent_team_name) for p in players)
+    print(f"\n== team names: {len(games)} game lines (Odds API names)")
+    for g in games:
+        print(
+            f"  {g.away_team_name} @ {g.home_team_name} event_id={g.odds_api_event_id}"
+        )
+    print("  active-player team pairs (team vs opponent: players):")
+    for (team, opp), n in sorted(per_pair.items()):
+        ok = "ok" if team in odds_names and opp in odds_names else "NO MATCH"
+        print(f"    {team} vs {opp}: {n} [{ok}]")
+
+
 ARGS_DATE = date.today()
 
 
@@ -60,6 +84,7 @@ def main() -> None:
     try:
         game_report(db, "totals", NBATotalsProjections, lambda r: r.market_total)
         game_report(db, "spreads", NBASpreadProjections, lambda r: r.market_spread_home)
+        name_match_report(db)
         print("\n== props")
         for stat in PROP_STATS:
             prop_report(db, stat)
