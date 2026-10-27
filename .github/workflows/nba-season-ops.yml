@@ -184,7 +184,7 @@ jobs:
           echo "== NBA pipeline / pregame refresh task results"
           grep -E "run_nba_update_pipeline|run_nba_pregame_refresh|NBA .*pipeline|etl_pipeline.*phase" worker.log | cut -c1-400 | tail -12 || true
           echo "== latest worker log lines (progress check)"
-          tail -n 8 worker.log | cut -c1-220
+          grep -E "^\[2026-" worker.log | sort | tail -n 10 | cut -c1-240
           echo "== NBA generate_* task activity (last lines)"
           grep -E "generate_(points|rebounds|assists)_predictions|today_active_players" worker.log | cut -c1-300 | tail -12 || true
 
