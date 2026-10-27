@@ -161,6 +161,29 @@ jobs:
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           PYTHONPATH=. python3 scripts/nba_slate_check.py
 
+      - name: Worker log - prop line coverage and Odds API (read-only)
+        if: inputs.action == 'slate-check'
+        continue-on-error: true
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          set -uo pipefail
+          # Only matching lines are printed; the rest of the log stays out of this run.
+          # Railway caps --lines (20000 is rejected), so read the last 24h in 3h windows.
+          : > worker.log
+          for i in 0 1 2 3 4 5 6 7; do
+            timeout 60 railway logs --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4 \
+              --lines 5000 --since "$((i * 3 + 3))h" --until "$((i * 3))h" \
+              >> worker.log 2>&1 || true
+          done
+          echo "worker.log: $(wc -l < worker.log) lines; first line: $(head -c 200 worker.log | head -1)"
+          echo "== prop line coverage per generator run"
+          grep -E "fanduel_line coverage" worker.log | tail -20 || true
+          echo "== Odds API failures / budget blocks / NBA prop calls"
+          grep -E "Odds API (events|.* odds) .*HTTP|budget blocked|get_events failed|get_event_market_odds|etl\.nba\.fanduel_lines" worker.log | tail -30 || true
+          echo "== NBA pregame refresh"
+          grep -E "NBA pregame refresh|nba_pregame" worker.log | tail -10 || true
+
       - name: Prop model experiments (read-only; caches the dataset in S3)
         if: inputs.action == 'props-experiment'
         env:
