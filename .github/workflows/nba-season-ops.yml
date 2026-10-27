@@ -168,10 +168,15 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           set -uo pipefail
-          # Only the matching lines are printed; the rest of the log stays out of this run.
-          timeout 120 railway logs --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4 \
-            --lines 5000 --since 24h 2>&1 \
-            | grep -E "fanduel_line coverage|Odds API" | tail -40 || echo "no matching worker log lines"
+          # Only matching lines are printed; the rest of the log stays out of this run.
+          timeout 240 railway logs --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4 \
+            --lines 40000 --since 36h > worker.log 2>&1 || true
+          echo "== prop line coverage per generator run"
+          grep -E "fanduel_line coverage" worker.log | tail -20 || true
+          echo "== Odds API failures / budget blocks / NBA prop calls"
+          grep -E "Odds API (events|.* odds) .*HTTP|budget blocked|get_events failed|get_event_market_odds|etl\.nba\.fanduel_lines" worker.log | tail -30 || true
+          echo "== NBA pregame refresh"
+          grep -E "NBA pregame refresh|nba_pregame" worker.log | tail -10 || true
 
       - name: Prop model experiments (read-only; caches the dataset in S3)
         if: inputs.action == 'props-experiment'
