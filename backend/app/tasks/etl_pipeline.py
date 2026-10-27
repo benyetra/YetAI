@@ -525,7 +525,15 @@ NBA_PHASES = [
 # Refresh injuries + lines and re-run the projectors before tip-off. Disable
 # with NBA_PREGAME_REFRESH_ENABLED=0 (each run spends Odds API credits).
 NBA_PREGAME_PHASES = [
-    ("pre_prediction", [nba_update_injury_status, nba_update_game_lines]),
+    (
+        "pre_prediction",
+        [
+            nba_today_active_players,
+            nba_update_injury_status,
+            nba_update_expected_minutes,
+            nba_update_game_lines,
+        ],
+    ),
     ("predictions", dict(NBA_PHASES)["predictions"]),
 ]
 

@@ -13,6 +13,13 @@ def test_pregame_phases_refresh_lines_then_every_projector():
     assert names.index(ep.nba_update_game_lines.name) < names.index(
         ep.nba_totals_projector.name
     )
+    # Players are rebuilt for today's slate before anything is re-projected.
+    assert names.index(ep.nba_today_active_players.name) < names.index(
+        ep.nba_generate_predictions.name
+    )
+    assert names.index(ep.nba_update_expected_minutes.name) < names.index(
+        ep.nba_generate_predictions.name
+    )
     for task in (
         ep.nba_update_injury_status,
         ep.nba_generate_predictions,
