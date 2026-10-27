@@ -181,8 +181,10 @@ jobs:
           grep -E "fanduel_line coverage" worker.log | tail -20 || true
           echo "== Odds API failures / budget blocks / NBA prop calls"
           grep -E "Odds API (events|.* odds) .*HTTP|budget blocked|get_events failed|get_event_market_odds|etl\.nba\.fanduel_lines" worker.log | tail -30 || true
-          echo "== NBA pregame refresh"
-          grep -E "NBA pregame refresh|nba_pregame" worker.log | tail -10 || true
+          echo "== NBA pipeline / pregame refresh task results"
+          grep -E "run_nba_update_pipeline|run_nba_pregame_refresh|NBA .*pipeline|etl_pipeline.*phase" worker.log | cut -c1-400 | tail -12 || true
+          echo "== NBA generate_* task activity (last lines)"
+          grep -E "generate_(points|rebounds|assists)_predictions|today_active_players" worker.log | cut -c1-300 | tail -12 || true
 
       - name: Prop model experiments (read-only; caches the dataset in S3)
         if: inputs.action == 'props-experiment'
