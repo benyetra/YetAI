@@ -170,7 +170,8 @@ jobs:
           set -uo pipefail
           # Only matching lines are printed; the rest of the log stays out of this run.
           timeout 240 railway logs --service 9b9982f4-82b7-4e0f-88a0-3212221fecf4 \
-            --lines 40000 --since 36h > worker.log 2>&1 || true
+            --lines 20000 --since 24h > worker.log 2>&1 || true
+          echo "worker.log: $(wc -l < worker.log) lines; first line: $(head -c 200 worker.log | head -1)"
           echo "== prop line coverage per generator run"
           grep -E "fanduel_line coverage" worker.log | tail -20 || true
           echo "== Odds API failures / budget blocks / NBA prop calls"
