@@ -1,9 +1,14 @@
 """Populate pred_today_active_players from today's ESPN scoreboard + roster.
 
 Port of YetiBets/scripts/nba/today_active_players_espn.py (Development-1nt).
-Behavior preserved: refresh pred_today_active_players for today (Eastern)
-from ESPN scoreboard ∩ pred_team_roster. If ESPN returns no games for today
-the prior data is left in place — this is a feature of the original.
+Refresh pred_today_active_players for today (Eastern) from the ESPN scoreboard
+for that date ∩ pred_team_roster. If ESPN returns no games for today the prior
+data is left in place.
+
+The scoreboard is requested for today's Eastern date explicitly. ESPN's default
+("live") scoreboard keeps showing last night's games until well after the
+overnight run, which stored last night's teams as today's slate and left the
+prop projections (and their sportsbook lines) matching no real game.
 """
 
 from __future__ import annotations
@@ -25,9 +30,7 @@ logger = logging.getLogger(__name__)
 def run() -> dict:
     today = now_eastern().date()
 
-    # No date param: ESPN's "today" reflects the live slate which respects
-    # ongoing-game state. Matches YetiBets's behavior.
-    games = fetch_games_for_date(None)
+    games = fetch_games_for_date(today)
     if not games:
         logger.info(
             "today_active_players: no NBA games for %s — keeping existing data", today
