@@ -26,7 +26,7 @@ class BaselineCheckResult:
 
 
 def summarize_backtest_metrics(
-    scorer_or_dict: BacktestScorer | Mapping[str, Any],
+    scorer_or_dict: BacktestScorer | Mapping[str, Any]
 ) -> dict[str, Any]:
     """Flatten nested ``compute_all_metrics()`` output for regression gates.
 

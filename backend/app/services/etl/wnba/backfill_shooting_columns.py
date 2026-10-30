@@ -30,18 +30,26 @@ WHERE true_shooting_percentage IS NULL
 def run(*, dry_run: bool = False) -> dict:
     db = SessionLocal()
     try:
-        efg_pending = db.execute(text("""
+        efg_pending = db.execute(
+            text(
+                """
                 SELECT COUNT(*) FROM pred_wnba_recent_games
                 WHERE effective_field_goal_percentage IS NULL
                   AND field_goals_made IS NOT NULL
                   AND fg_attempts IS NOT NULL AND fg_attempts > 0
-                """)).scalar()
-        ts_pending = db.execute(text("""
+                """
+            )
+        ).scalar()
+        ts_pending = db.execute(
+            text(
+                """
                 SELECT COUNT(*) FROM pred_wnba_recent_games
                 WHERE true_shooting_percentage IS NULL
                   AND points IS NOT NULL AND fg_attempts IS NOT NULL
                   AND (fg_attempts + COALESCE(ft_attempts, 0)) > 0
-                """)).scalar()
+                """
+            )
+        ).scalar()
 
         if dry_run:
             return {

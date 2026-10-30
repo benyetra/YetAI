@@ -8,6 +8,7 @@ from app.data.celery_tasks import (
 )
 from app.tasks.etl_pipeline import NFL_ANYTIME_TD_PHASES
 
+
 _ANYTIME_TD_ORCH = "app.tasks.etl_pipeline.run_nfl_anytime_td_pipeline"
 _ANYTIME_TD_LEAF = (
     "app.tasks.etl_pipeline.nfl.sync_defense_schemes",

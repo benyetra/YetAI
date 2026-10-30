@@ -33,7 +33,8 @@ def fetch_past_performance_metrics(pitcher_id):
     Fetches past performance metrics for a pitcher.
     """
     try:
-        query = text("""
+        query = text(
+            """
             SELECT
                 projections.date,
                 projections.projected_strikeouts,
@@ -50,7 +51,8 @@ def fetch_past_performance_metrics(pitcher_id):
               ON projections.date = actuals.date
              AND projections.pitcher_id = actuals.pitcher_id
             WHERE projections.pitcher_id = :pitcher_id
-            """)
+            """
+        )
         result = db_session.execute(query, {"pitcher_id": str(pitcher_id)})
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
@@ -92,12 +94,14 @@ def project_at_bats_faced(
     Ensures the projected at-bats are within a realistic range.
     """
     try:
-        query = text("""
+        query = text(
+            """
             SELECT date, innings_pitched, at_bats, strikeouts, walks, whip,
                    "baseOnBalls", "numberOfPitches"
             FROM pred_historical_pitcher_stats
             WHERE player_id = :pitcher_id
-            """)
+            """
+        )
         result = db_session.execute(query, {"pitcher_id": str(pitcher_id)})
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 
@@ -230,12 +234,14 @@ def perform_regression_analysis(pitcher_id, batter_id, innings_pitched, at_bats)
         else:
             mean_absolute_error = 0.0
 
-        query = text("""
+        query = text(
+            """
             SELECT player_id, date, at_bats, innings_pitched, strikeouts, walks, whip,
                    "baseOnBalls", "numberOfPitches", season
             FROM pred_historical_pitcher_stats
             WHERE player_id = :pitcher_id
-            """)
+            """
+        )
         result = db_session.execute(query, {"pitcher_id": str(pitcher_id)})
         df = pd.DataFrame(result.fetchall(), columns=result.keys())
 

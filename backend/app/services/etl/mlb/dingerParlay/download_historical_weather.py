@@ -3,7 +3,6 @@
 Back-fill your normalized weather with historical daily data from Meteostat,
 skipping any parks without coords rather than crashing on KeyError.
 """
-
 import argparse
 import sys
 import pandas as pd

@@ -11,6 +11,7 @@ from app.services.etl.nfl.kicker_weather import (
 )
 from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
 
+
 # Dynamic season and week detection
 season = get_nfl_season()
 current_week = get_current_nfl_week(season)

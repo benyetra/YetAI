@@ -11,6 +11,7 @@ from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.models.database_models import BetSource, BetType, YetAIBet
 from app.services.auto_pick.orchestrator import AutoPickOrchestrator
 
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------

@@ -96,7 +96,8 @@ def _check_db_via_app() -> dict:
         today = date.today()
         row = (
             session.execute(
-                text("""
+                text(
+                    """
                     SELECT COUNT(*) AS n,
                            COUNT(sim_distribution) AS with_sim,
                            COUNT(*) FILTER (WHERE model_version LIKE '%mc%') AS with_mc_tag,
@@ -105,7 +106,8 @@ def _check_db_via_app() -> dict:
                            ) AS with_lineup_weighted_mc
                     FROM pred_game_projections
                     WHERE date = :d
-                    """),
+                    """
+                ),
                 {"d": today},
             )
             .mappings()
@@ -122,13 +124,15 @@ def _check_db_via_app() -> dict:
             )
         sample = (
             db_session.execute(
-                text("""
+                text(
+                    """
                     SELECT game_id, model_version,
                            sim_distribution->>'n_sims' AS n_sims
                     FROM pred_game_projections
                     WHERE date = :d AND sim_distribution IS NOT NULL
                     LIMIT 1
-                    """),
+                    """
+                ),
                 {"d": today},
             )
             .mappings()

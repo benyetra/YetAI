@@ -254,7 +254,7 @@ def attach_p_over(row: Any, p_over: float | None) -> None:
 
 
 def calibration_params_from_metadata(
-    metadata: dict[str, Any] | None,
+    metadata: dict[str, Any] | None
 ) -> CalibrationParams | None:
     if not metadata:
         return None

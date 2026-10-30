@@ -31,6 +31,7 @@ from app.services.ml_model_version import (
     resolve_mlb_game_projection_model_version,
 )
 
+
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 

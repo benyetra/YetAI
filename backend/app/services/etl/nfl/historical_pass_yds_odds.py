@@ -65,7 +65,8 @@ def resolve_odds_api_key() -> str | None:
 def _conn() -> sqlite3.Connection:
     CACHE_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(CACHE_DB_PATH))
-    conn.execute("""
+    conn.execute(
+        """
         CREATE TABLE IF NOT EXISTS api_cache (
             cache_key TEXT PRIMARY KEY,
             endpoint TEXT NOT NULL,
@@ -74,7 +75,8 @@ def _conn() -> sqlite3.Connection:
             credits_last INTEGER,
             created_at REAL NOT NULL
         )
-        """)
+        """
+    )
     conn.commit()
     return conn
 

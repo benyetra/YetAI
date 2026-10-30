@@ -11,6 +11,7 @@ from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
 
+
 # revision identifiers, used by Alembic.
 revision: str = "1cfb8dd64dbd"
 down_revision: Union[str, Sequence[str], None] = "ed8098e2bdd1"
@@ -30,11 +31,15 @@ def upgrade() -> None:
     connection = op.get_bind()
 
     # Generate usernames for existing users
-    connection.execute(text("""
+    connection.execute(
+        text(
+            """
         UPDATE users 
         SET username = 'user_' || id 
         WHERE username IS NULL
-    """))
+    """
+        )
+    )
 
     # Now make the column not nullable and add unique constraint
     op.alter_column("users", "username", nullable=False)

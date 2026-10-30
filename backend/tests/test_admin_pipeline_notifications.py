@@ -15,6 +15,7 @@ from app.core import celery_signals
 from app.models.database_models import AdminNotificationEvent
 from app.services import admin_notification_service as ans
 
+
 # ---------------------------------------------------------------------------
 # Routing: signal handlers ignore non-pipeline tasks
 # ---------------------------------------------------------------------------

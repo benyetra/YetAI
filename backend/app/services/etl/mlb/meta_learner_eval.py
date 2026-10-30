@@ -76,7 +76,7 @@ def recommend_production_use(
 
 
 def _rows_to_arrays(
-    rows: Sequence[Mapping[str, Any]],
+    rows: Sequence[Mapping[str, Any]]
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     y_list: list[float] = []
     p_game_list: list[float] = []
@@ -97,7 +97,7 @@ def _rows_to_arrays(
 
 
 def compare_meta_learner_vs_game_ensemble(
-    metrics_or_rows: Mapping[str, Any] | Sequence[Mapping[str, Any]],
+    metrics_or_rows: Mapping[str, Any] | Sequence[Mapping[str, Any]]
 ) -> dict[str, Any]:
     """Compare stacked meta probabilities to calibrated game ensemble.
 

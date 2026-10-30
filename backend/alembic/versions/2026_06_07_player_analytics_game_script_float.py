@@ -18,7 +18,8 @@ depends_on: Union[str, Sequence[str], None] = None
 def upgrade() -> None:
     # Some environments created game_script as varchar (e.g. seeded 'neutral').
     # Canonical schema is double precision (see create_player_analytics_table.sql).
-    op.execute("""
+    op.execute(
+        """
         DO $$
         BEGIN
           IF EXISTS (
@@ -39,15 +40,18 @@ def upgrade() -> None:
             END;
           END IF;
         END $$;
-        """)
+        """
+    )
 
 
 def downgrade() -> None:
-    op.execute("""
+    op.execute(
+        """
         ALTER TABLE player_analytics
         ALTER COLUMN game_script TYPE varchar(20)
         USING CASE
           WHEN game_script IS NULL THEN NULL
           ELSE game_script::text
         END;
-        """)
+        """
+    )

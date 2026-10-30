@@ -51,14 +51,22 @@ def should_retrain_strikeout_classifier(
 
 
 def get_strikeout_table_counts() -> dict[str, int]:
-    row = db_session.execute(text("""
+    row = (
+        db_session.execute(
+            text(
+                """
             SELECT
               (SELECT COUNT(*) FROM pred_strikeout_projections) AS projections,
               (SELECT COUNT(*) FROM pred_strikeout_actuals) AS actuals,
               (SELECT COUNT(*) FROM pred_strikeout_projections p
                  JOIN pred_strikeout_actuals a
                    ON p.date = a.date AND p.pitcher_id = a.pitcher_id) AS joined
-            """)).mappings().first()
+            """
+            )
+        )
+        .mappings()
+        .first()
+    )
     return {
         "projections": int(row["projections"] or 0),
         "actuals": int(row["actuals"] or 0),

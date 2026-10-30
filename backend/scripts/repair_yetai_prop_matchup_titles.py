@@ -31,6 +31,7 @@ except ModuleNotFoundError as exc:
 from app.models.database_models import BetType, YetAIBet
 from app.models.predictions_models import Pitcher
 
+
 PROP_TITLE_RE = re.compile(r"\b(under|over)\b", re.I)
 
 
