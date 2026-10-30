@@ -951,44 +951,34 @@ def save_model(model, model_type="win"):
 def _cache_conn():
     """Open (and lazily initialize) the training-features sqlite cache."""
     conn = sqlite3.connect(TRAINING_CACHE_DB)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS pitcher_game_log (
             pitcher_id INTEGER, season INTEGER, game_date TEXT,
             ip REAL, er INTEGER, k INTEGER, bb INTEGER, h INTEGER,
             PRIMARY KEY (pitcher_id, season, game_date)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS pitcher_log_fetched (
             pitcher_id INTEGER, season INTEGER, fetched_at TEXT,
             PRIMARY KEY (pitcher_id, season)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS team_game_log (
             team_id INTEGER, season INTEGER, game_date TEXT,
             runs_scored INTEGER, runs_allowed INTEGER,
             hits INTEGER, at_bats INTEGER, ops REAL,
             PRIMARY KEY (team_id, season, game_date)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS team_log_fetched (
             team_id INTEGER, season INTEGER, fetched_at TEXT,
             PRIMARY KEY (team_id, season)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS pitcher_name_id (
             name TEXT PRIMARY KEY,
             pitcher_id INTEGER NOT NULL
-        )"""
-    )
+        )""")
     htb.init_backfill_tables(conn)
     return conn
 

@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from app.services import accuracy_shared as ash
 
-
 # ---------------------------------------------------------------------------
 # pct + tone_for_rate
 # ---------------------------------------------------------------------------

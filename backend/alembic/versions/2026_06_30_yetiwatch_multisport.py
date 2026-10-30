@@ -52,9 +52,7 @@ def upgrade() -> None:
         "pred_yetiwatch_signals"
     ):
         bind = op.get_bind()
-        bind.execute(
-            text(
-                """
+        bind.execute(text("""
                 INSERT INTO pred_yetiwatch_signals (
                     sport, run_id, as_of, entity_id, game_date, game_id,
                     team_id, opponent_id, payload_json, news_string, created_at
@@ -69,9 +67,7 @@ def upgrade() -> None:
                       AND y.entity_id = w.player_id::text
                       AND y.game_date = w.game_date
                 )
-                """
-            )
-        )
+                """))
 
 
 def downgrade() -> None:

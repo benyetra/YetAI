@@ -15,7 +15,6 @@ from app.data.celery_tasks import (
     PIPELINE_ENQUEUE_CATALOG,
 )
 
-
 router = APIRouter(prefix="/api/admin/celery", tags=["admin-celery"])
 
 PIPELINE_ORCHESTRATORS = ADMIN_ENQUEUE_TASKS

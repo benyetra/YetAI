@@ -3,7 +3,6 @@
 from alembic import op
 import sqlalchemy as sa
 
-
 revision = "2026_05_26_game_spread_rec"
 down_revision = "20260525_game_mc"
 branch_labels = None

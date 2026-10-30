@@ -2751,17 +2751,13 @@ async def cleanup_orphaned_bet_history(admin_user: dict = Depends(require_admin)
         db = SessionLocal()
         try:
             # Find bet_history records that don't have corresponding bets
-            orphaned_history = db.execute(
-                text(
-                    """
+            orphaned_history = db.execute(text("""
                 SELECT bh.id, bh.bet_id, bh.user_id
                 FROM bet_history bh
                 LEFT JOIN bets b ON bh.bet_id = b.id
                 LEFT JOIN parlay_bets pb ON bh.bet_id = pb.id
                 WHERE b.id IS NULL AND pb.id IS NULL
-                """
-                )
-            ).fetchall()
+                """)).fetchall()
 
             if not orphaned_history:
                 return {
@@ -5996,17 +5992,13 @@ async def get_featured_games(
         db.execute(text("DELETE FROM featured_games WHERE start_time <= NOW()"))
         db.commit()
 
-        result = db.execute(
-            text(
-                """
+        result = db.execute(text("""
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation, admin_notes, created_at
             FROM featured_games
             WHERE start_time > NOW()
             ORDER BY start_time ASC
-        """
-            )
-        )
+        """))
         featured_games = [
             row_to_featured_game(row, include_admin_notes=True)
             for row in result.fetchall()
@@ -6035,18 +6027,14 @@ async def get_public_featured_games(db=Depends(get_db)):
         db.execute(text("DELETE FROM featured_games WHERE start_time <= NOW()"))
         db.commit()
 
-        result = db.execute(
-            text(
-                """
+        result = db.execute(text("""
             SELECT game_id, home_team, away_team, start_time,
                    sport_key, explanation
             FROM featured_games
             WHERE start_time > NOW()
             ORDER BY start_time ASC
             LIMIT 10
-        """
-            )
-        )
+        """))
         featured_games = [row_to_featured_game(row) for row in result.fetchall()]
 
         return {"status": "success", "featured_games": featured_games}
@@ -6097,8 +6085,7 @@ async def set_featured_games(
     from app.db.featured_games import ensure_featured_games_table
 
     featured_games_data = request.get("featured_games", [])
-    insert_query = text(
-        """
+    insert_query = text("""
         INSERT INTO featured_games (
             game_id, home_team, away_team, start_time,
             sport_key, explanation, admin_notes, created_at
@@ -6106,8 +6093,7 @@ async def set_featured_games(
             :game_id, :home_team, :away_team, :start_time,
             :sport_key, :explanation, :admin_notes, NOW()
         )
-    """
-    )
+    """)
 
     try:
         ensure_featured_games_table(db)
@@ -6586,16 +6572,12 @@ async def debug_analytics_status(
 
     try:
         # Check if tables exist
-        tables_check = db.execute(
-            text(
-                """
+        tables_check = db.execute(text("""
             SELECT table_name FROM information_schema.tables
             WHERE table_schema = 'public'
             AND table_name IN ('player_analytics', 'player_trends', 'fantasy_players')
             ORDER BY table_name
-        """
-            )
-        ).fetchall()
+        """)).fetchall()
 
         # Count records in each table
         player_analytics_count = (

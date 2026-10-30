@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Enqueue a sport's daily pipeline via Celery broker or YetAI admin API.
 
-    PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py            # WNBA
-    PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
+PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py            # WNBA
+PYTHONPATH=. python3 scripts/enqueue_wnba_pipeline.py --sport nba
 """
 
 from __future__ import annotations

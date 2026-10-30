@@ -9,7 +9,6 @@ Runs daily to:
 5. Collect actuals from completed games
 """
 
-
 from app.models.predictions_models import (
     NHLGoaliePredictions,
     NHLGoalieActuals,

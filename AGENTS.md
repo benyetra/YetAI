@@ -21,6 +21,10 @@ cd backend && python3 -m black --check .
 
 Before committing any change under `backend/`, run Black on touched files (or the whole tree) and include formatted files in the commit. See `.cursor/rules/yetai-python-black.mdc`.
 
+## Seasonal jobs (MLB / WNBA)
+
+MLB and WNBA Celery Beat jobs are **off** in the off-season. Set `MLB_JOBS_ENABLED=true` / `WNBA_JOBS_ENABLED=true` on the beat service and restart it when the next season starts. Entries live in `_MLB_BEAT_SCHEDULE` / `_WNBA_BEAT_SCHEDULE` in `backend/app/celery_app.py`.
+
 ## MLB Monte Carlo smoke (no deploy)
 
 ```bash

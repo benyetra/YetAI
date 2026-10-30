@@ -13,7 +13,6 @@ from celery.schedules import crontab
 
 from app.services import pipeline_schedule_service as svc
 
-
 ET = ZoneInfo("America/New_York")
 
 

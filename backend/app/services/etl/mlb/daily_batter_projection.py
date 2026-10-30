@@ -20,7 +20,6 @@ from app.models.predictions_models import (
 import logging
 import argparse
 
-
 # Set up logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

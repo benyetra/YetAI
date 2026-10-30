@@ -95,37 +95,29 @@ def _is_il_activation(desc_lower):
 
 def init_backfill_tables(conn):
     """Create cache tables for backfilled training features."""
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS venue_weather (
             venue_name TEXT, game_date TEXT,
             temperature REAL, wind_speed REAL, wind_direction REAL,
             humidity REAL, source TEXT,
             PRIMARY KEY (venue_name, game_date)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS team_bullpen_fatigue (
             team_id INTEGER, game_date TEXT, fatigue REAL,
             source TEXT,
             PRIMARY KEY (team_id, game_date)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS team_injury_impact (
             team_id INTEGER, game_date TEXT, impact REAL,
             PRIMARY KEY (team_id, game_date)
-        )"""
-    )
-    conn.execute(
-        """
+        )""")
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS team_txn_month (
             team_id INTEGER, year_month TEXT, payload TEXT,
             PRIMARY KEY (team_id, year_month)
-        )"""
-    )
+        )""")
 
 
 def _monthly_weather_fallback(venue_name, game_date_str):

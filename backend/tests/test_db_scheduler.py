@@ -11,7 +11,6 @@ from celery.schedules import crontab
 from app.core.db_scheduler import apply_overrides
 from app.models.database_models import PipelineSchedule
 
-
 NBA_TASK = "app.tasks.etl_pipeline.run_nba_update_pipeline"
 MLB_TASK = "app.tasks.etl_pipeline.run_mlb_update_pipeline"
 
