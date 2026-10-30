@@ -10,7 +10,8 @@ def test_redis_visibility_timeout_covers_profile_rebuild():
 
 
 def test_mlb_profile_rebuild_scheduled_before_projections():
-    schedule = celery_app.conf.beat_schedule
+    from app.celery_app import _MLB_BEAT_SCHEDULE as schedule
+
     rebuild_hour = min(schedule["mlb-profile-rebuild"]["schedule"].hour)
     projections_hour = min(schedule["mlb-projections-daily"]["schedule"].hour)
     assert rebuild_hour < projections_hour
@@ -22,3 +23,18 @@ def test_mlb_rebuild_profiles_time_limits():
     # Soft limit must cover multi-hour Statcast load + 4 window aggregates.
     assert mlb_rebuild_profiles.soft_time_limit >= 14400
     assert mlb_rebuild_profiles.time_limit >= mlb_rebuild_profiles.soft_time_limit
+
+
+def test_mlb_and_wnba_beat_jobs_off_by_default():
+    """Seasons are over: no MLB/WNBA entries unless the env flags are set."""
+    schedule = celery_app.conf.beat_schedule
+    assert not [k for k in schedule if k.startswith(("mlb-", "wnba-"))]
+
+
+def test_seasonal_schedules_cover_all_mlb_wnba_entries():
+    from app.celery_app import _MLB_BEAT_SCHEDULE, _WNBA_BEAT_SCHEDULE
+
+    assert _MLB_BEAT_SCHEDULE and all(k.startswith("mlb-") for k in _MLB_BEAT_SCHEDULE)
+    assert _WNBA_BEAT_SCHEDULE and all(
+        k.startswith("wnba-") for k in _WNBA_BEAT_SCHEDULE
+    )

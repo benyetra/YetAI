@@ -37,9 +37,9 @@ def test_wnba_celery_tasks_registered():
 
 
 def test_wnba_beat_entries_registered():
-    from app.celery_app import celery_app
+    from app.celery_app import _WNBA_BEAT_SCHEDULE
 
-    entries = celery_app.conf.beat_schedule
+    entries = _WNBA_BEAT_SCHEDULE
     expected = [
         "wnba-update-pipeline-daily",
         "wnba-update-game-lines-thrice-daily",

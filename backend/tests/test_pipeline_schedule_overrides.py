@@ -7,8 +7,23 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
+from app.celery_app import _MLB_BEAT_SCHEDULE, _WNBA_BEAT_SCHEDULE, celery_app
 from app.models.database_models import PipelineSchedule
 from app.services import pipeline_schedule_overrides as ovr
+
+
+@pytest.fixture(autouse=True)
+def _seasonal_beat_entries(monkeypatch):
+    """MLB/WNBA beat entries are off-season-disabled by default; include them."""
+    monkeypatch.setitem(
+        celery_app.conf,
+        "beat_schedule",
+        {
+            **celery_app.conf.beat_schedule,
+            **_MLB_BEAT_SCHEDULE,
+            **_WNBA_BEAT_SCHEDULE,
+        },
+    )
 
 
 def test_model_has_required_columns():

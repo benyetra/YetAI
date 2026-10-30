@@ -77,71 +77,6 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.nba.spreads_accuracy",
         "schedule": crontab(hour=5, minute=5),
     },
-    # === WNBA ETL pipeline (Phase 1) — added 2026-05-21 ===
-    # All entries are season-gated within the task body (May 1 – October 31).
-    "wnba-update-pipeline-daily": {
-        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
-        "schedule": crontab(hour=3, minute=0),
-    },
-    "wnba-update-game-lines-thrice-daily": {
-        "task": "app.tasks.etl_pipeline.wnba.update_game_lines",
-        "schedule": crontab(hour=[6, 14, 22], minute=10),
-        "options": {"expires": 10800},
-    },
-    "wnba-update-injuries-every-2h": {
-        "task": "app.tasks.etl_pipeline.wnba.update_injury_status",
-        "schedule": crontab(minute=0, hour="*/2"),
-        "options": {"expires": 6600},
-    },
-    # Slow stats.wnba.com dashboards — not in hourly pregame orchestrator.
-    "wnba-update-team-stats-daily": {
-        "task": "app.tasks.etl_pipeline.run_wnba_team_stats_daily",
-        "schedule": crontab(hour=4, minute=30),
-        "options": {"expires": 14400},
-    },
-    "wnba-projectors-pregame-hourly": {
-        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
-        "schedule": crontab(minute=0, hour="9-22"),
-        "options": {"expires": 7200},
-    },
-    "wnba-store-actuals-morning": {
-        "task": "app.tasks.etl_pipeline.wnba.store_actuals",
-        "schedule": crontab(hour=4, minute=0),
-    },
-    "wnba-totals-accuracy-morning": {
-        "task": "app.tasks.etl_pipeline.wnba.totals_accuracy",
-        "schedule": crontab(hour=5, minute=0),
-    },
-    "wnba-spreads-accuracy-morning": {
-        "task": "app.tasks.etl_pipeline.wnba.spreads_accuracy",
-        "schedule": crontab(hour=5, minute=10),
-    },
-    # First run at 10 AM ET — MLB probable starters are usually complete by
-    # then. Safety net at 2 PM ET catches anything that wasn't posted earlier
-    # (the pipeline preserves existing rows when the schedule API is empty,
-    # so the later run effectively retries).
-    "mlb-statcast-incremental": {
-        "task": "app.tasks.etl_pipeline.mlb.statcast_incremental",
-        "schedule": crontab(hour=9, minute=30),
-    },
-    # Overnight so ~3h rebuild finishes before morning statcast + projections.
-    "mlb-profile-rebuild": {
-        "task": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
-        "schedule": crontab(hour=5, minute=0),
-        "options": {"expires": 21600},
-    },
-    "mlb-projections-daily": {
-        "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
-        "schedule": crontab(hour=14, minute=0),
-    },
-    "mlb-projections-safety-net": {
-        "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
-        "schedule": crontab(hour=18, minute=0),
-    },
-    "mlb-actuals-daily": {
-        "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",
-        "schedule": crontab(hour=4, minute=30),
-    },
     # === Auto-pick orchestrator (Task 14) — gated by AUTO_YETAI_PICKS_ENABLED ===
     # Beat entries below are added conditionally after this dict is built.
     "nfl-update-pipeline-daily": {
@@ -211,11 +146,93 @@ celery_app.conf.beat_schedule = {
 }
 
 
+# === Seasonal sports (off-season: disabled) ===
+# The MLB and WNBA seasons are over, so their beat entries are only registered
+# when explicitly enabled. Set MLB_JOBS_ENABLED=true / WNBA_JOBS_ENABLED=true
+# (and restart beat) when the next season starts.
+_WNBA_BEAT_SCHEDULE = {
+    # === WNBA ETL pipeline (Phase 1) — added 2026-05-21 ===
+    # All entries are season-gated within the task body (May 1 – October 31).
+    "wnba-update-pipeline-daily": {
+        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "schedule": crontab(hour=3, minute=0),
+    },
+    "wnba-update-game-lines-thrice-daily": {
+        "task": "app.tasks.etl_pipeline.wnba.update_game_lines",
+        "schedule": crontab(hour=[6, 14, 22], minute=10),
+        "options": {"expires": 10800},
+    },
+    "wnba-update-injuries-every-2h": {
+        "task": "app.tasks.etl_pipeline.wnba.update_injury_status",
+        "schedule": crontab(minute=0, hour="*/2"),
+        "options": {"expires": 6600},
+    },
+    # Slow stats.wnba.com dashboards — not in hourly pregame orchestrator.
+    "wnba-update-team-stats-daily": {
+        "task": "app.tasks.etl_pipeline.run_wnba_team_stats_daily",
+        "schedule": crontab(hour=4, minute=30),
+        "options": {"expires": 14400},
+    },
+    "wnba-projectors-pregame-hourly": {
+        "task": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
+        "schedule": crontab(minute=0, hour="9-22"),
+        "options": {"expires": 7200},
+    },
+    "wnba-store-actuals-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.store_actuals",
+        "schedule": crontab(hour=4, minute=0),
+    },
+    "wnba-totals-accuracy-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.totals_accuracy",
+        "schedule": crontab(hour=5, minute=0),
+    },
+    "wnba-spreads-accuracy-morning": {
+        "task": "app.tasks.etl_pipeline.wnba.spreads_accuracy",
+        "schedule": crontab(hour=5, minute=10),
+    },
+}
+
+_MLB_BEAT_SCHEDULE = {
+    # First run at 10 AM ET — MLB probable starters are usually complete by
+    # then. Safety net at 2 PM ET catches anything that wasn't posted earlier
+    # (the pipeline preserves existing rows when the schedule API is empty,
+    # so the later run effectively retries).
+    "mlb-statcast-incremental": {
+        "task": "app.tasks.etl_pipeline.mlb.statcast_incremental",
+        "schedule": crontab(hour=9, minute=30),
+    },
+    # Overnight so ~3h rebuild finishes before morning statcast + projections.
+    "mlb-profile-rebuild": {
+        "task": "app.tasks.etl_pipeline.mlb.rebuild_profiles",
+        "schedule": crontab(hour=5, minute=0),
+        "options": {"expires": 21600},
+    },
+    "mlb-projections-daily": {
+        "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "schedule": crontab(hour=14, minute=0),
+    },
+    "mlb-projections-safety-net": {
+        "task": "app.tasks.etl_pipeline.run_mlb_update_pipeline",
+        "schedule": crontab(hour=18, minute=0),
+    },
+    "mlb-actuals-daily": {
+        "task": "app.tasks.etl_pipeline.run_mlb_store_actuals",
+        "schedule": crontab(hour=4, minute=30),
+    },
+}
+
+
 import os
 
 # Register Celery signal handlers for admin pipeline notifications. Import
 # side effect: @task_prerun / @task_postrun / @task_failure decorators run.
 from app.core import celery_signals  # noqa: E402,F401
+
+if os.getenv("WNBA_JOBS_ENABLED", "false").lower() == "true":
+    celery_app.conf.beat_schedule.update(_WNBA_BEAT_SCHEDULE)
+
+if os.getenv("MLB_JOBS_ENABLED", "false").lower() == "true":
+    celery_app.conf.beat_schedule.update(_MLB_BEAT_SCHEDULE)
 
 if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
