@@ -1,6 +1,20 @@
 """Celery broker settings that prevent long MLB tasks from blocking pipelines."""
 
+from importlib.metadata import version
+
 from app.celery_app import celery_app
+
+
+def test_kombu_accepts_pinned_redis():
+    """kombu 5.6+ raises VersionMismatch on redis-py 5.0.1 and celery never boots."""
+    import redis
+
+    kombu_parts = tuple(int(p) for p in version("kombu").split(".")[:2])
+    if kombu_parts >= (5, 6):
+        assert redis.VERSION >= (
+            6,
+            1,
+        ), f"kombu {version('kombu')} needs redis-py 6.1+; have {redis.__version__}"
 
 
 def test_redis_visibility_timeout_covers_profile_rebuild():
