@@ -14,6 +14,7 @@ from app.services.etl.nba.ml_training import (
     upload_to_s3,
     validate_model,
 )
+from app.services.etl.nba._feature_engineering import FEATURES_VERSION
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.etl.nba.prop_calibration import fit_residual_calibration
 from app.services.ml import dataset_cache
@@ -89,7 +90,11 @@ def run(
     features_df = None
     if cache:
         key = dataset_cache.cache_key(
-            NBA_ML_CONFIG.s3_prefix, stat_col, season_start, season_end
+            NBA_ML_CONFIG.s3_prefix,
+            stat_col,
+            season_start,
+            season_end,
+            version=FEATURES_VERSION,
         )
         hit = dataset_cache.load(key)
         if hit is not None:

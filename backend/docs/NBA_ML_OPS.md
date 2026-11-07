@@ -44,7 +44,11 @@ See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
    `app/services/etl/nba/_season.py` (fallback: Tuesday on/after Oct 18).
    July 1 → the day before opening night is treated as offseason:
    `update_recent_games` never stores those box scores (Summer League,
-   preseason), so rolling averages carry over from last season's games.
+   preseason). Every sample then switches to this season on its own: a
+   player's (prop features, expected minutes, PRA, no-steals) once he has 5
+   games this season (`_samples.player_games`), a team's defense once it has
+   5, and the totals baseline once a team has 8 (`totals_baseline.CURRENT_SEASON`).
+   Until then they reach back into last season's games.
 2. Verify production data, then repair anything it flags:
 
    ```bash

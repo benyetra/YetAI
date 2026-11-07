@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
+from app.services.etl.nba._feature_engineering import FEATURES_VERSION
 from app.services.etl.nba.ml_training import build_training_dataset
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
 from app.services.ml import dataset_cache
@@ -104,7 +105,9 @@ def main() -> None:
     ap.add_argument("--end", required=True)
     args = ap.parse_args()
     start, end = date.fromisoformat(args.start), date.fromisoformat(args.end)
-    key = dataset_cache.cache_key(NBA_ML_CONFIG.s3_prefix, args.stat, start, end)
+    key = dataset_cache.cache_key(
+        NBA_ML_CONFIG.s3_prefix, args.stat, start, end, version=FEATURES_VERSION
+    )
     hit = dataset_cache.load(key)
     if hit is None:
         features_df, target = build_training_dataset.build(args.stat, start, end)

@@ -17,8 +17,12 @@ logger = logging.getLogger(__name__)
 BUCKET = "yetibets"
 
 
-def cache_key(s3_prefix: str, stat_col: str, start: date, end: date) -> str:
-    return f"{s3_prefix.rsplit('/', 1)[0]}/ml_datasets/{stat_col}_{start}_{end}.pkl"
+def cache_key(
+    s3_prefix: str, stat_col: str, start: date, end: date, version: int = 1
+) -> str:
+    """S3 key for a built dataset; `version` is the feature definition's."""
+    base = f"{s3_prefix.rsplit('/', 1)[0]}/ml_datasets/{stat_col}_{start}_{end}"
+    return f"{base}.pkl" if version == 1 else f"{base}_v{version}.pkl"
 
 
 def load(key: str):

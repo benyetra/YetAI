@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._samples import MIN_CURRENT_SEASON_GAMES, player_games
 from app.services.etl.nba._season import (
     regular_season_start,
     season_label,
@@ -27,11 +28,6 @@ from app.services.etl.nba._season import (
 logger = logging.getLogger(__name__)
 
 db = None
-
-
-# Regular-season games needed before the current season's career line
-# replaces last season's.
-MIN_CURRENT_SEASON_GAMES = 5
 
 
 def _career_row_for(
@@ -79,13 +75,7 @@ def fetch_recent_data(player_id, limit=5):
     Fetch recent game data for a player, limited by the number of games.
     """
     try:
-        recent_games = (
-            db.query(RecentGames)
-            .filter_by(player_id=player_id)
-            .order_by(RecentGames.game_date.desc())
-            .limit(limit)
-            .all()
-        )
+        recent_games = player_games(db, player_id, _today(), limit)
         logger.info(f"Fetched {len(recent_games)} recent games for player {player_id}.")
         return recent_games
     except SQLAlchemyError as e:
@@ -591,7 +581,8 @@ def calculate_no_steals_probability(
         logger.info(f"Probability NO steals: {probability_no_steals:.3f}")
         logger.info(f"=====================================")
 
-        return round(probability_no_steals, 2)
+        # scipy returns np.float64, which psycopg2 writes as "np.float64(...)".
+        return round(float(probability_no_steals), 2)
     except Exception as e:
         logger.error(f"Error calculating no steals probability: {e}")
         import traceback
@@ -763,6 +754,7 @@ def project_no_steals():
         db.commit()
         logger.info(f"Saved {len(projections)} no steals projections for {today}.")
     except SQLAlchemyError as e:
+        db.rollback()
         logger.error(f"Error saving projections to database: {e}")
 
 
@@ -860,6 +852,7 @@ def save_yesterdays_results():
         db.commit()
         logger.info(f"Saved {len(results)} results for yesterday ({yesterday}).")
     except SQLAlchemyError as e:
+        db.rollback()
         logger.error(f"Error saving results to database: {e}")
 
 

@@ -24,11 +24,11 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._season import season_start_year
+from app.services.etl.nba._samples import player_games
+from app.services.etl.nba._season import season_opener, season_start_year
 from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
     CALIBRATION_START,
-    CURRENT_SEASON_DELAY_DAYS,
-    CURRENT_SEASON_PRIOR_GAMES,
+    CURRENT_SEASON,
     MIN_FORM_GAMES,
     Final,
     baseline_scores,
@@ -222,7 +222,9 @@ def get_team_pace_and_efficiency(team_name: str) -> Dict:
     return result
 
 
-def get_projected_starters(team_name: str, num_starters: int = 5) -> List[Dict]:
+def get_projected_starters(
+    team_name: str, game_date: date, num_starters: int = 5
+) -> List[Dict]:
     """
     Get projected starting lineup for a team based on recent minutes played.
     Excludes players who are OUT or on IR.
@@ -251,14 +253,7 @@ def get_projected_starters(team_name: str, num_starters: int = 5) -> List[Dict]:
         if status in ("OUT", "IR"):
             continue
 
-        # Get recent games to calculate average minutes
-        recent_games = (
-            db.query(RecentGames)
-            .filter_by(player_id=player.player_id)
-            .order_by(RecentGames.game_date.desc())
-            .limit(10)
-            .all()
-        )
+        recent_games = player_games(db, player.player_id, game_date, 10)
 
         if recent_games:
             avg_minutes = sum(g.minutes or 0 for g in recent_games) / len(recent_games)
@@ -295,6 +290,10 @@ def calculate_injury_impact(
 
     Only counts star players explicitly listed in STAR_PLAYER_IMPACTS dictionary.
     This prevents noise from role players and bench players.
+
+    Once the baseline is this season's scoring alone, a star's impact is scaled
+    by the share of the team's games he has played: a season-long absence is
+    already in the numbers.
     """
     team_id = get_team_id_from_name(team_name)
     if not team_id:
@@ -302,6 +301,13 @@ def calculate_injury_impact(
 
     total_impact = 0.0
     injury_list = []
+
+    opener = season_opener(game_date)
+    team_games = sum(
+        1
+        for g in finals_for(game_date)
+        if g.game_date >= opener and team_name in (g.home_team_name, g.away_team_name)
+    )
 
     # Get roster for team
     roster = db.query(TeamRoster).filter_by(team_id=team_id).all()
@@ -331,7 +337,22 @@ def calculate_injury_impact(
             else:
                 probability = 0.25
 
-            adjusted_impact = base_impact * probability
+            share = 1.0
+            if team_games >= (CURRENT_SEASON.current_only_after or float("inf")):
+                played = (
+                    db.query(RecentGames)
+                    .filter(
+                        RecentGames.player_id == player.player_id,
+                        RecentGames.game_date >= opener,
+                        RecentGames.game_date < game_date,
+                        RecentGames.minutes > 0,
+                    )
+                    .count()
+                )
+                share = min(1.0, played / team_games)
+            adjusted_impact = base_impact * probability * share
+            if not adjusted_impact:
+                continue
             total_impact += adjusted_impact
 
             injury_list.append(
@@ -406,7 +427,9 @@ def calculate_venue_adjustment(home_team: str) -> float:
     return adjustment
 
 
-def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
+def calculate_team_form(
+    team_name: str, game_date: date, num_recent_games: int = 5
+) -> float:
     """
     Calculate a team's recent form by comparing tracked players' recent
     performance to their season averages.
@@ -415,11 +438,11 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
 
     Methodology:
     - For each tracked player on the roster, calculate their season avg PPG
+      (this season's games only: against a multi-season average every
+      team looks cold whenever scoring is down league-wide)
     - Compare their last N games to their season average
     - Sum the deviations to estimate team-level form
     """
-    from sqlalchemy import func
-
     team_id = get_team_id_from_name(team_name)
     if not team_id:
         return 0.0
@@ -430,28 +453,33 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
         return 0.0
 
     player_ids = [p.player_id for p in roster]
+    opener = season_opener(game_date)
 
     total_deviation = 0.0
     players_counted = 0
 
     for player_id in player_ids:
-        # Get all games for this player
-        all_games = db.query(RecentGames).filter_by(player_id=player_id).all()
+        season_games = (
+            db.query(RecentGames)
+            .filter(
+                RecentGames.player_id == player_id,
+                RecentGames.game_date >= opener,
+                RecentGames.game_date < game_date,
+            )
+            .order_by(RecentGames.game_date.desc())
+            .all()
+        )
 
-        if len(all_games) < 5:  # Need enough games for meaningful comparison
+        if len(season_games) < 5:  # Need enough games for meaningful comparison
             continue
 
-        # Calculate season average PPG
-        season_avg_ppg = sum(g.points for g in all_games) / len(all_games)
+        season_avg_ppg = sum(g.points or 0 for g in season_games) / len(season_games)
 
         if season_avg_ppg < 5.0:  # Skip low-minute players
             continue
 
-        # Get last N games
-        recent_games = sorted(all_games, key=lambda x: x.game_date, reverse=True)[
-            :num_recent_games
-        ]
-        recent_avg_ppg = sum(g.points for g in recent_games) / len(recent_games)
+        recent_games = season_games[:num_recent_games]
+        recent_avg_ppg = sum(g.points or 0 for g in recent_games) / len(recent_games)
 
         # Calculate deviation from season average
         deviation = recent_avg_ppg - season_avg_ppg
@@ -466,7 +494,7 @@ def calculate_team_form(team_name: str, num_recent_games: int = 5) -> float:
     return total_deviation
 
 
-def calculate_form_adjustment(home_team: str, away_team: str) -> float:
+def calculate_form_adjustment(home_team: str, away_team: str, game_date: date) -> float:
     """
     Calculate adjustment based on recent form (last 5 games).
     Teams on hot/cold streaks deviate from season averages.
@@ -474,8 +502,8 @@ def calculate_form_adjustment(home_team: str, away_team: str) -> float:
     Returns combined form adjustment for both teams.
     Positive = expect higher scoring, Negative = expect lower scoring.
     """
-    home_form = calculate_team_form(home_team)
-    away_form = calculate_team_form(away_team)
+    home_form = calculate_team_form(home_team, game_date)
+    away_form = calculate_team_form(away_team, game_date)
 
     # Combined form adjustment (both teams contribute)
     total_form = home_form + away_form
@@ -596,7 +624,7 @@ def generate_projection(
 
     rest_adjustment = calculate_rest_adjustment(home_team, away_team, game_date)
     venue_adjustment = calculate_venue_adjustment(home_team)
-    form_adjustment = calculate_form_adjustment(home_team, away_team)
+    form_adjustment = calculate_form_adjustment(home_team, away_team, game_date)
 
     total_adjustment = (
         injury_adjustment + rest_adjustment + venue_adjustment + (form_adjustment * 0.3)
@@ -669,8 +697,8 @@ def generate_projection(
         factors["situational"] = ", ".join(situational_notes)
 
     # Get projected starting lineups
-    home_starters = get_projected_starters(home_team)
-    away_starters = get_projected_starters(away_team)
+    home_starters = get_projected_starters(home_team, game_date)
+    away_starters = get_projected_starters(away_team, game_date)
 
     return {
         "game_date": game_date,

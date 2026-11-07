@@ -158,11 +158,14 @@ def test_predictor_passes_missing_values_as_nan(monkeypatch):
     assert seen["vec"][0][0] == 2.0 and math.isnan(seen["vec"][0][1])
 
 
-def test_totals_blend_uses_last_season_then_shifts_to_this_one():
+def test_totals_blend_moves_to_this_season():
     from types import SimpleNamespace as G
 
-    from app.services.etl.nba.totals_projector import (
-        CURRENT_SEASON_PRIOR_GAMES,
+    import pytest
+
+    from app.services.etl.nba.totals_baseline import (
+        CURRENT_SEASON,
+        LAST_SEASON_WEIGHTED,
         MIN_FORM_GAMES,
         blended_scoring,
     )
@@ -179,10 +182,19 @@ def test_totals_blend_uses_last_season_then_shifts_to_this_one():
         ]
 
     last = games(40, 112, 108)
-    assert blended_scoring(last, [], "A") == (112, 108)  # this season ignored
-    n = CURRENT_SEASON_PRIOR_GAMES
-    scored, allowed = blended_scoring(last, games(n, 122, 118), "A")
-    assert (round(scored, 1), round(allowed, 1)) == (117.0, 113.0)  # 50/50
+    assert blended_scoring(last, [], "A") == (112, 108)  # no games yet
+    # The first few games blend in by count...
+    few = CURRENT_SEASON.current_only_after - 1
+    scored, _ = blended_scoring(last, games(few, 122, 118), "A")
+    assert scored == pytest.approx(112 + 10 * few / (few + CURRENT_SEASON.prior_games))
+    # ...then last season is dropped.
+    n = CURRENT_SEASON.current_only_after
+    assert blended_scoring(last, games(n, 122, 118), "A") == (122, 118)
+    # The old policy still held last season at 50/50 after 20 games.
+    scored, allowed = blended_scoring(
+        last, games(20, 122, 118), "A", LAST_SEASON_WEIGHTED
+    )
+    assert (round(scored, 1), round(allowed, 1)) == (117.0, 113.0)
     assert blended_scoring(games(3, 100, 100), [], "A") is None  # no history
     cur = games(MIN_FORM_GAMES, 120, 110)
     assert blended_scoring([], cur, "A") == (120, 110)
@@ -200,25 +212,30 @@ def test_totals_baseline_bias_recommend_and_record():
 
     from app.services.etl.nba import totals_baseline as tb
 
-    # Last season: A and B each score/allow 110. This season they score 120.
+    # Last season: A and B each score/allow 110. This season they score 125.
     last = [
         _final(date(2026, 1, 1) + timedelta(days=i), "A", "B", 110, 110)
         for i in range(12)
     ]
     cur = [
         _final(date(2026, 10, 21) + timedelta(days=i), "A", "B", 125, 125)
-        for i in range(6)
+        for i in range(10)
     ]
     finals = last + cur
 
-    # Early in the season (inside the 14-day delay) the baseline is last season's.
-    s = tb.baseline_scores(finals, "A", "B", date(2026, 10, 25))
-    assert s == (110, 110)
-    # ...so it under-projects by 30 total; the correction adds a shrunk share.
-    bias, n = tb.recent_bias(finals, date(2026, 10, 25))
+    # The old policy ignored this season for two weeks...
+    old = tb.LAST_SEASON_WEIGHTED
+    assert tb.baseline_scores(finals, "A", "B", date(2026, 10, 25), old) == (110, 110)
+    # ...so it under-projected by 30 total; the correction adds a shrunk share.
+    bias, n = tb.recent_bias(finals, date(2026, 10, 25), blend=old)
     # four errors of +30, shrunk by 10: 120 / 14.
     assert n == 4 and abs(bias - 120 / 14) < 1e-9
     assert tb.recent_bias(last, date(2026, 10, 25)) == (0.0, 0)
+    # Now this season counts from opening night (4 games in: 4/24 of the way)...
+    home, away = tb.baseline_scores(finals, "A", "B", date(2026, 10, 25))
+    assert abs(home - (110 + 15 * 4 / 24)) < 1e-9 and home == away
+    # ...and alone once there are enough games.
+    assert tb.baseline_scores(finals, "A", "B", date(2026, 10, 31)) == (125, 125)
 
     # Calls: small edges are NO_PLAY; unproven calls carry 50% confidence.
     assert tb.recommend(2.0, (0, 0))[0] == "NO_PLAY"

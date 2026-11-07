@@ -11,7 +11,7 @@ in dev; the guard will start enforcing real tiers once auth is fixed.
 """
 
 from datetime import date as date_type, timedelta
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -44,6 +44,7 @@ from app.models.predictions_models import (
     ProjectedHomers,
     QBPredictions,
     ReboundsProjections,
+    RecentGames,
     StealsProjections,
     StrikeoutActuals,
     StrikeoutProjections,
@@ -58,6 +59,7 @@ from app.models.predictions_models import (
     WNBAThreePtMadeProjections,
     WNBATotalsProjections,
 )
+from app.services.etl.nba._season import season_opener
 from app.services.etl.yetiwatch.news import attach_news_to_rows
 from app.services.mlb_strikeout_pick import enrich_strikeout_projection_row
 from app.services.player_prop_projection_display import (
@@ -71,6 +73,8 @@ router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
 ALLOWED_TIERS = {"pro", "elite", "PRO", "ELITE"}
 DEFAULT_LIMIT = 50
+# Ranked by minutes, this covers the rotations of a 12-game NBA slate.
+NBA_PROP_DEFAULT_LIMIT = 200
 WNBA_PROP_DEFAULT_LIMIT = 75
 MAX_LIMIT = 500
 ANYTIME_TD_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
@@ -352,6 +356,29 @@ def _load_wnba_season_minutes_avg(
     return {int(r.player_id): float(r.season_mpg) for r in rows}
 
 
+def _load_nba_season_minutes_avg(
+    db: Session, player_ids: list[int], as_of: date_type
+) -> dict[int, float]:
+    """This season's MPG from pred_recent_games (games strictly before as_of)."""
+    if not player_ids:
+        return {}
+    rows = (
+        db.query(
+            RecentGames.player_id,
+            func.avg(RecentGames.minutes).label("season_mpg"),
+        )
+        .filter(
+            RecentGames.player_id.in_(player_ids),
+            RecentGames.game_date >= season_opener(as_of),
+            RecentGames.game_date < as_of,
+            RecentGames.minutes > 0,
+        )
+        .group_by(RecentGames.player_id)
+        .all()
+    )
+    return {int(r.player_id): float(r.season_mpg) for r in rows}
+
+
 def _query_wnba_props_by_season_minutes(
     db: Session,
     model: Any,
@@ -361,6 +388,37 @@ def _query_wnba_props_by_season_minutes(
     tz: str = "UTC",
 ) -> list[dict[str, Any]]:
     """Return prop projections for a slate, ranked by season MPG (not insert order)."""
+    return _query_props_by_minutes(
+        db, model, target_date, limit, _load_wnba_season_minutes_avg, tz=tz
+    )
+
+
+def _query_nba_props_by_season_minutes(
+    db: Session,
+    model: Any,
+    target_date: date_type | None,
+    limit: int,
+    *,
+    tz: str = "UTC",
+) -> list[dict[str, Any]]:
+    """Return prop projections for a slate, ranked by season MPG (not insert order).
+
+    Insert order follows the roster table's team order (API-Sports ids,
+    Washington last), so it says nothing about which players matter."""
+    return _query_props_by_minutes(
+        db, model, target_date, limit, _load_nba_season_minutes_avg, tz=tz
+    )
+
+
+def _query_props_by_minutes(
+    db: Session,
+    model: Any,
+    target_date: date_type | None,
+    limit: int,
+    load_mpg: Callable[[Session, list[int], date_type], dict[int, float]],
+    *,
+    tz: str = "UTC",
+) -> list[dict[str, Any]]:
     if target_date is None:
         return _query_recent(db, model, "date", None, limit, tz=tz)
 
@@ -371,7 +429,7 @@ def _query_wnba_props_by_season_minutes(
         return []
 
     player_ids = [int(r["player_id"]) for r in rows if r.get("player_id") is not None]
-    mpg_by_player = _load_wnba_season_minutes_avg(db, player_ids, target_date)
+    mpg_by_player = load_mpg(db, player_ids, target_date)
     rows.sort(
         key=lambda r: (
             mpg_by_player.get(int(r["player_id"]), 0.0)
@@ -648,10 +706,20 @@ def nba_predictions(
     target_date: date_type | None = Query(default=None, alias="date"),
     tz: str = Query(default="UTC"),
     limit: int = Query(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
+    prop_limit: int = Query(
+        default=NBA_PROP_DEFAULT_LIMIT,
+        ge=1,
+        le=MAX_LIMIT,
+        description="Max player prop rows per stat; ranked by season minutes per game.",
+    ),
     _user: dict = Depends(require_paid_tier),
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
-    """Recent NBA props: game totals O/U plus points, assists, rebounds, etc."""
+    """NBA: game totals O/U and spreads, plus points, assists, rebounds, etc.
+
+    Player props return up to ``prop_limit`` rows per stat for the requested
+    date, ordered by this season's minutes per game.
+    """
     from app.services.game_projection_schedule import attach_game_times_from_lines
 
     tz = _safe_tz(tz)
@@ -663,51 +731,29 @@ def nba_predictions(
     )
     spreads = attach_game_times_from_lines(db, spreads, NBAGameLines)
     totals = attach_game_times_from_lines(db, totals, NBAGameLines)
+    props = {
+        "points": (PointsProjections, "points"),
+        "assists": (AssistsProjections, "assists"),
+        "rebounds": (ReboundsProjections, "rebounds"),
+        "three_point": (ThreePointProjections, "three_pt_made"),
+        "steals": (StealsProjections, "steals"),
+        "blocks": (BlocksProjections, "blocks"),
+        "pra": (PRAProjections, "pra"),
+    }
     return {
         "totals": totals,
         "spreads": spreads,
-        "points": enrich_prop_rows(
-            _query_recent(db, PointsProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="points",
-            db=db,
-        ),
-        "assists": enrich_prop_rows(
-            _query_recent(db, AssistsProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="assists",
-            db=db,
-        ),
-        "rebounds": enrich_prop_rows(
-            _query_recent(db, ReboundsProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="rebounds",
-            db=db,
-        ),
-        "three_point": enrich_prop_rows(
-            _query_recent(db, ThreePointProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="three_pt_made",
-            db=db,
-        ),
-        "steals": enrich_prop_rows(
-            _query_recent(db, StealsProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="steals",
-            db=db,
-        ),
-        "blocks": enrich_prop_rows(
-            _query_recent(db, BlocksProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="blocks",
-            db=db,
-        ),
-        "pra": enrich_prop_rows(
-            _query_recent(db, PRAProjections, "date", target_date, limit, tz=tz),
-            sport="nba",
-            stat="pra",
-            db=db,
-        ),
+        **{
+            key: enrich_prop_rows(
+                _query_nba_props_by_season_minutes(
+                    db, model, target_date, prop_limit, tz=tz
+                ),
+                sport="nba",
+                stat=stat,
+                db=db,
+            )
+            for key, (model, stat) in props.items()
+        },
     }
 
 

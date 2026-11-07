@@ -21,12 +21,15 @@ from sqlalchemy import func
 from app.core.database import SessionLocal
 from app.models.predictions_models import RecentGames, TeamDefenseStats
 from app.services.etl.nba._espn import EASTERN, NBA_TEAM_NAMES, now_eastern
+from app.services.etl.nba._samples import MIN_CURRENT_SEASON_GAMES
+from app.services.etl.nba._season import season_opener
 
 logger = logging.getLogger(__name__)
 
-# Last N games each team appeared in as the opponent (~60 days in-season).
-# A game count rather than a date window: at season rollover the window
-# reaches back into last season instead of averaging one or two games.
+# Last N games each team appeared in as the opponent (~60 days in-season),
+# this season's only once there are MIN_CURRENT_SEASON_GAMES of them. A game
+# count rather than a date window: at season rollover the window reaches back
+# into last season instead of averaging one or two games.
 LOOKBACK_GAMES = 25
 LEAGUE_AVG_DRTG = 114.0
 LEAGUE_AVG_TRACKED_PTS = 95.0
@@ -34,14 +37,16 @@ LEAGUE_AVG_TRACKED_PTS = 95.0
 
 def run() -> dict:
     end_date = now_eastern().date()
+    opener = season_opener(end_date)
     teams_updated = 0
     teams_no_data = 0
 
     db = SessionLocal()
     try:
         for nba_team_id, team_name in NBA_TEAM_NAMES.items():
-            recent_dates = (
-                db.query(RecentGames.game_date)
+            recent_dates = [
+                d
+                for (d,) in db.query(RecentGames.game_date)
                 .filter(
                     RecentGames.opponent_team_id == nba_team_id,
                     RecentGames.game_date <= end_date,
@@ -50,11 +55,14 @@ def run() -> dict:
                 .order_by(RecentGames.game_date.desc())
                 .limit(LOOKBACK_GAMES)
                 .all()
-            )
+            ]
+            this_season = [d for d in recent_dates if d >= opener]
+            if len(this_season) >= MIN_CURRENT_SEASON_GAMES:
+                recent_dates = this_season
             if not recent_dates:
                 teams_no_data += 1
                 continue
-            start_date = min(d for (d,) in recent_dates)
+            start_date = min(recent_dates)
             base_filter = [
                 RecentGames.opponent_team_id == nba_team_id,
                 RecentGames.game_date >= start_date,
