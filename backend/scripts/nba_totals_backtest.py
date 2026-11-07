@@ -17,11 +17,17 @@ from datetime import date, timedelta
 from collections import defaultdict
 
 from app.core.database import SessionLocal
-from app.models.predictions_models import NBAGameLines, NBASpreadActuals
+from app.models.predictions_models import (
+    NBAGameLines,
+    NBASpreadActuals,
+    NBATotalsActuals,
+    NBATotalsProjections,
+)
 from app.services.etl.nba._season import regular_season_start, season_start_year
 from app.services.etl.nba.totals_baseline import (
     BIAS_SHRINK,
     BIAS_WINDOW,
+    CALIBRATION_START,
     CURRENT_SEASON,
     LAST_SEASON_WEIGHTED,
     MIN_EDGE,
@@ -103,6 +109,36 @@ def compare_blends(finals, lines, season):
         )
 
 
+def stored_report(stored):
+    """The projections that were published, scored as stored and without the
+    form / injury adjustments layered on the baseline.
+
+    stored: [(projected, form adj, injury adj, market total, actual total)]."""
+    print(f"\nstored projections: {len(stored)} graded games with a line")
+    variants = {
+        "as published": lambda p, f, i: p,
+        "without form": lambda p, f, i: p - f,
+        "without form or injuries": lambda p, f, i: p - f - i,
+    }
+    for name, project in variants.items():
+        e = [a - project(p, f, i) for p, f, i, _, a in stored]
+        picks = [
+            (q, a, m)
+            for p, f, i, m, a in stored
+            if abs((q := project(p, f, i)) - m) >= MIN_EDGE and a != m
+        ]
+        hit = sum((q < m) == (a < m) for q, a, m in picks)
+        unders = sum(q < m for q, _, m in picks)
+        calls = (
+            f"{len(picks)} picks, hit {hit / len(picks):.1%}, {unders / len(picks):.0%} unders"
+            if picks
+            else "no picks"
+        )
+        print(
+            f"  {name:26s} bias {st.mean(e):+6.2f} MAE {mae(e):6.2f}  |edge|>={MIN_EDGE}: {calls}"
+        )
+
+
 def corrected(run, window, shrink):
     """[(game, baseline, corrected)] with the correction learned only from earlier games."""
     out = []
@@ -138,6 +174,31 @@ def main() -> None:
             for ln in db.query(NBAGameLines).all()
             if ln.total
         }
+        stored = [
+            (
+                p.game_date,
+                p.projected_total,
+                p.form_adjustment or 0.0,
+                p.injury_adjustment or 0.0,
+                p.market_total,
+                a.actual_total,
+            )
+            for p, a in db.query(NBATotalsProjections, NBATotalsActuals)
+            .join(
+                NBATotalsActuals,
+                (NBATotalsActuals.game_date == NBATotalsProjections.game_date)
+                & (
+                    NBATotalsActuals.home_team_name
+                    == NBATotalsProjections.home_team_name
+                )
+                & (
+                    NBATotalsActuals.away_team_name
+                    == NBATotalsProjections.away_team_name
+                ),
+            )
+            .filter(NBATotalsProjections.game_date >= CALIBRATION_START)
+            if p.market_total and a.actual_total is not None
+        ]
     finally:
         db.close()
 
@@ -189,6 +250,9 @@ def main() -> None:
         if len(have) >= 20:
             report_vs_market(have)
         compare_blends(finals, lines, season)
+        published = [s[1:] for s in stored if season_start_year(s[0]) == season]
+        if len(published) >= 20:
+            stored_report(published)
 
 
 def report_vs_market(have):
