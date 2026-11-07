@@ -37,6 +37,8 @@ boto3>=1.35.0
 
 # Background Tasks
 celery==5.3.4
+# kombu 5.6+ refuses redis-py 5.0.1 at worker boot (VersionMismatch 6.1.0+).
+kombu>=5.3.4,<5.6
 redis==5.0.1
 
 # Authentication & Security
