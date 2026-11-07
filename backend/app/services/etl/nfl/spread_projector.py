@@ -145,11 +145,14 @@ def run() -> dict:
     upsert_rows: list[dict] = []
     try:
         elos = _load_elos(db)
+        # Full actuals history still drives Elo; PPG is scoped to current-season
+        # form (with early-season prior-year fallback) so multi-year seed data
+        # does not drown mid-season pace.
         actuals = (
             db.query(NFLSpreadActuals).order_by(NFLSpreadActuals.game_date.asc()).all()
         )
-        ppg_stats = compute_team_ppg_stats(actuals)
         season = get_nfl_season()
+        ppg_stats = compute_team_ppg_stats(actuals, season=season)
         loaded_week = get_current_nfl_week(season, today=today)
         qb_out_by_team = _load_qb_out_by_team(db, season=season, week=loaded_week)
 
