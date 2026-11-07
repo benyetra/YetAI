@@ -2,11 +2,11 @@
 
 ## QB passing yards (Phase 4.3+)
 
-| Mode | Env | Production yards | `model_version` |
-|------|-----|------------------|-----------------|
-| Market line (default) | — | Real `pass_yds_line` when attached; else dynamic tier | `market_line` or `tier-v3` |
-| ML shadow | — | Same as default; GBM stored as `ml_shadow_yards` | `tier-v3` / `market_line`; `feature_importance.ml_shadow_yards` |
-| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM when `line_is_real`; else market line / tier | `gbm-qb-residual-YYYYMMDD` |
+| Mode | Env | Production yards | `model_version` / `prediction_method` |
+|------|-----|------------------|----------------------------------------|
+| Soft-anchor (default) | `NFL_QB_ANCHOR_ALPHA` (default `0.25`) | When a real line is attached: `α·model + (1−α)·line` where model = `ml_shadow_yards` else tier; else dynamic tier | `soft_anchor` or `tier-v3` |
+| ML shadow | — | Soft-anchor publish; GBM stored as `ml_shadow_yards` | `soft_anchor` / `tier-v3`; `feature_importance.ml_shadow_yards` |
+| ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM when `line_is_real`; else soft-anchor / tier | `gbm-qb-residual-YYYYMMDD` |
 
 **Tier v3:** No hash-based week noise. Uncertainty is
 `prediction_interval_lower/upper` + confidence. Opt-in legacy noise with
@@ -39,9 +39,12 @@ GBM only when a **real** prop line is on the feature row (`line_is_real`).
 without lines inverts the slate (mid-tier QBs above Allen/Mahomes). After
 `qb_betting` reinjects lines, ML applies. Promote bundle loads from **S3**
 (when ML is on); shipped `backend/models/nfl/` pickles are shadow-only.
-When `NFL_QB_ML_ENABLED` is unset, a real `pass_yds_line` is published as
-`predicted_passing_yards` (`prediction_method=market_line`); GBM still
-requires the flag.
+When `NFL_QB_ML_ENABLED` is unset, a real `pass_yds_line` is **soft-anchored**
+into `predicted_passing_yards` (`prediction_method=soft_anchor`):
+`α·model + (1−α)·line` with `α = NFL_QB_ANCHOR_ALPHA` (default `0.25`) and
+model = shadow GBM else tier. Edge = publish − line (UI: Model / Market /
+Edge / Pick). Do **not** publish the raw market as the projection. GBM as the
+sole published yards still requires the promote flag.
 
 **O/U classifier:** trains on **real market lines only** (no synthetic tier±noise).
 `qb_betting` blends yards-edge with `P(over)`; disagreement → always PASS.
