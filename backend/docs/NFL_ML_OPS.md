@@ -68,7 +68,23 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 - Report includes **`ablations`** (v5/v6 market, tier-only HP variants, promote
   sweep) and `promote_hp_selected`.
 
-### Latest Railway promote-gate (2026-08-12, run 31555122122)
+### Latest Railway promote-gate (2026-09-04, run 33913715865) — line-vs-ML
+
+| Metric | Value |
+|--------|-------|
+| Holdout | season_2025 (585); real lines **~91%** (`pass_yds_line_real_rate=0.9112`) |
+| Promote path | **`market_residual_v6`** + HP `strong_reg` (raw ML; no line blend) |
+| Dynamic-tier MAE | **65.525** |
+| Residual ML MAE | **57.314** |
+| Line-only MAE | **61.727** |
+| Lift vs dynamic | **+12.53%** (≥10% gate) |
+| Lift vs line | **+7.15%** (ML strictly better than line) |
+| `promote_recommended` | **true** (tier lift **and** beats line) |
+| S3 upload | **yes** — `s3://yetibets/nfl/ml_models/qb_passing_yards{,_metadata}.json` + O/U pair |
+| Recommendation | Enable `NFL_QB_ML_ENABLED=1` on Railway after confirming S3 bundle |
+| Ops note | Soft-anchor (#162) stays the default publish path until the flag is set. Agent cannot flip Railway vars without auth. |
+
+### Prior Railway promote-gate (2026-08-12, run 31555122122)
 
 | Metric | Value |
 |--------|-------|
@@ -81,7 +97,7 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 | Lift vs static | **+14.13%** |
 | v5 / v6 ablations | +11.27% / +11.74% |
 | `promote_recommended` (old gate) | **true** (tier lift only; no `line_mae`) |
-| Next | Re-run **NFL Prod QB Eval** under the line-vs-ML gate. Do **not** set `NFL_QB_ML_ENABLED=1` from this run. |
+| Next (done 2026-09-04) | Re-ran under line-vs-ML gate — see latest section. |
 
 ### Prior Railway ablations (2026-08-12, pre-promote-path switch)
 
