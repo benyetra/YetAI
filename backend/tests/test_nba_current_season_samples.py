@@ -1,4 +1,4 @@
-"""NBA projections sample this season's games once a player or team has enough."""
+"""NBA projections sample this season's games once a player or team has any."""
 
 from __future__ import annotations
 
@@ -89,18 +89,25 @@ def add_roster(db, team_id, player_id, name):
 # --- player samples ----------------------------------------------------------
 
 
-def test_player_games_use_this_season_once_there_are_five(db):
+def test_player_games_use_this_season_once_there_is_one(db):
     add_games(db, 1, LAST_SEASON, 30, points=25)
-    add_games(db, 1, OPENER, 6, points=10)
+    add_games(db, 1, OPENER, 1, points=10)
     games = player_games(db, 1, TODAY, 50)
-    assert [g.points for g in games] == [10] * 6
+    assert [g.points for g in games] == [10]
 
 
-def test_player_games_reach_back_until_then(db):
+def test_player_games_reach_back_with_no_current_season_games(db):
     add_games(db, 1, LAST_SEASON, 30, points=25)
-    add_games(db, 1, OPENER, 3, points=10)
     games = player_games(db, 1, TODAY, 20)
-    assert [g.points for g in games] == [10] * 3 + [25] * 17
+    assert [g.points for g in games] == [25] * 20
+
+
+def test_matchup_sample_stays_in_this_season(db):
+    add_games(db, 1, LAST_SEASON, 4, points=25, opponent=NUGGETS)
+    add_games(db, 1, OPENER, 2, points=8, opponent=NUGGETS)
+    add_games(db, 1, OPENER + timedelta(days=5), 3, points=12, opponent=CELTICS)
+    games = player_games(db, 1, TODAY, 10, RecentGames.opponent_team_id == NUGGETS)
+    assert [g.points for g in games] == [8] * 2
 
 
 def test_player_games_exclude_the_game_date_and_apply_criteria(db):
@@ -124,17 +131,17 @@ def test_features_follow_this_seasons_role(db):
     assert feats["points_matchup_mult"] == 1.0
 
 
-def test_features_reach_back_before_five_games(db):
+def test_features_skip_until_five_current_season_games(db):
     add_games(db, 7, LAST_SEASON, 30, points=30)
     add_games(db, 7, OPENER, 2, points=12)
-    feats = fe.build_features(db, 7, TODAY, CELTICS, "points")
-    assert feats["points_avg_20"] == pytest.approx((2 * 12 + 18 * 30) / 20)
+    # Two current-season games are not mixed with last season; the model waits.
+    assert fe.build_features(db, 7, TODAY, CELTICS, "points") is None
 
 
 # --- team defense ---------------------------------------------------------------
 
 
-def test_defense_stats_drop_last_season_after_five_games(db, monkeypatch):
+def test_defense_stats_drop_last_season_after_one_game(db, monkeypatch):
     for i in range(30):
         db.add(
             RecentGames(
@@ -144,15 +151,14 @@ def test_defense_stats_drop_last_season_after_five_games(db, monkeypatch):
                 points=10,
             )
         )
-    for i in range(6):
-        db.add(
-            RecentGames(
-                player_id=5,
-                game_date=OPENER + timedelta(days=i),
-                opponent_team_id=CELTICS,
-                points=40,
-            )
+    db.add(
+        RecentGames(
+            player_id=5,
+            game_date=OPENER,
+            opponent_team_id=CELTICS,
+            points=40,
         )
+    )
     db.commit()
     monkeypatch.setattr(utds, "SessionLocal", lambda: db)
     monkeypatch.setattr(utds, "NBA_TEAM_NAMES", {CELTICS: "Boston Celtics"})

@@ -38,9 +38,8 @@ def _career_row_for(
     season_open: date,
     today: date,
 ):
-    """Current-season PlayerCareerData once the player has
-    MIN_CURRENT_SEASON_GAMES this season, otherwise last season's row
-    (falling back to whichever exists)."""
+    """Current-season PlayerCareerData once the player has any games this
+    season, otherwise last season's row (falling back to whichever exists)."""
     rows = {
         r.season: r
         for r in db.query(PlayerCareerData)
@@ -88,12 +87,12 @@ def fetch_historical_matchup_data(player_id, opponent_team_id, limit=5):
     Fetch historical matchups between the player and the opponent team.
     """
     try:
-        historical_games = (
-            db.query(RecentGames)
-            .filter_by(player_id=player_id, opponent_team_id=opponent_team_id)
-            .order_by(RecentGames.game_date.desc())
-            .limit(limit)
-            .all()
+        historical_games = player_games(
+            db,
+            player_id,
+            _today(),
+            limit,
+            RecentGames.opponent_team_id == opponent_team_id,
         )
         logger.info(
             f"Fetched {len(historical_games)} historical matchups for player {player_id} against team {opponent_team_id}."
@@ -256,12 +255,17 @@ def get_opponent_ball_handling_factor(opponent_team_id, opponent_offense_stats):
 
         opponent_player_ids = [p.player_id for p in opponent_roster]
 
-        # Get recent games for opponent's players (last 10 games per player, roughly 2 weeks of team data)
+        # This season's games for the opponent's players (team A/TO).
+        opener = regular_season_start(season_start_year(_today()))
         recent_opponent_games = (
             db.query(RecentGames)
-            .filter(RecentGames.player_id.in_(opponent_player_ids))
+            .filter(
+                RecentGames.player_id.in_(opponent_player_ids),
+                RecentGames.game_date >= opener,
+                RecentGames.game_date < _today(),
+            )
             .order_by(RecentGames.game_date.desc())
-            .limit(50)  # Get enough data for team aggregate
+            .limit(50)
             .all()
         )
 
@@ -385,12 +389,16 @@ def get_combined_pace_factor(player_team_id, opponent_pace):
 
         team_player_ids = [p.player_id for p in team_roster]
 
-        # Get recent team games
+        opener = regular_season_start(season_start_year(_today()))
         recent_team_games = (
             db.query(RecentGames)
-            .filter(RecentGames.player_id.in_(team_player_ids))
+            .filter(
+                RecentGames.player_id.in_(team_player_ids),
+                RecentGames.game_date >= opener,
+                RecentGames.game_date < _today(),
+            )
             .order_by(RecentGames.game_date.desc())
-            .limit(20)  # Get recent games
+            .limit(20)
             .all()
         )
 
@@ -604,8 +612,8 @@ def project_no_steals():
         logger.error(f"Error fetching today's active players: {e}")
         return
 
-    # Current season (e.g. "2026-27"); early in the season fall back to last
-    # season's career line until the player has a meaningful sample.
+    # Current season (e.g. "2026-27"); last season's career line only if the
+    # player has not appeared yet.
     season_year = season_start_year(today)
     current_season = season_label(season_year)
     previous_season = season_label(season_year - 1)

@@ -45,10 +45,11 @@ See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
    July 1 → the day before opening night is treated as offseason:
    `update_recent_games` never stores those box scores (Summer League,
    preseason). Every sample then switches to this season on its own: a
-   player's (prop features, expected minutes, PRA, no-steals) once he has 5
-   games this season (`_samples.player_games`), a team's defense once it has
-   5, and the totals baseline once a team has 8 (`totals_baseline.CURRENT_SEASON`).
-   Until then they reach back into last season's games.
+   player's (prop features, expected minutes, PRA, no-steals) as soon as he
+   has a game this season (`_samples.player_games`), a team's defense once it
+   has one, and the totals baseline once a team has 5
+   (`totals_baseline.CURRENT_SEASON`). Last season is only the stand-in when
+   there are no current-season games yet.
 2. Verify production data, then repair anything it flags:
 
    ```bash
@@ -100,11 +101,11 @@ the table with an incomplete roster (< 300 players or < 25 teams).
   while live points were 5.2. Props must also beat a player's recent average
   (5/10/20-game) on the same holdout; the spread must beat Elo. The spread
   predictor ignores any uploaded model that was not validated chronologically.
-- **Totals** are projected from final scores (`totals_baseline.py`): last
-  season weighted, this season blended in after two weeks, plus a shrunk
-  average of the baseline's last 30 errors. Calls need 4+ points of edge and
-  their confidence is the measured hit rate; calls stop if that record is
-  below -110 breakeven after 30 graded picks.
+- **Totals** are projected from final scores (`totals_baseline.py`): this
+  season alone once a team has 5 games, last season only before that, plus a
+  shrunk average of the baseline's last 30 errors. Calls need 4+ points of
+  edge and their confidence is the measured hit rate; calls stop if that
+  record is below -110 breakeven after 30 graded picks.
 - **Refresh before tip-off.** `nba-pregame-refresh` (12:00 and 17:00 ET) updates
   injuries and lines and re-runs every projector, since books post props after
   the 3:30 ET run. Set `NBA_PREGAME_REFRESH_ENABLED=0` to stop it (it spends

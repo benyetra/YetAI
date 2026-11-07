@@ -33,7 +33,7 @@ class Blend(NamedTuple):
     current_only_after: Optional[int]
 
 
-CURRENT_SEASON = Blend(delay_days=0, prior_games=20, current_only_after=8)
+CURRENT_SEASON = Blend(delay_days=0, prior_games=20, current_only_after=5)
 # The policy until November 2026, kept for backtest comparisons.
 LAST_SEASON_WEIGHTED = Blend(delay_days=14, prior_games=20, current_only_after=None)
 

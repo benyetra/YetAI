@@ -27,9 +27,9 @@ from app.services.etl.nba._season import season_opener
 logger = logging.getLogger(__name__)
 
 # Last N games each team appeared in as the opponent (~60 days in-season),
-# this season's only once there are MIN_CURRENT_SEASON_GAMES of them. A game
-# count rather than a date window: at season rollover the window reaches back
-# into last season instead of averaging one or two games.
+# this season's only once there is any current-season game. A game count
+# rather than a date window: opening night still reaches back into last
+# season instead of averaging an empty slate.
 LOOKBACK_GAMES = 25
 LEAGUE_AVG_DRTG = 114.0
 LEAGUE_AVG_TRACKED_PTS = 95.0
