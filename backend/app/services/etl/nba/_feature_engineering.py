@@ -30,14 +30,16 @@ from sqlalchemy import and_, or_
 
 from app.models.predictions_models import (
     NBAGameLines,
-    RecentGames,
     TeamDefenseStats,
     TeamOffenseStats,
     TeamRoster,
 )
+from app.services.etl.nba._samples import player_games
 
 logger = logging.getLogger(__name__)
 
+# Cached training datasets are keyed by this; bump it when features change.
+FEATURES_VERSION = 2
 
 # Per-stat `opp_stat_allowed` column on TeamDefenseStats. Mapping is lifted
 # verbatim from YetiBets/scripts/nba/ml_models/predict.py (see the
@@ -105,14 +107,14 @@ def build_features(
     Args:
         db: an open SessionLocal()
         player_id: NBA.com player_id
-        game_date: target game date (features use only games BEFORE this)
+        game_date: target game date (features use only games BEFORE this,
+            from this season once there are enough — see `_samples`)
         opponent_team_id: NBA.com opponent team_id
         stat_col: target stat key — one of the keys in _OPP_STAT_ALLOWED_COL
 
     Returns:
         A dict keyed by the training-time feature names, or None if the player
-        has fewer than 5 historical games (insufficient data — caller should
-        skip).
+        has fewer than 5 games (insufficient data — caller should skip).
     """
     if stat_col not in _OPP_STAT_ALLOWED_COL:
         raise ValueError(
@@ -120,18 +122,7 @@ def build_features(
             f"{sorted(_OPP_STAT_ALLOWED_COL)}"
         )
 
-    historical_games = (
-        db.query(RecentGames)
-        .filter(
-            and_(
-                RecentGames.player_id == player_id,
-                RecentGames.game_date < game_date,
-            )
-        )
-        .order_by(RecentGames.game_date.desc())
-        .limit(50)
-        .all()
-    )
+    historical_games = player_games(db, player_id, game_date, 50)
     if len(historical_games) < 5:
         return None
 
@@ -147,40 +138,17 @@ def build_features(
         team_stats = db.query(TeamOffenseStats).filter_by(team_id=team_id).first()
         team_name = team_stats.team_name if team_stats else ""
 
-    # ---- Rolling avg/std for the target stat across 5/10/20-game windows.
-    for window in [5, 10, 20]:
-        if len(games_df) >= window:
-            recent = games_df.head(window)[stat_col].dropna()
-            if len(recent) > 0:
-                features[f"{stat_col}_avg_{window}"] = recent.mean()
-                features[f"{stat_col}_std_{window}"] = (
-                    recent.std() if len(recent) > 1 else 0
-                )
-            else:
-                features[f"{stat_col}_avg_{window}"] = 0
-                features[f"{stat_col}_std_{window}"] = 0
-        else:
-            features[f"{stat_col}_avg_{window}"] = 0
-            features[f"{stat_col}_std_{window}"] = 0
+    # ---- Rolling avg/std for the target stat (5/10/20 games) and minutes
+    # (5/10). A window longer than the sample, early in the season, averages
+    # the games there are: a 0 would read as a player who doesn't score.
+    for col, windows in ((stat_col, (5, 10, 20)), ("minutes", (5, 10))):
+        for window in windows:
+            recent = games_df.head(window)[col].dropna()
+            features[f"{col}_avg_{window}"] = recent.mean() if len(recent) else 0
+            features[f"{col}_std_{window}"] = recent.std() if len(recent) > 1 else 0
 
-    # ---- Rolling avg/std for minutes across 5/10-game windows.
-    for window in [5, 10]:
-        if len(games_df) >= window:
-            recent = games_df.head(window)["minutes"].dropna()
-            if len(recent) > 0:
-                features[f"minutes_avg_{window}"] = recent.mean()
-                features[f"minutes_std_{window}"] = (
-                    recent.std() if len(recent) > 1 else 0
-                )
-            else:
-                features[f"minutes_avg_{window}"] = 0
-                features[f"minutes_std_{window}"] = 0
-        else:
-            features[f"minutes_avg_{window}"] = 0
-            features[f"minutes_std_{window}"] = 0
-
-    # ---- Trend: 5-game vs 20-game baseline.
-    if len(games_df) >= 20:
+    # ---- Trend: last 5 games vs the last 20 (or all of a shorter sample).
+    if len(games_df) >= 10:
         recent_avg = games_df.head(5)[stat_col].dropna().mean()
         baseline_avg = games_df.head(20)[stat_col].dropna().mean()
         if baseline_avg and baseline_avg > 0:
@@ -227,21 +195,13 @@ def build_features(
         features["games_last_7_days"] = 0
 
     # ---- Minutes-derived features.
-    if len(games_df) >= 5:
-        minutes = games_df["minutes"].dropna()
-        features["avg_minutes_5"] = minutes.head(5).mean() if len(minutes) >= 5 else 0
-        features["avg_minutes_10"] = (
-            minutes.head(10).mean() if len(minutes) >= 10 else 0
-        )
-        features["minutes_std"] = minutes.head(10).std() if len(minutes) >= 10 else 0
-        features["is_starter"] = (
-            1 if (len(minutes) >= 5 and minutes.head(5).mean() >= 28) else 0
-        )
-    else:
-        features["avg_minutes_5"] = 0
-        features["avg_minutes_10"] = 0
-        features["minutes_std"] = 0
-        features["is_starter"] = 0
+    minutes = games_df["minutes"].dropna()
+    features["avg_minutes_5"] = minutes.head(5).mean() if len(minutes) else 0
+    features["avg_minutes_10"] = minutes.head(10).mean() if len(minutes) else 0
+    features["minutes_std"] = minutes.head(10).std() if len(minutes) > 1 else 0
+    features["is_starter"] = (
+        1 if (len(minutes) >= 5 and minutes.head(5).mean() >= 28) else 0
+    )
 
     # ---- Advanced stat 10-game averages (one per column).
     advanced_cols = [

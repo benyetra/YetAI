@@ -15,12 +15,12 @@ from app.models.predictions_models import (
     PlayerInjuryStatus,
     PointsProjections,
     PRAProjections,
-    RecentGames,
     ReboundsProjections,
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._fanduel_lines import get_event_id_for_game, get_fanduel_line
+from app.services.etl.nba._samples import player_games
 
 logger = logging.getLogger(__name__)
 
@@ -157,13 +157,7 @@ def run() -> dict:
                     skipped += 1
                     continue
 
-                recent = (
-                    db.query(RecentGames)
-                    .filter(RecentGames.player_id == player.player_id)
-                    .order_by(RecentGames.game_date.desc())
-                    .limit(30)
-                    .all()
-                )
+                recent = player_games(db, player.player_id, today, 30)
                 if not recent:
                     skipped += 1
                     continue

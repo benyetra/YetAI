@@ -2,13 +2,14 @@
 
 Pure functions (no DB) shared by ``totals_projector`` and the backtest script.
 
-Each side's points come from scored/allowed per game: last season carries the
-weight, this season is ignored for its first two weeks and then blended in. A
-backtest over 2025-26 showed that baseline is unbiased over a season but drifts
-(about +8 points low in October, ~-10 in the playoffs), so the projector adds a
-shrunk average of the baseline's recent errors. Raw edge against the line had no
-predictive power there (hit rate ~49% at every edge size), so calls need a
-bigger edge and their confidence comes from measured results, not the edge.
+Each side's points come from scored/allowed per game. Once a team has a few
+games this season only this season counts; until then last season stands in,
+with this season's games blended in as they arrive. A backtest over 2025-26
+showed a baseline built on last season drifting (about +8 points low in
+October, ~-10 in the playoffs), so the projector adds a shrunk average of the
+baseline's recent errors. Raw edge against the line had no predictive power
+there (hit rate ~49% at every edge size), so calls need a bigger edge and their
+confidence comes from measured results, not the edge.
 """
 
 from __future__ import annotations
@@ -19,8 +20,22 @@ from typing import Iterable, List, NamedTuple, Optional, Sequence, Tuple
 from app.services.etl.nba._season import regular_season_start, season_start_year
 
 MIN_FORM_GAMES = 10
-CURRENT_SEASON_DELAY_DAYS = 14
-CURRENT_SEASON_PRIOR_GAMES = 20  # current-season weight = n / (n + this)
+
+
+class Blend(NamedTuple):
+    """How a team's scoring baseline mixes last season with this one."""
+
+    # This season counts from this many days after opening night.
+    delay_days: int
+    # Last season weighs as this many games: this season's weight is n / (n + it).
+    prior_games: int
+    # Last season is dropped once the team has this many games this season.
+    current_only_after: Optional[int]
+
+
+CURRENT_SEASON = Blend(delay_days=0, prior_games=20, current_only_after=8)
+# The policy until November 2026, kept for backtest comparisons.
+LAST_SEASON_WEIGHTED = Blend(delay_days=14, prior_games=20, current_only_after=None)
 
 # Self-correction: mean error of the baseline over the last BIAS_WINDOW games of
 # the season, shrunk toward zero by BIAS_SHRINK.
@@ -67,24 +82,29 @@ def scoring_averages(games, team_name: str) -> Tuple[float, float, int]:
 
 
 def blended_scoring(
-    prior_games, current_games, team_name: str
+    prior_games, current_games, team_name: str, blend: Blend = CURRENT_SEASON
 ) -> Optional[Tuple[float, float]]:
-    """Last season's scoring, shifted toward this season as its games pile up."""
+    """This season's scoring once there's enough of it, else last season's
+    shifted toward this one as its games pile up."""
     p_for, p_against, p_n = scoring_averages(prior_games, team_name)
     c_for, c_against, c_n = scoring_averages(current_games, team_name)
+    if blend.current_only_after is not None and c_n >= blend.current_only_after:
+        return c_for, c_against
     if p_n < MIN_FORM_GAMES:
         # No usable history: wait for this season.
         return (c_for, c_against) if c_n >= MIN_FORM_GAMES else None
-    w = c_n / (c_n + CURRENT_SEASON_PRIOR_GAMES)
+    w = c_n / (c_n + blend.prior_games)
     return (1 - w) * p_for + w * c_for, (1 - w) * p_against + w * c_against
 
 
-def windows(finals: Sequence, game_date: date) -> Tuple[List, List]:
+def windows(
+    finals: Sequence, game_date: date, blend: Blend = CURRENT_SEASON
+) -> Tuple[List, List]:
     """(last season's games, this season's games before game_date to use)."""
     year = season_start_year(game_date)
     opener = regular_season_start(year)
     prior = [g for g in finals if date(year - 1, 7, 1) <= g.game_date < opener]
-    use_current = game_date >= opener + timedelta(days=CURRENT_SEASON_DELAY_DAYS)
+    use_current = game_date >= opener + timedelta(days=blend.delay_days)
     current = (
         [g for g in finals if opener <= g.game_date < game_date] if use_current else []
     )
@@ -92,12 +112,16 @@ def windows(finals: Sequence, game_date: date) -> Tuple[List, List]:
 
 
 def baseline_scores(
-    finals: Sequence, home_team: str, away_team: str, game_date: date
+    finals: Sequence,
+    home_team: str,
+    away_team: str,
+    game_date: date,
+    blend: Blend = CURRENT_SEASON,
 ) -> Optional[Tuple[float, float]]:
     """(home, away) projected points for a game, or None without history."""
-    prior, current = windows(finals, game_date)
-    home = blended_scoring(prior, current, home_team)
-    away = blended_scoring(prior, current, away_team)
+    prior, current = windows(finals, game_date, blend)
+    home = blended_scoring(prior, current, home_team, blend)
+    away = blended_scoring(prior, current, away_team, blend)
     if home is None or away is None:
         return None
     return (home[0] + away[1]) / 2, (away[0] + home[1]) / 2
@@ -108,6 +132,7 @@ def recent_bias(
     game_date: date,
     window: int = BIAS_WINDOW,
     shrink: int = BIAS_SHRINK,
+    blend: Blend = CURRENT_SEASON,
 ) -> Tuple[float, int]:
     """(points to add, games used): shrunk mean of the baseline's recent errors.
 
@@ -122,7 +147,7 @@ def recent_bias(
     errors: List[float] = []
     for g in recent:
         scores = baseline_scores(
-            finals, g.home_team_name, g.away_team_name, g.game_date
+            finals, g.home_team_name, g.away_team_name, g.game_date, blend
         )
         if scores is not None:
             errors.append(g.home_score + g.away_score - sum(scores))

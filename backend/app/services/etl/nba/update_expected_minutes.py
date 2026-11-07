@@ -2,17 +2,16 @@
 
 Port of YetiBets/scripts/nba/update_expected_minutes.py. Pure-Python calc:
 weighted recency average + std-dev + starter/B2B/home/away splits over the
-last 30 games with minutes>0. Targets today's active players first, falls
-back to the whole roster if pred_today_active_players is empty.
+last 30 games with minutes>0 (this season's, see `_samples`). Targets today's
+active players first, falls back to the whole roster if
+pred_today_active_players is empty.
 """
 
 from __future__ import annotations
 
 import logging
 import math
-from datetime import datetime, timedelta
-
-from sqlalchemy import and_
+from datetime import date, datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import (
@@ -22,6 +21,7 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._samples import player_games
 
 logger = logging.getLogger(__name__)
 
@@ -30,19 +30,14 @@ logger = logging.getLogger(__name__)
 RECENCY_WEIGHTS = [0.25, 0.20, 0.15, 0.10, 0.10, 0.05, 0.05, 0.05, 0.025, 0.025]
 
 
-def _calc_for(db, player_id: int, player_name: str) -> dict | None:
-    games = (
-        db.query(RecentGames)
-        .filter(
-            and_(
-                RecentGames.player_id == player_id,
-                RecentGames.minutes.isnot(None),
-                RecentGames.minutes > 0,
-            )
-        )
-        .order_by(RecentGames.game_date.desc())
-        .limit(30)
-        .all()
+def _calc_for(db, player_id: int, player_name: str, today: date) -> dict | None:
+    games = player_games(
+        db,
+        player_id,
+        today,
+        30,
+        RecentGames.minutes.isnot(None),
+        RecentGames.minutes > 0,
     )
     if len(games) < 5:
         return None
@@ -125,7 +120,7 @@ def run() -> dict:
 
         for pid, pname in player_list:
             try:
-                metrics = _calc_for(db, pid, pname)
+                metrics = _calc_for(db, pid, pname, today)
                 if metrics is None:
                     skipped += 1
                     continue

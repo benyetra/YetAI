@@ -52,6 +52,11 @@ def regular_season_start(year: int) -> date:
     return REGULAR_SEASON_START.get(year) or _estimated_regular_season_start(year)
 
 
+def season_opener(d: date) -> date:
+    """Opening night of the season `d` belongs to."""
+    return regular_season_start(season_start_year(d))
+
+
 def is_offseason_date(d: date) -> bool:
     """True for Summer League / preseason dates (July 1 → day before opening night)."""
     offseason_start = date(d.year, *OFFSEASON_START_MONTH_DAY)
