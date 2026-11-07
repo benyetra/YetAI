@@ -343,9 +343,11 @@ def _run_qb_betting_core():
                         apply_published_yards_after_line,
                         predict_yards_ml_loaded,
                         production_method_for_published,
+                        qb_anchor_alpha,
                         qb_ml_enabled,
                         recenter_qb_interval,
                         reinject_pass_yds_line,
+                        resolve_qb_model_yards,
                     )
 
                     ml_yards = None
@@ -378,6 +380,13 @@ def _run_qb_betting_core():
                         pub_method,
                         existing_method=qb.prediction_method,
                     )
+                    model_yards = resolve_qb_model_yards(
+                        tier_yards=float(tier_raw),
+                        ml_yards=ml_yards,
+                    )
+                    fi["model_yards"] = float(model_yards)
+                    fi["anchor_alpha"] = float(qb_anchor_alpha())
+                    fi["market_line"] = float(ou_line)
                     if ml_yards is not None and pub_method != "gbm":
                         fi["ml_shadow_yards"] = float(ml_yards)
                     qb.feature_importance = fi

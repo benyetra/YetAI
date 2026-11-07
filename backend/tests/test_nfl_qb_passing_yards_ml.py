@@ -11,6 +11,7 @@ import pytest
 from app.services.etl.nfl import qb_passing_yards_ml as qbm
 from app.services.etl.nfl.qb_features import FEATURE_NAMES
 from app.services.etl.nfl.qb_passing_yards_ml import (
+    DEFAULT_QB_ANCHOR_ALPHA,
     PROMOTE_BASELINE_MODE,
     PROMOTE_FEATURE_NAMES,
     apply_published_yards_after_line,
@@ -18,7 +19,10 @@ from app.services.etl.nfl.qb_passing_yards_ml import (
     enrich_qb_prediction_for_write,
     predict_yards_ml,
     published_qb_yards,
+    qb_anchor_alpha,
     recenter_qb_interval,
+    resolve_qb_model_yards,
+    soft_anchor_qb_yards,
     train_promote_qb_yards_model,
     train_qb_yards_model,
 )
@@ -86,16 +90,64 @@ def test_enrich_shadow_stores_ml_when_disabled(monkeypatch):
     assert "features" in out["feature_importance"]
 
 
-def test_published_qb_yards_uses_line_when_real_and_ml_off():
+def test_qb_anchor_alpha_defaults_to_quarter(monkeypatch):
+    monkeypatch.delenv("NFL_QB_ANCHOR_ALPHA", raising=False)
+    assert DEFAULT_QB_ANCHOR_ALPHA == 0.25
+    assert qb_anchor_alpha() == 0.25
+
+
+def test_qb_anchor_alpha_clamps(monkeypatch):
+    monkeypatch.setenv("NFL_QB_ANCHOR_ALPHA", "1.5")
+    assert qb_anchor_alpha() == 1.0
+    monkeypatch.setenv("NFL_QB_ANCHOR_ALPHA", "-0.2")
+    assert qb_anchor_alpha() == 0.0
+
+
+def test_resolve_qb_model_yards_prefers_shadow():
+    assert resolve_qb_model_yards(tier_yards=245.0, ml_yards=252.0) == 252.0
+    assert resolve_qb_model_yards(tier_yards=245.0, ml_yards=None) == 245.0
+
+
+def test_soft_anchor_qb_yards_blend():
+    assert (
+        soft_anchor_qb_yards(model_yards=252.0, pass_yds_line=268.5, alpha=0.25)
+        == 264.4
+    )
+    assert (
+        soft_anchor_qb_yards(model_yards=252.0, pass_yds_line=268.5, alpha=1.0) == 252.0
+    )
+    assert (
+        soft_anchor_qb_yards(model_yards=252.0, pass_yds_line=268.5, alpha=0.0) == 268.5
+    )
+
+
+def test_published_qb_yards_soft_anchors_when_real_and_ml_off():
+    # α=0.25 → 0.25*252 + 0.75*268.5 = 264.375 → 264.4
     yards, method = published_qb_yards(
         tier_yards=245.0,
         pass_yds_line=268.5,
         line_is_real=True,
         ml_yards=252.0,
         ml_enabled=False,
+        anchor_alpha=0.25,
     )
-    assert yards == 268.5
-    assert method == "market_line"
+    assert yards == 264.4
+    assert method == "soft_anchor"
+    assert yards != 268.5
+
+
+def test_published_qb_yards_soft_anchor_falls_back_to_tier_model():
+    # No shadow ML → model = tier; α=0.25 → 0.25*245 + 0.75*268.5 = 262.625 → 262.6
+    yards, method = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=268.5,
+        line_is_real=True,
+        ml_yards=None,
+        ml_enabled=False,
+        anchor_alpha=0.25,
+    )
+    assert yards == 262.6
+    assert method == "soft_anchor"
 
 
 def test_published_qb_yards_keeps_tier_without_real_line():
@@ -122,15 +174,16 @@ def test_published_qb_yards_promotes_ml_when_enabled_and_line_real():
     assert method == "gbm"
 
 
-def test_apply_published_yards_after_line_uses_market_when_ml_off():
+def test_apply_published_yards_after_line_soft_anchors_when_ml_off():
     yards, method = apply_published_yards_after_line(
         tier_yards=245.0,
         ou_line=268.5,
         ml_yards=252.0,
         ml_enabled=False,
+        anchor_alpha=0.25,
     )
-    assert yards == 268.5
-    assert method == "market_line"
+    assert yards == 264.4
+    assert method == "soft_anchor"
 
 
 def test_apply_published_yards_after_line_promotes_gbm_when_ml_on():
@@ -144,8 +197,23 @@ def test_apply_published_yards_after_line_promotes_gbm_when_ml_on():
     assert method == "gbm"
 
 
-def test_enrich_publishes_market_line_when_ml_disabled(monkeypatch):
+def test_soft_anchor_edge_is_publish_minus_line():
+    publish, _ = published_qb_yards(
+        tier_yards=245.0,
+        pass_yds_line=268.5,
+        line_is_real=True,
+        ml_yards=252.0,
+        ml_enabled=False,
+        anchor_alpha=0.25,
+    )
+    edge = publish - 268.5
+    assert edge == pytest.approx(-4.1, abs=0.05)
+    assert edge != 0.0
+
+
+def test_enrich_publishes_soft_anchor_when_ml_disabled(monkeypatch):
     monkeypatch.delenv("NFL_QB_ML_ENABLED", raising=False)
+    monkeypatch.setenv("NFL_QB_ANCHOR_ALPHA", "0.25")
     with patch.object(qbm, "predict_yards_ml_loaded", return_value=252.0):
         out = enrich_qb_prediction_for_write(
             _tier_pred(),
@@ -157,11 +225,15 @@ def test_enrich_publishes_market_line_when_ml_disabled(monkeypatch):
                 "dynamic_tier_yards": 245.0,
             },
         )
-    assert out["predicted_passing_yards"] == 268.5
-    assert out["prediction_method"] == "market_line"
+    assert out["predicted_passing_yards"] == 264.4
+    assert out["prediction_method"] == "soft_anchor"
     assert out["feature_importance"]["ml_shadow_yards"] == 252.0
-    assert out["prediction_interval_lower"] == pytest.approx(236.5)
-    assert out["prediction_interval_upper"] == pytest.approx(300.5)
+    assert out["feature_importance"]["model_yards"] == 252.0
+    assert out["feature_importance"]["anchor_alpha"] == 0.25
+    assert out["predicted_passing_yards"] != 268.5
+    # Interval recentered on soft-anchor mean (width from tier 213–277 → half 32)
+    assert out["prediction_interval_lower"] == pytest.approx(232.4)
+    assert out["prediction_interval_upper"] == pytest.approx(296.4)
 
 
 def test_recenter_qb_interval_keeps_width_on_new_mean():

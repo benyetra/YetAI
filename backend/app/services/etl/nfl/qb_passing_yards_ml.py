@@ -95,6 +95,54 @@ def qb_ml_enabled() -> bool:
     return os.getenv("NFL_QB_ML_ENABLED", "").strip().lower() in _TRUTHY
 
 
+DEFAULT_QB_ANCHOR_ALPHA = 0.25
+
+
+def qb_anchor_alpha() -> float:
+    """Model weight α in soft-anchor publish: ``α·model + (1−α)·line``.
+
+    Default ``NFL_QB_ANCHOR_ALPHA=0.25`` (mostly market, small model signal)
+    until residual ML clears the line-vs-ML promote gate.
+    """
+    raw = os.getenv("NFL_QB_ANCHOR_ALPHA", str(DEFAULT_QB_ANCHOR_ALPHA)).strip()
+    try:
+        alpha = float(raw)
+    except (TypeError, ValueError):
+        return DEFAULT_QB_ANCHOR_ALPHA
+    if alpha != alpha:  # NaN
+        return DEFAULT_QB_ANCHOR_ALPHA
+    return min(1.0, max(0.0, alpha))
+
+
+def resolve_qb_model_yards(
+    *,
+    tier_yards: float,
+    ml_yards: float | None,
+) -> float:
+    """Independent model yards: prefer ML/shadow prediction, else dynamic tier."""
+    if ml_yards is not None:
+        return float(ml_yards)
+    return float(tier_yards)
+
+
+def soft_anchor_qb_yards(
+    *,
+    model_yards: float,
+    pass_yds_line: float,
+    alpha: float | None = None,
+) -> float:
+    """Blend model toward the market line: ``α·model + (1−α)·line``."""
+    a = DEFAULT_QB_ANCHOR_ALPHA if alpha is None else float(alpha)
+    a = min(1.0, max(0.0, a))
+    model = float(model_yards)
+    line = float(pass_yds_line)
+    if a >= 1.0 - 1e-12:
+        return round(model, 1)
+    if a <= 1e-12:
+        return round(line, 1)
+    return round(a * model + (1.0 - a) * line, 1)
+
+
 def _float_or(value: Any, default: float) -> float:
     if value is None:
         return default
@@ -241,12 +289,27 @@ def published_qb_yards(
     line_is_real: bool,
     ml_yards: float | None,
     ml_enabled: bool,
+    anchor_alpha: float | None = None,
 ) -> tuple[float, str]:
-    """Choose production yards: GBM (flag + real line), else market line, else tier."""
+    """Choose production yards: GBM (flag + real line), else soft-anchor, else tier.
+
+    When ML is off and a real prop line is attached, publish
+    ``α·model + (1−α)·line`` where model is ``ml_yards`` (shadow) else tier.
+    Never publish the raw market line as the projection (product honesty).
+    """
     if ml_enabled and ml_yards is not None and line_is_real:
         return float(ml_yards), "gbm"
     if line_is_real and pass_yds_line is not None:
-        return float(pass_yds_line), "market_line"
+        model = resolve_qb_model_yards(tier_yards=tier_yards, ml_yards=ml_yards)
+        alpha = qb_anchor_alpha() if anchor_alpha is None else float(anchor_alpha)
+        return (
+            soft_anchor_qb_yards(
+                model_yards=model,
+                pass_yds_line=float(pass_yds_line),
+                alpha=alpha,
+            ),
+            "soft_anchor",
+        )
     return float(tier_yards), "tier"
 
 
@@ -256,6 +319,7 @@ def apply_published_yards_after_line(
     ou_line: float,
     ml_yards: float | None,
     ml_enabled: bool,
+    anchor_alpha: float | None = None,
 ) -> tuple[float, str]:
     """Publish yards after a real prop line is attached (odds / qb_betting)."""
     return published_qb_yards(
@@ -264,6 +328,7 @@ def apply_published_yards_after_line(
         line_is_real=True,
         ml_yards=ml_yards,
         ml_enabled=bool(ml_enabled),
+        anchor_alpha=anchor_alpha,
     )
 
 
@@ -293,7 +358,10 @@ def production_method_for_published(
     existing_method: str | None = None,
 ) -> str:
     """Map published_qb_yards suffix to stored ``prediction_method``."""
+    if pub_method == "soft_anchor":
+        return "soft_anchor"
     if pub_method == "market_line":
+        # Legacy path; new publishes use soft_anchor when a real line is present.
         return "market_line"
     if pub_method == "gbm":
         if existing_method in {"gbm_qb_residual", "gbm_qb_yards"}:
@@ -913,7 +981,8 @@ def enrich_qb_prediction_for_write(
 ) -> dict[str, Any]:
     """
     Publish production yards: GBM when ``NFL_QB_ML_ENABLED=1`` and a real prop
-    line is present, else the real ``pass_yds_line``, else the dynamic tier.
+    line is present, else soft-anchor ``α·model + (1−α)·line`` (model =
+    shadow ML else tier), else the dynamic tier alone.
 
     ``context`` carries matchup/form features (rolling yards, opp pass D, home,
     rest, implied total, weather). See ``qb_features.build_qb_features``.
@@ -931,9 +1000,13 @@ def enrich_qb_prediction_for_write(
 
     ml_yards = predict_yards_ml_loaded(feats)
     ml_loaded = ml_yards is not None
+    model_yards = resolve_qb_model_yards(tier_yards=tier_yards, ml_yards=ml_yards)
+    alpha = qb_anchor_alpha()
 
     feature_importance: dict[str, Any] = {
         "tier_yards": tier_yards,
+        "model_yards": model_yards,
+        "anchor_alpha": alpha,
         "prediction_method": prediction.get("prediction_method"),
         "features": {k: feats.get(k) for k in FEATURE_NAMES},
     }
@@ -961,12 +1034,16 @@ def enrich_qb_prediction_for_write(
         line_is_real=line_is_real,
         ml_yards=ml_yards,
         ml_enabled=qb_ml_enabled(),
+        anchor_alpha=alpha,
     )
     version = resolve_qb_model_version(ml_loaded=ml_loaded)
     method = production_method_for_published(
         pub_method,
         existing_method=prediction.get("prediction_method") or "tier_table",
     )
+    feature_importance["prediction_method"] = method
+    if pub_method == "soft_anchor" and pass_yds_line is not None:
+        feature_importance["market_line"] = float(pass_yds_line)
 
     lower, upper = recenter_qb_interval(
         projected,
@@ -981,6 +1058,7 @@ def enrich_qb_prediction_for_write(
         "model_version": version,
         "feature_importance": feature_importance,
         "tier_yards": tier_yards,
+        "model_yards": model_yards,
         "ml_shadow_yards": ml_yards,
         "feature_context": feats,
         "prediction_interval_lower": round(float(lower), 1),

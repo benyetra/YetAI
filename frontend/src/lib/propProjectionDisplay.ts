@@ -347,14 +347,14 @@ export const NFL_QB_COLUMNS: ColumnDef[] = [
   OPPONENT_TEAM_COLUMN,
   {
     key: 'predicted_passing_yards',
-    label: 'Pass Yds',
+    label: 'Model',
     align: 'right',
     mono: true,
     format: (v) => formatNumber(v, 0),
   },
   {
     key: 'ou_line',
-    label: 'O/U Line',
+    label: 'Market',
     align: 'right',
     mono: true,
     format: (v) => formatNumber(v, 1),
