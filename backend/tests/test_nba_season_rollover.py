@@ -122,21 +122,20 @@ def _game(pid, d):
     return RecentGames(player_id=pid, game_date=d, opponent_team_id=1, minutes=30)
 
 
-def test_career_row_falls_back_to_last_season_early(db):
+def test_career_row_falls_back_to_last_season_with_no_games(db):
     opener = date(2026, 10, 20)
     db.add_all([_career(1, "2026-27", 1.0), _career(1, "2025-26", 90.0)])
-    db.add_all(_game(1, opener + timedelta(days=i)) for i in range(2))
     db.commit()
     row = _career_row_for(db, 1, "2026-27", "2025-26", opener, date(2026, 10, 25))
     assert row.season == "2025-26"
 
 
-def test_career_row_uses_current_season_after_sample(db):
+def test_career_row_uses_current_season_after_one_game(db):
     opener = date(2026, 10, 20)
     db.add_all([_career(1, "2026-27", 1.0), _career(1, "2025-26", 90.0)])
-    db.add_all(_game(1, opener + timedelta(days=2 * i)) for i in range(6))
+    db.add(_game(1, opener))
     db.commit()
-    row = _career_row_for(db, 1, "2026-27", "2025-26", opener, date(2026, 11, 5))
+    row = _career_row_for(db, 1, "2026-27", "2025-26", opener, date(2026, 10, 21))
     assert row.season == "2026-27"
 
 
@@ -158,7 +157,7 @@ def test_career_row_uses_whatever_exists(db):
 # --- team defense window ----------------------------------------------------
 
 
-def test_defense_stats_use_last_n_games_across_seasons(db, monkeypatch):
+def test_defense_stats_use_this_season_once_there_is_one_game(db, monkeypatch):
     celtics = 1610612738
     # 30 games last season (10 pts each), one game this season (40 pts).
     last_season = [date(2026, 1, 1) + timedelta(days=i) for i in range(30)]
@@ -186,8 +185,7 @@ def test_defense_stats_use_last_n_games_across_seasons(db, monkeypatch):
 
     assert result["teams_updated"] == 1
     row = db.query(TeamDefenseStats).filter_by(team_id=celtics).one()
-    # 25-game window = 1 game at 40 + 24 games at 10 → 11.2, not 40.
-    assert row.points_allowed_per_game == pytest.approx((40 + 24 * 10) / 25, abs=0.1)
+    assert row.points_allowed_per_game == 40
 
 
 # --- update_team_roster -------------------------------------------------------
