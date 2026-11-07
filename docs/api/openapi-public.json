@@ -632,7 +632,7 @@
           "predictions"
         ],
         "summary": "Nba Predictions",
-        "description": "Recent NBA props: game totals O/U plus points, assists, rebounds, etc.",
+        "description": "NBA: game totals O/U and spreads, plus points, assists, rebounds, etc.\n\nPlayer props return up to ``prop_limit`` rows per stat for the requested\ndate, ordered by this season's minutes per game.",
         "operationId": "nba_predictions_api_v1_predictions_nba_get",
         "security": [
           {
@@ -678,6 +678,20 @@
               "default": 50,
               "title": "Limit"
             }
+          },
+          {
+            "name": "prop_limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "description": "Max player prop rows per stat; ranked by season minutes per game.",
+              "default": 200,
+              "title": "Prop Limit"
+            },
+            "description": "Max player prop rows per stat; ranked by season minutes per game."
           }
         ],
         "responses": {

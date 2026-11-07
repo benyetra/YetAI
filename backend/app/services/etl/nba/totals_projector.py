@@ -24,10 +24,11 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._samples import MIN_CURRENT_SEASON_GAMES, player_games
+from app.services.etl.nba._samples import player_games
 from app.services.etl.nba._season import season_opener, season_start_year
 from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
     CALIBRATION_START,
+    CURRENT_SEASON,
     MIN_FORM_GAMES,
     Final,
     baseline_scores,
@@ -290,9 +291,9 @@ def calculate_injury_impact(
     Only counts star players explicitly listed in STAR_PLAYER_IMPACTS dictionary.
     This prevents noise from role players and bench players.
 
-    The baseline is this season's scoring, so a star's impact is scaled by the
-    share of the team's games he has played: a season-long absence is already
-    in the numbers.
+    Once the baseline is this season's scoring alone, a star's impact is scaled
+    by the share of the team's games he has played: a season-long absence is
+    already in the numbers.
     """
     team_id = get_team_id_from_name(team_name)
     if not team_id:
@@ -337,7 +338,7 @@ def calculate_injury_impact(
                 probability = 0.25
 
             share = 1.0
-            if team_games >= MIN_CURRENT_SEASON_GAMES:
+            if team_games >= (CURRENT_SEASON.current_only_after or float("inf")):
                 played = (
                     db.query(RecentGames)
                     .filter(

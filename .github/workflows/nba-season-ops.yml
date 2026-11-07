@@ -148,7 +148,7 @@ jobs:
         run: |
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
-          PYTHONPATH=. python3 scripts/nba_props_audit.py --teams 30 --exposure
+          PYTHONPATH=. python3 scripts/nba_props_audit.py --teams 30
 
       - name: Check today's stored projections (read-only)
         if: inputs.action == 'slate-check'

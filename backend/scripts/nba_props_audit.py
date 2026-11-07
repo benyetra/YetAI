@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import argparse
 import statistics as st
-from collections import Counter, defaultdict
+from collections import defaultdict
 from datetime import date, timedelta
 from typing import NamedTuple, Optional
 
@@ -34,7 +34,6 @@ class Graded(NamedTuple):
     actual: float
     date: date
     player_id: int
-    row_id: int
 
 
 def pick_stats(rows, min_edge):
@@ -71,7 +70,6 @@ def load(db, stat, since):
                 float(actuals[key]),
                 r.date,
                 r.player_id,
-                r.id,
             )
     return list(seen.values())
 
@@ -165,33 +163,12 @@ def team_report(data, team_of, top):
         )
 
 
-def exposure_report(data, team_of, slots=50):
-    """Which teams filled the newest-`slots` rows per date (the old API page)."""
-    opener = season_opener(date.today())
-    by_date = defaultdict(list)
-    for r in data:
-        if r.date >= opener:
-            by_date[r.date].append(r)
-    shown, total = Counter(), Counter()
-    for rows in by_date.values():
-        rows.sort(key=lambda r: r.row_id, reverse=True)
-        shown.update(team_of.get(r.player_id, "?") for r in rows[:slots])
-        total.update(team_of.get(r.player_id, "?") for r in rows)
-    n_shown, n_total = sum(shown.values()), sum(total.values())
-    print(f"  newest-{slots} rows per date over {len(by_date)} dates:")
-    for team, n in shown.most_common(8):
-        print(
-            f"    {team:24s} {n / n_shown:5.1%} of shown rows vs {total[team] / n_total:5.1%} of all rows"
-        )
-
-
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--days", type=int, default=400)
     ap.add_argument(
         "--teams", type=int, default=5, help="teams to show at each end of the bias"
     )
-    ap.add_argument("--exposure", action="store_true")
     args = ap.parse_args()
     since = date.today() - timedelta(days=args.days)
     db = SessionLocal()
@@ -204,8 +181,6 @@ def main() -> None:
             data = load(db, stat, since)
             report(stat, data)
             team_report(data, team_of, args.teams)
-            if args.exposure:
-                exposure_report(data, team_of)
     finally:
         db.close()
 
