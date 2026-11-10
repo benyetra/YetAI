@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import RecentGames, TeamRoster
@@ -25,7 +25,7 @@ from app.services.etl.nba._api_sports import (
     expand_player_name,
     resolve_nba_player_id,
 )
-from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._espn import EASTERN, now_eastern
 from app.services.etl.nba._season import is_offseason_date
 
 logger = logging.getLogger(__name__)
@@ -95,6 +95,26 @@ def stat_line_fields(ps: dict, home_api_id, away_api_id) -> dict:
     }
 
 
+def game_eastern_date(game: dict, fallback: date) -> date:
+    """Eastern calendar date of a game's tip-off.
+
+    API-Sports filters ``games?date=`` by UTC date, so a 7 pm ET tip-off (00:00
+    UTC) comes back under the *next* day. Filing it under the queried date put
+    nearly every evening game a day late, and the prop generators (which read
+    history with ``game_date < today``) then skipped last night's games.
+    """
+    start = (game.get("date") or {}).get("start")
+    if not start:
+        return fallback
+    try:
+        tipoff = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+    except ValueError:
+        return fallback
+    if tipoff.tzinfo is None:
+        tipoff = tipoff.replace(tzinfo=timezone.utc)
+    return tipoff.astimezone(EASTERN).date()
+
+
 def _process_day(target_date: date) -> tuple[int, int]:
     """Fetch games for a date, upsert stat lines. Returns (added, updated)."""
     if is_offseason_date(target_date):
@@ -127,11 +147,17 @@ def _process_day(target_date: date) -> tuple[int, int]:
             if not is_nba_league_game(game):
                 continue
             game_id = game["id"]
+            game_day = game_eastern_date(game, target_date)
             home_api_id = (game.get("teams", {}).get("home") or {}).get("id")
             away_api_id = (game.get("teams", {}).get("visitors") or {}).get("id")
 
             stats_data = api_request("players/statistics", params={"game": game_id})
             if not stats_data or not stats_data.get("response"):
+                logger.warning(
+                    "update_recent_games: no box score for game %s (%s)",
+                    game_id,
+                    game_day,
+                )
                 continue
 
             for ps in stats_data["response"]:
@@ -156,7 +182,7 @@ def _process_day(target_date: date) -> tuple[int, int]:
 
                     existing = (
                         db.query(RecentGames)
-                        .filter_by(player_id=nba_player_id, game_date=target_date)
+                        .filter_by(player_id=nba_player_id, game_date=game_day)
                         .first()
                     )
                     if existing:
@@ -167,7 +193,7 @@ def _process_day(target_date: date) -> tuple[int, int]:
                         db.add(
                             RecentGames(
                                 player_id=nba_player_id,
-                                game_date=target_date,
+                                game_date=game_day,
                                 **stats,
                             )
                         )
