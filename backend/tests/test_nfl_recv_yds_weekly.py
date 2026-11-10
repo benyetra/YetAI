@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from app.services.etl.nfl.recv_yds_weekly import _run_core
 
 
@@ -62,3 +64,13 @@ def test_run_core_upserts_lined_soft_anchor():
     assert session.committed is True
     assert session.added[0].prediction_method == "soft_anchor"
     assert session.added[0].predicted_receiving_yards != session.added[0].ou_line
+
+
+def test_run_does_not_call_session_proxy_as_factory():
+    """Guard against TypeError: '_SessionProxy' object is not callable."""
+    root = Path(__file__).resolve().parents[1]
+    weekly = (root / "app/services/etl/nfl/recv_yds_weekly.py").read_text()
+    actuals = (root / "app/services/etl/nfl/collect_recv_yds_actuals.py").read_text()
+    assert "db_session()," not in weekly
+    assert "db_session()," not in actuals
+    assert "db_session().commit()" not in actuals

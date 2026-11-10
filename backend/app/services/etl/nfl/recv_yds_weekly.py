@@ -44,8 +44,9 @@ def run() -> dict:
 
     init_session()
     try:
+        # db_session is a _SessionProxy singleton, not a factory.
         return _run_core(
-            db_session(),
+            db_session,
             fetch_lines=fetch_reception_yds_lines,
             load_priors=load_usage_priors_for_names,
         )
