@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from datetime import datetime, timedelta
 
 from app.core.database import SessionLocal
@@ -382,15 +383,34 @@ def print_accuracy_report(report):
     print("\n" + "=" * 80)
 
 
-def run(backfill_days: int = 7) -> dict:
+REPORT_DAYS = 7
+DEFAULT_BACKFILL_DAYS = 2
+
+
+def _backfill_days() -> int:
+    """Days re-graded each night (yesterday included). Grading costs about five
+    minutes per day, and older days are almost all already-graded rows, so the
+    default is short; ``NBA_ACCURACY_BACKFILL_DAYS`` widens it for a catch-up."""
+    raw = os.getenv("NBA_ACCURACY_BACKFILL_DAYS", "").strip()
+    try:
+        return max(1, int(raw)) if raw else DEFAULT_BACKFILL_DAYS
+    except ValueError:
+        logger.warning("Bad NBA_ACCURACY_BACKFILL_DAYS=%r; using default", raw)
+        return DEFAULT_BACKFILL_DAYS
+
+
+def run(backfill_days: int | None = None) -> dict:
     global db
+    if backfill_days is None:
+        backfill_days = _backfill_days()
     db = SessionLocal()
     try:
         yesterday = _today() - timedelta(days=1)
         calculate_accuracy_for_date(yesterday)
         for days_ago in range(2, backfill_days + 1):
             calculate_accuracy_for_date(_today() - timedelta(days=days_ago))
-        report = generate_accuracy_report(days_back=backfill_days)
+        # The report reads stored rows, so it keeps its own 7-day window.
+        report = generate_accuracy_report(days_back=max(REPORT_DAYS, backfill_days))
         return {"status": "ok", "yesterday": yesterday.isoformat(), "report": report}
     finally:
         db.close()
