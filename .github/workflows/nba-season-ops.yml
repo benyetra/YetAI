@@ -6,6 +6,9 @@ name: NBA Season Ops
 #   (dry run unless apply is checked).
 # refresh-roster-projections: update_team_roster + totals/spread projectors run
 #   from the runner against prod (no worker deploy needed).
+# repair-recent-game-dates: re-file pred_recent_games under each game's Eastern
+#   date (backs up, deletes, re-pulls per season; dry run unless apply is
+#   checked). Set `seasons` (league start years, e.g. 2026 or 2024,2025,2026).
 # Same secrets/services as enqueue-wnba-pipeline.yml and nba-train-props.yml.
 
 on:
@@ -25,6 +28,7 @@ on:
           - audit-props
           - slate-check
           - props-experiment
+          - repair-recent-game-dates
         default: verify
       start:
         description: Backfill start (YYYY-MM-DD)
@@ -38,8 +42,12 @@ on:
         description: Prop stat (props-experiment only)
         required: false
         default: points
+      seasons:
+        description: League start years (repair-recent-game-dates only, e.g. 2026 or 2025,2026)
+        required: false
+        default: "2026"
       apply:
-        description: Write changes (backfill only; otherwise dry run)
+        description: Write changes (backfill and repair only; otherwise dry run)
         required: false
         type: boolean
         default: false
@@ -219,6 +227,20 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           PYTHONPATH=. python3 scripts/nba_backfill_spread_actuals.py --from "$START" --to "$END" $APPLY
+
+      - name: Repair recent-game dates
+        if: inputs.action == 'repair-recent-game-dates'
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
+          DEBUG: "false"
+          SEASONS: ${{ inputs.seasons }}
+          APPLY: ${{ inputs.apply && '--apply' || '' }}
+        run: |
+          set -euo pipefail
+          export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
+          export NBA_API_KEY="$(python3 scripts/resolve_railway_variable.py NBA_API_KEY)"
+          PYTHONPATH=. python3 scripts/nba_recent_games_date_repair.py --seasons "$SEASONS" $APPLY
 
       - name: Upload verify log
         if: inputs.action == 'verify'

@@ -146,6 +146,20 @@ test suite checks every pin against nba_api).
 tie-breaker for team assignment (trades, signings) and refuses to replace
 the table with an incomplete roster (< 300 players or < 25 teams).
 
+## Game dates in `pred_recent_games`
+
+API-Sports filters `games?date=` by UTC, so a 7 pm ET tip-off comes back under the
+next day. Before #173 every box score was filed under the queried (UTC) date: evening
+games sat a day late, nightly `store_actuals` matched few projections, and the prop
+generators (which read `game_date < today`) skipped the previous night's games. The
+ingest now files each game under its Eastern tip-off date.
+
+Rows written before the fix keep their shifted dates. Repair a season with the
+**NBA Season Ops** action `repair-recent-game-dates` (inputs `seasons`, `apply`; dry run
+unless `apply` is checked), or `scripts/nba_recent_games_date_repair.py`. It copies the
+season's rows to `pred_recent_games_bak_<year>`, deletes them and re-pulls every game
+day (~1,500 API-Sports calls per full season). Retrain the prop models afterwards.
+
 ## Honest evaluation and the daily loop
 
 - **Holdout is chronological.** Prop and spread models train on the first 80% of
