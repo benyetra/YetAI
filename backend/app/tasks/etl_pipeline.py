@@ -712,6 +712,20 @@ def nfl_kickers():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.recv_yds_weekly")
+def nfl_recv_yds_weekly():
+    from app.services.etl.nfl.recv_yds_weekly import run
+
+    return run()
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.nfl.collect_recv_yds_actuals")
+def nfl_collect_recv_yds_actuals():
+    from app.services.etl.nfl.collect_recv_yds_actuals import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nfl.update_game_lines")
 def nfl_update_game_lines():
     from app.services.etl.nfl.update_game_lines import run
@@ -785,6 +799,7 @@ NFL_PHASES = [
             nfl_collect_kicker_actuals,
             nfl_store_game_actuals,
             nfl_anytime_td_actuals,
+            nfl_collect_recv_yds_actuals,
         ],
     ),
     (
@@ -799,6 +814,7 @@ NFL_PHASES = [
             nfl_yetiwatch,
             nfl_qb_weekly,
             nfl_kickers,
+            nfl_recv_yds_weekly,
         ],
     ),
     (
@@ -838,6 +854,7 @@ NFL_GAMEDAY_AVAILABILITY_PHASES = [
         [
             nfl_qb_weekly,
             nfl_kickers,
+            nfl_recv_yds_weekly,
         ],
     ),
     (

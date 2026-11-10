@@ -702,6 +702,88 @@ class NFLAnytimeTDActuals(Base):
         )
 
 
+class RecvYdsPredictions(Base):
+    """Weekly receiving-yards board rows (lined RB/WR/TE only)."""
+
+    __tablename__ = "pred_recv_yds_predictions"
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False)
+    player_id = Column(String(20), nullable=False)
+    player_name = Column(String(100), nullable=False)
+    position = Column(String(10), nullable=False)  # RB / WR / TE
+    team_name = Column(String(100), nullable=False)
+    opponent_team_name = Column(String(100), nullable=False)
+
+    predicted_receiving_yards = Column(Float, nullable=False)  # soft-anchored publish
+    model_yards = Column(Float, nullable=True)  # pre-anchor non-ML yards
+    ou_line = Column(Float, nullable=True)
+    over_odds = Column(Integer, nullable=True)
+    under_odds = Column(Integer, nullable=True)
+    best_over_book = Column(String(50), nullable=True)
+    best_under_book = Column(String(50), nullable=True)
+    edge = Column(Float, nullable=True)  # publish − line
+    edge_percentage = Column(Float, nullable=True)
+    betting_recommendation = Column(String(20), nullable=True)  # OVER/UNDER/PASS
+    bet_size = Column(String(10), nullable=True)
+    recommendation_reason = Column(String(200), nullable=True)
+    confidence_score = Column(Float, nullable=True)
+    prediction_method = Column(String(50), nullable=True)  # soft_anchor
+    features = Column(JSON, nullable=True)
+    model_version = Column(String(64), nullable=True)
+    prediction_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "season",
+            "week",
+            "player_id",
+            name="unique_nfl_recv_yds_prediction",
+        ),
+        Index("idx_nfl_recv_yds_predictions_date", "game_date"),
+        Index("idx_nfl_recv_yds_predictions_edge", "edge"),
+        Index("idx_nfl_recv_yds_predictions_pos", "position"),
+    )
+
+
+class RecvYdsActuals(Base):
+    """Post-week actual receiving yards for grading."""
+
+    __tablename__ = "pred_recv_yds_actuals"
+
+    id = Column(Integer, primary_key=True)
+    season = Column(Integer, nullable=False)
+    week = Column(Integer, nullable=False)
+    game_date = Column(Date, nullable=False)
+    player_id = Column(String(20), nullable=False)
+    player_name = Column(String(100), nullable=False)
+    position = Column(String(10), nullable=False)
+    team_name = Column(String(100), nullable=False)
+    opponent_team_name = Column(String(100), nullable=False)
+    actual_receiving_yards = Column(Float, nullable=False)
+    actual_receptions = Column(Integer, nullable=True)
+    actual_targets = Column(Integer, nullable=True)
+    predicted_receiving_yards = Column(Float, nullable=True)
+    ou_line = Column(Float, nullable=True)
+    prediction_error = Column(Float, nullable=True)
+    hit_over_under = Column(Boolean, nullable=True)
+    prediction_method = Column(String(50), nullable=True)
+    data_collection_date = Column(DateTime, nullable=False, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "season",
+            "week",
+            "player_id",
+            name="unique_nfl_recv_yds_actual",
+        ),
+        Index("idx_nfl_recv_yds_actuals_date", "game_date"),
+    )
+
+
 class StrikeoutProjections(Base):
     __tablename__ = "pred_strikeout_projections"
     id = Column(Integer, primary_key=True)
