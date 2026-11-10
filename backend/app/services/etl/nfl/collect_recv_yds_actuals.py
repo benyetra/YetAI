@@ -104,10 +104,13 @@ def run() -> dict:
         season = int(get_nfl_season())
         # Grade the previous completed week by default (mirror QB actuals cadence).
         week = max(1, int(get_current_nfl_week()) - 1)
+        # The loader also returns last season (usage priors); grade only
+        # against this season's game.
         weekly = [
             r
             for r in load_weekly_receiver_rows(season)
-            if int(r.get("week") or 0) == week
+            if int(r.get("season") or season) == season
+            and int(r.get("week") or 0) == week
         ]
         # db_session is a _SessionProxy singleton, not a factory.
         n = collect_for_week(db_session, season=season, week=week, weekly_stats=weekly)

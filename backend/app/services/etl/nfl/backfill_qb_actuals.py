@@ -15,6 +15,7 @@ import pandas as pd
 
 from app.models.predictions_models import QBActuals, QBPredictions
 from app.services.etl.nfl._db import db_session
+from app.services.etl.nfl.nflverse_weekly import load_weekly_frame
 from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
 
 
@@ -117,7 +118,7 @@ def _weekly_qb_rows(
 ) -> list[dict[str, Any]]:
     if weekly is None:
         try:
-            weekly = nfl.import_weekly_data([season])
+            weekly = load_weekly_frame(season)
         except Exception:
             weekly = None
     if weekly is None or getattr(weekly, "empty", True):
@@ -343,7 +344,7 @@ def backfill_qb_actuals(
         weekly = None
         schedules = None
         try:
-            weekly = nfl.import_weekly_data([season])
+            weekly = load_weekly_frame(season)
         except Exception as exc:
             print(f"weekly unavailable for {season}: {exc}; will use PBP fallback")
             weekly = None

@@ -42,15 +42,21 @@ def expected_targets(
 def model_receiving_yards(
     *,
     expected_targets: float,
-    ypr: float,
+    yards_per_target: float,
     depth_adj: float = 1.0,
     pace_adj: float = 1.0,
     matchup_adj: float = 1.0,
 ) -> float:
-    """``targets × YPR × depth/pace/matchup`` — independent of the O/U line."""
+    """``targets × yards per target × depth/pace/matchup`` — independent of
+    the O/U line.
+
+    Yards per target is ``catch rate × yards per reception``. Multiplying
+    targets by yards per *reception* alone counts every incompletion as a
+    catch and over-projects by roughly a third for wide receivers.
+    """
     return (
         float(expected_targets)
-        * float(ypr)
+        * float(yards_per_target)
         * float(depth_adj)
         * float(pace_adj)
         * float(matchup_adj)

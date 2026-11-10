@@ -381,3 +381,66 @@ def test_run_clears_unmatched_player():
     row = um.call_args[0][2][0]
     assert row["market_odds"] is None
     assert row["edge"] is None
+
+
+def _scheduled_run(pred, odds):
+    """A pipeline run (no explicit week) with the calendar on a 'Tuesday'."""
+    from datetime import datetime
+
+    mock_db = MagicMock()
+    mock_db.query.return_value.filter_by.return_value.all.return_value = [pred]
+    with (
+        patch(
+            "app.services.etl.nfl.anytime_td_betting.SessionLocal", return_value=mock_db
+        ),
+        patch(
+            "app.services.etl.nfl.anytime_td_betting.fetch_anytime_td_odds",
+            return_value=odds,
+        ),
+        patch(
+            "app.services.etl.nfl.anytime_td_betting.now_eastern_naive",
+            return_value=datetime(2025, 10, 7, 11, 0),
+        ),
+        patch("app.services.etl.nfl.anytime_td_betting.upsert_many") as um,
+    ):
+        um.return_value = 1
+        return run(season=2025), um
+
+
+def test_scheduled_run_leaves_played_games_with_their_closing_odds():
+    # Sunday's game is over; the feed now carries next week's quote for Kelce.
+    pred = _mock_pred(market_odds=-120, edge=0.04, recommendation="OVER")
+    result, um = _scheduled_run(
+        pred, {"Travis Kelce": {"yes": 150, "no": -190, "book": "pinnacle"}}
+    )
+    assert result["frozen"] == 1
+    assert result["matched"] == 0
+    um.assert_not_called()
+
+
+def test_scheduled_run_keeps_odds_when_market_closes_on_game_day():
+    from datetime import date
+
+    pred = _mock_pred(
+        game_date=date(2025, 10, 7),
+        market_odds=-120,
+        market_implied_prob=0.52,
+        edge=0.04,
+        recommendation="OVER",
+    )
+    result, um = _scheduled_run(pred, {"Someone Else": {"yes": 200, "no": -260}})
+    assert result["frozen"] == 1
+    assert result["stale_cleared"] == 0
+    um.assert_not_called()
+
+
+def test_scheduled_run_still_updates_upcoming_games():
+    from datetime import date
+
+    pred = _mock_pred(game_date=date(2025, 10, 12))
+    result, um = _scheduled_run(
+        pred, {"Travis Kelce": {"yes": -110, "no": -110, "book": "pinnacle"}}
+    )
+    assert result["matched"] == 1
+    assert result["frozen"] == 0
+    um.assert_called_once()

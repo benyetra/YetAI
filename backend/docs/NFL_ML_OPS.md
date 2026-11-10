@@ -1,12 +1,58 @@
 # NFL ML operations
 
-## Receiving yards (v1)
+## Data source and the frozen week (all NFL boards)
 
-Non-ML only: `targets × YPR` + depth/pace/matchup, then soft-anchor publish
+- **nflverse weekly stats.** `nflverse_weekly.load_weekly_frame` tries the
+  legacy `player_stats_{season}` file, then `stats_player_week_{season}`
+  (nflverse stopped publishing the legacy file after 2024). Before this, every
+  2025+ caller of `import_weekly_data` got a 404 and fell back to defaults:
+  the QB "dynamic" tier was the static name table, and the shadow GBM saw
+  tier-filled form features it was never trained on.
+- **A kicked-off game is final.** The pipeline runs daily and
+  `get_current_nfl_week` rolls over on Thursday, so Monday-Wednesday runs
+  still name the week just played while the odds feed only lists next week.
+  `nfl_common.has_kicked_off` gates QB (`qb_dynamic`, `qb_betting`), receiving
+  yards (schedule filter), anytime TD (projector + betting) and kickers (next
+  game only): rows keep the numbers, closing line and pick they had at
+  kickoff. Without it, next week's line was written onto last week's row and
+  graded as its O/U. Runs with an explicit `week=` are not frozen.
+- **Lines.** `prop_lines.best_lines`: the line the edge is measured against is
+  the middle book's (`consensus`); `best_over_book` is the lowest line,
+  `best_under_book` the highest. Names match on `player_names.player_name_key`
+  (punctuation, accents and Jr./III ignored), never by substring.
+
+## Receiving yards (v2)
+
+Non-ML: `expected targets × yards per target`, then soft-anchor publish
 `α·model + (1−α)·line` with `NFL_RECV_ANCHOR_ALPHA` (default **0.25**). Lined
-RB/WR/TE only; fail-closed Odds attach. **No** residual ML in v1 — do not set
-`NFL_RECV_ML_ENABLED` (flag does not exist yet). Residual ML and a line-vs-ML
-promote gate are deferred (mirror QB Phase C / `NFL_QB_ML_ENABLED` later).
+RB/WR/TE only; fail-closed Odds attach. **No** residual ML — do not set
+`NFL_RECV_ML_ENABLED` (flag does not exist yet).
+
+`recv_yds_usage` builds the inputs from each player's game log, this season
+plus last season at 0.35 weight, with a 6-game recency half-life:
+
+| Input | How |
+|-------|-----|
+| `target_share` | weighted targets / weighted team pass attempts |
+| `team_pass_attempts` | team's last 6 games, blended with 3 league-average games (32.5) |
+| `yards_per_target` | weighted yards / targets, shrunk toward the position average (WR 8.0, TE 7.3, RB 5.9) with 40 pseudo-targets |
+
+v1 read all three from the single most recent game and multiplied targets by
+yards per **reception** (every incompletion counted as a catch). Walk-forward
+on nflverse 2025 + 2026 weeks 2-18, players averaging 4+ targets (3+ for RBs),
+2,641 player-games:
+
+| Model | 2025 MAE | 2026 MAE | Bias |
+|-------|---------:|---------:|-----:|
+| v1 (last game, targets × YPR) | 43.2 | 44.6 | +28 |
+| Season average yards | 24.8 | 26.8 | +2 to +3 |
+| **v2** | **23.4** | **24.2** | +1 to +2 |
+
+There are no historical reception-yards lines in the repo, so this is error
+against actual yards, not a line-vs-model result. Opponent and game date come
+from this week's nflverse schedule (v1 showed last week's opponent).
+Confidence is sample-based (0.50 + 0.045 per current-season game, capped at
+five games), so picks need five games in the current role.
 
 ## QB passing yards (Phase 4.3+)
 
@@ -15,6 +61,19 @@ promote gate are deferred (mirror QB Phase C / `NFL_QB_ML_ENABLED` later).
 | Soft-anchor (default) | `NFL_QB_ANCHOR_ALPHA` (default `0.25`) | When a real line is attached: `α·model + (1−α)·line` where model = `ml_shadow_yards` else tier; else dynamic tier | `soft_anchor` or `tier-v3` |
 | ML shadow | — | Soft-anchor publish; GBM stored as `ml_shadow_yards` | `soft_anchor` / `tier-v3`; `feature_importance.ml_shadow_yards` |
 | ML promote | `NFL_QB_ML_ENABLED=1` | Residual GBM when `line_is_real`; else soft-anchor / tier | `gbm-qb-residual-YYYYMMDD` |
+
+**Dynamic tier:** `qb_features.dynamic_tier_from_history` shrinks the name
+table toward the QB's own starts: `(4·tier + Σ w·yards) / (4 + Σ w)` over his
+last 17 starts (15+ attempts; this season w = 1, last season w = 0.3), times a
+quarter of the opponent's pass-yards-allowed gap to the league. Walk-forward on
+nflverse starters, static table → old 60/40 last-5 blend → this:
+2025 **59.4 → 58.6 → 56.5** MAE, 2026 (weeks 1-9) **59.0 → 58.2 → 56.7**, bias
++9.5 → +7.7 → +4.1 yards. Against the committed 2025 lines the tier alone still
+loses to the line (55.5 vs 53.5 MAE) and its edge has no measurable signal,
+which is why the publish stays soft-anchored at α = 0.25. The table's tiers
+were calibrated in Aug 2026, so the 2025 numbers flatter the static tier. Both
+dataset builders use the same function; re-run **NFL Prod QB Eval** before
+relying on a model trained with the old 60/40 tier as its baseline.
 
 **Tier v3:** No hash-based week noise. Uncertainty is
 `prediction_interval_lower/upper` + confidence. Opt-in legacy noise with
@@ -299,6 +358,14 @@ Artifacts under `backend/models/nfl/` for shadow inference:
 `qb_passing_yards.pkl` (residual), `qb_pass_yds_ou.pkl`,
 `qb_prod_retrain_report.json`, `qb_prod_backtest_report.json`.
 ## Kicker blend (Phase 4.4+)
+
+Each kicker has one `pred_kicker_predictions` row per game, dated with the real
+Eastern kickoff and refreshed until then. The projected game is the team's next
+game that has not kicked off (`kickers.upcoming_events`); roof and surface come
+from `venues.py`. Earlier rows were dated "run time + 1 day", one per run, and
+from Sunday night to Wednesday the projected game was the one just played.
+`collect_kicker_actuals._find_prediction` grades a game against the row dated
+for it, or for legacy rows the latest one written before it.
 
 | Variable | Purpose |
 |----------|---------|

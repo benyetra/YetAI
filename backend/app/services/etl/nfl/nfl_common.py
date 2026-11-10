@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 DEFAULT_NFL_SEASON = 2026
 
@@ -51,3 +52,31 @@ def get_current_nfl_week(
     days_since_start = (ref - first_thursday).days
     current_week = (days_since_start // 7) + 1
     return min(max(current_week, 1), 18)
+
+
+EASTERN = ZoneInfo("America/New_York")
+
+
+def now_eastern_naive() -> datetime:
+    """Current wall-clock time in US Eastern, without tzinfo (nflverse kickoffs
+    and the stored ``game_date`` columns are naive Eastern times)."""
+    return datetime.now(EASTERN).replace(tzinfo=None)
+
+
+def has_kicked_off(
+    kickoff: datetime | date | None, *, now: datetime | None = None
+) -> bool:
+    """True once a game's scheduled kickoff has passed.
+
+    The weekly pipeline runs every day, and the NFL week only rolls over on
+    Thursday, so Monday-Wednesday runs still point at games already played.
+    Their rows must stay as they were at kickoff: those are the numbers (and
+    the closing line) the pick is graded against. Unknown kickoff -> False.
+    A bare date counts as kicked off from the following day.
+    """
+    if kickoff is None:
+        return False
+    current = now if now is not None else now_eastern_naive()
+    if isinstance(kickoff, datetime):
+        return kickoff.replace(tzinfo=None) <= current
+    return kickoff < current.date()

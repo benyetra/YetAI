@@ -45,12 +45,18 @@ def test_expected_targets_never_invents_from_missing_usage():
 def test_model_receiving_yards_multiplicative():
     yards = model_receiving_yards(
         expected_targets=8.0,
-        ypr=12.5,
+        yards_per_target=8.0,
         depth_adj=1.05,
         pace_adj=0.95,
         matchup_adj=1.1,
     )
-    assert abs(yards - (8.0 * 12.5 * 1.05 * 0.95 * 1.1)) < 1e-9
+    assert abs(yards - (8.0 * 8.0 * 1.05 * 0.95 * 1.1)) < 1e-9
+
+
+def test_model_receiving_yards_uses_yards_per_target_not_per_reception():
+    # 8 targets, 5 catches, 60 yards: 12.0 yards per reception, 7.5 per target.
+    # Targets x yards-per-reception would say 96 for a 60-yard day.
+    assert model_receiving_yards(expected_targets=8.0, yards_per_target=7.5) == 60.0
 
 
 def test_published_recv_yards_soft_anchors_when_line_and_model():

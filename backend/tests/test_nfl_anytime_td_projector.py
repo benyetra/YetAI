@@ -253,3 +253,38 @@ def test_try_build_feature_rows_delegates_to_nflverse_builder():
         rows = _try_build_feature_rows(2025, 5)
     assert rows == sample
     builder.assert_called_once_with(2025, 5)
+
+
+def test_scheduled_run_does_not_rebuild_or_purge_played_games():
+    """Mon-Wed the week helper still names the week just played."""
+    from datetime import datetime
+
+    played = _sample_feature_row(player_id="p_played", game_date=date(2025, 10, 5))
+    upcoming = _sample_feature_row(player_id="p_mnf", game_date=date(2025, 10, 6))
+    mock_db = MagicMock()
+
+    with (
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.SessionLocal",
+            return_value=mock_db,
+        ),
+        patch(
+            "app.services.etl.nfl.anytime_td_projector._try_build_feature_rows",
+            return_value=[played, upcoming],
+        ),
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.now_eastern_naive",
+            return_value=datetime(2025, 10, 6, 4, 30),
+        ),
+        patch("app.services.etl.nfl.anytime_td_projector.upsert_many") as um,
+        patch(
+            "app.services.etl.nfl.anytime_td_projector.delete_stale_week_predictions",
+            return_value=0,
+        ) as purge,
+    ):
+        result = run(season=2025)
+
+    assert result["frozen_played"] == 1
+    assert result["predictions"] == 1
+    assert [r["player_id"] for r in um.call_args[0][2]] == ["p_mnf"]
+    assert purge.call_args.kwargs["on_or_after"] == date(2025, 10, 6)

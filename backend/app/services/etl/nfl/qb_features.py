@@ -107,6 +107,22 @@ TIER_ONLY_FEATURE_NAMES: tuple[str, ...] = tuple(
 )
 
 _LEAGUE_AVG_ATTEMPTS = 34.0
+
+# A QB's "game" for form purposes needs real pass volume: relief cameos and
+# kneel-down appearances (a handful of attempts) are not evidence about a start.
+MIN_FORM_ATTEMPTS = 15.0
+
+# Dynamic tier = the name-table tier shrunk toward the QB's own starts.
+# Walk-forward on nflverse 2025 + 2026 starters (816 team-games): static tier
+# MAE 59.4 / 59.0, the old 60/40 last-5 blend 58.6 / 58.2, this 56.5 / 56.7,
+# with the over-projection roughly halved (+9.5 -> +4.1 yards in 2026).
+TIER_PRIOR_GAMES = 4.0  # the table counts as this many games
+PREV_SEASON_GAME_WEIGHT = 0.3  # a start last season vs one this season
+DYNAMIC_TIER_MAX_GAMES = 17
+OPP_PASS_ALLOWED_WEIGHT = 0.25  # share of the opponent's pass-yards-allowed gap
+MIN_OPP_GAMES = 3
+DYNAMIC_TIER_FLOOR = 120.0
+DYNAMIC_TIER_CEILING = 350.0
 _LEAGUE_AVG_YPA = 7.0
 _LEAGUE_AVG_COMP_PCT = 0.65
 _LEAGUE_AVG_AIR_YARDS = 7.5
@@ -153,11 +169,14 @@ def prior_yards_for_player(
     yards_key: str = "actual_passing_yards",
     season_key: str = "season",
     week_key: str = "week",
+    min_attempts: float = 0.0,
 ) -> list[float]:
     """
     Leak-safe prior actual yards for a QB before ``(season, week)``.
 
     ``player_key`` may be an id or display name; matches either column.
+    ``min_attempts`` drops games with fewer known pass attempts (cameos);
+    rows that carry no attempts at all are kept.
     """
     key_norm = str(player_key).strip().lower()
     prior: list[tuple[int, int, float]] = []
@@ -169,6 +188,8 @@ def prior_yards_for_player(
         row_season = int(row.get(season_key) or 0)
         row_week = int(row.get(week_key) or 0)
         if row_season > season or (row_season == season and row_week >= week):
+            continue
+        if _is_cameo(row, min_attempts):
             continue
         yards = row.get(yards_key)
         if yards is None:
@@ -210,8 +231,12 @@ def prior_game_stats_for_player(
     name_key: str = "qb_player_name",
     season_key: str = "season",
     week_key: str = "week",
+    min_attempts: float = 0.0,
 ) -> list[dict[str, float]]:
-    """Leak-safe prior game stats (yards/attempts/completions) before ``(season, week)``."""
+    """Leak-safe prior game stats (yards/attempts/completions) before ``(season, week)``.
+
+    Each entry also carries its ``season`` / ``week``. ``min_attempts`` drops
+    games with fewer known pass attempts; rows without attempts are kept."""
     key_norm = str(player_key).strip().lower()
     prior: list[tuple[int, int, dict[str, float]]] = []
     for row in history:
@@ -222,6 +247,8 @@ def prior_game_stats_for_player(
         row_season = int(row.get(season_key) or 0)
         row_week = int(row.get(week_key) or 0)
         if row_season > season or (row_season == season and row_week >= week):
+            continue
+        if _is_cameo(row, min_attempts):
             continue
         yards = row.get("actual_passing_yards")
         if yards is None:
@@ -277,6 +304,8 @@ def prior_game_stats_for_player(
                 row_season,
                 row_week,
                 {
+                    "season": float(row_season),
+                    "week": float(row_week),
                     "yards": y,
                     "attempts": att_f,
                     "completions": float(comp) if comp is not None else 0.0,
@@ -358,6 +387,83 @@ def market_residual_features(
     }
 
 
+def _row_attempts(row: Mapping[str, Any]) -> float | None:
+    for key in ("actual_attempts", "attempts", "passing_attempts"):
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            att = float(value)
+        except (TypeError, ValueError):
+            continue
+        if att == att:  # not NaN
+            return att
+    return None
+
+
+def _is_cameo(row: Mapping[str, Any], min_attempts: float) -> bool:
+    """True when the row has a known attempt count below ``min_attempts``."""
+    if min_attempts <= 0:
+        return False
+    att = _row_attempts(row)
+    return att is not None and att < min_attempts
+
+
+def opponent_pass_factor(
+    opp_allowed: float | None,
+    league_allowed: float | None,
+    *,
+    weight: float = OPP_PASS_ALLOWED_WEIGHT,
+) -> float:
+    """Multiplier for the opponent's pass defense: a quarter of how far its
+    pass yards allowed per game sit from the league's (1.0 when unknown)."""
+    if not opp_allowed or not league_allowed or league_allowed <= 0:
+        return 1.0
+    return _clamp(
+        1.0 + weight * (float(opp_allowed) / float(league_allowed) - 1.0), 0.9, 1.1
+    )
+
+
+def dynamic_tier_from_history(
+    static_tier: float,
+    prior_games: Sequence[Mapping[str, Any]],
+    *,
+    season: int,
+    opp_factor: float = 1.0,
+) -> float:
+    """
+    Dynamic tier: the name-table tier shrunk toward the QB's own starts.
+
+    ``(K * tier + sum(w_i * yards_i)) / (K + sum(w_i))`` over his last
+    ``DYNAMIC_TIER_MAX_GAMES`` games from this season (w = 1) and last season
+    (w = ``PREV_SEASON_GAME_WEIGHT``), then the opponent factor. With no games
+    it is the table; every start moves it toward what he actually does, which
+    also covers QBs the table has never heard of (default tier).
+
+    ``prior_games`` come from ``prior_game_stats_for_player`` (oldest first);
+    entries without a ``season`` count as this season's.
+    """
+    tier = _float_or(static_tier, _LEAGUE_AVG_PASS_YARDS)
+    num = TIER_PRIOR_GAMES * tier
+    den = TIER_PRIOR_GAMES
+    for game in list(prior_games)[-DYNAMIC_TIER_MAX_GAMES:]:
+        try:
+            yards = float(game.get("yards"))
+        except (TypeError, ValueError):
+            continue
+        game_season = int(_float_or(game.get("season"), season))
+        if game_season == season:
+            weight = 1.0
+        elif game_season == season - 1:
+            weight = PREV_SEASON_GAME_WEIGHT
+        else:
+            continue
+        num += weight * yards
+        den += weight
+    blended = (num / den) * _float_or(opp_factor, 1.0)
+    return round(_clamp(blended, DYNAMIC_TIER_FLOOR, DYNAMIC_TIER_CEILING), 1)
+
+
 def blend_tier_with_form(
     static_tier: float,
     prior_yards: Sequence[float],
@@ -366,7 +472,8 @@ def blend_tier_with_form(
     form_weight: float = 0.40,
 ) -> float:
     """
-    Dynamic tier: blend static name table with leak-safe rolling form.
+    Legacy dynamic tier (60/40 table vs last-5 average); superseded by
+    ``dynamic_tier_from_history`` and kept for ablations.
 
     When fewer than ``min_games`` priors exist, returns static tier unchanged.
     """
@@ -476,10 +583,9 @@ def implied_team_total_from_market(
     """
     Classic implied team total from game total + spread.
 
-    ``spread_line`` is from the home team's perspective (nflverse): negative =
-    home favored. For the team of interest, pass the spread *for that team*
-    (negative = favored) via ``spread_line`` and set ``is_home`` unused —
-    callers should already flip sign for away teams.
+    ``spread_line`` is a sportsbook spread for the team of interest (negative =
+    favored); ``is_home`` is unused. For nflverse schedule spreads (positive =
+    home favored) use ``implied_team_total_from_expected_margin`` instead.
     """
     if total_line is None:
         return None
@@ -489,6 +595,25 @@ def implied_team_total_from_market(
     implied = total / 2.0 - spread / 2.0
     _ = is_home
     return float(implied)
+
+
+def implied_team_total_from_expected_margin(
+    *,
+    total_line: float | None,
+    team_margin: float | None,
+) -> float | None:
+    """Implied team total from the game total and the team's expected margin.
+
+    nflverse schedules give ``spread_line`` as the home team's expected margin
+    (positive = home favored), the opposite sign of a sportsbook spread. Pass
+    that number (negated for the away team) here; passing it to
+    ``implied_team_total_from_market`` hands the favorite the underdog's total.
+    """
+    if total_line is None:
+        return None
+    total = _float_or(total_line, _LEAGUE_AVG_TOTAL_LINE)
+    margin = _float_or(team_margin, 0.0)
+    return float(total / 2.0 + margin / 2.0)
 
 
 def build_qb_features(
@@ -695,11 +820,12 @@ def enrich_context_from_actual_row(
         player_key=player_key,
         season=season,
         week=week,
+        min_attempts=MIN_FORM_ATTEMPTS,
     )
     prior_yards = [float(s["yards"]) for s in prior_stats]
     form = form_features_from_prior_yards(prior_yards, tier_yards=tier_yards)
     volume = form_volume_features_from_prior(prior_stats)
-    dynamic_tier = blend_tier_with_form(tier_yards, prior_yards)
+    dynamic_tier = dynamic_tier_from_history(tier_yards, prior_stats, season=season)
     ctx: dict[str, Any] = {
         **form,
         **volume,
@@ -771,6 +897,45 @@ def estimate_opp_defense_from_weekly(
     return out
 
 
+def _pass_yards_by_team_game(
+    weekly_rows: Sequence[Mapping[str, Any]],
+    *,
+    season: int,
+    week: int,
+    team_key: str = "recent_team",
+    yards_key: str = "passing_yards",
+) -> dict[tuple[str, int], float]:
+    """(defense, week) -> pass yards thrown against it, for this season's
+    weeks before ``week``. Every passer on the offense is summed, so a relief
+    QB adds to his team's game instead of counting as a low-yardage "game"."""
+    totals: dict[tuple[str, int], float] = {}
+    for row in weekly_rows:
+        pos = str(row.get("position") or "").upper()
+        if pos and pos != "QB":
+            continue
+        row_opp = str(row.get("opponent_team") or row.get("opponent") or "").upper()
+        row_team = str(row.get(team_key) or row.get("team") or "").upper()
+        if not row_opp or row_team == row_opp:
+            continue
+        try:
+            row_week = int(row.get("week") or 0)
+            row_season = int(row.get("season") or season)
+        except (TypeError, ValueError):
+            continue
+        if row_season != season or row_week >= week or row_week < 1:
+            continue
+        yards = row.get(yards_key)
+        if yards is None:
+            continue
+        try:
+            totals[(row_opp, row_week)] = totals.get((row_opp, row_week), 0.0) + float(
+                yards
+            )
+        except (TypeError, ValueError):
+            continue
+    return totals
+
+
 def estimate_opp_pass_allowed_from_weekly(
     weekly_rows: Sequence[Mapping[str, Any]],
     *,
@@ -779,10 +944,11 @@ def estimate_opp_pass_allowed_from_weekly(
     week: int,
     team_key: str = "recent_team",
     yards_key: str = "passing_yards",
+    min_games: int = 1,
 ) -> float | None:
     """
-    Opponent pass yards allowed ≈ mean of opposing QBs' pass yards vs that team
-    in prior weeks of the same season (proxy when defense tables are absent).
+    Opponent pass yards allowed per game in prior weeks of the same season
+    (proxy when defense tables are absent). None below ``min_games`` games.
     """
     opp = opponent_abbr.strip().upper()
     if not opp:
@@ -799,34 +965,26 @@ def estimate_opp_pass_allowed_from_weekly(
                         allowed.append(float(row["passing_yards_allowed"]))
                 except (TypeError, ValueError):
                     pass
-        # QB weekly: yards thrown *against* opponent when opponent == defense
-        # nflverse weekly has `opponent_team`
-        row_opp = str(row.get("opponent_team") or row.get("opponent") or "").upper()
-        row_team = str(row.get(team_key) or row.get("team") or "").upper()
-        pos = str(row.get("position") or "").upper()
-        if pos and pos != "QB":
-            continue
-        if row_opp != opp:
-            continue
-        if row_team == opp:
-            continue
-        try:
-            row_week = int(row.get("week") or 0)
-            row_season = int(row.get("season") or season)
-        except (TypeError, ValueError):
-            continue
-        if row_season != season or row_week >= week or row_week < 1:
-            continue
-        yards = row.get(yards_key)
-        if yards is None:
-            continue
-        try:
-            allowed.append(float(yards))
-        except (TypeError, ValueError):
-            continue
-    if not allowed:
+    by_game = _pass_yards_by_team_game(
+        weekly_rows, season=season, week=week, team_key=team_key, yards_key=yards_key
+    )
+    allowed.extend(total for (defense, _), total in by_game.items() if defense == opp)
+    if len(allowed) < max(1, min_games):
         return None
     return float(sum(allowed) / len(allowed))
+
+
+def league_pass_allowed_from_weekly(
+    weekly_rows: Sequence[Mapping[str, Any]],
+    *,
+    season: int,
+    week: int,
+) -> float | None:
+    """League pass yards allowed per team-game before ``week`` this season."""
+    by_game = _pass_yards_by_team_game(weekly_rows, season=season, week=week)
+    if not by_game:
+        return None
+    return float(sum(by_game.values()) / len(by_game))
 
 
 def estimate_opp_air_yards_allowed_from_weekly(

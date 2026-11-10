@@ -25,21 +25,32 @@ import logging
 from datetime import date, timedelta
 from typing import Optional
 
+import numpy as np
 import pandas as pd
 from sqlalchemy import and_, or_
 
-from app.models.predictions_models import (
-    NBAGameLines,
-    TeamDefenseStats,
-    TeamOffenseStats,
-    TeamRoster,
-)
+from app.models.predictions_models import NBAGameLines, TeamDefenseStats
+from app.services.etl.nba._espn import NBA_TEAM_NAMES
 from app.services.etl.nba._samples import player_games
+from app.services.etl.nba._team_defense import team_defense_as_of
 
 logger = logging.getLogger(__name__)
 
 # Cached training datasets are keyed by this; bump it when features change.
-FEATURES_VERSION = 2
+# v3: opponent defense as of each game's date, the Vegas line found through
+# the opponent, and the rate / recency / volume features below.
+FEATURES_VERSION = 3
+
+# Half-lives (in games) of the exponentially weighted averages.
+EWM_HALF_LIVES = (5, 10)
+# Shot-volume and role columns averaged alongside the target stat.
+VOLUME_WINDOWS: dict[str, tuple[int, ...]] = {
+    "fg_attempts": (10, 20),
+    "three_pt_attempts": (10,),
+    "ft_attempts": (10,),
+    "turnovers": (10,),
+    "personal_fouls": (10,),
+}
 
 # Per-stat `opp_stat_allowed` column on TeamDefenseStats. Mapping is lifted
 # verbatim from YetiBets/scripts/nba/ml_models/predict.py (see the
@@ -78,6 +89,11 @@ def _games_to_df(games) -> pd.DataFrame:
                 "blocks": g.blocks,
                 "steals": g.steals,
                 "free_throws_made": g.free_throws_made,
+                "fg_attempts": g.fg_attempts,
+                "three_pt_attempts": g.three_pt_attempts,
+                "ft_attempts": g.ft_attempts,
+                "turnovers": g.turnovers,
+                "personal_fouls": g.personal_fouls,
                 "usage_percentage": g.usage_percentage,
                 "true_shooting_percentage": g.true_shooting_percentage,
                 "effective_field_goal_percentage": g.effective_field_goal_percentage,
@@ -93,6 +109,93 @@ def _games_to_df(games) -> pd.DataFrame:
             for g in games
         ]
     )
+
+
+def _mean(series: pd.Series) -> float:
+    values = series.dropna()
+    return float(values.mean()) if len(values) else 0.0
+
+
+def _ewm(series: pd.Series, half_life: float) -> float:
+    """Exponentially weighted mean of a newest-first series: a game
+    ``half_life`` games back counts half as much as the latest one."""
+    values = series.dropna().to_numpy(dtype=float)
+    if not len(values):
+        return 0.0
+    weights = 0.5 ** (np.arange(len(values)) / half_life)
+    return float((values * weights).sum() / weights.sum())
+
+
+def _recency_rate_features(games_df: pd.DataFrame, stat_col: str) -> dict:
+    """Recency-weighted, per-minute and volume features (newest game first)."""
+    stat = games_df[stat_col]
+    minutes = games_df["minutes"]
+    out: dict = {}
+
+    for half_life in EWM_HALF_LIVES:
+        out[f"{stat_col}_ewm_{half_life}"] = _ewm(stat, half_life)
+    out[f"{stat_col}_avg_season"] = _mean(stat)
+    last = stat.dropna()
+    out[f"{stat_col}_last"] = float(last.iloc[0]) if len(last) else 0.0
+    out["sample_games"] = len(games_df)
+
+    # Production per minute over the last 20, re-scaled by recent minutes: a
+    # bench player handed a starter's minutes projects like one right away.
+    recent = games_df.head(20)[[stat_col, "minutes"]].dropna()
+    played = float(recent["minutes"].sum())
+    per_minute = float(recent[stat_col].sum()) / played if played > 0 else 0.0
+    out[f"{stat_col}_per_min_20"] = per_minute
+    out[f"{stat_col}_rate_x_min_5"] = per_minute * _mean(minutes.head(5))
+    out[f"{stat_col}_rate_x_min_10"] = per_minute * _mean(minutes.head(10))
+
+    out["minutes_avg_3"] = _mean(minutes.head(3))
+    out["minutes_avg_20"] = _mean(minutes.head(20))
+    out["minutes_avg_season"] = _mean(minutes)
+    out["minutes_ewm_3"] = _ewm(minutes, 3)
+    played_minutes = minutes.dropna()
+    out["minutes_last"] = float(played_minutes.iloc[0]) if len(played_minutes) else 0.0
+
+    for col, windows in VOLUME_WINDOWS.items():
+        for window in windows:
+            out[f"{col}_avg_{window}"] = _mean(games_df.head(window)[col])
+    return out
+
+
+def _opponent_defense(db, opponent_team_id: int, game_date: date) -> dict:
+    """Opponent's per-game allowed stats before ``game_date``; the stored
+    current-day row only when the game log has nothing for that team."""
+    defense = team_defense_as_of(db, opponent_team_id, game_date)
+    if defense is not None:
+        return defense
+    row = db.query(TeamDefenseStats).filter_by(team_id=opponent_team_id).first()
+    if row is None:
+        return {}
+    return {c.name: getattr(row, c.name) for c in row.__table__.columns}
+
+
+def _game_line_vs(db, opponent_team_id: int, game_date: date):
+    """(line row, player's team is home) for the game against the opponent on
+    ``game_date``, or None when no line is stored."""
+    opp_name = NBA_TEAM_NAMES.get(opponent_team_id)
+    if not opp_name:
+        return None
+    line = (
+        db.query(NBAGameLines)
+        .filter(
+            and_(
+                NBAGameLines.game_date == game_date,
+                or_(
+                    NBAGameLines.home_team_name.ilike(f"%{opp_name}%"),
+                    NBAGameLines.away_team_name.ilike(f"%{opp_name}%"),
+                ),
+            )
+        )
+        .first()
+    )
+    if line is None:
+        return None
+    opponent_is_home = opp_name.lower() in (line.home_team_name or "").lower()
+    return line, not opponent_is_home
 
 
 def build_features(
@@ -130,14 +233,6 @@ def build_features(
 
     features: dict = {}
 
-    # Player's team — used to find the Vegas line and the home/away flag.
-    roster = db.query(TeamRoster).filter_by(player_id=player_id).first()
-    team_id = roster.team_id if roster else None
-    team_name = ""
-    if team_id:
-        team_stats = db.query(TeamOffenseStats).filter_by(team_id=team_id).first()
-        team_name = team_stats.team_name if team_stats else ""
-
     # ---- Rolling avg/std for the target stat (5/10/20 games) and minutes
     # (5/10). A window longer than the sample, early in the season, averages
     # the games there are: a 0 would read as a player who doesn't score.
@@ -146,6 +241,14 @@ def build_features(
             recent = games_df.head(window)[col].dropna()
             features[f"{col}_avg_{window}"] = recent.mean() if len(recent) else 0
             features[f"{col}_std_{window}"] = recent.std() if len(recent) > 1 else 0
+
+    # ---- Recency, per-minute rate and volume (FEATURES_VERSION 3).
+    # On a chronological holdout of 2024-25 through early 2026-27 these took
+    # the points model from 4.69 to 4.63 MAE (rebounds 1.894 -> 1.871, assists
+    # 1.368 -> 1.356): windowed means throw away how recent each game is, and
+    # a player's production follows his minutes, which move faster than his
+    # per-minute rate. Models trained before v3 ignore these columns.
+    features.update(_recency_rate_features(games_df, stat_col))
 
     # ---- Trend: last 5 games vs the last 20 (or all of a shorter sample).
     if len(games_df) >= 10:
@@ -223,49 +326,27 @@ def build_features(
         else:
             features[f"{col}_avg"] = 0
 
-    # ---- Opponent team defense.
-    defense = db.query(TeamDefenseStats).filter_by(team_id=opponent_team_id).first()
-    if defense:
-        features["opp_def_rating"] = getattr(defense, "defensive_rating", None) or 0
-        features["opp_pace"] = getattr(defense, "pace", None) or 0
-        defense_col = _OPP_STAT_ALLOWED_COL[stat_col]
-        features["opp_stat_allowed"] = getattr(defense, defense_col, None) or 0
-    else:
-        features["opp_def_rating"] = 0
-        features["opp_pace"] = 0
-        features["opp_stat_allowed"] = 0
+    # ---- Opponent team defense, as it stood before this game. Tonight that
+    # is the pred_team_defense_stats row; for a past game it is what that row
+    # would have held then (a training row must not see today's defense).
+    defense = _opponent_defense(db, opponent_team_id, game_date)
+    defense_col = _OPP_STAT_ALLOWED_COL[stat_col]
+    features["opp_def_rating"] = defense.get("defensive_rating") or 0
+    features["opp_pace"] = defense.get("pace") or 0
+    features["opp_stat_allowed"] = defense.get(defense_col) or 0
 
-    # ---- Vegas lines for this game (matched by team-name substring).
-    game_line = None
-    if team_name:
-        game_line = (
-            db.query(NBAGameLines)
-            .filter(
-                and_(
-                    NBAGameLines.game_date == game_date,
-                    or_(
-                        NBAGameLines.home_team_name.ilike(f"%{team_name}%"),
-                        NBAGameLines.away_team_name.ilike(f"%{team_name}%"),
-                    ),
-                )
-            )
-            .first()
-        )
-
-    if game_line:
-        is_home = (
-            team_name.lower() in (game_line.home_team_name or "").lower()
-            if game_line.home_team_name
-            else False
-        )
-        spread = game_line.spread_home if is_home else game_line.spread_away
+    # ---- Vegas lines for this game, found through the opponent: the roster
+    # table only knows a player's team today, which is the wrong game for
+    # anyone traded since.
+    game_line = _game_line_vs(db, opponent_team_id, game_date)
+    if game_line is not None:
+        line, is_home = game_line
+        spread = line.spread_home if is_home else line.spread_away
         features["spread"] = spread if spread else 0
-        features["total"] = game_line.total if game_line.total else 0
+        features["total"] = line.total if line.total else 0
         features["is_home"] = 1 if is_home else 0
         features["is_favorite"] = 1 if spread and spread < 0 else 0
-        features["blowout_risk"] = (
-            game_line.get_blowout_risk() if game_line.spread_home else 0.15
-        )
+        features["blowout_risk"] = line.get_blowout_risk() if line.spread_home else 0.15
     else:
         features["spread"] = 0
         features["total"] = 0

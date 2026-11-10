@@ -81,5 +81,53 @@ def test_get_best_line_picks_books():
             },
         }
     )
-    assert best["over"]["line"] == 71.5
-    assert best["under"]["line"] == 70.5
+    # Over bettors want the lowest line, under bettors the highest.
+    assert best["over"]["line"] == 70.5
+    assert best["over"]["book"] == "FanDuel"
+    assert best["under"]["line"] == 71.5
+    assert best["under"]["book"] == "DraftKings"
+    assert best["consensus"] == 70.5
+
+
+def test_get_best_line_consensus_is_the_middle_book():
+    best = get_best_line(
+        {
+            "FanDuel": {"over": {"line": 60.5, "odds": -110}},
+            "DraftKings": {"over": {"line": 62.5, "odds": -110}},
+            "BetMGM": {"over": {"line": 68.5, "odds": -110}},
+        }
+    )
+    assert best["consensus"] == 62.5
+    assert best["over"]["line"] == 60.5
+
+
+def test_get_best_line_same_line_prefers_better_price():
+    best = get_best_line(
+        {
+            "FanDuel": {
+                "over": {"line": 70.5, "odds": -120},
+                "under": {"line": 70.5, "odds": -105},
+            },
+            "DraftKings": {
+                "over": {"line": 70.5, "odds": -108},
+                "under": {"line": 70.5, "odds": -115},
+            },
+        }
+    )
+    assert best["over"]["book"] == "DraftKings"
+    assert best["under"]["book"] == "FanDuel"
+
+
+def test_match_player_lines_ignores_punctuation_and_suffixes():
+    from app.services.etl.nfl.recv_yds_betting import match_player_lines
+
+    lines = {"AJ Brown": {"FanDuel": {}}, "Brian Thomas Jr": {"DraftKings": {}}}
+    assert match_player_lines("A.J. Brown", lines) == {"FanDuel": {}}
+    assert match_player_lines("Brian Thomas Jr.", lines) == {"DraftKings": {}}
+
+
+def test_match_player_lines_does_not_substring_match():
+    from app.services.etl.nfl.recv_yds_betting import match_player_lines
+
+    lines = {"Josh Allen Smith": {"FanDuel": {}}}
+    assert match_player_lines("Josh Allen", lines) is None

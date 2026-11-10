@@ -35,32 +35,10 @@ def normalize_player_name(name: str) -> str:
 
 
 def get_best_line(player_lines: dict) -> dict:
-    best_over = {"line": 0, "odds": -110, "book": "N/A"}
-    best_under = {"line": 999, "odds": -110, "book": "N/A"}
-    for bookmaker, lines in player_lines.items():
-        if "over" in lines:
-            over_line = lines["over"]
-            if over_line["line"] > best_over["line"] or (
-                over_line["line"] == best_over["line"]
-                and over_line["odds"] > best_over["odds"]
-            ):
-                best_over = {
-                    "line": over_line["line"],
-                    "odds": over_line["odds"],
-                    "book": bookmaker,
-                }
-        if "under" in lines:
-            under_line = lines["under"]
-            if under_line["line"] < best_under["line"] or (
-                under_line["line"] == best_under["line"]
-                and under_line["odds"] > best_under["odds"]
-            ):
-                best_under = {
-                    "line": under_line["line"],
-                    "odds": under_line["odds"],
-                    "book": bookmaker,
-                }
-    return {"over": best_over, "under": best_under}
+    """Best book per side plus the consensus line (see ``prop_lines.best_lines``)."""
+    from app.services.etl.nfl.prop_lines import best_lines
+
+    return best_lines(player_lines)
 
 
 def clear_betting_fields() -> dict[str, Any]:
@@ -142,7 +120,7 @@ def attach_recv_betting(
     if not player_lines:
         return None
     best = get_best_line(player_lines)
-    ou_line = float(best["over"]["line"] or 0)
+    ou_line = float(best["consensus"] or 0)
     if ou_line <= 0:
         return None
     published, method = published_recv_yards(
@@ -237,11 +215,12 @@ def fetch_reception_yds_lines() -> dict[str, dict]:
 
 
 def match_player_lines(player_name: str, all_lines: dict[str, dict]) -> dict | None:
-    normalized = normalize_player_name(player_name)
-    for line_player_name, lines in all_lines.items():
-        if (
-            normalized.lower() in line_player_name.lower()
-            or line_player_name.lower() in normalized.lower()
-        ):
-            return lines
-    return None
+    """Lines for this player: same name ignoring punctuation and suffixes
+    ("A.J. Brown" / "AJ Brown", "Brian Thomas Jr" / "Brian Thomas Jr.").
+
+    Substring matching attached other players' lines ("Josh Allen" inside a
+    longer name) and the alias table missed whichever spelling it did not list.
+    """
+    from app.services.etl.nfl.player_names import find_by_player_name
+
+    return find_by_player_name(player_name, all_lines)

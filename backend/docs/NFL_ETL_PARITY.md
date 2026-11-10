@@ -69,8 +69,9 @@ Game projector window = `GAME_LINES_HORIZON_DAYS` (**14**), not today+1. QB-out 
 | `kickers.py` | `pred_kickers`, `pred_kicker_predictions` |
 | `recv_yds_weekly.py` | Odds slate → features → soft-anchor → `pred_recv_yds_predictions` |
 | `recv_yds_betting.py` | Odds API `player_reception_yds` attach (fail-closed) |
-| `recv_yds_features.py` / `recv_yds_model.py` | Non-ML targets×YPR + soft-anchor math |
-| `recv_yds_projector.py` / `recv_yds_usage.py` | Lined-only upsert + nflverse usage priors |
+| `recv_yds_features.py` / `recv_yds_model.py` | Non-ML targets × yards-per-target + soft-anchor math |
+| `recv_yds_projector.py` / `recv_yds_usage.py` | Lined-only upsert + rolling nflverse usage priors |
+| `nflverse_weekly.py` / `player_names.py` / `prop_lines.py` / `venues.py` | Shared: weekly stats loader (legacy + 2025+ release), name keys, consensus/best line, stadium roof + surface |
 | `collect_recv_yds_actuals.py` | `pred_recv_yds_actuals` |
 | `kicker_prediction.py` | Scoring helpers for kickers |
 | `statistical_kicker_prediction.py` | CSV-backed stats (`data/nfl/*.csv`) |

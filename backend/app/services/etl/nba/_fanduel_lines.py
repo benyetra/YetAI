@@ -171,6 +171,27 @@ def _get_event_market_odds(
         return {}
 
 
+def pick_side(projection: float, line: float) -> str:
+    """'u' when the projection is below the line, else 'o'.
+
+    The inherited rule only called an under when the projection sat more than
+    1.5 below the line and called everything else an over. A 17.9-point
+    projection against a 19.5 line was published, graded and auto-picked as an
+    OVER, and for threes, rebounds and assists (lines of 1.5-6.5) an under was
+    almost impossible to produce at all.
+    """
+    return "u" if float(projection) < float(line) else "o"
+
+
+def _name_key(name: str | None) -> str:
+    """Accent-, case-, punctuation- and suffix-insensitive player key, so
+    "Nikola Jokić" / "Nikola Jokic" and "Jaren Jackson Jr." / "Jaren Jackson
+    Jr" find their line instead of silently going without one."""
+    from app.services.etl.nba._api_sports import normalize_player_name
+
+    return normalize_player_name(name)
+
+
 def get_fanduel_line(
     sport: str,
     event_id: str,
@@ -184,6 +205,7 @@ def get_fanduel_line(
     data = _get_event_market_odds(sport, event_id, market, bookmakers=bookmakers)
     if not data:
         return 0.0, 0.0, "n"
+    wanted = _name_key(player_name)
     try:
         for bookmaker in data.get("bookmakers", []):
             if not _bookmaker_matches(bookmaker, bookmakers):
@@ -194,7 +216,7 @@ def get_fanduel_line(
                 over_outcome = None
                 under_outcome = None
                 for outcome in mkt.get("outcomes", []):
-                    if outcome.get("description") != player_name:
+                    if _name_key(outcome.get("description")) != wanted:
                         continue
                     if outcome.get("name") == "Over":
                         over_outcome = outcome
@@ -202,7 +224,8 @@ def get_fanduel_line(
                         under_outcome = outcome
                 if over_outcome and under_outcome:
                     over_point = float(over_outcome["point"])
-                    if projection < over_point - 1.5:
+                    # The pick is the side of the line the projection is on.
+                    if pick_side(projection, over_point) == "u":
                         return (
                             float(under_outcome["point"]),
                             float(under_outcome["price"]),
