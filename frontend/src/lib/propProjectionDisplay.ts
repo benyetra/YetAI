@@ -341,6 +341,50 @@ export const MLB_STRIKEOUT_COLUMNS_BASE = [
   NEWS_COLUMN,
 ];
 
+export const NFL_RECV_YDS_COLUMNS: ColumnDef[] = [
+  { key: 'player_name', label: 'Player', format: (v) => formatString(v) },
+  { key: 'position', label: 'Pos', format: (v) => formatString(v) },
+  TEAM_COLUMN,
+  OPPONENT_TEAM_COLUMN,
+  {
+    key: 'predicted_receiving_yards',
+    label: 'Model',
+    align: 'right',
+    mono: true,
+    format: (v) => formatNumber(v, 0),
+  },
+  {
+    key: 'ou_line',
+    label: 'Market',
+    align: 'right',
+    mono: true,
+    format: (v) => formatNumber(v, 1),
+  },
+  {
+    key: 'edge',
+    label: 'Edge',
+    align: 'right',
+    mono: true,
+    format: (v) => formatSignedEdge(v),
+    className: 'prop-edge-cell',
+  },
+  {
+    key: 'recommendation',
+    label: 'Pick',
+    format: (v, row) => formatString(v ?? row.betting_recommendation),
+    className: 'prop-pick-cell',
+  },
+  {
+    key: 'pick_confidence',
+    label: 'Conf',
+    align: 'right',
+    mono: true,
+    format: (v, row) => formatPickConfidence(v ?? row.confidence_score),
+    className: 'prop-conf-cell',
+  },
+  NEWS_COLUMN,
+];
+
 export const NFL_QB_COLUMNS: ColumnDef[] = [
   { key: 'qb_player_name', label: 'QB', format: (v) => formatString(v) },
   TEAM_COLUMN,

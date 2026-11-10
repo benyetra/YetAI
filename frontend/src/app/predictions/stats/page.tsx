@@ -25,7 +25,7 @@ const SPORTS: Array<{
   { sport: 'mlb', href: '/predictions/mlb', emoji: '⚾', label: 'MLB', desc: 'Strikeouts, home runs, and game-level slate projections.' },
   { sport: 'nba', href: '/predictions/nba', emoji: '🏀', label: 'NBA', desc: 'Points, assists, rebounds, threes, steals, blocks, and PRA.' },
   { sport: 'wnba', href: '/predictions/wnba', emoji: '🏀', label: 'WNBA', desc: 'Game totals O/U, spread/win-probability, and player props (points, assists, rebounds).' },
-  { sport: 'nfl', href: '/predictions/nfl', emoji: '🏈', label: 'NFL', desc: 'QB passing and kicker field goal projections.' },
+  { sport: 'nfl', href: '/predictions/nfl', emoji: '🏈', label: 'NFL', desc: 'QB passing, receiving yards, and kicker field goal projections.' },
   { sport: 'nhl', href: '/predictions/nhl', emoji: '🏒', label: 'NHL', desc: 'Goalie saves and player shots on goal.' },
 ];
 
