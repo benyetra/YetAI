@@ -115,6 +115,7 @@ FALLBACK_PLAYER_PROP_MARKETS = {
         "player_pass_tds",
         "player_rush_yds",
         "player_receptions",
+        "player_reception_yds",
         "player_anytime_td",
     ],
     "basketball_nba": [
