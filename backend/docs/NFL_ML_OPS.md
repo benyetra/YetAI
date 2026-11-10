@@ -1,5 +1,13 @@
 # NFL ML operations
 
+## Receiving yards (v1)
+
+Non-ML only: `targets × YPR` + depth/pace/matchup, then soft-anchor publish
+`α·model + (1−α)·line` with `NFL_RECV_ANCHOR_ALPHA` (default **0.25**). Lined
+RB/WR/TE only; fail-closed Odds attach. **No** residual ML in v1 — do not set
+`NFL_RECV_ML_ENABLED` (flag does not exist yet). Residual ML and a line-vs-ML
+promote gate are deferred (mirror QB Phase C / `NFL_QB_ML_ENABLED` later).
+
 ## QB passing yards (Phase 4.3+)
 
 | Mode | Env | Production yards | `model_version` / `prediction_method` |

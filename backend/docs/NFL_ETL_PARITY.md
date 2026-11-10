@@ -17,6 +17,8 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 | `nfl.qb_weekly` | `qb_dynamic_heroku.py` then `qb_betting_heroku.py` |
 | `nfl.qb_dynamic` / `nfl.qb_betting` | Same modules, fireable individually for debugging |
 | `nfl.kickers` | `kickers.py` → `pred_kickers` + `pred_kicker_predictions` |
+| `nfl.recv_yds_weekly` | Odds `player_reception_yds` slate → features → soft-anchor → `pred_recv_yds_predictions` |
+| `nfl.collect_recv_yds_actuals` | Grade → `pred_recv_yds_actuals` |
 | `nfl.sync_defense_schemes` | `defensive_schemes.yaml` → `pred_nfl_defense_scheme` |
 | `nfl.anytime_td_projector` | Feature rows → λ → P(TD) → `pred_nfl_anytime_td_predictions` |
 | `nfl.anytime_td_betting` | Odds API `player_anytime_td` attach on predictions |
@@ -25,9 +27,9 @@ Reference: `YetiBets/scripts/nfl/` (weekly QB + kicker path; no single daily she
 
 ### `NFL_PHASES` (Beat: `nfl-update-pipeline-daily` 4:30 ET)
 
-1. **actuals** — `nfl_collect_qb_actuals`, `nfl_collect_kicker_actuals`, `nfl_store_game_actuals`, `nfl_anytime_td_actuals`
+1. **actuals** — `nfl_collect_qb_actuals`, `nfl_collect_kicker_actuals`, `nfl_store_game_actuals`, `nfl_anytime_td_actuals`, `nfl_collect_recv_yds_actuals`
 2. **game_lines** — `nfl_update_game_lines`
-3. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers` (QB weekly first so backup flags exist before spread reprice)
+3. **predictions** — `nfl_yetiwatch`, `nfl_qb_weekly`, `nfl_kickers`, `nfl_recv_yds_weekly` (QB weekly first so backup flags exist before spread reprice)
 4. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
 5. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
 
@@ -46,7 +48,7 @@ Beat (ET): Sun 10:00 / 12:30 / 15:30, Mon 18:00, **Thu 10:00 / 19:00**, **Sat 12
 
 Phases:
 
-1. **predictions** — `nfl_qb_weekly`, `nfl_kickers` (QB weekly first so backup flags exist)
+1. **predictions** — `nfl_qb_weekly`, `nfl_kickers`, `nfl_recv_yds_weekly` (QB weekly first so backup flags exist)
 2. **game_projections** — `nfl_spread_projector`, `nfl_totals_projector`
 3. **anytime_td** — `nfl_sync_defense_schemes`, `nfl_anytime_td_projector`, `nfl_anytime_td_betting`
 
@@ -65,6 +67,11 @@ Game projector window = `GAME_LINES_HORIZON_DAYS` (**14**), not today+1. QB-out 
 | `qb_dynamic.py` | `pred_qb_predictions` (yards from nflverse) |
 | `qb_betting.py` | O/U lines + edges on `pred_qb_predictions` |
 | `kickers.py` | `pred_kickers`, `pred_kicker_predictions` |
+| `recv_yds_weekly.py` | Odds slate → features → soft-anchor → `pred_recv_yds_predictions` |
+| `recv_yds_betting.py` | Odds API `player_reception_yds` attach (fail-closed) |
+| `recv_yds_features.py` / `recv_yds_model.py` | Non-ML targets×YPR + soft-anchor math |
+| `recv_yds_projector.py` / `recv_yds_usage.py` | Lined-only upsert + nflverse usage priors |
+| `collect_recv_yds_actuals.py` | `pred_recv_yds_actuals` |
 | `kicker_prediction.py` | Scoring helpers for kickers |
 | `statistical_kicker_prediction.py` | CSV-backed stats (`data/nfl/*.csv`) |
 | `collect_qb_actuals.py` | `pred_qb_actuals` |
@@ -84,7 +91,8 @@ Static data shipped in the image: `backend/data/nfl/` (weather, distance, FG his
 | Variable | Purpose |
 |----------|---------|
 | `DATABASE_URL` | Postgres (`pred_qb_*`, `pred_kicker_*`, `pred_nfl_*`) |
-| `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines, `player_anytime_td` |
+| `ODDS_API_KEY` | QB passing O/U, kicker markets, NFL game lines, `player_anytime_td`, `player_reception_yds` (receiving yards board) |
+| `NFL_RECV_ANCHOR_ALPHA` | Receiving-yards soft-anchor model weight α (default **0.25**); no `NFL_RECV_ML_ENABLED` in v1 |
 | `REDIS_URL` | Celery broker (worker) |
 | `NFL_SEASON` | Override season year (default **2026**) |
 | `NFL_ANYTIME_TD_UI` | Anytime-TD UI group (default **on** after 2026-09-04 walk-forward gate; `0` to hide) |
@@ -93,8 +101,16 @@ Python: `nfl-data-py` (see `requirements.txt`).
 
 ## API / UI
 
-- `GET /api/v1/predictions/nfl` — `qb_predictions`, `kicker_predictions`, `spreads`, `totals`
-- `/predictions/nfl` — frontend QB + kicker tables + game projection cards + anytime TD (hide with `NEXT_PUBLIC_NFL_ANYTIME_TD_UI=0`)
+- `GET /api/v1/predictions/nfl` — `qb_predictions`, `kicker_predictions`, `receiving_yards_predictions`, `spreads`, `totals`
+- `/predictions/nfl` — frontend QB + kicker + **Receiving Yards** tables (position filter All/RB/WR/TE) + game projection cards + anytime TD (hide with `NEXT_PUBLIC_NFL_ANYTIME_TD_UI=0`)
+
+## Odds API — receiving yards (live slate)
+
+Shares the same `ODDS_API_KEY` budget as QB props and game lines. Per NFL
+gameday event, expect **~10 credits** when fetching
+`markets=player_reception_yds` with `regions=us` (same order of magnitude as
+`player_pass_yds`). Weekly `nfl.recv_yds_weekly` fails closed on miss/off-season
+(no invented lines).
 
 ## Validation
 
