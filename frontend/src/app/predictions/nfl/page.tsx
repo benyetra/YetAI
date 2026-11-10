@@ -16,6 +16,7 @@ import {
 } from '@/lib/anytimeTdDisplay';
 import {
   NFL_QB_COLUMNS,
+  NFL_RECV_YDS_COLUMNS,
   OPPONENT_TEAM_COLUMN,
   TEAM_COLUMN,
   propRowClassName,
@@ -43,6 +44,13 @@ function buildNflPropGroups(): PropGroup[] {
       responseKey: 'kicker_predictions',
       columns: KICKER_COLUMNS,
     },
+    {
+      title: 'Receiving Yards',
+      responseKey: 'receiving_yards_predictions',
+      columns: NFL_RECV_YDS_COLUMNS,
+      rowClassName: propRowClassName,
+      positionFilterKey: 'position',
+    },
   ];
   if (isAnytimeTdUiEnabled()) {
     groups.push({
@@ -56,8 +64,8 @@ function buildNflPropGroups(): PropGroup[] {
 }
 
 const NFL_SUBTITLE = isAnytimeTdUiEnabled()
-  ? 'Game slate projections plus quarterback passing, kicker field goals, and model anytime touchdown predictions.'
-  : 'Game slate projections plus quarterback passing and kicker field goal predictions.';
+  ? 'Game slate projections plus quarterback passing, receiving yards, kicker field goals, and model anytime touchdown predictions.'
+  : 'Game slate projections plus quarterback passing, receiving yards, and kicker field goal predictions.';
 
 export default function NFLPredictionsPage() {
   return (

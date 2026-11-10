@@ -16,6 +16,11 @@ import {
 import { usePredictions, type PredictionSport } from '@/lib/usePredictions';
 import { countTopPlays, isTopPlay } from '@/lib/propProjectionDisplay';
 import {
+  RECV_POSITION_FILTERS,
+  filterRowsByPosition,
+  type PositionFilter,
+} from '@/lib/propPositionFilter';
+import {
   buildDiscoverySections,
   rowMatchesPlayerSearch,
   type DiscoveryGroupConfig,
@@ -28,6 +33,8 @@ export type PropGroup = {
   responseKey: string;
   columns: ColumnDef[];
   rowClassName?: (row: Record<string, unknown>) => string | undefined;
+  /** When set, toolbar position chips filter this group's rows by this field. */
+  positionFilterKey?: string;
 };
 
 export type GroupsContext = {
@@ -79,6 +86,7 @@ export default function SportPredictionsPage({
   const router = useRouter();
   const [date, setDate] = useState<string>(todayIso);
   const [playerSearch, setPlayerSearch] = useState('');
+  const [positionFilter, setPositionFilter] = useState<PositionFilter>('All');
   const { data, loading, error, paywalled } = usePredictions(sport, date, { enabled: isAuthenticated });
 
   const isPastDate = useMemo(() => date < todayIso(), [date]);
@@ -165,6 +173,11 @@ export default function SportPredictionsPage({
   const hasTopPlayGroups = useMemo(
     () => resolvedGroups.some((g) => g.rowClassName != null),
     [resolvedGroups]
+  );
+
+  const hasPositionFilterGroups = useMemo(
+    () => resolvedGroups.some((g) => g.positionFilterKey != null),
+    [resolvedGroups],
   );
 
   const topPlayCount = useMemo(() => {
@@ -265,6 +278,26 @@ export default function SportPredictionsPage({
                 ) : null}
               </div>
               <div className="predictions-toolbar-actions">
+                {hasPositionFilterGroups && (
+                  <div
+                    className="predictions-toolbar-chip-row"
+                    role="group"
+                    aria-label="Filter by position"
+                  >
+                    {RECV_POSITION_FILTERS.map((pos) => (
+                      <button
+                        key={pos}
+                        type="button"
+                        className={`predictions-chip ${positionFilter === pos ? 'is-active' : ''}`}
+                        aria-pressed={positionFilter === pos}
+                        onClick={() => setPositionFilter(pos)}
+                        disabled={loading}
+                      >
+                        {pos}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 {hasTopPlayGroups && (
                   <button
                     type="button"
@@ -353,6 +386,9 @@ export default function SportPredictionsPage({
               applyTopPlaysFilter && g.rowClassName ? allRows.filter(isTopPlay) : allRows;
             if (searchActive) {
               rows = rows.filter((row) => rowMatchesPlayerSearch(row, playerSearch));
+            }
+            if (g.positionFilterKey) {
+              rows = filterRowsByPosition(rows, g.positionFilterKey, positionFilter);
             }
             if (applyTopPlaysFilter && g.rowClassName && rows.length === 0 && !searchActive) {
               return null;
