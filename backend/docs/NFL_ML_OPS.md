@@ -135,7 +135,27 @@ Prod eval (`scripts/nfl_prod_qb_eval.py` + workflow **NFL Prod QB Eval
 - Report includes **`ablations`** (v5/v6 market, tier-only HP variants, promote
   sweep) and `promote_hp_selected`.
 
-### Latest Railway promote-gate (2026-09-04, run 33913715865) — line-vs-ML
+### Latest Railway promote-gate (2026-11-10, run 42896579873) — re-run on the shrunk dynamic tier
+
+Re-run after #170 changed the dynamic tier (and so the residual model's baseline)
+with `NFL_QB_ML_ENABLED=1` already set on Railway. The September bundle was trained
+on the old tier, so the live model and live tier had drifted apart until this upload.
+
+| Metric | Value |
+|--------|-------|
+| Holdout | season_2025 |
+| Promote path | **`market_residual_v6`** + HP `strong_reg` (raw ML; no line blend) |
+| Dynamic-tier MAE | ~64.4 |
+| Residual ML MAE | **57.04** |
+| Line-only MAE | ~62.3 |
+| Lift vs dynamic | **+11.46%** (≥10% gate) |
+| Lift vs line | **+8.5%** (ML strictly better than line) |
+| `promote_recommended` | **true** |
+| O/U classifier | acc 0.520, Brier 0.274 (shadow-grade; not a pick source) |
+| S3 upload | **yes** — `s3://yetibets/nfl/ml_models/qb_passing_yards{,_metadata}.json` + O/U pair (replaces the 2026-09-04 bundle) |
+| Ops note | Celery workers cache the loaded bundle per process; restart `celery-worker` after an upload so it takes effect before the next QB run. |
+
+### Prior Railway promote-gate (2026-09-04, run 33913715865) — line-vs-ML
 
 | Metric | Value |
 |--------|-------|
