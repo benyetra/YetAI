@@ -291,6 +291,26 @@ def enrich_nfl_qb_row(row: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def enrich_nfl_recv_yds_row(row: dict[str, Any]) -> dict[str, Any]:
+    """NFL receiving-yard O/U rows (soft-anchored board)."""
+    out = enrich_projection_vs_line(
+        row,
+        projected_key="predicted_receiving_yards",
+        line_key="ou_line",
+        stat="receiving_yards",
+        pick_key="betting_recommendation",
+        recommendation_key="recommendation",
+        edge_key="edge",
+        confidence_key="pick_confidence",
+    )
+    if out.get("pick_confidence") is None and out.get("confidence_score") is not None:
+        conf = _as_float(out["confidence_score"])
+        if conf is not None:
+            out["pick_confidence"] = round(conf * 100 if conf <= 1.0 else conf, 1)
+            out["confidence_score"] = out["pick_confidence"]
+    return out
+
+
 _NEWS_ENTITY_KEYS: dict[tuple[str, str], tuple[str, str]] = {
     ("nba", "points"): ("player_id", "date"),
     ("nba", "assists"): ("player_id", "date"),
@@ -306,6 +326,7 @@ _NEWS_ENTITY_KEYS: dict[tuple[str, str], tuple[str, str]] = {
     ("wnba", "pra"): ("player_id", "date"),
     ("mlb", "strikeouts"): ("pitcher_id", "date"),
     ("nfl", "passing_yards"): ("qb_player_id", "game_date"),
+    ("nfl", "receiving_yards"): ("player_id", "game_date"),
     ("nhl", "saves"): ("goalie_id", "game_date"),
     ("nhl", "shots"): ("player_id", "game_date"),
 }
@@ -521,6 +542,10 @@ def enrich_prop_rows(
         )
     elif sport == "nfl" and stat == "passing_yards":
         enriched = attach_team_opponent_fields([enrich_nfl_qb_row(r) for r in rows])
+    elif sport == "nfl" and stat == "receiving_yards":
+        enriched = attach_team_opponent_fields(
+            [enrich_nfl_recv_yds_row(r) for r in rows]
+        )
     else:
         enriched = attach_team_opponent_fields(rows)
 

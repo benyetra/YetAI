@@ -45,6 +45,7 @@ from app.models.predictions_models import (
     QBPredictions,
     ReboundsProjections,
     RecentGames,
+    RecvYdsPredictions,
     StealsProjections,
     StrikeoutActuals,
     StrikeoutProjections,
@@ -805,6 +806,20 @@ def nfl_predictions(
         ),
         "anytime_td_predictions": _query_nfl_anytime_td_predictions(
             db, target_date, limit
+        ),
+        "receiving_yards_predictions": enrich_prop_rows(
+            _query_recent_nfl_with_fallback(
+                db,
+                RecvYdsPredictions,
+                "game_date",
+                target_date,
+                limit,
+                tz=tz,
+                dedupe_keys=("season", "week", "player_id"),
+            ),
+            sport="nfl",
+            stat="receiving_yards",
+            db=db,
         ),
         "spreads": spreads,
         "totals": totals,
