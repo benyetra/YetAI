@@ -109,10 +109,9 @@ def run() -> dict:
             for r in load_weekly_receiver_rows(season)
             if int(r.get("week") or 0) == week
         ]
-        n = collect_for_week(
-            db_session(), season=season, week=week, weekly_stats=weekly
-        )
-        db_session().commit()
+        # db_session is a _SessionProxy singleton, not a factory.
+        n = collect_for_week(db_session, season=season, week=week, weekly_stats=weekly)
+        db_session.commit()
         return {
             "status": "ok",
             "task": "nfl_collect_recv_yds_actuals",
