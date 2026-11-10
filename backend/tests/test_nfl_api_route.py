@@ -72,6 +72,7 @@ def test_nfl_predictions_returns_all_expected_keys(monkeypatch):
         "qb_predictions",
         "kicker_predictions",
         "anytime_td_predictions",
+        "receiving_yards_predictions",
         "spreads",
         "totals",
     }
