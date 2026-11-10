@@ -15,6 +15,7 @@ from app.models.predictions_models import (
     TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._stale_rows import drop_projection_for_today
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._fanduel_lines import (
     PROP_MARKETS,
@@ -89,6 +90,9 @@ def run() -> dict:
                 if injured:
                     logger.info(
                         "Skipping %s (injury: %s)", player.player_name, injury_status
+                    )
+                    drop_projection_for_today(
+                        db, ReboundsProjections, today, player.player_id
                     )
                     skipped_injured += 1
                     continue

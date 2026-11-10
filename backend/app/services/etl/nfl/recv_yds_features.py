@@ -10,7 +10,50 @@ from app.services.etl.nfl.recv_yds_model import (
 )
 
 SKILL_POSITIONS = frozenset({"RB", "WR", "TE"})
-MODEL_VERSION = "recv_nonml_v1"
+MODEL_VERSION = "recv_nonml_v2"
+
+# Catch rate by position, for callers that only know yards per reception.
+_CATCH_RATE = {"WR": 0.63, "TE": 0.72, "RB": 0.79}
+
+# Confidence is how much of the player's current role we have actually seen:
+# 0.50 with no games this season, rising to 0.725 at five or more. Picks need
+# 0.70 (recv_yds_betting.MIN_CONFIDENCE), so a player returning from injury or
+# new to a team is shown but not recommended.
+BASE_CONFIDENCE = 0.50
+CONFIDENCE_PER_GAME = 0.045
+CONFIDENCE_GAMES_CAP = 5
+LEGACY_THIN_CONFIDENCE = 0.55
+
+
+def _yards_per_target(player: dict[str, Any], position: str) -> float | None:
+    """Yards per target: given directly, or catch rate × yards per reception."""
+    for key in ("yards_per_target", "ypt"):
+        value = player.get(key)
+        if value is not None:
+            try:
+                return float(value)
+            except (TypeError, ValueError):
+                return None
+    ypr = player.get("ypr")
+    if ypr is None:
+        return None
+    try:
+        catch_rate = player.get("catch_rate")
+        rate = float(catch_rate) if catch_rate is not None else _CATCH_RATE[position]
+        return float(ypr) * min(1.0, max(0.0, rate))
+    except (TypeError, ValueError, KeyError):
+        return None
+
+
+def _confidence(player: dict[str, Any]) -> float:
+    games = player.get("current_season_games")
+    if games is None:
+        return LEGACY_THIN_CONFIDENCE
+    try:
+        seen = min(float(games), CONFIDENCE_GAMES_CAP)
+    except (TypeError, ValueError):
+        return LEGACY_THIN_CONFIDENCE
+    return round(BASE_CONFIDENCE + CONFIDENCE_PER_GAME * max(0.0, seen), 3)
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -58,15 +101,9 @@ def build_recv_feature_row(
 
     share = player.get("target_share")
     attempts = player.get("team_pass_attempts")
-    ypr = player.get("ypr")
     targets = expected_targets(target_share=share, team_pass_attempts=attempts)
-    if targets is None or ypr is None:
-        return None
-    try:
-        ypr_f = float(ypr)
-    except (TypeError, ValueError):
-        return None
-    if ypr_f <= 0:
+    ypt = _yards_per_target(player, pos)
+    if targets is None or ypt is None or ypt <= 0:
         return None
 
     depth = _depth_adj(player.get("adot"), pos)
@@ -74,25 +111,23 @@ def build_recv_feature_row(
     matchup = _matchup_adj(opponent_defense, pos)
     model_yards = model_receiving_yards(
         expected_targets=targets,
-        ypr=ypr_f,
+        yards_per_target=ypt,
         depth_adj=depth,
         pace_adj=pace,
         matchup_adj=matchup,
     )
+    confidence = _confidence(player)
 
-    thin = (
-        player.get("adot") is None
-        or not game_env
-        or not opponent_defense
-        or player.get("snap_pct") is None
-    )
-    confidence = 0.55 if thin else 0.72
-
+    ypr = player.get("ypr")
     features = {
         "target_share": float(share),
         "team_pass_attempts": float(attempts),
         "expected_targets": targets,
-        "ypr": ypr_f,
+        "yards_per_target": ypt,
+        "catch_rate": player.get("catch_rate"),
+        "ypr": float(ypr) if ypr is not None else None,
+        "games": player.get("games"),
+        "current_season_games": player.get("current_season_games"),
         "adot": player.get("adot"),
         "depth_adj": depth,
         "pace_adj": pace,
@@ -112,7 +147,8 @@ def build_recv_feature_row(
         "season": int(player["season"]),
         "week": int(player["week"]),
         "expected_targets": targets,
-        "ypr": ypr_f,
+        "yards_per_target": ypt,
+        "ypr": float(ypr) if ypr is not None else None,
         "depth_adj": depth,
         "pace_adj": pace,
         "matchup_adj": matchup,

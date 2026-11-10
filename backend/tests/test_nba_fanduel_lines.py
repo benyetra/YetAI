@@ -446,3 +446,71 @@ def test_clear_cache_forces_refetch(monkeypatch):
     assert sum(u.endswith("/odds") for u in calls) == 2
 
     fdl.clear_cache()
+
+
+@pytest.mark.parametrize(
+    "projection,expected",
+    [
+        (30.0, "o"),
+        (27.6, "o"),
+        (27.4, "u"),  # the old rule called this an over
+        (26.1, "u"),  # ...and this: within 1.5 below the line
+        (20.0, "u"),
+    ],
+)
+def test_pick_side_is_the_side_of_the_line_the_projection_is_on(
+    monkeypatch, projection, expected
+):
+    monkeypatch.setattr(
+        fdl, "_get_event_market_odds", lambda *a, **k: _odds_payload("player_points")
+    )
+    line, _price, flag = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jayson Tatum", "player_points", projection
+    )
+    assert line == 27.5
+    assert flag == expected
+
+
+def test_small_line_markets_can_produce_an_under():
+    # Threes line 2.5, projection 1.4: under. The 1.5 cushion made this "over".
+    assert fdl.pick_side(1.4, 2.5) == "u"
+    assert fdl.pick_side(2.5, 2.5) == "o"
+    assert fdl.pick_side(3.1, 2.5) == "o"
+
+
+def test_line_lookup_ignores_accents_and_suffixes(monkeypatch):
+    def outcome(desc, name, point):
+        return {"description": desc, "name": name, "point": point, "price": -110}
+
+    payload = {
+        "bookmakers": [
+            {
+                "key": "fanduel",
+                "title": "FanDuel",
+                "markets": [
+                    {
+                        "key": "player_points",
+                        "outcomes": [
+                            outcome("Nikola Jokic", "Over", 28.5),
+                            outcome("Nikola Jokic", "Under", 28.5),
+                            outcome("Jaren Jackson Jr", "Over", 21.5),
+                            outcome("Jaren Jackson Jr", "Under", 21.5),
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+    monkeypatch.setattr(fdl, "_get_event_market_odds", lambda *a, **k: payload)
+    jokic = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Nikola Jokić", "player_points", 30.0
+    )
+    jackson = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Jaren Jackson Jr.", "player_points", 19.0
+    )
+    nobody = fdl.get_fanduel_line(
+        "basketball_nba", "evt1", "Nikola Jovic", "player_points", 12.0
+    )
+    assert jokic == (28.5, -110.0, "o")
+    assert jackson == (21.5, -110.0, "u")
+    assert nobody == (0.0, 0.0, "n")

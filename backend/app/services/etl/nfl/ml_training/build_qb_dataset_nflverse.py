@@ -7,14 +7,18 @@ from typing import Any
 import pandas as pd
 
 from app.services.etl.nfl.qb_features import (
+    MIN_FORM_ATTEMPTS,
+    MIN_OPP_GAMES,
+    dynamic_tier_from_history,
     estimate_opp_air_yards_allowed_from_weekly,
     estimate_opp_defense_from_weekly,
     estimate_opp_pass_allowed_from_weekly,
     form_features_from_prior_yards,
     form_volume_features_from_prior,
-    implied_team_total_from_market,
+    implied_team_total_from_expected_margin,
+    league_pass_allowed_from_weekly,
+    opponent_pass_factor,
     prior_game_stats_for_player,
-    prior_yards_for_player,
     scheme_features_for_opponent,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import (
@@ -85,8 +89,9 @@ def _schedule_market_index(seasons: list[int]) -> dict[tuple[int, int, str], dic
                 continue
             implied = None
             if total_f is not None and team_spread is not None:
-                implied = implied_team_total_from_market(
-                    total_line=total_f, spread_line=team_spread
+                # team_spread is the team's expected margin (positive = favored)
+                implied = implied_team_total_from_expected_margin(
+                    total_line=total_f, team_margin=team_spread
                 )
             out[(season, week, team)] = {
                 "total_line": total_f,
@@ -105,72 +110,18 @@ def _schedule_market_index(seasons: list[int]) -> dict[tuple[int, int, str], dic
 
 
 def _weekly_records(seasons: list[int]) -> list[dict[str, Any]]:
-    import nfl_data_py as nfl
-
-    frames = []
-    for season in seasons:
-        try:
-            weekly = nfl.import_weekly_data([int(season)])
-        except Exception:
-            continue
-        if weekly is None or getattr(weekly, "empty", True):
-            continue
-        frames.append(weekly)
-    if not frames:
-        return []
-    weekly = pd.concat(frames, ignore_index=True)
-    if "season_type" in weekly.columns:
-        weekly = weekly[weekly["season_type"] == "REG"]
-    if "position" in weekly.columns:
-        weekly = weekly[weekly["position"] == "QB"]
-    # Starters / meaningful pass volume
-    if "attempts" in weekly.columns:
-        weekly = weekly[weekly["attempts"].fillna(0) >= 10]
+    """REG QB games with meaningful pass volume, legacy or new nflverse release."""
+    from app.services.etl.nfl.nflverse_weekly import (
+        load_weekly_frame,
+        weekly_qb_records,
+    )
 
     records: list[dict[str, Any]] = []
-    for _, row in weekly.iterrows():
-        records.append(
-            {
-                "qb_player_id": str(row.get("player_id") or ""),
-                "qb_player_name": str(
-                    row.get("player_display_name") or row.get("player_name") or ""
-                ),
-                "season": int(row.get("season") or 0),
-                "week": int(row.get("week") or 0),
-                "actual_passing_yards": float(row.get("passing_yards") or 0),
-                "recent_team": str(row.get("recent_team") or row.get("team") or ""),
-                "opponent_team": str(row.get("opponent_team") or ""),
-                "position": "QB",
-                "passing_yards": float(row.get("passing_yards") or 0),
-                "passing_epa": (
-                    float(row["passing_epa"])
-                    if row.get("passing_epa") is not None
-                    and pd.notna(row.get("passing_epa"))
-                    else None
-                ),
-                "attempts": (
-                    float(row["attempts"])
-                    if row.get("attempts") is not None and pd.notna(row.get("attempts"))
-                    else None
-                ),
-                "completions": (
-                    float(row["completions"])
-                    if row.get("completions") is not None
-                    and pd.notna(row.get("completions"))
-                    else None
-                ),
-                "sacks": (
-                    float(row["sacks"])
-                    if row.get("sacks") is not None and pd.notna(row.get("sacks"))
-                    else None
-                ),
-                "passing_air_yards": (
-                    float(row["passing_air_yards"])
-                    if row.get("passing_air_yards") is not None
-                    and pd.notna(row.get("passing_air_yards"))
-                    else None
-                ),
-            }
+    for season in seasons:
+        records.extend(
+            r
+            for r in weekly_qb_records(load_weekly_frame(int(season)))
+            if (r.get("attempts") or 0) >= 10
         )
     return records
 
@@ -208,19 +159,15 @@ def build_from_nflverse(
         tier_pred = predict_qb_passing_yards(name, season, week, is_backup=False)
         tier_yards = float(tier_pred["predicted_passing_yards"])
         player_key = row["qb_player_id"] or name
-        prior = prior_yards_for_player(
-            history_sorted,
-            player_key=str(player_key),
-            season=season,
-            week=week,
-        )
-        form = form_features_from_prior_yards(prior, tier_yards=tier_yards)
         prior_stats = prior_game_stats_for_player(
             history_sorted,
             player_key=str(player_key),
             season=season,
             week=week,
+            min_attempts=MIN_FORM_ATTEMPTS,
         )
+        prior = [float(s["yards"]) for s in prior_stats]
+        form = form_features_from_prior_yards(prior, tier_yards=tier_yards)
         volume = form_volume_features_from_prior(prior_stats)
         opp = str(row.get("opponent_team") or "")
         team = str(row.get("recent_team") or "").upper()
@@ -236,6 +183,24 @@ def build_from_nflverse(
         scheme = scheme_features_for_opponent(opp, schemes=schemes)
         mkt = market.get((season, week, team), {})
         context: dict[str, Any] = {**form, **volume, **defense, **scheme}
+        # Same dynamic tier the live board publishes and feeds the model.
+        context["dynamic_tier_yards"] = dynamic_tier_from_history(
+            tier_yards,
+            prior_stats,
+            season=season,
+            opp_factor=opponent_pass_factor(
+                estimate_opp_pass_allowed_from_weekly(
+                    history_sorted,
+                    opponent_abbr=opp,
+                    season=season,
+                    week=week,
+                    min_games=MIN_OPP_GAMES,
+                ),
+                league_pass_allowed_from_weekly(
+                    history_sorted, season=season, week=week
+                ),
+            ),
+        )
         if opp_allowed is not None:
             context["opp_pass_yds_allowed"] = opp_allowed
         if opp_air is not None:

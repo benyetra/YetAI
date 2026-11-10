@@ -1,5 +1,5 @@
 from app.services.etl.nfl._db import db_session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Optional
 import requests
 
@@ -9,7 +9,13 @@ from app.services.etl.nfl.kicker_weather import (
     kicker_stat_inputs,
     weather_dict_from_nfl_row,
 )
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    EASTERN,
+    get_current_nfl_week,
+    get_nfl_season,
+)
+from app.services.etl.nfl.venues import surface_type as venue_surface_type
+from app.services.etl.nfl.venues import venue_type as venue_roof_type
 
 
 # Dynamic season and week detection
@@ -20,41 +26,53 @@ pre_season = 1
 
 
 # Ensure the tables are created if they don't exist
-def get_team_schedule(team_id):
-    """Get team schedule using proper NFL week calculation"""
-    try:
-        # Use the proper week calculation function
-        current_week = get_current_nfl_week(season)
-        current_season = get_nfl_season()
+def _event_kickoff_utc(event) -> Optional[datetime]:
+    """Kickoff of an ESPN schedule event as a naive UTC datetime."""
+    raw = str(event.get("date") or "")
+    for fmt in ("%Y-%m-%dT%H:%MZ", "%Y-%m-%dT%H:%M:%SZ"):
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+    return None
 
-        # Get full season schedule and filter for current/upcoming games
+
+def event_kickoff_eastern(event) -> Optional[datetime]:
+    """Kickoff in US Eastern (naive), the clock ``game_date`` columns and the
+    play-by-play game dates use. A 01:20Z Friday kickoff is Thursday night."""
+    kickoff = _event_kickoff_utc(event)
+    if kickoff is None:
+        return None
+    return kickoff.replace(tzinfo=timezone.utc).astimezone(EASTERN).replace(tzinfo=None)
+
+
+def upcoming_events(events, *, now_utc: Optional[datetime] = None) -> list:
+    """Schedule events that have not kicked off yet, soonest first.
+
+    The old filter also kept any game from the current NFL week, and that week
+    only rolls over on Thursday: from Sunday night to Wednesday the "next game"
+    was the one just played, so the kicker was re-projected against last
+    week's opponent with that game already in his season stats."""
+    now = now_utc if now_utc is not None else datetime.utcnow()
+    upcoming = []
+    for event in events or []:
+        kickoff = _event_kickoff_utc(event)
+        if kickoff is not None and kickoff > now:
+            upcoming.append((kickoff, event))
+    upcoming.sort(key=lambda pair: pair[0])
+    return [event for _, event in upcoming]
+
+
+def get_team_schedule(team_id):
+    """Team schedule limited to games that have not kicked off, soonest first."""
+    try:
+        current_season = get_nfl_season()
         url = f"https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/{team_id}/schedule?season={current_season}&seasontype=2"
         response = requests.get(url)
 
         if response.status_code == 200:
             schedule_data = response.json()
-
-            # Filter for upcoming games (current week and beyond)
-            current_time = datetime.now()
-            upcoming_events = []
-
-            for event in schedule_data.get("events", []):
-                try:
-                    game_time = datetime.strptime(event["date"], "%Y-%m-%dT%H:%MZ")
-                    # Include games from current week onwards
-                    if (
-                        game_time >= current_time
-                        or event.get("week", {}).get("number", 0) >= current_week
-                    ):
-                        upcoming_events.append(event)
-                except (ValueError, KeyError):
-                    continue
-
-            # Sort by date to get next games first
-            upcoming_events.sort(key=lambda x: x["date"])
-
-            # Return schedule data with filtered events
-            schedule_data["events"] = upcoming_events
+            schedule_data["events"] = upcoming_events(schedule_data.get("events", []))
             return schedule_data
         else:
             print(
@@ -577,8 +595,8 @@ def process_kicker_data(kicker, team_name, opponent_name, game_time, venue_name)
 
     weather_data = _load_venue_weather(venue_name)
     weather_info = {}
-    venue_type = "dome" if "dome" in (venue_name or "").lower() else "outdoor"
-    surface_type = "turf" if "turf" in (venue_name or "").lower() else "grass"
+    venue_type = venue_roof_type(venue_name)
+    surface_type = venue_surface_type(venue_name)
     if weather_data:
         print(
             f"🌡️ Weather for {venue_name}: {weather_data['temperature']}°F, "
@@ -737,45 +755,49 @@ def save_kicker_data(kicker_data):
         kicker.venue_type = kicker_data.get("venue_type")
         kicker.surface_type = kicker_data.get("surface_type")
 
-    # 2. Save to historical KickerPredictions table (ALWAYS create new record)
-    # Check if prediction already exists for this player/date to avoid duplicates
+    # 2. Historical KickerPredictions: one row per kicker and game day, kept
+    # current until kickoff (weather and form move during the week).
+    day_start = datetime.combine(game_date, datetime.min.time())
     existing_prediction = (
         db_session.query(KickerPredictions)
-        .filter_by(kicker_player_id=str(kicker_data["player_id"]), game_date=game_date)
+        .filter(
+            KickerPredictions.kicker_player_id == str(kicker_data["player_id"]),
+            KickerPredictions.game_date >= day_start,
+            KickerPredictions.game_date < day_start + timedelta(days=1),
+        )
         .first()
     )
 
-    saved_historical = False
     predicted_fg_made = projected_fg
-    if not existing_prediction:
-        # Calculate distance-specific probabilities (placeholder logic - enhance as needed)
-        predicted_fg_attempts = float(max(1.5, predicted_fg_made * 1.2))
-        predicted_success_rate = float(
-            min(
-                0.95,
-                (
-                    predicted_fg_made / predicted_fg_attempts
-                    if predicted_fg_attempts > 0
-                    else 0.85
-                ),
-            )
+    predicted_fg_attempts = float(max(1.5, predicted_fg_made * 1.2))
+    predicted_success_rate = float(
+        min(
+            0.95,
+            (
+                predicted_fg_made / predicted_fg_attempts
+                if predicted_fg_attempts > 0
+                else 0.85
+            ),
         )
+    )
 
-        wind_for_impact = wind_speed if wind_speed is not None else 0.0
-        temp_for_impact = temperature if temperature is not None else 70.0
-        feature_importance = _sanitize_feature_importance(
-            {
-                "team_red_zone_efficiency": team_rz,
-                "weather_impact": (
-                    wind_for_impact * -0.1 + (temp_for_impact - 70.0) * -0.02
-                ),
-                "venue_type": 0.1 if kicker_data.get("venue_type") == "dome" else 0.0,
-                "surface_type": (
-                    0.05 if kicker_data.get("surface_type") == "turf" else 0.0
-                ),
-            }
-        )
+    wind_for_impact = wind_speed if wind_speed is not None else 0.0
+    temp_for_impact = temperature if temperature is not None else 70.0
+    feature_importance = _sanitize_feature_importance(
+        {
+            "team_red_zone_efficiency": team_rz,
+            "weather_impact": (
+                wind_for_impact * -0.1 + (temp_for_impact - 70.0) * -0.02
+            ),
+            "venue_type": 0.1 if kicker_data.get("venue_type") == "dome" else 0.0,
+            "surface_type": (
+                0.05 if kicker_data.get("surface_type") == "turf" else 0.0
+            ),
+        }
+    )
 
+    historical_prediction = existing_prediction
+    if historical_prediction is None:
         # Create instance with required parameters only (due to custom __init__)
         historical_prediction = KickerPredictions(
             kicker_player_id=str(kicker_data["player_id"]),
@@ -789,32 +811,34 @@ def save_kicker_data(kicker_data):
             predicted_fg_made=float(predicted_fg_made),
             predicted_success_rate=predicted_success_rate,
         )
-
-        # Note: KickerPredictions model uses game_date for temporal tracking instead of season/week
-
-        # Set additional attributes manually
-        historical_prediction.short_distance_prob = float(
-            min(0.95, predicted_success_rate + 0.1)
-        )  # <30 yards
-        historical_prediction.medium_distance_prob = float(
-            predicted_success_rate
-        )  # 30-49 yards
-        historical_prediction.long_distance_prob = float(
-            max(0.6, predicted_success_rate - 0.2)
-        )  # 50+ yards
-        historical_prediction.model_confidence = 0.75  # Placeholder confidence score
-        historical_prediction.feature_importance = feature_importance
-        historical_prediction.temperature = temperature
-        historical_prediction.wind_speed = wind_speed
-        historical_prediction.roof_type = kicker_data.get("venue_type")
-        historical_prediction.surface_type = kicker_data.get("surface_type")
-
         db_session.add(historical_prediction)
-        saved_historical = True
     else:
-        print(
-            f"⚠️ Prediction already exists for {kicker_data['name']} on {game_date}, skipping historical save"
-        )
+        historical_prediction.kicker_player_name = kicker_data["name"]
+        historical_prediction.team_name = kicker_data["team_name"]
+        historical_prediction.venue_name = kicker_data["venue_name"]
+        historical_prediction.opponent_team_name = kicker_data["opponent_name"]
+        historical_prediction.game_date = kicker_data["game_time"]
+        historical_prediction.predicted_fg_attempts = predicted_fg_attempts
+        historical_prediction.predicted_fg_made = float(predicted_fg_made)
+        historical_prediction.predicted_success_rate = predicted_success_rate
+        historical_prediction.prediction_date = datetime.utcnow()
+
+    historical_prediction.short_distance_prob = float(
+        min(0.95, predicted_success_rate + 0.1)
+    )  # <30 yards
+    historical_prediction.medium_distance_prob = float(
+        predicted_success_rate
+    )  # 30-49 yards
+    historical_prediction.long_distance_prob = float(
+        max(0.6, predicted_success_rate - 0.2)
+    )  # 50+ yards
+    historical_prediction.model_confidence = 0.75  # Placeholder confidence score
+    historical_prediction.feature_importance = feature_importance
+    historical_prediction.temperature = temperature
+    historical_prediction.wind_speed = wind_speed
+    historical_prediction.roof_type = kicker_data.get("venue_type")
+    historical_prediction.surface_type = kicker_data.get("surface_type")
+    saved_historical = True
 
     try:
         db_session.commit()
@@ -874,9 +898,11 @@ def _run_kickers_core():
                         and len(schedule["events"]) > 0
                     ):
                         next_game = schedule["events"][0]
-                        game_time = datetime.now() + timedelta(
-                            days=1
-                        )  # Default to tomorrow
+                        # Real kickoff (Eastern). "Tomorrow" is only the
+                        # fallback when ESPN's date cannot be read.
+                        game_time = event_kickoff_eastern(
+                            next_game
+                        ) or datetime.now() + timedelta(days=1)
                         venue_name = "Stadium"  # Default venue
                         opponent_name = "Opponent"  # Default opponent
 

@@ -13,7 +13,12 @@ import requests
 
 from app.models.predictions_models import QBPredictions
 from app.services.etl.nfl._db import db_session
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, get_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    get_current_nfl_week,
+    get_nfl_season,
+    has_kicked_off,
+)
+from app.services.etl.nfl.player_names import find_by_player_name
 
 warnings.filterwarnings("ignore")
 
@@ -102,36 +107,10 @@ def get_nfl_games_and_lines():
 
 
 def get_best_line(player_lines: Dict) -> Dict:
-    """Get the best available line and odds for a player"""
-    best_over = {"line": 0, "odds": -110, "book": "N/A"}
-    best_under = {"line": 999, "odds": -110, "book": "N/A"}
+    """Best book per side plus the consensus line (see ``prop_lines.best_lines``)."""
+    from app.services.etl.nfl.prop_lines import best_lines
 
-    for bookmaker, lines in player_lines.items():
-        if "over" in lines:
-            over_line = lines["over"]
-            if over_line["line"] > best_over["line"] or (
-                over_line["line"] == best_over["line"]
-                and over_line["odds"] > best_over["odds"]
-            ):
-                best_over = {
-                    "line": over_line["line"],
-                    "odds": over_line["odds"],
-                    "book": bookmaker,
-                }
-
-        if "under" in lines:
-            under_line = lines["under"]
-            if under_line["line"] < best_under["line"] or (
-                under_line["line"] == best_under["line"]
-                and under_line["odds"] > best_under["odds"]
-            ):
-                best_under = {
-                    "line": under_line["line"],
-                    "odds": under_line["odds"],
-                    "book": bookmaker,
-                }
-
-    return {"over": best_over, "under": best_under}
+    return best_lines(player_lines)
 
 
 def generate_betting_recommendation(
@@ -255,6 +234,11 @@ def normalize_player_name(name: str) -> str:
     return name_mapping.get(name, name)
 
 
+def match_qb_lines(qb_name: str, all_lines: Dict) -> Dict | None:
+    """Lines for this QB: same name ignoring punctuation / suffixes."""
+    return find_by_player_name(qb_name, all_lines)
+
+
 def _run_qb_betting_core():
     """Main function to update QB predictions with betting data"""
     print("🏈 QB Predictions with Betting Integration - Heroku")
@@ -305,24 +289,24 @@ def _run_qb_betting_core():
     updated_count = 0
     matched_count = 0
 
+    frozen_count = 0
+
     for qb in qb_predictions:
         qb_name = qb.qb_player_name
-        normalized_name = normalize_player_name(qb_name)
 
-        # Try to find matching lines
-        lines = None
-        for line_player_name in all_lines.keys():
-            if (
-                normalized_name.lower() in line_player_name.lower()
-                or line_player_name.lower() in normalized_name.lower()
-            ):
-                lines = all_lines[line_player_name]
-                break
+        # The odds feed only lists upcoming games. Once this row's game has
+        # kicked off, a line under the same name belongs to next week's game:
+        # attaching it would replace the closing line the pick is graded on.
+        if has_kicked_off(qb.game_date):
+            frozen_count += 1
+            continue
+
+        lines = match_qb_lines(qb_name, all_lines)
 
         if lines:
             matched_count += 1
             best_lines = get_best_line(lines)
-            ou_line = best_lines["over"]["line"]
+            ou_line = best_lines["consensus"]
 
             if ou_line > 0:
                 over_prob = None
@@ -439,6 +423,7 @@ def _run_qb_betting_core():
     print(f"   🎯 QBs with predictions: {len(qb_predictions)}")
     print(f"   📈 QBs with lines available: {matched_count}")
     print(f"   ✅ QBs updated with betting data: {updated_count}")
+    print(f"   🧊 QBs frozen (game already kicked off): {frozen_count}")
     match_rate = (
         (matched_count / len(qb_predictions) * 100) if len(qb_predictions) > 0 else 0
     )

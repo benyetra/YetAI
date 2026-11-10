@@ -25,7 +25,11 @@ from app.services.etl.nba._samples import player_games
 logger = logging.getLogger(__name__)
 
 INJURY_SKIP_STATUSES = {"out", "ir", "doubtful"}
-CORRELATION_ADJUSTMENT = 0.98
+# The expected value of a sum is the sum of the expected values, however the
+# three stats move together: correlation widens the floor/ceiling, not the
+# mean. The inherited 0.98 shaved 2% (about half a point) off every PRA
+# projection, a built-in lean to the under.
+CORRELATION_ADJUSTMENT = 1.0
 
 
 def _normalize_status(status_str: str | None) -> str:

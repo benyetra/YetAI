@@ -96,6 +96,12 @@ matchup_adj       ← opponent receiving yards / YPR allowed (by pos when availa
 model_yards = expected_targets × ypr × depth/pace/matchup factors
 ```
 
+> **Revision (v2, `recv_nonml_v2`):** `ypr` is applied per *target*, i.e.
+> `expected_targets × catch_rate × ypr` (= yards per target), with usage
+> aggregated over the player's recent games instead of his last one. Targets ×
+> yards-per-reception over-projected by ~28 yards a player in a walk-forward
+> backtest; see `backend/docs/NFL_ML_OPS.md`.
+
 Exact factor parameterization is an implementation detail; invariants:
 
 1. **Targets are never invented** — if target/share/snap priors are missing, skip the player or mark **low-conf** and do not fabricate a target rate from the line.

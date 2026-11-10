@@ -21,7 +21,11 @@ from app.services.etl.nfl.anytime_td_market_anchor import (
     stamp_market_model_version,
     vig_free_fair_prob,
 )
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    get_current_nfl_week,
+    now_eastern_naive,
+    resolve_nfl_season,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
@@ -445,6 +449,8 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
     """Load predictions, attach market-anchored odds/edge/pick (or clear stale)."""
     resolved_season = resolve_nfl_season(season)
     resolved_week = week if week is not None else get_current_nfl_week(resolved_season)
+    # Scheduled runs (no explicit week) leave played games alone.
+    freeze_played = week is None
 
     odds_by_player = fetch_anytime_td_odds()
     fetch_empty = not odds_by_player
@@ -459,9 +465,29 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
         upsert_rows: list[dict[str, Any]] = []
         matched = 0
         stale_cleared = 0
+        frozen = 0
+        today = now_eastern_naive().date()
 
         for pred in predictions:
+            game_day = pred.game_date
+            if isinstance(game_day, datetime):
+                game_day = game_day.date()
+            # A played game keeps its closing odds, edge and pick: the feed now
+            # only lists next week's games, and a quote under the same name
+            # would replace what the pick is graded on.
+            if freeze_played and game_day is not None and game_day < today:
+                frozen += 1
+                continue
+            # On game day a missing quote usually means the market closed at
+            # kickoff, not that the player lost his market: keep what we had.
+            market_closed = (
+                freeze_played and game_day == today and _had_stale_betting(pred)
+            )
+
             if fetch_empty:
+                if market_closed:
+                    frozen += 1
+                    continue
                 betting = _restore_model_probability(pred)
                 if _had_stale_betting(pred):
                     stale_cleared += 1
@@ -472,6 +498,9 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
                 match_player_odds(pred.player_name, odds_by_player)
             )
             if quote is None:
+                if market_closed:
+                    frozen += 1
+                    continue
                 betting = _restore_model_probability(pred)
                 if _had_stale_betting(pred):
                     stale_cleared += 1
@@ -507,6 +536,7 @@ def run(*, season: int | None = None, week: int | None = None) -> dict[str, Any]
             "predictions": len(predictions),
             "matched": matched,
             "stale_cleared": stale_cleared,
+            "frozen": frozen,
             "blocked": 1 if fetch_empty else 0,
             "updated": len(upsert_rows),
         }

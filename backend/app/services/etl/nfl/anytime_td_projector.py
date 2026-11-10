@@ -13,7 +13,11 @@ from app.services.etl.nfl.anytime_td_calibration import (
     MODEL_VERSION_HIER,
 )
 from app.services.etl.nfl.anytime_td_model import expected_tds
-from app.services.etl.nfl.nfl_common import get_current_nfl_week, resolve_nfl_season
+from app.services.etl.nfl.nfl_common import (
+    get_current_nfl_week,
+    now_eastern_naive,
+    resolve_nfl_season,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
@@ -151,31 +155,40 @@ def build_upsert_row(
     }
 
 
+def _is_played(game_date: Any, today: date) -> bool:
+    """True when the row's game day is before today (Eastern)."""
+    if isinstance(game_date, datetime):
+        game_date = game_date.date()
+    return isinstance(game_date, date) and game_date < today
+
+
 def delete_stale_week_predictions(
     db: Any,
     *,
     season: int,
     week: int,
     keep_player_ids: Iterable[str],
+    on_or_after: date | None = None,
 ) -> int:
     """Delete same-season/week ATD rows whose player_id is not on the new slate.
 
     Upsert alone leaves prior-run players (wrong TEAM after trades/depth
     changes) on the board because conflict keys are (season, week, player_id).
     Only call after a successful non-empty project for that season/week.
+    ``on_or_after`` limits the purge to games on or after that date, so rows
+    for games already played are never removed.
     """
     keep = {str(pid) for pid in keep_player_ids if pid}
     if not keep:
         return 0
-    deleted = (
-        db.query(NFLAnytimeTDPredictions)
-        .filter(
-            NFLAnytimeTDPredictions.season == season,
-            NFLAnytimeTDPredictions.week == week,
-            NFLAnytimeTDPredictions.player_id.notin_(keep),
-        )
-        .delete(synchronize_session=False)
+    query = db.query(NFLAnytimeTDPredictions).filter(
+        NFLAnytimeTDPredictions.season == season,
+        NFLAnytimeTDPredictions.week == week,
+        NFLAnytimeTDPredictions.player_id.notin_(keep),
     )
+    if on_or_after is not None:
+        query = query.filter(NFLAnytimeTDPredictions.game_date >= on_or_after)
+    deleted = query.delete(synchronize_session=False)
     return int(deleted or 0)
 
 
@@ -233,6 +246,9 @@ def run(
     """
     resolved_season = resolve_nfl_season(season)
     resolved_week = week if week is not None else get_current_nfl_week(resolved_season)
+    # Scheduled runs (no explicit week) never touch games already played; an
+    # operator naming the week is rebuilding it on purpose.
+    freeze_played = week is None
 
     rows = (
         feature_rows
@@ -254,6 +270,28 @@ def run(
         build_upsert_row(r, season=resolved_season, week=resolved_week, now=now)
         for r in rows
     ]
+    # The week only rolls over on Thursday, so Monday-Wednesday runs rebuild a
+    # week whose games are over. Those rows are what the picks are graded on:
+    # leave them exactly as they were at kickoff.
+    today = now_eastern_naive().date()
+    frozen = (
+        [r for r in upsert_rows if _is_played(r.get("game_date"), today)]
+        if freeze_played
+        else []
+    )
+    if frozen:
+        upsert_rows = [
+            r for r in upsert_rows if not _is_played(r.get("game_date"), today)
+        ]
+    if not upsert_rows:
+        return {
+            "status": "ok",
+            "predictions": 0,
+            "deleted_stale": 0,
+            "frozen_played": len(frozen),
+            "season": resolved_season,
+            "week": resolved_week,
+        }
     keep_ids = {str(r["player_id"]) for r in upsert_rows if r.get("player_id")}
 
     db = SessionLocal()
@@ -270,6 +308,7 @@ def run(
             season=resolved_season,
             week=resolved_week,
             keep_player_ids=keep_ids,
+            on_or_after=today if freeze_played else None,
         )
         db.commit()
         if deleted:
@@ -283,6 +322,7 @@ def run(
             "status": "ok",
             "predictions": len(upsert_rows),
             "deleted_stale": deleted,
+            "frozen_played": len(frozen),
             "season": resolved_season,
             "week": resolved_week,
         }

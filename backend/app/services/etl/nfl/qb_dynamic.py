@@ -17,6 +17,7 @@ from app.services.etl.nfl.nfl_common import (
     _first_regular_season_thursday,
     get_current_nfl_week,
     get_nfl_season,
+    has_kicked_off,
 )
 from app.services.etl.nfl.qb_passing_yards_ml import enrich_qb_prediction_for_write
 from app.services.etl.nfl.qb_tiers import predict_qb_passing_yards
@@ -189,63 +190,19 @@ def team_is_home(team_abbr: str, season: int, week: int) -> float:
 
 
 def _load_weekly_qb_history(season: int) -> list[dict]:
-    """nflverse weekly QB rows for rolling form / opp allowed (best-effort)."""
-    try:
-        weekly = nfl.import_weekly_data([season])
-    except Exception as e:
-        print(f"⚠️ weekly data unavailable for QB features: {e}")
-        return []
-    if weekly is None or getattr(weekly, "empty", True):
-        return []
+    """nflverse QB rows for this season and last (rolling form, the dynamic
+    tier's prior-season starts, opponent pass defense). Best-effort."""
+    from app.services.etl.nfl.nflverse_weekly import (
+        load_weekly_frame,
+        weekly_qb_records,
+    )
+
     records: list[dict] = []
-    for _, row in weekly.iterrows():
-        pos = str(row.get("position") or "").upper()
-        if pos and pos != "QB":
-            continue
-        records.append(
-            {
-                "qb_player_id": str(row.get("player_id") or ""),
-                "qb_player_name": str(
-                    row.get("player_display_name") or row.get("player_name") or ""
-                ),
-                "season": int(row.get("season") or season),
-                "week": int(row.get("week") or 0),
-                "actual_passing_yards": float(row.get("passing_yards") or 0),
-                "recent_team": str(row.get("recent_team") or row.get("team") or ""),
-                "opponent_team": str(row.get("opponent_team") or ""),
-                "position": "QB",
-                "passing_yards": float(row.get("passing_yards") or 0),
-                "passing_epa": (
-                    float(row["passing_epa"])
-                    if row.get("passing_epa") is not None
-                    and not pd.isna(row.get("passing_epa"))
-                    else None
-                ),
-                "attempts": (
-                    float(row["attempts"])
-                    if row.get("attempts") is not None
-                    and not pd.isna(row.get("attempts"))
-                    else None
-                ),
-                "completions": (
-                    float(row["completions"])
-                    if row.get("completions") is not None
-                    and not pd.isna(row.get("completions"))
-                    else None
-                ),
-                "sacks": (
-                    float(row["sacks"])
-                    if row.get("sacks") is not None and not pd.isna(row.get("sacks"))
-                    else None
-                ),
-                "passing_air_yards": (
-                    float(row["passing_air_yards"])
-                    if row.get("passing_air_yards") is not None
-                    and not pd.isna(row.get("passing_air_yards"))
-                    else None
-                ),
-            }
-        )
+    for year in (season - 1, season):
+        rows = weekly_qb_records(load_weekly_frame(year))
+        if not rows:
+            print(f"⚠️ weekly QB data unavailable for {year}")
+        records.extend(rows)
     return records
 
 
@@ -318,6 +275,15 @@ def _market_lines_for_team(team_abbr: str, season: int, week: int) -> dict:
             "is_home": 1.0 if is_home else 0.0,
             "dome": roof in {"dome", "closed", "retractable"},
         }
+        if total_f is not None and team_spread is not None:
+            from app.services.etl.nfl.qb_features import (
+                implied_team_total_from_expected_margin,
+            )
+
+            # team_spread is the expected margin here (positive = favored).
+            out["implied_team_total"] = implied_team_total_from_expected_margin(
+                total_line=total_f, team_margin=team_spread
+            )
         temp = game.get("temp")
         wind = game.get("wind")
         if temp is not None and pd.notna(temp):
@@ -347,38 +313,30 @@ def build_qb_prediction_context(
 ) -> dict:
     """Assemble matchup/form context for GBM features."""
     from app.services.etl.nfl.qb_features import (
-        blend_tier_with_form,
+        MIN_FORM_ATTEMPTS,
+        MIN_OPP_GAMES,
+        dynamic_tier_from_history,
         estimate_opp_air_yards_allowed_from_weekly,
         estimate_opp_defense_from_weekly,
         estimate_opp_pass_allowed_from_weekly,
         form_features_from_prior_yards,
         form_volume_features_from_prior,
+        league_pass_allowed_from_weekly,
+        opponent_pass_factor,
         prior_game_stats_for_player,
-        prior_yards_for_player,
         scheme_features_for_opponent,
     )
     from app.services.etl.nfl.qb_late_availability import late_injury_risk
 
     history = weekly_history if weekly_history is not None else []
     player_key = player_id or qb_name
-    prior = prior_yards_for_player(
-        history,
-        player_key=player_key,
-        season=season,
-        week=week,
-    )
-    if not prior and qb_name:
-        prior = prior_yards_for_player(
-            history,
-            player_key=qb_name,
-            season=season,
-            week=week,
-        )
+    # Starts only: a relief cameo is not evidence about a full game.
     prior_stats = prior_game_stats_for_player(
         history,
         player_key=player_key,
         season=season,
         week=week,
+        min_attempts=MIN_FORM_ATTEMPTS,
     )
     if not prior_stats and qb_name:
         prior_stats = prior_game_stats_for_player(
@@ -386,16 +344,33 @@ def build_qb_prediction_context(
             player_key=qb_name,
             season=season,
             week=week,
+            min_attempts=MIN_FORM_ATTEMPTS,
         )
+    prior = [float(s["yards"]) for s in prior_stats]
     tier_anchor = float(static_tier_yards) if static_tier_yards is not None else 210.0
     form = form_features_from_prior_yards(prior, tier_yards=tier_anchor)
     volume = form_volume_features_from_prior(prior_stats)
-    dynamic_tier = blend_tier_with_form(tier_anchor, prior)
     opp_allowed = estimate_opp_pass_allowed_from_weekly(
         history,
         opponent_abbr=opponent_abbr or "",
         season=season,
         week=week,
+    )
+    opp_allowed_stable = estimate_opp_pass_allowed_from_weekly(
+        history,
+        opponent_abbr=opponent_abbr or "",
+        season=season,
+        week=week,
+        min_games=MIN_OPP_GAMES,
+    )
+    dynamic_tier = dynamic_tier_from_history(
+        tier_anchor,
+        prior_stats,
+        season=season,
+        opp_factor=opponent_pass_factor(
+            opp_allowed_stable,
+            league_pass_allowed_from_weekly(history, season=season, week=week),
+        ),
     )
     opp_air = estimate_opp_air_yards_allowed_from_weekly(
         history,
@@ -423,6 +398,7 @@ def build_qb_prediction_context(
         **defense,
         **scheme,
         "dynamic_tier_yards": dynamic_tier,
+        "prior_starts": len(prior_stats),
         "is_home": market.get("is_home", team_is_home(team_abbr, season, week)),
         "team_abbr": team_abbr,
         "opponent_abbr": opponent_abbr,
@@ -444,7 +420,8 @@ def build_qb_prediction_context(
         ctx["pass_yds_line"] = float(pass_yds_line)
     if week > 1 and history:
         played_prior = any(
-            int(r.get("week") or 0) == week - 1
+            int(r.get("season") or season) == season
+            and int(r.get("week") or 0) == week - 1
             and (
                 str(r.get("qb_player_id") or "") == str(player_id)
                 or str(r.get("qb_player_name") or "").lower() == qb_name.lower()
@@ -673,6 +650,7 @@ def _run_qb_dynamic_core():
     weekly_history = _load_weekly_qb_history(season)
     created_predictions = 0
     updated_predictions = 0
+    frozen_predictions = 0
 
     for qb_data in starting_qbs:
         try:
@@ -684,6 +662,13 @@ def _run_qb_dynamic_core():
             is_backup = qb_data["is_backup"]
             injury_status = qb_data.get("injury_status") or "Healthy"
             hours = qb_data.get("hours_to_kickoff")
+
+            # A game that has kicked off is history: re-projecting it would
+            # overwrite the pre-game numbers (and, in qb_betting, the closing
+            # line) that the row is graded on.
+            if has_kicked_off(get_game_kickoff(team_abbr, season, week)):
+                frozen_predictions += 1
+                continue
 
             # Get opponent team and scheduled kickoff
             opponent_abbr = get_team_opponent(team_abbr, season, week)
@@ -742,19 +727,9 @@ def _run_qb_dynamic_core():
                 static_tier_yards=float(tier_prediction["predicted_passing_yards"]),
             )
             context["late_availability"] = late_meta
-            # If no prior games, anchor form features to this week's tier yards
+            # No prior starts: form features already sit on this week's tier.
             tier_yards = float(tier_prediction["predicted_passing_yards"])
-            if not any(
-                (
-                    str(r.get("qb_player_id") or "") == str(player_id)
-                    or str(r.get("qb_player_name") or "").lower() == qb_name.lower()
-                )
-                and int(r.get("week") or 0) < week
-                for r in weekly_history
-            ):
-                context["rolling_yards_l3"] = tier_yards
-                context["rolling_yards_l5"] = tier_yards
-                context["season_avg_yards"] = tier_yards
+            context.pop("prior_starts", None)
             # Publish dynamic (form-blended) tier as the non-ML point estimate
             dynamic_tier = float(context.get("dynamic_tier_yards") or tier_yards)
             tier_prediction["predicted_passing_yards"] = dynamic_tier
@@ -843,6 +818,7 @@ def _run_qb_dynamic_core():
     print(f"\n📊 DYNAMIC PREDICTIONS SUMMARY:")
     print(f"   ➕ Created Predictions: {created_predictions}")
     print(f"   🔄 Updated Predictions: {updated_predictions}")
+    print(f"   🧊 Frozen (game already kicked off): {frozen_predictions}")
 
     print(f"\n✅ Dynamic predictions complete!")
 

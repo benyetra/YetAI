@@ -172,6 +172,7 @@ def test_save_kicker_data_binds_plain_python_floats(monkeypatch):
     added = []
     mock_session = MagicMock()
     mock_session.query.return_value.filter_by.return_value.first.return_value = None
+    mock_session.query.return_value.filter.return_value.first.return_value = None
     mock_session.add.side_effect = lambda obj: added.append(obj)
     monkeypatch.setattr(kickers, "db_session", mock_session)
 

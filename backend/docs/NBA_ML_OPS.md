@@ -38,6 +38,60 @@ cd backend && PYTHONPATH=. .venv/bin/python -m pytest tests/test_nba_prop_calibr
 
 See also `docs/NBA_ETL_PARITY.md` for ETL task mapping.
 
+## Prop picks, features and PRA
+
+- **Pick side.** `fanduel_over_under` is the side of the line the projection
+  is on (`_fanduel_lines.pick_side`). The inherited rule called an under only
+  when the projection was more than 1.5 below the line and an over otherwise,
+  so 17.9 against a 19.5 line was published, graded and auto-picked as an
+  over, and threes / rebounds / assists (lines of 1.5-6.5) almost never
+  produced an under. Rows written before the fix keep the side they were
+  published with; `scripts/nba_props_audit.py` already grades by projection
+  side and is the number to compare across the change.
+- **Line matching** ignores accents, punctuation and suffixes
+  (`normalize_player_name`): "Nikola Jokić" finds "Nikola Jokic".
+- **PRA** is points + rebounds + assists with no haircut. The inherited 0.98
+  "correlation adjustment" took 2% off every projection; correlation changes
+  the spread of a sum, not its mean.
+- **Features v3** (`_feature_engineering.FEATURES_VERSION = 3`):
+  - `opp_*` come from `_team_defense.team_defense_as_of(opponent, game_date)`,
+    the same aggregation `update_team_defense_stats` stores, restricted to
+    games before the row's date. Training rows used to read the opponent's
+    defense as of the day the dataset was built.
+  - The Vegas line is found through the opponent, not through the roster
+    table (which only knows a player's team today).
+  - New columns: `<stat>_ewm_5/10`, `<stat>_avg_season`, `<stat>_last`,
+    `<stat>_per_min_20`, `<stat>_rate_x_min_5/10`, `sample_games`,
+    `minutes_avg_3/20/season`, `minutes_ewm_3`, `minutes_last`, and 10/20-game
+    shot-volume averages (`fg_attempts`, `three_pt_attempts`, `ft_attempts`,
+    `turnovers`, `personal_fouls`).
+  - Live models list their own features in metadata, so they keep running on
+    the v2 columns until a retrain on v3 passes its gate (**NBA Weekly
+    Retrain**, or **NBA Train Prop Models** by hand).
+
+**What v3 buys.** Replayed offline through the same builder and trainer on
+public box scores (2024-25, 2025-26 and the first three weeks of 2026-27;
+53,255 rows, latest 20% held out, shipped `PROP_HYPERPARAMS`):
+
+| Stat | Recent average (best of 5/10/20) | v2 features | v3 features |
+|------|---------------------------------:|------------:|------------:|
+| Points | 4.79 | 4.71 | **4.65** |
+| Rebounds | 1.91 | 1.90 | **1.87** |
+| Assists | 1.41 | 1.37 | **1.36** |
+
+About a third of the gain is the as-of-date opponent defense, the rest the
+recency and rate columns. A home/away flag, last season's averages and
+opponent-relative-to-league ratios were tried and added nothing. The replay
+used ESPN box scores, not the production table, so expect the direction rather
+than the exact figures from the first production retrain. Threes, free throws,
+steals and blocks were also replayed: a squared-error model does not beat a
+recent average on MAE for counts that small, so they are not added to the
+weekly retrain and keep their inherited models.
+
+- **Ruled out after the overnight run.** A generator that skips a player for
+  injury also deletes his row for today (`_stale_rows`); otherwise the 3:30 ET
+  projection, line and pick stay on the board after he is declared out.
+
 ## Season rollover (each October)
 
 1. Add the new opening night to `REGULAR_SEASON_START` in

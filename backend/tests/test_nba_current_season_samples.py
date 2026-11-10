@@ -12,6 +12,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.api.v1 import predictions as predictions_module
 from app.models.predictions_models import (
+    NBAGameLines,
     NBASpreadActuals,
     PlayerInjuryStatus,
     RecentGames,
@@ -36,6 +37,7 @@ NUGGETS = 1610612743
 def db():
     engine = create_engine("sqlite://")
     for model in (
+        NBAGameLines,
         NBASpreadActuals,
         PlayerInjuryStatus,
         RecentGames,

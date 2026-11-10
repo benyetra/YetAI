@@ -36,6 +36,16 @@ CONFIGS: dict[str, dict[str, Any]] = {
         "learning_rate": 0.03,
         "min_child_weight": 50,
     },
+    # Slightly ahead of depth2 on the v3 features in a local replay
+    # (points 4.636 vs 4.648 MAE); not adopted without a prod-data run.
+    "depth3_subsample": {
+        "max_depth": 3,
+        "n_estimators": 500,
+        "learning_rate": 0.03,
+        "min_child_weight": 50,
+        "subsample": 0.8,
+        "colsample_bytree": 0.8,
+    },
     "regularized": {
         "max_depth": 4,
         "n_estimators": 150,

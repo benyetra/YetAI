@@ -147,6 +147,12 @@ def _pred_game_date(pred: Any) -> date | None:
         return None
 
 
+# Rows written before kickers.py read real kickoff times are dated the day
+# after the run that made them, so a pre-game row can sit one day past the game.
+_LEGACY_DATE_SLACK_DAYS = 1
+_MAX_PREDICTION_AGE_DAYS = 10
+
+
 def _find_prediction(
     *,
     kicker_name: str,
@@ -155,24 +161,44 @@ def _find_prediction(
     historical: list[Any],
     current: list[Any],
 ) -> tuple[Any | None, str | None, float]:
-    """Return (prediction, source, projected_fgs)."""
-    name_l = kicker_name.lower()
-    # Prefer player-id match on historical rows
-    for pred in historical:
-        pid = str(getattr(pred, "kicker_player_id", "") or "")
-        if pid and pid == str(kicker_id):
-            pred_date = _pred_game_date(pred)
-            if pred_date is None or abs((pred_date - game_date).days) <= 10:
-                return pred, "historical", float(pred.predicted_fg_made)
+    """Return (prediction, source, projected_fgs).
 
-    for pred in historical:
-        if not _match_kicker_name(pred, name_l):
-            continue
-        pred_date = _pred_game_date(pred)
-        if pred_date is None:
-            continue
-        if abs((pred_date - game_date).days) <= 10:
-            return pred, "historical", float(pred.predicted_fg_made)
+    Among this kicker's stored predictions, take the one dated closest to the
+    game without being for a later one. Taking the first row within ten days
+    (the old rule) graded most games against a projection made for the
+    previous week's opponent.
+    """
+    name_l = kicker_name.lower()
+
+    def _latest_for_game(matches) -> Any | None:
+        best = None
+        best_date = None
+        for pred in matches:
+            pred_date = _pred_game_date(pred)
+            if pred_date is None:
+                continue
+            days_after = (pred_date - game_date).days
+            if not -_MAX_PREDICTION_AGE_DAYS <= days_after <= _LEGACY_DATE_SLACK_DAYS:
+                continue
+            # Exact game day wins; otherwise the most recent earlier row.
+            rank = (pred_date == game_date, pred_date)
+            if best is None or rank > best_date:
+                best, best_date = pred, rank
+        return best
+
+    by_id = _latest_for_game(
+        pred
+        for pred in historical
+        if str(getattr(pred, "kicker_player_id", "") or "") == str(kicker_id)
+    )
+    if by_id is not None:
+        return by_id, "historical", float(by_id.predicted_fg_made)
+
+    by_name = _latest_for_game(
+        pred for pred in historical if _match_kicker_name(pred, name_l)
+    )
+    if by_name is not None:
+        return by_name, "historical", float(by_name.predicted_fg_made)
 
     for pred in current:
         if _match_kicker_name(pred, name_l):

@@ -18,6 +18,27 @@ from app.services.etl.nfl.qb_passing_yards_ml import (
 )
 
 
+# Recomputed leak-safe from pred_qb_actuals for every row; never taken from the
+# stored prediction's feature blob.
+_HISTORY_DERIVED_KEYS = frozenset(
+    {
+        "rolling_yards_l3",
+        "rolling_yards_l5",
+        "season_avg_yards",
+        "rolling_attempts_l3",
+        "rolling_ypa_l3",
+        "rolling_comp_pct_l3",
+        "rolling_air_yards_l3",
+        "rolling_dropbacks_l3",
+        "rolling_sack_rate_l3",
+        "dynamic_tier_yards",
+        "market_residual_l3",
+        "line_minus_rolling",
+        "line_minus_tier",
+    }
+)
+
+
 def build(
     season_start: date,
     season_end: date,
@@ -92,9 +113,18 @@ def build(
                 tier_yards=tier_yards,
             )
             # Prefer joining stored prediction context when available
+            # Form comes from the actuals themselves: the stored copies were
+            # league defaults whenever the live history load failed (all of
+            # 2025 and 2026 until the nflverse loader fallback).
             pred_ctx = _prediction_context_for_actual(session, row)
             if pred_ctx:
-                context.update({k: v for k, v in pred_ctx.items() if v is not None})
+                context.update(
+                    {
+                        k: v
+                        for k, v in pred_ctx.items()
+                        if v is not None and k not in _HISTORY_DERIVED_KEYS
+                    }
+                )
             # Real game lines from nflverse schedules when prediction context missing
             team = str(getattr(row, "team_name", "") or "").upper()
             mkt = market.get((int(row.season), int(row.week), team), {})
