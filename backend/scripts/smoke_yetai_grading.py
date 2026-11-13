@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from app.models.database_models import BetType, YetAIBet
 from app.services import espn_results as er
+from app.services import mlb_results
 from app.services.yetai_grading import grade_pick
 
 TERMINAL = {"won", "lost", "pushed"}
@@ -42,8 +43,7 @@ def final_games(league: str, day: date) -> list[dict]:
     return games
 
 
-def find_prop(league: str, g: dict) -> tuple[str, str, float] | None:
-    """(player, stat, value) for a box-score player with a gradeable stat."""
+def box_names(league: str, g: dict) -> list[str]:
     sport, slug, _ = er.LEAGUES[league]
     summary = er._get_json(f"{er.BASE_URL}/{sport}/{slug}/summary", {"event": g["id"]})
     names = []
@@ -52,11 +52,39 @@ def find_prop(league: str, g: dict) -> tuple[str, str, float] | None:
             for ath in grp.get("athletes", []):
                 if ath.get("stats"):
                     names.append(ath["athlete"]["displayName"])
+    return names
+
+
+def find_prop(league: str, g: dict) -> tuple[str, str, float] | None:
+    """(player, stat, value) for a box-score player with a gradeable stat."""
+    names = box_names(league, g)
     for stat in sorted(er.PROP_STATS[league]):
+        # anytime_td is yes/no and total_bases comes from the MLB Stats API: see below
+        if stat == "anytime_td":
+            continue
         for name in names[:60]:
             r = er.player_stat(league, g["id"], name, stat)
             if r.status == "ok" and r.value >= 1:
                 return name, stat, r.value
+    return None
+
+
+def find_scorer(league: str, g: dict) -> tuple[str, float] | None:
+    """(player, TDs) for a player who scored an anytime-TD touchdown (NFL/NCAAF)."""
+    for name in box_names(league, g):
+        r = er.player_stat(league, g["id"], name, "anytime_td")
+        if r.status == "ok" and r.value >= 1:
+            return name, r.value
+    return None
+
+
+def find_total_bases(league: str, g: dict, day: date) -> tuple[str, float] | None:
+    """(batter, total bases >= 2) from the MLB Stats API box score of the same game."""
+    game = er.find_games(league, g["home"], g["away"], day, g["start"])[0]
+    for name in box_names(league, g):
+        r = mlb_results.total_bases(game, day, name)
+        if r.status == "ok" and r.value >= 2:
+            return name, r.value
     return None
 
 
@@ -133,6 +161,37 @@ def picks_for(league: str, g: dict) -> list[tuple[str, YetAIBet]]:
                     line=val - 0.5,
                     player=player,
                     stat=stat,
+                ),
+            )
+        )
+    if league in er.PROP_STATS and "anytime_td" in er.PROP_STATS[league]:
+        if p := find_scorer(league, g):
+            out.append(
+                (
+                    "anytime_td",
+                    bet(
+                        BetType.PROP,
+                        f"{p[0]} Anytime TD",
+                        market="player_prop",
+                        side="yes",
+                        line=None,
+                        player=p[0],
+                        stat="anytime_td",
+                    ),
+                )
+            )
+    if league == "MLB" and (p := find_total_bases(league, g, day)):
+        out.append(
+            (
+                "total_bases",
+                bet(
+                    BetType.PROP,
+                    f"{p[0]} Over {p[1] - 0.5:g} total bases",
+                    market="player_prop",
+                    side="over",
+                    line=p[1] - 0.5,
+                    player=p[0],
+                    stat="total_bases",
                 ),
             )
         )

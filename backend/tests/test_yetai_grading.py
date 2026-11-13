@@ -111,7 +111,10 @@ def test_every_supported_combination_is_covered_by_the_table():
     tested_props = {(c[0], c[2]) for c in PROP_CASES}
     # Everything espn_results supports must be graded above, none silently skipped.
     assert tested_games >= {lg for lg in er.LEAGUES if lg in GAMES}
-    assert tested_props == {(lg, s) for lg, ss in er.PROP_STATS.items() for s in ss}
+    # anytime_td (yes/no, no line) is graded in test_yetai_yesno_totalbases.py
+    assert tested_props == {
+        (lg, s) for lg, ss in er.PROP_STATS.items() for s in ss if s != "anytime_td"
+    }
     # Acceptance criterion 1 minimum set.
     assert tested_games >= REQUIRED_GAME
     assert tested_props >= REQUIRED_PROPS
@@ -124,7 +127,7 @@ def test_unsupported_combinations(espn):
         ("Tennis", "moneyline", None, "Unsupported: Tennis moneyline"),
         ("NBA", "player_prop", "dunks", "Unsupported: NBA player_prop dunks"),
         ("NHL", "player_prop", "power_play_points", "Unsupported: NHL player_prop"),
-        ("MLB", "player_prop", "total_bases", "Unsupported: MLB player_prop"),
+        ("MLB", "player_prop", "walks", "Unsupported: MLB player_prop"),
         ("NCAAB", "player_prop", "points", "Unsupported: NCAAB player_prop"),
     ]
     for league, market, stat, reason in cases:

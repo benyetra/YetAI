@@ -1,0 +1,17 @@
+{
+ "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2025/athletes/3127310?lang=en&region=us": {
+  "fullName": "Drew Sample"
+ },
+ "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2025/athletes/3052743?lang=en&region=us": {
+  "fullName": "Trey Hendrickson"
+ },
+ "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2025/athletes/3915511?lang=en&region=us": {
+  "fullName": "Joe Burrow"
+ },
+ "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2025/athletes/3052897?lang=en&region=us": {
+  "fullName": "Durham Smythe"
+ },
+ "https://sports.core.api.espn.com/v2/sports/football/leagues/nfl/seasons/2025/athletes/4243923?lang=en&region=us": {
+  "fullName": "Cameron Sample"
+ }
+}

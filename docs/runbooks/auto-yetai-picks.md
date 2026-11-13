@@ -108,8 +108,12 @@ that real price; a row with no price (written before the column existed, or the 
 odds gate applies to props like every other market. If the migration `20261113_prop_fanduel_price` has not run, the
 prop SELECT fails, is logged, and the prop source returns no rows.
 Game-line markets without a stored price are skipped. The MLB hits board is
-not a source (no market line or price stored). The NHL goalie-saves source is also not registered: its writer
-needs boxscore starters, which do not exist pregame.
+not a source (no market line or price stored). The NHL goalie-saves source is registered. Goalie rows are refreshed pregame at 16:45 ET
+(`nhl.goalie_pregame_refresh`, gated by `NHL_PREGAME_REFRESH_ENABLED`) and carry a starter method
+(`confirmed`: NHL boxscore or ESPN-confirmed; `probable`: ESPN `expected`, written at confidence 70; no history-based guess, it backtested at 60-65%).
+Only `confirmed` starters are picked; `probable` ones are picked only with `NHL_GOALIE_PROBABLE_PICKS=1`
+(default off: ESPN `expected` calls cannot be backtested, and a goalie who does not start is
+"not in box score" and voids once the settlement retry window ends).
 
 ## Operations
 

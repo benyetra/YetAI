@@ -16,7 +16,7 @@ from zoneinfo import ZoneInfo
 
 import requests
 
-from app.services import espn_results
+from app.services import espn_results, mlb_results
 
 _ET = ZoneInfo("America/New_York")
 _GAME_MARKETS = ("moneyline", "spread", "total")
@@ -75,7 +75,9 @@ def can_grade(league: str, market: str, stat: str | None = None) -> bool:
     if market in _GAME_MARKETS:
         return lg == SOCCER or lg in espn_results.LEAGUES
     if market == "player_prop":
-        return stat in espn_results.PROP_STATS.get(lg, ())
+        return stat in espn_results.PROP_STATS.get(
+            lg, ()
+        ) or stat in mlb_results.PROP_STATS.get(lg, ())
     return False
 
 
@@ -123,9 +125,69 @@ _PARTIAL = re.compile(
 )
 
 
+# "Player Anytime TD", "anytime touchdown", "to score a touchdown", "ATD", ["Yes"|"No"]
+_ANYTIME_TD = re.compile(
+    r"\b(?:any ?time (?:td|touchdown)(?: scorer)?|to score (?:a|an) (?:td|touchdown)|atd)\b",
+    re.I,
+)
+
+
 def unsupported_market(text: str | None) -> str | None:
-    m = _PARTIAL.search(text or "")
+    text = text or ""
+    if _ANYTIME_TD.search(text):  # a supported pick: "(anytime)" is part of it
+        text = re.sub(
+            r"\(\s*any ?time\s*\)", " ", _ANYTIME_TD.sub(" ", text), flags=re.I
+        )
+    m = _PARTIAL.search(text)
     return m.group(0) if m else None
+
+
+_JUNK = {
+    "first",
+    "last",
+    "scorer",
+    "td",
+    "tds",
+    "touchdown",
+    "touchdowns",
+    "or",
+    "and",
+    "not",
+}
+
+
+def _parse_anytime_td(selection: str) -> dict | None:
+    """Player and side of an anytime-TD pick; None when the text says more than that
+    (2+ TDs, first/last scorer, combos, odds in the middle): not gradeable as anytime TD.
+    """
+    raw = selection or ""
+    if not _ANYTIME_TD.search(_PAREN.sub(" ", raw)):
+        return None
+    # "(No)" / "(Yes)" is the side: read it before the parentheses are dropped
+    paren = {m.lower() for m in re.findall(r"\(\s*(yes|no)\s*\)", raw, re.I)}
+    text = _ODDS_TAIL.sub(" ", f" {_PAREN.sub(' ', raw)}")
+    words = (
+        _ANYTIME_TD.sub(" ", text)
+        .replace("-", " ")
+        .replace("–", " ")
+        .replace(":", " ")
+        .split()
+    )
+    bare = set()
+    for i in (-1, 0):
+        if words and words[i].lower() in ("yes", "no"):
+            bare.add(words.pop(i).lower())
+    sides = paren | bare
+    if len(sides) > 1 or not words:
+        return None
+    if any(re.search(r"[\d&/+]", w) or w.lower() in _JUNK for w in words):
+        return None
+    return {
+        "player": " ".join(words),
+        "side": sides.pop() if sides else "yes",
+        "line": None,
+        "stat": "anytime_td",
+    }
 
 
 _norm = espn_results._norm
@@ -325,7 +387,7 @@ def grading_spec(bet_like) -> dict | None:
         "away_team": away,
     }
     if market == "player_prop":
-        prop = _parse_prop(sel)
+        prop = _parse_anytime_td(sel) or _parse_prop(sel)
         return {**spec, **prop} if prop else None
     if market == "total":
         ou = _over_under(_PAREN.sub(" ", sel))
@@ -433,9 +495,15 @@ def _grade(spec: dict, bet_like) -> Outcome:
     day = _to_date(spec.get("game_date"))
     side = spec.get("side")
     league, market, stat = spec["league"], spec["market"], spec.get("stat")
+    yes_no = market == "player_prop" and stat == "anytime_td"
+    if yes_no:  # default side is yes; the line is meaningless
+        side = str(side or "yes").lower()
+        spec = {**spec, "side": side, "line": None}
     sides = ("home", "away", "over", "under") + (
         ("draw",) if market == "moneyline" else ()
     )
+    if yes_no:
+        sides = ("yes", "no")
     if (
         not day
         or not isinstance(spec.get("home_team"), str)
@@ -449,7 +517,7 @@ def _grade(spec: dict, bet_like) -> Outcome:
         extra = f" {stat}" if stat else ""
         return Outcome("ungradeable", f"Unsupported: {league} {market}{extra}")
     line = spec.get("line")
-    if market in ("spread", "total", "player_prop"):
+    if market in ("spread", "total", "player_prop") and not yes_no:
         if line is None:
             return Outcome("ungradeable", "Could not parse pick")
         line = float(line)  # "220.5" is fine; "abc" -> ValueError -> ungradeable
@@ -505,14 +573,33 @@ def _grade_game(spec: dict, league: str, game, line) -> Outcome:
 
     if market == "player_prop":
         player = spec["player"]
-        stat_res = _espn(espn_results.player_stat, league, game.event_id, player, stat)
+        if stat == "total_bases":
+            stat_res = _espn(
+                mlb_results.total_bases, game, _to_date(spec["game_date"]), player
+            )
+        else:
+            stat_res = _espn(
+                espn_results.player_stat, league, game.event_id, player, stat
+            )
         if stat_res.status == "did_not_play":
             return Outcome("void", f"DNP: {player}")
         if stat_res.status == "stat_unavailable":
             # final box score, player present, but the stat does not exist for his role
+            if stat == "anytime_td":  # a TD play with no scorer we can name
+                return Outcome(
+                    "ungradeable", f"Touchdown scorer not identifiable: {player}"
+                )
             return Outcome("ungradeable", f"Stat not recorded for {player}: {stat}")
+        if stat_res.status == "ambiguous":
+            return Outcome("ungradeable", f"Ambiguous player name: {player}")
         if stat_res.status != "ok":
             return Outcome("not_ready", f"Player not in box score: {player}")
+        if stat == "anytime_td":
+            kind = "won" if (stat_res.value > 0) == (side == "yes") else "lost"
+            return Outcome(
+                kind,
+                f"{kind.title()}: {player} anytime TD {side} ({_fmt(stat_res.value)} TD)",
+            )
         kind = _compare(stat_res.value, line, side)
         label = stat.replace("_", " ")
         return Outcome(

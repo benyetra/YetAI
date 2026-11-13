@@ -10,9 +10,19 @@ import pytest
 from app.services.etl.nhl import _config as nhl_config
 
 
+def test_season_for_rolls_over_in_september():
+    from datetime import date
+
+    assert nhl_config.season_for(date(2026, 11, 13)) == 20262027
+    assert nhl_config.season_for(date(2027, 4, 1)) == 20262027
+    assert nhl_config.season_for(date(2026, 8, 31)) == 20252026
+    assert nhl_config.season_for(date(2026, 9, 1)) == 20262027
+
+
 def test_get_nhl_season_default(monkeypatch):
     monkeypatch.delenv("NHL_SEASON", raising=False)
-    assert nhl_config.get_nhl_season() == nhl_config.DEFAULT_NHL_SEASON
+    today = nhl_config.now_eastern().date()
+    assert nhl_config.get_nhl_season() == nhl_config.season_for(today)
 
 
 def test_get_nhl_season_from_env(monkeypatch):
@@ -22,7 +32,8 @@ def test_get_nhl_season_from_env(monkeypatch):
 
 def test_get_nhl_season_invalid_env_falls_back(monkeypatch):
     monkeypatch.setenv("NHL_SEASON", "not-a-season")
-    assert nhl_config.get_nhl_season() == nhl_config.DEFAULT_NHL_SEASON
+    today = nhl_config.now_eastern().date()
+    assert nhl_config.get_nhl_season() == nhl_config.season_for(today)
 
 
 @patch("app.services.etl.nhl._config.db_session")

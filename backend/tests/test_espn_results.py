@@ -322,8 +322,9 @@ EVENT = {
 
 
 def test_stat_cases_cover_every_prop_stat():
+    # anytime_td has its own real-game cases: test_yetai_yesno_totalbases.py
     assert {(lg, st) for lg, _, st, _ in STAT_CASES} >= {
-        (lg, st) for lg, s in er.PROP_STATS.items() for st in s
+        (lg, st) for lg, s in er.PROP_STATS.items() for st in s if st != "anytime_td"
     }
 
 

@@ -276,12 +276,12 @@ def get_opponent_offensive_strength(team_name):
     2. Shooting percentage (efficiency)
     3. Shots per game (volume)
 
-    Returns: (goals_per_game, shooting_pct, expected_goals_impact)
+    Returns: (goals_per_game, shooting_pct, expected_goals_impact, xgf_per_game)
     """
     team_stats = db_session.query(NHLTeamStats).filter_by(team_name=team_name).first()
 
     if not team_stats or team_stats.games_played == 0:
-        return 3.0, 0.10, 1.0  # League averages
+        return 3.0, 0.10, 1.0, 3.0  # League averages (xGF/game 3.0)
 
     # Use recent form (L10) if available
     goals_pg = (

@@ -47,10 +47,9 @@ ADMIN_PROPS = [
     ("MLB", "Pitcher Strikeouts", "Braxton Ashcraft", 4),
     ("MLB", "pitcher outs", "Braxton Ashcraft", 15),
 ]
-# Strings the admin UI can produce that ESPN has no stat for: void with the reason named.
+# Strings the admin UI can produce that no results source has a stat for (anytime td and
+# batter total bases now grade: tests/test_yetai_yesno_totalbases.py): void with the reason named.
 ADMIN_VOID = [
-    ("NFL", "anytime td", "Unsupported market: anytime"),
-    ("MLB", "batter total bases", "Unsupported: MLB player_prop total_bases"),
     ("NBA", "double double", "Unsupported: NBA player_prop double_double"),
 ]
 
@@ -90,7 +89,8 @@ def test_admin_prop_strings_without_an_espn_stat_void_with_a_reason(
 def test_every_prop_stat_is_gradeable_by_can_grade():
     for league, stats in er.PROP_STATS.items():
         assert all(yg.can_grade(league, "player_prop", s) for s in stats)
-    assert not yg.can_grade("MLB", "player_prop", "total_bases")
+    assert yg.can_grade("MLB", "player_prop", "total_bases")  # MLB Stats API
+    assert not yg.can_grade("MLB", "player_prop", "double_double")
 
 
 # --- P1-1: a real Clippers game under the canonical name ------------------------

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from typing import Literal
 
@@ -83,12 +83,14 @@ PROP_STATS: dict[str, frozenset[str]] = {
             "passing_tds",
             "pass_completions",
             "receptions",
+            "anytime_td",
         }
     ),
+    "NCAAF": frozenset({"anytime_td"}),
     "NHL": frozenset(
         {"saves", "shots_on_goal", "goals", "assists", "points", "blocked_shots"}
     ),
-    # No total_bases: ESPN's MLB box score has no 2B/3B columns.
+    # No total_bases: ESPN's MLB box score has no 2B/3B columns (see mlb_results).
     "MLB": frozenset(
         {"strikeouts", "hits", "home_runs", "rbis", "batter_strikeouts", "pitcher_outs"}
     ),
@@ -142,6 +144,22 @@ for _lg in ("NBA", "WNBA"):
     }.items():
         _COMBOS[(_lg, _st)] = _parts
 
+# anytime_td: touchdowns sportsbooks count (not passing). ESPN's defensiveTouchdowns includes
+# interception returns and sometimes kick/punt returns, so those columns are not added to it.
+_ANYTIME_TD_KEYS = (
+    "rushingTouchdowns",
+    "receivingTouchdowns",
+    "defensiveTouchdowns",
+    "interceptionTouchdowns",
+    "kickReturnTouchdowns",
+    "puntReturnTouchdowns",
+)
+# A scoring-play text names its scorer right before the yardage ("Woody Marks 1 Yd Fumble
+# Recovery", "Marshawn Kneeland Blocked Punt Recovery"); a passer follows "pass from".
+_TD_ANCHOR = r"(?: (?:jr|sr|ii|iii|iv|v))?(?: \d+ yds?\b| no gain\b| blocked\b| recovered\b| for \d+ yds?\b)"
+# A scorer written out in full (two words of 2+ letters, so not "W. Eget") before the anchor
+_FULL_NAME = re.compile(rf" \w{{2,}} \w{{2,}}{_TD_ANCHOR}")
+
 _MINUTES_KEY = "minutes"
 _SUFFIXES = {"jr", "sr", "ii", "iii", "iv", "v"}
 
@@ -154,6 +172,8 @@ class GameResult:
     event_id: str
     start_time: datetime | None  # naive UTC
     detail: str  # ESPN status detail, e.g. "Final/OT"
+    teams: tuple[str, ...] = ()  # the two competitors' displayNames, either order
+    number: int = 0  # 1-based order among same-day games of the pair; 0 = only game
 
 
 @dataclass(frozen=True)
@@ -425,6 +445,7 @@ def _result(league: str, event: dict, comp: dict, swapped: bool) -> GameResult:
         event_id=str(event["id"]),
         start_time=_parse_time(event.get("date")),
         detail=detail,
+        teams=tuple(c["team"].get("displayName") or "" for c in comp["competitors"]),
     )
 
 
@@ -468,7 +489,11 @@ def find_games(
         )
     else:
         found.sort(key=lambda f: _parse_time(f[0].get("date")) or far)
-    return [_result(league, *f) for f in found]
+    results = [_result(league, *f) for f in found]
+    if len(results) > 1:  # a doubleheader: number the games chronologically
+        order = sorted(results, key=lambda r: r.start_time or far)
+        results = [replace(r, number=order.index(r) + 1) for r in results]
+    return results
 
 
 def find_game(
@@ -500,6 +525,102 @@ def _num(raw) -> float | None:
     return float(m.group(1)) if m else None
 
 
+CORE_URL = "https://sports.core.api.espn.com/v2/sports"
+
+
+def _td_plays(summary: dict) -> list[str]:
+    """Normalised text of every touchdown scoring play, PAT / two-point parentheses dropped
+    and, after a lateral, only the part naming the final ball carrier."""
+    out = []
+    for p in summary.get("scoringPlays") or []:
+        if "touchdown" not in ((p.get("type") or {}).get("text") or "").lower():
+            continue
+        text = re.sub(r"\([^)]*\)", " ", p.get("text") or "")
+        text = re.split(r"lateral(?:ed)?(?: to)?", text, flags=re.I)[-1]
+        # "Sacker 22 Yd Fumble Recovery by Scorer For 22 Yd Loss": the scorer follows "by"
+        text = re.split(r"\bby\b", text, flags=re.I)[-1]
+        out.append(f" {_norm(text)} ")
+    return out
+
+
+def _scorer_is(play: str, person: str) -> bool:
+    parts = person.split()
+    forms = {person} | ({f"{parts[0][0]} {parts[-1]}"} if len(parts) > 1 else set())
+    return any(re.search(f" {re.escape(f)}{_TD_ANCHOR}", play) for f in forms)
+
+
+def _mentions(play: str, person: str) -> bool:
+    """The name anywhere in the play text, also as "F. Last" or glued "FLast" ("J.Gibbs")."""
+    parts = person.split()
+    forms = {person}
+    if len(parts) > 1:
+        forms |= {f"{parts[0][0]} {parts[-1]}", f"{parts[0][0]}{parts[-1]}"}
+    return any(f" {f} " in play for f in forms)
+
+
+def _td_plays_check(summary: dict, want: str) -> tuple[int, bool]:
+    """(touchdown plays this player scored, a touchdown play has an unidentified scorer).
+
+    A play is identified when its scorer is the player, a box-score athlete or a full name,
+    or when a box-score athlete credited with a TD is mentioned in it (ESPN's odd play-by-play
+    wording). Passing TDs credit the receiver only; extra points and two-point tries are
+    not touchdown plays.
+    """
+    plays = _td_plays(summary)
+    box, credited = set(), set()
+    for t in (summary.get("boxscore") or {}).get("players", []):
+        for g in t.get("statistics", []):
+            idx = [
+                i for i, k in enumerate(g.get("keys") or []) if k in _ANYTIME_TD_KEYS
+            ]
+            for a in g.get("athletes", []):
+                name = _person(a["athlete"].get("displayName"))
+                box.add(name)
+                if any(_num(a["stats"][i]) for i in idx if a.get("stats")):
+                    credited.add(name)
+    mine = sum(_scorer_is(p, want) for p in plays)
+    unknown = any(
+        not _scorer_is(p, want)
+        and not _FULL_NAME.search(p)
+        and not any(_scorer_is(p, n) for n in box)
+        and not any(_mentions(p, n) for n in credited)
+        for p in plays
+    )
+    return mine, unknown
+
+
+def _roster_status(league: str, event_id: str, summary: dict, want: str) -> StatResult:
+    """A player with no box-score line: active zero-touch ("ok", 0) or inactive.
+
+    ESPN's core event roster (NFL only: `valid` is meaningless for NCAAF) lists the gameday
+    squad with `valid` true and `didNotPlay` false for everyone who dressed; every box-score
+    player of 16 checked teams is that way. Entries carry only a last name, so candidates are
+    resolved to a full name through their athlete $ref. Not on either roster = not_found.
+    """
+    sport, slug, _ = LEAGUES[league]
+    found = {}
+    for team in (summary.get("boxscore") or {}).get("players", []):
+        tid = team["team"]["id"]
+        roster = _get_json(
+            f"{CORE_URL}/{sport}/leagues/{slug}/events/{event_id}"
+            f"/competitions/{event_id}/competitors/{tid}/roster"
+        )
+        for e in roster["entries"]:
+            if _person(e["displayName"]).split()[-1:] != want.split()[-1:]:
+                continue
+            ref = e["athlete"]["$ref"].replace("http://", "https://")
+            if _person(_get_json(ref)["fullName"]) == want:
+                found[e["playerId"]] = e
+    if len(found) > 1:
+        return StatResult("ambiguous")
+    if not found:
+        return StatResult("not_found")
+    e = next(iter(found.values()))
+    if e["valid"] and not e["didNotPlay"]:
+        return StatResult("ok", 0.0)
+    return StatResult("did_not_play")
+
+
 def player_stat(league: str, event_id: str, player: str, stat: str) -> StatResult:
     league = (league or "").upper()
     if stat not in PROP_STATS.get(league, ()):
@@ -515,7 +636,14 @@ def player_stat(league: str, event_id: str, player: str, stat: str) -> StatResul
             for ath in group.get("athletes", []):
                 if _person(ath["athlete"].get("displayName")) == want:
                     entries.append((gid, group.get("keys") or [], ath))
+    scored, unknown = _td_plays_check(summary, want) if stat == "anytime_td" else (0, 0)
     if not entries:
+        if scored:  # scored without a box-score line (e.g. a blocked-punt recovery)
+            return StatResult("ok", float(scored))
+        if unknown:  # a touchdown nobody can be named for: never guess lost
+            return StatResult("stat_unavailable")
+        if stat == "anytime_td" and league == "NFL":
+            return _roster_status(league, event_id, summary, want)
         return StatResult("not_found")
 
     def who(entry) -> str:
@@ -528,7 +656,7 @@ def player_stat(league: str, event_id: str, player: str, stat: str) -> StatResul
             e for e in entries if _norm(e[2]["athlete"].get("displayName")) == exact
         ]
         if len({who(e) for e in entries}) != 1:
-            return StatResult("not_found")
+            return StatResult("ambiguous" if stat == "anytime_td" else "not_found")
 
     def raw(key: str, group: str | None):
         for gid, keys, ath in entries:
@@ -546,6 +674,23 @@ def player_stat(league: str, event_id: str, player: str, stat: str) -> StatResul
     minutes = value(_MINUTES_KEY, None)
     if minutes is not None and minutes == 0:
         return StatResult("did_not_play")
+
+    if stat == "anytime_td":
+        sums = dict.fromkeys(_ANYTIME_TD_KEYS, 0.0)
+        for _, keys, ath in entries:
+            for k in _ANYTIME_TD_KEYS:
+                if k in keys and ath.get("stats"):
+                    sums[k] += _num(ath["stats"][keys.index(k)]) or 0
+        returns = sums["kickReturnTouchdowns"] + sums["puntReturnTouchdowns"]
+        box = (
+            sums["rushingTouchdowns"]
+            + sums["receivingTouchdowns"]
+            + max(sums["defensiveTouchdowns"], returns + sums["interceptionTouchdowns"])
+        )
+        total = max(box, float(scored))
+        if not total and unknown:  # a TD with an unnamed scorer might be his
+            return StatResult("stat_unavailable")
+        return StatResult("ok", total)
 
     def one(name: str) -> float | None:
         group, key = _STAT_KEYS[(league, name)]

@@ -58,6 +58,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.nhl.update_daily_stats": 600.0,
     "app.tasks.etl_pipeline.nhl.daily_predictions": 900.0,
     "app.tasks.etl_pipeline.nhl.collect_goalie_actuals": 300.0,
+    "app.tasks.etl_pipeline.nhl.goalie_pregame_refresh": 600.0,
     "app.tasks.etl_pipeline.nhl.collect_team_shots_actuals": 300.0,
     "app.tasks.etl_pipeline.nhl.collect_player_shots_actuals": 600.0,
     "app.tasks.etl_pipeline.nhl.collect_team_totals_actuals": 300.0,
@@ -109,6 +110,17 @@ PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
             "app.tasks.etl_pipeline.nba.spread_projector"
         ],
         "description": "Elo+pace spread / win-probability (needs game lines).",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.run_nhl_pregame_refresh",
+        "label": "NHL pregame goalie refresh",
+        "sport": "nhl",
+        "description": (
+            "Afternoon goalie starters (NHL boxscore + ESPN) and DraftKings saves "
+            "lines, goalie predictions only; beat 16:45 ET. Spends Odds API credits "
+            "(one saves-only event call per predicted game); disable with "
+            "NHL_PREGAME_REFRESH_ENABLED=0."
+        ),
     },
     {
         "task_name": "app.tasks.etl_pipeline.run_wnba_update_pipeline",
@@ -278,6 +290,15 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
             "app.tasks.etl_pipeline.nhl.daily_predictions"
         ],
         "description": "Goalie, SOG, team totals automation.",
+    },
+    {
+        "task_name": "app.tasks.etl_pipeline.nhl.goalie_pregame_refresh",
+        "label": "NHL goalie pregame refresh",
+        "sport": "nhl",
+        "timeout_s": ADMIN_FIREABLE_TASKS[
+            "app.tasks.etl_pipeline.nhl.goalie_pregame_refresh"
+        ],
+        "description": "Goalie starters + saves lines for today's unstarted games (spends Odds API credits).",
     },
     {
         "task_name": "app.tasks.etl_pipeline.nfl.kickers",

@@ -978,6 +978,13 @@ def nhl_daily_predictions():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nhl.goalie_pregame_refresh")
+def nhl_goalie_pregame_refresh():
+    from app.services.etl.nhl.daily_predictions import run_goalie_refresh
+
+    return run_goalie_refresh()
+
+
 # Ingest refreshes game/goalie/team tables; daily_predictions mirrors YetiBets
 # automated_daily_predictions (stats refresh + goalie/player/totals + actuals).
 NHL_PHASES = [
@@ -1004,6 +1011,25 @@ def run_nhl_update_pipeline(self) -> dict:
     """
     logger.info("NHL update pipeline starting (task_id=%s)", self.request.id)
     return _run_phases("nhl", NHL_PHASES)
+
+
+# Starters post through the afternoon, so re-run the goalie slice (and its saves
+# lines) before the 17:30 auto-pick. Disable with NHL_PREGAME_REFRESH_ENABLED=0
+# (each run spends Odds API credits).
+NHL_PREGAME_PHASES = [("goalie_predictions", [nhl_goalie_pregame_refresh])]
+
+
+@celery_app.task(name="app.tasks.etl_pipeline.run_nhl_pregame_refresh", bind=True)
+def run_nhl_pregame_refresh(self) -> dict:
+    """Afternoon NHL goalie starters + saves lines refresh (see NHL_PREGAME_PHASES)."""
+    if os.getenv("NHL_PREGAME_REFRESH_ENABLED", "1").strip().lower() in (
+        "0",
+        "false",
+        "no",
+    ):
+        return {"status": "disabled"}
+    logger.info("NHL pregame refresh starting (task_id=%s)", self.request.id)
+    return _run_phases("nhl", NHL_PREGAME_PHASES)
 
 
 # =============================================================================

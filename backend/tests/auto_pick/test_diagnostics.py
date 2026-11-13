@@ -35,6 +35,7 @@ def test_projection_counts_cover_all_leagues(sqlite_db):
         "nfl_totals_projections",
         "nfl_receiving_yards_with_line",
         "nhl_totals_projections",
+        "nhl_goalie_saves_with_line",
         "mlb_strikeout_with_line",
         "mlb_game_projections",
     ):
