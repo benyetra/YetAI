@@ -36,7 +36,7 @@ class TotalsCandidateProvider:
         out: list[BetCandidate] = []
         for r in rows:
             try:
-                side = r.get("side", "over")
+                side = r["side"]  # model-named side; no default
                 market_total = float(r["market_total"])
                 selection = f"{r['away_team_name']} vs {r['home_team_name']} {side.upper()} {market_total}"
                 out.append(
@@ -46,11 +46,12 @@ class TotalsCandidateProvider:
                         event_id=r["event_id"],
                         selection=selection,
                         market_line=market_total,
-                        market_odds=int(r.get("line_odds", -110)),
+                        market_odds=int(r["line_odds"]),
                         our_projection=float(r["projected_total"]),
                         away_team=r.get("away_team_name"),
                         home_team=r.get("home_team_name"),
-                        commence_time=r.get("game_time"),
+                        commence_time=r.get("commence_time"),
+                        game_date=r.get("game_date"),
                         projection_metadata={
                             "edge": r.get("edge"),
                             "recommendation": r.get("recommendation"),

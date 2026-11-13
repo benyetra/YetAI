@@ -13,6 +13,7 @@ export interface YetaiHistoryStats {
   won: number;
   lost: number;
   pushed: number;
+  void?: number;
   win_rate: number;
   units: number;
   settled?: number;
@@ -36,12 +37,23 @@ export interface YetaiHistoryBet {
   settled_at?: string | null;
   created_at?: string | null;
   result?: string | null;
+  parlay_legs?: YetaiParlayLeg[] | null;
+}
+
+export interface YetaiParlayLeg {
+  sport?: string;
+  game?: string;
+  pick?: string;
+  odds?: string | number;
+  bet_type?: string;
+  leg_status?: string;
+  leg_result?: string | null;
 }
 
 function statusIcon(status: string) {
   if (status === 'won') return <Check size={14} />;
   if (status === 'lost') return <X size={14} />;
-  if (status === 'pushed') return <Minus size={14} />;
+  if (status === 'pushed' || status === 'void') return <Minus size={14} />;
   return <Clock size={13} />;
 }
 
@@ -53,6 +65,14 @@ function statusStyle(status: string): { background: string; color: string } {
     return { background: 'rgba(124, 92, 255, 0.12)', color: 'var(--accent)' };
   }
   return { background: 'rgba(255,255,255,0.06)', color: 'var(--text-2)' };
+}
+
+/** Badge text/class; unknown statuses stay neutral and show the raw value. */
+function statusBadge(status: string): { cls: string; label: string } {
+  if (status === 'won') return { cls: 'win', label: 'won' };
+  if (status === 'lost') return { cls: 'loss', label: 'lost' };
+  if (status === 'void') return { cls: 'pending', label: 'Void' };
+  return { cls: 'pending', label: status };
 }
 
 function formatGameDate(bet: YetaiHistoryBet): string {
@@ -104,6 +124,7 @@ export default function YetaiBetsHistory({
             <div className="section-sub" style={{ marginTop: 4 }}>
               {stats.won}W · {stats.lost}L
               {stats.pushed > 0 ? ` · ${stats.pushed}P` : ''}
+              {stats.void ? ` · ${stats.void} void` : ''}
             </div>
           </div>
           <div className="card stat-tile">
@@ -163,6 +184,7 @@ export default function YetaiBetsHistory({
               const status = (bet.status || 'pending').toLowerCase();
               const pick = picks[i];
               const style = statusStyle(status);
+              const badge = statusBadge(status);
               return (
                 <div
                   key={bet.id}
@@ -197,20 +219,23 @@ export default function YetaiBetsHistory({
                         {bet.result}
                       </div>
                     ) : null}
+                    {bet.parlay_legs?.map((leg, j) => {
+                      const legStatus = (leg.leg_status || 'pending').toLowerCase();
+                      return (
+                        <div
+                          key={j}
+                          data-testid="parlay-leg"
+                          style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 4 }}
+                        >
+                          {leg.pick}
+                          {leg.odds != null ? ` ${fmtOdds(leg.odds)}` : ''} ·{' '}
+                          <span style={statusStyle(legStatus)}>{legStatus}</span>
+                          {leg.leg_result ? ` · ${leg.leg_result}` : ''}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <span
-                    className={`badge badge-${
-                      status === 'won'
-                        ? 'win'
-                        : status === 'lost'
-                          ? 'loss'
-                          : status === 'pushed'
-                            ? 'pending'
-                            : 'pending'
-                    }`}
-                  >
-                    {status}
-                  </span>
+                  <span className={`badge badge-${badge.cls}`}>{badge.label}</span>
                 </div>
               );
             })}

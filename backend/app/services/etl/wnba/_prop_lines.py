@@ -126,7 +126,7 @@ def attach_prop_market_fields(
     if not event_id:
         event_id = resolve_wnba_event_id(db, game_date, team_name, opponent_team_name)
 
-    line, _flag = fetch_fanduel_prop_for_player(
+    line, _flag, price = fetch_fanduel_prop_for_player(
         team_name,
         opponent_team_name,
         player_name,
@@ -142,6 +142,7 @@ def attach_prop_market_fields(
     threshold = EDGE_THRESHOLDS.get(stat, 1.0)
     edge, recommendation = _edge_and_recommendation(projected, line, threshold)
     row["market_line"] = line
+    row["fanduel_price"] = price
     row["edge"] = edge
     row["recommendation"] = recommendation
     row["confidence_score"] = (

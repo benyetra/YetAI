@@ -2,15 +2,23 @@
 Database-powered service for managing admin-created YetAI Bets
 """
 
+import os
 import re
 import uuid
-from datetime import date, datetime, time, timedelta
-from typing import Dict, List, Optional, Tuple
+from datetime import date, datetime, time, timedelta, timezone
+from typing import Dict, List, Optional
+from zoneinfo import ZoneInfo
 import logging
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, desc
 from app.core.database import SessionLocal
-from app.models.database_models import User, YetAIBet, SubscriptionTier, BetType
+from app.models.database_models import (
+    BetSource,
+    User,
+    YetAIBet,
+    SubscriptionTier,
+    BetType,
+)
 from app.models.bet_models import (
     CreateYetAIBetRequest,
     CreateParlayBetRequest,
@@ -117,6 +125,20 @@ MLB_PROP_EVENT_DATE_RE = PROP_EVENT_DATE_RE
 YETAI_LIVE_POST_GAME_BUFFER = timedelta(hours=8)
 
 
+_ET = ZoneInfo("America/New_York")
+
+
+def format_game_time_et(commence_time: datetime) -> str:
+    """Naive-UTC start -> "11/13/2026 @7:30 PM ET" (Eastern wall clock, DST aware)."""
+    utc = (
+        commence_time.replace(tzinfo=timezone.utc)
+        if (commence_time.tzinfo is None)
+        else commence_time
+    )
+    et = utc.astimezone(_ET)
+    return f"{et:%m/%d/%Y} @{et:%I:%M %p}".replace("@0", "@") + " ET"
+
+
 def _naive_utc(dt: Optional[datetime]) -> Optional[datetime]:
     if dt is None:
         return None
@@ -147,12 +169,21 @@ def game_date_for_yetai_bet(bet: YetAIBet) -> date:
 AUTO_GRADE_HOLD_KEY = "auto_grade_hold"
 
 
-def yetai_auto_grade_held(bet: YetAIBet) -> bool:
-    """True when auto-settlement must stay off (e.g. after admin reopen)."""
+AUTO_GRADE_HOLD_AT_KEY = "auto_grade_hold_at"
+AUTO_GRADE_HOLD_TTL = timedelta(hours=24)
+
+
+def yetai_auto_grade_held(bet: YetAIBet, now: Optional[datetime] = None) -> bool:
+    """True while the 24h hold set by admin reopen is running (no timestamp = elapsed)."""
     factors = getattr(bet, "prediction_factors", None)
-    if not isinstance(factors, dict):
+    if not isinstance(factors, dict) or not factors.get(AUTO_GRADE_HOLD_KEY):
         return False
-    return bool(factors.get(AUTO_GRADE_HOLD_KEY))
+    try:
+        held_at = datetime.fromisoformat(str(factors[AUTO_GRADE_HOLD_AT_KEY]))
+    except (KeyError, TypeError, ValueError):
+        return False
+    held_at = _naive_utc(held_at)
+    return (now or datetime.utcnow()) - held_at < AUTO_GRADE_HOLD_TTL
 
 
 def set_yetai_auto_grade_hold(bet: YetAIBet, *, held: bool = True) -> None:
@@ -161,8 +192,10 @@ def set_yetai_auto_grade_hold(bet: YetAIBet, *, held: bool = True) -> None:
     )
     if held:
         factors[AUTO_GRADE_HOLD_KEY] = True
+        factors[AUTO_GRADE_HOLD_AT_KEY] = datetime.utcnow().isoformat()
     else:
         factors.pop(AUTO_GRADE_HOLD_KEY, None)
+        factors.pop(AUTO_GRADE_HOLD_AT_KEY, None)
     bet.prediction_factors = factors
 
 
@@ -173,23 +206,6 @@ def _prop_without_tipoff(bet: YetAIBet) -> bool:
     if isinstance(bt, BetType):
         return bt == BetType.PROP
     return str(bt or "").lower() == "prop"
-
-
-def yetai_bet_is_stale(bet: YetAIBet, cutoff: datetime) -> bool:
-    """True when a pick should leave the live board and be expired if still unsettled."""
-    now = datetime.utcnow()
-    tipoff = _naive_utc(bet.commence_time)
-    if tipoff is not None:
-        return tipoff + timedelta(hours=8) < now
-
-    anchor = _yetai_anchor_game_day(bet)
-    game_deadline = datetime.combine(anchor, time.max) + timedelta(hours=36)
-    if now > game_deadline:
-        return True
-
-    if bet.created_at is not None:
-        return bet.created_at < cutoff
-    return False
 
 
 def yetai_bet_subscriber_live_visible(
@@ -214,13 +230,18 @@ def yetai_bet_subscriber_live_visible(
 
 def yetai_pick_gradeable(bet: YetAIBet, *, now: Optional[datetime] = None) -> bool:
     """True when the game window has likely finished and auto-grading is safe."""
-    if yetai_auto_grade_held(bet):
+    now = now or datetime.utcnow()
+    if yetai_auto_grade_held(bet, now):
         return False
 
-    now = now or datetime.utcnow()
     tipoff = _naive_utc(bet.commence_time)
     if tipoff is not None:
         return now >= tipoff + timedelta(hours=3)
+
+    from app.services import yetai_grading
+
+    if yetai_grading.game_day_for(bet) is None:
+        return True  # no date anywhere: the grader voids it (nothing to wait for)
 
     anchor = _yetai_anchor_game_day(bet)
     # Auto-pick props without tipoff often use projection slate date; game is next day.
@@ -255,6 +276,30 @@ def clamp_yetai_result(text: str, max_len: int = YETAI_RESULT_MAX_LEN) -> str:
     return value[: max_len - 3] + "..."
 
 
+def settle_retry_days() -> int:
+    """Days after the game day that an unready pick keeps being retried."""
+    try:
+        return int(os.getenv("YETAI_SETTLE_RETRY_DAYS", "3"))
+    except ValueError:
+        return 3
+
+
+SETTLE_BACKSTOP_DAYS = 14
+
+
+def _settlement(bet) -> dict:
+    factors = getattr(bet, "prediction_factors", None)
+    out = factors.get("settlement") if isinstance(factors, dict) else None
+    return out if isinstance(out, dict) else {}
+
+
+def settle_window_elapsed(day: Optional[date], now: datetime) -> bool:
+    """True once ``now`` is past the end of ``day`` plus the retry window."""
+    if day is None:
+        return False
+    return now > datetime.combine(day, time.max) + timedelta(days=settle_retry_days())
+
+
 class YetAIBetsServiceDB:
     """Database-powered admin-created best bets for the YetAI Bets page"""
 
@@ -279,23 +324,11 @@ class YetAIBetsServiceDB:
         return "nba" in blob and "wnba" not in blob
 
     @staticmethod
-    def _is_nhl_sport(value: Optional[str]) -> bool:
-        blob = (value or "").strip().lower()
-        return "nhl" in blob or "hockey" in blob or "icehockey" in blob
-
-    @staticmethod
     def _is_parlay_bet(bet: YetAIBet) -> bool:
         if getattr(bet, "bet_type", None) == BetType.PARLAY:
             return True
         legs = getattr(bet, "parlay_legs", None)
         return isinstance(legs, list) and len(legs) >= 2
-
-    @staticmethod
-    def _is_spread_bet(bet: YetAIBet) -> bool:
-        value = getattr(bet, "bet_type", None)
-        if value == BetType.SPREAD:
-            return True
-        return str(value).lower() == "spread"
 
     def _is_retryable_error_loss(self, bet: YetAIBet) -> bool:
         """Permit regrading for legacy rows marked lost due to evaluation errors."""
@@ -307,68 +340,6 @@ class YetAIBetsServiceDB:
             return False
         reason = (bet.result or "").strip().lower()
         return reason.startswith("evaluation")
-
-    def _is_retryable_nba_prop_regrade(self, bet: YetAIBet) -> bool:
-        """Re-run NBA prop grading after box-score parser fixes (recent settlements)."""
-        if not self._is_prop_bet(bet) or not self._is_nba_sport(bet.sport):
-            return False
-        if (bet.status or "").lower() not in ("won", "lost"):
-            return False
-        if not bet.settled_at:
-            return False
-        return bet.settled_at >= datetime.utcnow() - timedelta(days=7)
-
-    def _retry_historical_error_losses(self, db: Session, *, limit: int = 50) -> int:
-        """
-        Best-effort self-healing for legacy props marked lost due to evaluation errors.
-        Runs during read paths so stale rows can correct even if scheduler misses them.
-        """
-        from app.services.player_prop_verification_service import (
-            PlayerPropVerificationService,
-        )
-
-        rows = (
-            db.query(YetAIBet)
-            .filter(YetAIBet.status == "lost")
-            .filter(YetAIBet.result.ilike("Evaluation%"))
-            .order_by(desc(YetAIBet.settled_at), desc(YetAIBet.created_at))
-            .limit(max(1, limit))
-            .all()
-        )
-        if not rows:
-            return 0
-
-        prop_service = PlayerPropVerificationService(db)
-        updated = 0
-        for bet in rows:
-            if not self._is_retryable_error_loss(bet):
-                continue
-
-            game_day = game_date_for_yetai_bet(bet)
-            outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
-            if not outcome:
-                continue
-
-            result_status, result_description = outcome
-            if result_status not in {"won", "lost", "pushed"}:
-                continue
-
-            if (
-                bet.status == result_status
-                and (bet.result or "").strip() == (result_description or "").strip()
-            ):
-                continue
-
-            bet.status = result_status
-            bet.settled_at = datetime.utcnow()
-            bet.result = clamp_yetai_result(result_description)
-            updated += 1
-
-        if updated:
-            db.commit()
-            logger.info("Regraded %s historical YetAI error-loss picks", updated)
-
-        return updated
 
     async def create_bet(
         self, bet_request: CreateYetAIBetRequest, admin_user_id: int
@@ -595,9 +566,9 @@ class YetAIBetsServiceDB:
     }
 
     # Statuses that are safe to display to subscribers
-    SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed"}
+    SUBSCRIBER_VISIBLE_STATUSES = {"active", "pending", "won", "lost", "pushed", "void"}
     YETAI_LIVE_STATUSES = ("active", "pending")
-    YETAI_HISTORY_STATUSES = ("won", "lost", "pushed")
+    YETAI_HISTORY_STATUSES = ("won", "lost", "pushed", "void")
 
     def _allowed_tiers_for_user(self, user_tier: object) -> List[SubscriptionTier]:
         tier_slug = coerce_subscription_tier(user_tier)
@@ -649,12 +620,13 @@ class YetAIBetsServiceDB:
         won = [b for b in bets if b.get("status") == "won"]
         lost = [b for b in bets if b.get("status") == "lost"]
         pushed = [b for b in bets if b.get("status") == "pushed"]
+        void = [b for b in bets if b.get("status") == "void"]
         graded = len(won) + len(lost)
         units = 0.0
         for bet in bets:
             status = bet.get("status")
             try:
-                odds_val = float(bet.get("odds", 0))
+                odds_val = float(bet.get("effective_odds") or bet.get("odds", 0))
             except (TypeError, ValueError):
                 odds_val = 0.0
             if status == "won":
@@ -668,6 +640,7 @@ class YetAIBetsServiceDB:
             "won": len(won),
             "lost": len(lost),
             "pushed": len(pushed),
+            "void": len(void),
             "win_rate": win_rate,
             "units": round(units, 2),
         }
@@ -689,68 +662,6 @@ class YetAIBetsServiceDB:
             .all()
         )
 
-    def _repair_unified_for_evaluation_yetai_picks(self, db: Session) -> int:
-        """Regrade linked placed bets for YetAI picks stuck on evaluation errors."""
-        import asyncio
-
-        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
-        from app.services.player_prop_verification_service import (
-            PlayerPropVerificationService,
-        )
-
-        rows = (
-            db.query(YetAIBet)
-            .filter(YetAIBet.status == "lost")
-            .filter(YetAIBet.result.ilike("Evaluation%"))
-            .limit(50)
-            .all()
-        )
-        if not rows:
-            return 0
-
-        prop_service = PlayerPropVerificationService(db)
-        updated = 0
-
-        for yetai in rows:
-            if not self._is_retryable_error_loss(yetai):
-                continue
-
-            for unified in self._linked_unified_bets_for_yetai_pick(db, yetai):
-                if unified.status != UnifiedBetStatus.LOST:
-                    continue
-                if not self._is_prop_bet(yetai):
-                    continue
-
-                prop_result = asyncio.run(prop_service.verify_single_prop(unified))
-                if not prop_result or prop_result.get("status") != UnifiedBetStatus.WON:
-                    continue
-
-                unified.status = UnifiedBetStatus.WON
-                unified.result_amount = prop_result.get("result_amount", 0.0)
-                unified.reasoning = prop_result.get("reasoning")
-                unified.settled_at = datetime.utcnow()
-                if not unified.yetai_bet_id:
-                    unified.yetai_bet_id = yetai.id
-                updated += 1
-
-            game_day = game_date_for_yetai_bet(yetai)
-            outcome = prop_service.verify_yetai_mlb_prop(yetai, game_day)
-            if outcome:
-                result_status, result_description = outcome
-                if result_status in {"won", "lost", "pushed"}:
-                    yetai.status = result_status
-                    yetai.settled_at = datetime.utcnow()
-                    yetai.result = clamp_yetai_result(result_description)
-                    updated += 1
-
-        if updated:
-            db.commit()
-            logger.info(
-                "Regraded %s linked unified/YetAI rows after evaluation errors", updated
-            )
-
-        return updated
-
     def sync_unified_from_yetai_pick(
         self, db: Session, yetai: YetAIBet, unified_bet
     ) -> bool:
@@ -758,12 +669,22 @@ class YetAIBetsServiceDB:
         from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
 
         yetai_status = (yetai.status or "").lower()
-        if yetai_status not in {"won", "lost", "pushed"}:
+        if yetai_status not in {"won", "lost", "pushed", "void"}:
             return False
 
-        target = UnifiedBetStatus(yetai_status)
+        # A voided pick (postponed, DNP, ungradeable) refunds the placed bet: the
+        # unified model's no-action status is CANCELLED with the stake returned.
+        void = yetai_status == "void"
+        target = UnifiedBetStatus.CANCELLED if void else UnifiedBetStatus(yetai_status)
         if unified_bet.status == target:
             return False
+        if void and unified_bet.status not in (
+            UnifiedBetStatus.PENDING,
+            UnifiedBetStatus.LIVE,
+        ):
+            return (
+                False  # a void note only cancels a still-open bet, never a settled one
+            )
 
         # Authoritative YetAI grading should not be overwritten by a winning placed row.
         if (
@@ -779,7 +700,7 @@ class YetAIBetsServiceDB:
 
         if target == UnifiedBetStatus.WON:
             unified_bet.result_amount = unified_bet.amount + unified_bet.potential_win
-        elif target == UnifiedBetStatus.PUSHED:
+        elif target in (UnifiedBetStatus.PUSHED, UnifiedBetStatus.CANCELLED):
             unified_bet.result_amount = unified_bet.amount
         else:
             unified_bet.result_amount = 0.0
@@ -824,81 +745,6 @@ class YetAIBetsServiceDB:
 
         return updated
 
-    def sync_yetai_from_unified_bet(self, db: Session, unified_bet) -> bool:
-        """Mirror graded placed-bet outcomes onto the linked YetAI pick row."""
-        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
-        from app.services.player_prop_verification_service import (
-            PlayerPropVerificationService,
-        )
-
-        if unified_bet.status not in (
-            UnifiedBetStatus.WON,
-            UnifiedBetStatus.LOST,
-            UnifiedBetStatus.PUSHED,
-        ):
-            return False
-
-        prop_service = PlayerPropVerificationService(db)
-        yetai = None
-        yetai_id = getattr(unified_bet, "yetai_bet_id", None)
-        if yetai_id:
-            yetai = db.query(YetAIBet).filter(YetAIBet.id == yetai_id).first()
-        if not yetai:
-            yetai = prop_service._resolve_yetai_pick(unified_bet)
-        if not yetai:
-            return False
-
-        unified_reason = (getattr(unified_bet, "reasoning", None) or "").strip().lower()
-        yetai_reason = (yetai.result or "").strip().lower()
-        if yetai_reason.startswith("evaluation") or unified_reason.startswith(
-            "evaluation"
-        ):
-            return False
-
-        target = unified_bet.status.value
-        if yetai.status == "won" and target == "lost":
-            return False
-        if yetai.status == target and yetai.settled_at is not None:
-            return False
-        if yetai_auto_grade_held(yetai):
-            return False
-
-        yetai.status = target
-        yetai.settled_at = unified_bet.settled_at or datetime.utcnow()
-        note = (getattr(unified_bet, "reasoning", None) or "").strip()
-        yetai.result = clamp_yetai_result(note or f"Graded from placed bet ({target})")
-        return True
-
-    def sync_yetai_picks_from_linked_unified_bets(self, db: Session) -> int:
-        """Backfill yetai_bets rows from settled simple_unified_bets with yetai_bet_id."""
-        from app.models.simple_unified_bet_model import (
-            SimpleUnifiedBet,
-            BetStatus as UnifiedBetStatus,
-        )
-
-        linked = (
-            db.query(SimpleUnifiedBet)
-            .filter(SimpleUnifiedBet.yetai_bet_id.isnot(None))
-            .filter(
-                SimpleUnifiedBet.status.in_(
-                    [
-                        UnifiedBetStatus.WON,
-                        UnifiedBetStatus.LOST,
-                        UnifiedBetStatus.PUSHED,
-                    ]
-                )
-            )
-            .all()
-        )
-        updated = 0
-        for unified in linked:
-            if self.sync_yetai_from_unified_bet(db, unified):
-                updated += 1
-        if updated:
-            db.commit()
-            logger.info("Synced %s YetAI pick(s) from linked placed bets", updated)
-        return updated
-
     def get_yetai_bets_for_user(self, user_tier: object, db: Session) -> List[Dict]:
         """Return open YetAI picks (active/pending) for the subscriber tier."""
         tier_slug = coerce_subscription_tier(user_tier)
@@ -914,10 +760,7 @@ class YetAIBetsServiceDB:
         days: int = 90,
         limit: int = 100,
     ) -> tuple[List[Dict], Dict[str, float | int]]:
-        """Promoted picks in the window (newest first), with stats for settled only."""
-        self._repair_unified_for_evaluation_yetai_picks(db)
-        self._retry_historical_error_losses(db)
-        self.sync_yetai_picks_from_linked_unified_bets(db)
+        """Promoted picks in the window (newest first); stats cover the whole window."""
         since = datetime.utcnow() - timedelta(days=max(days, 1))
         rows = self._query_yetai_bets_for_user(
             user_tier,
@@ -928,7 +771,20 @@ class YetAIBetsServiceDB:
             order_by="created",
         )
         bets = [self._yetai_bet_to_dict(bet) for bet in rows]
-        settled = [b for b in bets if b.get("status") in self.YETAI_HISTORY_STATUSES]
+        settled = [
+            {
+                "status": bet.status,
+                "odds": bet.odds,
+                "effective_odds": _settlement(bet).get("effective_odds"),
+            }
+            for bet in self._query_yetai_bets_for_user(
+                user_tier,
+                db,
+                self.YETAI_HISTORY_STATUSES,
+                since=since,
+                order_by="created",
+            )
+        ]
         stats = self.compute_history_stats(settled, period_days=days)
         stats["returned"] = len(bets)
         stats["settled"] = len(settled)
@@ -938,10 +794,10 @@ class YetAIBetsServiceDB:
         """Get active YetAI Bets based on user tier from database
 
         Returns bets that are:
-        - Status "pending" or "active" (not yet settled, not pending_approval/rejected/expired)
+        - Status "pending" or "active" (not yet settled, not pending_approval/rejected)
         - Tier-gated: FREE sees FREE only, PRO sees FREE+PRO, ELITE sees all
 
-        Stale unsettled rows are removed by verify_pending_yetai_bets (status -> expired).
+        Unsettled rows are graded by verify_pending_yetai_bets (never expired).
         """
         try:
             db = SessionLocal()
@@ -1138,16 +994,11 @@ class YetAIBetsServiceDB:
 
     def _yetai_bet_to_dict(self, bet: YetAIBet) -> Dict:
         """Convert YetAIBet model to dictionary"""
-        # Format game time as MM/DD/YYYY @H:MMPM EST
+        # Eastern wall clock: commence_time is naive UTC
         game_time_formatted = "TBD"
         if bet.commence_time:
             try:
-                formatted_date = bet.commence_time.strftime("%m/%d/%Y")
-                formatted_time = bet.commence_time.strftime("%I:%M %p EDT")
-                game_time_formatted = f"{formatted_date} @{formatted_time}"
-                logger.debug(
-                    f"Formatted game time: {game_time_formatted} from {bet.commence_time}"
-                )
+                game_time_formatted = format_game_time_et(bet.commence_time)
             except Exception as e:
                 logger.warning(f"Error formatting game time {bet.commence_time}: {e}")
                 game_time_formatted = bet.commence_time.isoformat()
@@ -1192,154 +1043,21 @@ class YetAIBetsServiceDB:
 
         # Include parlay legs if they exist
         if bet.parlay_legs:
-            bet_dict["parlay_legs"] = bet.parlay_legs
+            bet_dict["parlay_legs"] = [
+                {
+                    "sport": leg.get("sport"),
+                    "game": leg.get("game"),
+                    "pick": leg.get("pick"),
+                    "odds": leg.get("odds"),
+                    "bet_type": leg.get("bet_type"),
+                    "leg_status": leg.get("leg_status") or "pending",
+                    "leg_result": leg.get("leg_result"),
+                }
+                for leg in bet.parlay_legs
+                if isinstance(leg, dict)
+            ]
 
         return bet_dict
-
-    def _verify_yetai_nba_spread_from_actuals(
-        self, bet: YetAIBet, game_day: date, db: Session
-    ) -> Optional[Tuple[str, str]]:
-        """Settle NBA spread picks using pred_nba_spread_actuals when game_id is missing."""
-        from app.models.predictions_models import NBASpreadActuals
-
-        if not self._is_spread_bet(bet) or not self._is_nba_sport(bet.sport):
-            return None
-        home = (bet.home_team or "").strip()
-        away = (bet.away_team or "").strip()
-        if not home or not away:
-            return None
-
-        row = (
-            db.query(NBASpreadActuals)
-            .filter(
-                NBASpreadActuals.game_date == game_day,
-                NBASpreadActuals.home_team_name == home,
-                NBASpreadActuals.away_team_name == away,
-            )
-            .first()
-        )
-        if not row:
-            return None
-
-        return self._evaluate_yetai_bet_outcome(bet, row.home_score, row.away_score)
-
-    def _evaluate_yetai_bet_outcome(
-        self, bet: YetAIBet, home_score: int, away_score: int
-    ) -> tuple[str, str]:
-        """
-        Evaluate YetAI bet outcome based on bet type and scores
-        Returns: (status, result_description)
-        """
-        bet_type = bet.bet_type
-        selection = bet.selection.lower()
-
-        try:
-            if bet_type == BetType.MONEYLINE:
-                # Check if selection is home or away team
-                if home_score == away_score:
-                    return "pushed", "Game tied - bet pushed"
-
-                # Check which team won
-                home_won = home_score > away_score
-                if bet.home_team.lower() in selection:
-                    if home_won:
-                        return (
-                            "won",
-                            f"Won: {bet.home_team} won ({home_score}-{away_score})",
-                        )
-                    else:
-                        return (
-                            "lost",
-                            f"Lost: {bet.home_team} lost ({home_score}-{away_score})",
-                        )
-                elif bet.away_team.lower() in selection:
-                    if not home_won:
-                        return (
-                            "won",
-                            f"Won: {bet.away_team} won ({away_score}-{home_score})",
-                        )
-                    else:
-                        return (
-                            "lost",
-                            f"Lost: {bet.away_team} lost ({away_score}-{home_score})",
-                        )
-
-            elif bet_type == BetType.SPREAD:
-                # Parse spread from selection (e.g., "Team Name -7.5" or "Team Name +3.5")
-                import re
-
-                spread_match = re.search(r"([+-]?\d+\.?\d*)", selection)
-                if not spread_match:
-                    return "pending_manual_review", "Could not parse spread value"
-
-                spread = float(spread_match.group(1))
-
-                # Determine which team and apply spread
-                if bet.home_team.lower() in selection:
-                    adjusted_home = home_score + spread
-                    if adjusted_home > away_score:
-                        return (
-                            "won",
-                            f"Won: {bet.home_team} {spread:+.1f} covered ({adjusted_home:.1f} vs {away_score})",
-                        )
-                    elif adjusted_home == away_score:
-                        return "pushed", f"Push: {bet.home_team} {spread:+.1f} tied"
-                    else:
-                        return (
-                            "lost",
-                            f"Lost: {bet.home_team} {spread:+.1f} didn't cover ({adjusted_home:.1f} vs {away_score})",
-                        )
-                elif bet.away_team.lower() in selection:
-                    adjusted_away = away_score + spread
-                    if adjusted_away > home_score:
-                        return (
-                            "won",
-                            f"Won: {bet.away_team} {spread:+.1f} covered ({adjusted_away:.1f} vs {home_score})",
-                        )
-                    elif adjusted_away == home_score:
-                        return "pushed", f"Push: {bet.away_team} {spread:+.1f} tied"
-                    else:
-                        return (
-                            "lost",
-                            f"Lost: {bet.away_team} {spread:+.1f} didn't cover ({adjusted_away:.1f} vs {home_score})",
-                        )
-
-            elif bet_type == BetType.TOTAL:
-                # Parse total from selection (e.g., "Over 220.5" or "Under 45.5")
-                import re
-
-                total_match = re.search(r"(\d+\.?\d*)", selection)
-                if not total_match:
-                    return "pending_manual_review", "Could not parse total value"
-
-                line = float(total_match.group(1))
-                total_score = home_score + away_score
-                is_over = "over" in selection
-
-                if total_score == line:
-                    return "pushed", f"Push: Total exactly {line}"
-                elif (is_over and total_score > line) or (
-                    not is_over and total_score < line
-                ):
-                    direction = "Over" if is_over else "Under"
-                    return "won", f"Won: {direction} {line} (total: {total_score})"
-                else:
-                    direction = "Over" if is_over else "Under"
-                    return "lost", f"Lost: {direction} {line} (total: {total_score})"
-
-            elif bet_type == BetType.PARLAY:
-                # Parlay evaluation is complex - would need to check all legs
-                return (
-                    "pending_manual_review",
-                    "Parlay evaluation requires manual review",
-                )
-
-            else:
-                return "pending_manual_review", f"Unknown bet type: {bet_type}"
-
-        except Exception as e:
-            logger.error(f"Error evaluating YetAI bet {bet.id[:8]}: {e}")
-            return "pending_manual_review", f"Evaluation error: {str(e)}"
 
     def _expire_stale_pending_approval(self, db: Session) -> int:
         """Drop admin-queue picks that are past game day or >24h old without commence_time."""
@@ -1366,245 +1084,285 @@ class YetAIBetsServiceDB:
             row.result = clamp_yetai_result("Auto-expired (unapproved)")
         return len(expired)
 
-    async def verify_pending_yetai_bets(self) -> Dict:
-        """
-        Verify unsettled YetAI bets (pending + active) and settle when possible.
+    LEGACY_STATUSES = ("expired", "pending_manual_review")
+    SETTLE_LEGACY_LIMIT = 50
+    # Results written by "expired" writers whose rows may never have been shown:
+    # the admin expire endpoint (any status) and the unapproved-queue expiry.
+    NOT_GRADER_EXPIRED = ("Admin expired", "Auto-expired")
 
-        - Game-linked bets: ``games`` row with FINAL status + score evaluation.
-        - MLB props: MLB Stats API via PlayerPropVerificationService.
-        - Stale rows (>24h, still unsettled): pending_manual_review (hidden from subscribers).
+    @classmethod
+    def _legacy_filter(cls):
+        """Rows the old grader parked or expired itself (they were shown to users).
+
+        History (git log -p): the old grader wrote ``pending_manual_review`` (results
+        "Auto-expired: ...") and later ``expired`` with ``settled_at`` set and result
+        "Unsettled >24h, no result" (or the prior result). The unapproved-queue expiry
+        (expire_pending_picks / _expire_stale_pending_approval before 7f12466c) wrote
+        ``expired`` with no result and no ``settled_at``; the admin expire wrote
+        "Admin expired (stale pick)" on any status. Those two are never re-graded.
         """
-        from app.models.database_models import Game, GameStatus
-        from app.services.player_prop_verification_service import (
-            PlayerPropVerificationService,
+        return or_(
+            YetAIBet.status == "pending_manual_review",
+            and_(
+                YetAIBet.status == "expired",
+                YetAIBet.settled_at.isnot(None),
+                YetAIBet.result.isnot(None),
+                *[~YetAIBet.result.ilike(f"{p}%") for p in cls.NOT_GRADER_EXPIRED],
+            ),
         )
 
-        logger.info("🎯 Starting YetAI bets verification...")
-        db = SessionLocal()
-        prop_service = PlayerPropVerificationService(db)
+    @staticmethod
+    def _admin_expired_shown(bet: YetAIBet) -> bool:
+        """Manual pick an admin (or the reopen script) expired: manual picks are created
+        pending, so users had seen it. Auto picks cannot be told apart from never-approved
+        queue rows, so they are left alone."""
+        source = getattr(bet.source, "value", bet.source)
+        return (
+            (bet.status or "").lower() == "expired"
+            and (bet.result or "").lower().startswith("admin expired")
+            and source == BetSource.MANUAL.value
+        )
 
+    @classmethod
+    def _legacy_sweepable(cls, bet: YetAIBet) -> bool:
+        status = (bet.status or "").lower()
+        if status == "pending_manual_review":
+            return True
+        result = (bet.result or "").lower()
+        return (
+            status == "expired"
+            and bet.settled_at is not None
+            and bet.result is not None
+            and not any(result.startswith(p.lower()) for p in cls.NOT_GRADER_EXPIRED)
+        )
+
+    def _settle_candidates(self, db: Session) -> List[YetAIBet]:
+        """Unsettled rows, retryable error losses and legacy dead ends (oldest first)."""
+        rows = (
+            db.query(YetAIBet)
+            .filter(
+                or_(
+                    YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES),
+                    and_(
+                        YetAIBet.status == "lost", YetAIBet.result.ilike("Evaluation%")
+                    ),
+                )
+            )
+            .all()
+        )
+        legacy = (
+            db.query(YetAIBet)
+            .filter(self._legacy_filter())
+            .order_by(YetAIBet.created_at)
+            .limit(self.SETTLE_LEGACY_LIMIT)
+            .all()
+        )
+        # Shown, then expired by an admin: moved to history as void (not re-graded).
+        admin_expired = (
+            db.query(YetAIBet)
+            .filter(
+                YetAIBet.status == "expired",
+                YetAIBet.result.ilike("Admin expired%"),
+                YetAIBet.source == BetSource.MANUAL,
+            )
+            .all()
+        )
+        seen = set()
+        return [
+            b
+            for b in [*rows, *legacy, *admin_expired]
+            if not (b.id in seen or seen.add(b.id))
+        ]
+
+    @staticmethod
+    def _load_for_settlement(db: Session, bet_id: str) -> Optional[YetAIBet]:
+        """Fresh row, row-locked on Postgres (skip rows another settler holds)."""
+        query = db.query(YetAIBet).filter(YetAIBet.id == bet_id)
+        try:
+            postgres = db.get_bind().dialect.name == "postgresql"
+        except Exception:
+            postgres = False
+        if postgres:
+            query = query.with_for_update(skip_locked=True)
+        return query.populate_existing().first()
+
+    def _settle_one(self, db: Session, bet: YetAIBet, now: datetime) -> str:
+        """Grade one bet. Returns skipped | pending | settled | void (caller commits)."""
+        from app.services import yetai_grading
+        from app.services import yetai_parlay_verification as parlays
+
+        status = (bet.status or "").lower()
+        if self._admin_expired_shown(bet):
+            bet.status = "void"  # keeps the admin's reason in `result`
+            bet.settled_at = bet.settled_at or now
+            logger.info("YETAI_ADMIN_EXPIRED_TO_VOID bet=%s", bet.id)
+            return "void"
+        legacy = status in self.LEGACY_STATUSES
+        error_loss = status == "lost" and self._is_retryable_error_loss(bet)
+        if not (status in YETAI_UNSETTLED_STATUSES or legacy or error_loss):
+            return "skipped"
+        if legacy and not self._legacy_sweepable(bet):
+            return "skipped"
+        if yetai_auto_grade_held(bet, now):
+            return "skipped"
+        if status in YETAI_UNSETTLED_STATUSES and not yetai_pick_gradeable(
+            bet, now=now
+        ):
+            return "skipped"
+
+        prior = _settlement(bet)
+        first_attempt = prior.get("first_attempt_at") or now.isoformat()
+        try:
+            first_day = datetime.fromisoformat(str(first_attempt)).date()
+        except ValueError:
+            first_attempt, first_day = now.isoformat(), now.date()
+
+        parlay = self._is_parlay_bet(bet)
+        game_day = (
+            parlays.parlay_last_day(bet) if parlay else yetai_grading.game_day_for(bet)
+        ) or (bet.created_at.date() if bet.created_at else now.date())
+        # Legacy rows get a full window from their first attempt, not from game day.
+        anchor = max(game_day, first_day)
+        window_over = settle_window_elapsed(anchor, now)
+        backstop = now > datetime.combine(anchor, time.max) + timedelta(
+            days=SETTLE_BACKSTOP_DAYS
+        )
+
+        legs = None
+        if parlay:
+            outcome, legs = parlays.grade_parlay(bet, now, window_over, backstop)
+        else:
+            outcome = yetai_grading.grade_pick(bet, db)
+
+        kind, text = outcome.kind, outcome.result
+        if kind in ("not_ready", "error") and not parlay:
+            waiting = kind == "error" or text in yetai_grading.WAITING
+            if backstop or (window_over and not waiting):
+                kind, text = "void", f"Ungradeable: {text}"
+        if kind == "ungradeable":
+            kind, text = "void", f"Ungradeable: {text}"
+        keep_error_loss = error_loss and kind not in ("won", "lost", "pushed")
+
+        settlement = {
+            "attempts": int(prior.get("attempts", 0) or 0) + 1,
+            "first_attempt_at": first_attempt,
+            "last_attempt_at": now.isoformat(),
+            "last_kind": outcome.kind,
+            "last_error": text if kind in ("not_ready", "error", "void") else None,
+        }
+        if parlay and kind == "won" and legs:
+            effective = parlays.effective_parlay_odds(legs)
+            if effective is not None:
+                settlement["effective_odds"] = effective
+        factors = (
+            dict(bet.prediction_factors)
+            if isinstance(bet.prediction_factors, dict)
+            else {}
+        )
+        factors["settlement"] = settlement
+        bet.prediction_factors = factors
+        if legs:
+            bet.parlay_legs = legs
+
+        if kind in ("not_ready", "error") or keep_error_loss:
+            return "pending"
+        if kind == "void":
+            logger.error(
+                "YETAI_SETTLEMENT_VOID bet=%s sport=%s selection=%r reason=%s",
+                bet.id,
+                bet.sport,
+                bet.selection,
+                text,
+            )
+        bet.status = kind
+        bet.settled_at = now
+        bet.result = clamp_yetai_result(text, max_len=200)
+        return "void" if kind == "void" else "settled"
+
+    def _record_settlement_error(
+        self, db: Session, bet_id: str, exc: Exception
+    ) -> None:
+        """Best-effort: note why a row failed, in its own transaction."""
+        try:
+            bet = db.query(YetAIBet).filter(YetAIBet.id == bet_id).first()
+            if bet is None:
+                return
+            factors = dict(bet.prediction_factors or {})
+            prior = _settlement(bet)
+            now = datetime.utcnow().isoformat()
+            factors["settlement"] = {
+                **prior,
+                "attempts": int(prior.get("attempts", 0) or 0) + 1,
+                "first_attempt_at": prior.get("first_attempt_at") or now,
+                "last_attempt_at": now,
+                "last_kind": "error",
+                "last_error": f"{type(exc).__name__}: {exc}"[:300],
+            }
+            bet.prediction_factors = factors
+            db.commit()
+        except Exception:
+            db.rollback()
+
+    def verify_pending_yetai_bets(self) -> Dict:
+        """
+        Settle every shown YetAI bet through ``yetai_grading.grade_pick``.
+
+        Plain (blocking) function: the Celery task calls it directly, async callers via
+        ``asyncio.to_thread``. Each bet is re-loaded (row-locked on Postgres), graded and
+        committed on its own, so one bad row never blocks the others and concurrent
+        settlers never double-write. Nothing is ever expired: a bet that cannot be graded
+        within ``YETAI_SETTLE_RETRY_DAYS`` becomes ``void`` with a reason (transport
+        errors only after the 14-day backstop). ``expired`` is kept and is always 0.
+        """
+        from app.services import espn_results
+
+        logger.info("Starting YetAI bets verification...")
+        espn_results.clear_cache()  # the cache never expires; the worker is long-lived
+        db = SessionLocal()
         try:
             expired_approval = self._expire_stale_pending_approval(db)
             if expired_approval:
                 logger.info(
                     "Expired %s stale pending_approval YetAI picks", expired_approval
                 )
+                db.commit()
 
-            from sqlalchemy import and_, or_
-
-            candidates = (
-                db.query(YetAIBet)
-                .filter(
-                    or_(
-                        YetAIBet.status.in_(YETAI_UNSETTLED_STATUSES),
-                        and_(
-                            YetAIBet.status == "lost",
-                            YetAIBet.result.ilike("Evaluation%"),
-                        ),
-                    )
-                )
-                .all()
-            )
-            unsettled = []
-            for bet in candidates:
-                if bet.status in YETAI_UNSETTLED_STATUSES:
-                    unsettled.append(bet)
-                    continue
-                if self._is_retryable_error_loss(bet):
-                    unsettled.append(bet)
-                    logger.info(
-                        "Retrying previously errored YetAI pick %s: %s",
-                        bet.id[:8],
-                        (bet.result or "")[:80],
-                    )
-            logger.info(
-                "Found %s unsettled YetAI bets (statuses %s)",
-                len(unsettled),
-                YETAI_UNSETTLED_STATUSES,
-            )
-
-            if not unsettled:
-                if expired_approval:
+            candidate_ids = [b.id for b in self._settle_candidates(db)]
+            db.commit()  # end the read transaction; each bet gets its own below
+            counts = {"settled": 0, "voided": 0}
+            now = datetime.utcnow()
+            for bet_id in candidate_ids:
+                try:
+                    bet = self._load_for_settlement(db, bet_id)
+                    # None: another settler holds the row lock (or it was deleted)
+                    result = self._settle_one(db, bet, now) if bet else "skipped"
                     db.commit()
-                return {
-                    "success": True,
-                    "verified": 0,
-                    "settled": 0,
-                    "expired": 0,
-                    "expired_pending_approval": expired_approval,
-                }
-
-            total_settled = 0
-            total_expired = 0
-            stale_cutoff = datetime.utcnow() - timedelta(hours=24)
-
-            for bet in unsettled:
-                settled = False
-
-                if self._is_retryable_error_loss(bet):
-                    game_day = game_date_for_yetai_bet(bet)
-                    outcome = None
-                    if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
-                        outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
-                    elif self._is_prop_bet(bet) and self._is_nba_sport(bet.sport):
-                        outcome = prop_service.verify_yetai_nba_prop(bet, game_day)
-                    if outcome:
-                        result_status, result_description = outcome
-                        bet.status = result_status
-                        bet.settled_at = datetime.utcnow()
-                        bet.result = clamp_yetai_result(result_description)
-                        total_settled += 1
-                        settled = True
-                        logger.info(
-                            "Regraded YetAI prop %s: %s",
-                            bet.id[:8],
-                            result_status,
-                        )
-                    continue
-
-                if bet.status not in YETAI_UNSETTLED_STATUSES:
-                    continue
-
-                if yetai_auto_grade_held(bet):
-                    continue
-
-                if not yetai_pick_gradeable(bet):
-                    continue
-
-                if self._is_parlay_bet(bet):
-                    from app.services.yetai_parlay_verification import (
-                        verify_yetai_parlay,
+                except Exception as exc:
+                    logger.error(
+                        "YetAI settlement failed for %s: %s", bet_id, exc, exc_info=True
                     )
-
-                    parlay_outcome = verify_yetai_parlay(bet, self, prop_service, db)
-                    if parlay_outcome:
-                        result_status, result_description, updated_legs = parlay_outcome
-                        bet.parlay_legs = updated_legs
-                        bet.status = result_status
-                        bet.settled_at = datetime.utcnow()
-                        bet.result = clamp_yetai_result(result_description)
-                        total_settled += 1
-                        settled = True
-                        logger.info(
-                            "Settled YetAI parlay %s: %s",
-                            bet.id[:8],
-                            result_status,
-                        )
+                    db.rollback()
+                    self._record_settlement_error(db, bet_id, exc)
                     continue
+                if result in ("settled", "void"):
+                    counts["settled"] += 1
+                if result == "void":
+                    counts["voided"] += 1
 
-                if self._is_prop_bet(bet) and self._is_mlb_sport(bet.sport):
-                    game_day = game_date_for_yetai_bet(bet)
-                    outcome = prop_service.verify_yetai_mlb_prop(bet, game_day)
-                    if outcome:
-                        result_status, result_description = outcome
-                        bet.status = result_status
-                        bet.settled_at = datetime.utcnow()
-                        bet.result = clamp_yetai_result(result_description)
-                        total_settled += 1
-                        settled = True
-                        logger.info(
-                            "Settled YetAI MLB prop %s via stats API: %s",
-                            bet.id[:8],
-                            result_status,
-                        )
-
-                elif self._is_prop_bet(bet) and self._is_nba_sport(bet.sport):
-                    game_day = game_date_for_yetai_bet(bet)
-                    outcome = prop_service.verify_yetai_nba_prop(bet, game_day)
-                    if outcome:
-                        result_status, result_description = outcome
-                        bet.status = result_status
-                        bet.settled_at = datetime.utcnow()
-                        bet.result = clamp_yetai_result(result_description)
-                        total_settled += 1
-                        settled = True
-                        logger.info(
-                            "Settled YetAI NBA prop %s: %s",
-                            bet.id[:8],
-                            result_status,
-                        )
-
-                elif self._is_spread_bet(bet) and self._is_nba_sport(bet.sport):
-                    game_day = game_date_for_yetai_bet(bet)
-                    outcome = self._verify_yetai_nba_spread_from_actuals(
-                        bet, game_day, db
-                    )
-                    if outcome:
-                        result_status, result_description = outcome
-                        if result_status in (
-                            "won",
-                            "lost",
-                            "pushed",
-                            "pending_manual_review",
-                        ):
-                            bet.status = result_status
-                            bet.settled_at = datetime.utcnow()
-                            bet.result = clamp_yetai_result(result_description)
-                            if result_status != "pending_manual_review":
-                                total_settled += 1
-                            settled = True
-                            logger.info(
-                                "Settled YetAI NBA spread %s: %s",
-                                bet.id[:8],
-                                result_status,
-                            )
-
-                elif bet.game_id:
-                    game = db.query(Game).filter(Game.id == bet.game_id).first()
-                    if game and game.status == GameStatus.FINAL:
-                        result_status, result_description = (
-                            self._evaluate_yetai_bet_outcome(
-                                bet, game.home_score, game.away_score
-                            )
-                        )
-                        if result_status in (
-                            "won",
-                            "lost",
-                            "pushed",
-                            "pending_manual_review",
-                        ):
-                            bet.status = result_status
-                            bet.settled_at = datetime.utcnow()
-                            bet.result = clamp_yetai_result(result_description)
-                            if result_status != "pending_manual_review":
-                                total_settled += 1
-                            settled = True
-                            logger.info(
-                                "Settled YetAI bet %s via games DB: %s",
-                                bet.id[:8],
-                                result_status,
-                            )
-
-                if settled:
-                    continue
-
-                if yetai_bet_is_stale(bet, stale_cutoff):
-                    bet.status = "expired"
-                    bet.settled_at = datetime.utcnow()
-                    if not bet.result:
-                        bet.result = clamp_yetai_result("Unsettled >24h, no result")
-                    total_expired += 1
-                    logger.info(
-                        "Auto-expired stale YetAI bet %s: %s",
-                        bet.id[:8],
-                        bet.title,
-                    )
-
-            db.commit()
             logger.info(
-                "✅ YetAI verification complete: %s settled, %s expired/manual",
-                total_settled,
-                total_expired,
+                "YetAI verification complete: %s of %s settled (%s void)",
+                counts["settled"],
+                len(candidate_ids),
+                counts["voided"],
             )
-
             return {
                 "success": True,
-                "verified": len(unsettled),
-                "settled": total_settled,
-                "expired": total_expired,
+                "verified": len(candidate_ids),
+                "settled": counts["settled"],
+                "voided": counts["voided"],
+                "expired": 0,
                 "expired_pending_approval": expired_approval,
             }
-
         except Exception as e:
             logger.error(f"Error in YetAI bet verification: {e}", exc_info=True)
             db.rollback()

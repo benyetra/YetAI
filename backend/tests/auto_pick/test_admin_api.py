@@ -13,7 +13,6 @@ from fastapi import HTTPException
 
 from app.api.admin_yetai_picks import (
     ACTIVE_STATUS,
-    EXPIRED_STATUS,
     PENDING_STATUS,
     REJECTED_STATUS,
     EditPickRequest,
@@ -183,16 +182,20 @@ async def test_reopen_clears_settlement_and_returns_active():
 
 
 @pytest.mark.asyncio
-async def test_expire_marks_stale_pending_as_expired():
-    bet = _bet("b1", status="pending")
+@pytest.mark.parametrize(
+    "status, expected",
+    [("pending", "void"), ("active", "void"), ("pending_approval", "rejected")],
+)
+async def test_expire_voids_shown_picks_and_rejects_unapproved(status, expected):
+    bet = _bet("b1", status=status)
     db = _db_with_first(bet)
 
     result = await expire_pick("b1", _={}, db=db)
 
-    assert bet.status == EXPIRED_STATUS
+    assert bet.status == expected
     assert bet.settled_at is not None
     assert bet.result == "Admin expired (stale pick)"
-    assert result["status"] == EXPIRED_STATUS
+    assert result["status"] == expected
 
 
 # ---------------------------------------------------------------------------
@@ -222,12 +225,27 @@ async def test_reject_not_found_raises_404():
 
 @pytest.mark.asyncio
 async def test_reject_wrong_status_raises_400():
-    bet = _bet("b1", status="active")
+    bet = _bet("b1", status="won")
     db = _db_with_first(bet)
     with pytest.raises(HTTPException) as exc_info:
         await reject("b1", _={}, db=db)
     assert exc_info.value.status_code == 400
     db.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["active", "pending"])
+async def test_reject_pulls_published_pick_as_void(status):
+    bet = _bet("b1", status=status)
+    db = _db_with_first(bet)
+
+    result = await reject("b1", _={}, db=db)
+
+    assert bet.status == "void"
+    assert bet.result == "Pulled by admin"
+    assert bet.settled_at is not None
+    db.commit.assert_called_once()
+    assert result["status"] == "void"
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +264,24 @@ async def test_edit_updates_provided_fields():
     assert bet.odds == -105.0
     assert bet.selection == "Celtics ML"
     db.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_edit_selection_drops_grading_block_odds_only_keeps_it():
+    grading = {"market": "moneyline", "side": "home"}
+    bet = _bet("b1", status="active", selection="Lakers ML")
+    bet.prediction_factors = {"grading": grading, "event_id": "e1"}
+    db = _db_with_first(bet)
+
+    await edit("b1", EditPickRequest(odds=-120.0), _={}, db=db)
+    assert bet.prediction_factors["grading"] == grading
+
+    await edit("b1", EditPickRequest(selection="Lakers ML"), _={}, db=db)
+    assert "grading" in bet.prediction_factors  # unchanged text
+
+    await edit("b1", EditPickRequest(selection="Celtics ML"), _={}, db=db)
+    assert bet.prediction_factors == {"event_id": "e1"}
+    assert bet.selection == "Celtics ML"
 
 
 @pytest.mark.asyncio

@@ -56,7 +56,7 @@ def test_attach_prop_market_fields_sets_line_and_over():
     db = MagicMock()
     with patch(
         "app.services.etl.wnba._prop_lines.fetch_fanduel_prop_for_player",
-        return_value=(18.5, "o"),
+        return_value=(18.5, "o", -125),
     ) as fetch:
         attached = attach_prop_market_fields(
             row,
@@ -71,6 +71,7 @@ def test_attach_prop_market_fields_sets_line_and_over():
         )
     assert attached is True
     assert row["market_line"] == 18.5
+    assert row["fanduel_price"] == -125
     assert row["edge"] == 3.5
     assert row["recommendation"] == "OVER"
     fetch.assert_called_once()
@@ -83,7 +84,7 @@ def test_attach_prop_market_fields_no_play_when_edge_below_threshold():
     db = MagicMock()
     with patch(
         "app.services.etl.wnba._prop_lines.fetch_fanduel_prop_for_player",
-        return_value=(8.0, "o"),
+        return_value=(8.0, "o", -105),
     ):
         attach_prop_market_fields(
             row,
@@ -107,7 +108,7 @@ def test_attach_prop_market_fields_leaves_row_when_no_line():
     db = MagicMock()
     with patch(
         "app.services.etl.wnba._prop_lines.fetch_fanduel_prop_for_player",
-        return_value=(None, None),
+        return_value=(None, None, None),
     ):
         assert (
             attach_prop_market_fields(

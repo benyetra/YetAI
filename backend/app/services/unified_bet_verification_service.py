@@ -878,10 +878,6 @@ class UnifiedBetVerificationService:
                     if result.status != BetStatus.PENDING:
                         bet.settled_at = datetime.now(timezone.utc)
 
-                    from app.services.yetai_bets_service_db import YetAIBetsServiceDB
-
-                    YetAIBetsServiceDB().sync_yetai_from_unified_bet(db, bet)
-
                     logger.info(
                         f"✅ Updated bet {result.bet_id[:8]}: {result.status.value} - {result.reasoning}"
                     )

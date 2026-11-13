@@ -36,15 +36,21 @@ class MoneylineCandidateProvider:
         out: list[BetCandidate] = []
         for r in rows:
             try:
-                side = r.get("side", "home")
+                side = r["side"]  # model-named side; no default
                 if side == "home":
                     team = r["home_team_name"]
                     odds = int(r["moneyline_home"])
+                    opp_odds = r.get("moneyline_away")
                     win_prob = float(r["home_win_prob"])
                 else:
                     team = r["away_team_name"]
                     odds = int(r["moneyline_away"])
-                    win_prob = 1.0 - float(r["home_win_prob"])
+                    opp_odds = r.get("moneyline_home")
+                    win_prob = float(
+                        r["away_win_prob"]
+                        if r.get("away_win_prob") is not None
+                        else 1.0 - float(r["home_win_prob"])
+                    )
                 selection = f"{team} ML"
                 out.append(
                     BetCandidate(
@@ -57,12 +63,17 @@ class MoneylineCandidateProvider:
                         our_projection=win_prob,
                         away_team=r.get("away_team_name"),
                         home_team=r.get("home_team_name"),
-                        commence_time=r.get("game_time"),
+                        commence_time=r.get("commence_time"),
+                        game_date=r.get("game_date"),
                         projection_metadata={
                             "confidence_score": r.get("confidence_score"),
                             "home_win_prob": r.get("home_win_prob"),
                             "generated_at": r.get("generated_at"),
                             "side": side,
+                            "opp_odds": (
+                                int(opp_odds) if opp_odds is not None else None
+                            ),
+                            "model_confidence": r.get("model_confidence"),
                         },
                     )
                 )

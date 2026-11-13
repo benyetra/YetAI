@@ -30,7 +30,7 @@ _PIPELINE_LABELS: dict[str, str] = {
     entry["task_name"]: entry["label"] for entry in PIPELINE_ENQUEUE_CATALOG
 }
 
-# YetAI auto-pick beat entries (gated by AUTO_YETAI_PICKS_ENABLED on API + worker).
+# YetAI auto-pick beat entries (on by default; AUTO_YETAI_PICKS_ENABLED=false removes them).
 _AUTO_PICK_TASK_LABELS: dict[str, str] = {
     "auto_pick.yetai_bets": "YetAI auto-pick (daily)",
     "auto_pick.expire_pending": "YetAI expire pending picks",

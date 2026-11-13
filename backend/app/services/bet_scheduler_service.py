@@ -98,13 +98,7 @@ class BetSchedulerService:
 
         while not self._stop_event.is_set():
             try:
-                # Check if we're in quiet hours
-                if self._is_quiet_hours():
-                    logger.debug("Skipping verification during quiet hours")
-                    await asyncio.sleep(60)  # Check every minute during quiet hours
-                    continue
-
-                # Run verification
+                # Run verification (quiet hours skip only the unified/prop steps)
                 await self._run_verification()
 
                 # Wait for next interval
@@ -156,30 +150,52 @@ class BetSchedulerService:
                     await asyncio.sleep(self.config.rate_limit_delay)
 
                 prop_result: Dict = {"verified": 0, "settled": 0, "errors": 0}
+                result: Dict = {"success": False, "error": "Unified step not run"}
+                yetai_result: Dict = {"verified": 0, "settled": 0}
 
-                # Run the unified verification (uses API directly)
-                result = (
-                    await unified_bet_verification_service.verify_all_pending_bets()
-                )
+                # Unified + prop steps are skipped in quiet hours; the YetAI
+                # step below always runs so shown bets settle around the clock.
+                if self._is_quiet_hours():
+                    result = {"success": True, "verified": 0, "settled": 0}
+                else:
+                    try:
+                        # Run the unified verification (uses API directly)
+                        result = (
+                            await unified_bet_verification_service.verify_all_pending_bets()
+                        )
+                    except Exception as e:
+                        logger.error(f"Unified verification step failed: {e}")
+                        result = {"success": False, "error": str(e)}
 
-                # Backup path: settle unified props even if Odds scores fetch failed
-                from app.core.database import SessionLocal
-                from app.services.player_prop_verification_service import (
-                    PlayerPropVerificationService,
-                )
+                    # Backup path: settle unified props even if Odds scores fetch failed
+                    try:
+                        from app.core.database import SessionLocal
+                        from app.services.player_prop_verification_service import (
+                            PlayerPropVerificationService,
+                        )
 
-                prop_db = SessionLocal()
+                        prop_db = SessionLocal()
+                        try:
+                            prop_service = PlayerPropVerificationService(prop_db)
+                            prop_result = (
+                                await prop_service.verify_pending_unified_props(
+                                    prop_db, days_back=14
+                                )
+                            )
+                        finally:
+                            prop_db.close()
+                    except Exception as e:
+                        logger.error(f"Prop verification step failed: {e}")
+
+                # YetAI bets verification: independent of the steps above
                 try:
-                    prop_service = PlayerPropVerificationService(prop_db)
-                    prop_result = await prop_service.verify_pending_unified_props(
-                        prop_db, days_back=14
+                    yetai_service = YetAIBetsServiceDB()
+                    yetai_result = await asyncio.to_thread(
+                        yetai_service.verify_pending_yetai_bets
                     )
-                finally:
-                    prop_db.close()
-
-                # Also run YetAI bets verification
-                yetai_service = YetAIBetsServiceDB()
-                yetai_result = await yetai_service.verify_pending_yetai_bets()
+                except Exception as e:
+                    logger.error(f"YetAI verification step failed: {e}")
+                    yetai_result = {"success": False, "error": str(e)}
 
                 if result.get("success", False):
                     # Success

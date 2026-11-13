@@ -325,7 +325,7 @@ class ScoringConfig(Base):
     score_threshold = Column(Float, nullable=False, default=65.0)
     odds_min = Column(Integer, nullable=False, default=-300)
     odds_max = Column(Integer, nullable=False, default=400)
-    max_picks_per_day = Column(Integer, nullable=False, default=4)
+    max_picks_per_day = Column(Integer, nullable=False, default=3)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 

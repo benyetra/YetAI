@@ -110,6 +110,7 @@ def run() -> dict:
                     existing.opponent_team_name = player.opponent_team_name
                     existing.fanduel_line = None
                     existing.fanduel_over_under = None
+                    existing.fanduel_price = None
                     updated += 1
                 else:
                     db.add(
@@ -121,6 +122,7 @@ def run() -> dict:
                             projected_steals=projected,
                             fanduel_line=None,
                             fanduel_over_under=None,
+                            fanduel_price=None,
                         )
                     )
                     created += 1

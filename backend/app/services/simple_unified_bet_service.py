@@ -354,10 +354,7 @@ class SimpleUnifiedBetService:
         from app.services.player_prop_verification_service import (
             PlayerPropVerificationService,
         )
-        from app.services.yetai_bets_service_db import (
-            YetAIBetsServiceDB,
-            clamp_yetai_result,
-        )
+        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
 
         candidates = (
             db.query(SimpleUnifiedBet)
@@ -403,20 +400,10 @@ class SimpleUnifiedBetService:
                 bet.result_amount = prop_result.get("result_amount", 0.0)
                 bet.reasoning = prop_result.get("reasoning")
                 bet.settled_at = datetime.now(timezone.utc)
-                yetai_service.sync_yetai_from_unified_bet(db, bet)
                 updated += 1
                 changed = True
 
-            if yetai and (yetai.result or "").lower().startswith("evaluation"):
-                game_day = prop_service._game_date_for_yetai_pick(yetai)
-                outcome = prop_service.verify_yetai_mlb_prop(yetai, game_day)
-                if outcome:
-                    result_status, result_description = outcome
-                    if result_status in {"won", "lost", "pushed"}:
-                        yetai.status = result_status
-                        yetai.settled_at = datetime.utcnow()
-                        yetai.result = clamp_yetai_result(result_description)
-                        changed = True
+            # The house pick itself is graded only by verify_pending_yetai_bets.
 
         if changed:
             db.commit()

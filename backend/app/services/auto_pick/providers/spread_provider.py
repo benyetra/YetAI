@@ -39,7 +39,7 @@ class SpreadCandidateProvider:
                 market_spread_home = r.get("market_spread_home")
                 if market_spread_home is None:
                     continue
-                side = r.get("side", "home")
+                side = r["side"]  # model-named side; no default
                 team = r["home_team_name"] if side == "home" else r["away_team_name"]
                 line = (
                     float(market_spread_home)
@@ -54,11 +54,12 @@ class SpreadCandidateProvider:
                         event_id=r["event_id"],
                         selection=selection,
                         market_line=line,
-                        market_odds=int(r.get("spread_odds", -110)),
+                        market_odds=int(r["spread_odds"]),
                         our_projection=float(r["projected_margin"]),
                         away_team=r.get("away_team_name"),
                         home_team=r.get("home_team_name"),
-                        commence_time=r.get("game_time"),
+                        commence_time=r.get("commence_time"),
+                        game_date=r.get("game_date"),
                         projection_metadata={
                             "edge": r.get("edge"),
                             "recommendation": r.get("recommendation"),

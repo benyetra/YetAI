@@ -23,6 +23,7 @@ interface BestBet {
   status: string;
   is_premium: boolean;
   game_time: string;
+  commence_time?: string | null;
   settled_at?: string | null;
   created_at?: string | null;
 }

@@ -87,6 +87,10 @@ def main() -> int:
                 bet.status = "active"
                 bet.settled_at = None
                 bet.result = None
+                # fresh settlement window: an old first_attempt_at would void it at once
+                factors = dict(bet.prediction_factors or {})
+                factors.pop("settlement", None)
+                bet.prediction_factors = factors
                 set_yetai_auto_grade_hold(bet, held=True)
                 if bet.parlay_legs:
                     bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
@@ -102,9 +106,12 @@ def main() -> int:
                     f"title={bet.title!r}"
                 )
                 continue
-            print(f"EXPIRE {pick_id}: {bet.title!r} ({bet.status} -> expired)")
+            # Never shown (queue) -> rejected; shown -> void so history keeps it. Matches the
+            # admin expire endpoint; nothing writes "expired" any more.
+            target = "rejected" if bet.status == "pending_approval" else "void"
+            print(f"EXPIRE {pick_id}: {bet.title!r} ({bet.status} -> {target})")
             if not args.dry_run:
-                bet.status = "expired"
+                bet.status = target
                 bet.settled_at = datetime.utcnow()
                 bet.result = clamp_yetai_result("Admin expired (stale pick)")
 

@@ -1,0 +1,114 @@
+[
+{
+"id": "20",
+"displayName": "Atlanta Dream",
+"shortDisplayName": "Dream",
+"abbreviation": "ATL",
+"name": "Dream",
+"location": "Atlanta"
+},
+{
+"id": "19",
+"displayName": "Chicago Sky",
+"shortDisplayName": "Sky",
+"abbreviation": "CHI",
+"name": "Sky",
+"location": "Chicago"
+},
+{
+"id": "3",
+"displayName": "Dallas Wings",
+"shortDisplayName": "Wings",
+"abbreviation": "DAL",
+"name": "Wings",
+"location": "Dallas"
+},
+{
+"id": "129689",
+"displayName": "Golden State Valkyries",
+"shortDisplayName": "Valkyries",
+"abbreviation": "GS",
+"name": "Valkyries",
+"location": "Golden State"
+},
+{
+"id": "5",
+"displayName": "Indiana Fever",
+"shortDisplayName": "Fever",
+"abbreviation": "IND",
+"name": "Fever",
+"location": "Indiana"
+},
+{
+"id": "17",
+"displayName": "Las Vegas Aces",
+"shortDisplayName": "Aces",
+"abbreviation": "LV",
+"name": "Aces",
+"location": "Las Vegas"
+},
+{
+"id": "6",
+"displayName": "Los Angeles Sparks",
+"shortDisplayName": "Sparks",
+"abbreviation": "LA",
+"name": "Sparks",
+"location": "Los Angeles"
+},
+{
+"id": "8",
+"displayName": "Minnesota Lynx",
+"shortDisplayName": "Lynx",
+"abbreviation": "MIN",
+"name": "Lynx",
+"location": "Minnesota"
+},
+{
+"id": "9",
+"displayName": "New York Liberty",
+"shortDisplayName": "Liberty",
+"abbreviation": "NY",
+"name": "Liberty",
+"location": "New York"
+},
+{
+"id": "11",
+"displayName": "Phoenix Mercury",
+"shortDisplayName": "Mercury",
+"abbreviation": "PHX",
+"name": "Mercury",
+"location": "Phoenix"
+},
+{
+"id": "132052",
+"displayName": "Portland Fire",
+"shortDisplayName": "Fire",
+"abbreviation": "POR",
+"name": "Fire",
+"location": "Portland"
+},
+{
+"id": "14",
+"displayName": "Seattle Storm",
+"shortDisplayName": "Storm",
+"abbreviation": "SEA",
+"name": "Storm",
+"location": "Seattle"
+},
+{
+"id": "131935",
+"displayName": "Toronto Tempo",
+"shortDisplayName": "Tempo",
+"abbreviation": "TOR",
+"name": "Tempo",
+"location": "Toronto"
+},
+{
+"id": "16",
+"displayName": "Washington Mystics",
+"shortDisplayName": "Mystics",
+"abbreviation": "WSH",
+"name": "Mystics",
+"location": "Washington"
+}
+]

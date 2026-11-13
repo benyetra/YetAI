@@ -264,14 +264,15 @@ def fetch_fanduel_prop_for_player(
     sport: str = NBA_SPORT,
     event_id: str | None = None,
     bookmakers: str = "fanduel",
-) -> tuple[float | None, str | None]:
-    """Resolve FanDuel line + pick side for one player prop, or (None, None)."""
+) -> tuple[float | None, str | None, int | None]:
+    """Resolve (line, pick side, American price of that side) for one player prop,
+    or (None, None, None). The price is None when the book sent none."""
     if not event_id:
         event_id = get_event_id_for_game(sport, team_name, opponent_team_name)
     if not event_id:
         _miss_reasons["no_event_match"] += 1
-        return None, None
-    line, _price, flag = get_fanduel_line(
+        return None, None, None
+    line, price, flag = get_fanduel_line(
         sport,
         event_id,
         player_name,
@@ -280,8 +281,8 @@ def fetch_fanduel_prop_for_player(
         bookmakers=bookmakers,
     )
     if line <= 0 or flag == "n":
-        return None, None
-    return line, flag
+        return None, None, None
+    return line, flag, int(price) if price else None
 
 
 def apply_fanduel_to_projection(
@@ -293,12 +294,12 @@ def apply_fanduel_to_projection(
     market: str,
     projection: float,
 ) -> bool:
-    """Set ``fanduel_line`` / ``fanduel_over_under`` on a projection ORM row.
+    """Set ``fanduel_line`` / ``fanduel_over_under`` / ``fanduel_price`` on a projection ORM row.
 
     Returns True when a line was stored; an existing line is left untouched
     when no fresh one can be fetched.
     """
-    line, flag = fetch_fanduel_prop_for_player(
+    line, flag, price = fetch_fanduel_prop_for_player(
         team_name, opponent_team_name, player_name, market, projection
     )
     if line is None:
@@ -306,4 +307,5 @@ def apply_fanduel_to_projection(
         return False
     row.fanduel_line = line
     row.fanduel_over_under = flag
+    row.fanduel_price = price  # never leave a stale price next to a new line
     return True

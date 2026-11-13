@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { calculatePotentialWin } from '@/lib/formatting';
+import { placementCommenceTime } from '@/lib/yetaiCommenceTime';
 import {
   X,
   DollarSign,
@@ -28,7 +29,8 @@ interface YetAIBet {
   reasoning: string;
   status: 'pending' | 'won' | 'lost' | 'pushed';
   is_premium: boolean;
-  game_time: string;
+  game_time: string; // display only
+  commence_time?: string | null; // ISO UTC start
   bet_category?: 'straight' | 'parlay';
   parlay_legs?: Array<{
     sport: string;
@@ -199,23 +201,7 @@ export default function YetAIBetModal({
           home_team: bet.game.split(' @ ')[1] || bet.game.split(' vs ')[1] || 'Home',
           away_team: bet.game.split(' @ ')[0] || bet.game.split(' vs ')[0] || 'Away',
           sport: bet.sport,
-          commence_time: (() => {
-            try {
-              if (!bet.game_time) {
-                console.warn('⚠️ No game_time provided for YetAI bet, using fallback');
-                return new Date().toISOString();
-              }
-              const date = new Date(bet.game_time);
-              if (isNaN(date.getTime())) {
-                console.warn('⚠️ Invalid game_time format:', bet.game_time, 'using fallback');
-                return new Date().toISOString();
-              }
-              return date.toISOString();
-            } catch (error) {
-              console.warn('⚠️ Date parsing error:', error, 'for game_time:', bet.game_time, 'using fallback');
-              return new Date().toISOString();
-            }
-          })()
+          commence_time: placementCommenceTime(bet), // ISO UTC; game_time is display-only
         };
 
         console.log('🚀 Making API call:', {

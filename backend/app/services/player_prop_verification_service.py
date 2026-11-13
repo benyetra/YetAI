@@ -119,8 +119,6 @@ class PlayerPropVerificationService:
         db: Session, bet: SimpleUnifiedBet, prop_result: Dict
     ) -> bool:
         """Persist a graded prop on the bet row (avoids enum/session mismatches)."""
-        from app.services.yetai_bets_service_db import YetAIBetsServiceDB
-
         status = _coerce_unified_status(prop_result["status"])
         if status == UnifiedBetStatus.PENDING:
             return False
@@ -131,7 +129,6 @@ class PlayerPropVerificationService:
         if reasoning:
             bet.reasoning = str(reasoning)
         bet.settled_at = datetime.now(timezone.utc)
-        YetAIBetsServiceDB().sync_yetai_from_unified_bet(db, bet)
         logger.info(
             "Settled prop %s: %s — %s",
             bet.id[:8],

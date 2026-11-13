@@ -102,11 +102,11 @@ def _get_component(
 
 def _fanduel_pra_line(
     team_name: str, player_name: str, opponent_team_name: str, projection: float
-) -> tuple[float | None, str | None]:
+) -> tuple[float | None, str | None, int | None]:
     event_id = get_event_id_for_game("basketball_nba", team_name, opponent_team_name)
     if not event_id:
-        return None, None
-    line, _price, flag = get_fanduel_line(
+        return None, None, None
+    line, price, flag = get_fanduel_line(
         "basketball_nba",
         event_id,
         player_name,
@@ -114,8 +114,8 @@ def _fanduel_pra_line(
         projection,
     )
     if line <= 0 or flag == "n":
-        return None, None
-    return line, flag
+        return None, None, None
+    return line, flag, int(price) if price else None
 
 
 def run() -> dict:
@@ -227,7 +227,7 @@ def run() -> dict:
                 pra_floor, pra_ceiling = _pra_floor_ceiling(
                     recent, points, rebounds, assists
                 )
-                fd_line, fd_flag = _fanduel_pra_line(
+                fd_line, fd_flag, fd_price = _fanduel_pra_line(
                     player.team_name,
                     player.player_name,
                     player.opponent_team_name,
@@ -253,6 +253,7 @@ def run() -> dict:
                     "pra_ceiling": pra_ceiling,
                     "fanduel_line": fd_line,
                     "fanduel_over_under": fd_flag,
+                    "fanduel_price": fd_price,
                 }
                 if existing:
                     for k, v in payload.items():

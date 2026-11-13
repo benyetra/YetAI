@@ -1,166 +1,160 @@
-"""
-Tests for MLBStrikeoutSource.
-
-Each test:
-  1. Returns properly shaped candidates given fake DB rows.
-  2. Returns [] when DB has no matching rows.
-  3. Returns [] when DB query raises.
-"""
+"""MLB strikeout + game moneyline sources (real ORM rows)."""
 
 import asyncio
-from datetime import date, datetime, timedelta
-from unittest.mock import MagicMock
+from datetime import date, datetime
 
-from app.services.auto_pick.candidate import DateRange
+from app.models.predictions_models import GameProjections, Pitcher, StrikeoutProjections
+from app.services.auto_pick.candidate import slate_window_for_date
+from app.services.auto_pick.providers.moneyline_provider import (
+    MoneylineCandidateProvider,
+)
+from app.services.auto_pick.providers.player_prop_provider import (
+    PlayerPropCandidateProvider,
+)
+from app.services.auto_pick.sources.mlb_game_source import MLBGameMoneylineSource
 from app.services.auto_pick.sources.mlb_strikeout_source import MLBStrikeoutSource
 
+DAY = date(2026, 6, 10)
+DR = slate_window_for_date(DAY)
+FIRST_PITCH = datetime(2026, 6, 10, 23, 5)  # naive UTC
+NYY, BOS = "New York Yankees", "Boston Red Sox"
 
-def _date_range():
-    today = date.today()
-    return DateRange(
-        start=datetime.combine(today, datetime.min.time()),
-        end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+
+def run(coro):
+    return asyncio.run(coro)
+
+
+def _proj(db, pid="p1", **kw):
+    base = dict(
+        date=DAY,
+        pitcher_id=pid,
+        pitcher_name="Gerrit Cole",
+        projected_strikeouts=8.5,
+        projected_innings_pitched=6.0,
+        projected_at_bats=24.0,
+        fanduel_line=6.5,
+        fanduel_over_under="over",
     )
+    base.update(kw)
+    db.add(StrikeoutProjections(**base))
 
 
-def _fake_row(
-    pitcher_id="p1",
-    pitcher_name="Spencer Strider",
-    date_val=None,
-    projected_strikeouts=9.2,
-    fanduel_line=6.5,
-    fanduel_over_under="OVER",
-):
-    r = MagicMock()
-    r.pitcher_id = pitcher_id
-    r.pitcher_name = pitcher_name
-    r.date = date_val or date.today()
-    r.projected_strikeouts = projected_strikeouts
-    r.fanduel_line = fanduel_line
-    r.fanduel_over_under = fanduel_over_under
-    return r
+def _pitcher(db, pid="p1", **kw):
+    base = dict(
+        name="Gerrit Cole",
+        pitch_hand="R",
+        team=NYY,
+        opponent=BOS,
+        game_time=FIRST_PITCH,
+        venue_name="Yankee Stadium",
+        k_per_9=10.0,
+        last_5_avg_k_per_9=10.0,
+        opponent_k_rate=22.0,
+        combined_score=1.0,
+        fanduel_point=6.5,
+        fanduel_price=-135.0,
+        fanduel_flag="o",
+        game_status="Scheduled",
+        pitcher_id=pid,
+        projected_strikeouts=8.5,
+        projected_innings=6.0,
+        projected_at_bats=24.0,
+        game_id=77,
+    )
+    base.update(kw)
+    db.add(Pitcher(**base))
 
 
-# ---------------------------------------------------------------------------
-# 1. Returns properly shaped candidates
-# ---------------------------------------------------------------------------
+def _game(db, **kw):
+    base = dict(
+        date=DAY,
+        game_id=77,
+        home_team=BOS,
+        away_team=NYY,
+        home_win_prob=0.40,
+        away_win_prob=0.60,
+        projected_total=8.5,
+        model_confidence=0.2,
+        market_home_ml=150,
+        market_away_ml=-170,
+        ml_recommendation="AWAY",
+        game_time=FIRST_PITCH,
+        created_at=datetime(2026, 6, 10, 10, 0),
+        updated_at=datetime(2026, 6, 10, 15, 0),
+    )
+    base.update(kw)
+    db.add(GameProjections(**base))
 
 
-def test_mlb_strikeout_source_returns_candidates():
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = [_fake_row()]
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert len(results) == 1
-    r = results[0]
-    assert r["league"] == "MLB"
-    assert r["stat"] == "strikeouts"
-    assert r["player"] == "Spencer Strider"
-    assert r["line"] == 6.5
-    assert r["projection"] == 9.2
-    assert r["side"] == "over"
-    assert r["odds"] == -110
-    assert "mlb-prop" in r["event_id"]
-    assert "strikeouts" in r["event_id"]
-
-
-def test_mlb_strikeout_source_under_side():
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = [
-        _fake_row(fanduel_over_under="UNDER")
-    ]
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert results[0]["side"] == "under"
+def test_strikeouts_picked_side_price_and_teams(sqlite_db):
+    _proj(sqlite_db)
+    _pitcher(sqlite_db)
+    _game(sqlite_db)
+    sqlite_db.commit()
+    (r,) = run(MLBStrikeoutSource(sqlite_db).get_todays_projections(DR))
+    assert (r["side"], r["line"], r["odds"], r["stat"]) == (
+        "over",
+        6.5,
+        -135,
+        "strikeouts",
+    )
+    assert r["odds_assumed"] is False
+    assert r["game_date"] == DAY and r["commence_time"] == FIRST_PITCH
+    assert (r["home_team_name"], r["away_team_name"]) == (BOS, NYY)
+    assert r["generated_at"] is None
+    (c,) = run(
+        PlayerPropCandidateProvider(MLBStrikeoutSource(sqlite_db)).get_candidates(DR)
+    )
+    assert c.projection_metadata["side"] == "over"
+    assert c.commence_time == FIRST_PITCH and c.game_date == DAY
 
 
-def test_mlb_strikeout_source_skips_low_edge():
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = [
-        _fake_row(projected_strikeouts=5.6, fanduel_line=5.5, fanduel_over_under="over")
-    ]
-    db.query.return_value.all.return_value = []
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert results == []
+def test_strikeouts_price_for_other_side_is_assumed(sqlite_db):
+    _proj(sqlite_db, projected_strikeouts=4.0, fanduel_over_under="under")
+    _pitcher(sqlite_db)  # flag "o" -> price is not the under price
+    sqlite_db.commit()
+    (r,) = run(MLBStrikeoutSource(sqlite_db).get_todays_projections(DR))
+    assert (r["side"], r["odds"], r["odds_assumed"]) == ("under", -110, True)
+    # no GameProjections row: pitcher team is away, opponent home
+    assert (r["home_team_name"], r["away_team_name"]) == (BOS, NYY)
 
 
-def test_mlb_strikeout_source_uses_projection_pick_when_ou_missing():
-    db = MagicMock()
-    strikeout_q = MagicMock()
-    strikeout_q.filter.return_value.all.return_value = [
-        _fake_row(projected_strikeouts=8.2, fanduel_line=5.5, fanduel_over_under=None)
-    ]
-    pitcher_q = MagicMock()
-    pitcher_q.all.return_value = []
-
-    def _query(model):
-        if getattr(model, "__name__", "") == "StrikeoutProjections":
-            return strikeout_q
-        return pitcher_q
-
-    db.query.side_effect = _query
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert len(results) == 1
-    assert results[0]["side"] == "over"
-    assert results[0]["model_confidence"] is not None
+def test_strikeouts_skips(sqlite_db):
+    _proj(sqlite_db, "a", date=date(2026, 6, 9))  # other day
+    _proj(sqlite_db, "b", projected_strikeouts=6.7)  # insufficient edge
+    _proj(sqlite_db, "c", fanduel_line=None)
+    _proj(sqlite_db, "d")  # no pitcher meta today
+    _pitcher(sqlite_db, "a")
+    _pitcher(sqlite_db, "b")
+    _pitcher(sqlite_db, "c")
+    _pitcher(sqlite_db, "d", game_time=datetime(2026, 6, 9, 23, 5))  # stale row
+    sqlite_db.commit()
+    assert run(MLBStrikeoutSource(sqlite_db).get_todays_projections(DR)) == []
 
 
-def test_mlb_strikeout_source_skips_no_line():
-    """Rows without fanduel_line are omitted."""
-    db = MagicMock()
-    strikeout_q = MagicMock()
-    strikeout_q.filter.return_value.all.return_value = [_fake_row(fanduel_line=None)]
-    pitcher_q = MagicMock()
-    pitcher_q.all.return_value = []
-
-    def _query(model):
-        if getattr(model, "__name__", "") == "StrikeoutProjections":
-            return strikeout_q
-        return pitcher_q
-
-    db.query.side_effect = _query
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert results == []
+def test_moneyline(sqlite_db):
+    _game(sqlite_db)
+    sqlite_db.commit()
+    (r,) = run(MLBGameMoneylineSource(sqlite_db).get_todays_projections(DR))
+    assert r["side"] == "away" and r["moneyline_away"] == -170
+    assert (r["home_team_name"], r["away_team_name"]) == (BOS, NYY)
+    assert r["game_date"] == DAY and r["commence_time"] == FIRST_PITCH
+    assert r["generated_at"] == datetime(2026, 6, 10, 15, 0)
+    (c,) = run(
+        MoneylineCandidateProvider(MLBGameMoneylineSource(sqlite_db)).get_candidates(DR)
+    )
+    assert c.market_odds == -170 and c.our_projection == 0.60
+    assert c.projection_metadata["side"] == "away"
+    assert c.projection_metadata["opp_odds"] == 150
+    assert c.game_date == DAY and c.commence_time == FIRST_PITCH
 
 
-# ---------------------------------------------------------------------------
-# 2. Returns [] when no rows
-# ---------------------------------------------------------------------------
-
-
-def test_mlb_strikeout_source_empty_when_no_rows():
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.return_value = []
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert results == []
-
-
-# ---------------------------------------------------------------------------
-# 3. Returns [] on DB error
-# ---------------------------------------------------------------------------
-
-
-def test_mlb_strikeout_source_returns_empty_on_db_error():
-    db = MagicMock()
-    db.query.return_value.filter.return_value.all.side_effect = RuntimeError("db down")
-
-    source = MLBStrikeoutSource(db)
-    results = asyncio.run(source.get_todays_projections(_date_range()))
-
-    assert results == []
+def test_moneyline_created_at_fallback_and_skips(sqlite_db):
+    _game(sqlite_db, updated_at=None)
+    _game(sqlite_db, game_id=2, ml_recommendation="NO_PLAY")
+    _game(sqlite_db, game_id=3, market_away_ml=None)
+    _game(sqlite_db, game_id=4, ml_recommendation=None)
+    _game(sqlite_db, game_id=5, date=date(2026, 6, 11))
+    sqlite_db.commit()
+    (r,) = run(MLBGameMoneylineSource(sqlite_db).get_todays_projections(DR))
+    assert r["generated_at"] == datetime(2026, 6, 10, 10, 0)

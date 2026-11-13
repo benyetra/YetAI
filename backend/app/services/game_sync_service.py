@@ -42,59 +42,6 @@ class GameSyncService:
         """Check if the service is available (has API key)"""
         return self.odds_api_service is not None
 
-    async def sync_game_scores_mock(self) -> Dict[str, any]:
-        """
-        Mock game sync for testing when no API key is available
-        Updates some existing games with mock completed status
-        """
-        logger.info("Running mock game sync (no API key configured)")
-
-        db = SessionLocal()
-        try:
-            # Find some scheduled games to mark as completed
-            scheduled_games = (
-                db.query(Game)
-                .filter(Game.status == GameStatus.SCHEDULED)
-                .limit(3)
-                .all()
-            )
-
-            updated_count = 0
-            for game in scheduled_games:
-                # Mock final scores
-                game.status = GameStatus.FINAL
-                game.home_score = 24  # Mock score
-                game.away_score = 17  # Mock score
-                game.last_update = datetime.utcnow()
-                updated_count += 1
-
-                logger.info(
-                    f"Mock updated: {game.away_team} @ {game.home_team} -> Final"
-                )
-
-            db.commit()
-
-            return {
-                "success": True,
-                "message": f"Mock sync completed - updated {updated_count} games",
-                "games_updated": updated_count,
-                "games_created": 0,
-                "sports_synced": ["mock"],
-                "mock_mode": True,
-            }
-
-        except Exception as e:
-            db.rollback()
-            logger.error(f"Error in mock game sync: {e}")
-            return {
-                "success": False,
-                "message": f"Mock sync failed: {str(e)}",
-                "games_updated": 0,
-                "games_created": 0,
-            }
-        finally:
-            db.close()
-
     async def sync_game_scores(self, days_back: int = 3) -> Dict[str, any]:
         """
         Sync game scores from The Odds API and update database
@@ -106,8 +53,15 @@ class GameSyncService:
             Dict with sync results
         """
         if not self.is_available():
-            logger.warning("Game sync service unavailable - using mock mode")
-            return await self.sync_game_scores_mock()
+            logger.warning("Game sync skipped - no ODDS_API_KEY configured")
+            return {
+                "success": False,
+                "status": "skipped",
+                "reason": "no_api_key",
+                "message": "Game sync skipped: no ODDS_API_KEY configured",
+                "games_updated": 0,
+                "games_created": 0,
+            }
 
         total_updated = 0
         total_created = 0
