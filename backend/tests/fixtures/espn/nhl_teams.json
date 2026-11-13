@@ -1,0 +1,258 @@
+[
+{
+"id": "25",
+"displayName": "Anaheim Ducks",
+"shortDisplayName": "Ducks",
+"abbreviation": "ANA",
+"name": "Ducks",
+"location": "Anaheim"
+},
+{
+"id": "1",
+"displayName": "Boston Bruins",
+"shortDisplayName": "Bruins",
+"abbreviation": "BOS",
+"name": "Bruins",
+"location": "Boston"
+},
+{
+"id": "2",
+"displayName": "Buffalo Sabres",
+"shortDisplayName": "Sabres",
+"abbreviation": "BUF",
+"name": "Sabres",
+"location": "Buffalo"
+},
+{
+"id": "3",
+"displayName": "Calgary Flames",
+"shortDisplayName": "Flames",
+"abbreviation": "CGY",
+"name": "Flames",
+"location": "Calgary"
+},
+{
+"id": "7",
+"displayName": "Carolina Hurricanes",
+"shortDisplayName": "Hurricanes",
+"abbreviation": "CAR",
+"name": "Hurricanes",
+"location": "Carolina"
+},
+{
+"id": "4",
+"displayName": "Chicago Blackhawks",
+"shortDisplayName": "Blackhawks",
+"abbreviation": "CHI",
+"name": "Blackhawks",
+"location": "Chicago"
+},
+{
+"id": "17",
+"displayName": "Colorado Avalanche",
+"shortDisplayName": "Avalanche",
+"abbreviation": "COL",
+"name": "Avalanche",
+"location": "Colorado"
+},
+{
+"id": "29",
+"displayName": "Columbus Blue Jackets",
+"shortDisplayName": "Blue Jackets",
+"abbreviation": "CBJ",
+"name": "Blue Jackets",
+"location": "Columbus"
+},
+{
+"id": "9",
+"displayName": "Dallas Stars",
+"shortDisplayName": "Stars",
+"abbreviation": "DAL",
+"name": "Stars",
+"location": "Dallas"
+},
+{
+"id": "5",
+"displayName": "Detroit Red Wings",
+"shortDisplayName": "Red Wings",
+"abbreviation": "DET",
+"name": "Red Wings",
+"location": "Detroit"
+},
+{
+"id": "6",
+"displayName": "Edmonton Oilers",
+"shortDisplayName": "Oilers",
+"abbreviation": "EDM",
+"name": "Oilers",
+"location": "Edmonton"
+},
+{
+"id": "26",
+"displayName": "Florida Panthers",
+"shortDisplayName": "Panthers",
+"abbreviation": "FLA",
+"name": "Panthers",
+"location": "Florida"
+},
+{
+"id": "8",
+"displayName": "Los Angeles Kings",
+"shortDisplayName": "Kings",
+"abbreviation": "LA",
+"name": "Kings",
+"location": "Los Angeles"
+},
+{
+"id": "30",
+"displayName": "Minnesota Wild",
+"shortDisplayName": "Wild",
+"abbreviation": "MIN",
+"name": "Wild",
+"location": "Minnesota"
+},
+{
+"id": "10",
+"displayName": "Montreal Canadiens",
+"shortDisplayName": "Canadiens",
+"abbreviation": "MTL",
+"name": "Canadiens",
+"location": "Montreal"
+},
+{
+"id": "27",
+"displayName": "Nashville Predators",
+"shortDisplayName": "Predators",
+"abbreviation": "NSH",
+"name": "Predators",
+"location": "Nashville"
+},
+{
+"id": "11",
+"displayName": "New Jersey Devils",
+"shortDisplayName": "Devils",
+"abbreviation": "NJ",
+"name": "Devils",
+"location": "New Jersey"
+},
+{
+"id": "12",
+"displayName": "New York Islanders",
+"shortDisplayName": "Islanders",
+"abbreviation": "NYI",
+"name": "Islanders",
+"location": "New York"
+},
+{
+"id": "13",
+"displayName": "New York Rangers",
+"shortDisplayName": "Rangers",
+"abbreviation": "NYR",
+"name": "Rangers",
+"location": "New York"
+},
+{
+"id": "14",
+"displayName": "Ottawa Senators",
+"shortDisplayName": "Senators",
+"abbreviation": "OTT",
+"name": "Senators",
+"location": "Ottawa"
+},
+{
+"id": "15",
+"displayName": "Philadelphia Flyers",
+"shortDisplayName": "Flyers",
+"abbreviation": "PHI",
+"name": "Flyers",
+"location": "Philadelphia"
+},
+{
+"id": "16",
+"displayName": "Pittsburgh Penguins",
+"shortDisplayName": "Penguins",
+"abbreviation": "PIT",
+"name": "Penguins",
+"location": "Pittsburgh"
+},
+{
+"id": "18",
+"displayName": "San Jose Sharks",
+"shortDisplayName": "Sharks",
+"abbreviation": "SJ",
+"name": "Sharks",
+"location": "San Jose"
+},
+{
+"id": "124292",
+"displayName": "Seattle Kraken",
+"shortDisplayName": "Kraken",
+"abbreviation": "SEA",
+"name": "Kraken",
+"location": "Seattle"
+},
+{
+"id": "19",
+"displayName": "St. Louis Blues",
+"shortDisplayName": "Blues",
+"abbreviation": "STL",
+"name": "Blues",
+"location": "St. Louis"
+},
+{
+"id": "20",
+"displayName": "Tampa Bay Lightning",
+"shortDisplayName": "Lightning",
+"abbreviation": "TB",
+"name": "Lightning",
+"location": "Tampa Bay"
+},
+{
+"id": "21",
+"displayName": "Toronto Maple Leafs",
+"shortDisplayName": "Maple Leafs",
+"abbreviation": "TOR",
+"name": "Maple Leafs",
+"location": "Toronto"
+},
+{
+"id": "129764",
+"displayName": "Utah Mammoth",
+"shortDisplayName": "Mammoth",
+"abbreviation": "UTAH",
+"name": "Mammoth",
+"location": "Utah"
+},
+{
+"id": "22",
+"displayName": "Vancouver Canucks",
+"shortDisplayName": "Canucks",
+"abbreviation": "VAN",
+"name": "Canucks",
+"location": "Vancouver"
+},
+{
+"id": "37",
+"displayName": "Vegas Golden Knights",
+"shortDisplayName": "Golden Knights",
+"abbreviation": "VGK",
+"name": "Golden Knights",
+"location": "Vegas"
+},
+{
+"id": "23",
+"displayName": "Washington Capitals",
+"shortDisplayName": "Capitals",
+"abbreviation": "WSH",
+"name": "Capitals",
+"location": "Washington"
+},
+{
+"id": "28",
+"displayName": "Winnipeg Jets",
+"shortDisplayName": "Jets",
+"abbreviation": "WPG",
+"name": "Jets",
+"location": "Winnipeg"
+}
+]

@@ -5,11 +5,13 @@ and persistence for automated bet picks.
 
 import asyncio
 import logging
+import os
 import uuid
-from dataclasses import dataclass
-from datetime import date, datetime, time
+from dataclasses import dataclass, field
+from datetime import date, datetime
 from typing import Any, Optional
 
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.models.database_models import (
@@ -19,12 +21,26 @@ from app.models.database_models import (
     BetType,
     YetAIBet,
 )
-from app.services.auto_pick.candidate import BetCandidate, DateRange, MarketType
+from app.services.auto_pick.candidate import (
+    EASTERN,
+    EVENING_RUN_ET,
+    BetCandidate,
+    DateRange,
+    MarketType,
+    slate_window,
+    to_naive_utc,
+)
 from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.parlay_selector import ParlaySelector, ScoredParlayPick
-from app.services.auto_pick.selector import BetSelector, ScoredCandidate, SelectorConfig
+from app.services.auto_pick.selector import (
+    BetSelector,
+    ScoredCandidate,
+    SelectorConfig,
+    game_key,
+    hard_gate_reason,
+)
 from app.services.yetai_bets_display import game_label_for_matchup
 from app.services.yetai_bets_service_db import clamp_yetai_result
 
@@ -72,17 +88,83 @@ def pending_pick_key(
     return (bet_type.value, sport or "", event_id or "", selection)
 
 
-def date_range_for_utc_day(now: datetime) -> DateRange:
-    """Inclusive UTC calendar-day bounds for projection source queries.
+def _env_flag(name: str, default: str) -> bool:
+    return os.getenv(name, default).strip().lower() == "true"
 
-    Using bare ``utcnow()`` as the lower bound breaks SQL ``date >= timestamp``
-    comparisons (date at midnight is less than an afternoon timestamp).
-    """
-    run_day = now.date()
-    return DateRange(
-        start=datetime.combine(run_day, time.min),
-        end=datetime.combine(run_day, time.max),
-    )
+
+DEFAULT_MIN_SCORE = 55.0
+# pg_advisory_xact_lock key serialising auto-pick write paths ("YETAIPCK").
+AUTO_PICK_LOCK_KEY = 0x5945544149504B
+
+
+def _min_score() -> float:
+    raw = os.getenv("AUTO_YETAI_PICKS_MIN_SCORE")
+    if raw is None or not raw.strip():
+        return DEFAULT_MIN_SCORE
+    try:
+        return float(raw)
+    except ValueError:
+        log.warning(
+            "AUTO_YETAI_PICKS_MIN_SCORE=%r is not a number; using %s",
+            raw,
+            DEFAULT_MIN_SCORE,
+        )
+        return DEFAULT_MIN_SCORE
+
+
+def _dialect_name(db: Session) -> str:
+    return db.get_bind().dialect.name
+
+
+def acquire_run_lock(db: Session) -> None:
+    """Serialise concurrent runs until this transaction commits (Postgres only)."""
+    if _dialect_name(db) != "postgresql":
+        return
+    db.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": AUTO_PICK_LOCK_KEY})
+
+
+def _can_grade(league: str, market: str, stat: Optional[str]) -> bool:
+    # Lazy import: a missing grader fails the run loudly instead of skipping the gate.
+    from app.services.yetai_grading import can_grade
+
+    return can_grade(league, market, stat)
+
+
+def grading_block(c: BetCandidate) -> dict:
+    """``prediction_factors["grading"]`` per .factory/CONTRACT.md."""
+    md = c.projection_metadata
+    block = {
+        "market": c.market_type.value,
+        "league": c.league,
+        "game_date": c.game_date.isoformat() if c.game_date else None,
+        "home_team": c.home_team,
+        "away_team": c.away_team,
+        "side": md.get("side"),
+        "line": None if c.market_type == MarketType.MONEYLINE else c.market_line,
+    }
+    if c.market_type == MarketType.PLAYER_PROP:
+        block["player"] = md.get("player")
+        block["stat"] = md.get("stat")
+    return block
+
+
+def row_market_key(bet: YetAIBet) -> tuple:
+    """Same identity as ``market_key`` for an existing row."""
+    pf = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
+    g = pf.get("grading") or {}
+    if g.get("league") and g.get("market"):
+        return (g["league"], g["market"])
+    market = _BET_TYPE_TO_MARKET.get(bet.bet_type)
+    return (bet.sport, market.value if market else None)
+
+
+def row_game_key(bet: YetAIBet) -> tuple:
+    """Same identity as ``game_key`` for an existing row."""
+    pf = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
+    g = pf.get("grading") or {}
+    if g.get("game_date") and g.get("home_team") and g.get("away_team"):
+        return (g.get("league"), str(g["game_date"]), g["home_team"], g["away_team"])
+    return ("event", str(pf.get("event_id") or ""))
 
 
 # Map auto-pick MarketType -> YetAIBet BetType enum
@@ -92,6 +174,8 @@ _MARKET_TYPE_TO_BET_TYPE: dict[MarketType, BetType] = {
     MarketType.TOTAL: BetType.TOTAL,
     MarketType.PLAYER_PROP: BetType.PROP,
 }
+
+_BET_TYPE_TO_MARKET = {v: k for k, v in _MARKET_TYPE_TO_BET_TYPE.items()}
 
 _MARKET_TYPE_TO_LEG_BET_TYPE: dict[MarketType, str] = {
     MarketType.MONEYLINE: "Moneyline",
@@ -112,9 +196,12 @@ def parlay_sport_label(legs: tuple[ScoredCandidate, ScoredCandidate]) -> str:
 
 @dataclass
 class OrchestratorResult:
-    id: int
+    id: Optional[int]
     status: AutoPickRunStatus
     pick_count: int
+    # Populated for dry runs (and always cheap): the chosen picks and drop summary.
+    picks: list = field(default_factory=list)
+    dropped_reasons: dict = field(default_factory=dict)
 
 
 class AutoPickOrchestrator:
@@ -124,9 +211,11 @@ class AutoPickOrchestrator:
       2. Build scoring context (recent history, line movements, etc.).
       3. Fan out to all registered providers in parallel.
       4. Score every candidate with ConfidenceScorer.
-      5. Run BetSelector to filter/rank/tier.
-      6. Persist YetAIBet rows (status="pending_approval", source=AUTO).
+      5. Apply hard gates, then BetSelector to rank/tier within today's open slots.
+      6. Persist YetAIBet rows (source=AUTO): "active" when auto-publish is on
+         (default), "pending_approval" when AUTO_YETAI_PICKS_AUTO_PUBLISH=false.
       7. Write an AutoPickRun audit row.
+    ``dry_run`` computes everything and writes nothing.
     """
 
     def __init__(
@@ -135,7 +224,13 @@ class AutoPickOrchestrator:
         providers: list,
         now: datetime,
         scorer: Optional[ConfidenceScorer] = None,
+        dry_run: bool = False,
+        reserve_slots: int = 0,
     ) -> None:
+        self.dry_run = dry_run
+        # Slots this run leaves for a later run today (cap - reserve, min 1);
+        # a reserving run also skips the fill-to-2-from-floor step.
+        self.reserve_slots = max(0, reserve_slots)
         self.db = db
         self.providers = providers
         self.now = now
@@ -144,19 +239,22 @@ class AutoPickOrchestrator:
     async def run(self) -> OrchestratorResult:
         cfg = load_scoring_config(self.db)
         ctx = build_scoring_context(self.db, cfg, self.now)
+        auto_publish = _env_flag("AUTO_YETAI_PICKS_AUTO_PUBLISH", "true")
+        parlay_enabled = _env_flag("AUTO_YETAI_PARLAY_ENABLED", "false")
 
         selector_config = SelectorConfig(
             threshold=cfg.score_threshold,
             odds_min=cfg.odds_min,
             odds_max=cfg.odds_max,
             max_picks=cfg.max_picks,
+            min_score=_min_score(),
             parlay_leg_threshold=cfg.parlay_leg_threshold,
             parlay_score_threshold=cfg.parlay_score_threshold,
         )
         selector = BetSelector(selector_config)
         parlay_selector = ParlaySelector(selector_config)
 
-        date_range = date_range_for_utc_day(self.now)
+        date_range = slate_window(self.now)
 
         results = await asyncio.gather(
             *[self._safe_get(p, date_range) for p in self.providers],
@@ -173,8 +271,61 @@ class AutoPickOrchestrator:
             ScoredCandidate(candidate=c, score=self.scorer.score(c, ctx))
             for c in all_candidates
         ]
-        picks = selector.select(scored)
-        parlay_pick = parlay_selector.select_parlay(scored)
+
+        if not self.dry_run:
+            # Held until commit: a concurrent run waits here, then sees our rows.
+            acquire_run_lock(self.db)
+        today_rows = self._load_today_auto_rows(date_range) if auto_publish else []
+        published = [
+            b for b in today_rows if b.status not in ("rejected", "pending_approval")
+        ]
+        straight_shown = [b for b in published if b.bet_type != BetType.PARLAY]
+        # A pulled (void) row frees its slot but its game stays excluded.
+        used_games = {row_game_key(b) for b in straight_shown}
+        straight_published = [b for b in straight_shown if b.status != "void"]
+        market_counts: dict[tuple, int] = {}
+        for b in straight_published:
+            mk = row_market_key(b)
+            market_counts[mk] = market_counts.get(mk, 0) + 1
+
+        gated: list[ScoredCandidate] = []
+        for sc in scored:
+            sc.drop_reason = self._gate(sc, selector_config, used_games)
+            if sc.drop_reason is None:
+                gated.append(sc)
+
+        def pick(reserve: int):
+            run_cap = max(1, cfg.max_picks - reserve) if reserve else cfg.max_picks
+            if auto_publish:
+                already = len(straight_published)
+                remaining = max(0, run_cap - already)
+            else:
+                remaining, already = run_cap, 0
+            return selector.select(
+                gated,
+                remaining=remaining,
+                already_published=already,
+                used_games=used_games,
+                market_counts=market_counts,
+                fill_floor=reserve == 0,
+            )
+
+        reserve = self.reserve_slots
+        picks = pick(reserve)
+        if reserve:
+            # Keep the slot only if something is left for the evening once this run's own
+            # picks are taken; otherwise fill the floor now (the evening could not).
+            taken = used_games | {game_key(p.candidate) for p in picks}
+            if not self._evening_can_pick(scored, selector_config, taken, date_range):
+                picks = pick(0)
+
+        parlay_pick = parlay_selector.select_parlay(gated) if parlay_enabled else None
+        if parlay_pick and auto_publish:
+            if any(
+                b.bet_type == BetType.PARLAY and b.status != "rejected"
+                for b in today_rows
+            ):
+                parlay_pick = None
         total_picks = len(picks) + (1 if parlay_pick else 0)
 
         status = self._compute_status(
@@ -182,39 +333,132 @@ class AutoPickOrchestrator:
             fails=provider_failures,
             n_providers=len(self.providers),
         )
+        dropped = self._summarize_drops(scored)
+
+        if self.dry_run:
+            return OrchestratorResult(
+                id=None,
+                status=status,
+                pick_count=total_picks,
+                picks=picks,
+                dropped_reasons=dropped,
+            )
 
         run = AutoPickRun(
             run_at=self.now,
             status=status,
             candidates_considered=len(all_candidates),
             candidates_selected=total_picks,
-            dropped_reasons={
-                sc.candidate.event_id: sc.drop_reason for sc in scored if sc.drop_reason
-            },
+            dropped_reasons=dropped,
             error=None,
         )
         self.db.add(run)
         self.db.flush()  # populates run.id
 
-        pending_by_key = self._load_pending_auto_index()
-        for p in picks:
-            self._upsert_pick(p, run.id, pending_by_key)
-        if parlay_pick:
-            self._upsert_parlay_pick(parlay_pick, run.id, pending_by_key)
+        row_status = "active" if auto_publish else "pending_approval"
+        if auto_publish:
+            for p in picks:
+                self.db.add(self._build_bet(p, run.id, row_status))
+            if parlay_pick:
+                self.db.add(self._build_parlay_bet(parlay_pick, run.id, row_status))
+        else:
+            pending_by_key = self._load_pending_auto_index()
+            for p in picks:
+                self._upsert_pick(p, run.id, pending_by_key)
+            if parlay_pick:
+                self._upsert_parlay_pick(parlay_pick, run.id, pending_by_key)
 
         self.db.commit()
         log.info(
-            "auto_pick run %s: %s straight + %s parlay, status=%s",
+            "auto_pick run %s: %s straight + %s parlay, status=%s, mode=%s",
             run.id,
             len(picks),
             1 if parlay_pick else 0,
             status,
+            "publish" if auto_publish else "pending",
         )
-        return OrchestratorResult(id=run.id, status=status, pick_count=total_picks)
+        return OrchestratorResult(
+            id=run.id,
+            status=status,
+            pick_count=total_picks,
+            picks=picks,
+            dropped_reasons=dropped,
+        )
 
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _evening_can_pick(
+        self,
+        scored: list[ScoredCandidate],
+        cfg: SelectorConfig,
+        used_games: set,
+        date_range: DateRange,
+    ) -> bool:
+        """True if some candidate would still pass the gates and the score floor at
+        the evening run (unknown start times fail the gate after 12:00 ET)."""
+        evening = to_naive_utc(
+            datetime.combine(date_range.slate_date, EVENING_RUN_ET, tzinfo=EASTERN)
+        )
+        return any(
+            sc.score.total >= cfg.min_score
+            and self._gate(sc, cfg, used_games, now=evening) is None
+            for sc in scored
+        )
+
+    def _gate(
+        self,
+        sc: ScoredCandidate,
+        cfg: SelectorConfig,
+        used_games: set,
+        now: Optional[datetime] = None,
+    ) -> Optional[str]:
+        reason = hard_gate_reason(sc, now or self.now, cfg.odds_min, cfg.odds_max)
+        if reason:
+            return reason
+        c = sc.candidate
+        stat = (
+            c.projection_metadata.get("stat")
+            if c.market_type == MarketType.PLAYER_PROP
+            else None
+        )
+        if not _can_grade(c.league, c.market_type.value, stat):
+            return "ungradeable"
+        if game_key(c) in used_games:
+            return "event_already_used"
+        return None
+
+    def _load_today_auto_rows(self, date_range: DateRange) -> list[YetAIBet]:
+        return (
+            self.db.query(YetAIBet)
+            .filter(
+                YetAIBet.source == BetSource.AUTO,
+                YetAIBet.created_at >= date_range.start,
+                YetAIBet.created_at < date_range.end,
+            )
+            .all()
+        )
+
+    @staticmethod
+    def _summarize_drops(scored: list[ScoredCandidate]) -> dict:
+        counts: dict[str, int] = {}
+        dropped = [sc for sc in scored if sc.drop_reason]
+        for sc in dropped:
+            counts[sc.drop_reason] = counts.get(sc.drop_reason, 0) + 1
+        dropped.sort(key=lambda s: s.score.total, reverse=True)
+        top = [
+            {
+                "event_id": sc.candidate.event_id,
+                "selection": sc.candidate.selection,
+                "league": sc.candidate.league,
+                "market": sc.candidate.market_type.value,
+                "score": sc.score.total,
+                "reason": sc.drop_reason,
+            }
+            for sc in dropped[:15]
+        ]
+        return {"counts": counts, "top_rejected": top}
 
     async def _safe_get(
         self, provider, date_range: DateRange
@@ -348,10 +592,13 @@ class AutoPickOrchestrator:
                     c.commence_time.isoformat() if c.commence_time else None
                 ),
                 "reasoning": leg.score.reasoning or "",
+                "grading": grading_block(c),
             }
         )
 
-    def _build_parlay_bet(self, p: ScoredParlayPick, run_id: int) -> YetAIBet:
+    def _build_parlay_bet(
+        self, p: ScoredParlayPick, run_id: int, status: str = "pending_approval"
+    ) -> YetAIBet:
         leg_a, leg_b = p.legs
         s = p.score
         legs_json = [
@@ -380,8 +627,9 @@ class AutoPickOrchestrator:
             selection="2-Leg Parlay",
             odds=float(p.combined_odds),
             confidence=s.total,
-            status="pending_approval",
+            status=status,
             source=BetSource.AUTO,
+            created_at=self.now,
             tier_requirement=p.tier,
             confidence_score=s.total,
             score_breakdown=s.breakdown,
@@ -460,7 +708,9 @@ class AutoPickOrchestrator:
         ):
             setattr(bet, field, getattr(fresh, field))
 
-    def _build_bet(self, p: ScoredCandidate, run_id: int) -> YetAIBet:
+    def _build_bet(
+        self, p: ScoredCandidate, run_id: int, status: str = "pending_approval"
+    ) -> YetAIBet:
         """
         Map a ScoredCandidate onto a YetAIBet row.
 
@@ -471,7 +721,7 @@ class AutoPickOrchestrator:
           - selection:        String(255) nullable=False — from candidate
           - odds:             Float nullable=False — candidate.market_odds (int -> float)
           - confidence:       Float nullable=False — legacy 0-100 field, use score.total
-          - status:           String(50) — set literal "pending_approval" (not enum)
+          - status:           String(50) — "active" (auto-publish) or "pending_approval"
           - source:           Enum(BetSource) — BetSource.AUTO
           - tier_requirement: Enum(SubscriptionTier) — from selector tier assignment
           - confidence_score: Float nullable=True — score.total
@@ -498,8 +748,9 @@ class AutoPickOrchestrator:
             odds=float(c.market_odds),
             confidence=s.total,  # legacy 0-100 field
             # Status/source (status is String(50), not enum)
-            status="pending_approval",
+            status=status,
             source=BetSource.AUTO,
+            created_at=self.now,
             # Tier assigned by selector
             tier_requirement=p.tier,
             # Auto-pick scoring fields
@@ -518,6 +769,8 @@ class AutoPickOrchestrator:
                     "our_projection": c.our_projection,
                     "projection_metadata": c.projection_metadata,
                     "event_id": c.event_id,
+                    "grading": grading_block(c),
+                    "slate_date": c.game_date.isoformat() if c.game_date else None,
                 }
             ),
         )

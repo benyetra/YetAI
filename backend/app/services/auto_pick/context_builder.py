@@ -10,11 +10,14 @@ from datetime import datetime, timedelta
 from sqlalchemy import case, func
 from sqlalchemy.orm import Session
 
-from app.models.database_models import YetAIBet
+from app.models.database_models import BetSource, YetAIBet
 from app.services.auto_pick.config_loader import LoadedScoringConfig
 from app.services.auto_pick.scoring_context import ScoringContext
 
 logger = logging.getLogger(__name__)
+
+# Below this many graded auto picks per (market, league) the sub-score stays neutral.
+MIN_GRADED_PICKS = 20
 
 
 # YetAIBet.bet_type uses BetType enum ("moneyline", "spread", "total", "prop").
@@ -64,9 +67,9 @@ def build_scoring_context(
 def _load_historical_hit_rates(
     db: Session, now: datetime
 ) -> dict[tuple[str, str], float]:
-    """90-day rolling hit rate from settled YetAIBet, grouped by (bet_type, sport).
+    """90-day rolling hit rate of graded auto picks (won/lost), grouped by (bet_type, sport).
 
-    Returns {} if no settled data; logs a warning so operators know context is cold.
+    Keys with fewer than MIN_GRADED_PICKS graded picks are omitted. Returns {} if no data; logs a warning so operators know context is cold.
 
     Keys are normalized to match what candidates emit:
     - BetType -> MarketType ("prop" -> "player_prop"; others unchanged)
@@ -81,12 +84,12 @@ def _load_historical_hit_rates(
             YetAIBet.bet_type,
             YetAIBet.sport,
             func.count(YetAIBet.id).label("total"),
-            func.sum(case((YetAIBet.result == "won", 1), else_=0)).label("wins"),
+            func.sum(case((YetAIBet.status == "won", 1), else_=0)).label("wins"),
         )
         .filter(
-            YetAIBet.status == "settled",
+            YetAIBet.source == BetSource.AUTO,
+            YetAIBet.status.in_(["won", "lost"]),
             YetAIBet.settled_at >= cutoff,
-            YetAIBet.result.in_(["won", "lost"]),
         )
         .group_by(YetAIBet.bet_type, YetAIBet.sport)
         .all()
@@ -94,14 +97,14 @@ def _load_historical_hit_rates(
 
     if not rows:
         logger.warning(
-            "context_builder: no settled YetAIBet data in the last 90 days — "
+            "context_builder: no graded auto-pick data in the last 90 days — "
             "historical_hit_rates will be empty (neutral scoring)."
         )
         return {}
 
     hit_rates: dict[tuple[str, str], float] = {}
     for row in rows:
-        if row.total and row.total > 0:
+        if row.total and row.total >= MIN_GRADED_PICKS:
             raw_market = str(
                 row.bet_type.value if hasattr(row.bet_type, "value") else row.bet_type
             )

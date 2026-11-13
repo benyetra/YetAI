@@ -15,7 +15,7 @@ from app.services.auto_pick.providers.moneyline_provider import (
 
 def _date_range():
     now = datetime.utcnow()
-    return DateRange(now, now + timedelta(days=1))
+    return DateRange(now, now + timedelta(days=1), now.date())
 
 
 # ---------------------------------------------------------------------------

@@ -5,12 +5,68 @@ from app.services.auto_pick.scoring_context import ScoringContext
 from app.services.mlb_hit_pick import hit_confidence_pct
 from app.services.mlb_strikeout_pick import signed_edge_for_side
 
+# "A strong edge is about this big" per market, so edge scores compare across
+# markets. Hand-set scales; tune them from graded results.
 EDGE_NORMALIZERS = {
     MarketType.MONEYLINE: 0.20,
     MarketType.SPREAD: 7.0,
     MarketType.TOTAL: 7.0,
     MarketType.PLAYER_PROP: 4.0,
 }
+SPREAD_EDGE_BY_LEAGUE = {"NBA": 7.0, "WNBA": 7.0, "NFL": 4.0}
+TOTAL_EDGE_BY_LEAGUE = {"NBA": 8.0, "WNBA": 8.0, "NFL": 5.0, "NHL": 1.0, "MLB": 1.5}
+PROP_EDGE_BY_STAT = {
+    "points": 4.0,
+    "rebounds": 2.5,
+    "assists": 2.0,
+    "steals": 0.8,
+    "blocks": 0.8,
+    "threes": 1.2,
+    "pra": 6.0,
+    "passing_yards": 40.0,
+    "receiving_yards": 18.0,
+    "rushing_yards": 18.0,
+    "saves": 4.0,
+    "shots_on_goal": 1.5,
+    "strikeouts": 1.5,
+    "hits": 0.5,
+}
+UNKNOWN_PROP_EDGE_FRACTION = 0.15  # of the line
+
+
+def edge_normalizer(candidate: BetCandidate) -> float:
+    mt = candidate.market_type
+    if mt == MarketType.SPREAD:
+        return SPREAD_EDGE_BY_LEAGUE.get(candidate.league, EDGE_NORMALIZERS[mt])
+    if mt == MarketType.TOTAL:
+        return TOTAL_EDGE_BY_LEAGUE.get(candidate.league, EDGE_NORMALIZERS[mt])
+    if mt == MarketType.PLAYER_PROP:
+        norm = PROP_EDGE_BY_STAT.get(candidate.projection_metadata.get("stat"))
+        if norm is None:
+            norm = UNKNOWN_PROP_EDGE_FRACTION * abs(candidate.market_line or 0.0)
+        return norm if norm > 0 else EDGE_NORMALIZERS[mt]
+    return EDGE_NORMALIZERS[mt]
+
+
+def _implied(odds: float) -> float:
+    return 100.0 / (odds + 100.0) if odds > 0 else -odds / (-odds + 100.0)
+
+
+def raw_edge(candidate: BetCandidate) -> float:
+    """Signed edge from the picked side's point of view (units of the market)."""
+    md = candidate.projection_metadata
+    side = (md.get("side") or "").lower()
+    mt = candidate.market_type
+    if mt == MarketType.SPREAD:
+        margin = candidate.our_projection
+        return (margin if side == "home" else -margin) + candidate.market_line
+    if mt == MarketType.MONEYLINE:
+        p = candidate.our_projection
+        q_odds = md.get("opp_odds")
+        own = _implied(candidate.market_odds)
+        implied = own if q_odds is None else own / (own + _implied(q_odds))
+        return p - implied
+    return signed_edge_for_side(candidate.our_projection, candidate.market_line, side)
 
 
 def edge_sub_score(candidate: BetCandidate) -> float:
@@ -23,17 +79,8 @@ def edge_sub_score(candidate: BetCandidate) -> float:
                 min(100.0, hit_confidence_pct(float(combined)) * 1.18),
             )
 
-    side = (candidate.projection_metadata.get("side") or "").lower()
-    if candidate.market_type == MarketType.PLAYER_PROP and side in ("over", "under"):
-        delta = signed_edge_for_side(
-            candidate.our_projection, candidate.market_line, side
-        )
-    else:
-        delta = candidate.our_projection - candidate.market_line
-    norm = EDGE_NORMALIZERS[candidate.market_type]
-    if candidate.projection_metadata.get("stat") == "hits":
-        norm = 0.20
-    raw = (delta / norm) * 100.0
+    delta = raw_edge(candidate)
+    raw = (delta / edge_normalizer(candidate)) * 100.0
     if raw > 100.0:
         return 100.0
     if raw < -100.0:
@@ -60,12 +107,11 @@ def freshness_sub_score(candidate: BetCandidate, context: ScoringContext) -> flo
     score = 100.0
     md = candidate.projection_metadata
     sample = md.get("sample_size")
-    if sample is None:
-        sample = 10
-    if sample < 5:
-        score -= 45
-    elif sample < 10:
-        score -= 20
+    if sample is not None:
+        if sample < 5:
+            score -= 45
+        elif sample < 10:
+            score -= 20
 
     gen_at = md.get("generated_at")
     if gen_at and context.now:

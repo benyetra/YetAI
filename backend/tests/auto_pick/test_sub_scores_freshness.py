@@ -49,7 +49,7 @@ def test_freshness_hard_penalty_on_injury_flag():
     assert freshness_sub_score(_cand(md), _ctx()) < 30
 
 
-def test_freshness_none_sample_size_defaults_to_neutral():
+def test_freshness_none_sample_size_has_no_penalty():
     md = {"sample_size": None, "generated_at": NOW.isoformat()}
     assert freshness_sub_score(_cand(md), _ctx()) >= 90
 
@@ -57,3 +57,7 @@ def test_freshness_none_sample_size_defaults_to_neutral():
 def test_freshness_accepts_date_object_generated_at():
     md = {"sample_size": 30, "generated_at": NOW.date()}
     assert freshness_sub_score(_cand(md), _ctx()) >= 90
+
+
+def test_freshness_missing_generated_at_has_no_age_penalty():
+    assert freshness_sub_score(_cand({"sample_size": 30}), _ctx()) == 100.0

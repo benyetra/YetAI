@@ -40,7 +40,7 @@ def test_load_returns_defaults_when_no_row():
     assert cfg.score_threshold == 65.0
     assert cfg.odds_min == -300
     assert cfg.odds_max == 400
-    assert cfg.max_picks == 4
+    assert cfg.max_picks == 3
 
 
 def test_load_returns_row_values():
@@ -70,3 +70,7 @@ def test_load_full_weights_passthrough():
         0.10,
         0.05,
     )
+
+
+def test_legacy_row_with_four_is_capped_at_three():
+    assert load_scoring_config(_db_returning(_row(max_picks_per_day=4))).max_picks == 3

@@ -23,8 +23,7 @@ router = APIRouter(prefix="/api/admin/yetai-picks", tags=["admin-yetai-picks"])
 PENDING_STATUS = "pending_approval"
 ACTIVE_STATUS = "active"
 REJECTED_STATUS = "rejected"
-EXPIRED_STATUS = "expired"
-REOPENABLE_STATUSES = frozenset({"won", "lost", "pushed", "expired"})
+REOPENABLE_STATUSES = frozenset({"won", "lost", "pushed", "void", "expired"})
 EXPIRABLE_STATUSES = frozenset({"pending", "active", "pending_approval"})
 
 
@@ -47,7 +46,9 @@ def _clear_parlay_leg_results(legs: Any) -> Any:
     cleaned: list = []
     for leg in legs:
         if isinstance(leg, dict):
-            cleaned.append({k: v for k, v in leg.items() if k != "leg_result"})
+            cleaned.append(
+                {k: v for k, v in leg.items() if k not in ("leg_result", "leg_status")}
+            )
         else:
             cleaned.append(leg)
     return cleaned
@@ -152,6 +153,10 @@ async def reopen(
     bet.settled_at = None
     bet.result = None
     set_yetai_auto_grade_hold(bet, held=True)
+    # Fresh retry window: drop the previous grading attempts.
+    bet.prediction_factors = {
+        k: v for k, v in bet.prediction_factors.items() if k != "settlement"
+    }
     if bet.parlay_legs:
         bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
     db.commit()
@@ -173,7 +178,8 @@ async def expire_pick(
             status_code=400,
             detail=f"Cannot expire a bet in status '{bet.status}'",
         )
-    bet.status = EXPIRED_STATUS
+    # Never shown -> rejected; shown -> void, so it stays in history with a reason.
+    bet.status = REJECTED_STATUS if bet.status == PENDING_STATUS else "void"
     bet.settled_at = datetime.utcnow()
     bet.result = clamp_yetai_result("Admin expired (stale pick)")
     db.commit()
@@ -186,16 +192,22 @@ async def reject(
     _: dict = Depends(require_admin),
     db: Session = Depends(get_db),
 ):
-    """Reject a single pending pick."""
+    """Reject a pending pick, or pull a published one (active/pending -> void)."""
     bet = db.query(YetAIBet).filter(YetAIBet.id == pick_id).first()
     if not bet:
         raise HTTPException(status_code=404, detail="Pick not found")
-    if bet.status != PENDING_STATUS:
+    if bet.status == PENDING_STATUS:
+        bet.status = REJECTED_STATUS
+    elif bet.status in ("active", "pending"):
+        # Already shown to users: keep it in history as void, never make it vanish.
+        bet.status = "void"
+        bet.result = clamp_yetai_result("Pulled by admin")
+        bet.settled_at = datetime.utcnow()
+    else:
         raise HTTPException(
             status_code=400,
             detail=f"Cannot reject a bet in status '{bet.status}'",
         )
-    bet.status = REJECTED_STATUS
     db.commit()
     return _serialize(bet)
 
@@ -211,7 +223,17 @@ async def edit(
     bet = db.query(YetAIBet).filter(YetAIBet.id == pick_id).first()
     if not bet:
         raise HTTPException(status_code=404, detail="Pick not found")
-    for field, val in payload.model_dump(exclude_unset=True).items():
+    updates = payload.model_dump(exclude_unset=True)
+    pf = bet.prediction_factors
+    if (
+        "selection" in updates
+        and updates["selection"] != bet.selection
+        and isinstance(pf, dict)
+        and "grading" in pf
+    ):
+        # Settlement prefers the grading block; drop it so the new text is graded.
+        bet.prediction_factors = {k: v for k, v in pf.items() if k != "grading"}
+    for field, val in updates.items():
         setattr(bet, field, val)
     db.commit()
     return _serialize(bet)

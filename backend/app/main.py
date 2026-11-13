@@ -2139,6 +2139,7 @@ async def get_yetai_bets_history(
             "won": 0,
             "lost": 0,
             "pushed": 0,
+            "void": 0,
             "win_rate": 0,
             "units": 0,
         },
@@ -2228,7 +2229,7 @@ async def delete_yetai_bet(bet_id: str, admin_user: dict = Depends(require_admin
             result = await yetai_service.delete_bet(bet_id, admin_user["id"])
             if not result.get("success"):
                 raise HTTPException(
-                    status_code=404,
+                    status_code=result.get("code", 404),
                     detail=result.get("error", "Bet not found"),
                 )
 
@@ -2966,7 +2967,7 @@ async def run_verification_now(admin_user: dict = Depends(require_admin)):
             prop_db.close()
 
         yetai_service = YetAIBetsServiceDB()
-        yetai_result = await yetai_service.verify_pending_yetai_bets()
+        yetai_result = await asyncio.to_thread(yetai_service.verify_pending_yetai_bets)
 
         logger.info(f"Unified verification result: {result}")
         logger.info(f"YetAI bets verification result: {yetai_result}")

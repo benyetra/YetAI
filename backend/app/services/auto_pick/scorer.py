@@ -8,6 +8,7 @@ from app.services.auto_pick.sub_scores import (
     line_movement_sub_score,
     model_confidence_sub_score,
     odds_sanity_sub_score,
+    raw_edge,
 )
 
 
@@ -38,10 +39,10 @@ class ConfidenceScorer:
         )
 
     def _build_reasoning(self, c: BetCandidate, b: dict, ctx: ScoringContext) -> str:
-        delta = c.our_projection - c.market_line
+        delta = raw_edge(c)
         sign = "+" if delta >= 0 else ""
         parts = [
-            f"{c.selection}: projection {c.our_projection} vs line {c.market_line} ({sign}{delta:.2f}).",
+            f"{c.selection}: projection {c.our_projection} vs line {c.market_line} (edge {sign}{delta:.2f}).",
             f"Edge {b['edge']:.0f}, historical {b['historical']:.0f}, freshness {b['freshness']:.0f}.",
         ]
         hist = ctx.historical_hit_rates.get((c.market_type.value, c.league))

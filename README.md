@@ -180,7 +180,7 @@ Copy from `backend/.env.example`. Common variables:
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in |
 | `BREVO_API_KEY` / `FROM_EMAIL` | Transactional email (production) |
 | `ENVIRONMENT` | `development` \| `staging` \| `production` |
-| `AUTO_YETAI_PICKS_ENABLED` | Enable scheduled auto-pick tasks (see runbook) |
+| `AUTO_YETAI_PICKS_ENABLED` | Scheduled auto-pick tasks; on by default, `false` is the kill switch (see runbook) |
 
 Sport-specific optional keys (S3 ML artifacts, weather, etc.) are documented in `.env.example`.
 

@@ -1,17 +1,19 @@
 """Tests for YetAI parlay verification."""
 
-from datetime import date, datetime
-from unittest.mock import MagicMock
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 from app.models.database_models import BetType, YetAIBet
-from app.services.yetai_bets_service_db import YetAIBetsServiceDB
+from app.services.yetai_grading import Outcome
 from app.services.yetai_parlay_verification import (
+    _leg_as_bet,
     combine_parlay_leg_statuses,
     game_date_for_parlay_leg,
+    grade_parlay,
     normalize_leg_bet_type,
-    verify_yetai_parlay,
-    yetai_bet_from_parlay_leg,
 )
+
+NOW = datetime(2026, 6, 10, 12, 0)
 
 
 def test_normalize_leg_bet_type_variants():
@@ -20,28 +22,38 @@ def test_normalize_leg_bet_type_variants():
     assert normalize_leg_bet_type("Player Prop") == BetType.PROP
 
 
-def test_game_date_for_parlay_leg_prefers_commence_time():
-    leg = {"commence_time": "2026-06-04T23:05:00+00:00", "game_id": "evt-1"}
-    assert game_date_for_parlay_leg(leg) == date(2026, 6, 4)
+def test_leg_date_order_grading_then_commence_then_parent_never_today():
+    both = {
+        "grading": {"market": "spread", "league": "MLB", "game_date": "2026-06-03"},
+        "commence_time": "2026-06-04T23:05:00+00:00",
+    }
+    assert game_date_for_parlay_leg(both) == date(2026, 6, 3)
+    assert game_date_for_parlay_leg({"commence_time": "2026-06-04T23:05:00+00:00"}) == (
+        date(2026, 6, 4)
+    )
+    parent = YetAIBet(commence_time=datetime(2026, 6, 2, 23, 0))
+    assert game_date_for_parlay_leg({"pick": "x"}, parent) == date(2026, 6, 2)
+    assert game_date_for_parlay_leg({"pick": "x"}) is None  # never falls back to today
 
 
-def test_yetai_bet_from_parlay_leg_maps_fields():
+def test_leg_as_bet_maps_fields_and_grading():
+    grading = {"market": "moneyline", "league": "MLB"}
     leg = {
         "sport": "MLB",
-        "game": "Rockies @ Phillies",
         "game_id": "mlb-game-2",
         "home_team": "Philadelphia Phillies",
         "away_team": "Colorado Rockies",
         "bet_type": "Moneyline",
         "pick": "Colorado Rockies ML",
-        "odds": "+145",
-        "confidence": 82,
-        "commence_time": "2026-06-04T23:05:00+00:00",
+        "grading": grading,
     }
-    synthetic = yetai_bet_from_parlay_leg(leg)
+    synthetic = _leg_as_bet(leg)
     assert synthetic.bet_type == BetType.MONEYLINE
     assert synthetic.selection == "Colorado Rockies ML"
-    assert synthetic.home_team == "Philadelphia Phillies"
+    assert synthetic.prediction_factors == {
+        "grading": grading,
+        "event_id": "mlb-game-2",
+    }
 
 
 def test_combine_parlay_leg_statuses_rules():
@@ -53,108 +65,65 @@ def test_combine_parlay_leg_statuses_rules():
         "lost",
         "Parlay lost: 1 of 2 legs lost",
     )
+    assert combine_parlay_leg_statuses(["lost", "pending"])[0] == "lost"
     assert combine_parlay_leg_statuses(["won", "pending"]) is None
+    assert combine_parlay_leg_statuses(["won", "void", "pushed"])[0] == "won"
+    assert combine_parlay_leg_statuses(["void", "pushed"])[0] == "void"
+    assert (
+        combine_parlay_leg_statuses(["pushed", "pushed"])[0] == "void"
+    )  # no live legs
+    assert combine_parlay_leg_statuses(["void", "void"])[0] == "void"
 
 
-def test_verify_yetai_parlay_settles_when_both_legs_grade():
-    service = YetAIBetsServiceDB()
-    prop_service = MagicMock()
-    db = MagicMock()
-
-    parlay = YetAIBet(
+def _parlay(*legs):
+    return YetAIBet(
         id="parlay-1",
-        title="2-Leg Parlay (+450)",
+        title="Parlay",
         description="",
         bet_type=BetType.PARLAY,
-        selection="2-Leg Parlay",
+        selection="Parlay",
         odds=450,
         confidence=80,
-        sport="Multi-Sport",
+        created_at=NOW - timedelta(days=1),
         parlay_legs=[
-            {
-                "sport": "MLB",
-                "bet_type": "Spread",
-                "pick": "Philadelphia Phillies +3.5",
-                "home_team": "Philadelphia Phillies",
-                "away_team": "Colorado Rockies",
-                "game_id": "game-1",
-                "odds": "-110",
-            },
-            {
-                "sport": "MLB",
-                "bet_type": "Moneyline",
-                "pick": "Colorado Rockies ML",
-                "home_team": "Philadelphia Phillies",
-                "away_team": "Colorado Rockies",
-                "game_id": "game-2",
-                "odds": "+145",
-            },
+            {"sport": "MLB", "bet_type": "Spread", "pick": f"P{i}", **leg}
+            for i, leg in enumerate(legs)
         ],
     )
 
-    service._evaluate_yetai_bet_outcome = MagicMock(
-        side_effect=[
-            ("won", "Phillies covered"),
-            ("won", "Rockies won"),
-        ]
+
+def _grade(parlay, *outcomes):
+    with patch(
+        "app.services.yetai_grading.grade_pick", side_effect=list(outcomes)
+    ) as grade:
+        return grade_parlay(parlay, NOW), grade
+
+
+def test_grade_parlay_won_annotates_every_leg():
+    (outcome, legs), _ = _grade(
+        _parlay({}, {}), Outcome("won", "a"), Outcome("won", "b")
     )
-
-    def _fake_verify_leg(leg, svc, props, session):
-        synthetic = yetai_bet_from_parlay_leg(leg)
-        if synthetic.bet_type == BetType.SPREAD:
-            return ("won", "Phillies covered")
-        return ("won", "Rockies won")
-
-    import app.services.yetai_parlay_verification as mod
-
-    original = mod.verify_parlay_leg
-    mod.verify_parlay_leg = _fake_verify_leg
-    try:
-        outcome = verify_yetai_parlay(parlay, service, prop_service, db)
-    finally:
-        mod.verify_parlay_leg = original
-
-    assert outcome is not None
-    status, result, legs = outcome
-    assert status == "won"
-    assert legs[0]["leg_status"] == "won"
-    assert legs[1]["leg_status"] == "won"
-    assert "Parlay won" in result
+    assert outcome.kind == "won" and "Parlay won" in outcome.result
+    assert [leg["leg_status"] for leg in legs] == ["won", "won"]
+    assert legs[0]["leg_result"] == "a"
 
 
-def test_verify_yetai_parlay_stays_pending_until_all_legs_ready():
-    service = YetAIBetsServiceDB()
-    prop_service = MagicMock()
-    db = MagicMock()
-    parlay = YetAIBet(
-        id="parlay-2",
-        title="2-Leg Parlay",
-        description="",
-        bet_type=BetType.PARLAY,
-        selection="2-Leg Parlay",
-        odds=264,
-        confidence=80,
-        parlay_legs=[
-            {
-                "sport": "NHL",
-                "bet_type": "Spread",
-                "pick": "Bruins +2.5",
-                "odds": "-110",
-            },
-            {
-                "sport": "MLB",
-                "bet_type": "Player Prop",
-                "pick": "Shohei Ohtani OVER 4.5 strikeouts",
-                "odds": "-110",
-            },
-        ],
+def test_grade_parlay_not_ready_until_all_legs_ready():
+    (outcome, legs), _ = _grade(
+        _parlay({}, {}), Outcome("won", "a"), Outcome("not_ready", "Game not found")
     )
+    assert outcome.kind == "not_ready"
+    assert legs[1]["leg_status"] == "pending"
 
-    import app.services.yetai_parlay_verification as mod
 
-    original = mod.verify_parlay_leg
-    mod.verify_parlay_leg = lambda *args, **kwargs: None
-    try:
-        assert verify_yetai_parlay(parlay, service, prop_service, db) is None
-    finally:
-        mod.verify_parlay_leg = original
+def test_grade_parlay_past_window_voids_pending_leg():
+    old = {"commence_time": (NOW - timedelta(days=9)).isoformat()}
+    (outcome, legs), _ = _grade(
+        _parlay(old, old), Outcome("lost", "a"), Outcome("not_ready", "Game not found")
+    )
+    assert outcome.kind == "lost"
+    (outcome, legs), _ = _grade(
+        _parlay(old, old), Outcome("won", "a"), Outcome("not_ready", "Game not found")
+    )
+    assert outcome.kind == "won" and legs[1]["leg_status"] == "void"
+    assert legs[1]["leg_result"] == "Ungradeable: Game not found"

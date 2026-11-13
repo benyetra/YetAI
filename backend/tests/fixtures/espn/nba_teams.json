@@ -1,0 +1,242 @@
+[
+{
+"id": "1",
+"displayName": "Atlanta Hawks",
+"shortDisplayName": "Hawks",
+"abbreviation": "ATL",
+"name": "Hawks",
+"location": "Atlanta"
+},
+{
+"id": "2",
+"displayName": "Boston Celtics",
+"shortDisplayName": "Celtics",
+"abbreviation": "BOS",
+"name": "Celtics",
+"location": "Boston"
+},
+{
+"id": "17",
+"displayName": "Brooklyn Nets",
+"shortDisplayName": "Nets",
+"abbreviation": "BKN",
+"name": "Nets",
+"location": "Brooklyn"
+},
+{
+"id": "30",
+"displayName": "Charlotte Hornets",
+"shortDisplayName": "Hornets",
+"abbreviation": "CHA",
+"name": "Hornets",
+"location": "Charlotte"
+},
+{
+"id": "4",
+"displayName": "Chicago Bulls",
+"shortDisplayName": "Bulls",
+"abbreviation": "CHI",
+"name": "Bulls",
+"location": "Chicago"
+},
+{
+"id": "5",
+"displayName": "Cleveland Cavaliers",
+"shortDisplayName": "Cavaliers",
+"abbreviation": "CLE",
+"name": "Cavaliers",
+"location": "Cleveland"
+},
+{
+"id": "6",
+"displayName": "Dallas Mavericks",
+"shortDisplayName": "Mavericks",
+"abbreviation": "DAL",
+"name": "Mavericks",
+"location": "Dallas"
+},
+{
+"id": "7",
+"displayName": "Denver Nuggets",
+"shortDisplayName": "Nuggets",
+"abbreviation": "DEN",
+"name": "Nuggets",
+"location": "Denver"
+},
+{
+"id": "8",
+"displayName": "Detroit Pistons",
+"shortDisplayName": "Pistons",
+"abbreviation": "DET",
+"name": "Pistons",
+"location": "Detroit"
+},
+{
+"id": "9",
+"displayName": "Golden State Warriors",
+"shortDisplayName": "Warriors",
+"abbreviation": "GS",
+"name": "Warriors",
+"location": "Golden State"
+},
+{
+"id": "10",
+"displayName": "Houston Rockets",
+"shortDisplayName": "Rockets",
+"abbreviation": "HOU",
+"name": "Rockets",
+"location": "Houston"
+},
+{
+"id": "11",
+"displayName": "Indiana Pacers",
+"shortDisplayName": "Pacers",
+"abbreviation": "IND",
+"name": "Pacers",
+"location": "Indiana"
+},
+{
+"id": "12",
+"displayName": "LA Clippers",
+"shortDisplayName": "Clippers",
+"abbreviation": "LAC",
+"name": "Clippers",
+"location": "LA"
+},
+{
+"id": "13",
+"displayName": "Los Angeles Lakers",
+"shortDisplayName": "Lakers",
+"abbreviation": "LAL",
+"name": "Lakers",
+"location": "Los Angeles"
+},
+{
+"id": "29",
+"displayName": "Memphis Grizzlies",
+"shortDisplayName": "Grizzlies",
+"abbreviation": "MEM",
+"name": "Grizzlies",
+"location": "Memphis"
+},
+{
+"id": "14",
+"displayName": "Miami Heat",
+"shortDisplayName": "Heat",
+"abbreviation": "MIA",
+"name": "Heat",
+"location": "Miami"
+},
+{
+"id": "15",
+"displayName": "Milwaukee Bucks",
+"shortDisplayName": "Bucks",
+"abbreviation": "MIL",
+"name": "Bucks",
+"location": "Milwaukee"
+},
+{
+"id": "16",
+"displayName": "Minnesota Timberwolves",
+"shortDisplayName": "Timberwolves",
+"abbreviation": "MIN",
+"name": "Timberwolves",
+"location": "Minnesota"
+},
+{
+"id": "3",
+"displayName": "New Orleans Pelicans",
+"shortDisplayName": "Pelicans",
+"abbreviation": "NO",
+"name": "Pelicans",
+"location": "New Orleans"
+},
+{
+"id": "18",
+"displayName": "New York Knicks",
+"shortDisplayName": "Knicks",
+"abbreviation": "NY",
+"name": "Knicks",
+"location": "New York"
+},
+{
+"id": "25",
+"displayName": "Oklahoma City Thunder",
+"shortDisplayName": "Thunder",
+"abbreviation": "OKC",
+"name": "Thunder",
+"location": "Oklahoma City"
+},
+{
+"id": "19",
+"displayName": "Orlando Magic",
+"shortDisplayName": "Magic",
+"abbreviation": "ORL",
+"name": "Magic",
+"location": "Orlando"
+},
+{
+"id": "20",
+"displayName": "Philadelphia 76ers",
+"shortDisplayName": "76ers",
+"abbreviation": "PHI",
+"name": "76ers",
+"location": "Philadelphia"
+},
+{
+"id": "21",
+"displayName": "Phoenix Suns",
+"shortDisplayName": "Suns",
+"abbreviation": "PHX",
+"name": "Suns",
+"location": "Phoenix"
+},
+{
+"id": "22",
+"displayName": "Portland Trail Blazers",
+"shortDisplayName": "Trail Blazers",
+"abbreviation": "POR",
+"name": "Trail Blazers",
+"location": "Portland"
+},
+{
+"id": "23",
+"displayName": "Sacramento Kings",
+"shortDisplayName": "Kings",
+"abbreviation": "SAC",
+"name": "Kings",
+"location": "Sacramento"
+},
+{
+"id": "24",
+"displayName": "San Antonio Spurs",
+"shortDisplayName": "Spurs",
+"abbreviation": "SA",
+"name": "Spurs",
+"location": "San Antonio"
+},
+{
+"id": "28",
+"displayName": "Toronto Raptors",
+"shortDisplayName": "Raptors",
+"abbreviation": "TOR",
+"name": "Raptors",
+"location": "Toronto"
+},
+{
+"id": "26",
+"displayName": "Utah Jazz",
+"shortDisplayName": "Jazz",
+"abbreviation": "UTAH",
+"name": "Jazz",
+"location": "Utah"
+},
+{
+"id": "27",
+"displayName": "Washington Wizards",
+"shortDisplayName": "Wizards",
+"abbreviation": "WSH",
+"name": "Wizards",
+"location": "Washington"
+}
+]

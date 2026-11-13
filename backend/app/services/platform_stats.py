@@ -24,7 +24,12 @@ def _profit_dollars(bet: YetAIBet, *, stake: float = 100.0) -> float:
     if status != "won":
         return 0.0
     try:
-        odds = float(bet.odds or 0)
+        # A parlay with void/pushed legs pays at the reduced price the grader stored.
+        factors = (
+            bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
+        )
+        effective = (factors.get("settlement") or {}).get("effective_odds")
+        odds = float(effective or bet.odds or 0)
     except (TypeError, ValueError):
         return 0.0
     if odds > 0:

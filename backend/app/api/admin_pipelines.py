@@ -7,13 +7,12 @@ flags (is_overridden, is_enabled). PATCH upserts an override row; POST
 
 from __future__ import annotations
 
-import os
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.celery_app import celery_app
+from app.celery_app import auto_picks_enabled, celery_app
 from app.core.auth import require_admin
 from app.core.database import get_db
 from app.core.db_scheduler import apply_overrides
@@ -44,9 +43,7 @@ async def get_schedule(
     overrides = ovr.load_all(db)
     merged = apply_overrides(dict(celery_app.conf.beat_schedule), overrides)
     body = svc.serialize_schedule(merged, overrides=overrides)
-    body["auto_yetai_picks_enabled"] = (
-        os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true"
-    )
+    body["auto_yetai_picks_enabled"] = auto_picks_enabled()
     return body
 
 

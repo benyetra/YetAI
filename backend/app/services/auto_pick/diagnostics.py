@@ -2,79 +2,132 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Any
 
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.models.database_models import AutoPickRun, ScoringConfig
 from app.models.predictions_models import (
-    Hitter,
+    GameProjections,
     NBASpreadProjections,
     NBATotalsProjections,
+    NHLTeamTotalsPredictions,
+    NFLSpreadProjections,
+    NFLTotalsProjections,
     PointsProjections,
+    PRAProjections,
+    QBPredictions,
+    RecvYdsPredictions,
     StealsProjections,
     StrikeoutProjections,
+    ThreePointProjections,
     WNBAPointsProjections,
     WNBASpreadProjections,
     WNBATotalsProjections,
 )
+from app.services.auto_pick.candidate import utc_to_eastern
 
 
 def projection_counts_for_day(db: Session, day: date) -> dict[str, int]:
-    """Row counts that feed auto-pick sources for a single calendar day (UTC)."""
+    """Row counts that feed auto-pick sources for one US Eastern slate day.
+
+    Each count uses the same date filter as the source that reads the table.
+    """
+
+    def n(model, *conds) -> int:
+        return db.query(model).filter(*conds).count()
+
     return {
-        "nba_spread_projections": db.query(NBASpreadProjections)
-        .filter(NBASpreadProjections.game_date == day)
-        .count(),
-        "nba_totals_projections": db.query(NBATotalsProjections)
-        .filter(NBATotalsProjections.game_date == day)
-        .count(),
-        "nba_points_props_with_line": db.query(PointsProjections)
-        .filter(
+        # NBA
+        "nba_spread_projections": n(
+            NBASpreadProjections, NBASpreadProjections.game_date == day
+        ),
+        "nba_totals_projections": n(
+            NBATotalsProjections, NBATotalsProjections.game_date == day
+        ),
+        "nba_points_props_with_line": n(
+            PointsProjections,
             PointsProjections.date == day,
             PointsProjections.fanduel_line.isnot(None),
-        )
-        .count(),
-        "nba_steals_props_with_line": db.query(StealsProjections)
-        .filter(
+        ),
+        "nba_steals_props_with_line": n(
+            StealsProjections,
             StealsProjections.date == day,
             StealsProjections.fanduel_line.isnot(None),
-        )
-        .count(),
-        "mlb_strikeout_with_line": db.query(StrikeoutProjections)
-        .filter(
+        ),
+        "nba_threes_props_with_line": n(
+            ThreePointProjections,
+            ThreePointProjections.date == day,
+            ThreePointProjections.fanduel_line.isnot(None),
+        ),
+        "nba_pra_props_with_line": n(
+            PRAProjections,
+            PRAProjections.date == day,
+            PRAProjections.fanduel_line.isnot(None),
+        ),
+        # WNBA
+        "wnba_totals_projections": n(
+            WNBATotalsProjections, WNBATotalsProjections.game_date == day
+        ),
+        "wnba_spread_projections": n(
+            WNBASpreadProjections, WNBASpreadProjections.game_date == day
+        ),
+        "wnba_points_props_with_line": n(
+            WNBAPointsProjections,
+            WNBAPointsProjections.date == day,
+            WNBAPointsProjections.market_line.isnot(None),
+        ),
+        # NFL
+        "nfl_qb_passing_with_line": n(
+            QBPredictions,
+            # QBPredictions.game_date is a naive ET kickoff (same filter as the source).
+            QBPredictions.game_date >= datetime.combine(day, time.min),
+            QBPredictions.game_date
+            < datetime.combine(day + timedelta(days=1), time.min),
+            QBPredictions.ou_line.isnot(None),
+        ),
+        "nfl_spread_projections": n(
+            NFLSpreadProjections, NFLSpreadProjections.game_date == day
+        ),
+        "nfl_totals_projections": n(
+            NFLTotalsProjections, NFLTotalsProjections.game_date == day
+        ),
+        "nfl_receiving_yards_with_line": n(
+            RecvYdsPredictions,
+            RecvYdsPredictions.game_date == day,
+            RecvYdsPredictions.ou_line.isnot(None),
+        ),
+        # NHL
+        "nhl_totals_projections": n(
+            NHLTeamTotalsPredictions, NHLTeamTotalsPredictions.game_date == day
+        ),
+        # MLB
+        "mlb_strikeout_with_line": n(
+            StrikeoutProjections,
             StrikeoutProjections.date == day,
             StrikeoutProjections.fanduel_line.isnot(None),
             StrikeoutProjections.fanduel_line > 0,
-        )
-        .count(),
-        "mlb_hits_today": db.query(Hitter)
-        .filter(
-            Hitter.game_time >= datetime.combine(day, datetime.min.time()),
-            Hitter.game_time <= datetime.combine(day, datetime.max.time()),
-        )
-        .count(),
-        "wnba_totals_projections": db.query(WNBATotalsProjections)
-        .filter(WNBATotalsProjections.game_date == day)
-        .count(),
-        "wnba_spread_projections": db.query(WNBASpreadProjections)
-        .filter(WNBASpreadProjections.game_date == day)
-        .count(),
-        "wnba_points_props_with_line": db.query(WNBAPointsProjections)
-        .filter(
-            WNBAPointsProjections.date == day,
-            WNBAPointsProjections.market_line.isnot(None),
-        )
-        .count(),
+        ),
+        "mlb_game_projections": n(GameProjections, GameProjections.date == day),
     }
 
 
-def summarize_drop_reasons(dropped: dict[str, str] | None) -> dict[str, int]:
-    """Aggregate drop_reason strings from auto_pick_runs.dropped_reasons JSONB."""
+def summarize_drop_reasons(dropped: dict | None) -> dict[str, int]:
+    """Aggregate drop reasons from auto_pick_runs.dropped_reasons.
+
+    Reads the current shape ``{"counts": {...}, "top_rejected": [...]}`` and the
+    legacy ``{event_id: reason}`` shape.
+    """
     if not dropped:
         return {}
     buckets: dict[str, int] = {}
+    if isinstance(dropped.get("counts"), dict):
+        for reason, n in dropped["counts"].items():
+            key = (reason or "unknown").split(":")[0]
+            buckets[key] = buckets.get(key, 0) + int(n)
+        return buckets
     for reason in dropped.values():
         key = (reason or "unknown").split(":")[0]
         buckets[key] = buckets.get(key, 0) + 1
@@ -99,13 +152,13 @@ def get_run_diagnostics(db: Session, run_id: int) -> dict[str, Any]:
     if not run:
         return {"found": False, "run_id": run_id}
 
-    run_day = run.run_at.date() if run.run_at else datetime.utcnow().date()
+    run_day = utc_to_eastern(run.run_at or datetime.utcnow()).date()
     cfg = db.query(ScoringConfig).order_by(ScoringConfig.id.asc()).first()
 
     return {
         "found": True,
         "run": serialize_run(run),
-        "run_day_utc": run_day.isoformat(),
+        "slate_date_et": run_day.isoformat(),
         "projection_counts": projection_counts_for_day(db, run_day),
         "scoring_config": (
             {
@@ -123,22 +176,26 @@ def get_run_diagnostics(db: Session, run_id: int) -> dict[str, Any]:
 
 def _hints_for_run(run: AutoPickRun) -> list[str]:
     hints: list[str] = []
+    summary = summarize_drop_reasons(run.dropped_reasons)
     if run.candidates_considered == 0:
         hints.append(
-            "No candidates: run MLB/NBA ETL for this UTC day, or check date-window "
-            "(fixed in orchestrator to use start/end of UTC day)."
+            "No candidates: check that the ETL produced projections with market "
+            "lines for this ET slate day (see projection_counts)."
         )
     elif run.candidates_selected == 0:
-        summary = summarize_drop_reasons(run.dropped_reasons)
-        if summary.get("below_threshold"):
-            hints.append(
-                f"{summary['below_threshold']} candidate(s) below score_threshold — "
-                "inspect dropped_reasons or lower scoring_config.score_threshold."
-            )
-        if summary.get("odds_out_of_bounds"):
-            hints.append(
-                "Some candidates rejected for odds outside configured min/max."
-            )
-        if summary.get("correlation_same_event"):
-            hints.append("Some candidates dropped as duplicate event_id.")
+        for reason, text in (
+            ("below_floor", "below the min score floor"),
+            ("below_threshold", "below score_threshold"),
+            ("non_positive_edge", "had no positive edge for the picked side"),
+            ("no_play", "had no model recommendation"),
+            ("ungradeable", "have no results source (can_grade is False)"),
+            ("started_or_starting", "belong to games already started or starting"),
+            ("start_time_unknown", "have no start time and it is past 12:00 ET"),
+            ("odds_out_of_bounds", "were outside the configured odds range"),
+            ("event_already_used", "were in games already picked today"),
+            ("same_event", "were in a game already picked this run"),
+            ("market_concentration", "hit the 2-per-league+market daily limit"),
+        ):
+            if summary.get(reason):
+                hints.append(f"{summary[reason]} candidate(s) {text}.")
     return hints

@@ -45,3 +45,39 @@ def test_returns_zero_when_nothing_to_expire():
         count = expire_pending_picks()
     assert count == 0
     db.commit.assert_not_called()
+
+
+def test_never_touches_active_rows(sqlite_db):
+    from app.models.database_models import BetSource, BetType, YetAIBet
+
+    now = datetime.utcnow()
+    for id_, status in (("act", "active"), ("pend", "pending_approval")):
+        sqlite_db.add(
+            YetAIBet(
+                id=id_,
+                title="t",
+                bet_type=BetType.MONEYLINE,
+                selection="s",
+                odds=-110.0,
+                confidence=70.0,
+                status=status,
+                source=BetSource.AUTO,
+                commence_time=now - timedelta(hours=10),
+            )
+        )
+    sqlite_db.commit()
+
+    class _NoClose:
+        def __getattr__(self, name):
+            return getattr(sqlite_db, name)
+
+        def close(self):
+            pass
+
+    with patch("app.tasks.expire_pending_picks.SessionLocal", return_value=_NoClose()):
+        from app.tasks.expire_pending_picks import expire_pending_picks
+
+        assert expire_pending_picks() == 1
+
+    status = {b.id: b.status for b in sqlite_db.query(YetAIBet).all()}
+    assert status == {"act": "active", "pend": "rejected"}

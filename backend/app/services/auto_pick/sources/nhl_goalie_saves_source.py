@@ -5,7 +5,12 @@ Queries pred_nhl_goalie_predictions for saves props.
 Each row already stores saves_line, over_odds, under_odds and a
 betting_recommendation — no separate game_lines join required.
 
-Rows where saves_line is NULL or line_available is False are skipped.
+The writer (etl/nhl/daily_predictions.py) sets ``saves_line`` / odds when a book
+line exists but never sets ``line_available``; it writes only starter-confirmed
+slots (``starter_confirmed`` True). Rows are skipped unless ``saves_line`` is set,
+the starter is confirmed and the recommendation is "OVER x" / "UNDER x" with a price
+for that side. Team columns are place names; full names come from the team ids.
+``game_time`` is naive US Eastern; ``prediction_date`` is refreshed on every run.
 
 Returns dicts shaped for PlayerPropCandidateProvider:
   Required: event_id, league, player, stat, line, odds, projection, side
@@ -13,12 +18,11 @@ Returns dicts shaped for PlayerPropCandidateProvider:
 """
 
 import logging
-from datetime import date
-
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NHLGoaliePredictions
-from app.services.auto_pick.candidate import DateRange
+from app.services.auto_pick.candidate import DateRange, eastern_naive_to_utc
+from app.services.auto_pick.sources._nhl_teams import nhl_full_name
 
 log = logging.getLogger(__name__)
 
@@ -28,15 +32,13 @@ class NHLGoalieSavesSource:
         self.db = db
 
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
-        start: date = date_range.start
-        end: date = date_range.end
+        day = date_range.slate_date
 
         try:
             rows = (
                 self.db.query(NHLGoaliePredictions)
                 .filter(
-                    NHLGoaliePredictions.game_date >= start,
-                    NHLGoaliePredictions.game_date <= end,
+                    NHLGoaliePredictions.game_date == day,
                 )
                 .all()
             )
@@ -53,56 +55,54 @@ class NHLGoalieSavesSource:
                 continue
 
             if r.saves_line is None:
-                log.debug(
-                    "NHLGoalieSavesSource: skipping %s (%s) — no saves_line",
-                    r.goalie_name,
-                    r.game_date,
-                )
+                continue
+            if not r.starter_confirmed:
                 continue
 
-            # Determine side from betting_recommendation or raw comparison
-            rec = (r.betting_recommendation or "").upper()
-            if "UNDER" in rec:
-                side = "under"
-                odds = r.under_odds if r.under_odds is not None else -110
+            rec = (r.betting_recommendation or "").strip().upper()
+            if rec.startswith("OVER"):
+                side, odds = "over", r.over_odds
+            elif rec.startswith("UNDER"):
+                side, odds = "under", r.under_odds
             else:
-                side = "over"
-                odds = r.over_odds if r.over_odds is not None else -110
+                continue
+            if odds is None or r.is_home is None:
+                continue
+
+            team, opponent = nhl_full_name(r.team_id), nhl_full_name(r.opponent_team_id)
+            if team is None or opponent is None:
+                continue
 
             event_id = f"nhl-prop-{r.game_date}-{r.goalie_id}-saves"
-            if r.is_home is True:
-                away_team_name = r.opponent_team_name
-                home_team_name = r.team_name
-            elif r.is_home is False:
-                away_team_name = r.team_name
-                home_team_name = r.opponent_team_name
+            if r.is_home:
+                away_team_name, home_team_name = opponent, team
             else:
-                away_team_name = r.team_name
-                home_team_name = r.opponent_team_name
+                away_team_name, home_team_name = team, opponent
 
             out.append(
                 {
                     "event_id": event_id,
                     "league": "NHL",
+                    "game_date": day,
                     "player": r.goalie_name,
                     "stat": "saves",
                     "line": float(r.saves_line),
-                    "odds": odds,
+                    "odds": int(odds),
                     "projection": float(r.predicted_saves),
                     "side": side,
                     "sample_size": None,
-                    "generated_at": r.game_date,
+                    "generated_at": r.prediction_date,
                     "model_confidence": (
                         r.confidence / 100.0 if r.confidence is not None else None
                     ),
                     "injury_flag": (
                         bool(r.was_scratch) if r.was_scratch is not None else False
                     ),
-                    "team": r.team_name,
-                    "opponent": r.opponent_team_name,
+                    "team": team,
+                    "opponent": opponent,
                     "away_team_name": away_team_name,
                     "home_team_name": home_team_name,
-                    "commence_time": r.game_time,
+                    "commence_time": eastern_naive_to_utc(r.game_time),
                 }
             )
 

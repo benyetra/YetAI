@@ -1248,6 +1248,7 @@ class PointsProjections(Base):
     projected_points = Column(Float, nullable=False)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
 
 class PointsActuals(Base):
@@ -1273,6 +1274,7 @@ class ThreePointProjections(Base):
     projected_three_pt_made = Column(Float, nullable=True)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String, nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
     def __repr__(self):
         return f"<ThreePointProjections Player ID: {self.player_id}, Date: {self.date}, Projected 3PT Made: {self.projected_three_pt_made}>"
@@ -1405,6 +1407,7 @@ class StealsProjections(Base):
     projected_steals = Column(Float, nullable=False)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
 
 class StealsActuals(Base):
@@ -1455,6 +1458,7 @@ class AssistsProjections(Base):
     projected_assists = Column(Float, nullable=False)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
 
 class AssistsActuals(Base):
@@ -1483,6 +1487,7 @@ class ReboundsProjections(Base):
     projected_defensive_rebounds = Column(Float, nullable=True)
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
 
 class ReboundsActuals(Base):
@@ -1544,6 +1549,7 @@ class PRAProjections(Base):
     # Sportsbook lines for comparison
     fanduel_line = Column(Float, nullable=True)
     fanduel_over_under = Column(String(7), nullable=True)
+    fanduel_price = Column(Integer, nullable=True)  # American odds of the stored side
 
     def __repr__(self):
         return f"<PRAProjections {self.player_name}: {self.projected_pra:.1f} PRA vs {self.opponent_team_name}>"
@@ -3726,6 +3732,7 @@ def _make_prop_projection(prop: str, *, class_stem: str | None = None):
         "opponent_team_name": Column(String, nullable=True),
         f"projected_{prop}": Column(Float, nullable=False),
         "market_line": Column(Float, nullable=True),
+        "fanduel_price": Column(Integer, nullable=True),
         "edge": Column(Float, nullable=True),
         "recommendation": Column(String(20), nullable=True),
         "confidence_score": Column(Float, nullable=True),

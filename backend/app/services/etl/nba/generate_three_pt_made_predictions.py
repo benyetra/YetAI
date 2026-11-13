@@ -97,12 +97,12 @@ def run() -> dict:
                     skipped_insufficient += 1
                     continue
 
-                fd_line, _, fd_flag = 0.0, 0.0, "n"
+                fd_line, fd_price, fd_flag = 0.0, 0.0, "n"
                 event_id = get_event_id_for_game(
                     "basketball_nba", player.team_name, player.opponent_team_name
                 )
                 if event_id:
-                    fd_line, _, fd_flag = get_fanduel_line(
+                    fd_line, fd_price, fd_flag = get_fanduel_line(
                         "basketball_nba",
                         event_id,
                         player.player_name,
@@ -110,6 +110,7 @@ def run() -> dict:
                         projected,
                     )
 
+                fd_price_val = int(fd_price) if fd_line > 0 and fd_price else None
                 existing = (
                     db.query(ThreePointProjections)
                     .filter(
@@ -124,6 +125,7 @@ def run() -> dict:
                     existing.opponent_team_name = player.opponent_team_name
                     existing.fanduel_line = fd_line if fd_line > 0 else None
                     existing.fanduel_over_under = fd_flag if fd_flag != "n" else None
+                    existing.fanduel_price = fd_price_val
                     updated += 1
                 else:
                     db.add(
@@ -135,6 +137,7 @@ def run() -> dict:
                             projected_three_pt_made=projected,
                             fanduel_line=fd_line if fd_line > 0 else None,
                             fanduel_over_under=(fd_flag if fd_flag != "n" else None),
+                            fanduel_price=fd_price_val,
                         )
                     )
                     created += 1

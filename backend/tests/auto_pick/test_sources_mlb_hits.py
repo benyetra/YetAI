@@ -11,6 +11,7 @@ def _date_range():
     return DateRange(
         start=datetime.combine(today, datetime.min.time()),
         end=datetime.combine(today + timedelta(days=1), datetime.min.time()),
+        slate_date=today,
     )
 
 

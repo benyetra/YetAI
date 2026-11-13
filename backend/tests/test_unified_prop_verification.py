@@ -178,10 +178,6 @@ def test_unified_verify_settles_mlb_props_without_odds_scores():
                 }
             ),
         ),
-        patch(
-            "app.services.yetai_bets_service_db.YetAIBetsServiceDB.sync_yetai_from_unified_bet",
-            return_value=None,
-        ),
     ):
         result = asyncio.run(service.verify_all_pending_bets())
 
@@ -214,19 +210,15 @@ def test_apply_prop_settlement_updates_pending_bet():
     bet.potential_win = 68.0
 
     mock_db = MagicMock()
-    with patch(
-        "app.services.yetai_bets_service_db.YetAIBetsServiceDB.sync_yetai_from_unified_bet",
-        return_value=None,
-    ):
-        ok = PlayerPropVerificationService._apply_prop_settlement(
-            mock_db,
-            bet,
-            {
-                "status": BetStatus.LOST,
-                "result_amount": 0.0,
-                "reasoning": "MLB prop graded",
-            },
-        )
+    ok = PlayerPropVerificationService._apply_prop_settlement(
+        mock_db,
+        bet,
+        {
+            "status": BetStatus.LOST,
+            "result_amount": 0.0,
+            "reasoning": "MLB prop graded",
+        },
+    )
 
     assert ok is True
     assert bet.status == BetStatus.LOST

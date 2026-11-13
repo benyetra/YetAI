@@ -79,6 +79,7 @@ ADMIN_FIREABLE_TASKS: dict[str, float] = {
     "app.tasks.etl_pipeline.wnba.totals_projector": 300.0,
     "app.tasks.etl_pipeline.wnba.spread_projector": 300.0,
     "auto_pick.yetai_bets": 600.0,
+    "yetai_bets.settle": 300.0,
 }
 
 PIPELINE_ENQUEUE_CATALOG: list[dict[str, str]] = [
@@ -172,8 +173,19 @@ FIREABLE_CATALOG: list[dict[str, str | float]] = [
         "sport": "yetai",
         "timeout_s": ADMIN_FIREABLE_TASKS["auto_pick.yetai_bets"],
         "description": (
-            "Score today's candidates and write up to 4 picks as pending_approval. "
-            "Requires AUTO_YETAI_PICKS_ENABLED on worker; approve at /admin/yetai-picks."
+            "Score today's candidates and publish the best picks to YetAI Bets, filling "
+            "today's remaining slots (cap 3 per ET day, at most 2 per league+market). "
+            "Writes pending_approval instead when AUTO_YETAI_PICKS_AUTO_PUBLISH=false."
+        ),
+    },
+    {
+        "task_name": "yetai_bets.settle",
+        "label": "YetAI settle now",
+        "sport": "yetai",
+        "timeout_s": ADMIN_FIREABLE_TASKS["yetai_bets.settle"],
+        "description": (
+            "Grade every shown YetAI bet from ESPN results (won/lost/pushed/void). "
+            "Safe to re-run: settled rows are skipped."
         ),
     },
     {

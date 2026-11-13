@@ -27,7 +27,7 @@ def test_fetch_fanduel_prop_returns_none_without_event():
     with patch(
         "app.services.etl.nba._fanduel_lines.get_event_id_for_game", return_value=None
     ):
-        line, flag = fetch_fanduel_prop_for_player(
+        line, flag, price = fetch_fanduel_prop_for_player(
             "Boston Celtics",
             "Los Angeles Lakers",
             "Jayson Tatum",
@@ -36,6 +36,7 @@ def test_fetch_fanduel_prop_returns_none_without_event():
         )
     assert line is None
     assert flag is None
+    assert price is None
 
 
 def test_fetch_fanduel_prop_returns_line_when_api_responds():
@@ -49,7 +50,7 @@ def test_fetch_fanduel_prop_returns_line_when_api_responds():
             return_value=(24.5, -110.0, "o"),
         ),
     ):
-        line, flag = fetch_fanduel_prop_for_player(
+        line, flag, price = fetch_fanduel_prop_for_player(
             "Boston Celtics",
             "Los Angeles Lakers",
             "Jayson Tatum",
@@ -58,13 +59,14 @@ def test_fetch_fanduel_prop_returns_line_when_api_responds():
         )
     assert line == 24.5
     assert flag == "o"
+    assert price == -110
 
 
 def test_apply_fanduel_to_projection_sets_orm_fields():
-    row = SimpleNamespace(fanduel_line=None, fanduel_over_under=None)
+    row = SimpleNamespace(fanduel_line=20.5, fanduel_over_under="o", fanduel_price=-300)
     with patch(
         "app.services.etl.nba._fanduel_lines.fetch_fanduel_prop_for_player",
-        return_value=(18.5, "u"),
+        return_value=(18.5, "u", 105),
     ):
         attached = apply_fanduel_to_projection(
             row,
@@ -77,13 +79,14 @@ def test_apply_fanduel_to_projection_sets_orm_fields():
     assert attached is True
     assert row.fanduel_line == 18.5
     assert row.fanduel_over_under == "u"
+    assert row.fanduel_price == 105  # replaced together with the line, never stale
 
 
 def test_apply_fanduel_keeps_existing_line_when_refetch_finds_none():
-    row = SimpleNamespace(fanduel_line=21.5, fanduel_over_under="o")
+    row = SimpleNamespace(fanduel_line=21.5, fanduel_over_under="o", fanduel_price=-120)
     with patch(
         "app.services.etl.nba._fanduel_lines.fetch_fanduel_prop_for_player",
-        return_value=(None, None),
+        return_value=(None, None, None),
     ):
         attached = apply_fanduel_to_projection(
             row,
@@ -96,6 +99,7 @@ def test_apply_fanduel_keeps_existing_line_when_refetch_finds_none():
     assert attached is False
     assert row.fanduel_line == 21.5
     assert row.fanduel_over_under == "o"
+    assert row.fanduel_price == -120
 
 
 def test_line_diagnostics_reports_and_resets_miss_reasons():

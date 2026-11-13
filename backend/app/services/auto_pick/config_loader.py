@@ -6,6 +6,9 @@ from app.models.database_models import ScoringConfig
 from app.services.auto_pick.scoring_context import ScoringWeights
 
 
+MAX_PICKS_CAP = 3  # product cap; holds even if a legacy row still says 4
+
+
 @dataclass
 class LoadedScoringConfig:
     weights: ScoringWeights
@@ -25,7 +28,7 @@ def load_scoring_config(db: Session) -> LoadedScoringConfig:
             score_threshold=65.0,
             odds_min=-300,
             odds_max=400,
-            max_picks=4,
+            max_picks=MAX_PICKS_CAP,
             parlay_leg_threshold=55.0,
             parlay_score_threshold=55.0,
         )
@@ -41,5 +44,5 @@ def load_scoring_config(db: Session) -> LoadedScoringConfig:
         score_threshold=row.score_threshold,
         odds_min=row.odds_min,
         odds_max=row.odds_max,
-        max_picks=row.max_picks_per_day,
+        max_picks=min(row.max_picks_per_day, MAX_PICKS_CAP),
     )

@@ -25,6 +25,7 @@ celery_app = Celery(
         "app.tasks.games_sync",
         "app.tasks.health",
         "app.tasks.auto_pick",
+        "app.tasks.settle_yetai_bets",
         "app.tasks.expire_pending_picks",
         "app.tasks.league_vault_sync",
     ],
@@ -63,6 +64,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=[6, 14, 22], minute=0),
         "options": {"expires": 10800},
     },
+    # YetAI Bets settlement — always on, independent of the API-process scheduler.
+    "settle-yetai-bets": {
+        "task": "yetai_bets.settle",
+        "schedule": crontab(minute="*/15"),
+        "options": {"expires": 600},
+    },
     # === ETL pipeline (u9t) — overnight orchestrator ===
     "nba-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nba_update_pipeline",
@@ -77,7 +84,7 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.etl_pipeline.nba.spreads_accuracy",
         "schedule": crontab(hour=5, minute=5),
     },
-    # === Auto-pick orchestrator (Task 14) — gated by AUTO_YETAI_PICKS_ENABLED ===
+    # === Auto-pick orchestrator (Task 14) — on unless AUTO_YETAI_PICKS_ENABLED=false ===
     # Beat entries below are added conditionally after this dict is built.
     "nfl-update-pipeline-daily": {
         "task": "app.tasks.etl_pipeline.run_nfl_update_pipeline",
@@ -234,10 +241,32 @@ if os.getenv("WNBA_JOBS_ENABLED", "false").lower() == "true":
 if os.getenv("MLB_JOBS_ENABLED", "false").lower() == "true":
     celery_app.conf.beat_schedule.update(_MLB_BEAT_SCHEDULE)
 
-if os.getenv("AUTO_YETAI_PICKS_ENABLED", "false").lower() == "true":
+
+from app.services.auto_pick.candidate import EVENING_RUN_ET  # noqa: E402
+
+
+def auto_picks_enabled() -> bool:
+    """Default on; AUTO_YETAI_PICKS_ENABLED=false/0/no/off is the kill switch."""
+    return os.getenv("AUTO_YETAI_PICKS_ENABLED", "true").strip().lower() not in (
+        "false",
+        "0",
+        "no",
+        "off",
+    )
+
+
+if auto_picks_enabled():
+    # Celery timezone is America/New_York: these are ET wall times. The 11:00 run
+    # leaves one slot (and the fill-to-2 floor) for the 17:30 run, which sees the
+    # pregame refreshes and fills the day to the cap.
     celery_app.conf.beat_schedule["auto_pick_yetai_bets_daily"] = {
         "task": "auto_pick.yetai_bets",
-        "schedule": crontab(hour=13, minute=0),  # 9:00 AM ET
+        "schedule": crontab(hour=11, minute=0),
+        "kwargs": {"reserve_slots": 1},
+    }
+    celery_app.conf.beat_schedule["auto_pick_yetai_bets_topup"] = {
+        "task": "auto_pick.yetai_bets",
+        "schedule": crontab(hour=EVENING_RUN_ET.hour, minute=EVENING_RUN_ET.minute),
     }
     celery_app.conf.beat_schedule["expire_pending_yetai_picks"] = {
         "task": "auto_pick.expire_pending",
