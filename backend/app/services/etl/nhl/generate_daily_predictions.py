@@ -30,7 +30,9 @@ SPORT = "icehockey_nhl"
 # One event-odds response includes all NHL prop markets we need (1 credit vs 3).
 _NHL_EVENT_ODDS_MARKETS = "player_total_saves,player_shots_on_goal,totals"
 _NHL_EVENT_ODDS_CACHE_TTL_SECONDS = 600
-_nhl_event_odds_cache: dict = {}  # event_id -> (expires_at_monotonic, payload)
+_nhl_event_odds_cache: dict = (
+    {}
+)  # (event_id, markets) -> (expires_at_monotonic, payload)
 
 # Global dict to store Fanatics lines
 FANATICS_LINES = {}
@@ -41,14 +43,17 @@ def clear_nhl_event_odds_cache() -> None:
     _nhl_event_odds_cache.clear()
 
 
-def _fetch_nhl_event_odds_payload(event_id: str) -> dict:
-    """Return DraftKings event odds for saves, player SOG, and totals (memoized)."""
-    entry = _nhl_event_odds_cache.get(event_id)
+def _fetch_nhl_event_odds_payload(
+    event_id: str, markets: str = _NHL_EVENT_ODDS_MARKETS
+) -> dict:
+    """Return DraftKings event odds (memoized per event + markets)."""
+    cache_key = (event_id, markets)
+    entry = _nhl_event_odds_cache.get(cache_key)
     if entry is not None:
         expires_at, payload = entry
         if time.monotonic() < expires_at:
             return payload
-        _nhl_event_odds_cache.pop(event_id, None)
+        _nhl_event_odds_cache.pop(cache_key, None)
 
     if not ODDS_API_KEY:
         return {}
@@ -59,7 +64,7 @@ def _fetch_nhl_event_odds_payload(event_id: str) -> dict:
     params = {
         "apiKey": ODDS_API_KEY,
         "regions": "us",
-        "markets": _NHL_EVENT_ODDS_MARKETS,
+        "markets": markets,
         "bookmakers": "draftkings",
         "oddsFormat": "american",
     }
@@ -73,7 +78,7 @@ def _fetch_nhl_event_odds_payload(event_id: str) -> dict:
     if resp is None or resp.status_code != 200:
         return {}
     data = resp.json()
-    _nhl_event_odds_cache[event_id] = (
+    _nhl_event_odds_cache[cache_key] = (
         time.monotonic() + _NHL_EVENT_ODDS_CACHE_TTL_SECONDS,
         data,
     )
@@ -185,7 +190,9 @@ def get_nhl_events_from_odds_api():
         return []
 
 
-def get_goalie_saves_odds_for_event(event_id, home_team, away_team):
+def get_goalie_saves_odds_for_event(
+    event_id, home_team, away_team, markets=_NHL_EVENT_ODDS_MARKETS
+):
     """
     Fetch goalie save lines from The Odds API for a specific event
 
@@ -193,12 +200,13 @@ def get_goalie_saves_odds_for_event(event_id, home_team, away_team):
         event_id: The Odds API event ID
         home_team: Home team name
         away_team: Away team name
+        markets: Odds API markets to request (the refresh passes saves only)
 
     Returns:
         dict mapping goalie names to their lines
     """
     try:
-        data = _fetch_nhl_event_odds_payload(event_id)
+        data = _fetch_nhl_event_odds_payload(event_id, markets)
         if not data:
             logging.warning(
                 "No Odds API payload for goalie saves %s @ %s", away_team, home_team

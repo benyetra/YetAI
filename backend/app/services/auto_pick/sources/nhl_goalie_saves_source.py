@@ -5,11 +5,16 @@ Queries pred_nhl_goalie_predictions for saves props.
 Each row already stores saves_line, over_odds, under_odds and a
 betting_recommendation — no separate game_lines join required.
 
-The writer (etl/nhl/daily_predictions.py) sets ``saves_line`` / odds when a book
-line exists but never sets ``line_available``; it writes only starter-confirmed
-slots (``starter_confirmed`` True). Rows are skipped unless ``saves_line`` is set,
-the starter is confirmed and the recommendation is "OVER x" / "UNDER x" with a price
-for that side. Team columns are place names; full names come from the team ids.
+The writer (etl/nhl/daily_predictions.py) writes a row per starter it can name,
+pregame included, with ``features_used["starter_confirmation"]`` =
+{method: confirmed|probable, full_name, ...}; confirmed rows are written at
+confidence 95, probable at 70. Rows are skipped unless ``saves_line``,
+``predicted_saves``, an "OVER x" / "UNDER x" recommendation and a price for that
+side are set, and the starter method is "confirmed" (legacy rows: ``starter_confirmed``
+True with no method). "probable" is allowed only when env NHL_GOALIE_PROBABLE_PICKS
+is 1/true/yes (read per call). ``player`` is the roster full name (what the grader
+matches against ESPN), falling back to ``goalie_name``.
+Team columns are place names; full names come from the team ids.
 ``game_time`` is naive US Eastern; ``prediction_date`` is refreshed on every run.
 
 Returns dicts shaped for PlayerPropCandidateProvider:
@@ -18,6 +23,7 @@ Returns dicts shaped for PlayerPropCandidateProvider:
 """
 
 import logging
+import os
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NHLGoaliePredictions
@@ -25,6 +31,14 @@ from app.services.auto_pick.candidate import DateRange, eastern_naive_to_utc
 from app.services.auto_pick.sources._nhl_teams import nhl_full_name
 
 log = logging.getLogger(__name__)
+
+
+def _starter_ok(r, allow_probable: bool) -> bool:
+    sc = (r.features_used or {}).get("starter_confirmation") or {}
+    method = sc.get("method")
+    if method is None:
+        return bool(r.starter_confirmed)
+    return method == "confirmed" or (method == "probable" and allow_probable)
 
 
 class NHLGoalieSavesSource:
@@ -49,6 +63,11 @@ class NHLGoalieSavesSource:
         if not rows:
             return []
 
+        allow_probable = os.getenv("NHL_GOALIE_PROBABLE_PICKS", "").lower() in (
+            "1",
+            "true",
+            "yes",
+        )
         out: list[dict] = []
         for r in rows:
             if r.predicted_saves is None:
@@ -56,7 +75,7 @@ class NHLGoalieSavesSource:
 
             if r.saves_line is None:
                 continue
-            if not r.starter_confirmed:
+            if not _starter_ok(r, allow_probable):
                 continue
 
             rec = (r.betting_recommendation or "").strip().upper()
@@ -84,7 +103,10 @@ class NHLGoalieSavesSource:
                     "event_id": event_id,
                     "league": "NHL",
                     "game_date": day,
-                    "player": r.goalie_name,
+                    "player": (
+                        (r.features_used or {}).get("starter_confirmation") or {}
+                    ).get("full_name")
+                    or r.goalie_name,
                     "stat": "saves",
                     "line": float(r.saves_line),
                     "odds": int(odds),

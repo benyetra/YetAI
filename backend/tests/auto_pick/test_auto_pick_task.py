@@ -16,9 +16,9 @@ def test_build_providers_includes_wnba_sources():
     db = MagicMock()
     providers = _build_providers(db)
     names = {type(p.source).__name__ for p in providers}
-    assert len(providers) == 14
-    assert "NHLGoalieSavesSource" not in names  # needs boxscore starters pregame
+    assert len(providers) == 15
     assert {
+        "NHLGoalieSavesSource",
         "WNBAPlayerPropSource",
         "NFLSpreadSource",
         "NFLTotalsSource",

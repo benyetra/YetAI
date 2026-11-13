@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import os
+from datetime import date
 
 from app.models.predictions_models import NHLTeamStats
+from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._db import db_session
-
-DEFAULT_NHL_SEASON = 20252026
 
 # Fallback constants when pred_nhl_team_stats is empty or a field is null.
 DEFAULT_SHOTS_AGAINST = 30.0
@@ -18,13 +18,26 @@ DEFAULT_GOALS_FOR_PER_GAME = 3.0
 DEFAULT_GOALS_AGAINST_PER_GAME = 3.0
 
 
+def season_for(day: date) -> int:
+    """NHL season id for an ET date: September starts the next season."""
+    start = day.year if day.month >= 9 else day.year - 1
+    return start * 10000 + start + 1
+
+
 def get_nhl_season() -> int:
-    """Current NHL season id (YYYYYYYY), e.g. 20252026 for 2025-26."""
-    raw = os.environ.get("NHL_SEASON", str(DEFAULT_NHL_SEASON))
+    """Current NHL season id (YYYYYYYY), e.g. 20252026 for 2025-26.
+
+    ``NHL_SEASON`` overrides; otherwise derived from today's ET date (a fixed
+    default goes stale every autumn and the pipeline reads last season's goalies).
+    """
+    current = season_for(now_eastern().date())
+    raw = os.environ.get("NHL_SEASON")
+    if not raw:
+        return current
     try:
         return int(raw)
     except (TypeError, ValueError):
-        return DEFAULT_NHL_SEASON
+        return current
 
 
 def _resolve_season(season: int | None) -> int:

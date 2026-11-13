@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 from datetime import date
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -47,13 +49,10 @@ def _primary_goalie(player_id: int, name: str, team: str) -> SimpleNamespace:
     )
 
 
-@patch("app.services.etl.nhl.confirm_starters.db_session")
-def test_resolve_skips_when_backup_announced(mock_db):
-    primary = _primary_goalie(100, "Starter One", "New York")
-    mock_db.query.return_value.filter.return_value.order_by.return_value.first.return_value = (
-        primary
-    )
-    mock_db.query.return_value.filter.return_value.first.return_value = None
+@patch("app.services.etl.nhl.confirm_starters.db_goalie_by_player_id")
+def test_resolve_predicts_announced_backup(mock_by_id):
+    """No DB-primary gate: whoever is the listed starter is predicted."""
+    mock_by_id.return_value = _primary_goalie(200, "Backup Two", "New York")
 
     ctx = cs.resolve_goalie_slot(
         game_id=1,
@@ -67,10 +66,9 @@ def test_resolve_skips_when_backup_announced(mock_db):
         api_starter=_api_starter(200, "Backup Two"),
     )
 
-    assert ctx.should_predict is False
-    assert ctx.prediction_skipped_reason == cs.SKIP_BACKUP_EXPECTED
-    assert ctx.starter_confirmed is True
+    assert ctx.should_predict is True
     assert ctx.goalie_id == 200
+    assert (ctx.method, ctx.source) == ("confirmed", "nhl_boxscore")
 
 
 @patch("app.services.etl.nhl.confirm_starters.db_session")
@@ -129,27 +127,19 @@ def test_resolve_skips_when_starter_unconfirmed(mock_db):
     assert ctx.starter_confirmed is False
 
 
+@patch("app.services.etl.nhl.confirm_starters.fetch_espn_probables", return_value={})
 @patch("app.services.etl.nhl.confirm_starters.db_goalie_by_player_id")
-@patch("app.services.etl.nhl.confirm_starters.primary_db_goalie")
 @patch("app.services.etl.nhl.confirm_starters.get_starters_from_boxscore")
-def test_build_slate_skips_backup_slot(mock_starters, mock_primary, mock_db_by_id):
-    home_primary = _primary_goalie(100, "Home Starter", "New York")
-    away_primary = _primary_goalie(400, "Away Primary", "Boston")
-    mock_starters.return_value = (
-        _api_starter(100, "Home Starter"),
-        _api_starter(300, "Away Backup"),
-    )
-    mock_primary.side_effect = [home_primary, away_primary]
-    mock_db_by_id.return_value = home_primary
+def test_build_slate_skips_slot_without_starter(mock_starters, mock_by_id, _espn):
+    mock_starters.return_value = (_api_starter(100, "Home Starter"), None)
+    mock_by_id.return_value = _primary_goalie(100, "Home Starter", "New York")
 
-    client = MagicMock()
-    summary = cs.build_slate_starter_context([_game()], client=client)
+    summary = cs.build_slate_starter_context([_game()], client=MagicMock())
 
-    assert len(summary.slots) == 2
     home_slot, away_slot = summary.slots
     assert home_slot.should_predict is True
     assert away_slot.should_predict is False
-    assert away_slot.prediction_skipped_reason == cs.SKIP_BACKUP_EXPECTED
+    assert away_slot.prediction_skipped_reason == cs.SKIP_STARTER_UNCONFIRMED
     assert summary.skipped == 1
     assert summary.predicted_eligible == 1
 
@@ -180,8 +170,131 @@ def test_starter_features_metadata_includes_skip_reason():
         starter_confirmed=True,
         confidence=95.0,
         should_predict=False,
-        prediction_skipped_reason=cs.SKIP_BACKUP_EXPECTED,
+        prediction_skipped_reason=cs.SKIP_NO_DB_GOALIE,
     )
     meta = cs.starter_features_metadata(ctx)
-    assert meta["prediction_skipped_reason"] == cs.SKIP_BACKUP_EXPECTED
+    assert meta["prediction_skipped_reason"] == cs.SKIP_NO_DB_GOALIE
     assert meta["starter_confirmation"]["starter_confirmed"] is True
+
+
+# --- ESPN probables + roster mapping (real 2026-11-13 payloads) -------------------
+
+FIX = Path(__file__).parent / "fixtures" / "nhl"
+
+
+def _fixture(name: str) -> dict:
+    return json.loads((FIX / name).read_text())
+
+
+def test_fetch_espn_probables_parses_real_scoreboard():
+    resp = MagicMock()
+    resp.json.return_value = _fixture("espn_nhl_scoreboard_20261113.json")
+    with patch.object(cs.requests, "get", return_value=resp):
+        out = cs.fetch_espn_probables(date(2026, 11, 13))
+    assert out["new york rangers"] == ("Dylan Garand", "confirmed")
+    assert out["vancouver canucks"] == ("Leevi Merilainen", "probable")
+
+
+def test_fetch_espn_probables_error_returns_empty():
+    with patch.object(cs.requests, "get", side_effect=RuntimeError("boom")):
+        assert cs.fetch_espn_probables(date(2026, 11, 13)) == {}
+
+
+def test_roster_match_handles_diacritics_and_last_name_fallback():
+    goalies = _fixture("nhl_roster_VAN.json")["goalies"]
+    assert cs.match_roster_goalie(goalies, "Leevi Merilainen")["id"] == 8482447
+    assert cs.match_roster_goalie(goalies, "L. Merilainen")["id"] == 8482447
+    assert cs.match_roster_goalie(goalies, "Nobody Else") is None
+
+
+def test_resolve_prefers_boxscore_over_espn_and_marks_probable():
+    espn = {"id": 5, "full_name": "Espn Guy", "method": "probable"}
+    kw = dict(
+        game_id=1,
+        game_date=date(2026, 5, 23),
+        game_time=None,
+        is_home=True,
+        team_id=10,
+        team_name="New York",
+        opponent_team_id=6,
+        opponent_team_name="Boston",
+    )
+    with patch.object(
+        cs, "db_goalie_by_player_id", side_effect=lambda i: _primary_goalie(i, "G", "x")
+    ):
+        both = cs.resolve_goalie_slot(
+            **kw, api_starter=_api_starter(9, "Box Guy"), espn_starter=espn
+        )
+        only_espn = cs.resolve_goalie_slot(**kw, api_starter=None, espn_starter=espn)
+    assert (both.goalie_id, both.method, both.source) == (
+        9,
+        "confirmed",
+        "nhl_boxscore",
+    )
+    assert both.confidence == cs.CONFIDENCE_CONFIRMED_PRIMARY
+    assert (only_espn.goalie_id, only_espn.method, only_espn.source) == (
+        5,
+        "probable",
+        "espn",
+    )
+    assert only_espn.starter_confirmed is False
+    assert only_espn.confidence == cs.CONFIDENCE_PROBABLE
+    meta = cs.starter_features_metadata(only_espn)["starter_confirmation"]
+    assert meta["method"] == "probable" and meta["full_name"] == "Espn Guy"
+
+
+def test_resolve_skips_no_db_goalie():
+    with patch.object(cs, "db_goalie_by_player_id", return_value=None):
+        ctx = cs.resolve_goalie_slot(
+            game_id=1,
+            game_date=date(2026, 5, 23),
+            game_time=None,
+            is_home=True,
+            team_id=10,
+            team_name="New York",
+            opponent_team_id=6,
+            opponent_team_name="Boston",
+            api_starter=_api_starter(9, "Box Guy"),
+        )
+    assert ctx.should_predict is False
+    assert ctx.prediction_skipped_reason == cs.SKIP_NO_DB_GOALIE
+
+
+def test_build_slate_maps_espn_probables_to_nhl_ids():
+    game = {
+        "id": 2026020310,
+        "startTimeUTC": "2026-11-13T23:00:00Z",
+        "homeTeam": {
+            "id": 23,
+            "abbrev": "VAN",
+            "placeName": {"default": "Vancouver"},
+        },
+        "awayTeam": {
+            "id": 3,
+            "abbrev": "NYR",
+            "placeName": {"default": "New York"},
+        },
+    }
+    client = MagicMock()
+    client.get_game_boxscore.return_value = {}
+    client.get_team_roster.side_effect = lambda a: _fixture(f"nhl_roster_{a}.json")
+    resp = MagicMock()
+    resp.json.return_value = _fixture("espn_nhl_scoreboard_20261113.json")
+    with (
+        patch.object(cs.requests, "get", return_value=resp) as get,
+        patch.object(
+            cs,
+            "db_goalie_by_player_id",
+            side_effect=lambda i: _primary_goalie(i, "db", "x"),
+        ),
+    ):
+        summary = cs.build_slate_starter_context([game, game], client=client)
+    assert get.call_count == 1  # one ESPN fetch per ET game date
+    home, away = summary.slots[:2]
+    assert (home.goalie_id, home.method, home.full_name) == (
+        8482447,
+        "probable",
+        "Leevi Meriläinen",
+    )
+    assert (away.method, away.full_name) == ("confirmed", "Dylan Garand")
+    assert client.get_team_roster.call_count == 2  # roster cached per abbrev

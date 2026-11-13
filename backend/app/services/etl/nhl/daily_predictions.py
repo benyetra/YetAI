@@ -33,6 +33,7 @@ from app.services.etl.nhl.player_shots_ml import (
 from app.services.etl.nhl.team_totals_ml import enrich_team_totals_prediction_for_write
 from app.services.etl.nhl.player_shots_model import predict_player_shots
 from app.services.etl.nhl.team_totals_model import predict_team_total_goals
+from app.services.espn_results import _norm
 from app.services.etl.nhl.generate_daily_predictions import (
     get_nhl_events_from_odds_api,
     get_goalie_saves_odds_for_event,
@@ -59,10 +60,10 @@ logging.basicConfig(
 def clear_nhl_predictions_for_dates(dates: set[date]) -> dict[str, int]:
     """Remove prior rows for this slate so re-runs replace rather than append."""
     if not dates:
-        return {"goalie": 0, "player_shots": 0, "team_totals": 0}
+        return {"player_shots": 0, "team_totals": 0}
     cleared: dict[str, int] = {}
+    # Goalie rows are upserted per (game_date, team_id), never cleared.
     for model, key in (
-        (NHLGoaliePredictions, "goalie"),
         (NHLPlayerShotsPredictions, "player_shots"),
         (NHLTeamTotalsPredictions, "team_totals"),
     ):
@@ -100,14 +101,42 @@ def update_nhl_stats():
         return False
 
 
-def generate_goalie_predictions(games, odds_events):
-    """Step 2: Generate goalie save predictions with betting lines"""
+def find_goalie_line(goalie_lines: dict, full_name, goalie_name) -> dict:
+    """Odds API outcomes are keyed by full name ("Leevi Merilainen"); our goalie_name
+    is the boxscore name ("L. Meriläinen"). Match full name, then initial + last name.
+    """
+    by_norm = {_norm(k): v for k, v in goalie_lines.items()}
+    for name in (full_name, goalie_name):
+        if name and _norm(name) in by_norm:
+            return by_norm[_norm(name)]
+    first, _, last = _norm(full_name or goalie_name).rpartition(" ")
+    if not last:
+        return {}
+    hits = [
+        v
+        for k, v in by_norm.items()
+        if k.rpartition(" ")[2] == last and (not first or k[:1] == first[:1])
+    ]
+    return hits[0] if len(hits) == 1 else {}
+
+
+def generate_goalie_predictions(games, odds_events, odds_markets=None):
+    """Step 2: Generate goalie save predictions with betting lines.
+
+    Upserts one row per (game_date, team_id): reruns update in place, keep a known
+    line when the new run finds none for the same goalie, and drop a stale row when
+    the slot's starter changed and the new one cannot be predicted.
+    """
+    from app.services.etl.nhl.betting_edges import recommendation_for_saves
+
     logging.info("=" * 80)
     logging.info("STEP 2: Generating goalie save predictions")
     logging.info("=" * 80)
 
     predictions_generated = 0
     skipped_starters = 0
+    stale_deleted = 0
+    odds_kwargs = {"markets": odds_markets} if odds_markets else {}
 
     starter_summary = build_slate_starter_context(games)
     game_abbrevs = {
@@ -122,7 +151,16 @@ def generate_goalie_predictions(games, odds_events):
     }
 
     for slot in starter_summary.slots:
-        if not slot.should_predict:
+        existing = (
+            db_session.query(NHLGoaliePredictions)
+            .filter(
+                NHLGoaliePredictions.game_date == slot.game_date,
+                NHLGoaliePredictions.team_id == slot.team_id,
+            )
+            .first()
+        )
+
+        if not slot.should_predict or not slot.goalie_id or not slot.goalie_name:
             skipped_starters += 1
             logging.info(
                 "⏭️  Skipping %s (%s): %s",
@@ -130,11 +168,10 @@ def generate_goalie_predictions(games, odds_events):
                 slot.team_name,
                 slot.prediction_skipped_reason,
             )
-            continue
-
-        if not slot.goalie_id or not slot.goalie_name:
-            skipped_starters += 1
-            logging.warning("⚠️  No goalie resolved for %s", slot.team_name)
+            # Skip leaves the row alone unless it is for a different known goalie.
+            if existing and slot.goalie_id and existing.goalie_id != slot.goalie_id:
+                db_session.delete(existing)
+                stale_deleted += 1
             continue
 
         home_abbrev, away_abbrev, home_team, away_team = game_abbrevs.get(
@@ -153,7 +190,7 @@ def generate_goalie_predictions(games, odds_events):
         goalie_lines = {}
         if event_id:
             goalie_lines = get_goalie_saves_odds_for_event(
-                event_id, odds_home, odds_away
+                event_id, odds_home, odds_away, **odds_kwargs
             )
 
         goalie_id = slot.goalie_id
@@ -170,10 +207,18 @@ def generate_goalie_predictions(games, odds_events):
             )
 
             if "error" not in prediction:
-                line_data = goalie_lines.get(goalie_name, {})
-                from app.services.etl.nhl.betting_edges import (
-                    recommendation_for_saves,
-                )
+                line_data = find_goalie_line(goalie_lines, slot.full_name, goalie_name)
+                if (
+                    line_data.get("line") is None
+                    and existing
+                    and existing.goalie_id == goalie_id
+                    and existing.saves_line is not None
+                ):
+                    line_data = {
+                        "line": existing.saves_line,
+                        "over_odds": existing.over_odds,
+                        "under_odds": existing.under_odds,
+                    }
 
                 saves_line = line_data.get("line")
                 write = enrich_goalie_prediction_for_write(
@@ -186,13 +231,15 @@ def generate_goalie_predictions(games, odds_events):
                 )
 
                 model_confidence = prediction.get("confidence")
+                # Scale by starter certainty (95 confirmed, 70 probable) so a
+                # probable starter always scores below a confirmed one.
                 combined_confidence = (
-                    min(float(model_confidence), slot.confidence)
+                    float(model_confidence) * slot.confidence / 100.0
                     if model_confidence is not None
                     else slot.confidence
                 )
 
-                db_pred = NHLGoaliePredictions(
+                values = dict(
                     game_date=slot.game_date,
                     game_id=slot.game_id,
                     game_time=slot.game_time,
@@ -216,17 +263,24 @@ def generate_goalie_predictions(games, odds_events):
                     saves_line=saves_line,
                     over_odds=line_data.get("over_odds"),
                     under_odds=line_data.get("under_odds"),
+                    line_available=saves_line is not None,
                     edge_saves=edge_info.edge_value,
                     edge_category=edge_info.edge_category,
                     betting_recommendation=edge_info.recommendation,
                     features_used=write["features_used"],
+                    prediction_date=datetime.utcnow(),
                 )
-                db_session.add(db_pred)
+                if existing:
+                    for key, value in values.items():
+                        setattr(existing, key, value)
+                else:
+                    db_session.add(NHLGoaliePredictions(**values))
                 predictions_generated += 1
                 logging.info(
-                    "✅ %s: %.1f saves predicted (starter confirmed)",
+                    "✅ %s: %.1f saves predicted (%s)",
                     goalie_name,
                     prediction["predicted_saves"],
+                    slot.method,
                 )
 
         except Exception as e:
@@ -235,9 +289,10 @@ def generate_goalie_predictions(games, odds_events):
 
     db_session.commit()
     logging.info(
-        "✅ Generated %s goalie predictions (%s skipped — starter gate)",
+        "✅ Generated %s goalie predictions (%s skipped — starter gate, %s stale removed)",
         predictions_generated,
         skipped_starters,
+        stale_deleted,
     )
     return predictions_generated
 
@@ -779,5 +834,46 @@ def run() -> dict:
     try:
         result = _run_daily_core()
         return {"task": "nhl_daily_predictions", **result}
+    finally:
+        close_session()
+
+
+def run_goalie_refresh() -> dict:
+    """Pregame refresh: today's not-yet-started games, goalie predictions only.
+
+    Odds credits: one saves-only event-odds call per predicted slot's event.
+    """
+    from app.services.etl.nhl._db import close_session, init_session
+
+    slate_date = now_eastern().date()
+    init_session()
+    try:
+        schedule = NHLAPIClient().get_schedule(slate_date.strftime("%Y-%m-%d"))
+        games = [
+            g
+            for day in (schedule or {}).get("gameWeek", [])
+            for g in day.get("games", [])
+            if g.get("gameState") in ("FUT", "PRE")
+            and game_datetime_et(g, slate_date)[0] == slate_date
+        ]
+        if not games:
+            return {
+                "task": "nhl_goalie_pregame_refresh",
+                "status": "skipped",
+                "reason": "no_upcoming_games",
+                "slate_date_et": str(slate_date),
+            }
+        odds_events = get_nhl_events_from_odds_api()
+        count = generate_goalie_predictions(
+            games, odds_events, odds_markets="player_total_saves"
+        )
+        return {
+            "task": "nhl_goalie_pregame_refresh",
+            "status": "ok",
+            "slate_date_et": str(slate_date),
+            "games": len(games),
+            "odds_events": len(odds_events),
+            "goalie_predictions": count,
+        }
     finally:
         close_session()

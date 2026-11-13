@@ -13,6 +13,7 @@ from app.models.predictions_models import (
     GameProjections,
     NBASpreadProjections,
     NBATotalsProjections,
+    NHLGoaliePredictions,
     NHLTeamTotalsPredictions,
     NFLSpreadProjections,
     NFLTotalsProjections,
@@ -102,6 +103,11 @@ def projection_counts_for_day(db: Session, day: date) -> dict[str, int]:
         # NHL
         "nhl_totals_projections": n(
             NHLTeamTotalsPredictions, NHLTeamTotalsPredictions.game_date == day
+        ),
+        "nhl_goalie_saves_with_line": n(
+            NHLGoaliePredictions,
+            NHLGoaliePredictions.game_date == day,
+            NHLGoaliePredictions.saves_line.isnot(None),
         ),
         # MLB
         "mlb_strikeout_with_line": n(

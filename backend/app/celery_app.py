@@ -80,6 +80,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=[12, 17], minute=0),  # ET (celery tz)
         "options": {"expires": 7200},
     },
+    # Before the 17:30 auto-pick: refreshed NHL starters + saves lines (goalies only).
+    "nhl-pregame-refresh": {
+        "task": "app.tasks.etl_pipeline.run_nhl_pregame_refresh",
+        "schedule": crontab(hour=16, minute=45),  # ET (celery tz)
+        "options": {"expires": 3600},
+    },
     "nba-spreads-accuracy-morning": {
         "task": "app.tasks.etl_pipeline.nba.spreads_accuracy",
         "schedule": crontab(hour=5, minute=5),

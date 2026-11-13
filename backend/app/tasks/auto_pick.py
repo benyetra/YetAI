@@ -35,6 +35,7 @@ from app.services.auto_pick.sources.nfl_receiving_yards_source import (
 )
 from app.services.auto_pick.sources.nfl_spread_source import NFLSpreadSource
 from app.services.auto_pick.sources.nfl_totals_source import NFLTotalsSource
+from app.services.auto_pick.sources.nhl_goalie_saves_source import NHLGoalieSavesSource
 from app.services.auto_pick.sources.nhl_totals_source import NHLTotalsSource
 from app.services.auto_pick.sources.player_prop_source import PlayerPropSource
 from app.services.auto_pick.sources.wnba_player_prop_source import WNBAPlayerPropSource
@@ -56,8 +57,8 @@ def _build_providers(db):
         MoneylineCandidateProvider(source=MLBGameMoneylineSource(db)),
         # MLBHitsSource is not registered: the hits board stores no market line or
         # price (constant 0.5 / -110), so its picks would publish made-up odds.
-        # NHL. NHLGoalieSavesSource is not registered: its writer needs boxscore
-        # starters, which do not exist pregame, so it never yields rows.
+        # NHL. Goalie saves need a confirmed starter (probable only with NHL_GOALIE_PROBABLE_PICKS).
+        PlayerPropCandidateProvider(source=NHLGoalieSavesSource(db)),
         TotalsCandidateProvider(source=NHLTotalsSource(db)),
         # NFL
         PlayerPropCandidateProvider(source=NFLQBPassingSource(db)),
