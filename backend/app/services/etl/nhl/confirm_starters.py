@@ -9,7 +9,7 @@ slot is skipped.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import logging
@@ -18,6 +18,7 @@ import requests
 
 from app.models.predictions_models import NHLGoalie
 from app.services.etl.nhl._db import db_session
+from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._slate import game_datetime_et
 from app.services.etl.nhl.nhl_api_client import NHLAPIClient
 from app.services.auto_pick.sources._nhl_teams import nhl_full_name
@@ -261,7 +262,8 @@ def resolve_goalie_slot(
         reason=None if db_row else SKIP_NO_DB_GOALIE,
         method=method,
         source=source,
-        full_name=roster_name or full_name,
+        # ESPN name is what the grader matches (Sam vs Samuel Montembeault)
+        full_name=full_name if source == "espn" else roster_name or full_name,
     )
 
 
@@ -304,7 +306,15 @@ def build_slate_starter_context(
         home_team_id = game["homeTeam"]["id"]
         away_team_id = game["awayTeam"]["id"]
 
-        home_starter, away_starter = get_starters_from_boxscore(api, game_id)
+        # No boxscore starter flag exists until close to puck drop.
+        too_early = (
+            game.get("gameState") == "FUT"
+            and game_time is not None
+            and game_time - now_eastern().replace(tzinfo=None) > timedelta(minutes=30)
+        )
+        home_starter, away_starter = (
+            (None, None) if too_early else get_starters_from_boxscore(api, game_id)
+        )
 
         for is_home, starter in ((True, home_starter), (False, away_starter)):
             side, other = (
@@ -327,21 +337,27 @@ def build_slate_starter_context(
                 espn, roster_name = espn_for(
                     game_date, side["id"], side.get("abbrev", "")
                 )
-            slots.append(
-                resolve_goalie_slot(
-                    game_id=game_id,
-                    game_date=game_date,
-                    game_time=game_time,
-                    is_home=is_home,
-                    team_id=side["id"],
-                    team_name=side["placeName"]["default"],
-                    opponent_team_id=other["id"],
-                    opponent_team_name=other["placeName"]["default"],
-                    api_starter=starter,
-                    espn_starter=espn,
-                    roster_name=roster_name,
-                )
+            slot = resolve_goalie_slot(
+                game_id=game_id,
+                game_date=game_date,
+                game_time=game_time,
+                is_home=is_home,
+                team_id=side["id"],
+                team_name=side["placeName"]["default"],
+                opponent_team_id=other["id"],
+                opponent_team_name=other["placeName"]["default"],
+                api_starter=starter,
+                espn_starter=espn,
+                roster_name=roster_name,
             )
+            if not slot.should_predict:
+                logger.warning(
+                    "Goalie slot dropped: game %s %s (%s)",
+                    game_id,
+                    slot.team_name,
+                    slot.prediction_skipped_reason,
+                )
+            slots.append(slot)
 
     summary = SlateStarterSummary.from_slots(slots)
     logger.info(

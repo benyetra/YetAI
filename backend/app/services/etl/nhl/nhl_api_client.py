@@ -15,6 +15,18 @@ class NHLAPIClient:
         self.base_url = "https://api-web.nhle.com/v1"
         self.stats_url = "https://api.nhle.com/stats/rest/en"
 
+    def _get(self, url):
+        """GET with a timeout and one retry on 429 (honours Retry-After)."""
+        response = requests.get(url, timeout=10)
+        if response.status_code == 429:
+            try:
+                wait = float(response.headers.get("Retry-After", 1.5))
+            except (TypeError, ValueError):
+                wait = 1.5
+            time.sleep(min(max(wait, 0.5), 5))
+            response = requests.get(url, timeout=10)
+        return response
+
     def get_schedule(self, date=None):
         """
         Get schedule for a specific date
@@ -24,7 +36,7 @@ class NHLAPIClient:
             date = now_eastern().date().strftime("%Y-%m-%d")
 
         url = f"{self.base_url}/schedule/{date}"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -39,7 +51,7 @@ class NHLAPIClient:
         season: Season in format YYYYYYY (e.g., 20252026)
         """
         url = f"{self.base_url}/club-schedule-season/{team_abbrev}/{season}"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -53,7 +65,7 @@ class NHLAPIClient:
         game_id: NHL game ID (e.g., 2024020001)
         """
         url = f"{self.base_url}/gamecenter/{game_id}/boxscore"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -70,7 +82,7 @@ class NHLAPIClient:
         if season:
             url += f"?cayenneExp=seasonId={season}"
 
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -81,7 +93,7 @@ class NHLAPIClient:
     def get_standings(self):
         """Get current NHL standings"""
         url = f"{self.base_url}/standings/now"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -95,7 +107,7 @@ class NHLAPIClient:
         player_id: NHL player ID
         """
         url = f"{self.base_url}/player/{player_id}/landing"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -109,7 +121,7 @@ class NHLAPIClient:
         team_abbrev: Team abbreviation (e.g., 'BOS', 'TOR')
         """
         url = f"{self.base_url}/roster/{team_abbrev}/current"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -157,7 +169,7 @@ class NHLAPIClient:
         if season:
             url += f"?cayenneExp=seasonId={season}"
 
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -174,7 +186,7 @@ class NHLAPIClient:
         if season:
             url += f"?cayenneExp=seasonId={season}"
 
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -188,7 +200,7 @@ class NHLAPIClient:
         game_id: NHL game ID (e.g., 2024020001)
         """
         url = f"{self.base_url}/gamecenter/{game_id}/play-by-play"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -205,7 +217,7 @@ class NHLAPIClient:
         if season:
             url += f"?cayenneExp=seasonId={season}%20and%20gameTypeId=2"
 
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -221,7 +233,7 @@ class NHLAPIClient:
         game_type: 2 for regular season, 3 for playoffs
         """
         url = f"{self.base_url}/player/{player_id}/game-log/{season}/{game_type}"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()
@@ -235,7 +247,7 @@ class NHLAPIClient:
         team_abbrev: Team abbreviation (e.g., 'BOS')
         """
         url = f"{self.base_url}/club-stats/{team_abbrev}/now"
-        response = requests.get(url)
+        response = self._get(url)
 
         if response.status_code == 200:
             return response.json()

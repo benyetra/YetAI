@@ -294,7 +294,85 @@ def test_build_slate_maps_espn_probables_to_nhl_ids():
     assert (home.goalie_id, home.method, home.full_name) == (
         8482447,
         "probable",
-        "Leevi Meriläinen",
+        "Leevi Merilainen",
     )
     assert (away.method, away.full_name) == ("confirmed", "Dylan Garand")
     assert client.get_team_roster.call_count == 2  # roster cached per abbrev
+
+
+def _resp(status, payload=None, headers=None):
+    return SimpleNamespace(
+        status_code=status, json=lambda: payload, headers=headers or {}
+    )
+
+
+def test_client_retries_once_on_429_then_succeeds():
+    from app.services.etl.nhl import nhl_api_client as nc
+
+    with (
+        patch.object(
+            nc.requests,
+            "get",
+            side_effect=[
+                _resp(429, headers={"Retry-After": "0"}),
+                _resp(200, {"ok": 1}),
+            ],
+        ) as get,
+        patch.object(nc.time, "sleep"),
+    ):
+        assert nc.NHLAPIClient().get_team_roster("VAN") == {"ok": 1}
+    assert get.call_count == 2 and get.call_args.kwargs["timeout"] == 10
+
+
+def test_client_429_twice_returns_none_no_crash():
+    from app.services.etl.nhl import nhl_api_client as nc
+
+    with (
+        patch.object(nc.requests, "get", return_value=_resp(429)) as get,
+        patch.object(nc.time, "sleep"),
+    ):
+        assert nc.NHLAPIClient().get_team_roster("VAN") is None
+    assert get.call_count == 2
+
+
+def test_build_slate_warns_when_slot_dropped(caplog):
+    game = _game()
+    with (
+        patch.object(cs, "fetch_espn_probables", return_value={}),
+        patch.object(cs, "get_starters_from_boxscore", return_value=(None, None)),
+        caplog.at_level("WARNING", logger=cs.logger.name),
+    ):
+        summary = cs.build_slate_starter_context([game], client=MagicMock())
+    assert summary.skipped == 2
+    assert "Goalie slot dropped" in caplog.text
+
+
+def test_build_slate_skips_boxscore_for_far_future_game():
+    game = {**_game(), "gameState": "FUT", "startTimeUTC": "2099-01-01T00:00:00Z"}
+    with (
+        patch.object(cs, "fetch_espn_probables", return_value={}),
+        patch.object(cs, "get_starters_from_boxscore") as box,
+    ):
+        cs.build_slate_starter_context([game], client=MagicMock())
+    box.assert_not_called()
+
+
+def test_espn_spelling_kept_over_roster_spelling():
+    espn = {"id": 7, "full_name": "Sam Montembeault", "method": "probable"}
+    with patch.object(
+        cs, "db_goalie_by_player_id", side_effect=lambda i: _primary_goalie(i, "G", "x")
+    ):
+        ctx = cs.resolve_goalie_slot(
+            game_id=1,
+            game_date=date(2026, 5, 23),
+            game_time=None,
+            is_home=True,
+            team_id=10,
+            team_name="Montreal",
+            opponent_team_id=6,
+            opponent_team_name="Boston",
+            api_starter=None,
+            espn_starter=espn,
+            roster_name="Samuel Montembeault",
+        )
+    assert ctx.full_name == "Sam Montembeault"
