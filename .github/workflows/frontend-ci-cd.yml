@@ -19,7 +19,7 @@ env:
 jobs:
   test:
     name: Run Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04 # Playwright 1.55 has no chromium deps for 26.04
     defaults:
       run:
         working-directory: ./frontend
