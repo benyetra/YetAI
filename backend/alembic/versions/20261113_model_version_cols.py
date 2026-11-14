@@ -2,6 +2,7 @@
 
 from typing import Sequence, Union
 
+import sqlalchemy as sa
 from alembic import op
 
 revision: str = "20261113_model_version_cols"
@@ -33,10 +34,20 @@ TABLES = [
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    if bind.dialect.name == "postgresql":
+        # Fail fast if a running pipeline holds one of the tables, so the tables
+        # already altered in this transaction are not left locked; safe to re-run.
+        op.execute("SET LOCAL lock_timeout = '5s'")
+        for table in TABLES:
+            op.execute(
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_version VARCHAR(20)"
+            )
+        return
+    inspector = sa.inspect(bind)
     for table in TABLES:
-        op.execute(
-            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_version VARCHAR(20)"
-        )
+        if "model_version" not in {c["name"] for c in inspector.get_columns(table)}:
+            op.add_column(table, sa.Column("model_version", sa.String(20)))
 
 
 def downgrade() -> None:
