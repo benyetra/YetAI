@@ -1,17 +1,14 @@
 """NHL team shots-on-goal actuals collector.
 
-Reads the boxscore for each completed game on `target_date`, extracts
-per-team SOG, matches against `NHLTeamShotsPredictions` for the same
-(team_name, game_date), and writes (idempotently) to
-`NHLTeamShotsActuals`. Mirrors `collect_goalie_actuals` for consistency.
+No projection writer exists for `NHLTeamShotsPredictions`, so this is not in
+NHL_PHASES and nothing grades from it; kept so the actuals can be backfilled if a
+writer is ever added. Matches predictions by (team_id, game_date); upserts.
 """
 
 from __future__ import annotations
 
 from datetime import date
 from typing import Any, Optional
-
-from sqlalchemy import and_
 
 from app.models.predictions_models import (
     NHLTeamShotsActuals,
@@ -21,46 +18,29 @@ from app.services.etl.nhl._boxscore import (
     extract_team_shots,
     get_completed_games_for_date,
     get_game_boxscore,
-    get_yesterday,
     grade_ou_pick,
+    run_for_grading_dates,
+    upsert_row,
 )
 from app.services.etl.nhl._db import close_session, init_session
 
 
-def _existing_actual(db, game_id: int, team_name: str) -> bool:
-    return (
-        db.query(NHLTeamShotsActuals)
-        .filter(
-            and_(
-                NHLTeamShotsActuals.game_id == game_id,
-                NHLTeamShotsActuals.team_name == team_name,
-            )
-        )
-        .first()
-        is not None
-    )
-
-
 def _find_prediction(
-    db, *, team_name: str, game_date: date
+    db, *, team_id: int, game_date: date
 ) -> Optional[NHLTeamShotsPredictions]:
     return (
         db.query(NHLTeamShotsPredictions)
         .filter(
-            and_(
-                NHLTeamShotsPredictions.team_name == team_name,
-                NHLTeamShotsPredictions.game_date == game_date,
-            )
+            NHLTeamShotsPredictions.team_id == team_id,
+            NHLTeamShotsPredictions.game_date == game_date,
         )
+        .order_by(NHLTeamShotsPredictions.id.desc())
         .first()
     )
 
 
-def _persist_row(db, row: dict[str, Any]) -> bool:
-    """Upsert one team-shots actual. Returns True on insert, False on skip."""
-    if _existing_actual(db, row["game_id"], row["team_name"]):
-        return False
-    pred = _find_prediction(db, team_name=row["team_name"], game_date=row["game_date"])
+def _persist_row(db, row: dict[str, Any]) -> str:
+    pred = _find_prediction(db, team_id=row["team_id"], game_date=row["game_date"])
     if pred is not None:
         row["predicted_shots"] = pred.predicted_shots
         row["shots_line"] = pred.shots_line
@@ -70,15 +50,24 @@ def _persist_row(db, row: dict[str, Any]) -> bool:
             line=pred.shots_line,
             recommendation=pred.betting_recommendation,
         )
-    db.add(NHLTeamShotsActuals(**row))
-    return True
+    return upsert_row(
+        db,
+        NHLTeamShotsActuals,
+        [
+            NHLTeamShotsActuals.game_id == row["game_id"],
+            NHLTeamShotsActuals.team_id == row["team_id"],
+        ],
+        row,
+    )
 
 
-def update_team_shots_actuals(target_date: Optional[date] = None) -> dict[str, Any]:
+def update_team_shots_actuals(
+    target_date: date, *, commit: bool = True
+) -> dict[str, Any]:
     """Pull completed games for the date and persist team-level SOG rows."""
-    target = target_date or get_yesterday()
-    games = get_completed_games_for_date(target)
-    inserted = 0
+    games = get_completed_games_for_date(target_date)
+    db = init_session()
+    counts = {"inserted": 0, "updated": 0, "unchanged": 0}
     for game in games:
         game_id = game.get("id")
         if game_id is None:
@@ -86,25 +75,22 @@ def update_team_shots_actuals(target_date: Optional[date] = None) -> dict[str, A
         boxscore = get_game_boxscore(game_id)
         if not boxscore:
             continue
-        rows = extract_team_shots(boxscore, game_id=game_id, game_date=target)
-        db = init_session()
-        for row in rows:
-            if _persist_row(db, row):
-                inserted += 1
-    if inserted:
-        init_session().commit()
+        for row in extract_team_shots(boxscore, game_id=game_id, game_date=target_date):
+            counts[_persist_row(db, row)] += 1
+    db.commit() if commit else db.rollback()
     return {
-        "status": "ok",
-        "task": "nhl_collect_team_shots_actuals",
-        "date": target.isoformat(),
+        "date": target_date.isoformat(),
         "games_processed": len(games),
-        "rows_inserted": inserted,
+        "rows_inserted": counts["inserted"],
+        "rows_updated": counts["updated"],
     }
 
 
 def run() -> dict[str, Any]:
     init_session()
     try:
-        return update_team_shots_actuals()
+        return run_for_grading_dates(
+            update_team_shots_actuals, "nhl_collect_team_shots_actuals"
+        )
     finally:
         close_session()

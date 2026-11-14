@@ -10,7 +10,7 @@ no network.
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date
 from typing import Any, Optional
 
 import requests
@@ -19,7 +19,12 @@ NHL_API_BASE = "https://api-web.nhle.com/v1"
 
 
 def get_completed_games_for_date(target_date: date) -> list[dict[str, Any]]:
-    """Schedule endpoint → list of games whose state is OFF/FINAL."""
+    """Schedule endpoint → games on ``target_date`` whose state is OFF/FINAL.
+
+    ``/schedule/{date}`` returns a 7-day ``gameWeek``; only the day whose own
+    ``date`` is the target counts, otherwise a run for one date would stamp the
+    whole week's games with it.
+    """
     url = f"{NHL_API_BASE}/schedule/{target_date.strftime('%Y-%m-%d')}"
     try:
         response = requests.get(url, timeout=10)
@@ -28,16 +33,48 @@ def get_completed_games_for_date(target_date: date) -> list[dict[str, Any]]:
     except Exception:
         return []
 
+    target = target_date.isoformat()
     games: list[dict[str, Any]] = []
     for game_day in data.get("gameWeek", []):
+        if game_day.get("date") != target:
+            continue
         for game in game_day.get("games", []):
             if game.get("gameState") in ("OFF", "FINAL"):
                 games.append(game)
     return games
 
 
-def get_yesterday() -> date:
-    return date.today() - timedelta(days=1)
+def run_for_grading_dates(update_fn, task: str) -> dict[str, Any]:
+    """Run one collector's ``update_fn(date)`` over the shared lookback window."""
+    from app.services.etl.grading_window import grading_dates
+
+    results = [update_fn(d) for d in grading_dates("nhl")]
+    return {
+        "status": "ok",
+        "task": task,
+        "dates": [r["date"] for r in results],
+        "games_processed": sum(r["games_processed"] for r in results),
+        "rows_inserted": sum(r["rows_inserted"] for r in results),
+        "rows_updated": sum(r["rows_updated"] for r in results),
+    }
+
+
+def upsert_row(db, model: Any, key_filters: list[Any], row: dict[str, Any]) -> str:
+    """Insert ``row`` or update the existing match. Returns inserted/updated/unchanged.
+
+    Re-collecting a date corrects a partial row (blank names, missing mirror)
+    instead of skipping it, and a clean re-run changes nothing.
+    """
+    existing = db.query(model).filter(*key_filters).first()
+    if existing is None:
+        db.add(model(**row))
+        return "inserted"
+    changed = False
+    for key, value in row.items():
+        if getattr(existing, key, None) != value:
+            setattr(existing, key, value)
+            changed = True
+    return "updated" if changed else "unchanged"
 
 
 def get_game_boxscore(game_id: int) -> Optional[dict[str, Any]]:
@@ -57,7 +94,16 @@ def get_game_boxscore(game_id: int) -> Optional[dict[str, Any]]:
 
 
 def _team_name(team: dict[str, Any]) -> str:
-    return (team.get("name") or {}).get("default", "") or ""
+    """Team name in the form the projection writers store: ``placeName`` ("Colorado").
+
+    The real NHL team object has abbrev/commonName/placeName/id/score/sog and no
+    ``name``; daily_predictions stores placeName too, so the two sides spell alike.
+    """
+    for key in ("placeName", "commonName", "name"):
+        value = (team.get(key) or {}).get("default")
+        if value:
+            return value
+    return team.get("abbrev") or ""
 
 
 def _team_id(team: dict[str, Any]) -> Optional[int]:
