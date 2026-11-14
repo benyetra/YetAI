@@ -60,8 +60,21 @@ def build_scoring_context(
         score_threshold=cfg.score_threshold,
         historical_hit_rates=_load_historical_hit_rates(db, now),
         line_movement=_load_line_movement(db, now),
+        records=_load_records(db, now),
         now=now,
     )
+
+
+def _load_records(db: Session, now: datetime) -> dict:
+    # Lazy import: record_gate imports the normalizers above.
+    from app.services.auto_pick.record_gate import load_records
+
+    try:
+        return load_records(db, now)
+    except Exception:
+        # Gate stays open rather than crashing a run.
+        logger.exception("context_builder: record gate load failed; gate open")
+        return {}
 
 
 def _load_historical_hit_rates(
