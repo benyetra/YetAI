@@ -58,3 +58,42 @@ def test_run_skips_incomplete_games(monkeypatch):
     assert result["totals_written"] == 0
     assert result["spreads_written"] == 0
     um.assert_not_called()
+
+
+def test_default_run_grades_the_lookback_window(monkeypatch):
+    """H-8: no target_date grades every grading_dates day with one upsert pass."""
+    from datetime import datetime
+
+    monkeypatch.setattr(
+        "app.services.etl.wnba.store_actuals.SessionLocal", lambda: MagicMock()
+    )
+    monkeypatch.setattr(
+        "app.services.etl.wnba.store_actuals.now_eastern",
+        lambda: datetime(2026, 6, 15, 8, 0),
+    )
+    monkeypatch.setenv("WNBA_GRADING_LOOKBACK_DAYS", "3")
+    game = {
+        "completed": True,
+        "home_team_name": "New York Liberty",
+        "away_team_name": "Las Vegas Aces",
+        "home_score": 90,
+        "away_score": 80,
+    }
+    with (
+        patch("app.services.etl.wnba.store_actuals.fetch_games") as fg,
+        patch("app.services.etl.wnba.store_actuals.upsert_many") as um,
+    ):
+        fg.return_value = [game]
+        result = sa.run()
+
+    assert [c.args[0] for c in fg.call_args_list] == [
+        date(2026, 6, 12),
+        date(2026, 6, 13),
+        date(2026, 6, 14),
+    ]
+    assert result["totals_written"] == 3
+    assert {r["game_date"] for r in um.call_args_list[0][0][2]} == {
+        date(2026, 6, 12),
+        date(2026, 6, 13),
+        date(2026, 6, 14),
+    }
