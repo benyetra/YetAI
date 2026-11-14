@@ -16,7 +16,7 @@ from app.services.etl.nba.ml_training import (
 )
 from app.services.etl.nba._feature_engineering import FEATURES_VERSION
 from app.services.etl.nba.ml_training.config import NBA_ML_CONFIG
-from app.services.etl.nba.prop_calibration import fit_residual_calibration
+from app.services.etl.nba.prop_calibration import fit_time_ordered
 from app.services.ml import dataset_cache
 from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
@@ -142,10 +142,14 @@ def run(
     holdout_preds = model.predict(X_hold)
     holdout_actuals = y_hold.values
     holdout_lines = np.round(holdout_actuals.astype(float) * 2) / 2
-    cal_params = fit_residual_calibration(
+    # Fit on the earlier holdout rows, gate on the later ones (not served yet:
+    # NBA_PROP_CALIBRATION_ENABLED stays off).
+    cal_params, cal_info = fit_time_ordered(
         stat_col, holdout_preds, holdout_actuals, holdout_lines
     )
     metadata["prop_calibration"] = cal_params.to_dict()
+    metadata["prop_calibration_eval"] = cal_info
+    logger.info("NBA %s prop calibration (time-ordered): %s", stat_col, cal_info)
 
     # Judge on the holdout only: validating on every row would include the 80%
     # the model trained on.

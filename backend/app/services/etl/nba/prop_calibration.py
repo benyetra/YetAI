@@ -21,6 +21,8 @@ RESIDUAL_MEAN_GATE = 0.3
 N_BUCKETS = 5
 MIN_BUCKET_ROWS = 5
 MIN_RESIDUAL_STD = 0.25
+# Share of the (time-ordered) holdout the calibration is fitted on; the rest gates it.
+FIT_FRACTION = 0.5
 
 
 def is_prop_calibration_enabled() -> bool:
@@ -202,6 +204,60 @@ def fit_residual_calibration(
         buckets=buckets,
         bucket_edges=[float(e) for e in edges],
     )
+
+
+def fit_time_ordered(
+    stat: str,
+    holdout_preds: np.ndarray | list[float],
+    holdout_actuals: np.ndarray | list[float],
+    holdout_lines: np.ndarray | list[float],
+    *,
+    fit_fraction: float = FIT_FRACTION,
+    residual_mean_gate: float = RESIDUAL_MEAN_GATE,
+) -> tuple[CalibrationParams, dict[str, Any]]:
+    """Fit on the earlier rows, gate on the later ones.
+
+    Rows must be in game order (the chronological holdout is). Fitting and
+    gating on the same rows made every bucket look calibrated by construction;
+    here the gate is the largest |mean residual| left on the later rows after
+    each bucket's fitted offset is applied. Returns the params (``passes_gate``
+    and ``max_abs_bucket_residual_mean`` are the out-of-sample values) and an
+    info dict for the retrain log / metadata.
+    """
+    preds = np.asarray(holdout_preds, dtype=float)
+    actuals = np.asarray(holdout_actuals, dtype=float)
+    lines = np.asarray(holdout_lines, dtype=float)
+    k = int(len(preds) * fit_fraction)
+    params = fit_residual_calibration(
+        stat,
+        preds[:k],
+        actuals[:k],
+        lines[:k],
+        residual_mean_gate=residual_mean_gate,
+    )
+    gate_preds, gate_actuals = preds[k:], actuals[k:]
+    info: dict[str, Any] = {
+        "method": "time_ordered",
+        "fit_rows": k,
+        "gate_rows": len(gate_preds),
+        "in_sample_max_bucket_residual": params.max_abs_bucket_residual_mean,
+    }
+    out_of_sample_max, checked = 0.0, 0
+    if k and len(gate_preds):
+        # Later predictions outside the fitted range land in the end buckets.
+        idx = np.searchsorted(params.bucket_edges[1:-1], gate_preds, side="right")
+        for i, bucket in enumerate(params.buckets):
+            mask = idx == i
+            if mask.sum() < MIN_BUCKET_ROWS:
+                continue
+            left_over = (gate_preds[mask] - bucket.residual_mean) - gate_actuals[mask]
+            checked += 1
+            out_of_sample_max = max(out_of_sample_max, abs(float(np.mean(left_over))))
+    params.passes_gate = checked > 0 and out_of_sample_max < residual_mean_gate
+    params.max_abs_bucket_residual_mean = out_of_sample_max if checked else 999.0
+    info["out_of_sample_max_bucket_residual"] = params.max_abs_bucket_residual_mean
+    info["passes_gate"] = params.passes_gate
+    return params, info
 
 
 def _pick_bucket(projected: float, params: CalibrationParams) -> CalibrationBucket:
