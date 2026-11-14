@@ -88,6 +88,12 @@ celery_app.conf.beat_schedule = {
         "schedule": crontab(hour=[12, 17], minute=0),  # ET (celery tz)
         "options": {"expires": 7200},
     },
+    # Closing prop lines: one call per NBA event in the ~25 min before tip-off.
+    "nba-close-capture": {
+        "task": "app.tasks.etl_pipeline.nba.close_capture",
+        "schedule": crontab(minute="*/10", hour="18-23"),  # ET (celery tz)
+        "options": {"expires": 540},
+    },
     # Before the 17:30 auto-pick: refreshed NHL starters + saves lines (goalies only).
     "nhl-pregame-refresh": {
         "task": "app.tasks.etl_pipeline.run_nhl_pregame_refresh",

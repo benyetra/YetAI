@@ -166,6 +166,13 @@ def nba_update_game_lines():
     return run()
 
 
+@celery_app.task(name="app.tasks.etl_pipeline.nba.close_capture")
+def nba_close_capture():
+    from app.services.etl.nba.close_capture import run
+
+    return run()
+
+
 @celery_app.task(name="app.tasks.etl_pipeline.nba.generate_predictions")
 def nba_generate_predictions():
     from app.services.etl.nba.generate_points_predictions import run
