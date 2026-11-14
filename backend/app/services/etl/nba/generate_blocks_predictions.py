@@ -23,8 +23,10 @@ from app.services.etl.nba._stale_rows import (
     active_players_not_started,
     mark_projection_out,
 )
+from app.services.etl.nba import _last10
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._ml_predict import predict
+from app.services.ml_model_version import resolve_nba_prop_model_version
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,13 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+
+    use_last10 = _last10.enabled(STAT)
+    model_version = (
+        _last10.LAST10_MODEL_VERSION
+        if use_last10
+        else resolve_nba_prop_model_version(STAT)
+    )
 
     db = SessionLocal()
     try:
@@ -78,19 +87,26 @@ def run() -> dict:
                     skipped_injured += 1
                     continue
 
-                features = build_features(
-                    db=db,
-                    player_id=player.player_id,
-                    game_date=today,
-                    opponent_team_id=player.opponent_team_id,
-                    stat_col=STAT,
-                )
-                if features is None:
-                    skipped_insufficient += 1
-                    continue
+                if use_last10:
+                    avg = _last10.projection(db, player.player_id, today, STAT)
+                    if avg is None:
+                        skipped_insufficient += 1
+                        continue
+                    projected = round(avg, 2)
+                else:
+                    features = build_features(
+                        db=db,
+                        player_id=player.player_id,
+                        game_date=today,
+                        opponent_team_id=player.opponent_team_id,
+                        stat_col=STAT,
+                    )
+                    if features is None:
+                        skipped_insufficient += 1
+                        continue
 
-                prediction = predict(STAT, features)
-                projected = max(0.0, round(prediction, 2))
+                    prediction = predict(STAT, features)
+                    projected = max(0.0, round(prediction, 2))
 
                 existing = (
                     db.query(BlocksProjections)
@@ -102,6 +118,7 @@ def run() -> dict:
                 )
                 if existing:
                     existing.projected_blocks = projected
+                    existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
                     updated += 1
@@ -113,6 +130,7 @@ def run() -> dict:
                             player_name=player.player_name,
                             opponent_team_name=player.opponent_team_name,
                             projected_blocks=projected,
+                            model_version=model_version,
                         )
                     )
                     created += 1
