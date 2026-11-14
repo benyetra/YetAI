@@ -44,7 +44,8 @@ def test_spread_matches_projector(delta, sign):
 def test_totals_match_projectors(delta, sign):
     proj = 220.0
     cases = {
-        "NBA": (lambda l: nba_recommend(proj - l, (0, 0))[0], False),
+        # a proven record: the threshold, not the record gate, decides
+        "NBA": (lambda l: nba_recommend(proj - l, (70, 100))[0], False),
         "WNBA": (lambda l: _wnba_totals(proj, l), True),
         "NFL": (lambda l: _totals_recommendation(proj, l)[1], False),
     }

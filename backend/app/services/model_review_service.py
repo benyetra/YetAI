@@ -8,7 +8,7 @@ format it. Every section is built independently: a missing/empty table shows
 
 Numbers come from the existing loaders: record_gate.load_records (bet + projection
 records, withheld keys), the accuracy services' row merges and accuracy_shared
-counters, and totals_baseline (NBA totals gate / published bias).
+counters, and the NBA projectors (version records, market anchor fit).
 """
 
 import html
@@ -129,21 +129,29 @@ def _nba_props(db, start, end) -> Loaded:
     return out
 
 
+def _version_key(kind: str, version) -> tuple:
+    return ("NBA", kind, f"version {version or 'none'}")
+
+
 def _nba_totals(db, start, end) -> Loaded:
     from app.models.predictions_models import NBATotalsActuals, NBATotalsProjections
-    from app.services.etl.nba.totals_baseline import CALIBRATION_START, MIN_EDGE
+    from app.services.etl.nba.totals_baseline import MIN_EDGE
 
+    A, P = NBATotalsActuals, NBATotalsProjections
     rows = (
-        db.query(NBATotalsActuals)
-        .filter(
-            NBATotalsActuals.game_date >= max(start, CALIBRATION_START),
-            NBATotalsActuals.game_date <= end,
+        db.query(A, P.model_version)
+        .outerjoin(
+            P,
+            (P.game_date == A.game_date)
+            & (P.home_team_name == A.home_team_name)
+            & (P.away_team_name == A.away_team_name),
         )
+        .filter(A.game_date >= start, A.game_date <= end)
         .all()
     )
-    table = NBATotalsProjections.__tablename__
-    out = []
-    for r in rows:
+    table = P.__tablename__
+    out: Loaded = {}
+    for r, version in rows:
         edge = (
             r.projected_total - r.market_total
             if r.projected_total is not None and r.market_total
@@ -155,7 +163,7 @@ def _nba_totals(db, start, end) -> Loaded:
             if edge is not None and edge >= MIN_EDGE
             else "under" if edge is not None and edge <= -MIN_EDGE else None
         )
-        out.append(
+        out.setdefault(_version_key("total", version), ("ou", []))[1].append(
             _row(
                 r.projected_total,
                 r.market_total,
@@ -165,7 +173,7 @@ def _nba_totals(db, start, end) -> Loaded:
                 f"{r.away_team_name} @ {r.home_team_name}",
             )
         )
-    return {("NBA", "total", None): ("ou", out)}
+    return out
 
 
 def _spread_rows(projs, merged) -> list[dict]:
@@ -196,7 +204,11 @@ def _nba_spread(db, start, end) -> Loaded:
 
     projs = q(NBASpreadProjections)
     merged = _merge_actuals_spread(projs, q(NBASpreadActuals))
-    return {("NBA", "spread", None): ("edge", _spread_rows(projs, merged))}
+    out: Loaded = {}
+    for p, row in zip(projs, _spread_rows(projs, merged)):
+        key = _version_key("spread", p.model_version)
+        out.setdefault(key, ("edge", []))[1].append(row)
+    return out
 
 
 def _nhl(db, start, end) -> Loaded:
@@ -524,9 +536,17 @@ def _projection_section(cur: Loaded, prior: Loaded) -> list[dict]:
     return out
 
 
+def _totals_history(tp, db: Session, today: date):
+    """tp.anchor_history reads the projector's module-level session."""
+    saved, tp.db = tp.db, db
+    try:
+        return tp.anchor_history(today)
+    finally:
+        tp.db = saved
+
+
 def _gate_section(db: Session, today: date) -> dict:
     from app.services.etl.nba import totals_baseline as tb
-    from app.models.predictions_models import NBATotalsActuals
 
     now = _day_start_utc(today) + timedelta(hours=12)  # same ET date for the gate
     records = record_gate.load_records(db, now)
@@ -549,40 +569,62 @@ def _gate_section(db: Session, today: date) -> dict:
             for r in withheld[:WITHHELD_LIMIT]
         ],
     }
-    try:
-        rows = (
-            db.query(NBATotalsActuals)
-            .filter(
-                NBATotalsActuals.game_date
-                >= max(tb.CALIBRATION_START, today - timedelta(days=60)),
-                NBATotalsActuals.game_date < today,
-            )
-            .all()
-        )
-        record = tb.pick_record(rows)
-        rec, conf, note = tb.recommend(tb.MIN_EDGE + 1, record)  # a qualifying edge
-        out["nba_totals"] = {
-            "hits": record[0],
-            "picks": record[1],
-            "calls_published": rec != "NO_PLAY",
-            "note": note,
-            "confidence": conf,
-        }
-    except Exception as e:
-        db.rollback()
-        out["nba_totals"] = {"unavailable": f"{type(e).__name__}: {e}"}
-    try:
-        from app.services.etl.nba import totals_projector as tp
+    from app.services.etl.nba import _season
+    from app.services.etl.nba import market_anchor as ma
+    from app.services.etl.nba import spread_projector as sp
+    from app.services.etl.nba import totals_projector as tp
 
-        points, n = tb.published_bias(tp._load_published_history(today, db), today)
-        out["nba_totals_bias"] = {
-            "points": round(points, 2),
-            "games": n,
-            "enabled": tp.published_bias_enabled(),
-        }
-    except Exception as e:
-        db.rollback()
-        out["nba_totals_bias"] = {"unavailable": f"{type(e).__name__}: {e}"}
+    opener = _season.season_opener(today)
+    for name, record_fn, edge_floor in (
+        ("nba_totals", lambda: tp.version_pick_record(db, opener, today), tb.MIN_EDGE),
+        (
+            "nba_spread",
+            lambda: sp.version_pick_record(db, opener, today),
+            sp.NBA_CONFIG.edge_threshold,
+        ),
+    ):
+        try:
+            record = record_fn()
+            sides = ("HOME", "AWAY") if "spread" in name else ("OVER", "UNDER")
+            rec, conf, note = tb.recommend(
+                edge_floor + 1, record, min_edge=edge_floor, sides=sides
+            )  # a qualifying edge
+            out[name] = {
+                "hits": record[0],
+                "picks": record[1],
+                "calls_published": rec != "NO_PLAY",
+                "note": note,
+                "confidence": conf,
+            }
+        except Exception as e:
+            db.rollback()
+            out[name] = {"unavailable": f"{type(e).__name__}: {e}"}
+    for name, fit_fn in (
+        (
+            "nba_totals_anchor",
+            lambda: ma.fit_anchor(
+                _totals_history(tp, db, today),
+                window=tp.ANCHOR_WINDOW,
+                k_prior=tp.ANCHOR_K_PRIOR,
+                a_prior=tp.ANCHOR_A_PRIOR,
+            ),
+        ),
+        (
+            "nba_spread_anchor",
+            lambda: ma.fit_anchor(
+                sp.spread_anchor_history(db, today),
+                window=sp.SPREAD_ANCHOR_WINDOW,
+                k_prior=sp.SPREAD_ANCHOR_K_PRIOR,
+                a_prior=sp.SPREAD_ANCHOR_A_PRIOR,
+            ),
+        ),
+    ):
+        try:
+            fit = fit_fn()
+            out[name] = {"k": round(fit.k, 3), "a": round(fit.a, 2), "n": fit.n}
+        except Exception as e:
+            db.rollback()
+            out[name] = {"unavailable": f"{type(e).__name__}: {e}"}
     return out
 
 
@@ -887,22 +929,26 @@ def render_text(review: dict) -> str:
                 f"{w['shrunk_roi'] * 100:+.1f}% (bets {w['bet_n']} {w['bet_units']:+.2f}u; "
                 f"projections {w['proj_hits']}/{w['proj_n']})"
             )
-        t = g.get("nba_totals", {})
-        if "unavailable" in t:
-            L.append(f"  NBA totals gate unavailable: {t['unavailable']}")
-        else:
-            L.append(
-                f"  NBA totals gate: {t['hits']}/{t['picks']}, calls "
-                f"{'published' if t['calls_published'] else 'WITHHELD'} ({t['note']})"
-            )
-        b = g.get("nba_totals_bias", {})
-        if "unavailable" in b:
-            L.append(f"  NBA totals bias unavailable: {b['unavailable']}")
-        else:
-            L.append(
-                f"  NBA totals published-bias correction: {b['points']:+.2f} pts "
-                f"({b['games']} games, {'on' if b['enabled'] else 'off'})"
-            )
+        for name, label in (("nba_totals", "totals"), ("nba_spread", "spread")):
+            t = g.get(name, {})
+            if "unavailable" in t:
+                L.append(f"  NBA {label} gate unavailable: {t['unavailable']}")
+            else:
+                L.append(
+                    f"  NBA {label} gate: {t['hits']}/{t['picks']}, calls "
+                    f"{'published' if t['calls_published'] else 'WITHHELD'} ({t['note']})"
+                )
+        for name, label in (
+            ("nba_totals_anchor", "totals"),
+            ("nba_spread_anchor", "spread"),
+        ):
+            b = g.get(name, {})
+            if "unavailable" in b:
+                L.append(f"  NBA {label} anchor unavailable: {b['unavailable']}")
+            else:
+                L.append(
+                    f"  NBA {label} market anchor: k {b['k']}, a {b['a']:+.2f} (n={b['n']})"
+                )
     L.append("")
 
     m = review["misses"]

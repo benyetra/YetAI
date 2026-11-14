@@ -70,13 +70,17 @@ def test_nba_spread_row_version_ml_and_heuristic(monkeypatch):
         monkeypatch.setattr(nsp, "get_model_version", lambda: "2026-11-13")
         with patch.object(nsp, "upsert_many") as um:
             nsp.run()
-        return um.call_args[0][2][0]["model_version"]
+        return um.call_args[0][2][0]
 
-    assert run(True) == "2026-11-13"
-    assert run(False) == "elo-pace-v1"
+    # The row is stamped with the anchored formula; the ML artifact's version
+    # is kept in factors.
+    assert run(True)["model_version"] == nsp.SPREAD_MODEL_VERSION
+    assert run(True)["factors"]["ml_version"] == "2026-11-13"
+    assert run(False)["model_version"] == nsp.SPREAD_MODEL_VERSION
+    assert run(False)["factors"]["ml_version"] is None
 
 
-def test_nba_totals_enrich_stamps_heuristic():
+def test_nba_totals_enrich_stamps_anchor_version():
     from app.services.etl.nba import totals_ml
 
     proj = {"projected_total": 220.0, "factors": {}}
@@ -85,7 +89,7 @@ def test_nba_totals_enrich_stamps_heuristic():
         patch.object(totals_ml, "predict_residual", return_value=None),
     ):
         totals_ml.enrich_projection(proj)
-    assert proj["model_version"] == "heuristic-v1"
+    assert proj["model_version"] == "totals-anchor-v1"
 
 
 def test_resolve_nba_prop_version_uses_loader(monkeypatch):

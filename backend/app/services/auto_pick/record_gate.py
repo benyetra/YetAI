@@ -224,9 +224,10 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
 
 # Which stored rows each prior grades (publishable calls only):
 # - NBA props: the stored call is made at any edge, so rows are cut at fill_floor_edge.
-# - NBA total: pick_record keeps |edge| >= 4.0, above the total's fill-floor edge
-#   (2.5 = 31.25/100 * 8.0), so every row is publishable.
-# - NBA/NFL spread, NFL total, NFL passing/receiving, NHL saves/total: rows are the
+# - NBA total and spread: the would-be calls of the CURRENT model version (the anchored
+#   projectors' own version_pick_record), graded against the stored line, not the stored
+#   recommendation, which is NO_PLAY while the version's record is unproven.
+# - NFL spread, NFL total, NFL passing/receiving, NHL saves/total: rows are the
 #   stored recommendation/pick (NO_PLAY and pushes excluded); their edge thresholds
 #   live in each sport's ETL and were not compared with the fill-floor edge here.
 # Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded)}; dates inclusive.
@@ -321,34 +322,21 @@ def _nba_props(db, start, end):
 
 
 def _nba_totals(db, start, end):
-    from app.models.predictions_models import NBATotalsActuals
-    from app.services.etl.nba.totals_baseline import CALIBRATION_START, pick_record
+    from app.services.etl.nba import totals_projector
 
-    # Rows before calibration came from the old model (same rule as the totals gate).
-    start = max(start, CALIBRATION_START)
-    rows = (
-        db.query(NBATotalsActuals)
-        .filter(NBATotalsActuals.game_date >= start, NBATotalsActuals.game_date <= end)
-        .all()
-    )
-    return {("NBA", "total", None): pick_record(rows)}
+    return {
+        ("NBA", "total", None): totals_projector.version_pick_record(
+            db, start, end + timedelta(days=1)
+        )
+    }
 
 
 def _nba_spread(db, start, end):
-    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
-    from app.services.nfl_accuracy_service import _merge_actuals_spread
+    from app.services.etl.nba import spread_projector
 
-    def q(model):
-        return (
-            db.query(model)
-            .filter(model.game_date >= start, model.game_date <= end)
-            .all()
-        )
-
-    rows = _merge_actuals_spread(q(NBASpreadProjections), q(NBASpreadActuals))
     return {
-        ("NBA", "spread", None): edge_play_graded_counts(
-            rows, pick_field="recommendation", correct_field="spread_correct"
+        ("NBA", "spread", None): spread_projector.version_pick_record(
+            db, start, end + timedelta(days=1)
         )
     }
 

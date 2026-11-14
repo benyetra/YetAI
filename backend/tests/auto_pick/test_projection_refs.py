@@ -106,7 +106,7 @@ def _ref(row, table, **keys):
 
 def test_nba_sources(sqlite_db):
     nba_t._gl(sqlite_db)
-    nba_t._spread(sqlite_db)
+    nba_t._spread(sqlite_db, factors={"market_win_prob": 0.7})  # model part -0.1
     nba_t._total(sqlite_db)
     sqlite_db.add(
         PointsProjections(

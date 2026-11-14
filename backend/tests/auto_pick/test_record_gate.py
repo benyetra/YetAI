@@ -311,6 +311,7 @@ def test_historical_sub_score_uses_key_record_else_old_hit_rate():
 
 def test_nba_spread_projection_record_feeds_the_gate(sqlite_db):
     from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+    from app.services.etl.nba.spread_projector import SPREAD_MODEL_VERSION
 
     day = NOW.date() - timedelta(days=2)
     for i in range(100):
@@ -323,7 +324,8 @@ def test_nba_spread_projection_record_feeds_the_gate(sqlite_db):
                 projected_margin=8.0,
                 home_win_prob=0.7,
                 market_spread_home=-3.5,
-                recommendation="HOME",
+                recommendation="NO_PLAY",  # withheld: the record counts would-be calls
+                model_version=SPREAD_MODEL_VERSION,
             )
         )
         margin = 10 if i < 40 else 1  # home covers -3.5 in 40 of 100
@@ -417,3 +419,37 @@ def test_every_registered_source_declares_its_keys():
     declared = rg.emitted_keys()
     names = {type(p.source).__name__ for p in _build_providers(None)}
     assert names <= set(declared), names - set(declared)
+
+
+def test_nba_totals_record_counts_only_current_version(sqlite_db):
+    from app.models.predictions_models import NBASpreadActuals, NBATotalsProjections
+    from app.services.etl.nba.totals_projector import MODEL_VERSION
+
+    day = NOW.date() - timedelta(days=2)
+    for i in range(30):
+        cur = i < 10  # 10 current-version rows, all would-be OVER hits
+        sqlite_db.add(
+            NBATotalsProjections(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                projected_total=230.0,
+                market_total=225.0,
+                recommendation="NO_PLAY",
+                model_version=MODEL_VERSION if cur else None,
+            )
+        )
+        sqlite_db.add(
+            NBASpreadActuals(
+                game_date=day,
+                home_team_name=f"H{i}",
+                away_team_name=f"A{i}",
+                home_score=120,
+                away_score=110 if cur else 90,  # old rows would be misses
+                actual_margin=10 if cur else 30,
+                home_won=True,
+            )
+        )
+    sqlite_db.commit()
+    rec = load_records(sqlite_db, NOW)[("NBA", "total", None)]
+    assert (rec.proj_hits, rec.proj_n) == (10, 10)

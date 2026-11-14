@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
@@ -16,7 +14,6 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     NBAGameLines,
     NBASpreadActuals,
-    NBATotalsActuals,
     NBATotalsProjections,
     PlayerInjuryStatus,
     RecentGames,
@@ -30,18 +27,21 @@ from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._samples import player_games
 from app.services.etl.nba._season import season_opener, season_start_year
 from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
-    CALIBRATION_START,
+    ANCHOR_A_PRIOR,
+    ANCHOR_K_PRIOR,
+    ANCHOR_WINDOW,
     CURRENT_SEASON,
     MIN_FORM_GAMES,
+    MODEL_VERSION,
     Final,
     baseline_scores,
     blended_scoring,
     pick_record,
-    published_bias,
     recent_bias,
     recommend,
     scoring_averages,
 )
+from app.services.etl.nba.market_anchor import NO_ANCHOR, anchored, fit_anchor
 from app.services.etl.nba.totals_ml import enrich_projection
 
 logger = logging.getLogger(__name__)
@@ -375,46 +375,38 @@ def calculate_injury_impact(
 
 def calculate_rest_adjustment(home_team: str, away_team: str, game_date: date) -> float:
     """
-    Calculate adjustment based on rest days.
-    Back-to-back games typically result in lower scoring.
+    Calculate adjustment based on rest days, from the schedule only.
 
-    NOTE: Due to potentially stale game data, we use conservative adjustments.
-    Research shows B2B impact is ~2-3 points per team, we use 2.0 to be safe.
+    A team's previous game date comes from final scores and the lines table
+    (the 7 days before game_date); box scores are never consulted, since a
+    player's last box score is not the team's last game (NBA-6).
+    Back-to-back: -2.0 per team; 4+ days off: +0.5; clamped to [-5, 2].
     """
+    since = game_date - timedelta(days=7)
+    played: Dict[str, List[date]] = {}
+    for g in finals_for(game_date):
+        if g.game_date >= since:
+            for t in (g.home_team_name, g.away_team_name):
+                played.setdefault(t, []).append(g.game_date)
+    for g in (
+        db.query(NBAGameLines)
+        .filter(NBAGameLines.game_date >= since, NBAGameLines.game_date < game_date)
+        .all()
+    ):
+        for t in (g.home_team_name, g.away_team_name):
+            played.setdefault(t, []).append(g.game_date)
+
     adjustment = 0.0
-
-    # Get team IDs
-    home_id = get_team_id_from_name(home_team)
-    away_id = get_team_id_from_name(away_team)
-
-    for team_id, is_home in [(home_id, True), (away_id, False)]:
-        if not team_id:
+    for team in (home_team, away_team):
+        if team not in played:
             continue
+        days_rest = (game_date - max(played[team])).days
+        if days_rest == 1:  # Back-to-back
+            adjustment -= 2.0
+        elif days_rest >= 4:  # Well rested
+            adjustment += 0.5
 
-        # Check most recent game
-        recent_game = (
-            db.query(RecentGames)
-            .filter(RecentGames.game_date < game_date)
-            .join(TeamRoster, RecentGames.player_id == TeamRoster.player_id)
-            .filter(TeamRoster.team_id == team_id)
-            .order_by(RecentGames.game_date.desc())
-            .first()
-        )
-
-        if recent_game:
-            days_rest = (game_date - recent_game.game_date).days
-
-            if days_rest == 1:  # Back-to-back
-                adjustment -= 2.0  # B2B reduces total by ~2 points per team
-            elif days_rest == 0:  # Same day (rare but possible)
-                adjustment -= 3.0
-            elif days_rest >= 4:  # Well rested
-                adjustment += 0.5  # Slightly higher scoring
-
-    # Cap total rest adjustment (both teams combined shouldn't exceed ±5 points)
-    adjustment = max(-5.0, min(adjustment, 2.0))
-
-    return adjustment
+    return max(-5.0, min(adjustment, 2.0))
 
 
 def calculate_venue_adjustment(home_team: str) -> float:
@@ -553,82 +545,107 @@ def finals_for(game_date: date) -> List:
     return _finals_cache[game_date]
 
 
-def _load_published_history(game_date: date, session=None) -> List:
-    """Graded games with the total as published and the correction inside it."""
-    start = max(CALIBRATION_START, season_opener(game_date))
+_anchor_cache: Dict[date, List] = {}
+
+
+def anchor_history(game_date: date) -> List[Tuple[float, float, float]]:
+    """[(model, market, actual)], oldest first, for the most recent
+    ANCHOR_WINDOW graded games before game_date that had a market line.
+
+    model = baseline + recent_bias, point-in-time at each game's date (the
+    same definition as scripts/nba_game_model_replay.py); market = the line
+    stored on the projection row, else the lines table. Loaded once per date.
+    """
+    if game_date in _anchor_cache:
+        return _anchor_cache[game_date]
+    _anchor_cache.clear()
+    finals = finals_for(game_date)
+    opener_prev = date(season_start_year(game_date) - 1, 7, 1)
+    proj = {
+        (r.game_date, r.home_team_name, r.away_team_name): r.market_total
+        for r in db.query(
+            NBATotalsProjections.game_date,
+            NBATotalsProjections.home_team_name,
+            NBATotalsProjections.away_team_name,
+            NBATotalsProjections.market_total,
+        ).filter(
+            NBATotalsProjections.game_date >= opener_prev,
+            NBATotalsProjections.game_date < game_date,
+        )
+    }
+    lines = {
+        (r.game_date, r.home_team_name, r.away_team_name): r.total
+        for r in db.query(
+            NBAGameLines.game_date,
+            NBAGameLines.home_team_name,
+            NBAGameLines.away_team_name,
+            NBAGameLines.total,
+        ).filter(
+            NBAGameLines.game_date >= opener_prev, NBAGameLines.game_date < game_date
+        )
+    }
+    bias_by_date: Dict[date, float] = {}
+    rows: List[Tuple[float, float, float]] = []
+    # Ties on a date in a fixed order, so the window edge matches the replay.
+    for g in sorted(
+        finals,
+        key=lambda f: (f.game_date, f.home_team_name, f.away_team_name),
+        reverse=True,
+    ):
+        k = (g.game_date, g.home_team_name, g.away_team_name)
+        market = proj.get(k) or lines.get(k)
+        if not market:
+            continue
+        sides = baseline_scores(finals, g.home_team_name, g.away_team_name, g.game_date)
+        if sides is None:
+            continue
+        if g.game_date not in bias_by_date:
+            bias_by_date[g.game_date] = recent_bias(finals, g.game_date)[0]
+        rows.append(
+            (
+                sum(sides) + bias_by_date[g.game_date],
+                market,
+                g.home_score + g.away_score,
+            )
+        )
+        if len(rows) >= ANCHOR_WINDOW:
+            break
+    rows.reverse()
+    _anchor_cache[game_date] = rows
+    return rows
+
+
+def version_pick_record(session, start: date, end_exclusive: date) -> Tuple[int, int]:
+    """Hits and picks of this model version's would-be calls in [start, end)."""
     rows = (
-        (session or db)
-        .query(NBATotalsActuals, NBATotalsProjections.factors)
-        .outerjoin(
-            NBATotalsProjections,
-            (NBATotalsProjections.game_date == NBATotalsActuals.game_date)
-            & (NBATotalsProjections.home_team_name == NBATotalsActuals.home_team_name)
-            & (NBATotalsProjections.away_team_name == NBATotalsActuals.away_team_name),
+        session.query(
+            NBATotalsProjections.projected_total,
+            NBATotalsProjections.market_total,
+            NBASpreadActuals.home_score,
+            NBASpreadActuals.away_score,
+        )
+        .join(
+            NBASpreadActuals,
+            (NBASpreadActuals.game_date == NBATotalsProjections.game_date)
+            & (NBASpreadActuals.home_team_name == NBATotalsProjections.home_team_name)
+            & (NBASpreadActuals.away_team_name == NBATotalsProjections.away_team_name),
         )
         .filter(
-            NBATotalsActuals.game_date >= start,
-            NBATotalsActuals.game_date < game_date,
+            NBATotalsProjections.model_version == MODEL_VERSION,
+            NBATotalsProjections.game_date >= start,
+            NBATotalsProjections.game_date < end_exclusive,
         )
         .all()
     )
-    out = []
-    for actual, factors in rows:
-        if isinstance(factors, str):
-            try:
-                factors = json.loads(factors)
-            except ValueError:
-                factors = None
-        correction = (factors or {}).get("bias_correction") or {}
-        out.append(
-            SimpleNamespace(
-                game_date=actual.game_date,
-                actual_total=actual.actual_total,
-                projected_total=actual.projected_total,
-                applied_bias=correction.get("points") or 0.0,
-            )
-        )
-    return out
-
-
-_published_cache: Dict[date, List] = {}
-
-
-def published_history_for(game_date: date) -> List:
-    """Published-vs-actual history for a run date, loaded once per date."""
-    if game_date not in _published_cache:
-        _published_cache.clear()
-        _published_cache[game_date] = _load_published_history(game_date)
-    return _published_cache[game_date]
-
-
-def published_bias_enabled() -> bool:
-    return os.getenv("NBA_TOTALS_PUBLISHED_BIAS_ENABLED", "true").strip().lower() in (
-        "1",
-        "true",
-        "yes",
+    return pick_record(
+        SimpleNamespace(projected_total=pt, market_total=mt, actual_total=hs + as_)
+        for pt, mt, hs, as_ in rows
     )
-
-
-def bias_correction(finals: List, game_date: date) -> Tuple[float, int, str]:
-    """(points, games, source) to add to the published total."""
-    if published_bias_enabled():
-        points, games = published_bias(published_history_for(game_date), game_date)
-        return points, games, "published"
-    points, games = recent_bias(finals, game_date)
-    return points, games, "baseline"
 
 
 def current_pick_record(game_date: date) -> Tuple[int, int]:
-    """Hits and picks of the model's would-be calls since calibration began."""
-    start = max(CALIBRATION_START, game_date - timedelta(days=60))
-    rows = (
-        db.query(NBATotalsActuals)
-        .filter(
-            NBATotalsActuals.game_date >= start, NBATotalsActuals.game_date < game_date
-        )
-        .all()
-    )
-    return pick_record(rows)
+    """This model version's record since the season opened."""
+    return version_pick_record(db, season_opener(game_date), game_date)
 
 
 def generate_projection(
@@ -677,16 +694,29 @@ def generate_projection(
 
     finals = finals_for(game_date)
     from_actuals = baseline_scores(finals, home_team, away_team, game_date)
-    bias, bias_games, bias_source = 0.0, 0, "none"
+    base_projection = home_projected + away_projected
+    anchor, bias, model_total = NO_ANCHOR, 0.0, base_projection
     if from_actuals:
         home_projected, away_projected = from_actuals
-        bias, bias_games, bias_source = bias_correction(finals, game_date)
-    base_projection = home_projected + away_projected
+        base_projection = home_projected + away_projected
+        bias = recent_bias(finals, game_date)[0]
+        model_total = base_projection + bias
+        anchor = fit_anchor(
+            anchor_history(game_date),
+            window=ANCHOR_WINDOW,
+            k_prior=ANCHOR_K_PRIOR,
+            a_prior=ANCHOR_A_PRIOR,
+        )
+        projected_total = anchored(model_total, market_total, anchor)
+    else:
+        # No history: the line if there is one, else the old pace/ORtg base.
+        projected_total = market_total or model_total
     logger.info(
         f"Base Projection: {base_projection:.1f} (Home: {home_projected:.1f}, Away: {away_projected:.1f})"
     )
 
-    # Step 4: Apply adjustments
+    # Step 4: Adjustments are computed and stored for display only; the
+    # replay (2026-11-14) showed each one made the total less accurate.
     injury_adj_home, home_injuries = calculate_injury_impact(home_team, game_date)
     injury_adj_away, away_injuries = calculate_injury_impact(away_team, game_date)
     injury_adjustment = injury_adj_home + injury_adj_away
@@ -694,24 +724,13 @@ def generate_projection(
     rest_adjustment = calculate_rest_adjustment(home_team, away_team, game_date)
     venue_adjustment = calculate_venue_adjustment(home_team)
     form_adjustment = calculate_form_adjustment(home_team, away_team, game_date)
+    total_adjustment = 0.0
 
-    total_adjustment = (
-        injury_adjustment + rest_adjustment + venue_adjustment + (form_adjustment * 0.3)
-    )
-
-    # Cap total adjustment to prevent extreme outliers (max ±12 points combined)
-    # Even with multiple factors, adjustments beyond this are likely data errors
-    total_adjustment = max(-12.0, min(total_adjustment, 12.0))
-
-    logger.info(f"Adjustments:")
+    logger.info(f"Adjustments (display only):")
     logger.info(f"  Injuries: {injury_adjustment:+.1f}")
     logger.info(f"  Rest/Schedule: {rest_adjustment:+.1f}")
     logger.info(f"  Venue: {venue_adjustment:+.1f}")
     logger.info(f"  Form: {form_adjustment * 0.3:+.1f} (weighted)")
-    logger.info(f"  Total Adjustment: {total_adjustment:+.1f}")
-
-    # Final projection
-    projected_total = base_projection + total_adjustment + bias
     logger.info(f"PROJECTED TOTAL: {projected_total:.1f}")
 
     # Market comparison
@@ -722,7 +741,7 @@ def generate_projection(
     record = current_pick_record(game_date)
 
     if market_total:
-        edge = projected_total - market_total
+        edge = round(projected_total, 1) - market_total
         logger.info(f"Market Total: {market_total}")
         logger.info(f"Edge: {edge:+.1f}")
 
@@ -743,11 +762,24 @@ def generate_projection(
         "defensive_matchup": f"Home DRtg: {home_stats['defensive_rating']:.1f}, Away DRtg: {away_stats['defensive_rating']:.1f}",
         "key_absence": None,
         "situational": None,
-        "bias_correction": {
-            "points": round(bias, 2),
-            "games": bias_games,
-            "source": bias_source,
+        # The correction inside projected_total: the anchor's constant on a
+        # line, the baseline's own correction when the model is published alone.
+        "bias_correction": (
+            {"points": round(anchor.a, 2), "games": anchor.n, "source": "anchor"}
+            if from_actuals and market_total
+            else {"points": round(bias, 2), "games": 0, "source": "baseline"}
+        ),
+        "anchor": {
+            "k": round(anchor.k, 4),
+            "a": round(anchor.a, 2),
+            "n": anchor.n,
+            "model_total": round(model_total, 1),
+            "baseline_bias": round(bias, 2),
         },
+        "adjustments_note": (
+            "injury, rest, venue and form are shown for information; none is"
+            " added to projected_total (replay 2026-11-14: each made it less accurate)"
+        ),
         "pick_record": list(record),
         "recommendation_note": rec_note,
     }
@@ -778,8 +810,12 @@ def generate_projection(
         "home_team": home_team,
         "away_team": away_team,
         "projected_total": round(projected_total, 1),
-        "home_projected_score": round(home_projected + (total_adjustment / 2), 1),
-        "away_projected_score": round(away_projected + (total_adjustment / 2), 1),
+        "home_projected_score": round(
+            home_projected + (projected_total - base_projection) / 2, 1
+        ),
+        "away_projected_score": round(
+            away_projected + (projected_total - base_projection) / 2, 1
+        ),
         "base_projection": round(base_projection, 1),
         "expected_pace": round(expected_pace, 1),
         "home_offensive_rating": round(home_stats["offensive_rating"], 1),
@@ -792,7 +828,7 @@ def generate_projection(
         "form_adjustment": round(form_adjustment * 0.3, 1),
         "total_adjustment": round(total_adjustment, 1),
         "market_total": market_total,
-        "edge": round(edge, 1) if edge else None,
+        "edge": round(edge, 1) if edge is not None else None,
         "recommendation": recommendation,
         "confidence_score": round(confidence, 2),
         "injury_report": injury_report,
@@ -995,7 +1031,7 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
         matchup = f"{proj['away_team'][:15]} @ {proj['home_team'][:15]}"
         projected = f"{proj['projected_total']:.1f}"
         market = f"{proj['market_total']}" if proj["market_total"] else "N/A"
-        edge = f"{proj['edge']:+.1f}" if proj["edge"] else "N/A"
+        edge = f"{proj['edge']:+.1f}" if proj["edge"] is not None else "N/A"
         rec = proj["recommendation"]
 
         print(f"{matchup:<35} {projected:>10} {market:>10} {edge:>8} {rec:>10}")
@@ -1017,6 +1053,9 @@ def run(game_date: date | None = None) -> dict:
     if game_date is None:
         game_date = _today()
     global db
+    # A worker re-running a date must see finals graded since the last run.
+    _finals_cache.clear()
+    _anchor_cache.clear()
     db = SessionLocal()
     try:
         report = generate_nightly_report(game_date)
