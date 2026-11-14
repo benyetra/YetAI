@@ -783,10 +783,22 @@ class YetAIBetsServiceDB:
     def sync_unified_from_yetai_pick(
         self, db: Session, yetai: YetAIBet, unified_bet
     ) -> bool:
-        """Mirror a graded YetAI pick onto the user's linked placed bet row."""
+        """Make a linked placed bet equal its YetAI pick (the pick is the only grader).
+
+        Terminal pick -> copy mirrors it (any correction allowed, void -> CANCELLED with
+        the stake back). Pick back to active/pending (admin reopen) -> copy PENDING.
+        """
         from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
 
         yetai_status = (yetai.status or "").lower()
+        if yetai_status in {"active", "pending"}:
+            if unified_bet.status == UnifiedBetStatus.PENDING:
+                return False
+            unified_bet.status = UnifiedBetStatus.PENDING
+            unified_bet.settled_at = None
+            unified_bet.result_amount = None
+            unified_bet.reasoning = None
+            return True
         if yetai_status not in {"won", "lost", "pushed", "void"}:
             return False
 
@@ -795,20 +807,6 @@ class YetAIBetsServiceDB:
         void = yetai_status == "void"
         target = UnifiedBetStatus.CANCELLED if void else UnifiedBetStatus(yetai_status)
         if unified_bet.status == target:
-            return False
-        if void and unified_bet.status not in (
-            UnifiedBetStatus.PENDING,
-            UnifiedBetStatus.LIVE,
-        ):
-            return (
-                False  # a void note only cancels a still-open bet, never a settled one
-            )
-
-        # Authoritative YetAI grading should not be overwritten by a winning placed row.
-        if (
-            unified_bet.status == UnifiedBetStatus.WON
-            and target == UnifiedBetStatus.LOST
-        ):
             return False
 
         unified_bet.status = target
@@ -827,6 +825,13 @@ class YetAIBetsServiceDB:
             unified_bet.yetai_bet_id = yetai.id
 
         return True
+
+    def mirror_to_linked_copies(self, db: Session, yetai: YetAIBet) -> int:
+        """Push the pick's state onto every linked user copy (caller commits)."""
+        return sum(
+            self.sync_unified_from_yetai_pick(db, yetai, copy)
+            for copy in self._linked_unified_bets_for_yetai_pick(db, yetai)
+        )
 
     def sync_linked_unified_for_user(self, db: Session, user_id: int) -> int:
         """Align placed bets with their linked YetAI pick outcomes for one user."""
@@ -1257,6 +1262,7 @@ class YetAIBetsServiceDB:
             bet.status = "void"  # keeps the admin's reason in `result`
             bet.settled_at = bet.settled_at or now
             logger.info("YETAI_ADMIN_EXPIRED_TO_VOID bet=%s", bet.id)
+            self.mirror_to_linked_copies(db, bet)
             return "void"
         legacy = status in self.LEGACY_STATUSES
         error_loss = status == "lost" and self._is_retryable_error_loss(bet)
@@ -1338,6 +1344,7 @@ class YetAIBetsServiceDB:
         bet.status = kind
         bet.settled_at = now
         bet.result = clamp_yetai_result(text, max_len=200)
+        self.mirror_to_linked_copies(db, bet)  # same transaction as the pick
         return "void" if kind == "void" else "settled"
 
     def _record_settlement_error(

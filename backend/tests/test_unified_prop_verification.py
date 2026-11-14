@@ -163,6 +163,10 @@ def test_unified_verify_settles_mlb_props_without_odds_scores():
             "app.services.unified_bet_verification_service.SessionLocal",
             return_value=mock_db,
         ),
+        patch(
+            "app.services.player_prop_verification_service.PlayerPropVerificationService.is_yetai_linked",
+            return_value=False,
+        ),
         patch.object(
             service.odds_service,
             "get_scores_optimized",

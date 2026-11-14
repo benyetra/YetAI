@@ -15,6 +15,7 @@ from app.core.auth import require_admin
 from app.models.database_models import AutoPickRun, YetAIBet, SubscriptionTier
 from app.services.auto_pick.diagnostics import get_run_diagnostics
 from app.services.yetai_bets_service_db import (
+    YetAIBetsServiceDB,
     clamp_yetai_result,
     pick_started,
     publish_gate_reason,
@@ -173,6 +174,7 @@ async def reopen(
     }
     if bet.parlay_legs:
         bet.parlay_legs = _clear_parlay_leg_results(bet.parlay_legs)
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 
@@ -196,6 +198,7 @@ async def expire_pick(
     bet.status = REJECTED_STATUS if bet.status == PENDING_STATUS else "void"
     bet.settled_at = datetime.utcnow()
     bet.result = clamp_yetai_result("Admin expired (stale pick)")
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 
@@ -222,6 +225,7 @@ async def reject(
             status_code=400,
             detail=f"Cannot reject a bet in status '{bet.status}'",
         )
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, bet)
     db.commit()
     return _serialize(bet)
 

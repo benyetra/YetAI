@@ -94,24 +94,22 @@ def test_void_pick_cancels_a_still_open_placed_bet(status):
 
 @pytest.mark.parametrize(
     "status",
-    [
-        BetStatus.WON,
-        BetStatus.LOST,
-        BetStatus.PUSHED,
-        BetStatus.CASHED_OUT,
-        BetStatus.CANCELLED,
-    ],
+    [BetStatus.WON, BetStatus.LOST, BetStatus.PUSHED],
 )
-def test_void_pick_never_changes_a_settled_placed_bet(status):
+def test_void_pick_cancels_even_a_settled_copy(status):
+    """The pick is the only grader: a void correction refunds any linked copy."""
     placed = _placed(status)
-    assert not SERVICE.sync_unified_from_yetai_pick(MagicMock(), _pick("void"), placed)
-    assert placed.status == status and placed.result_amount == 0.0
+    changed = SERVICE.sync_unified_from_yetai_pick(MagicMock(), _pick("void"), placed)
+    assert changed is True
+    assert placed.status == BetStatus.CANCELLED and placed.result_amount == 100.0
 
 
-def test_unsettled_pick_does_not_touch_placed_bets():
-    assert not SERVICE.sync_unified_from_yetai_pick(
-        MagicMock(), _pick("active"), _placed()
-    )
+def test_reopened_pick_returns_copy_to_pending():
+    placed = _placed(BetStatus.WON)
+    placed.settled_at = object()
+    assert SERVICE.sync_unified_from_yetai_pick(MagicMock(), _pick("active"), placed)
+    assert placed.status == BetStatus.PENDING
+    assert placed.settled_at is None and placed.result_amount is None
 
 
 # --- rows with no date anywhere ------------------------------------------------------

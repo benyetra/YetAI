@@ -213,8 +213,11 @@ def test_expired_auto_with_user_copy_voided(Session):
     bet = _expired_auto()
     db.add(bet)
     db.commit()
-    with patch.object(
-        SERVICE, "_linked_unified_bets_for_yetai_pick", return_value=[object()]
+    with (
+        patch.object(
+            SERVICE, "_linked_unified_bets_for_yetai_pick", return_value=[object()]
+        ),
+        patch.object(SERVICE, "mirror_to_linked_copies"),
     ):
         assert SERVICE._admin_expired_shown(db, bet) is True
         assert SERVICE._settle_one(db, bet, datetime.utcnow()) == "void"
