@@ -222,3 +222,20 @@ def test_beat_entry_runs_after_scorecard():
     entry = celery_app.conf.beat_schedule["model_review_daily"]
     assert entry["task"] == "model_review.daily"
     assert (entry["schedule"].hour, entry["schedule"].minute) == ({9}, {45})
+
+
+def test_lookup_matches_json_round_tripped_datetime_ref():
+    # projection_ref lives in a JSON column: a QB row's datetime game_date comes back
+    # as an ISO string with a time, and must still hit the date-keyed index.
+    import json
+
+    ident = ("pred_nfl_qb", ms._norm(datetime(2026, 11, 9)), 42)
+    index = {tuple(str(i) for i in ident): ("ou", {"label": "QB 42"})}
+    ref = json.loads(
+        json.dumps(
+            {"table": "pred_nfl_qb", "game_date": datetime(2026, 11, 9), "qb_player_id": 42},
+            default=lambda d: d.isoformat(),
+        )
+    )
+    assert ref["game_date"] == "2026-11-09T00:00:00"
+    assert ms._lookup(index, ref) == ("ou", {"label": "QB 42"})

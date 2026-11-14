@@ -13,6 +13,7 @@ counters, and totals_baseline (NBA totals gate / published bias).
 
 import html
 import logging
+import re
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Callable, Optional
@@ -48,8 +49,16 @@ SPORTS = ("NBA", "NFL", "NHL")
 Loaded = dict[record_gate.RecordKey, tuple[str, list[dict]]]
 
 
+_ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]|$)")
+
+
 def _norm(v: Any) -> str:
-    return str(v)[:10] if isinstance(v, (date, datetime)) else str(v)
+    """Dates (also ISO strings with a time, as JSON refs return them) -> YYYY-MM-DD."""
+    if isinstance(v, (date, datetime)) or (
+        isinstance(v, str) and _ISO_DATE.match(v)
+    ):
+        return str(v)[:10]
+    return str(v)
 
 
 def _row(proj, line, actual, pick, ident, label, correct=None) -> dict:
