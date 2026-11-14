@@ -56,13 +56,15 @@ def team_stat_or_default(team_id: int, field: str, default: float) -> float:
 
 
 def _league_average(field: str, fallback: float) -> float:
-    """Mean of a per-game stat across teams with data, else fallback constant."""
+    """Mean of a per-game stat across teams with current games, else fallback."""
     column = getattr(NHLTeamStats, field, None)
     if column is None:
         return fallback
     values = [
         float(row[0])
-        for row in db_session.query(column).filter(column.isnot(None)).all()
+        for row in db_session.query(column)
+        .filter(column.isnot(None), NHLTeamStats.games_played > 0)
+        .all()
         if row[0] is not None
     ]
     if not values:

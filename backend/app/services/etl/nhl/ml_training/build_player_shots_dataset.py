@@ -13,6 +13,7 @@ from app.models.predictions_models import (
     NHLPlayerShotsPredictions,
 )
 from app.services.etl.nhl.player_shots_ml import (
+    HEURISTIC_VERSION,
     build_features_from_prediction,
     feature_names,
 )
@@ -65,6 +66,8 @@ def build(season_start: date, season_end: date) -> tuple[pd.DataFrame, pd.Series
                 .filter(
                     NHLPlayerShotsPredictions.player_id == actual.player_id,
                     NHLPlayerShotsPredictions.game_date == actual.game_date,
+                    # rows written before the NHL input repair are not training data
+                    NHLPlayerShotsPredictions.model_version == HEURISTIC_VERSION,
                 )
                 .first()
             )

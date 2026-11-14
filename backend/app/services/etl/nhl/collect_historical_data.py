@@ -4,6 +4,7 @@ Fetches game data, goalie stats, and team stats for the current and past seasons
 """
 
 from app.services.etl.nhl.nhl_api_client import NHLAPIClient
+from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._config import _resolve_season, get_nhl_season
 from app.services.etl.nhl._db import db_session
 from app.models.predictions_models import (
@@ -52,8 +53,24 @@ NHL_TEAMS = {
     "VGK": {"id": 54, "name": "Vegas Golden Knights"},
     "WPG": {"id": 52, "name": "Winnipeg Jets"},
     "WSH": {"id": 15, "name": "Washington Capitals"},
-    "UTA": {"id": 59, "name": "Utah Hockey Club"},
+    # Utah Hockey Club was id 59 in 2024-25; the Mammoth are 68 from 2025-26 on.
+    "UTA": {"id": 68, "name": "Utah Mammoth"},
 }
+
+# Shrinkage: current-season totals are blended with a prior worth this many
+# games (teams, skaters) or shots against (goalies) of last-season evidence.
+# Chosen by scripts/nhl_backtest_2026.py (2026-27 as-of backtest): K=40 gave the best
+# totals MAE/correlation and matched the best saves inputs; the prior is the team's
+# last-season rate scaled to this season's league level, and that level is itself
+# shrunk toward last season's by LEAGUE_PRIOR_TEAM_GAMES team-games.
+TEAM_PRIOR_GAMES = 40
+LEAGUE_PRIOR_TEAM_GAMES = 64
+SKATER_PRIOR_GAMES = 10
+GOALIE_PRIOR_SHOTS = 300
+DEFAULT_LEAGUE_SAVE_PCT = 0.905  # only when no goalie has a current shot yet
+FINISHED_STATES = ("OFF", "FINAL")
+# NHL ids: one season is 10001 apart (20262027 - 10001 = 20252026).
+PRIOR_SEASON_STEP = 10001
 
 
 def populate_teams():
@@ -76,11 +93,11 @@ def populate_teams():
     print(f"✓ Added {len(NHL_TEAMS)} teams")
 
 
-def collect_game_data(season=None, max_games_per_team=20):
+def collect_game_data(season=None, max_games_per_team=None):
     """
-    Collect historical game data for all teams
-    season: NHL season (e.g., 20252026 for 2024-25 season)
-    max_games_per_team: Limit games per team for testing (None = no limit)
+    Collect finished regular-season/playoff games not yet stored (incremental).
+    season: NHL season id (default: current, e.g. 20262027)
+    max_games_per_team: optional cap for testing (None = no cap)
 
     Returns: Number of games collected
     """
@@ -89,7 +106,7 @@ def collect_game_data(season=None, max_games_per_team=20):
     print(f"\nCollecting game data for {season} season...")
 
     games_collected = 0
-    game_ids_seen = set()
+    stored_ids = {row[0] for row in db_session.query(NHLGameStats.game_id).all()}
 
     for abbrev, team_info in NHL_TEAMS.items():
         print(f"\nProcessing {team_info['name']}...")
@@ -101,15 +118,14 @@ def collect_game_data(season=None, max_games_per_team=20):
             print(f"  No schedule found for {abbrev}")
             continue
 
-        # Filter for completed regular season games
-        # gameState can be 'FINAL' (recent) or 'OFF' (official/historical)
+        # Finished regular-season (2) and playoff (3) games; preseason (1) is
+        # not NHL evidence. Finished is "OFF" (official) or briefly "FINAL".
         completed_games = [
             g
             for g in schedule["games"]
-            if g["gameType"] == 2 and g["gameState"] in ["FINAL", "OFF"]
+            if g["gameType"] in (2, 3) and g["gameState"] in FINISHED_STATES
         ]
 
-        # Apply limit if specified
         if max_games_per_team is not None:
             games = completed_games[:max_games_per_team]
         else:
@@ -120,18 +136,10 @@ def collect_game_data(season=None, max_games_per_team=20):
         for game in games:
             game_id = game["id"]
 
-            # Skip if we've already processed this game
-            if game_id in game_ids_seen:
+            # Skip games already stored (also covers the other team's schedule)
+            if game_id in stored_ids:
                 continue
-
-            game_ids_seen.add(game_id)
-
-            # Check if game already exists in DB
-            existing_game = (
-                db_session.query(NHLGameStats).filter_by(game_id=game_id).first()
-            )
-            if existing_game:
-                continue
+            stored_ids.add(game_id)
 
             # Fetch detailed boxscore
             boxscore = client.get_game_boxscore(game_id)
@@ -230,7 +238,14 @@ def collect_game_data(season=None, max_games_per_team=20):
 
 
 def add_goalie_actual(game_id, game_date, goalie_data, team_name, opponent_name):
-    """Add goalie actual performance to database"""
+    """Add goalie actual performance unless (game_id, goalie_id) is already stored"""
+    exists = (
+        db_session.query(NHLGoalieActuals.id)
+        .filter_by(game_id=game_id, goalie_id=goalie_data["playerId"])
+        .first()
+    )
+    if exists:
+        return
     actual = NHLGoalieActuals(
         game_id=game_id,
         game_date=datetime.strptime(game_date, "%Y-%m-%d").date(),
@@ -315,227 +330,292 @@ def collect_player_game_stats(boxscore):
     return True
 
 
-def calculate_goalie_stats():
-    """Calculate aggregated goalie statistics from game data"""
-    print("\nCalculating goalie statistics...")
+def _in_season(game_id, season):
+    """True for a regular-season (type 02) game id of ``season`` (ids: YYYYTTNNNN)."""
+    return game_id // 1_000_000 == season // 10000 and (game_id // 10_000) % 100 == 2
 
-    # Get all goalie actuals
-    actuals = db_session.query(NHLGoalieActuals).all()
 
-    # Group by goalie
-    goalie_games = defaultdict(list)
-    for actual in actuals:
-        goalie_games[actual.goalie_id].append(actual)
+def _pct(saves, shots):
+    return saves / shots if shots > 0 else None
+
+
+def calculate_goalie_stats(season=None):
+    """Rebuild pred_nhl_goalies from the CURRENT season's regular-season games.
+
+    ``save_pct`` is shrunk toward the goalie's last regular-season save pct (or
+    the league's when he faced < GOALIE_PRIOR_SHOTS) so a 2-game goalie is not
+    read at face value. Goalies without a current game keep their row with
+    games_played 0 and save_pct NULL; last_game_* stay true dates.
+    """
+    season = _resolve_season(season)
+    today = now_eastern().date()
+    print(f"\nCalculating goalie statistics for {season}...")
+
+    by_goalie = defaultdict(list)
+    for actual in db_session.query(NHLGoalieActuals).all():
+        by_goalie[actual.goalie_id].append(actual)
+
+    # Team + home/away from the stored game rows (starters only)
+    game_rows = {g.game_id: g for g in db_session.query(NHLGameStats).all()}
+    latest_team = {}  # goalie_id -> (game_date, game_id, team_id, team_name)
+    for g in game_rows.values():
+        for gid, tid, tname in (
+            (g.home_goalie_id, g.home_team_id, g.home_team_name),
+            (g.away_goalie_id, g.away_team_id, g.away_team_name),
+        ):
+            key = (g.game_date, g.game_id)
+            if gid and (gid not in latest_team or key > latest_team[gid][:2]):
+                latest_team[gid] = (g.game_date, g.game_id, tid, tname)
+
+    def is_home(actual):
+        if actual.is_home is not None:
+            return actual.is_home
+        row = game_rows.get(actual.game_id)
+        return bool(row and row.home_goalie_id == actual.goalie_id)
+
+    # League save pct this season: the prior of last resort
+    league_saves = league_shots = 0
+    for games in by_goalie.values():
+        for a in games:
+            if _in_season(a.game_id, season):
+                league_saves += a.actual_saves
+                league_shots += a.actual_shots_against
+    league_sv = _pct(league_saves, league_shots) or DEFAULT_LEAGUE_SAVE_PCT
 
     goalies_updated = 0
 
-    for goalie_id, games in goalie_games.items():
-        if not games:
-            continue
+    for goalie_id, all_games in by_goalie.items():
+        all_games.sort(key=lambda x: (x.game_date, x.game_id))
+        latest_game = all_games[-1]
+        games = [g for g in all_games if _in_season(g.game_id, season)]
 
-        # Sort by date
-        games.sort(key=lambda x: x.game_date)
+        prior_saves = prior_shots = 0
+        for g in all_games:
+            if _in_season(g.game_id, season - PRIOR_SEASON_STEP):
+                prior_saves += g.actual_saves
+                prior_shots += g.actual_shots_against
+        prior_sv = (
+            prior_saves / prior_shots
+            if prior_shots >= GOALIE_PRIOR_SHOTS
+            else league_sv
+        )
 
-        # Get most recent game info
-        latest_game = games[-1]
-
-        # Calculate season stats
-        total_saves = sum(g.actual_saves for g in games)
-        total_shots = sum(g.actual_shots_against for g in games)
-        total_wins = sum(1 for g in games if g.decision == "W")
-        total_losses = sum(1 for g in games if g.decision == "L")
-        total_ot_losses = sum(1 for g in games if g.decision == "OT")
-
-        # Calculate last 5 and last 10
-        last_5 = games[-5:]
-        last_10 = games[-10:]
-
-        last_5_saves = sum(g.actual_saves for g in last_5)
-        last_5_shots = sum(g.actual_shots_against for g in last_5)
-
-        last_10_saves = sum(g.actual_saves for g in last_10)
-        last_10_shots = sum(g.actual_shots_against for g in last_10)
-
-        # Update or create goalie record
         goalie = db_session.query(NHLGoalie).filter_by(player_id=goalie_id).first()
-
+        team = latest_team.get(goalie_id)
         if not goalie:
             goalie = NHLGoalie(
                 player_id=goalie_id,
                 name=latest_game.goalie_name,
-                team_id=0,  # Will need to look this up
-                team_name=latest_game.team_name,
+                team_id=team[2] if team else 0,
+                team_name=team[3] if team else latest_game.team_name,
             )
             db_session.add(goalie)
+        elif team:
+            goalie.team_id, goalie.team_name = team[2], team[3]
 
-        # Update stats
+        total_saves = sum(g.actual_saves for g in games)
+        total_shots = sum(g.actual_shots_against for g in games)
+        last_5, last_10 = games[-5:], games[-10:]
+        home = [g for g in games if is_home(g)]
+        away = [g for g in games if not is_home(g)]
+
         goalie.games_played = len(games)
-        goalie.wins = total_wins
-        goalie.losses = total_losses
-        goalie.ot_losses = total_ot_losses
+        goalie.wins = sum(1 for g in games if g.decision == "W")
+        goalie.losses = sum(1 for g in games if g.decision == "L")
+        goalie.ot_losses = sum(1 for g in games if g.decision in ("OT", "O"))
         goalie.saves = total_saves
         goalie.shots_against = total_shots
-        goalie.save_pct = total_saves / total_shots if total_shots > 0 else 0
+        goalie.save_pct = (
+            (total_saves + GOALIE_PRIOR_SHOTS * prior_sv)
+            / (total_shots + GOALIE_PRIOR_SHOTS)
+            if games
+            else None
+        )
         goalie.goals_against_avg = (
-            (total_shots - total_saves) / len(games) if games else 0
+            (total_shots - total_saves) / len(games) if games else None
         )
 
-        goalie.last_5_saves = last_5_saves
-        goalie.last_5_shots_against = last_5_shots
-        goalie.last_5_save_pct = last_5_saves / last_5_shots if last_5_shots > 0 else 0
-        goalie.last_5_games_played = len(last_5)
+        for prefix, rows in (("last_5", last_5), ("last_10", last_10)):
+            saves = sum(g.actual_saves for g in rows)
+            shots = sum(g.actual_shots_against for g in rows)
+            setattr(goalie, f"{prefix}_saves", saves)
+            setattr(goalie, f"{prefix}_shots_against", shots)
+            setattr(goalie, f"{prefix}_save_pct", _pct(saves, shots))
+            setattr(goalie, f"{prefix}_games_played", len(rows))
+        for prefix, rows in (("home", home), ("away", away)):
+            saves = sum(g.actual_saves for g in rows)
+            shots = sum(g.actual_shots_against for g in rows)
+            setattr(goalie, f"{prefix}_saves", saves)
+            setattr(goalie, f"{prefix}_shots_against", shots)
+            setattr(goalie, f"{prefix}_save_pct", _pct(saves, shots))
+            setattr(goalie, f"{prefix}_games_played", len(rows))
 
-        goalie.last_10_saves = last_10_saves
-        goalie.last_10_shots_against = last_10_shots
-        goalie.last_10_save_pct = (
-            last_10_saves / last_10_shots if last_10_shots > 0 else 0
+        goalie.last_game_date = latest_game.game_date
+        goalie.last_game_saves = latest_game.actual_saves
+        goalie.last_game_shots = latest_game.actual_shots_against
+        goalie.games_in_last_7_days = sum(
+            1 for g in all_games if 0 <= (today - g.game_date).days < 7
         )
-        goalie.last_10_games_played = len(last_10)
 
         goalie.last_updated = datetime.utcnow()
 
         goalies_updated += 1
 
+    # Goalies with no stored game at all keep their row but no current numbers.
+    for goalie in db_session.query(NHLGoalie).all():
+        if goalie.player_id not in by_goalie:
+            goalie.games_played = 0
+            goalie.save_pct = goalie.goals_against_avg = None
+
     db_session.commit()
     print(f"✓ Updated {goalies_updated} goalies")
 
 
-def calculate_team_stats():
-    """Calculate aggregated team statistics from game data"""
-    print("\nCalculating team statistics...")
+def _team_games(season):
+    """team_id -> that team's finished regular-season games of ``season`` by date."""
+    games = (
+        db_session.query(NHLGameStats)
+        .filter(
+            NHLGameStats.season == season,
+            NHLGameStats.game_type == 2,
+            NHLGameStats.game_state.in_(FINISHED_STATES),
+        )
+        .order_by(NHLGameStats.game_date, NHLGameStats.game_id)
+        .all()
+    )
+    out = defaultdict(list)
+    for g in games:
+        if g.home_score is None or g.away_score is None:
+            continue
+        home_sog, away_sog = g.home_sog or 0, g.away_sog or 0
+        out[g.home_team_id].append(
+            dict(gf=g.home_score, ga=g.away_score, sf=home_sog, sa=away_sog)
+            | {"home": True, "name": g.home_team_name}
+        )
+        out[g.away_team_id].append(
+            dict(gf=g.away_score, ga=g.home_score, sf=away_sog, sa=home_sog)
+            | {"home": False, "name": g.away_team_name}
+        )
+    return out
 
-    # Get all games
-    games = db_session.query(NHLGameStats).filter_by(game_state="FINAL").all()
 
-    # Group by team
-    team_games = defaultdict(lambda: {"home": [], "away": []})
+def _per_game(rows):
+    """Mean gf/ga/sf/sa per game over a team's game dicts (None when no games)."""
+    if not rows:
+        return None
+    return {k: sum(r[k] for r in rows) / len(rows) for k in ("gf", "ga", "sf", "sa")}
 
-    for game in games:
-        team_games[game.home_team_id]["home"].append(game)
-        team_games[game.away_team_id]["away"].append(game)
 
+_TEAM_RATE_COLUMNS = {
+    "gf": "goals_for_per_game",
+    "ga": "goals_against_per_game",
+    "sf": "shots_for_per_game",
+    "sa": "shots_against_per_game",
+}
+_TEAM_LAST10_COLUMNS = {
+    "gf": "last_10_goals_for_per_game",
+    "ga": "last_10_goals_against_per_game",
+    "sf": "last_10_shots_for_per_game",
+    "sa": "last_10_shots_against_per_game",
+}
+
+
+def _league_level(current, previous):
+    """Per-team-game league means this season, shrunk toward last season's."""
+    now = [r for rows in current.values() for r in rows]
+    prev = _per_game([r for rows in previous.values() for r in rows])
+    if prev is None:
+        return _per_game(now)
+    k = LEAGUE_PRIOR_TEAM_GAMES
+    return {
+        key: (sum(r[key] for r in now) + k * prev[key]) / (len(now) + k)
+        for key in _TEAM_RATE_COLUMNS
+    }
+
+
+def _team_prior(previous, team_id, league):
+    """Last season's rate for team_id scaled to this season's league level."""
+    mine = _per_game(previous.get(team_id))
+    prev = _per_game([r for rows in previous.values() for r in rows])
+    if mine is None or prev is None:
+        return league
+    return {
+        key: mine[key] * league[key] / prev[key] if prev[key] else league[key]
+        for key in _TEAM_RATE_COLUMNS
+    }
+
+
+def calculate_team_stats(season=None):
+    """Rebuild pred_nhl_team_stats from the CURRENT season's regular-season games.
+
+    Totals are raw. Per-game rates are shrunk toward a prior:
+    ``(total + K * prior) / (games + K)``, K = TEAM_PRIOR_GAMES, where prior is the
+    same team_id's last-season rate times (league level now / league level last
+    season), or the league level when the team has no last-season games stored.
+    The league level is this season's per-team-game mean shrunk toward last
+    season's by LEAGUE_PRIOR_TEAM_GAMES. last_10_* are raw.
+    Teams with no current games get games_played 0 and NULL rates so they never
+    feed a league average.
+    """
+    season = _resolve_season(season)
+    print(f"\nCalculating team statistics for {season}...")
+
+    current = _team_games(season)
+    previous = _team_games(season - PRIOR_SEASON_STEP)
+    league = _league_level(current, previous)
+
+    existing = {t.team_id: t for t in db_session.query(NHLTeamStats).all()}
     teams_updated = 0
 
-    for team_id, game_lists in team_games.items():
-        all_games = game_lists["home"] + game_lists["away"]
-
-        if not all_games:
-            continue
-
-        # Sort by date
-        all_games.sort(key=lambda x: x.game_date)
-
-        # Calculate stats
-        wins = 0
-        losses = 0
-        ot_losses = 0
-        goals_for = 0
-        goals_against = 0
-        shots_for = 0
-        shots_against = 0
-
-        for game in all_games:
-            is_home = game.home_team_id == team_id
-
-            if is_home:
-                goals_for += game.home_score
-                goals_against += game.away_score
-                shots_for += game.home_sog
-                shots_against += game.away_sog
-
-                if game.home_score > game.away_score:
-                    wins += 1
-                else:
-                    losses += 1
-            else:
-                goals_for += game.away_score
-                goals_against += game.home_score
-                shots_for += game.away_sog
-                shots_against += game.home_sog
-
-                if game.away_score > game.home_score:
-                    wins += 1
-                else:
-                    losses += 1
-
-        games_played = len(all_games)
-
-        # Last 10 games
-        last_10 = all_games[-10:]
-        last_10_goals_for = 0
-        last_10_goals_against = 0
-        last_10_shots_for = 0
-        last_10_shots_against = 0
-
-        for game in last_10:
-            is_home = game.home_team_id == team_id
-
-            if is_home:
-                last_10_goals_for += game.home_score
-                last_10_goals_against += game.away_score
-                last_10_shots_for += game.home_sog
-                last_10_shots_against += game.away_sog
-            else:
-                last_10_goals_for += game.away_score
-                last_10_goals_against += game.home_score
-                last_10_shots_for += game.away_sog
-                last_10_shots_against += game.home_sog
-
-        # Get team name
-        sample_game = all_games[0]
-        team_name = (
-            sample_game.home_team_name
-            if sample_game.home_team_id == team_id
-            else sample_game.away_team_name
-        )
-
-        # Update or create team stats
-        team_stats = db_session.query(NHLTeamStats).filter_by(team_id=team_id).first()
-
-        if not team_stats:
-            team_stats = NHLTeamStats(team_id=team_id, team_name=team_name)
+    for team_id in set(existing) | set(current):
+        rows = current.get(team_id, [])
+        team_stats = existing.get(team_id)
+        if team_stats is None:
+            team_stats = NHLTeamStats(team_id=team_id, team_name=rows[-1]["name"])
             db_session.add(team_stats)
 
-        team_stats.games_played = games_played
-        team_stats.wins = wins
-        team_stats.losses = losses
-        team_stats.ot_losses = ot_losses
-        team_stats.goals_for = goals_for
-        team_stats.goals_for_per_game = (
-            goals_for / games_played if games_played > 0 else 0
-        )
-        team_stats.goals_against = goals_against
-        team_stats.goals_against_per_game = (
-            goals_against / games_played if games_played > 0 else 0
-        )
-        team_stats.shots_for = shots_for
-        team_stats.shots_for_per_game = (
-            shots_for / games_played if games_played > 0 else 0
-        )
-        team_stats.shots_against = shots_against
-        team_stats.shots_against_per_game = (
-            shots_against / games_played if games_played > 0 else 0
-        )
+        n = len(rows)
+        team_stats.games_played = n
+        team_stats.wins = sum(1 for r in rows if r["gf"] > r["ga"])
+        team_stats.losses = n - team_stats.wins
+        team_stats.ot_losses = 0
+        totals = {k: sum(r[k] for r in rows) for k in _TEAM_RATE_COLUMNS}
+        team_stats.goals_for = totals["gf"]
+        team_stats.goals_against = totals["ga"]
+        team_stats.shots_for = totals["sf"]
+        team_stats.shots_against = totals["sa"]
 
-        team_stats.last_10_shots_for_per_game = (
-            last_10_shots_for / len(last_10) if last_10 else 0
-        )
-        team_stats.last_10_shots_against_per_game = (
-            last_10_shots_against / len(last_10) if last_10 else 0
-        )
-        team_stats.last_10_goals_for_per_game = (
-            last_10_goals_for / len(last_10) if last_10 else 0
-        )
-        team_stats.last_10_goals_against_per_game = (
-            last_10_goals_against / len(last_10) if last_10 else 0
-        )
+        if n == 0:
+            for column in (
+                *_TEAM_RATE_COLUMNS.values(),
+                *_TEAM_LAST10_COLUMNS.values(),
+            ):
+                setattr(team_stats, column, None)
+            team_stats.shooting_pct = None
+            team_stats.last_10_shooting_pct = None
+        else:
+            prior = _team_prior(previous, team_id, league)
+            for key, column in _TEAM_RATE_COLUMNS.items():
+                setattr(
+                    team_stats,
+                    column,
+                    (totals[key] + TEAM_PRIOR_GAMES * prior[key])
+                    / (n + TEAM_PRIOR_GAMES),
+                )
+            last_10 = _per_game(rows[-10:])
+            for key, column in _TEAM_LAST10_COLUMNS.items():
+                setattr(team_stats, column, last_10[key])
+            team_stats.shooting_pct = _pct(totals["gf"], totals["sf"])
+            last_10_rows = rows[-10:]
+            team_stats.last_10_shooting_pct = _pct(
+                sum(r["gf"] for r in last_10_rows), sum(r["sf"] for r in last_10_rows)
+            )
+            teams_updated += 1
 
         team_stats.last_updated = datetime.utcnow()
 
-        teams_updated += 1
-
     db_session.commit()
-    print(f"✓ Updated {teams_updated} teams")
+    print(f"✓ Updated {teams_updated} teams ({len(existing)} rows checked)")
 
 
 def backfill_historical_seasons(start_season=20212022, end_season=None):
@@ -600,73 +680,8 @@ def backfill_historical_seasons(start_season=20212022, end_season=None):
 
 
 def calculate_team_stats_for_season(season):
-    """Calculate team stats for a specific season"""
-    print(f"\nCalculating team stats for season {season}...")
-
-    # Get all games for this season
-    games = db_session.query(NHLGameStats).filter_by(season=season).all()
-
-    if not games:
-        print(f"  No games found for season {season}")
-        return
-
-    # Group by team
-    team_stats = defaultdict(
-        lambda: {
-            "games": 0,
-            "wins": 0,
-            "losses": 0,
-            "ot_losses": 0,
-            "goals_for": 0,
-            "goals_against": 0,
-            "shots_for": 0,
-            "shots_against": 0,
-        }
-    )
-
-    for game in games:
-        # Home team stats
-        team_stats[game.home_team_id]["games"] += 1
-        team_stats[game.home_team_id]["goals_for"] += game.home_score
-        team_stats[game.home_team_id]["goals_against"] += game.away_score
-        team_stats[game.home_team_id]["shots_for"] += game.home_sog
-        team_stats[game.home_team_id]["shots_against"] += game.away_sog
-
-        if game.home_score > game.away_score:
-            team_stats[game.home_team_id]["wins"] += 1
-        else:
-            team_stats[game.home_team_id]["losses"] += 1
-
-        # Away team stats
-        team_stats[game.away_team_id]["games"] += 1
-        team_stats[game.away_team_id]["goals_for"] += game.away_score
-        team_stats[game.away_team_id]["goals_against"] += game.home_score
-        team_stats[game.away_team_id]["shots_for"] += game.away_sog
-        team_stats[game.away_team_id]["shots_against"] += game.home_sog
-
-        if game.away_score > game.home_score:
-            team_stats[game.away_team_id]["wins"] += 1
-        else:
-            team_stats[game.away_team_id]["losses"] += 1
-
-    # Update database
-    for team_id, stats in team_stats.items():
-        team = db_session.query(NHLTeamStats).filter_by(team_id=team_id).first()
-        if team:
-            games = stats["games"]
-            if games > 0:
-                team.goals_for_per_game = stats["goals_for"] / games
-                team.goals_against_per_game = stats["goals_against"] / games
-                team.shots_for_per_game = stats["shots_for"] / games
-                team.shots_against_per_game = stats["shots_against"] / games
-                team.shooting_pct = (
-                    stats["goals_for"] / stats["shots_for"]
-                    if stats["shots_for"] > 0
-                    else 0
-                )
-
-    db_session.commit()
-    print(f"  ✓ Updated stats for {len(team_stats)} teams")
+    """Calculate team stats for a specific season (same rules as calculate_team_stats)"""
+    calculate_team_stats(season)
 
 
 def calculate_career_goalie_vs_team_stats():
@@ -904,7 +919,12 @@ def calculate_shot_quality_metrics(season=None, sample_games=50):
 def collect_season_player_stats(season=None):
     """
     Collect season-long player statistics for all skaters
-    This provides baseline data for player shots/goals predictions
+    This provides baseline data for player shots/goals predictions.
+
+    ``shots_per_game`` is shrunk: ``(shots + K*prior) / (games + K)`` with
+    K = SKATER_PRIOR_GAMES and prior = last season's shots/game (>= 10 games
+    then) else this season's league mean for the F or D group. Players absent
+    from this season's data keep their row at games_played 0 / shots_per_game 0.
     """
     season = _resolve_season(season)
     print(f"\nCollecting season player stats for {season}...")
@@ -916,13 +936,37 @@ def collect_season_player_stats(season=None):
         print("  ❌ No skater data available")
         return
 
+    rows = skater_data["data"]
+    total = skater_data.get("total")
+    if total is not None and len(rows) < total:
+        print(f"  ⚠️  Got {len(rows)} of {total} skaters; stats are incomplete")
+
+    prior_data = client.get_skater_stats(season - PRIOR_SEASON_STEP)
+    prior_rate = {
+        p["playerId"]: p.get("shots", 0) / p["gamesPlayed"]
+        for p in ((prior_data or {}).get("data") or [])
+        if (p.get("gamesPlayed") or 0) >= SKATER_PRIOR_GAMES
+    }
+
+    def group(row):
+        return "D" if row.get("positionCode") == "D" else "F"
+
+    league_shots, league_games = defaultdict(int), defaultdict(int)
+    for row in rows:
+        league_shots[group(row)] += row.get("shots", 0)
+        league_games[group(row)] += row.get("gamesPlayed", 0)
+    league_rate = {
+        g: league_shots[g] / league_games[g] for g in league_games if league_games[g]
+    }
+
     # Create team abbreviation to ID mapping
     team_abbrev_to_id = {abbrev: info["id"] for abbrev, info in NHL_TEAMS.items()}
     team_abbrev_to_name = {abbrev: info["name"] for abbrev, info in NHL_TEAMS.items()}
 
     players_updated = 0
+    seen_ids = set()
 
-    for player_stats in skater_data["data"]:
+    for player_stats in rows:
         player_id = player_stats["playerId"]
         team_abbrevs = player_stats.get("teamAbbrevs", "")
 
@@ -943,6 +987,8 @@ def collect_season_player_stats(season=None):
                 f"  ⚠️  Could not map team '{team_abbrev}' for {player_stats['skaterFullName']}"
             )
             continue
+
+        seen_ids.add(player_id)
 
         # Find or create player record
         player = db_session.query(NHLPlayer).filter_by(player_id=player_id).first()
@@ -969,12 +1015,22 @@ def collect_season_player_stats(season=None):
         player.shots = player_stats.get("shots", 0)
         player.toi_per_game = player_stats.get("timeOnIcePerGame", 0.0)
 
-        # Calculate per-game averages
-        games = player.games_played or 1
-        player.shots_per_game = player.shots / games
+        prior = prior_rate.get(player_id, league_rate.get(group(player_stats), 0.0))
+        player.shots_per_game = (player.shots + SKATER_PRIOR_GAMES * prior) / (
+            player.games_played + SKATER_PRIOR_GAMES
+        )
 
         player.last_updated = datetime.utcnow()
         players_updated += 1
+
+    # Players not in this season's data must never look like current players
+    for player in db_session.query(NHLPlayer).all():
+        if player.player_id in seen_ids:
+            continue
+        player.games_played = 0
+        player.goals = player.assists = player.points = player.shots = 0
+        player.toi_per_game = 0.0
+        player.shots_per_game = 0
 
     db_session.commit()
     print(f"  ✓ Updated {players_updated} players")
@@ -982,65 +1038,34 @@ def collect_season_player_stats(season=None):
 
 def collect_team_offensive_stats(season=None):
     """
-    Collect detailed team offensive statistics
+    Collect detailed team offensive statistics (current-season regular season)
     Used for: team total goals predictions, over/under predictions
     """
     season = _resolve_season(season)
     print(f"\nCollecting team offensive stats for {season}...")
 
-    # Get all games for the season
-    games = db_session.query(NHLGameStats).filter_by(season=season).all()
+    current = _team_games(season)
 
-    if not games:
+    if not current:
         print("  ❌ No games found for season")
         return
 
-    # Calculate team offensive metrics
-    team_offense = defaultdict(
-        lambda: {
-            "games": 0,
-            "goals": 0,
-            "shots": 0,
-            "pp_goals": 0,
-            "home_goals": 0,
-            "away_goals": 0,
-            "goals_period_1": 0,
-            "goals_period_2": 0,
-            "goals_period_3": 0,
-        }
-    )
-
-    for game in games:
-        # Home team
-        team_offense[game.home_team_id]["games"] += 1
-        team_offense[game.home_team_id]["goals"] += game.home_score
-        team_offense[game.home_team_id]["shots"] += game.home_sog
-        team_offense[game.home_team_id]["home_goals"] += game.home_score
-
-        # Away team
-        team_offense[game.away_team_id]["games"] += 1
-        team_offense[game.away_team_id]["goals"] += game.away_score
-        team_offense[game.away_team_id]["shots"] += game.away_sog
-        team_offense[game.away_team_id]["away_goals"] += game.away_score
-
-    # Update team stats
     teams_updated = 0
-    for team_id, stats in team_offense.items():
+    for team_id, rows in current.items():
         team = db_session.query(NHLTeamStats).filter_by(team_id=team_id).first()
-        if team and stats["games"] > 0:
-            # Already have goals_for_per_game, but add more detail
-            team.home_goals_per_game = (
-                stats["home_goals"] / (stats["games"] / 2) if stats["games"] > 0 else 0
-            )
-            team.away_goals_per_game = (
-                stats["away_goals"] / (stats["games"] / 2) if stats["games"] > 0 else 0
-            )
+        if not team:
+            continue
+        home = [r["gf"] for r in rows if r["home"]]
+        away = [r["gf"] for r in rows if not r["home"]]
+        # (no pred_nhl_team_stats columns yet; kept as plain attributes)
+        team.home_goals_per_game = sum(home) / len(home) if home else None
+        team.away_goals_per_game = sum(away) / len(away) if away else None
 
-            # Calculate shooting percentage (goals / shots)
-            if stats["shots"] > 0:
-                team.shooting_pct = stats["goals"] / stats["shots"]
+        shots = sum(r["sf"] for r in rows)
+        if shots > 0:
+            team.shooting_pct = sum(r["gf"] for r in rows) / shots
 
-            teams_updated += 1
+        teams_updated += 1
 
     db_session.commit()
     print(f"  ✓ Updated offensive stats for {teams_updated} teams")
@@ -1048,19 +1073,24 @@ def collect_team_offensive_stats(season=None):
 
 def update_daily_stats(season=None):
     """
-    Daily update function - updates ALL stats with latest data
-    This should be run daily to keep stats current
+    Daily update function - brings ALL stats in line with the latest games.
+    run_ingest and the 05:00 ET pipeline both land here, so both leave the
+    tables in the same state.
 
     Includes:
-    - Team special teams (PP%, PK%)
-    - Team defensive stats (blocked shots, shot quality)
-    - Player season stats (goals, shots, ice time)
-    - Team offensive trends
+    - New finished games (incremental), goalie actuals
+    - Goalie, team and skater season rebuilds (current season, shrunk rates)
+    - Team special teams (PP%, PK%), blocked shots, shot quality
     """
     season = _resolve_season(season)
     print("\n" + "=" * 80)
     print(f"📅 DAILY STATS UPDATE - Season {season}")
     print("=" * 80)
+
+    collect_game_data(season=season)
+
+    calculate_goalie_stats(season)
+    calculate_team_stats(season)
 
     # Update special teams stats (PP%, PK%)
     update_special_teams_stats(season)
@@ -1071,19 +1101,15 @@ def update_daily_stats(season=None):
     # Update shot quality metrics (sample recent games)
     calculate_shot_quality_metrics(season, sample_games=30)
 
-    # Recalculate team stats from game data
-    calculate_team_stats()
-
-    # NEW: Collect player stats for shots/goals predictions
+    # Player stats for shots/goals predictions
     collect_season_player_stats(season)
 
-    # NEW: Update team offensive stats for totals predictions
+    # Team offensive trends for totals predictions
     collect_team_offensive_stats(season)
 
     print("\n" + "=" * 80)
     print("✅ Daily update complete!")
-    print("   - Team stats updated (special teams, defense, offense)")
-    print("   - Player stats updated (all skaters)")
+    print("   - Game, goalie, team and skater tables rebuilt for the current season")
     print("=" * 80)
 
 
@@ -1133,34 +1159,16 @@ def main():
         # Backfill mode: collect multiple seasons
         backfill_historical_seasons(args.start_season, args.end_season)
 
-        # After backfill, update advanced stats for current season
-        print("\n📊 Updating advanced statistics for current season...")
-        update_special_teams_stats(current_season)
-        update_realtime_stats(current_season)
-        calculate_shot_quality_metrics(current_season, sample_games=50)
-        collect_season_player_stats(current_season)
-        collect_team_offensive_stats(current_season)
+        # After backfill, rebuild everything for the current season
+        print("\n📊 Updating statistics for current season...")
+        update_daily_stats(current_season)
     else:
         # Default mode: current season only
         print("\n💡 Tip: Use --backfill to load historical data from 2021-2025")
         print("   This will improve goalie vs-team history and shot quality metrics")
         print("\n💡 Tip: Use --daily-update to update team stats daily\n")
 
-        # Step 2: Collect game data (current season)
-        collect_game_data(season=current_season, max_games_per_team=20)
-
-        # Step 3: Calculate goalie stats
-        calculate_goalie_stats()
-
-        # Step 4: Calculate team stats
-        calculate_team_stats()
-
-        # Step 5: Update advanced stats (all types)
-        update_special_teams_stats(current_season)
-        update_realtime_stats(current_season)
-        calculate_shot_quality_metrics(current_season, sample_games=20)
-        collect_season_player_stats(current_season)
-        collect_team_offensive_stats(current_season)
+        update_daily_stats(current_season)
 
     print("\n" + "=" * 80)
     print("✓ Data collection complete!")
@@ -1178,14 +1186,7 @@ def run_ingest(season: int | None = None) -> dict:
     init_session()
     try:
         populate_teams()
-        collect_game_data(season=season, max_games_per_team=20)
-        calculate_goalie_stats()
-        calculate_team_stats()
-        update_special_teams_stats(season)
-        update_realtime_stats(season)
-        calculate_shot_quality_metrics(season, sample_games=20)
-        collect_season_player_stats(season)
-        collect_team_offensive_stats(season)
+        update_daily_stats(season=season)
         return {"status": "ok", "task": "nhl_ingest", "season": season}
     finally:
         close_session()

@@ -181,7 +181,9 @@ def test_goalie_without_prediction_does_not_crash_and_recollect_is_idempotent(
 
 
 def test_schedule_only_takes_games_from_the_target_day(monkeypatch):
-    resp = SimpleNamespace(raise_for_status=lambda: None, json=lambda: SCHED)
+    resp = SimpleNamespace(
+        status_code=200, raise_for_status=lambda: None, json=lambda: SCHED
+    )
     monkeypatch.setattr(bx.requests, "get", lambda *a, **k: resp)
     days = {d["date"]: [g["id"] for g in d["games"]] for d in SCHED["gameWeek"]}
     got = bx.get_completed_games_for_date(date(2026, 11, 11))

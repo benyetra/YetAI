@@ -90,7 +90,7 @@ def test_gate_report_marks_nhl_as_prove_in(sqlite_db):
     assert rows["NBA/moneyline"]["state"].startswith("unproven (would be")
 
 
-def _seed_totals(db, n, hits, day):
+def _seed_totals(db, n, hits, day, model_version="heuristic-v2"):
     """n graded NHL totals OVER 5.5 calls on ``day``; ``hits`` of them go over."""
     for i in range(n):
         db.add(
@@ -107,12 +107,13 @@ def _seed_totals(db, n, hits, day):
                 draftkings_ou_line=5.5,
                 edge=1.0,
                 betting_recommendation="OVER 5.5",
+                model_version=model_version,
             )
         )
         goals = 7 if i < hits else 4
         db.add(
             NHLTeamTotalsActuals(
-                game_id=10_000 + i,
+                game_id=2026020000 + i,
                 game_date=day,
                 home_team_id=100 + i,
                 home_team_name=f"H{i}",
@@ -158,6 +159,21 @@ def test_board_keeps_pick_labels_once_the_record_qualifies(sqlite_db):
     assert out["team_totals"][0]["betting_recommendation"] == "OVER 5.5"
     assert "pick_withheld" not in out["team_totals"][0]
     assert out["goalie_predictions"][0]["value_tier"] is None
+
+
+def test_pre_repair_rows_do_not_count_toward_the_record(sqlite_db):
+    # 60 winning calls from the old model (heuristic-v1): still no record.
+    _seed_totals(
+        sqlite_db,
+        60,
+        50,
+        (datetime.utcnow() - timedelta(days=2)).date(),
+        "heuristic-v1",
+    )
+    out = api._withhold_unproven_picks(
+        _board_payload(), sqlite_db, api._NHL_MARKET_KEYS
+    )
+    assert out["team_totals"][0]["pick_withheld"] == "unproven_record"
 
 
 def test_board_strips_when_the_record_is_losing(sqlite_db):

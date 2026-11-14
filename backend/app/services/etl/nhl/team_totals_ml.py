@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 S3_BUCKET = "yetibets"
 S3_PREFIX = "nhl/ml_models"
 MODEL_KEY = "team_totals"
-HEURISTIC_VERSION = "heuristic-v1"
+HEURISTIC_VERSION = "heuristic-v2"
 
 _FEATURE_NAMES: tuple[str, ...] = (
     "heuristic_total",
