@@ -274,10 +274,10 @@ def test_totals_baseline_bias_recommend_and_record():
     # ...and alone once there are enough games.
     assert tb.baseline_scores(finals, "A", "B", date(2026, 10, 31)) == (125, 125)
 
-    # Calls: small edges are NO_PLAY; unproven calls carry 50% confidence.
+    # Calls: small edges are NO_PLAY; so is any call before the record is proven.
     assert tb.recommend(2.0, (0, 0))[0] == "NO_PLAY"
     rec, conf, note = tb.recommend(-6.0, (0, 0))
-    assert (rec, conf) == ("UNDER", 0.5) and "unproven" in note
+    assert (rec, conf) == ("NO_PLAY", 0.5) and "withheld" in note
     # A long losing record withholds calls; a winning one reports its rate.
     assert tb.recommend(-6.0, (40, 100))[0] == "NO_PLAY"
     rec, conf, _ = tb.recommend(6.0, (70, 100))

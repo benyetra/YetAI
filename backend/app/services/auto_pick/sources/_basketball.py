@@ -33,6 +33,22 @@ def _base(gl, league: str, game_date, home: str, away: str) -> dict:
     }
 
 
+def _reanchored(r, stored_line, live_line, sign: int):
+    """Projection moved onto the live line, or None when the row isn't anchored.
+
+    An anchored row's projection = line + k * (model - line) + a, so a line move
+    shifts it by (1 - k) * move; ``sign`` is +1 for totals, -1 for spread (home
+    spread is the negative of the margin line)."""
+    f = r.factors if isinstance(r.factors, dict) else {}
+    anchor = f.get("anchor")
+    if not isinstance(anchor, dict) or anchor.get("k") is None:
+        return None
+    proj = r.projected_total if sign > 0 else r.projected_margin
+    if proj is None or stored_line is None or live_line is None:
+        return None
+    return proj + sign * (1 - float(anchor["k"])) * (live_line - stored_line)
+
+
 def _spread_threshold(league: str) -> float:
     from app.services.etl._spread_model import NBA_CONFIG, WNBA_CONFIG
 
@@ -72,12 +88,15 @@ def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
         if odds is None:
             continue
         edge = r.edge
+        margin = r.projected_margin
         if not same_line(gl.spread_home, r.market_spread_home):
             # line moved since the projection: re-derive the edge on the current line
+            moved = _reanchored(r, r.market_spread_home, gl.spread_home, -1)
+            margin = r.projected_margin if moved is None else moved
             edge = moved_line_edge(
                 "spread",
                 side,
-                r.projected_margin,
+                margin,
                 gl.spread_home,
                 _spread_threshold(league),
             )
@@ -93,7 +112,7 @@ def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
                     away_team_name=r.away_team_name,
                 ),
                 "model_version": getattr(r, "model_version", None),
-                "projected_margin": r.projected_margin,
+                "projected_margin": margin,
                 "market_spread_home": gl.spread_home,
                 "spread_odds": odds,
                 "side": side,
@@ -133,12 +152,15 @@ def totals_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
         if odds is None:
             continue
         edge = r.edge
+        total = r.projected_total
         if not same_line(gl.total, r.market_total):
             # line moved since the projection: re-derive the edge on the current line
+            moved = _reanchored(r, r.market_total, gl.total, 1)
+            total = r.projected_total if moved is None else moved
             edge = moved_line_edge(
                 "total",
                 side,
-                r.projected_total,
+                total,
                 gl.total,
                 _totals_threshold(league),
                 strict=league != "NBA",  # WNBA projector plays on `edge > 2`
@@ -155,7 +177,7 @@ def totals_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
                     away_team_name=r.away_team_name,
                 ),
                 "model_version": getattr(r, "model_version", None),
-                "projected_total": r.projected_total,
+                "projected_total": total,
                 "market_total": gl.total,
                 "side": side,
                 "line_odds": odds,

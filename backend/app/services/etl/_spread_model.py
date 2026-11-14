@@ -23,7 +23,12 @@ class SpreadLeagueConfig:
 
 
 WNBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, season_start_month=5)
-NBA_CONFIG = SpreadLeagueConfig(home_court_advantage=2.8, season_start_month=10)
+NBA_CONFIG = SpreadLeagueConfig(
+    home_court_advantage=2.8,
+    season_start_month=10,
+    # MLE on 2025-26 market margins, n=664 (scripts/nba_game_model_replay.py).
+    win_prob_logistic_scale=6.6,
+)
 NFL_CONFIG = SpreadLeagueConfig(home_court_advantage=2.5, edge_threshold=3.0)
 
 

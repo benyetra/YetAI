@@ -56,6 +56,7 @@ def test_enrich_projection_shadow_without_model():
 def test_enrich_projection_promotes_ml_when_enabled(monkeypatch):
     monkeypatch.setenv("NBA_TOTALS_ML_ENABLED", "1")
     proj = _sample_projection(heuristic=220.0, market=218.0)
+    proj["factors"] = {"pick_record": [30, 40]}  # a proven record, else withheld
     with patch.object(tml, "predict_residual", return_value=3.0):
         out = enrich_projection(proj)
     assert out["heuristic_total"] == 220.0

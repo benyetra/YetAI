@@ -78,4 +78,4 @@ def test_run_uses_ml_when_model_available(monkeypatch):
     assert result["projection_method"] == "ml"
     row = um.call_args[0][2][0]
     assert row["factors"]["method"] == "ml"
-    assert row["projected_margin"] == 7.5
+    assert row["factors"]["model_margin"] == 7.5

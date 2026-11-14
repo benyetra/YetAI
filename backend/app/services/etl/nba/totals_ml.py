@@ -12,7 +12,7 @@ from typing import Any
 
 import numpy as np
 
-from app.services.etl.nba.totals_baseline import recommend
+from app.services.etl.nba.totals_baseline import MODEL_VERSION, recommend
 from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
@@ -204,7 +204,7 @@ def enrich_projection(projection: dict[str, Any]) -> dict[str, Any]:
             residual or 0.0,
         )
 
-    projection["model_version"] = "heuristic-v1"
+    projection["model_version"] = MODEL_VERSION
     if totals_ml_enabled() and ml_total is not None:
         projection["projected_total"] = ml_total
         _recompute_market_fields(projection)

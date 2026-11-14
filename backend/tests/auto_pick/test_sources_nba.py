@@ -212,7 +212,9 @@ def test_totals_no_play_skipped(sqlite_db):
 
 def test_moneyline_edge_side(sqlite_db):
     _gl(sqlite_db)  # no-vig home ~0.644
-    _spread(sqlite_db, rec="NO_PLAY", hwp=0.5)  # away: 0.5 > 0.356 -> away
+    _spread(
+        sqlite_db, rec="NO_PLAY", hwp=0.5, factors={"market_win_prob": 0.644}
+    )  # away: 0.5 > 0.356 -> away
     rows = run(NBAMoneylineSource(sqlite_db).get_todays_projections(RANGE))
     assert len(rows) == 1
     r = rows[0]
@@ -236,7 +238,7 @@ def test_moneyline_skips_no_edge_missing_price(sqlite_db):
 
 def test_moneyline_home_edge(sqlite_db):
     _gl(sqlite_db)
-    _spread(sqlite_db, rec="NO_PLAY", hwp=0.8)
+    _spread(sqlite_db, rec="NO_PLAY", hwp=0.8, factors={"market_win_prob": 0.644})
     rows = run(NBAMoneylineSource(sqlite_db).get_todays_projections(RANGE))
     assert rows[0]["side"] == "home"
 
