@@ -2,15 +2,10 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import pickle  # nosec B403 - artifacts written to private bucket only
-import tempfile
 from datetime import date, datetime, timezone
-from pathlib import Path
 from typing import Any
 
-import boto3
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor  # type: ignore
@@ -24,10 +19,10 @@ from app.services.etl.wnba.ml_training.totals_training_eval import (
 from app.services.etl.wnba.ml_training.validate_totals_model import validate_holdout
 from app.services.etl.wnba.totals_ml import (
     MODEL_KEY,
-    S3_BUCKET,
     S3_PREFIX,
     feature_names,
 )
+from app.services.ml.upload_to_s3 import score_live_pickle, upload_gated_pickle
 
 logger = logging.getLogger(__name__)
 
@@ -139,30 +134,23 @@ def train_residual_model(
 def upload_totals_model(
     model: GradientBoostingRegressor,
     metadata: dict[str, Any],
-    *,
-    boto3_module: Any | None = None,
-) -> dict[str, str]:
-    boto3_mod = boto3_module if boto3_module is not None else boto3
-    s3 = boto3_mod.client("s3")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        model_path = Path(tmpdir) / f"{MODEL_KEY}.pkl"
-        meta_path = Path(tmpdir) / f"{MODEL_KEY}_metadata.json"
-        with model_path.open("wb") as f:
-            pickle.dump(model, f)
-        meta_path.write_text(json.dumps(metadata, indent=2, default=str))
-
-        model_key = f"{S3_PREFIX}/{MODEL_KEY}.pkl"
-        meta_key = f"{S3_PREFIX}/{MODEL_KEY}_metadata.json"
-        s3.upload_file(str(model_path), S3_BUCKET, model_key)
-        s3.upload_file(str(meta_path), S3_BUCKET, meta_key)
-        logger.info(
-            "uploaded s3://%s/%s and s3://%s/%s",
-            S3_BUCKET,
-            model_key,
-            S3_BUCKET,
-            meta_key,
-        )
-        return {"model_key": model_key, "metadata_key": meta_key}
+    X_hold: pd.DataFrame,
+    y_hold: pd.Series,
+) -> dict[str, Any]:
+    """Champion-gated upload: replaces the live model only if it is not worse
+    on this holdout (residual MAE, which equals full-total MAE)."""
+    model_key = f"{S3_PREFIX}/{MODEL_KEY}.pkl"
+    return upload_gated_pickle(
+        model_key,
+        model,
+        metadata,
+        candidate_metric=float(
+            mean_absolute_error(y_hold, model.predict(X_hold))
+        ),
+        score_champion=score_live_pickle(
+            f"{S3_PREFIX}/{MODEL_KEY}_metadata.json", X_hold, y_hold
+        ),
+    )
 
 
 def run(
@@ -188,6 +176,7 @@ def run(
     features_df = features_df[order]
 
     model, metadata = train_residual_model(features_df, target, game_dates)
+    metadata["data_window"] = f"{season_start}..{season_end}"
     result: dict[str, Any] = {
         "status": "ok",
         "metadata": metadata,
@@ -211,8 +200,25 @@ def run(
                 validation.get("gate_threshold") or float("nan"),
             )
             return result
-        keys = upload_totals_model(model, metadata)
-        result["s3_keys"] = keys
+        _, test_idx = time_holdout_split(game_dates, test_fraction=HOLDOUT_FRACTION)
+        out = upload_totals_model(
+            model,
+            metadata,
+            features_df.iloc[test_idx],
+            target.iloc[test_idx],
+        )
+        result["gate"] = out
+        if out["status"] == "rejected_by_champion":
+            logger.warning(
+                "WNBA totals candidate rejected: holdout MAE %.3f vs live %.3f",
+                out["candidate_metric"],
+                out["champion_metric"],
+            )
+            result["status"] = "rejected_by_champion"
+        else:
+            result["s3_keys"] = {
+                k: out[k] for k in ("model_key", "metadata_key", "manifest_key")
+            }
 
     return result
 
@@ -237,5 +243,5 @@ if __name__ == "__main__":
         skip_gate=args.skip_gate,
     )
     print(out)
-    if out.get("status") not in ("ok",):
+    if out.get("status") not in ("ok", "rejected_by_champion"):
         raise SystemExit(1)

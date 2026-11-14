@@ -10,17 +10,17 @@ def _bet(id, commence_time, status="pending_approval"):
     return b
 
 
-def test_expires_only_after_tipoff_grace_window():
+def test_expires_once_tipoff_has_passed():
     now = datetime.utcnow()
-    in_progress = _bet("a", now - timedelta(hours=1))
-    past_grace = _bet("b", now - timedelta(hours=5))
+    started = _bet("a", now - timedelta(minutes=1))
+    long_past = _bet("b", now - timedelta(hours=5))
     future = _bet("c", now + timedelta(hours=2))
     db = MagicMock()
     # Implementation fetches all pending rows with a single .filter().all(),
     # then classifies them in Python. Return both rows so the task can decide.
     db.query.return_value.filter.return_value.all.return_value = [
-        in_progress,
-        past_grace,
+        started,
+        long_past,
         future,
     ]
 
@@ -29,9 +29,9 @@ def test_expires_only_after_tipoff_grace_window():
 
         count = expire_pending_picks()
 
-    assert count == 1
-    assert in_progress.status == "pending_approval"
-    assert past_grace.status == "rejected"
+    assert count == 2
+    assert started.status == "rejected"
+    assert long_past.status == "rejected"
     assert future.status == "pending_approval"
     db.commit.assert_called_once()
 

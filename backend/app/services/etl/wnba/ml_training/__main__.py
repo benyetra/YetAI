@@ -49,7 +49,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(json.dumps(result, indent=2, default=str))
     status = result.get("status")
-    if status in ("ok", "dry_run"):
+    if status in ("ok", "dry_run", "rejected_by_champion"):
         return 0
     return 1
 

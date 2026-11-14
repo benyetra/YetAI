@@ -11,24 +11,33 @@ export type YetaiBetsTab = 'live' | 'history';
 
 export interface YetaiBetsScreenProps {
   picks: DesignPick[];
-  hitRate?: number;
+  /** Today's win rate from the backend; null = nothing graded today. */
+  hitRate?: number | null;
   roiLabel?: string;
   modelConfidence?: string;
   onAddToSlip?: (pick: DesignPick) => void;
   historyBets?: YetaiHistoryBet[];
   historyStats?: YetaiHistoryStats | null;
   historyLoading?: boolean;
+  /** Set when the live-picks request failed: replaces the live tab, not the whole screen. */
+  error?: string | null;
+  /** Set when the history request failed: replaces the history tab only. */
+  historyError?: string | null;
+  onRetry?: () => void;
 }
 
 export default function YetaiBetsScreen({
   picks,
-  hitRate = 0,
+  hitRate = null,
   roiLabel,
   modelConfidence,
   onAddToSlip,
   historyBets = [],
   historyStats = null,
   historyLoading = false,
+  error = null,
+  historyError = null,
+  onRetry,
 }: YetaiBetsScreenProps) {
   const [tab, setTab] = useState<YetaiBetsTab>('live');
   const [filter, setFilter] = useState('All');
@@ -70,26 +79,37 @@ export default function YetaiBetsScreen({
         </button>
       </div>
 
-      {tab === 'history' ? (
+      {(tab === 'live' ? error : historyError) ? (
+        <div role="alert" className="card" style={{ padding: 32, textAlign: 'center', color: 'var(--text-3)' }}>
+          <p style={{ marginBottom: 12 }}>{tab === 'live' ? error : historyError}</p>
+          {onRetry ? (
+            <button type="button" className="chip" onClick={onRetry}>
+              Retry
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+
+      {!historyError && tab === 'history' ? (
         <YetaiBetsHistory bets={historyBets} stats={historyStats} loading={historyLoading} />
       ) : null}
 
-      {tab === 'live' ? (
+      {!error && tab === 'live' ? (
         <>
       <div className="stat-grid" style={{ marginBottom: 18 }}>
         <StatTile
           label={
             <>
-              <Target size={12} /> Today&apos;s hit rate
+              <Target size={12} /> Hit rate · settled today
             </>
           }
-          value={hitRate ? `${hitRate}%` : '—'}
+          value={hitRate === null ? '—' : `${hitRate}%`}
           deltaKind="up"
         />
         <StatTile
           label={
             <>
-              <TrendingUp size={12} /> 7-day ROI
+              <TrendingUp size={12} /> ROI · picks from last 7 days
             </>
           }
           value={roiLabel || '—'}

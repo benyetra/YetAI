@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 from app.models.predictions_models import (
     GameActuals,
     GameProjections,
+    HitActuals,
+    HomerActuals,
     ProjectedHits,
     ProjectedHomers,
     StrikeoutActuals,
@@ -24,15 +26,18 @@ from app.models.predictions_models import (
 from app.services.accuracy_shared import (
     assemble,
     edge_play_bucket,
+    edge_row_result,
     edge_play_graded_breakdown,
     edge_play_graded_counts,
     hit_rate_bucket,
     hit_rate_graded_breakdown,
     hit_rate_graded_counts,
+    hit_rate_row_result,
     ou_call_bucket,
     ou_call_graded_breakdown,
     ou_call_graded_counts,
-    overview_item_from_totals,
+    ou_row_result,
+    overview_item_from_markets,
 )
 from app.services.mlb_game_picks import enrich_game_projection_row
 
@@ -60,6 +65,68 @@ def _strikeout_accuracy_by_model_version(
         ).to_dict()
         for version, rows in sorted(grouped.items())
     }
+
+
+def _batter_rows(
+    db: Session,
+    *,
+    model: Any,
+    actuals_model: Any,
+    projected_field: str,
+    actual_field: str,
+    start: date_type,
+    end: date_type,
+) -> list[dict[str, Any]]:
+    """Batter-board rows with ``actual`` set only when grading actually ran.
+
+    ``actual_hits``/``actual_homers`` default to 0 on the projection row, so a
+    rained-out, scratched or not-yet-graded batter looks like a real miss. A
+    row is graded only when the actuals table has a row for (date, batter_id);
+    otherwise its actual is None (ungraded, or dnp when that date was graded).
+    """
+    graded = {
+        (a.date, str(a.batter_id))
+        for a in db.query(actuals_model)
+        .filter(actuals_model.date >= start, actuals_model.date <= end)
+        .all()
+    }
+    graded_dates = {d for d, _ in graded}
+    rows: list[dict[str, Any]] = []
+    for r in db.query(model).filter(model.date >= start, model.date <= end).all():
+        has_actual = (r.date, str(r.batter_id)) in graded
+        rows.append(
+            {
+                "id": getattr(r, "id", None),
+                projected_field: getattr(r, projected_field),
+                actual_field: getattr(r, actual_field) if has_actual else None,
+                "actual_expected": r.date in graded_dates,
+            }
+        )
+    return rows
+
+
+def _hits_rows(db: Session, *, start: date_type, end: date_type):
+    return _batter_rows(
+        db,
+        model=ProjectedHits,
+        actuals_model=HitActuals,
+        projected_field="projected_hits",
+        actual_field="actual_hits",
+        start=start,
+        end=end,
+    )
+
+
+def _homer_rows(db: Session, *, start: date_type, end: date_type):
+    return _batter_rows(
+        db,
+        model=ProjectedHomers,
+        actuals_model=HomerActuals,
+        projected_field="projected_homers",
+        actual_field="actual_homers",
+        start=start,
+        end=end,
+    )
 
 
 def _merge_game_rows_range(
@@ -152,16 +219,8 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             }
         )
 
-    hits_rows = [
-        {"projected_hits": r.projected_hits, "actual_hits": r.actual_hits}
-        for r in db.query(ProjectedHits).filter(ProjectedHits.date == target_date).all()
-    ]
-    homer_rows = [
-        {"projected_homers": r.projected_homers, "actual_homers": r.actual_homers}
-        for r in db.query(ProjectedHomers)
-        .filter(ProjectedHomers.date == target_date)
-        .all()
-    ]
+    hits_rows = _hits_rows(db, start=target_date, end=target_date)
+    homer_rows = _homer_rows(db, start=target_date, end=target_date)
 
     game_rows = _merge_game_rows(db, target_date=target_date)
 
@@ -180,18 +239,18 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
             actual_field="actual_hits",
             projected_field="projected_hits",
             threshold=1,
-            label="Projected Hits",
+            label="Projected Hits (board hit rate, no line)",
             key="projected_hits",
-            secondary="Batters projected for ≥1 hit",
+            secondary="Last-10 board: batters projected for ≥1 hit · no line, not in season model %",
         ),
         hit_rate_bucket(
             homer_rows,
             actual_field="actual_homers",
             projected_field="projected_homers",
             threshold=1,
-            label="Projected Home Runs",
+            label="Projected Home Runs (board hit rate, no line)",
             key="projected_homers",
-            secondary="Batters projected for ≥1 HR",
+            secondary="Last-10 board: batters projected for ≥1 HR · no line, not in season model %",
         ),
         edge_play_bucket(
             game_rows,
@@ -242,7 +301,7 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
         .all()
     )
     actuals_by_pid = {
-        r.pitcher_id: r
+        (getattr(r, "date", None), r.pitcher_id): r
         for r in db.query(StrikeoutActuals)
         .filter(
             StrikeoutActuals.date >= start,
@@ -252,7 +311,7 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
     }
     k_rows: list[dict[str, Any]] = []
     for p in proj_rows:
-        a = actuals_by_pid.get(p.pitcher_id)
+        a = actuals_by_pid.get((getattr(p, "date", None), p.pitcher_id))
         k_rows.append(
             {
                 "projected_strikeouts": p.projected_strikeouts,
@@ -262,60 +321,45 @@ def season_overview(db: Session, *, start: date_type, end: date_type) -> dict[st
             }
         )
 
-    hits_rows = [
-        {"projected_hits": r.projected_hits, "actual_hits": r.actual_hits}
-        for r in db.query(ProjectedHits)
-        .filter(ProjectedHits.date >= start, ProjectedHits.date <= end)
-        .all()
-    ]
-    homer_rows = [
-        {"projected_homers": r.projected_homers, "actual_homers": r.actual_homers}
-        for r in db.query(ProjectedHomers)
-        .filter(ProjectedHomers.date >= start, ProjectedHomers.date <= end)
-        .all()
-    ]
+    hits_rows = _hits_rows(db, start=start, end=end)
+    homer_rows = _homer_rows(db, start=start, end=end)
 
     game_rows = _merge_game_rows_range(db, start=start, end=end)
 
-    parts = [
-        ou_call_graded_counts(
+    # Headline = published calls with a line (Ks O/U, game ML/spread/total).
+    # Batter boards (last-10-game counts, no line) are diagnostics only.
+    return overview_item_from_markets(
+        sport="mlb",
+        label="MLB",
+        markets=_headline_markets(k_rows, game_rows),
+    )
+
+
+def _headline_markets(
+    k_rows: list[dict[str, Any]], game_rows: list[dict[str, Any]]
+) -> dict[str, tuple[int, int]]:
+    return {
+        "Pitcher Ks O/U": ou_call_graded_counts(
             k_rows,
             line_field="fanduel_line",
             pick_field="fanduel_over_under",
             actual_field="actual_strikeouts",
         ),
-        hit_rate_graded_counts(
-            hits_rows,
-            actual_field="actual_hits",
-            projected_field="projected_hits",
-            threshold=1,
-        ),
-        hit_rate_graded_counts(
-            homer_rows,
-            actual_field="actual_homers",
-            projected_field="projected_homers",
-            threshold=1,
-        ),
-        edge_play_graded_counts(
+        "Game moneyline": edge_play_graded_counts(
             game_rows, pick_field="ml_recommendation", correct_field="ml_correct"
         ),
-        edge_play_graded_counts(
+        "Game spread": edge_play_graded_counts(
             game_rows,
             pick_field="spread_recommendation",
             correct_field="spread_correct",
         ),
-        ou_call_graded_counts(
+        "Game total O/U": ou_call_graded_counts(
             game_rows,
             line_field="market_total",
             pick_field="total_recommendation",
             actual_field="actual_total_runs",
         ),
-    ]
-    correct = sum(p[0] for p in parts)
-    total = sum(p[1] for p in parts)
-    return overview_item_from_totals(
-        sport="mlb", label="MLB", correct=correct, total=total
-    )
+    }
 
 
 def season_overview_diagnostics(
@@ -331,7 +375,7 @@ def season_overview_diagnostics(
         .all()
     )
     actuals_by_pid = {
-        r.pitcher_id: r
+        (getattr(r, "date", None), r.pitcher_id): r
         for r in db.query(StrikeoutActuals)
         .filter(
             StrikeoutActuals.date >= start,
@@ -341,7 +385,7 @@ def season_overview_diagnostics(
     }
     k_rows: list[dict[str, Any]] = []
     for p in proj_rows:
-        a = actuals_by_pid.get(p.pitcher_id)
+        a = actuals_by_pid.get((getattr(p, "date", None), p.pitcher_id))
         k_rows.append(
             {
                 "projected_strikeouts": p.projected_strikeouts,
@@ -351,18 +395,8 @@ def season_overview_diagnostics(
             }
         )
 
-    hits_rows = [
-        {"projected_hits": r.projected_hits, "actual_hits": r.actual_hits}
-        for r in db.query(ProjectedHits)
-        .filter(ProjectedHits.date >= start, ProjectedHits.date <= end)
-        .all()
-    ]
-    homer_rows = [
-        {"projected_homers": r.projected_homers, "actual_homers": r.actual_homers}
-        for r in db.query(ProjectedHomers)
-        .filter(ProjectedHomers.date >= start, ProjectedHomers.date <= end)
-        .all()
-    ]
+    hits_rows = _hits_rows(db, start=start, end=end)
+    homer_rows = _homer_rows(db, start=start, end=end)
 
     game_rows = _merge_game_rows_range(db, start=start, end=end)
 
@@ -388,6 +422,7 @@ def season_overview_diagnostics(
                 "actual_field": "actual_hits",
                 "projected_field": "projected_hits",
                 "threshold": 1.0,
+                "headline": False,
             },
         ),
         (
@@ -399,6 +434,7 @@ def season_overview_diagnostics(
                 "actual_field": "actual_homers",
                 "projected_field": "projected_homers",
                 "threshold": 1.0,
+                "headline": False,
             },
         ),
         (
@@ -435,8 +471,7 @@ def season_overview_diagnostics(
     ]
 
     parts_out: list[dict[str, Any]] = []
-    correct = 0
-    total = 0
+    headline: dict[str, tuple[int, int]] = {}
     for key, label, spec in part_specs:
         rows = spec["rows"]
         if spec["kind"] == "ou":
@@ -465,12 +500,14 @@ def season_overview_diagnostics(
             )
             c, t = bd["graded_correct"], bd["graded_total"]
             extra = {}
-        correct += c
-        total += t
+        in_headline = spec.get("headline", True)
+        if in_headline:
+            headline[label] = (c, t)
         entry: dict[str, Any] = {
             "key": key,
             "label": label,
             "kind": spec["kind"],
+            "in_headline": in_headline,
             "breakdown": bd,
             "graded_correct": c,
             "graded_total": t,
@@ -482,8 +519,102 @@ def season_overview_diagnostics(
     return {
         "sport": "mlb",
         "date_bounds": {"start": start.isoformat(), "end": end.isoformat()},
-        "overview": overview_item_from_totals(
-            sport="mlb", label="MLB", correct=correct, total=total
+        "overview": overview_item_from_markets(
+            sport="mlb", label="MLB", markets=headline
         ),
         "parts": parts_out,
+    }
+
+
+def past_row_results(
+    db: Session, *, target_date: date_type
+) -> dict[str, dict[int, dict[str, Any]]]:
+    """Per-row results for the past view, keyed by GET /predictions/mlb list key.
+
+    Built from the same merged rows and shared row functions as
+    ``daily_accuracy`` so a row and its tile cannot disagree. Game rows carry
+    ``ml_result`` / ``spread_result`` / ``total_result`` (``result`` = the total
+    O/U call) plus the actual_* score fields the frontend mapper reads.
+    """
+    k_proj = (
+        db.query(StrikeoutProjections)
+        .filter(StrikeoutProjections.date == target_date)
+        .all()
+    )
+    k_actuals = {
+        r.pitcher_id: r
+        for r in db.query(StrikeoutActuals)
+        .filter(StrikeoutActuals.date == target_date)
+        .all()
+    }
+    strikeouts: dict[int, dict[str, Any]] = {}
+    for p in k_proj:
+        a = k_actuals.get(p.pitcher_id)
+        actual = a.actual_strikeouts if a else None
+        strikeouts[p.id] = {
+            "actual": actual,
+            "result": ou_row_result(
+                line=p.fanduel_line,
+                pick=p.fanduel_over_under,
+                actual=actual,
+                actual_expected=bool(k_actuals),
+            ),
+        }
+
+    games: dict[int, dict[str, Any]] = {}
+    for row in _merge_game_rows(db, target_date=target_date):
+        scored = row.get("actual_home_score") is not None
+        push = False
+        if scored and row.get("market_spread") is not None:
+            margin = row["actual_home_score"] - row["actual_away_score"]
+            push = margin + float(row["market_spread"]) == 0
+        total_result = ou_row_result(
+            line=row.get("market_total"),
+            pick=row.get("total_recommendation"),
+            actual=row.get("actual_total_runs"),
+        )
+        games[row["id"]] = {
+            "actual_home_score": row.get("actual_home_score"),
+            "actual_away_score": row.get("actual_away_score"),
+            "actual_total_runs": row.get("actual_total_runs"),
+            "actual_winner": row.get("actual_winner"),
+            "ml_result": edge_row_result(
+                pick=row.get("ml_recommendation"), correct_flag=row.get("ml_correct")
+            ),
+            "spread_result": edge_row_result(
+                pick=row.get("spread_recommendation"),
+                correct_flag=row.get("spread_correct"),
+                push=push,
+            ),
+            "total_result": total_result,
+            "result": total_result,
+        }
+
+    def batter(rows: list[dict[str, Any]], proj_f: str, act_f: str):
+        return {
+            r["id"]: {
+                "actual": r[act_f],
+                "result": hit_rate_row_result(
+                    projected=r[proj_f],
+                    actual=r[act_f],
+                    threshold=1,
+                    actual_expected=r["actual_expected"],
+                ),
+            }
+            for r in rows
+        }
+
+    return {
+        "strikeout_projections": strikeouts,
+        "game_projections": games,
+        "projected_hits": batter(
+            _hits_rows(db, start=target_date, end=target_date),
+            "projected_hits",
+            "actual_hits",
+        ),
+        "projected_homers": batter(
+            _homer_rows(db, start=target_date, end=target_date),
+            "projected_homers",
+            "actual_homers",
+        ),
     }

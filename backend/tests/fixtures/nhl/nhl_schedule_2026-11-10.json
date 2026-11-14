@@ -1,0 +1,354 @@
+{
+ "nextStartDate": "2026-11-17",
+ "previousStartDate": "2026-11-03",
+ "gameWeek": [
+  {
+   "date": "2026-11-10",
+   "dayAbbrev": "TUE",
+   "numberOfGames": 7,
+   "datePromo": [],
+   "games": [
+    {
+     "id": 2026020286,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-11T00:00:00Z",
+     "awayTeam": {
+      "id": 21,
+      "commonName": {
+       "default": "Avalanche"
+      },
+      "placeName": {
+       "default": "Colorado"
+      },
+      "placeNameWithPreposition": {
+       "default": "Colorado",
+       "fr": "du Colorado"
+      },
+      "abbrev": "COL",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/COL_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/COL_dark.svg",
+      "awaySplitSquad": false,
+      "score": 6
+     },
+     "homeTeam": {
+      "id": 10,
+      "commonName": {
+       "default": "Maple Leafs"
+      },
+      "placeName": {
+       "default": "Toronto"
+      },
+      "placeNameWithPreposition": {
+       "default": "Toronto",
+       "fr": "de Toronto"
+      },
+      "abbrev": "TOR",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/TOR_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/TOR_dark.svg",
+      "homeSplitSquad": false,
+      "score": 3
+     }
+    },
+    {
+     "id": 2026020287,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-11T00:00:00Z",
+     "awayTeam": {
+      "id": 30,
+      "commonName": {
+       "default": "Wild"
+      },
+      "placeName": {
+       "default": "Minnesota"
+      },
+      "placeNameWithPreposition": {
+       "default": "Minnesota",
+       "fr": "du Minnesota"
+      },
+      "abbrev": "MIN",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/MIN_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/MIN_dark.svg",
+      "awaySplitSquad": false,
+      "score": 2
+     },
+     "homeTeam": {
+      "id": 8,
+      "commonName": {
+       "default": "Canadiens"
+      },
+      "placeName": {
+       "default": "Montr\u00e9al"
+      },
+      "placeNameWithPreposition": {
+       "default": "Montr\u00e9al",
+       "fr": "de Montr\u00e9al"
+      },
+      "abbrev": "MTL",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/MTL_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/MTL_dark.svg",
+      "homeSplitSquad": false,
+      "score": 1
+     }
+    }
+   ]
+  },
+  {
+   "date": "2026-11-11",
+   "dayAbbrev": "WED",
+   "numberOfGames": 6,
+   "datePromo": [],
+   "games": [
+    {
+     "id": 2026020293,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-12T00:00:00Z",
+     "awayTeam": {
+      "id": 14,
+      "commonName": {
+       "default": "Lightning"
+      },
+      "placeName": {
+       "default": "Tampa Bay"
+      },
+      "placeNameWithPreposition": {
+       "default": "Tampa Bay",
+       "fr": "de Tampa Bay"
+      },
+      "abbrev": "TBL",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/TBL_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/TBL_dark.svg",
+      "awaySplitSquad": false,
+      "score": 8
+     },
+     "homeTeam": {
+      "id": 7,
+      "commonName": {
+       "default": "Sabres"
+      },
+      "placeName": {
+       "default": "Buffalo"
+      },
+      "placeNameWithPreposition": {
+       "default": "Buffalo",
+       "fr": "de Buffalo"
+      },
+      "abbrev": "BUF",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/BUF_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/BUF_dark.svg",
+      "homeSplitSquad": false,
+      "score": 3
+     }
+    },
+    {
+     "id": 2026020294,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-12T00:30:00Z",
+     "awayTeam": {
+      "id": 3,
+      "commonName": {
+       "default": "Rangers"
+      },
+      "placeName": {
+       "default": "New York"
+      },
+      "placeNameWithPreposition": {
+       "default": "New York",
+       "fr": "de New York"
+      },
+      "abbrev": "NYR",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/NYR_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/NYR_dark.svg",
+      "awaySplitSquad": false,
+      "score": 3
+     },
+     "homeTeam": {
+      "id": 20,
+      "commonName": {
+       "default": "Flames"
+      },
+      "placeName": {
+       "default": "Calgary"
+      },
+      "placeNameWithPreposition": {
+       "default": "Calgary",
+       "fr": "de Calgary"
+      },
+      "abbrev": "CGY",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/CGY_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/CGY_dark.svg",
+      "homeSplitSquad": false,
+      "score": 1
+     }
+    }
+   ]
+  },
+  {
+   "date": "2026-11-12",
+   "dayAbbrev": "THU",
+   "numberOfGames": 11,
+   "datePromo": [],
+   "games": [
+    {
+     "id": 2026020309,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-12T17:00:00Z",
+     "awayTeam": {
+      "id": 12,
+      "commonName": {
+       "default": "Hurricanes"
+      },
+      "placeName": {
+       "default": "Carolina",
+       "fr": "Caroline"
+      },
+      "placeNameWithPreposition": {
+       "default": "Carolina",
+       "fr": "de la Caroline"
+      },
+      "abbrev": "CAR",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/CAR_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/CAR_dark.svg",
+      "awaySplitSquad": false,
+      "score": 4
+     },
+     "homeTeam": {
+      "id": 55,
+      "commonName": {
+       "default": "Kraken"
+      },
+      "placeName": {
+       "default": "Seattle"
+      },
+      "placeNameWithPreposition": {
+       "default": "Seattle",
+       "fr": "de Seattle"
+      },
+      "abbrev": "SEA",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/SEA_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/SEA_dark.svg",
+      "homeSplitSquad": false,
+      "score": 1
+     }
+    },
+    {
+     "id": 2026020299,
+     "gameState": "OFF",
+     "startTimeUTC": "2026-11-13T00:00:00Z",
+     "awayTeam": {
+      "id": 8,
+      "commonName": {
+       "default": "Canadiens"
+      },
+      "placeName": {
+       "default": "Montr\u00e9al"
+      },
+      "placeNameWithPreposition": {
+       "default": "Montr\u00e9al",
+       "fr": "de Montr\u00e9al"
+      },
+      "abbrev": "MTL",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/MTL_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/MTL_dark.svg",
+      "awaySplitSquad": false,
+      "score": 5
+     },
+     "homeTeam": {
+      "id": 6,
+      "commonName": {
+       "default": "Bruins"
+      },
+      "placeName": {
+       "default": "Boston"
+      },
+      "placeNameWithPreposition": {
+       "default": "Boston",
+       "fr": "de Boston"
+      },
+      "abbrev": "BOS",
+      "logo": "https://assets.nhle.com/logos/nhl/svg/BOS_light.svg",
+      "darkLogo": "https://assets.nhle.com/logos/nhl/svg/BOS_dark.svg",
+      "homeSplitSquad": false,
+      "score": 2
+     }
+    }
+   ]
+  }
+ ],
+ "oddsPartners": [
+  {
+   "partnerId": 2,
+   "country": "SE",
+   "name": "Unibet",
+   "imageUrl": "https://assets.nhle.com/betting_partner/unibet.svg",
+   "siteUrl": "https://www.unibet.se/betting/sports/filter/ice_hockey/nhl/all/matches",
+   "bgColor": "#14805E",
+   "textColor": "#FFFFFF",
+   "accentColor": "#3AAA35"
+  },
+  {
+   "partnerId": 3,
+   "country": "CZ",
+   "name": "Tipsport",
+   "imageUrl": "https://assets.nhle.com/betting_partner/tipsport.svg",
+   "siteUrl": "https://www.tipsport.cz/PartnerRedirectAction.do?pid=16961&sid=20360&bid=34954&tid=11268",
+   "bgColor": "#2497F2",
+   "textColor": "#FFFFFF",
+   "accentColor": "#FFFFFF"
+  },
+  {
+   "partnerId": 6,
+   "country": "FI",
+   "name": "Veikkaus",
+   "imageUrl": "https://assets.nhle.com/betting_partner/veikkaus.svg",
+   "siteUrl": "https://www.veikkaus.fi/fi/vedonlyonti/pitkaveto?t=3-2-1_NHL",
+   "bgColor": "#0025F5",
+   "textColor": "#FFFFFF",
+   "accentColor": "#FFFFFF"
+  },
+  {
+   "partnerId": 7,
+   "country": "CA",
+   "name": "FanDuel",
+   "imageUrl": "https://assets.nhle.com/betting_partner/fanduel.svg",
+   "siteUrl": "https://fanduel.com",
+   "bgColor": "#0078ff",
+   "textColor": "#FFFFFF",
+   "accentColor": "#FFFFFF"
+  },
+  {
+   "partnerId": 8,
+   "country": "DE",
+   "name": "Sportradar",
+   "imageUrl": "https://assets.nhle.com/betting_partner/sportsradar.svg",
+   "siteUrl": "https://sportradar.com",
+   "bgColor": "#000000",
+   "textColor": "#FFFFFF",
+   "accentColor": "#E6E6E6"
+  },
+  {
+   "partnerId": 9,
+   "country": "US",
+   "name": "DraftKings",
+   "imageUrl": "https://assets.nhle.com/betting_partner/draftkings.svg",
+   "siteUrl": "https://dksb.sng.link/As9kz/3i4d?_dl=https%3A%2F%2Fsportsbook.draftkings.com%2Fgateway%3Fs%3D333653091&pcid=427326&psn=1320&pcn=NHL&pscn=OddsWidget&pcrn=NoOffer&pscid=SP&wpcid=427326&wpsrc=1320&wpcn=NHL&wpscn=OddsWidget&wpcrn=NoOffer&wpscid=SP&_forward_params=1",
+   "bgColor": "#000000",
+   "textColor": "#FFFFFF",
+   "accentColor": "#FFFFFF"
+  },
+  {
+   "partnerId": 10,
+   "country": "SK",
+   "name": "Doxxbet",
+   "imageUrl": "https://assets.nhle.com/betting_partner/doxxbet.svg",
+   "siteUrl": "https://www.doxxbet.sk/sk/sportove-tipovanie-online/kurzy/ladovy-hokej/usa/nhl/?msID=21&mbID=27",
+   "bgColor": "#f30d31",
+   "textColor": "#202020",
+   "accentColor": "#ffffff"
+  }
+ ],
+ "preSeasonStartDate": "2026-09-19",
+ "regularSeasonStartDate": "2026-09-29",
+ "regularSeasonEndDate": "2027-04-10",
+ "playoffEndDate": "2027-06-10",
+ "numberOfGames": 47
+}

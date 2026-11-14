@@ -26,7 +26,9 @@ celery_app = Celery(
         "app.tasks.health",
         "app.tasks.auto_pick",
         "app.tasks.settle_yetai_bets",
+        "app.tasks.yetai_settlement_alert",
         "app.tasks.expire_pending_picks",
+        "app.tasks.model_review",
         "app.tasks.league_vault_sync",
     ],
 )
@@ -69,6 +71,12 @@ celery_app.conf.beat_schedule = {
         "task": "yetai_bets.settle",
         "schedule": crontab(minute="*/15"),
         "options": {"expires": 600},
+    },
+    # Hourly: bets stuck unsettled / voided (alert only when state changed).
+    "yetai-settlement-alert": {
+        "task": "yetai_bets.settlement_alert",
+        "schedule": crontab(minute=15),
+        "options": {"expires": 1800},
     },
     # === ETL pipeline (u9t) — overnight orchestrator ===
     "nba-update-pipeline-daily": {
@@ -260,6 +268,13 @@ def auto_picks_enabled() -> bool:
         "off",
     )
 
+
+# Daily model review email, 09:45 ET: after overnight pipelines, accuracy grading
+# (03:30-05:10) and the 09:30 scorecard. Kill switch is read by the task itself.
+celery_app.conf.beat_schedule["model_review_daily"] = {
+    "task": "model_review.daily",
+    "schedule": crontab(hour=9, minute=45),
+}
 
 if auto_picks_enabled():
     # Celery timezone is America/New_York: these are ET wall times. The 11:00 run

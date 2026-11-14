@@ -63,11 +63,12 @@ def grade_spread(
     pick = _normalize_side_pick(spread_recommendation)
     if pick is None:
         return None
-    actual_margin = home_score - away_score
-    spread_f = float(market_spread_home)
-    if actual_margin == spread_f:
+    # market_spread_home is the home line (negative for a favourite): home covers
+    # when actual margin + line > 0 (same convention as yetai_grading).
+    cover_margin = (home_score - away_score) + float(market_spread_home)
+    if cover_margin == 0:
         return None
-    home_covers = actual_margin > spread_f
+    home_covers = cover_margin > 0
     if pick == "home":
         return home_covers
     return not home_covers

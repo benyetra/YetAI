@@ -60,6 +60,8 @@ class TotalsCandidateProvider:
                             "injury_report": r.get("injury_report"),
                             "generated_at": r.get("generated_at"),
                             "side": side,
+                            "projection_ref": r.get("projection_ref"),
+                            "model_version": r.get("model_version"),
                         },
                     )
                 )

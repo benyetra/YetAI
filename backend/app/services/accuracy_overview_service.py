@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import time
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy.orm import Session
 
 WindowMode = Literal["season", "last_30"]
 _CACHE_TTL_SECONDS = 300
+_ET = ZoneInfo("America/New_York")
+
+
+def _today_et() -> date:
+    return datetime.now(_ET).date()
+
+
 _OVERVIEW_CACHE: dict[tuple[WindowMode, str], tuple[float, dict[str, Any]]] = {}
 
 
@@ -36,8 +44,11 @@ def _cache_set(key: tuple[WindowMode, str], payload: dict[str, Any]) -> None:
 def window_date_bounds(
     *, sport: str, mode: WindowMode, today: date
 ) -> tuple[date, date]:
-    """Return [start, end] inclusive for aggregation (end is always `today`)."""
-    end = today
+    """Return [start, end] inclusive for aggregation.
+
+    End is yesterday: today's games are not graded yet and must not count.
+    """
+    end = today - timedelta(days=1)
     if mode == "last_30":
         return today - timedelta(days=30), end
     if sport == "mlb":
@@ -70,8 +81,6 @@ def build_accuracy_overview(
     today: date | None = None,
 ) -> dict[str, Any]:
     """One combined graded-accuracy line per league (fixed order)."""
-    from datetime import date as date_cls
-
     from app.services import (
         mlb_accuracy_service,
         nba_accuracy_service,
@@ -80,7 +89,7 @@ def build_accuracy_overview(
         wnba_accuracy_service,
     )
 
-    as_of = today or date_cls.today()
+    as_of = today or _today_et()
     # Cache only default prod flow (`today` inferred). Tests and explicit
     # historical calls bypass cache for deterministic behavior.
     cache_key = (window, as_of.isoformat())
@@ -119,8 +128,6 @@ def build_accuracy_overview_diagnostics(
 
     Not cached — intended for low-frequency inspection.
     """
-    from datetime import date as date_cls
-
     from app.services import (
         mlb_accuracy_service,
         nba_accuracy_service,
@@ -129,7 +136,7 @@ def build_accuracy_overview_diagnostics(
         wnba_accuracy_service,
     )
 
-    as_of = today or date_cls.today()
+    as_of = today or _today_et()
     loaders = [
         ("mlb", mlb_accuracy_service),
         ("nba", nba_accuracy_service),

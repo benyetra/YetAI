@@ -14,13 +14,20 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     PlayerInjuryStatus,
     ThreePointProjections,
-    TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._stale_rows import drop_projection_for_today
-from app.services.etl.nba._fanduel_lines import get_event_id_for_game, get_fanduel_line
+from app.services.etl.nba._stale_rows import (
+    active_players_not_started,
+    mark_projection_out,
+)
+from app.services.etl.nba._fanduel_lines import (
+    get_event_id_for_game,
+    get_fanduel_line,
+    pick_side,
+)
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._ml_predict import predict
+from app.services.ml_model_version import resolve_nba_prop_model_version
 
 logger = logging.getLogger(__name__)
 
@@ -47,13 +54,11 @@ def run() -> dict:
     skipped_insufficient = 0
     errors = 0
 
+    model_version = resolve_nba_prop_model_version(STAT)
+
     db = SessionLocal()
     try:
-        active = (
-            db.query(TodayActivePlayers)
-            .filter(TodayActivePlayers.game_date == today)
-            .all()
-        )
+        active = active_players_not_started(db, today)
 
         if not active:
             logger.info(
@@ -74,7 +79,7 @@ def run() -> dict:
             try:
                 injured, injury_status = _is_injured(db, player.player_id)
                 if injured:
-                    drop_projection_for_today(
+                    mark_projection_out(
                         db, ThreePointProjections, today, player.player_id
                     )
                     skipped_injured += 1
@@ -121,11 +126,19 @@ def run() -> dict:
                 )
                 if existing:
                     existing.projected_three_pt_made = projected
+                    existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
-                    existing.fanduel_line = fd_line if fd_line > 0 else None
-                    existing.fanduel_over_under = fd_flag if fd_flag != "n" else None
-                    existing.fanduel_price = fd_price_val
+                    if fd_line > 0:
+                        existing.fanduel_line = fd_line
+                        existing.fanduel_over_under = fd_flag if fd_flag != "n" else None
+                        existing.fanduel_price = fd_price_val
+                    elif existing.fanduel_line is not None:
+                        # No market now: keep the stored line; re-derive the side
+                        # (lifts an OUT flag).
+                        existing.fanduel_over_under = pick_side(
+                            projected, existing.fanduel_line
+                        )
                     updated += 1
                 else:
                     db.add(
@@ -135,6 +148,7 @@ def run() -> dict:
                             player_name=player.player_name,
                             opponent_team_name=player.opponent_team_name,
                             projected_three_pt_made=projected,
+                            model_version=model_version,
                             fanduel_line=fd_line if fd_line > 0 else None,
                             fanduel_over_under=(fd_flag if fd_flag != "n" else None),
                             fanduel_price=fd_price_val,

@@ -23,6 +23,7 @@ from sqlalchemy import text
 
 from app.models.predictions_models import GameProjections, GameActuals
 
+from app.services.etl._game_start import EASTERN, UTC, has_started, keep_known
 from app.services.etl.mlb._db import db_session
 from app.services.etl.mlb.odds_utils import american_to_break_even_prob
 from app.services.etl.mlb.meta_learner import mlb_meta_learner_enabled
@@ -40,8 +41,10 @@ SPORT = "baseball_mlb"
 BASE_URL = "https://api.the-odds-api.com/v4/sports/"
 
 
-def fetch_game_odds():
-    """Fetch moneyline, totals, and spreads from The Odds API for today's games.
+def fetch_game_odds(slate_date=None):
+    """Fetch moneyline, totals, and spreads from The Odds API for the slate's games.
+
+    ``slate_date`` is the Eastern slate date (default: today in ET).
 
     Returns dict keyed by "Away @ Home" with odds data.
     """
@@ -71,11 +74,17 @@ def fetch_game_odds():
         return {}
 
     odds_map = {}
-    today_iso = date.today().isoformat()
+    slate_date = slate_date or datetime.now(EASTERN).date()
 
     for event in events:
-        commence = event.get("commence_time", "")
-        if not commence.startswith(today_iso):
+        # commence_time is UTC ("...Z"); a 20:00 ET game is already tomorrow in UTC.
+        try:
+            commence = datetime.fromisoformat(
+                event.get("commence_time", "").replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if commence.astimezone(EASTERN).date() != slate_date:
             continue
 
         key = f"{event['away_team']} @ {event['home_team']}"
@@ -222,7 +231,43 @@ def _tag_game_projection_model_version(model_version, predictions):
     return normalize_model_version(f"{base}{suffix}")
 
 
-def store_game_projections(predictions, target_date=None, *, model_version=None):
+# Odds-derived columns by market: a rerun whose book has no price for the
+# market keeps what is stored instead of overwriting it with NULL / NO_PLAY.
+_ODDS_GROUPS = (
+    (
+        "market_home_ml",
+        (
+            "market_home_ml",
+            "market_away_ml",
+            "edge_vs_market_ml",
+            "ml_recommendation",
+            "model_confidence",
+            "value_rating",
+        ),
+    ),
+    (
+        "market_total",
+        ("market_total", "edge_vs_market_total", "total_recommendation"),
+    ),
+    ("market_spread", ("market_spread", "spread_recommendation")),
+)
+
+
+def _game_start(game_time):
+    """Feed start ("...Z" string or datetime) as naive UTC, or None."""
+    if isinstance(game_time, str):
+        try:
+            game_time = datetime.fromisoformat(game_time.replace("Z", "+00:00"))
+        except ValueError:
+            return None
+    if isinstance(game_time, datetime) and game_time.tzinfo is not None:
+        game_time = game_time.astimezone(UTC).replace(tzinfo=None)
+    return game_time
+
+
+def store_game_projections(
+    predictions, target_date=None, *, model_version=None, now=None
+):
     """Upsert game projections into the database."""
     if target_date is None:
         target_date = date.today()
@@ -245,11 +290,24 @@ def store_game_projections(predictions, target_date=None, *, model_version=None)
             .first()
         )
 
+        # Stored start (naive UTC) wins: a rerun must not move a started game.
+        start = (existing.game_time if existing else None) or _game_start(
+            pred.get("game_time")
+        )
+        if has_started(start, game_date=target_date, now=now):
+            continue
+
         if existing:
-            # Update existing projection
-            for key, val in pred.items():
-                if key not in ("game_id",) and hasattr(existing, key):
-                    setattr(existing, key, val)
+            values = {
+                k: v
+                for k, v in pred.items()
+                if k not in ("game_id",) and hasattr(existing, k)
+            }
+            for marker, keys in _ODDS_GROUPS:
+                if pred.get(marker) is None and getattr(existing, marker, None) is not None:
+                    for k in keys:
+                        values.pop(k, None)
+            keep_known(existing, values)
             attach_model_version(existing, model_version)
             existing.updated_at = datetime.utcnow()
         else:
@@ -492,7 +550,7 @@ def run_game_projection_pipeline(target_date=None):
 
     # Step 3: Fetch market odds
     logger.info("Step 3: Fetching market odds...")
-    odds_map = fetch_game_odds()
+    odds_map = fetch_game_odds(target_date)
 
     # Step 4: Compute edge and value ratings
     logger.info("Step 4: Computing edge vs market and value ratings...")

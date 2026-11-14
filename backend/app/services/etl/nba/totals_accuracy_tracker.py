@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     RecentGames,
     TeamRoster,
 )
+from app.services.etl.grading_window import grading_dates
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._season import api_basketball_season
 from app.services.etl.nba.totals_ml import shadow_from_factors
@@ -544,127 +545,39 @@ def save_accuracy_metrics(metrics: Dict):
         db.rollback()
 
 
-def update_yesterdays_results():
-    """
-    Update actual results for yesterday's games.
-    """
-    yesterday = _today() - timedelta(days=1)
+def _update_results_for(game_date: date) -> None:
+    logger.info(f"Updating results for {game_date}")
 
-    logger.info(f"Updating results for {yesterday}")
-
-    # Get projections for yesterday
-    projections = db.query(NBATotalsProjections).filter_by(game_date=yesterday).all()
+    projections = db.query(NBATotalsProjections).filter_by(game_date=game_date).all()
 
     if not projections:
-        logger.info("No projections found for yesterday")
+        logger.info("No projections found for %s", game_date)
         return
 
     # ESPN finals stored by store_spread_actuals use our team names exactly;
     # the third-party scores feed is only a fallback.
-    actuals = final_scores_from_actuals(yesterday) or fetch_game_scores_from_api(
-        yesterday
+    actuals = final_scores_from_actuals(game_date) or fetch_game_scores_from_api(
+        game_date
     )
 
     if not actuals:
-        logger.warning("Could not fetch game scores from API")
+        logger.warning("Could not fetch game scores for %s", game_date)
         return
 
-    # Match and store results
     matched = 0
     for proj in projections:
         actual = match_projection_to_actual(proj, actuals)
         if actual:
-            store_actual_result(proj, actual)
+            store_actual_result(proj, actual)  # upserts
             matched += 1
 
     logger.info(f"Matched {matched}/{len(projections)} projections to actuals")
 
 
-def print_accuracy_report(metrics: Dict):
-    """Print accuracy report to console."""
-    if not metrics:
-        print("No accuracy data available")
-        return
-
-    print("\n" + "=" * 70)
-    print("NBA TOTALS ACCURACY REPORT")
-    print(f"Period: {metrics['date_range_start']} to {metrics['date_range_end']}")
-    print("=" * 70)
-
-    print(f"\nGames Tracked: {metrics['total_games']}")
-
-    print("\nERROR METRICS:")
-    print(f"  Mean Absolute Error: {metrics.get('mean_absolute_error', 'N/A')} points")
-    h_mae = metrics.get("heuristic_mean_absolute_error")
-    print(
-        f"  Heuristic MAE: {h_mae} points"
-        if h_mae is not None
-        else "  Heuristic MAE: N/A"
-    )
-    ml_mae = metrics.get("ml_mean_absolute_error")
-    ml_n = metrics.get("ml_games_tracked", 0)
-    if ml_mae is not None:
-        print(f"  ML MAE: {ml_mae} points ({ml_n} games with ml_shadow)")
-    else:
-        print("  ML MAE: N/A (no ml_shadow on projections)")
-    print(
-        f"  Root Mean Square Error: {metrics.get('root_mean_square_error', 'N/A')} points"
-    )
-
-    print("\nDIRECTIONAL ACCURACY:")
-    dir_acc = metrics.get("directional_accuracy")
-    print(f"  Overall: {dir_acc * 100:.1f}%" if dir_acc else "  Overall: N/A")
-    over_acc = metrics.get("over_accuracy")
-    print(f"  Over Picks: {over_acc * 100:.1f}%" if over_acc else "  Over Picks: N/A")
-    under_acc = metrics.get("under_accuracy")
-    print(
-        f"  Under Picks: {under_acc * 100:.1f}%" if under_acc else "  Under Picks: N/A"
-    )
-
-    print("\nVALUE PLAYS (3+ point edge):")
-    print(f"  Count: {metrics.get('value_plays_count', 0)}")
-    val_acc = metrics.get("value_plays_accuracy")
-    print(f"  Accuracy: {val_acc * 100:.1f}%" if val_acc else "  Accuracy: N/A")
-    val_roi = metrics.get("value_plays_roi")
-    print(f"  ROI: {val_roi * 100:.1f}%" if val_roi else "  ROI: N/A")
-
-    print("\nPERFORMANCE BY EDGE SIZE:")
-    print(
-        f"  1-2 pts: {metrics.get('edge_1_2_count', 0)} games, {metrics.get('edge_1_2_accuracy', 0) * 100:.1f}% accuracy"
-        if metrics.get("edge_1_2_accuracy")
-        else f"  1-2 pts: {metrics.get('edge_1_2_count', 0)} games"
-    )
-    print(
-        f"  2-3 pts: {metrics.get('edge_2_3_count', 0)} games, {metrics.get('edge_2_3_accuracy', 0) * 100:.1f}% accuracy"
-        if metrics.get("edge_2_3_accuracy")
-        else f"  2-3 pts: {metrics.get('edge_2_3_count', 0)} games"
-    )
-    print(
-        f"  3-5 pts: {metrics.get('edge_3_5_count', 0)} games, {metrics.get('edge_3_5_accuracy', 0) * 100:.1f}% accuracy"
-        if metrics.get("edge_3_5_accuracy")
-        else f"  3-5 pts: {metrics.get('edge_3_5_count', 0)} games"
-    )
-    print(
-        f"  5+ pts:  {metrics.get('edge_5_plus_count', 0)} games, {metrics.get('edge_5_plus_accuracy', 0) * 100:.1f}% accuracy"
-        if metrics.get("edge_5_plus_accuracy")
-        else f"  5+ pts:  {metrics.get('edge_5_plus_count', 0)} games"
-    )
-
-    print("\n" + "=" * 70)
-
-
-def run_accuracy_tracker():
-    """Main function to run accuracy tracking."""
-    global db
-    db = SessionLocal()
-    try:
-        update_yesterdays_results()
-        metrics = calculate_accuracy_metrics(days=30)
-        if metrics:
-            save_accuracy_metrics(metrics)
-            print_accuracy_report(metrics)
-    finally:
-        db.close()
+def update_yesterdays_results():
+    """Re-grade the lookback window (``NBA_GRADING_LOOKBACK_DAYS``, default 3)."""
+    for game_date in grading_dates("nba", today=_today()):
+        _update_results_for(game_date)
 
 
 def run(days: int = 30) -> dict:

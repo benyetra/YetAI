@@ -151,6 +151,9 @@ def test_nfl_predictions_includes_anytime_td_key(monkeypatch):
     )
     monkeypatch.setattr(predictions_module, "enrich_prop_rows", lambda rows, **kw: rows)
     monkeypatch.setattr(
+        predictions_module, "_merge_past_results", lambda payload, *a: payload
+    )
+    monkeypatch.setattr(
         predictions_module, "attach_team_opponent_fields", lambda rows: rows
     )
     monkeypatch.setattr(

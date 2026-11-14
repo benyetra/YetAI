@@ -44,7 +44,8 @@ FULL_CONFIDENCE_EDGE: dict[str, float] = {
     "passing_yards": 40.0,
 }
 
-_NO_PLAY = frozenset({"", "NO_PLAY", "PASS", "N", "NONE", "NO PLAY"})
+# "OUT": NBA prop row kept after the player was ruled out before tip (etl/nba/_stale_rows.py).
+_NO_PLAY = frozenset({"", "NO_PLAY", "PASS", "N", "NONE", "NO PLAY", "OUT"})
 
 
 def _as_float(value: Any) -> float | None:

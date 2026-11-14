@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import pickle
+from datetime import date
+
 import numpy as np
 import pandas as pd
 
@@ -128,3 +132,75 @@ def test_run_holdout_ablations_smoke():
     assert out["summary"].get("tier_only_lift_vs_dynamic_tier") is not None
     assert out["summary"].get("promote_path") == "market_residual_v6"
     assert out["summary"].get("promote_baseline_mode") == "market"
+
+
+# ---- C6: weekly run learns from this season without leaking into the gate ----
+
+class _Fit:
+    """Picklable stand-in for a fitted model; remembers how many rows it saw."""
+
+    def __init__(self, n):
+        self.n = n
+
+
+def _season_frames(n_old=60, n_new=45):
+    from app.services.etl.nfl.qb_features import FEATURE_NAMES
+
+    n = n_old + n_new
+    f = {name: np.zeros(n) for name in FEATURE_NAMES}
+    f["tier_yards"] = np.linspace(200, 260, n)
+    features = pd.DataFrame(f)
+    target = pd.Series(features["tier_yards"] + 3.0, name="actual_passing_yards")
+    meta = pd.DataFrame(
+        {
+            "season": [2024] * n_old + [2025] * n_new,
+            "week": list(range(1, n_old + 1)) + list(range(1, n_new + 1)),
+            "tier_yards": features["tier_yards"],
+            "static_tier_yards": features["tier_yards"],
+            "pass_yds_line_real": [np.nan] * n,
+            "pass_yds_line_source": ["none"] * n,
+        }
+    )
+    return features, target, meta
+
+
+def _run(monkeypatch, tmp_path, promote):
+    import scripts.nfl_prod_qb_eval as ev
+    import app.services.etl.nfl.qb_passing_yards_ml as qm
+
+    fits = []
+
+    def fake_train(dataset, **kw):
+        fits.append(len(dataset[0]))
+        return _Fit(len(dataset[0])), {"model_family": "x", "n_train": len(dataset[0])}
+
+    monkeypatch.setattr(ev, "_build_with_meta", lambda a, b: _season_frames())
+    monkeypatch.setattr(ev, "_MODELS_DIR", tmp_path)
+    monkeypatch.setattr(ev, "run_holdout_ablations", lambda **k: {})
+    monkeypatch.setattr(ev, "promote_decision", lambda **k: (promote, "r"))
+    monkeypatch.setattr(qm, "train_promote_qb_yards_model", fake_train)
+    monkeypatch.setattr(qm, "predict_yards_ml", lambda *a, **k: 250.0)
+    report = ev.train_and_eval(
+        season_start=date(2024, 9, 1), season_end=date(2025, 12, 1)
+    )
+    return report, fits
+
+
+def test_shipped_model_is_refit_on_all_rows_after_the_gate_passes(monkeypatch, tmp_path):
+    report, fits = _run(monkeypatch, tmp_path, promote=True)
+    assert fits[0] == 60  # gate fit: everything before the holdout season
+    assert fits[-1] == 105  # shipped fit: all graded rows, incl. this season
+    shipped = pickle.loads((tmp_path / "qb_passing_yards.pkl").read_bytes())
+    assert shipped.n == 105
+    assert report["rows_train"] == 60  # metrics stay on the honest holdout
+
+
+def test_no_refit_when_the_gate_did_not_pass(monkeypatch, tmp_path):
+    _, fits = _run(monkeypatch, tmp_path, promote=False)
+    assert fits == [60]
+
+
+def test_data_window_names_last_graded_week(monkeypatch, tmp_path):
+    _run(monkeypatch, tmp_path, promote=True)
+    meta = json.loads((tmp_path / "qb_passing_yards_metadata.json").read_text())
+    assert meta["data_window"] == "2024w1..2025w45"

@@ -5,7 +5,7 @@ Garand (NYR) as confirmed and Leevi Merilainen (VAN) as expected (probable).
 """
 
 import json
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -76,6 +76,8 @@ def written(sqlite_db, monkeypatch):
     sqlite_db.commit()
     for mod in (dp, cs):
         monkeypatch.setattr(mod, "db_session", sqlite_db)
+    # The writer leaves started games alone: run it at NOW (UTC), before puck drop.
+    monkeypatch.setattr(dp, "_now", lambda: NOW.replace(tzinfo=timezone.utc))
     monkeypatch.setattr(
         dp,
         "predict_goalie_saves",

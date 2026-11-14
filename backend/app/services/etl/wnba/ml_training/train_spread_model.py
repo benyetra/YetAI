@@ -7,23 +7,21 @@ from datetime import date
 from typing import Any
 
 import numpy as np
-from sklearn.model_selection import train_test_split  # type: ignore
 
 from app.services.etl._spread_model import WNBA_CONFIG, margin_to_win_prob
 from app.services.etl.wnba._spread_ml_predict import MIN_TRAINING_ROWS
 from app.services.etl.wnba.ml_training.build_spread_dataset import build
 from app.services.etl.wnba.ml_training.train_model import train
-from app.services.etl.wnba.ml_training.upload_to_s3 import upload_spread_model
+from app.services.etl.wnba.ml_training import upload_to_s3
 from app.services.etl.wnba.ml_training.validate_spread_model import validate_holdout
+from app.services.ml.train_model import split
 
 logger = logging.getLogger(__name__)
 
 
 def _holdout_brier(model: Any, features_df, target) -> float:
     """Win-prob Brier on the same 20% holdout split used by ``train``."""
-    _, X_test, _, y_test = train_test_split(
-        features_df, target, test_size=0.2, random_state=42
-    )
+    _, X_test, _, y_test = split(features_df, target, chronological=True)
     preds = np.asarray(model.predict(X_test), dtype=float)
     actual_win = (np.asarray(y_test, dtype=float) > 0.0).astype(float)
     wp = np.array(
@@ -47,8 +45,10 @@ def run(
             "min_required": MIN_TRAINING_ROWS,
         }
 
-    model, metadata = train("spread", features_df, target)
+    # Chronological holdout: the builder emits rows in date order.
+    model, metadata = train("spread", features_df, target, chronological=True)
     metadata = dict(metadata)
+    metadata["data_window"] = f"{season_start}..{season_end}"
     test_brier = _holdout_brier(model, features_df, target)
     metadata["test_brier"] = test_brier
     metadata["holdout"] = {
@@ -78,8 +78,30 @@ def run(
                 validation.get("reason"),
             )
             return result
-        keys = upload_spread_model(model, metadata)
-        result["s3_keys"] = keys
+        # Only replace the live model if it is not worse on this same holdout.
+        _, X_test, _, y_test = split(features_df, target, chronological=True)
+        out = upload_to_s3.upload_gated(
+            "spread",
+            model,
+            metadata,
+            candidate_metric=metadata["test_mae"],
+            metric_name="test_mae",
+            score_champion=upload_to_s3.live_scorer(
+                "spread", X_test, y_test, fill=float("nan")
+            ),
+        )
+        result["gate"] = out
+        if out["status"] == "rejected_by_champion":
+            logger.warning(
+                "WNBA spread candidate rejected: holdout MAE %.3f vs live %.3f",
+                out["candidate_metric"],
+                out["champion_metric"],
+            )
+            result["status"] = "rejected_by_champion"
+        else:
+            result["s3_keys"] = {
+                k: out[k] for k in ("model_key", "metadata_key", "manifest_key")
+            }
     return result
 
 
@@ -103,5 +125,5 @@ if __name__ == "__main__":
         skip_gate=args.skip_gate,
     )
     print(out)
-    if out.get("status") not in {"ok", "insufficient_data"}:
+    if out.get("status") not in {"ok", "insufficient_data", "rejected_by_champion"}:
         raise SystemExit(1)

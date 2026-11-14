@@ -16,11 +16,18 @@ from app.models.predictions_models import (
     PointsProjections,
     PRAProjections,
     ReboundsProjections,
-    TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._fanduel_lines import get_event_id_for_game, get_fanduel_line
+from app.services.etl.nba._fanduel_lines import (
+    get_event_id_for_game,
+    get_fanduel_line,
+    pick_side,
+)
 from app.services.etl.nba._samples import player_games
+from app.services.etl.nba._stale_rows import (
+    active_players_not_started,
+    mark_projection_out,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -127,14 +134,9 @@ def run() -> dict:
 
     db = SessionLocal()
     try:
-        db.query(PRAProjections).filter(PRAProjections.date == today).delete()
-        db.commit()
-
-        active = (
-            db.query(TodayActivePlayers)
-            .filter(TodayActivePlayers.game_date == today)
-            .all()
-        )
+        # No blanket delete of today's rows: a shown row (line, side) is only
+        # ever updated, or flagged OUT, never wiped and rebuilt.
+        active = active_players_not_started(db, today)
         if not active:
             logger.info("generate_pra_predictions: no active players for %s", today)
             return {
@@ -158,6 +160,7 @@ def run() -> dict:
                     .first()
                 )
                 if injury and (injury.status or "").lower() in INJURY_SKIP_STATUSES:
+                    mark_projection_out(db, PRAProjections, today, player.player_id)
                     skipped += 1
                     continue
 
@@ -254,8 +257,18 @@ def run() -> dict:
                     "fanduel_line": fd_line,
                     "fanduel_over_under": fd_flag,
                     "fanduel_price": fd_price,
+                    "model_version": "sum-pra-v1",  # sum of the P/R/A projections
                 }
                 if existing:
+                    if fd_line is None:
+                        # No market now: keep the stored line and price; re-derive
+                        # the side (an OUT flag is lifted, he is active again).
+                        for k in ("fanduel_line", "fanduel_over_under", "fanduel_price"):
+                            del payload[k]
+                        if existing.fanduel_line is not None:
+                            existing.fanduel_over_under = pick_side(
+                                projected_pra, existing.fanduel_line
+                            )
                     for k, v in payload.items():
                         setattr(existing, k, v)
                     updated += 1

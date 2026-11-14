@@ -1,7 +1,8 @@
 """YetAI bets history API helpers."""
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from unittest.mock import patch
 
 from app.models.database_models import BetType, SubscriptionTier, YetAIBet
@@ -83,7 +84,7 @@ def test_history_stats_cover_whole_window_not_just_returned_rows():
         with patch.object(service, "_query_yetai_bets_for_user", side_effect=fake):
             return service.get_yetai_bets_history_for_user("free", None, limit=100)
 
-    bets, stats = asyncio.run(call())
+    bets, stats, _ = asyncio.run(call())
     assert len(bets) == 100 and stats["returned"] == 100
     assert stats["total"] == 151 and stats["won"] == 150 and stats["void"] == 1
     assert not hasattr(service, "_repair_unified_for_evaluation_yetai_picks")
@@ -117,3 +118,83 @@ def test_parlay_legs_in_payload_default_to_pending():
         "leg_result": None,
     }
     assert legs[1]["leg_status"] == "won" and legs[1]["leg_result"] == "ok"
+
+
+# ---- B10 tiles / B11 errors / B14 public panel ----
+def _rows_service(rows):
+    service = YetAIBetsServiceDB()
+
+    def fake(tier, db, statuses, *, since=None, limit=None, order_by="x"):
+        picked = [
+            r
+            for r in rows
+            if r.status in statuses and (since is None or r.created_at >= since)
+        ]
+        return picked[:limit] if limit else picked
+
+    return service, patch.object(
+        service, "_query_yetai_bets_for_user", side_effect=fake
+    )
+
+
+def _settled(i, status, created, odds=100, eff=None):
+    b = _pick(
+        i,
+        status,
+        prediction_factors={"settlement": {"effective_odds": eff}} if eff else None,
+    )
+    b.odds, b.created_at = odds, created
+    return b
+
+
+def test_history_has_today_and_last_7d_blocks():
+    now = datetime.utcnow()
+    rows = [_settled(1, "lost", now), _settled(2, "lost", now)]
+    for r in rows:
+        r.settled_at = now
+    service, p = _rows_service(rows)
+    with p:
+        _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
+    assert blocks["today"]["win_rate"] == 0.0 and blocks["today"]["graded"] == 2
+    assert blocks["last_7d"]["lost"] == 2
+
+
+def test_no_graded_win_rate_is_none():
+    stats = YetAIBetsServiceDB().compute_history_stats([{"status": "void"}], 7)
+    assert stats["win_rate"] is None and stats["graded"] == 0
+
+
+def test_last_7d_uses_effective_odds_and_created_at_window():
+    now = datetime.utcnow()
+    rows = [
+        _settled(1, "won", now - timedelta(days=1), odds=500, eff=100),
+        _settled(2, "won", now - timedelta(days=8), odds=100),
+    ]
+    rows[1].settled_at = now - timedelta(days=1)  # settled recently, created 8d ago
+    service, p = _rows_service(rows)
+    with p:
+        _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
+    assert blocks["last_7d"]["total"] == 1 and blocks["last_7d"]["units"] == 1.0
+
+
+def test_today_tile_counts_results_settled_today_not_picks_created_today():
+    # Last night's picks settle this morning (created yesterday); today's picks stay
+    # pending all day. The tile is about results: window on settled_at (ET day).
+    now = datetime.utcnow()
+    et_midnight = (
+        datetime.now(ZoneInfo("America/New_York"))
+        .replace(hour=0, minute=0, second=0, microsecond=0)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    overnight = _settled(1, "won", now - timedelta(days=1))
+    overnight.settled_at = now
+    yesterday = _settled(2, "lost", now - timedelta(days=1))
+    yesterday.settled_at = et_midnight - timedelta(hours=1)
+    pending_today = _pick(3, "pending")
+    pending_today.created_at = now
+    service, p = _rows_service([overnight, yesterday, pending_today])
+    with p:
+        _, _, blocks = service.get_yetai_bets_history_for_user("free", None)
+    assert blocks["today"]["graded"] == 1 and blocks["today"]["win_rate"] == 100.0
+    assert blocks["last_7d"]["graded"] == 2  # still picks created in the last 7 days

@@ -18,6 +18,7 @@ from app.models.predictions_models import (
     TeamOffenseStats,
 )
 from app.services.etl import _spread_model as _sm
+from app.services.etl._game_start import not_started
 from app.services.etl._spread_model import (
     NBA_CONFIG,
     load_elos_from_actuals,
@@ -25,8 +26,13 @@ from app.services.etl._spread_model import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._spread_features import build_game_features
-from app.services.etl.nba._spread_ml_predict import model_available, predict_margin
+from app.services.etl.nba._spread_ml_predict import (
+    get_model_version,
+    model_available,
+    predict_margin,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
+from app.services.ml_model_version import s3_object_version_date
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +51,13 @@ def run() -> dict:
     today = now_eastern().date()
     end = today + timedelta(days=1)
     use_ml = model_available()
+    ml_version = None
+    if use_ml:
+        # Same fallback as the props: manifest/metadata tag, else the S3 object's date.
+        ml_version = get_model_version()
+        if not ml_version:
+            day = s3_object_version_date("nba/ml_models/xgb_spread.pkl")
+            ml_version = f"xgb-{day}" if day else "ml-unversioned"
 
     db = SessionLocal()
     upsert_rows: list[dict] = []
@@ -59,7 +72,7 @@ def run() -> dict:
             .all()
         )
 
-        for g in games:
+        for g in not_started(games, lambda g: (g.game_time, g.game_date)):
             home_elo = elos.get(g.home_team_name, INITIAL_ELO)
             away_elo = elos.get(g.away_team_name, INITIAL_ELO)
             base_margin = _sm.expected_margin(home_elo, away_elo, cfg=NBA_CONFIG)
@@ -128,6 +141,9 @@ def run() -> dict:
                         "elo_pace_margin": elo_pace_margin,
                         "method": projection_method,
                     },
+                    "model_version": (
+                        ml_version if projection_method == "ml" else "elo-pace-v1"
+                    ),
                     "created_at": datetime.utcnow(),
                 }
             )

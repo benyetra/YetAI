@@ -149,9 +149,9 @@ def generate_betting_recommendation(
             "over_probability": over_probability,
         }
 
-    if abs(edge_percentage) < min_edge and (
-        ml_rec is None or ml_rec.get("recommendation") == "PASS"
-    ):
+    # The classifier alone never makes a call (live Brier worse than a coin flip):
+    # it only vetoes a yards-edge call below, and P(over) is still stored for display.
+    if abs(edge_percentage) < min_edge:
         return {
             "recommendation": "PASS",
             "reason": f"Insufficient edge ({edge_percentage:.1f}%)",
@@ -168,7 +168,7 @@ def generate_betting_recommendation(
         else:
             bet_size = "MEDIUM"
             reason = f"Good edge ({edge_percentage:.1f}%)"
-    elif edge_percentage <= -min_edge:
+    else:
         bet_type = "UNDER"
         if abs(edge_percentage) >= strong_edge and confidence >= strong_confidence:
             bet_size = "LARGE"
@@ -176,18 +176,6 @@ def generate_betting_recommendation(
         else:
             bet_size = "MEDIUM"
             reason = f"Good edge ({abs(edge_percentage):.1f}%)"
-    elif ml_rec and ml_rec.get("recommendation") in {"OVER", "UNDER"}:
-        bet_type = ml_rec["recommendation"]
-        bet_size = "SMALL"
-        reason = ml_rec.get("reason") or "ML O/U edge"
-    else:
-        return {
-            "recommendation": "PASS",
-            "reason": "No significant edge",
-            "edge_percentage": edge_percentage,
-            "bet_size": None,
-            "over_probability": over_probability,
-        }
 
     # Classifier disagreement → always PASS (no strong-edge override).
     if (
@@ -331,6 +319,7 @@ def _run_qb_betting_core():
                         qb_ml_enabled,
                         recenter_qb_interval,
                         reinject_pass_yds_line,
+                        resolve_qb_model_version,
                         resolve_qb_model_yards,
                     )
 
@@ -363,6 +352,9 @@ def _run_qb_betting_core():
                     qb.prediction_method = production_method_for_published(
                         pub_method,
                         existing_method=qb.prediction_method,
+                    )
+                    qb.model_version = resolve_qb_model_version(
+                        pub_method=pub_method, ml_yards=ml_yards
                     )
                     model_yards = resolve_qb_model_yards(
                         tier_yards=float(tier_raw),

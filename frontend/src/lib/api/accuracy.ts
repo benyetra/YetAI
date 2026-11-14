@@ -28,6 +28,14 @@ export interface AccuracyOverviewItem {
   tone: AccuracyTone;
   has_data: boolean;
   graded_count: number;
+  /** Markets behind the headline number (one definition for every league). */
+  markets: AccuracyOverviewMarket[];
+}
+
+export interface AccuracyOverviewMarket {
+  market: string;
+  correct: number;
+  graded: number;
 }
 
 export interface AccuracyOverviewResponse {
@@ -54,6 +62,13 @@ function normalizeOverviewItem(raw: Record<string, unknown>): AccuracyOverviewIt
     tone,
     has_data: hasData,
     graded_count: Number.isFinite(graded) ? graded : 0,
+    markets: Array.isArray(raw.markets)
+      ? (raw.markets as Array<Record<string, unknown>>).map((m) => ({
+          market: String(m.market ?? ''),
+          correct: Number(m.correct ?? 0),
+          graded: Number(m.graded ?? 0),
+        }))
+      : [],
   };
 }
 

@@ -8,6 +8,8 @@ import os
 from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
+from types import SimpleNamespace
+
 from sqlalchemy import func
 
 from app.core.database import SessionLocal
@@ -23,6 +25,7 @@ from app.models.predictions_models import (
     TeamRoster,
     TodayActivePlayers,
 )
+from app.services.etl._game_start import not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._samples import player_games
 from app.services.etl.nba._season import season_opener, season_start_year
@@ -34,6 +37,7 @@ from app.services.etl.nba.totals_baseline import (  # noqa: F401 - re-exported
     baseline_scores,
     blended_scoring,
     pick_record,
+    published_bias,
     recent_bias,
     recommend,
     scoring_averages,
@@ -549,6 +553,71 @@ def finals_for(game_date: date) -> List:
     return _finals_cache[game_date]
 
 
+def _load_published_history(game_date: date, session=None) -> List:
+    """Graded games with the total as published and the correction inside it."""
+    start = max(CALIBRATION_START, season_opener(game_date))
+    rows = (
+        (session or db)
+        .query(NBATotalsActuals, NBATotalsProjections.factors)
+        .outerjoin(
+            NBATotalsProjections,
+            (NBATotalsProjections.game_date == NBATotalsActuals.game_date)
+            & (NBATotalsProjections.home_team_name == NBATotalsActuals.home_team_name)
+            & (NBATotalsProjections.away_team_name == NBATotalsActuals.away_team_name),
+        )
+        .filter(
+            NBATotalsActuals.game_date >= start,
+            NBATotalsActuals.game_date < game_date,
+        )
+        .all()
+    )
+    out = []
+    for actual, factors in rows:
+        if isinstance(factors, str):
+            try:
+                factors = json.loads(factors)
+            except ValueError:
+                factors = None
+        correction = (factors or {}).get("bias_correction") or {}
+        out.append(
+            SimpleNamespace(
+                game_date=actual.game_date,
+                actual_total=actual.actual_total,
+                projected_total=actual.projected_total,
+                applied_bias=correction.get("points") or 0.0,
+            )
+        )
+    return out
+
+
+_published_cache: Dict[date, List] = {}
+
+
+def published_history_for(game_date: date) -> List:
+    """Published-vs-actual history for a run date, loaded once per date."""
+    if game_date not in _published_cache:
+        _published_cache.clear()
+        _published_cache[game_date] = _load_published_history(game_date)
+    return _published_cache[game_date]
+
+
+def published_bias_enabled() -> bool:
+    return os.getenv("NBA_TOTALS_PUBLISHED_BIAS_ENABLED", "true").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
+def bias_correction(finals: List, game_date: date) -> Tuple[float, int, str]:
+    """(points, games, source) to add to the published total."""
+    if published_bias_enabled():
+        points, games = published_bias(published_history_for(game_date), game_date)
+        return points, games, "published"
+    points, games = recent_bias(finals, game_date)
+    return points, games, "baseline"
+
+
 def current_pick_record(game_date: date) -> Tuple[int, int]:
     """Hits and picks of the model's would-be calls since calibration began."""
     start = max(CALIBRATION_START, game_date - timedelta(days=60))
@@ -608,10 +677,10 @@ def generate_projection(
 
     finals = finals_for(game_date)
     from_actuals = baseline_scores(finals, home_team, away_team, game_date)
-    bias, bias_games = 0.0, 0
+    bias, bias_games, bias_source = 0.0, 0, "none"
     if from_actuals:
         home_projected, away_projected = from_actuals
-        bias, bias_games = recent_bias(finals, game_date)
+        bias, bias_games, bias_source = bias_correction(finals, game_date)
     base_projection = home_projected + away_projected
     logger.info(
         f"Base Projection: {base_projection:.1f} (Home: {home_projected:.1f}, Away: {away_projected:.1f})"
@@ -650,15 +719,14 @@ def generate_projection(
     recommendation = "NO_PLAY"
     confidence = 0.5
     rec_note = "no market line"
+    record = current_pick_record(game_date)
 
     if market_total:
         edge = projected_total - market_total
         logger.info(f"Market Total: {market_total}")
         logger.info(f"Edge: {edge:+.1f}")
 
-        recommendation, confidence, rec_note = recommend(
-            edge, current_pick_record(game_date)
-        )
+        recommendation, confidence, rec_note = recommend(edge, record)
 
         logger.info(f"Recommendation: {recommendation} (Confidence: {confidence:.0%})")
 
@@ -675,7 +743,12 @@ def generate_projection(
         "defensive_matchup": f"Home DRtg: {home_stats['defensive_rating']:.1f}, Away DRtg: {away_stats['defensive_rating']:.1f}",
         "key_absence": None,
         "situational": None,
-        "bias_correction": {"points": round(bias, 2), "games": bias_games},
+        "bias_correction": {
+            "points": round(bias, 2),
+            "games": bias_games,
+            "source": bias_source,
+        },
+        "pick_record": list(record),
         "recommendation_note": rec_note,
     }
 
@@ -767,6 +840,7 @@ def save_projection(projection: Dict):
             existing.factors = projection["factors"]
             existing.home_starters = projection.get("home_starters")
             existing.away_starters = projection.get("away_starters")
+            existing.model_version = projection.get("model_version")
             existing.created_at = datetime.utcnow()
         else:
             # Create new
@@ -798,6 +872,7 @@ def save_projection(projection: Dict):
                 factors=projection["factors"],
                 home_starters=projection.get("home_starters"),
                 away_starters=projection.get("away_starters"),
+                model_version=projection.get("model_version"),
             )
             db.add(new_proj)
 
@@ -819,6 +894,8 @@ def get_todays_games() -> List[Dict]:
     today = _today()
 
     games = db.query(NBAGameLines).filter_by(game_date=today).all()
+    # Started games keep the projection users saw before tip.
+    games = not_started(games, lambda g: (g.game_time, g.game_date))
 
     result = []
     for game in games:

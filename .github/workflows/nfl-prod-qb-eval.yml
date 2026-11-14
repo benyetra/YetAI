@@ -1,6 +1,11 @@
 name: NFL Prod QB Eval (Railway)
 
 on:
+  # Dispatch-only. A weekly cron was removed: its champion gate compares this season's
+  # weeks 1..N error with last week's stored weeks 1..N-1 value, so "strictly better"
+  # only says week N was easier, and the refit that ships is never scored on unseen rows.
+  # A sound weekly rule: ship a refit when the script's promote_recommended is true and
+  # the data window moved; no champion comparison for a refit of the same recipe.
   workflow_dispatch:
     inputs:
       season_start:
@@ -12,7 +17,7 @@ on:
         required: true
         default: "2026-02-15"
       force_upload:
-        description: Force-upload shadow QB artifacts to S3 even if promote=false
+        description: Waive the promote_recommended check for the S3 upload (logged; the per-model champion gate still applies)
         required: true
         type: boolean
         default: false
@@ -108,14 +113,20 @@ jobs:
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
           echo "DATABASE_URL resolved (host only): ${DATABASE_URL#*@}"
-          # Always attempt promote-gated S3 upload; force_upload bypasses the gate.
+          # Always attempt promote-gated S3 upload. force_upload (manual dispatch
+          # only) waives promote_recommended; the champion gate still applies.
           EXTRA="--upload"
-          if [ "${{ inputs.force_upload }}" = "true" ]; then
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && [ "${{ inputs.force_upload }}" = "true" ]; then
+            echo "::warning::force_upload requested: promote_recommended check waived"
             EXTRA="--force-upload"
           fi
+          # Scheduled runs have no inputs: same start as the dispatch default, end = today.
+          SEASON_START="${{ inputs.season_start || '2023-09-01' }}"
+          SEASON_END="${{ inputs.season_end || '' }}"
+          if [ -z "$SEASON_END" ]; then SEASON_END="$(date -u +%F)"; fi
           PYTHONPATH=. python scripts/nfl_prod_qb_eval.py \
-            --season-start "${{ inputs.season_start }}" \
-            --season-end "${{ inputs.season_end }}" \
+            --season-start "$SEASON_START" \
+            --season-end "$SEASON_END" \
             $EXTRA | tee /tmp/nfl_prod_qb_eval.json
           python3 - <<'PY'
           import json
@@ -193,6 +204,10 @@ jobs:
                       f"ml_closer_to_line={payload.get('ml_closer_to_line_than_tier')}"
                   )
           print("summary:", ab.get("summary"))
+          for key, res in (report.get("s3_upload") or {}).items():
+              print("s3_upload", key, res.get("status"), res.get("candidate_metric"), "vs champion", res.get("champion_metric"))
+              if res.get("status", "").startswith("rejected"):
+                  print(f"::warning::{key} not uploaded ({res.get('status')})")
           ou = report.get("ou_classifier") or {}
           meta = ou.get("metadata") or {}
           print("ou_status:", ou.get("status"), "acc:", meta.get("holdout_accuracy"), "brier:", meta.get("holdout_brier"))

@@ -81,7 +81,6 @@ def run_retrain_strikeouts(*, dry_run: bool = False) -> dict[str, Any]:
     Raises RuntimeError with counts when guardrail fails.
     """
     from app.services.etl.mlb.classification_model import (
-        MODEL_LOCAL_PATH,
         S3_BUCKET,
         S3_KEY,
         load_training_data,
@@ -97,7 +96,6 @@ def run_retrain_strikeouts(*, dry_run: bool = False) -> dict[str, Any]:
             "dry_run": dry_run,
             "counts": counts,
             "min_joined_required": minimum,
-            "model_local": MODEL_LOCAL_PATH,
             "s3_uri": f"s3://{S3_BUCKET}/{S3_KEY}",
         }
 
@@ -122,9 +120,11 @@ def run_retrain_strikeouts(*, dry_run: bool = False) -> dict[str, Any]:
             manifest["status"] = "dry_run"
             return manifest
 
-        path = train_and_persist()
-        manifest["status"] = "ok"
-        manifest["model_path"] = path
+        upload = train_and_persist()
+        manifest["status"] = (
+            upload["status"] if upload["status"] == "rejected_by_champion" else "ok"
+        )
+        manifest["upload"] = upload
         _write_metrics_manifest(manifest)
         return manifest
     finally:

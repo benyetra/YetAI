@@ -1,6 +1,7 @@
 from datetime import date, datetime
 
 from app.services.auto_pick.candidate import BetCandidate, MarketType
+from app.services.auto_pick.record_gate import ROI_SCORE_SLOPE, min_picks, record_key
 from app.services.auto_pick.scoring_context import ScoringContext
 from app.services.mlb_hit_pick import hit_confidence_pct
 from app.services.mlb_strikeout_pick import signed_edge_for_side
@@ -89,6 +90,9 @@ def edge_sub_score(candidate: BetCandidate) -> float:
 
 
 def historical_sub_score(candidate: BetCandidate, context: ScoringContext) -> float:
+    rec = context.records.get(record_key(candidate))
+    if rec is not None and rec.n_eff >= min_picks():
+        return max(0.0, min(100.0, 50.0 + rec.shrunk_roi * ROI_SCORE_SLOPE))
     rate = context.historical_hit_rates.get(
         (candidate.market_type.value, candidate.league)
     )

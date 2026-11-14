@@ -993,7 +993,6 @@ NHL_PHASES = [
         "actuals",
         [
             nhl_collect_goalie_actuals,
-            nhl_collect_team_shots_actuals,
             nhl_collect_player_shots_actuals,
             nhl_collect_team_totals_actuals,
         ],

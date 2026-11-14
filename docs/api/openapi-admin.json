@@ -2318,7 +2318,7 @@
           "admin-yetai-picks"
         ],
         "summary": "Edit",
-        "description": "Edit editable fields on any pending pick (tier_requirement, reasoning, selection, odds, title).",
+        "description": "Edit a pick that is not settled and has not started; every change is audited\nin prediction_factors[\"edits\"].",
         "operationId": "edit_api_admin_yetai_picks__pick_id__patch",
         "security": [
           {
@@ -2470,6 +2470,103 @@
             "BearerAuth": []
           }
         ],
+        "x-audience": "admin"
+      }
+    },
+    "/api/admin/model-review": {
+      "get": {
+        "tags": [
+          "admin-model-review"
+        ],
+        "summary": "Get Model Review",
+        "description": "Review as of ``date`` (YYYY-MM-DD, default today ET).",
+        "operationId": "get_model_review_api_admin_model_review_get",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Model Review Api Admin Model Review Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Missing or invalid JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Invalid or expired token"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden \u2014 insufficient role or subscription tier",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Admin privileges required"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Required backend service unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                },
+                "example": {
+                  "detail": "Service is currently unavailable"
+                }
+              }
+            }
+          }
+        },
         "x-audience": "admin"
       }
     },

@@ -12,7 +12,6 @@ Runs daily to:
 
 from app.models.predictions_models import (
     NHLGoaliePredictions,
-    NHLGoalieActuals,
     NHLPlayer,
     NHLPlayerShotsPredictions,
     NHLTeam,
@@ -41,15 +40,14 @@ from app.services.etl.nhl.generate_daily_predictions import (
     get_team_totals_odds_for_event,
     get_odds_api_team_name,
 )
-from datetime import datetime, date, timedelta
-from sqlalchemy import and_
+from datetime import datetime, date, timezone
+from app.services.etl._game_start import EASTERN, keep_known, not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._config import get_nhl_season
 from app.services.etl.nhl._db import db_session
 from app.services.etl.nhl._slate import game_datetime_et, slate_game_dates_et
 import logging
 import time
-import requests
 
 # Setup logging
 logging.basicConfig(
@@ -57,24 +55,18 @@ logging.basicConfig(
 )
 
 
-def clear_nhl_predictions_for_dates(dates: set[date]) -> dict[str, int]:
-    """Remove prior rows for this slate so re-runs replace rather than append."""
-    if not dates:
-        return {"player_shots": 0, "team_totals": 0}
-    cleared: dict[str, int] = {}
-    # Goalie rows are upserted per (game_date, team_id), never cleared.
-    for model, key in (
-        (NHLPlayerShotsPredictions, "player_shots"),
-        (NHLTeamTotalsPredictions, "team_totals"),
-    ):
-        cleared[key] = (
-            db_session.query(model)
-            .filter(model.game_date.in_(dates))
-            .delete(synchronize_session=False)
-        )
-    db_session.commit()
-    logging.info("Cleared NHL predictions for dates %s: %s", sorted(dates), cleared)
-    return cleared
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _pregame(games: list[dict]) -> list[dict]:
+    """Games that have not started: the only ones any writer here may touch.
+
+    Rows for a started game are frozen exactly as users last saw them.
+    """
+    return not_started(
+        games, lambda g: game_datetime_et(g)[::-1], now=_now(), naive_tz=EASTERN
+    )
 
 
 def update_nhl_stats():
@@ -123,9 +115,10 @@ def find_goalie_line(goalie_lines: dict, full_name, goalie_name) -> dict:
 def generate_goalie_predictions(games, odds_events, odds_markets=None):
     """Step 2: Generate goalie save predictions with betting lines.
 
-    Upserts one row per (game_date, team_id): reruns update in place, keep a known
-    line when the new run finds none for the same goalie, and drop a stale row when
-    the slot's starter changed and the new one cannot be predicted.
+    Upserts one row per (game_date, team_id): reruns update in place and keep a known
+    line when the new run finds none for the same goalie. A changed starter flags the
+    superseded row was_scratch (kept, never deleted) and gets its own row. Started
+    games are not touched.
     """
     from app.services.etl.nhl.betting_edges import recommendation_for_saves
 
@@ -135,9 +128,10 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
 
     predictions_generated = 0
     skipped_starters = 0
-    stale_deleted = 0
+    stale_scratched = 0
     odds_kwargs = {"markets": odds_markets} if odds_markets else {}
 
+    games = _pregame(games)
     starter_summary = build_slate_starter_context(games)
     game_abbrevs = {
         g["id"]: (
@@ -151,14 +145,16 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
     }
 
     for slot in starter_summary.slots:
-        existing = (
+        rows = (
             db_session.query(NHLGoaliePredictions)
             .filter(
                 NHLGoaliePredictions.game_date == slot.game_date,
                 NHLGoaliePredictions.team_id == slot.team_id,
             )
-            .first()
+            .order_by(NHLGoaliePredictions.id)
+            .all()
         )
+        existing = next((r for r in rows if not r.was_scratch), None)
 
         if not slot.should_predict or not slot.goalie_id or not slot.goalie_name:
             skipped_starters += 1
@@ -168,10 +164,11 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                 slot.team_name,
                 slot.prediction_skipped_reason,
             )
-            # Skip leaves the row alone unless it is for a different known goalie.
+            # Skip leaves the row alone unless it is for a different known goalie,
+            # whose row is flagged (users saw it) rather than deleted.
             if existing and slot.goalie_id and existing.goalie_id != slot.goalie_id:
-                db_session.delete(existing)
-                stale_deleted += 1
+                existing.was_scratch = True
+                stale_scratched += 1
             continue
 
         home_abbrev, away_abbrev, home_team, away_team = game_abbrevs.get(
@@ -207,6 +204,16 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
             )
 
             if "error" not in prediction:
+                if existing and existing.goalie_id != goalie_id:
+                    # Starter changed: keep the old row as shown, flagged.
+                    existing.was_scratch = True
+                    stale_scratched += 1
+                    existing = None
+                if existing is None:
+                    # A goalie who comes back gets his flagged row revived.
+                    existing = next((r for r in rows if r.goalie_id == goalie_id), None)
+                    if existing:
+                        existing.was_scratch = False
                 line_data = find_goalie_line(goalie_lines, slot.full_name, goalie_name)
                 if (
                     line_data.get("line") is None
@@ -271,8 +278,7 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
                     prediction_date=datetime.utcnow(),
                 )
                 if existing:
-                    for key, value in values.items():
-                        setattr(existing, key, value)
+                    keep_known(existing, values)
                 else:
                     db_session.add(NHLGoaliePredictions(**values))
                 predictions_generated += 1
@@ -289,10 +295,10 @@ def generate_goalie_predictions(games, odds_events, odds_markets=None):
 
     db_session.commit()
     logging.info(
-        "✅ Generated %s goalie predictions (%s skipped — starter gate, %s stale removed)",
+        "✅ Generated %s goalie predictions (%s skipped — starter gate, %s scratched)",
         predictions_generated,
         skipped_starters,
-        stale_deleted,
+        stale_scratched,
     )
     return predictions_generated
 
@@ -316,7 +322,7 @@ def generate_player_predictions(games, odds_events):
         key = f"{event['away_team']} @ {event['home_team']}"
         odds_lookup[key] = event
 
-    for game in games:
+    for game in _pregame(games):
         # Get team IDs to look up players
         home_team_id = game["homeTeam"]["id"]
         away_team_id = game["awayTeam"]["id"]
@@ -367,6 +373,17 @@ def generate_player_predictions(games, odds_events):
                     if "error" not in pred:
                         line_data = player_lines.get(pred["player_name"], {})
                         shots_line = line_data.get("line")
+                        old_rows = (
+                            db_session.query(NHLPlayerShotsPredictions)
+                            .filter(
+                                NHLPlayerShotsPredictions.game_date == game_date,
+                                NHLPlayerShotsPredictions.player_id == player.player_id,
+                            )
+                            .all()
+                        )
+                        if shots_line is None and old_rows:
+                            # No market right now: keep the line users saw.
+                            shots_line = old_rows[0].shots_line
                         extra_features = {
                             "baseline_shots": pred.get("baseline_shots"),
                             "ice_time_adjustment": pred.get("ice_time_adjustment"),
@@ -392,7 +409,10 @@ def generate_player_predictions(games, odds_events):
                         edge_info = recommendation_for_shots(
                             write["predicted_shots"], shots_line
                         )
-                        # Save to database
+                        # Replace only what this run can rebuild; the commit below
+                        # swaps old for new in one transaction.
+                        for old in old_rows:
+                            db_session.delete(old)
                         db_pred = NHLPlayerShotsPredictions(
                             game_date=game_date,
                             game_time_et=game_time_et,
@@ -449,7 +469,7 @@ def generate_team_totals_predictions(games, odds_events):
 
     predictions_generated = 0
 
-    for game in games:
+    for game in _pregame(games):
         # Use placeName (city) not commonName (team nickname) to match database
         home_team = game["homeTeam"]["placeName"]["default"]
         away_team = game["awayTeam"]["placeName"]["default"]
@@ -486,6 +506,21 @@ def generate_team_totals_predictions(games, odds_events):
                         over_odds = totals_odds.get("over_odds")
                         under_odds = totals_odds.get("under_odds")
 
+                old_rows = (
+                    db_session.query(NHLTeamTotalsPredictions)
+                    .filter(
+                        NHLTeamTotalsPredictions.game_date == game_date,
+                        NHLTeamTotalsPredictions.home_team_id == home_team_id,
+                        NHLTeamTotalsPredictions.away_team_id == away_team_id,
+                    )
+                    .all()
+                )
+                if draftkings_ou_line is None and old_rows:
+                    # No market right now: keep the line users saw.
+                    old = old_rows[0]
+                    draftkings_ou_line = old.draftkings_ou_line
+                    over_odds, under_odds = old.over_odds, old.under_odds
+
                 write = enrich_team_totals_prediction_for_write(
                     pred,
                     draftkings_ou_line=draftkings_ou_line,
@@ -511,7 +546,9 @@ def generate_team_totals_predictions(games, odds_events):
                     write["predicted_total_goals"], draftkings_ou_line, edge
                 )
 
-                # Save to database
+                # Replace only what this run can rebuild (one transaction at commit).
+                for old in old_rows:
+                    db_session.delete(old)
                 db_pred = NHLTeamTotalsPredictions(
                     game_date=game_date,
                     game_time_et=game_time_et,
@@ -557,183 +594,6 @@ def generate_team_totals_predictions(games, odds_events):
     return predictions_generated
 
 
-def collect_actuals_from_completed_games():
-    """Step 5: Collect actual results from yesterday's games"""
-    logging.info("=" * 80)
-    logging.info("STEP 5: Collecting actuals from completed games")
-    logging.info("=" * 80)
-
-    try:
-        yesterday = now_eastern().date() - timedelta(days=1)
-
-        # Get yesterday's schedule
-        url = f"https://api-web.nhle.com/v1/schedule/{yesterday.strftime('%Y-%m-%d')}"
-        response = requests.get(url)
-        response.raise_for_status()
-        schedule_data = response.json()
-
-        # Find completed games
-        completed_games = []
-        if "gameWeek" in schedule_data:
-            for game_day in schedule_data["gameWeek"]:
-                if "games" in game_day:
-                    for game in game_day["games"]:
-                        if game.get("gameState") in ["OFF", "FINAL"]:
-                            completed_games.append(game)
-
-        logging.info(
-            f"📊 Found {len(completed_games)} completed games from {yesterday}"
-        )
-
-        actuals_saved = 0
-
-        for game in completed_games:
-            game_id = game["id"]
-
-            # Get detailed boxscore
-            boxscore_url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
-            box_response = requests.get(boxscore_url)
-
-            if box_response.status_code != 200:
-                logging.warning(f"⚠️  Could not fetch boxscore for game {game_id}")
-                continue
-
-            box_data = box_response.json()
-
-            if "playerByGameStats" not in box_data:
-                continue
-
-            # Extract team info
-            away_team = box_data.get("awayTeam", {})
-            home_team = box_data.get("homeTeam", {})
-
-            # Process away team goalies
-            if "awayTeam" in box_data["playerByGameStats"]:
-                for position, players in box_data["playerByGameStats"][
-                    "awayTeam"
-                ].items():
-                    if position == "goalies":
-                        for goalie in players:
-                            actuals_saved += save_goalie_actual(
-                                goalie,
-                                game_id,
-                                yesterday,
-                                away_team.get("placeName", {}).get("default", ""),
-                                home_team.get("placeName", {}).get("default", ""),
-                            )
-
-            # Process home team goalies
-            if "homeTeam" in box_data["playerByGameStats"]:
-                for position, players in box_data["playerByGameStats"][
-                    "homeTeam"
-                ].items():
-                    if position == "goalies":
-                        for goalie in players:
-                            actuals_saved += save_goalie_actual(
-                                goalie,
-                                game_id,
-                                yesterday,
-                                home_team.get("placeName", {}).get("default", ""),
-                                away_team.get("placeName", {}).get("default", ""),
-                            )
-
-        db_session.commit()
-
-        logging.info(f"✅ Saved {actuals_saved} goalie actual results")
-        return actuals_saved
-
-    except Exception as e:
-        logging.error(f"❌ Error collecting actuals: {e}")
-        import traceback
-
-        logging.error(traceback.format_exc())
-        return 0
-
-
-def save_goalie_actual(goalie, game_id, game_date, team_name, opponent_name):
-    """Save a single goalie actual result to database"""
-    try:
-        goalie_id = goalie.get("playerId")
-        goalie_name = goalie.get("name", {}).get("default", "")
-
-        # Skip if played less than 10 minutes
-        toi = goalie.get("toi", "0:00")
-        toi_parts = toi.split(":")
-        if len(toi_parts) == 2:
-            minutes = int(toi_parts[0])
-            if minutes < 10:
-                logging.info(f"⏭️  Skipping {goalie_name} - only played {toi}")
-                return 0
-
-        # Check if already exists
-        existing = (
-            db_session.query(NHLGoalieActuals)
-            .filter(
-                and_(
-                    NHLGoalieActuals.game_id == game_id,
-                    NHLGoalieActuals.goalie_id == goalie_id,
-                )
-            )
-            .first()
-        )
-
-        if existing:
-            logging.info(f"⏭️  Result already exists for {goalie_name}")
-            return 0
-
-        # Find matching prediction
-        prediction = (
-            db_session.query(NHLGoaliePredictions)
-            .filter(
-                and_(
-                    NHLGoaliePredictions.goalie_name == goalie_name,
-                    NHLGoaliePredictions.game_date == game_date,
-                )
-            )
-            .first()
-        )
-
-        # Create actual record
-        actual = NHLGoalieActuals(
-            game_id=game_id,
-            game_date=game_date,
-            goalie_id=goalie_id,
-            goalie_name=goalie_name,
-            team_name=team_name,
-            opponent_team_name=opponent_name,
-            actual_saves=goalie.get("saves", 0),
-            actual_shots_against=goalie.get("shotsAgainst", 0),
-            actual_save_pct=goalie.get("savePctg", 0.0),
-            actual_goals_against=goalie.get("goalsAgainst", 0),
-            actual_toi=toi,
-            decision=goalie.get("decision", ""),
-            predicted_saves=prediction.predicted_saves if prediction else None,
-            predicted_shots_against=(
-                prediction.predicted_shots_against if prediction else None
-            ),
-            prediction_error=(
-                goalie.get("saves", 0) - prediction.predicted_saves
-                if prediction
-                else None
-            ),
-            prediction_correct=(
-                abs(goalie.get("saves", 0) - prediction.predicted_saves) <= 2
-                if prediction
-                else None
-            ),
-        )
-
-        db_session.add(actual)
-        logging.info(
-            f"✅ {goalie_name}: {actual.actual_saves} saves (predicted: {actual.predicted_saves or 'N/A'})"
-        )
-        return 1
-
-    except Exception as e:
-        logging.error(f"❌ Error saving actual for {goalie_name}: {e}")
-        return 0
-
-
 def _run_daily_core() -> dict:
     """Main automation function - runs daily (ET slate date)."""
     slate_date = now_eastern().date()
@@ -769,7 +629,6 @@ def _run_daily_core() -> dict:
     logging.info(f"📅 Found {len(games)} games scheduled for {slate_date}\n")
 
     slate_dates = slate_game_dates_et(games, slate_date)
-    cleared = clear_nhl_predictions_for_dates(slate_dates)
 
     logging.info("Fetching betting odds from The Odds API...")
     odds_events = get_nhl_events_from_odds_api()
@@ -791,8 +650,6 @@ def _run_daily_core() -> dict:
     player_count = generate_player_predictions(games, odds_events)
     time.sleep(2)
     team_count = generate_team_totals_predictions(games, odds_events)
-    time.sleep(2)
-    actuals_count = collect_actuals_from_completed_games()
 
     logging.info("\n" + "=" * 80)
     logging.info("AUTOMATION COMPLETE")
@@ -800,20 +657,17 @@ def _run_daily_core() -> dict:
     logging.info(f"✅ Goalie predictions: {goalie_count}")
     logging.info(f"✅ Player predictions: {player_count}")
     logging.info(f"✅ Team totals predictions: {team_count}")
-    logging.info(f"✅ Actuals collected: {actuals_count}")
     logging.info("=" * 80 + "\n")
 
     return {
         "status": "ok",
         "slate_date_et": str(slate_date),
-        "slate_dates_cleared": sorted(str(d) for d in slate_dates),
-        "rows_cleared": cleared,
+        "slate_dates": sorted(str(d) for d in slate_dates),
         "games_scheduled": len(games),
         "odds_events": len(odds_events),
         "goalie_predictions": goalie_count,
         "player_predictions": player_count,
         "team_totals_predictions": team_count,
-        "actuals_collected": actuals_count,
     }
 
 

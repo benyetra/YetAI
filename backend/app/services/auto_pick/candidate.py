@@ -95,6 +95,18 @@ def moved_line_edge(
     return raw if (edge > threshold if strict else edge >= threshold) else None
 
 
+def projection_ref(row, **keys) -> dict:
+    """Pointer back to the projection row a candidate was built from.
+
+    ``keys`` are the columns that identify the row if the ETL rewrites it.
+    """
+    return {
+        "table": getattr(row.__class__, "__tablename__", None),
+        "id": getattr(row, "id", None),
+        **keys,
+    }
+
+
 def slate_window(now_utc: datetime) -> DateRange:
     """ET slate day containing ``now_utc`` (naive UTC or aware)."""
     return slate_window_for_date(utc_to_eastern(now_utc).date())

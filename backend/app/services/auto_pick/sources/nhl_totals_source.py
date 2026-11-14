@@ -23,7 +23,11 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NHLTeamTotalsPredictions
-from app.services.auto_pick.candidate import DateRange, eastern_naive_to_utc
+from app.services.auto_pick.candidate import (
+    DateRange,
+    eastern_naive_to_utc,
+    projection_ref,
+)
 from app.services.auto_pick.sources._nhl_teams import nhl_full_name
 
 log = logging.getLogger(__name__)
@@ -37,13 +41,14 @@ class NHLTotalsSource:
         day = date_range.slate_date
 
         try:
-            rows = (
-                self.db.query(NHLTeamTotalsPredictions)
-                .filter(
-                    NHLTeamTotalsPredictions.game_date == day,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NHLTeamTotalsPredictions)
+                    .filter(
+                        NHLTeamTotalsPredictions.game_date == day,
+                    )
+                    .all()
                 )
-                .all()
-            )
         except Exception:
             log.exception("NHLTotalsSource: DB query failed")
             return []
@@ -85,6 +90,13 @@ class NHLTotalsSource:
                     "game_date": day,
                     "home_team_name": home,
                     "away_team_name": away,
+                    "projection_ref": projection_ref(
+                        r,
+                        game_date=r.game_date,
+                        home_team_id=r.home_team_id,
+                        away_team_id=r.away_team_id,
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projected_total": float(r.predicted_total_goals),
                     "market_total": float(r.draftkings_ou_line),
                     "side": side,

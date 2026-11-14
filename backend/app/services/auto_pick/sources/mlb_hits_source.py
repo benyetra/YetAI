@@ -10,7 +10,7 @@ from datetime import date, datetime
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import Hitter
-from app.services.auto_pick.candidate import DateRange
+from app.services.auto_pick.candidate import DateRange, projection_ref
 from app.services.mlb_hit_pick import (
     DEFAULT_HIT_LINE,
     DEFAULT_HIT_ODDS,
@@ -31,14 +31,15 @@ class MLBHitsSource:
         end = date_range.end
 
         try:
-            rows = (
-                self.db.query(Hitter)
-                .filter(
-                    Hitter.game_time >= start,
-                    Hitter.game_time <= end,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(Hitter)
+                    .filter(
+                        Hitter.game_time >= start,
+                        Hitter.game_time <= end,
+                    )
+                    .all()
                 )
-                .all()
-            )
         except Exception:
             log.exception("MLBHitsSource: DB query failed")
             return []
@@ -61,6 +62,11 @@ class MLBHitsSource:
                     "stat": "hits",
                     "line": float(DEFAULT_HIT_LINE),
                     "odds": DEFAULT_HIT_ODDS,
+                    "odds_assumed": True,  # DEFAULT_HIT_ODDS is not a quoted price
+                    "projection_ref": projection_ref(
+                        r, game_id=r.game_id, player_id=r.player_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projection": projection,
                     "side": "over",
                     "sample_size": r.hits_last_10_games,

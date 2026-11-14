@@ -12,10 +12,12 @@ from app.core.database import SessionLocal
 from app.models.predictions_models import (
     AssistsProjections,
     PlayerInjuryStatus,
-    TodayActivePlayers,
 )
 from app.services.etl.nba._espn import now_eastern
-from app.services.etl.nba._stale_rows import drop_projection_for_today
+from app.services.etl.nba._stale_rows import (
+    active_players_not_started,
+    mark_projection_out,
+)
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._fanduel_lines import (
     PROP_MARKETS,
@@ -23,10 +25,10 @@ from app.services.etl.nba._fanduel_lines import (
     line_diagnostics,
 )
 from app.services.etl.nba.prop_calibration import maybe_attach_p_over
-from app.services.etl.nba._ml_predict import get_metadata, predict
+from app.services.etl.nba._ml_predict import predict
 from app.services.ml_model_version import (
     attach_model_version,
-    model_version_from_metadata,
+    resolve_nba_prop_model_version,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,15 +59,11 @@ def run() -> dict:
     lines_attached = 0
     rows_written = 0
 
-    model_version = model_version_from_metadata(get_metadata(STAT), prefix="xgb")
+    model_version = resolve_nba_prop_model_version(STAT)
 
     db = SessionLocal()
     try:
-        active = (
-            db.query(TodayActivePlayers)
-            .filter(TodayActivePlayers.game_date == today)
-            .all()
-        )
+        active = active_players_not_started(db, today)
 
         if not active:
             logger.info(
@@ -88,7 +86,7 @@ def run() -> dict:
             try:
                 injured, injury_status = _is_injured(db, player.player_id)
                 if injured:
-                    drop_projection_for_today(
+                    mark_projection_out(
                         db, AssistsProjections, today, player.player_id
                     )
                     skipped_injured += 1

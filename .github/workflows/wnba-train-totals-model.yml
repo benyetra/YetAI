@@ -122,4 +122,9 @@ jobs:
           fi
           OUT="$(python3 -m app.services.etl.wnba.ml_training.train_totals_model "${ARGS[@]}")"
           echo "$OUT"
+          # A candidate worse than the live model is not a failure: the live model is kept.
+          if echo "$OUT" | grep -q "rejected_by_champion"; then
+            echo "::warning::candidate rejected by champion gate; kept the live model"
+            exit 0
+          fi
           echo "$OUT" | grep -q "'status': 'ok'" || exit 1

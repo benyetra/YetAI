@@ -58,6 +58,8 @@ def test_wnba_props_ranked_by_season_mpg_not_row_id(monkeypatch):
 
 
 def test_wnba_props_caps_at_prop_limit(monkeypatch):
+    # The cap and ranking apply to a live slate; past slates return every row.
+    monkeypatch.setattr(predictions_module, "_is_past_date", lambda _d: False)
     db = MagicMock()
     model = MagicMock()
     model.date = MagicMock()

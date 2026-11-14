@@ -18,7 +18,7 @@ from datetime import datetime, time, timedelta
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import QBPredictions
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 from app.services.auto_pick.sources._nfl_lines import (
     find_line,
     line_event_id,
@@ -38,15 +38,16 @@ class NFLQBPassingSource:
         end_et = start_et + timedelta(days=1)
 
         try:
-            rows = (
-                self.db.query(QBPredictions)
-                .filter(
-                    QBPredictions.game_date >= start_et,
-                    QBPredictions.game_date < end_et,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(QBPredictions)
+                    .filter(
+                        QBPredictions.game_date >= start_et,
+                        QBPredictions.game_date < end_et,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            lines = load_nfl_lines(self.db, day) if rows else []
+                lines = load_nfl_lines(self.db, day) if rows else []
         except Exception:
             log.exception("NFLQBPassingSource: DB query failed")
             return []
@@ -76,6 +77,10 @@ class NFLQBPassingSource:
                     "game_date": day,
                     "player": r.qb_player_name,
                     "stat": "passing_yards",
+                    "projection_ref": projection_ref(
+                        r, game_date=r.game_date, qb_player_id=r.qb_player_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "line": float(r.ou_line),
                     "odds": int(odds),
                     "projection": float(r.predicted_passing_yards),

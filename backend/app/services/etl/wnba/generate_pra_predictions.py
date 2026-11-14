@@ -23,6 +23,7 @@ from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
+    freeze_prop_rows,
     resolve_wnba_event_id,
 )
 from app.services.etl.wnba._yetiwatch_news import attach_yetiwatch_news
@@ -162,6 +163,7 @@ def run() -> dict:
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
                 "projected_pra": round(projected, 1),
+                "model_version": "sum-pra-v1",  # sum of the P/R/A projections
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",
@@ -188,6 +190,14 @@ def run() -> dict:
             attach_yetiwatch_news(row, db=db, player_id=p.player_id, game_date=today)
             upsert_rows.append(row)
 
+        upsert_rows = freeze_prop_rows(
+            db,
+            WNBAPRAProjections,
+            upsert_rows,
+            stat=STAT,
+            game_date=today,
+            active_rows=active_rows,
+        )
         upsert_many(
             db,
             WNBAPRAProjections,

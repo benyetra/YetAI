@@ -230,9 +230,11 @@ def resolve_nba_prop_model_version(
     if metadata is None:
         if allow_network is False:
             return normalize_model_version(f"xgb-{stat}-v1")
-        from app.services.etl.nba._ml_predict import get_metadata
+        from app.services.etl.nba._ml_predict import get_model_version
 
-        metadata = get_metadata(stat)
+        loaded = get_model_version(stat)  # manifest version, else metadata tag
+        if loaded:
+            return normalize_model_version(loaded)
 
     if metadata:
         return model_version_from_metadata(
@@ -249,7 +251,17 @@ def resolve_nba_prop_model_version(
     return normalize_model_version(f"xgb-{stat}-v1")
 
 
+_WARNED_MISSING: set[type] = set()
+
+
 def attach_model_version(row: Any, version: str) -> None:
-    """Set ``model_version`` on an ORM row when the column exists."""
+    """Set ``model_version`` on an ORM row; warn once per class if the column is missing."""
     if hasattr(row, "model_version"):
         row.model_version = normalize_model_version(version)
+    elif type(row) not in _WARNED_MISSING:
+        _WARNED_MISSING.add(type(row))
+        logger.warning(
+            "%s has no model_version column; version %r not stored",
+            type(row).__name__,
+            version,
+        )

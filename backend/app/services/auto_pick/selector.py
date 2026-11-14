@@ -68,6 +68,8 @@ def hard_gate_reason(
         return "non_positive_edge"
     if c.market_odds < odds_min or c.market_odds > odds_max:
         return "odds_out_of_bounds"
+    if c.projection_metadata.get("odds_assumed"):
+        return "odds_assumed"
     if c.projection_metadata.get("injury_flag"):
         return "injury_flag"
     if c.commence_time is not None:

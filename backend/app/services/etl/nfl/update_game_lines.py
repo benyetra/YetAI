@@ -9,6 +9,7 @@ from datetime import date, datetime, timedelta, timezone
 import requests
 
 from app.core.database import SessionLocal
+from app.services.etl._game_start import has_started, keep_known
 from app.models.predictions_models import NFLGameLines
 from app.services.etl.nba._espn import EASTERN, now_eastern
 from app.services.etl.nfl.team_names import normalize_team_name
@@ -159,6 +160,9 @@ def run() -> dict:
                 game_dt = datetime.fromisoformat(ct.replace("Z", "+00:00"))
                 if game_dt.tzinfo is None:
                     game_dt = game_dt.replace(tzinfo=timezone.utc)
+                if has_started(game_dt):
+                    # live/finished game: the stored line is the closing one
+                    continue
                 game_date = game_dt.astimezone(EASTERN).date()
                 if not game_date_in_refresh_window(game_date, today=today):
                     continue
@@ -180,8 +184,7 @@ def run() -> dict:
                 if existing:
                     existing.odds_api_event_id = event_id
                     existing.game_time = game_dt
-                    for k, v in odds.items():
-                        setattr(existing, k, v)
+                    keep_known(existing, odds)
                     existing.last_updated = datetime.utcnow()
                 else:
                     db.add(

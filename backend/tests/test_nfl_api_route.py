@@ -13,6 +13,10 @@ def test_nfl_route_exists():
 
 
 def test_nfl_predictions_returns_all_expected_keys(monkeypatch):
+    # db is None here; past-row grading is covered in test_predictions_past_results.
+    monkeypatch.setattr(
+        predictions_module, "_merge_past_results", lambda payload, *a: payload
+    )
     """The route should return qb, kicker, spreads, and totals (some may be empty)."""
     captured_models = []
 

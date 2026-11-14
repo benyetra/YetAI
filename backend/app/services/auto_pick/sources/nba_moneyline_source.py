@@ -9,7 +9,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NBAGameLines, NBASpreadProjections
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 
 log = logging.getLogger(__name__)
 
@@ -24,17 +24,18 @@ class NBAMoneylineSource:
 
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         try:
-            rows = (
-                self.db.query(NBASpreadProjections)
-                .filter(NBASpreadProjections.game_date == date_range.slate_date)
-                .all()
-            )
-            gls = {
-                (g.home_team_name, g.away_team_name): g
-                for g in self.db.query(NBAGameLines)
-                .filter(NBAGameLines.game_date == date_range.slate_date)
-                .all()
-            }
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NBASpreadProjections)
+                    .filter(NBASpreadProjections.game_date == date_range.slate_date)
+                    .all()
+                )
+                gls = {
+                    (g.home_team_name, g.away_team_name): g
+                    for g in self.db.query(NBAGameLines)
+                    .filter(NBAGameLines.game_date == date_range.slate_date)
+                    .all()
+                }
         except Exception:
             log.exception("NBAMoneylineSource: query failed")
             return []
@@ -56,6 +57,13 @@ class NBAMoneylineSource:
                     "home_team_name": r.home_team_name,
                     "away_team_name": r.away_team_name,
                     "commence_time": to_naive_utc(gl.game_time),
+                    "projection_ref": projection_ref(
+                        r,
+                        game_date=r.game_date,
+                        home_team_name=r.home_team_name,
+                        away_team_name=r.away_team_name,
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "home_win_prob": r.home_win_prob,
                     "away_win_prob": 1.0 - r.home_win_prob,
                     "moneyline_home": gl.moneyline_home,

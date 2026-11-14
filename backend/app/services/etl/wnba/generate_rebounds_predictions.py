@@ -17,9 +17,11 @@ from app.services.etl.wnba._feature_engineering import (
     apply_expected_minutes,
     build_features,
 )
-from app.services.etl.wnba._ml_predict import predict
+from app.services.etl.wnba._ml_predict import get_metadata, predict
+from app.services.ml_model_version import model_version_from_metadata
 from app.services.etl.wnba._prop_lines import (
     attach_prop_market_fields,
+    freeze_prop_rows,
     resolve_wnba_event_id,
 )
 from app.services.etl.wnba._yetiwatch_news import attach_yetiwatch_news
@@ -76,6 +78,9 @@ def run() -> dict:
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
                 "projected_rebounds": projected,
+                "model_version": model_version_from_metadata(
+                    get_metadata(STAT), prefix="xgb", fallback=f"xgb-{STAT}-v1"
+                ),
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",
@@ -107,6 +112,14 @@ def run() -> dict:
             )
             attach_yetiwatch_news(row, db=db, player_id=p.player_id, game_date=today)
             upsert_rows.append(row)
+        upsert_rows = freeze_prop_rows(
+            db,
+            WNBAReboundsProjections,
+            upsert_rows,
+            stat=STAT,
+            game_date=today,
+            active_rows=active_rows,
+        )
         upsert_many(
             db,
             WNBAReboundsProjections,

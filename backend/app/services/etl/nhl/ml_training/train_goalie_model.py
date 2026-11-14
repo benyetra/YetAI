@@ -2,56 +2,35 @@
 
 from __future__ import annotations
 
-import json
 import logging
-import pickle  # nosec B403 - artifacts written to private bucket only
-import tempfile
-from datetime import date, datetime
-from pathlib import Path
+from datetime import date
 from typing import Any
 
-import boto3
+import pandas as pd
 
 from app.services.etl.nhl.goalie_saves_ml import (
     MODEL_KEY,
-    S3_BUCKET,
     S3_PREFIX,
+    feature_names,
     train_goalie_model,
 )
+from app.services.etl.nhl.ml_training._gated import upload_gated_model
 from app.services.etl.nhl.ml_training.build_goalie_dataset import build
+from app.services.ml.train_model import split
 
 logger = logging.getLogger(__name__)
 
 MIN_TRAINING_ROWS = 60
-S3_OBJECT_KEY = f"{S3_PREFIX}/{MODEL_KEY}.pkl"
-S3_META_KEY = f"{S3_PREFIX}/{MODEL_KEY}_metadata.json"
 
 
 def upload_goalie_model(
     model: Any,
     metadata: dict[str, Any],
-    *,
-    boto3_module: Any | None = None,
-) -> dict[str, str]:
-    boto3_mod = boto3_module if boto3_module is not None else boto3
-    s3 = boto3_mod.client("s3")
-    with tempfile.TemporaryDirectory() as tmpdir:
-        model_path = Path(tmpdir) / f"{MODEL_KEY}.pkl"
-        meta_path = Path(tmpdir) / f"{MODEL_KEY}_metadata.json"
-        with model_path.open("wb") as f:
-            pickle.dump(model, f)
-        meta_path.write_text(json.dumps(metadata, indent=2, default=str))
-
-        s3.upload_file(str(model_path), S3_BUCKET, S3_OBJECT_KEY)
-        s3.upload_file(str(meta_path), S3_BUCKET, S3_META_KEY)
-        logger.info(
-            "uploaded s3://%s/%s and s3://%s/%s",
-            S3_BUCKET,
-            S3_OBJECT_KEY,
-            S3_BUCKET,
-            S3_META_KEY,
-        )
-        return {"model_key": S3_OBJECT_KEY, "metadata_key": S3_META_KEY}
+    X_hold: pd.DataFrame,
+    y_hold: Any,
+) -> dict[str, Any]:
+    """Gated: status is first_upload / uploaded / rejected_by_champion."""
+    return upload_gated_model(S3_PREFIX, MODEL_KEY, model, metadata, X_hold, y_hold)
 
 
 def run(
@@ -75,8 +54,12 @@ def run(
         "rows": len(features_df),
     }
     if upload:
-        keys = upload_goalie_model(model, metadata)
-        result["s3_keys"] = keys
+        order = feature_names()
+        _, X_hold, _, y_hold = split(features_df[order], target, chronological=True)
+        out = upload_goalie_model(model, metadata, X_hold, y_hold)
+        result["upload"] = out
+        if out["status"] == "rejected_by_champion":
+            result["status"] = "rejected_by_champion"
     return result
 
 

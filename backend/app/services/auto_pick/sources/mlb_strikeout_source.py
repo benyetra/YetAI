@@ -13,7 +13,7 @@ from app.models.predictions_models import (
     Pitcher,
     StrikeoutProjections,
 )
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 from app.services.mlb_strikeout_pick import (
     pick_confidence_pct,
     projection_pick_side,
@@ -31,29 +31,30 @@ class MLBStrikeoutSource:
         day = date_range.slate_date
 
         try:
-            rows = (
-                self.db.query(StrikeoutProjections)
-                .filter(
-                    StrikeoutProjections.date == day,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(StrikeoutProjections)
+                    .filter(
+                        StrikeoutProjections.date == day,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            # pred_pitcher has no date column; keep only today's starts (naive UTC).
-            pitcher_meta = {
-                p.pitcher_id: p
-                for p in self.db.query(Pitcher)
-                .filter(
-                    Pitcher.game_time >= date_range.start,
-                    Pitcher.game_time < date_range.end,
-                )
-                .all()
-            }
-            games = {
-                g.game_id: g
-                for g in self.db.query(GameProjections)
-                .filter(GameProjections.date == day)
-                .all()
-            }
+                # pred_pitcher has no date column; keep only today's starts (naive UTC).
+                pitcher_meta = {
+                    p.pitcher_id: p
+                    for p in self.db.query(Pitcher)
+                    .filter(
+                        Pitcher.game_time >= date_range.start,
+                        Pitcher.game_time < date_range.end,
+                    )
+                    .all()
+                }
+                games = {
+                    g.game_id: g
+                    for g in self.db.query(GameProjections)
+                    .filter(GameProjections.date == day)
+                    .all()
+                }
         except Exception:
             log.exception("MLBStrikeoutSource: DB query failed")
             return []
@@ -127,6 +128,10 @@ class MLBStrikeoutSource:
                     "line": float(line_val),
                     "odds": odds,
                     "odds_assumed": assumed,
+                    "projection_ref": projection_ref(
+                        r, date=r.date, pitcher_id=r.pitcher_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projection": float(r.projected_strikeouts),
                     "side": side,
                     "sample_size": None,

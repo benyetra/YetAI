@@ -304,6 +304,9 @@ def apply_fanduel_to_projection(
     )
     if line is None:
         # A rerun that finds nothing must not wipe a line stored by an earlier run.
+        # Re-derive the side from it (lifts an OUT flag: the player is active again).
+        if getattr(row, "fanduel_line", None) is not None:
+            row.fanduel_over_under = pick_side(projection, row.fanduel_line)
         return False
     row.fanduel_line = line
     row.fanduel_over_under = flag

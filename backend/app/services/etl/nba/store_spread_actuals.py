@@ -9,11 +9,12 @@ the games we had a line for.
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import NBASpreadActuals
-from app.services.etl.nba._espn import fetch_final_scores, now_eastern
+from app.services.etl.grading_window import grading_dates
+from app.services.etl.nba._espn import fetch_final_scores
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
@@ -40,24 +41,27 @@ def actual_rows(game_date: date, finals: list[dict]) -> list[dict]:
 
 
 def run(target_date=None) -> dict:
-    if target_date is None:
-        target_date = now_eastern().date() - timedelta(days=1)
-
-    rows = actual_rows(target_date, fetch_final_scores(target_date))
+    """Store finals for ``target_date``, or re-grade ``grading_dates("nba")``."""
+    dates = [target_date] if target_date else grading_dates("nba")
     db = SessionLocal()
+    written = 0
     try:
-        if rows:
-            upsert_many(
-                db,
-                NBASpreadActuals,
-                rows,
-                conflict_keys=["game_date", "home_team_name", "away_team_name"],
-            )
-        db.commit()
+        for d in dates:
+            rows = actual_rows(d, fetch_final_scores(d))
+            if rows:
+                upsert_many(
+                    db,
+                    NBASpreadActuals,
+                    rows,
+                    conflict_keys=["game_date", "home_team_name", "away_team_name"],
+                )
+            db.commit()
+            written += len(rows)
         return {
             "status": "ok",
-            "date": target_date.isoformat(),
-            "spreads_written": len(rows),
+            "date": dates[-1].isoformat(),
+            "dates": [d.isoformat() for d in dates],
+            "spreads_written": written,
         }
     finally:
         db.close()

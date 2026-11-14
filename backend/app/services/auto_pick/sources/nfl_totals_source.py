@@ -12,6 +12,7 @@ from app.models.predictions_models import NFLGameLines, NFLTotalsProjections
 from app.services.auto_pick.candidate import (
     DateRange,
     moved_line_edge,
+    projection_ref,
     same_line,
     to_naive_utc,
 )
@@ -30,17 +31,18 @@ class NFLTotalsSource:
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         day = date_range.slate_date
         try:
-            rows = (
-                self.db.query(NFLTotalsProjections)
-                .filter(NFLTotalsProjections.game_date == day)
-                .all()
-            )
-            lines = {
-                (g.home_team_name, g.away_team_name): g
-                for g in self.db.query(NFLGameLines)
-                .filter(NFLGameLines.game_date == day)
-                .all()
-            }
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NFLTotalsProjections)
+                    .filter(NFLTotalsProjections.game_date == day)
+                    .all()
+                )
+                lines = {
+                    (g.home_team_name, g.away_team_name): g
+                    for g in self.db.query(NFLGameLines)
+                    .filter(NFLGameLines.game_date == day)
+                    .all()
+                }
         except Exception:
             log.exception("NFLTotalsSource: DB query failed")
             return []
@@ -72,6 +74,13 @@ class NFLTotalsSource:
                     "game_date": day,
                     "home_team_name": r.home_team_name,
                     "away_team_name": r.away_team_name,
+                    "projection_ref": projection_ref(
+                        r,
+                        game_date=r.game_date,
+                        home_team_name=r.home_team_name,
+                        away_team_name=r.away_team_name,
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projected_total": float(r.projected_total),
                     "market_total": float(gl.total),
                     "line_odds": int(odds),

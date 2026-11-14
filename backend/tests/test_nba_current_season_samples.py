@@ -271,6 +271,8 @@ def _prop_row(row_id, player_id, name):
 
 
 def test_nba_props_ranked_by_minutes_not_insert_order(monkeypatch):
+    # The cap and ranking apply to a live slate; past slates return every row.
+    monkeypatch.setattr(predictions_module, "_is_past_date", lambda _d: False)
     db = MagicMock()
     model = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [

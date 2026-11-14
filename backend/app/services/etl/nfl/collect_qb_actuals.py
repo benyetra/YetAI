@@ -416,8 +416,17 @@ def _run_qb_actuals_core(season: int | None = None, week: int | None = None):
         resolved_season = resolved_season - 1
         resolved_week = 18
 
-    print(f"📅 Collecting actuals for {resolved_season} Week {resolved_week}")
-    stats = upsert_qb_actuals_for_week(resolved_season, resolved_week)
+    # Grade the prior week too (H-8): the NFL week rolls on Thursday, so a late
+    # nflverse feed would otherwise leave week N ungraded forever.
+    targets = [(resolved_season, resolved_week)]
+    if week is None and resolved_week > 1:
+        targets.insert(0, (resolved_season, resolved_week - 1))
+    stats: dict = {}
+    for s_, w_ in targets:
+        print(f"📅 Collecting actuals for {s_} Week {w_}")
+        one = upsert_qb_actuals_for_week(s_, w_)
+        for k, v in one.items():
+            stats[k] = stats.get(k, 0) + v
     print(f"\n✅ QB actuals collection complete: {stats}")
     return stats
 

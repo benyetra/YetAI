@@ -7,18 +7,16 @@ import { Activity, TrendingUp, Users } from 'lucide-react';
 export interface PlatformStats {
   total_users: number;
   total_winnings: number;
-  performance_30d: {
-    win_rate: number;
-    profit: number;
-    total_bets: number;
-    wins: number;
-    losses: number;
-  };
-  performance_7d: {
-    win_rate: number;
-    profit: number;
-    wow_change: number;
-  };
+  record: {
+    label: string;
+    stats: {
+      win_rate: number | null;
+      units: number;
+      graded: number;
+      won: number;
+      lost: number;
+    };
+  } | null;
   user_avatars: Array<{ url: string; name: string }>;
 }
 
@@ -43,6 +41,9 @@ export function usePlatformStats() {
 
 export default function AuthPlatformStats() {
   const stats = usePlatformStats();
+  const record = stats?.record ?? null;
+  const rate = record?.stats.win_rate ?? null;
+  const units = record?.stats.units ?? 0;
 
   return (
     <div className="auth-hero-inner">
@@ -54,7 +55,7 @@ export default function AuthPlatformStats() {
         <p className="auth-stat-sub">From YetAI Bets</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 12, fontSize: 12, color: 'var(--text-2)' }}>
           <TrendingUp size={14} style={{ color: 'var(--win)' }} />
-          <span>{stats ? stats.performance_30d.win_rate.toFixed(1) : '0'}% win rate (30d)</span>
+          <span>{rate === null ? '—' : `${rate.toFixed(1)}%`} win rate ({record?.label ?? 'no record yet'})</span>
         </div>
       </div>
 
@@ -62,17 +63,15 @@ export default function AuthPlatformStats() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', gap: 12 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Activity size={18} style={{ color: 'var(--accent)' }} />
-            <h3 style={{ margin: 0 }}>30-day performance</h3>
+            <h3 style={{ margin: 0 }}>{record?.label ?? 'Record'}</h3>
           </div>
           <span className="auth-stat-val" style={{ fontSize: 22 }}>
-            {stats && stats.performance_30d.profit >= 0 ? '+' : ''}
-            ${stats ? stats.performance_30d.profit.toLocaleString() : '0'}
+            {units >= 0 ? '+' : ''}
+            {units.toLocaleString()}u
           </span>
         </div>
         <p className="auth-stat-sub">
-          {stats ? stats.performance_30d.total_bets : 0} bets · WoW{' '}
-          {stats && stats.performance_7d.wow_change >= 0 ? '+' : ''}
-          {stats ? stats.performance_7d.wow_change.toFixed(1) : '0'}%
+          {record ? record.stats.graded : 0} graded · {record ? `${record.stats.won}W ${record.stats.lost}L` : '—'}
         </p>
         <div
           style={{
@@ -86,7 +85,7 @@ export default function AuthPlatformStats() {
           <div
             style={{
               height: '100%',
-              width: `${stats ? Math.min(stats.performance_30d.win_rate, 100) : 0}%`,
+              width: `${Math.min(rate ?? 0, 100)}%`,
               background: 'linear-gradient(90deg, var(--accent), var(--win))',
               borderRadius: 999,
             }}

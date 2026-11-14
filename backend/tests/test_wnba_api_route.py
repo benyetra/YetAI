@@ -12,6 +12,10 @@ def test_wnba_route_exists():
 
 
 def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
+    # db is None here; past-row grading is covered in test_predictions_past_results.
+    monkeypatch.setattr(
+        predictions_module, "_merge_past_results", lambda payload, *a: payload
+    )
     """The route should return totals, spreads, points, assists, rebounds (some may be empty)."""
     captured_models = []
 
@@ -73,6 +77,10 @@ def test_wnba_predictions_returns_all_expected_keys(monkeypatch):
 
 
 def test_wnba_predictions_enriches_spreads_with_actuals(monkeypatch):
+    # db is None here; past-row grading is covered in test_predictions_past_results.
+    monkeypatch.setattr(
+        predictions_module, "_merge_past_results", lambda payload, *a: payload
+    )
     spread_row = {
         "game_date": date(2026, 5, 21),
         "home_team_name": "Indiana Fever",

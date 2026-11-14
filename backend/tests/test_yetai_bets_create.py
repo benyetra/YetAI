@@ -1,7 +1,7 @@
 """Admin YetAI bet creation (games FK and bet type normalization)."""
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -72,7 +72,7 @@ def _sample_leg(**overrides):
         confidence=80,
         reasoning="Edge on points",
         game_time="06/05/2026 @07:00 PM EDT",
-        commence_time="2026-06-06T02:00:00Z",
+        commence_time=(datetime.now(timezone.utc) + timedelta(days=1)).isoformat(),
     )
     base.update(overrides)
     return CreateYetAIBetRequest(**base)
@@ -102,7 +102,9 @@ def test_create_parlay_persists_without_game_time_column(mock_session_local):
                 bet_type="spread",
                 pick="Spread Portland Fire -2.5",
                 odds="-108",
-                commence_time="2026-06-06T03:00:00Z",
+                commence_time=(
+                    datetime.now(timezone.utc) + timedelta(days=1, hours=1)
+                ).isoformat(),
             ),
         ],
         total_odds="+241",

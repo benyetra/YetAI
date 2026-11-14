@@ -1,9 +1,9 @@
-"""Write per-prop actuals from yesterday's box scores for accuracy tracking."""
+"""Write per-prop actuals from recent box scores (grading lookback window) for accuracy tracking."""
 
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from app.core.database import SessionLocal
 from app.models.predictions_models import (
@@ -14,6 +14,7 @@ from app.models.predictions_models import (
     WNBAReboundsActuals,
     WNBAThreePtMadeActuals,
 )
+from app.services.etl.grading_window import grading_dates
 from app.services.etl.wnba._db_upsert import upsert_many
 from app.services.etl.wnba._espn import now_eastern
 
@@ -21,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 def run() -> dict:
-    yesterday = now_eastern().date() - timedelta(days=1)
+    dates = grading_dates("wnba", today=now_eastern().date())
     db = SessionLocal()
     points_rows: list[dict] = []
     assists_rows: list[dict] = []
@@ -30,16 +31,14 @@ def run() -> dict:
     pra_rows: list[dict] = []
     try:
         rows = (
-            db.query(WNBARecentGames)
-            .filter(WNBARecentGames.game_date == yesterday)
-            .all()
+            db.query(WNBARecentGames).filter(WNBARecentGames.game_date.in_(dates)).all()
         )
         now = datetime.utcnow()
         for r in rows:
             if r.points is not None:
                 points_rows.append(
                     {
-                        "date": yesterday,
+                        "date": r.game_date,
                         "player_id": r.player_id,
                         "player_name": None,
                         "actual_points": float(r.points),
@@ -49,7 +48,7 @@ def run() -> dict:
             if r.assists is not None:
                 assists_rows.append(
                     {
-                        "date": yesterday,
+                        "date": r.game_date,
                         "player_id": r.player_id,
                         "player_name": None,
                         "actual_assists": float(r.assists),
@@ -59,7 +58,7 @@ def run() -> dict:
             if r.rebounds is not None:
                 rebounds_rows.append(
                     {
-                        "date": yesterday,
+                        "date": r.game_date,
                         "player_id": r.player_id,
                         "player_name": None,
                         "actual_rebounds": float(r.rebounds),
@@ -69,7 +68,7 @@ def run() -> dict:
             if r.three_pt_made is not None:
                 threes_rows.append(
                     {
-                        "date": yesterday,
+                        "date": r.game_date,
                         "player_id": r.player_id,
                         "player_name": None,
                         "actual_three_pt_made": float(r.three_pt_made),
@@ -79,7 +78,7 @@ def run() -> dict:
             if None not in (r.points, r.rebounds, r.assists):
                 pra_rows.append(
                     {
-                        "date": yesterday,
+                        "date": r.game_date,
                         "player_id": r.player_id,
                         "player_name": None,
                         "actual_pra": float(r.points)
@@ -107,7 +106,8 @@ def run() -> dict:
         db.commit()
         return {
             "status": "ok",
-            "date": yesterday.isoformat(),
+            "date": dates[-1].isoformat(),
+            "dates": [d.isoformat() for d in dates],
             "actuals_written": (
                 len(points_rows)
                 + len(assists_rows)
