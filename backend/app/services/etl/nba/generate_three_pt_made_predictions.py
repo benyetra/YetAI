@@ -20,11 +20,7 @@ from app.services.etl.nba._stale_rows import (
     active_players_not_started,
     mark_projection_out,
 )
-from app.services.etl.nba._fanduel_lines import (
-    get_event_id_for_game,
-    get_fanduel_line,
-    pick_side,
-)
+from app.services.etl.nba._fanduel_lines import apply_fanduel_to_projection
 from app.services.etl.nba import _last10
 from app.services.etl.nba._feature_engineering import build_features
 from app.services.etl.nba._ml_predict import predict
@@ -54,6 +50,8 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+    lines_attached = 0
+    best_attached = 0
 
     use_last10 = _last10.enabled(STAT)
     model_version = (
@@ -115,20 +113,6 @@ def run() -> dict:
                     skipped_insufficient += 1
                     continue
 
-                fd_line, fd_price, fd_flag = 0.0, 0.0, "n"
-                event_id = get_event_id_for_game(
-                    "basketball_nba", player.team_name, player.opponent_team_name
-                )
-                if event_id:
-                    fd_line, fd_price, fd_flag = get_fanduel_line(
-                        "basketball_nba",
-                        event_id,
-                        player.player_name,
-                        "player_threes",
-                        projected,
-                    )
-
-                fd_price_val = int(fd_price) if fd_line > 0 and fd_price else None
                 existing = (
                     db.query(ThreePointProjections)
                     .filter(
@@ -142,34 +126,30 @@ def run() -> dict:
                     existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
-                    if fd_line > 0:
-                        existing.fanduel_line = fd_line
-                        existing.fanduel_over_under = (
-                            fd_flag if fd_flag != "n" else None
-                        )
-                        existing.fanduel_price = fd_price_val
-                    elif existing.fanduel_line is not None:
-                        # No market now: keep the stored line; re-derive the side
-                        # (lifts an OUT flag).
-                        existing.fanduel_over_under = pick_side(
-                            projected, existing.fanduel_line
-                        )
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        ThreePointProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            player_name=player.player_name,
-                            opponent_team_name=player.opponent_team_name,
-                            projected_three_pt_made=projected,
-                            model_version=model_version,
-                            fanduel_line=fd_line if fd_line > 0 else None,
-                            fanduel_over_under=(fd_flag if fd_flag != "n" else None),
-                            fanduel_price=fd_price_val,
-                        )
+                    row = ThreePointProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        player_name=player.player_name,
+                        opponent_team_name=player.opponent_team_name,
+                        projected_three_pt_made=projected,
+                        model_version=model_version,
                     )
+                    db.add(row)
                     created += 1
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market="player_threes",
+                    projection=projected,
+                ):
+                    lines_attached += 1
+                if row.best_price is not None:
+                    best_attached += 1
                 db.commit()
 
                 logger.info("%s -> %.2f 3pm", player.player_name, projected)
@@ -193,6 +173,8 @@ def run() -> dict:
             "skipped_injured": skipped_injured,
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "best_price_attached": best_attached,
         }
     finally:
         db.close()

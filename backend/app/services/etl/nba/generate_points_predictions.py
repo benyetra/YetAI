@@ -57,6 +57,7 @@ def run() -> dict:
     skipped_insufficient = 0
     errors = 0
     lines_attached = 0
+    best_attached = 0
     rows_written = 0
 
     model_version = resolve_nba_prop_model_version("points")
@@ -77,6 +78,7 @@ def run() -> dict:
                 "skipped_insufficient_data": 0,
                 "errors": 0,
                 "fanduel_lines_attached": 0,
+                "best_price_attached": 0,
                 "fanduel_line_coverage_pct": None,
             }
 
@@ -141,6 +143,8 @@ def run() -> dict:
                     projection=projected,
                 ):
                     lines_attached += 1
+                if getattr(row, "best_price", None) is not None:
+                    best_attached += 1
                 maybe_attach_p_over(
                     row,
                     stat="points",
@@ -182,6 +186,7 @@ def run() -> dict:
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
             "fanduel_lines_attached": lines_attached,
+            "best_price_attached": best_attached,
             "fanduel_line_coverage_pct": coverage,
             "fanduel_diagnostics": diagnostics,
         }

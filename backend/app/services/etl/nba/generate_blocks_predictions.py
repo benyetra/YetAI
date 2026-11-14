@@ -1,7 +1,8 @@
 """Generate per-player blocks projections via the XGBoost model.
 
 Mirrors generate_points_predictions.py but targets the blocks model and
-writes to pred_blocks_projections. BlocksProjections has no FanDuel columns.
+writes to pred_blocks_projections. Lines (fanduel_* plus best_* across the
+PROP_BOOKS) are attached with apply_fanduel_to_projection (player_blocks).
 
 Note: the `opp_stat_allowed` feature for blocks uses TeamDefenseStats.blocks
 (opponent team's own block rate as a shot-blocking environment proxy).
@@ -19,6 +20,7 @@ from app.models.predictions_models import (
     PlayerInjuryStatus,
 )
 from app.services.etl.nba._espn import now_eastern
+from app.services.etl.nba._fanduel_lines import apply_fanduel_to_projection
 from app.services.etl.nba._stale_rows import (
     active_players_not_started,
     mark_projection_out,
@@ -52,6 +54,8 @@ def run() -> dict:
     skipped_injured = 0
     skipped_insufficient = 0
     errors = 0
+    lines_attached = 0
+    best_attached = 0
 
     use_last10 = _last10.enabled(STAT)
     model_version = (
@@ -121,19 +125,30 @@ def run() -> dict:
                     existing.model_version = model_version
                     existing.player_name = player.player_name
                     existing.opponent_team_name = player.opponent_team_name
+                    row = existing
                     updated += 1
                 else:
-                    db.add(
-                        BlocksProjections(
-                            date=today,
-                            player_id=player.player_id,
-                            player_name=player.player_name,
-                            opponent_team_name=player.opponent_team_name,
-                            projected_blocks=projected,
-                            model_version=model_version,
-                        )
+                    row = BlocksProjections(
+                        date=today,
+                        player_id=player.player_id,
+                        player_name=player.player_name,
+                        opponent_team_name=player.opponent_team_name,
+                        projected_blocks=projected,
+                        model_version=model_version,
                     )
+                    db.add(row)
                     created += 1
+                if apply_fanduel_to_projection(
+                    row,
+                    team_name=player.team_name,
+                    opponent_team_name=player.opponent_team_name,
+                    player_name=player.player_name,
+                    market="player_blocks",
+                    projection=projected,
+                ):
+                    lines_attached += 1
+                if row.best_price is not None:
+                    best_attached += 1
                 db.commit()
 
                 logger.info("%s -> %.2f blk", player.player_name, projected)
@@ -157,6 +172,8 @@ def run() -> dict:
             "skipped_injured": skipped_injured,
             "skipped_insufficient_data": skipped_insufficient,
             "errors": errors,
+            "fanduel_lines_attached": lines_attached,
+            "best_price_attached": best_attached,
         }
     finally:
         db.close()
