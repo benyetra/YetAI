@@ -38,14 +38,31 @@ def _actual_strikeout(pid="p1", actual_strikeouts=7.0):
     )
 
 
-def _proj_hits(projected_hits=2, actual_hits=1):
-    return SimpleNamespace(projected_hits=projected_hits, actual_hits=actual_hits)
+D = date(2026, 5, 23)
 
 
-def _proj_homers(projected_homers=1, actual_homers=0):
+def _proj_hits(projected_hits=2, actual_hits=1, batter_id=1, id=1):
     return SimpleNamespace(
-        projected_homers=projected_homers, actual_homers=actual_homers
+        id=id,
+        date=D,
+        batter_id=batter_id,
+        projected_hits=projected_hits,
+        actual_hits=actual_hits,
     )
+
+
+def _proj_homers(projected_homers=1, actual_homers=0, batter_id=1, id=1):
+    return SimpleNamespace(
+        id=id,
+        date=D,
+        batter_id=batter_id,
+        projected_homers=projected_homers,
+        actual_homers=actual_homers,
+    )
+
+
+def _batter_actual(batter_id=1):
+    return SimpleNamespace(date=D, batter_id=str(batter_id))
 
 
 def _game_projection(game_id=1):
@@ -91,7 +108,16 @@ def _game_actual(game_id=1):
     )
 
 
-def _mock_db(strikeouts, actuals, hits, homers, games=None, game_actuals=None):
+def _mock_db(
+    strikeouts,
+    actuals,
+    hits,
+    homers,
+    games=None,
+    game_actuals=None,
+    hit_actuals=None,
+    homer_actuals=None,
+):
     db = MagicMock()
     games = games or []
     game_actuals = game_actuals or []
@@ -111,6 +137,10 @@ def _mock_db(strikeouts, actuals, hits, homers, games=None, game_actuals=None):
             result.filter.return_value.all.return_value = games
         elif name == "GameActuals":
             result.filter.return_value.all.return_value = game_actuals
+        elif name == "HitActuals":
+            result.filter.return_value.all.return_value = hit_actuals or []
+        elif name == "HomerActuals":
+            result.filter.return_value.all.return_value = homer_actuals or []
         else:
             result.filter.return_value.all.return_value = []
         return result
@@ -137,6 +167,8 @@ def test_daily_accuracy_returns_six_buckets_in_order():
         homers=[_proj_homers(1, 0)],
         games=[_game_projection()],
         game_actuals=[_game_actual()],
+        hit_actuals=[_batter_actual()],
+        homer_actuals=[_batter_actual()],
     )
     out = svc.daily_accuracy(db, target_date=date(2026, 5, 23))
     keys = [b["key"] for b in out["buckets"]]
@@ -191,3 +223,115 @@ def test_daily_accuracy_groups_strikeouts_by_model_version():
     assert set(by_v) == {"gb-v1", "heuristic-v1"}
     assert by_v["gb-v1"]["primary"] == "1/1 · 100%"
     assert by_v["heuristic-v1"]["primary"] == "1/1 · 100%"
+
+
+# --- MLB-4 / MLB-5 / H-3 / H-4 -------------------------------------------------
+
+
+def _tile(out, key):
+    return next(b for b in out["buckets"] if b["key"] == key)
+
+
+def test_ungraded_batters_are_not_counted_as_misses():
+    # actual_hits defaults to 0 on the projection row; no HitActuals row => ungraded.
+    db = _mock_db(
+        strikeouts=[],
+        actuals=[],
+        hits=[_proj_hits(2, 0, batter_id=1, id=1), _proj_hits(2, 3, batter_id=2, id=2)],
+        homers=[],
+        hit_actuals=[_batter_actual(2)],
+    )
+    out = svc.daily_accuracy(db, target_date=D)
+    assert _tile(out, "projected_hits")["primary"].startswith("1/1")
+
+
+def test_season_overview_excludes_batter_boards_from_headline():
+    games = [_game_projection()]
+    db = _mock_db(
+        strikeouts=[],
+        actuals=[],
+        hits=[_proj_hits(2, 0)] * 5,
+        homers=[_proj_homers(1, 0)] * 5,
+        games=games,
+        game_actuals=[_game_actual()],
+        hit_actuals=[_batter_actual()],
+        homer_actuals=[_batter_actual()],
+    )
+    out = svc.season_overview(db, start=D, end=D)
+    names = {m["market"] for m in out["markets"]}
+    assert names <= {
+        "Pitcher Ks O/U",
+        "Game moneyline",
+        "Game spread",
+        "Game total O/U",
+    }
+    assert out["graded_count"] == 3  # ML + spread + total, batter boards excluded
+
+    diag = svc.season_overview_diagnostics(db, start=D, end=D)
+    boards = [
+        p for p in diag["parts"] if p["key"] in ("projected_hits", "projected_homers")
+    ]
+    assert boards and all(p["in_headline"] is False for p in boards)
+    assert boards[0]["graded_total"] > 0  # still reported as their own counts
+    assert diag["overview"]["graded_count"] == 3
+
+
+def test_game_total_tile_excludes_no_play():
+    g_over = _game_projection(1)
+    g_none = _game_projection(2)
+    g_none.total_recommendation = "NO_PLAY"
+    db = _mock_db(
+        strikeouts=[],
+        actuals=[],
+        hits=[],
+        homers=[],
+        games=[g_over, g_none],
+        game_actuals=[_game_actual(1), _game_actual(2)],
+    )
+    out = svc.daily_accuracy(db, target_date=D)
+    assert _tile(out, "game_total")["primary"].startswith("1/1")
+
+
+def test_past_row_results_agree_with_tiles():
+    ks = [
+        _proj_strikeout(pid="p1", fd_ou="over"),  # actual 7 > 5.5 -> hit
+        _proj_strikeout(pid="p2", fd_ou="under"),  # no actual, date graded -> dnp
+    ]
+    for i, k in enumerate(ks, start=1):
+        k.id = i
+    g = _game_projection(10)
+    g.id = 100
+    g.__table__.columns.append(SimpleNamespace(name="id"))
+    db = _mock_db(
+        strikeouts=ks,
+        actuals=[_actual_strikeout(pid="p1", actual_strikeouts=7.0)],
+        hits=[
+            _proj_hits(2, 1, batter_id=1, id=11),  # graded hit
+            _proj_hits(2, 0, batter_id=2, id=12),  # graded miss
+            _proj_hits(2, 0, batter_id=3, id=13),  # no actuals row -> dnp
+        ],
+        homers=[],
+        games=[g],
+        game_actuals=[_game_actual(10)],
+        hit_actuals=[
+            SimpleNamespace(date=D, batter_id="1"),
+            SimpleNamespace(date=D, batter_id="2"),
+        ],
+    )
+    rows = svc.past_row_results(db, target_date=D)
+    assert rows["strikeout_projections"][1] == {"actual": 7.0, "result": "hit"}
+    assert rows["strikeout_projections"][2]["result"] == "dnp"
+    h = {i: r["result"] for i, r in rows["projected_hits"].items()}
+    assert h == {11: "hit", 12: "miss", 13: "dnp"}
+    gr = rows["game_projections"][100]
+    assert (gr["ml_result"], gr["spread_result"], gr["total_result"]) == (
+        "hit",
+        "hit",
+        "hit",
+    )
+    assert gr["actual_home_score"] == 6 and gr["actual_total_runs"] == 9
+
+    out = svc.daily_accuracy(db, target_date=D)
+    assert _tile(out, "projected_hits")["primary"].startswith("1/2")
+    assert _tile(out, "pitcher_ks_ou")["primary"].startswith("1/1")
+    assert _tile(out, "game_moneyline")["primary"].startswith("1/1")
