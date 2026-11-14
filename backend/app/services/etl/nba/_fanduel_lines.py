@@ -372,7 +372,8 @@ def apply_fanduel_to_projection(
         # Re-derive the side from it (lifts an OUT flag: the player is active again).
         side = pick_side(projection, row.fanduel_line)
         if side != row.fanduel_over_under and row.fanduel_over_under in ("o", "u"):
-            # best_* was priced for the other side of the line.
+            # The stored prices (FanDuel and best_*) were for the other side of the line.
+            row.fanduel_price = None
             row.best_book = row.best_line = row.best_price = None
         row.fanduel_over_under = side
 
