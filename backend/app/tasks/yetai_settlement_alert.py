@@ -56,8 +56,8 @@ def _load_bets(db) -> list:
 
 
 def collect(bets, now: datetime, stuck_after: timedelta = STUCK_AFTER):
-    """Return (stuck_count, [(void_id, reason)]) ignoring demo rows."""
-    stuck = 0
+    """Return ([stuck_id], [(void_id, reason)]) ignoring demo rows."""
+    stuck = []
     voids = []
     for b in bets:
         if is_demo_yetai_bet(b):
@@ -68,14 +68,14 @@ def collect(bets, now: datetime, stuck_after: timedelta = STUCK_AFTER):
             else:
                 due = (b.created_at or now) + NO_COMMENCE_GRACE + stuck_after
             if due < now:
-                stuck += 1
+                stuck.append(str(b.id))
         elif (
             b.status == "void"
             and b.settled_at
             and b.settled_at >= now - timedelta(hours=24)
         ):
             voids.append((str(b.id), b.result or "no reason recorded"))
-    return stuck, sorted(voids)
+    return sorted(stuck), sorted(voids)
 
 
 def _last_signature(db) -> Optional[str]:
@@ -86,6 +86,19 @@ def _last_signature(db) -> Optional[str]:
         .first()
     )
     return (row.extra or {}).get("signature") if row else None
+
+
+def _signature(stuck_ids: list, voids: list) -> str:
+    return f"s:{','.join(stuck_ids)}|v:{','.join(i for i, _ in voids)}"
+
+
+def _is_new(signature: str, last: Optional[str]) -> bool:
+    """Alert only for ids the last alert did not list: a set that merely shrank
+    (a bet settled, a void aged out of the 24h window) stays quiet."""
+    if not last or "|v:" not in last:  # none yet, or the old count-based format
+        return True
+    ids = lambda sig: [set(p.split(",")) - {""} for p in sig[2:].split("|v:")]  # noqa: E731
+    return any(cur - before for cur, before in zip(ids(signature), ids(last)))
 
 
 def _sms_targets(db) -> list[str]:
@@ -146,11 +159,12 @@ def settlement_alert() -> dict:
         return {"sent": False, "reason": "disabled"}
     db = SessionLocal()
     try:
-        stuck, voids = collect(_load_bets(db), _now())
+        stuck_ids, voids = collect(_load_bets(db), _now())
+        stuck = len(stuck_ids)
         if not stuck and not voids:
             return {"sent": False, "stuck": 0, "voided": 0}
-        signature = f"{stuck}|{','.join(i for i, _ in voids)}"
-        if signature == _last_signature(db):
+        signature = _signature(stuck_ids, voids)
+        if not _is_new(signature, _last_signature(db)):
             return {"sent": False, "stuck": stuck, "voided": len(voids)}
         _send(db, build_message(stuck, voids), signature)
         return {"sent": True, "stuck": stuck, "voided": len(voids)}

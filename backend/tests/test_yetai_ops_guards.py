@@ -94,10 +94,10 @@ def test_collect_counts_stuck_and_voids_skips_demo(monkeypatch):
     ]
     monkeypatch.setattr(alert, "is_demo_yetai_bet", lambda b: False)
     stuck, voids = alert.collect(rows, NOW, stuck_after=timedelta(hours=24))
-    assert stuck == 2
+    assert stuck == ["a", "c"]
     assert voids == [("d", "postponed")]
     monkeypatch.setattr(alert, "is_demo_yetai_bet", lambda b: True)
-    assert alert.collect(rows, NOW, stuck_after=timedelta(hours=24)) == (0, [])
+    assert alert.collect(rows, NOW, stuck_after=timedelta(hours=24)) == ([], [])
 
 
 @pytest.fixture
@@ -147,6 +147,26 @@ def test_new_void_triggers_new_alert_with_reason(sent):
     run([stuck, v])
     assert len(out) == 2
     assert "v1" in out[1] and "game cancelled" in out[1]
+
+
+def test_new_stuck_bet_alerts_after_earlier_one_cleared(sent):
+    out, run = sent
+    stale = NOW - timedelta(hours=30)
+    run([_bet("a", "active", commence=stale)])
+    run([_bet("a", "won", commence=stale)])  # A settled: back to zero
+    run([_bet("b", "active", commence=stale)])  # B stuck: same count as before
+    assert len(out) == 2
+
+
+def test_shrinking_set_does_not_realert(sent):
+    out, run = sent
+    stale = NOW - timedelta(hours=30)
+    old_void = lambda: _bet("v1", "void", settled=NOW - timedelta(hours=23), result="r")  # noqa: E731
+    run([_bet("a", "active", commence=stale), _bet("b", "active", commence=stale), old_void()])
+    run([_bet("b", "active", commence=stale)])  # A settled and the void aged out
+    assert len(out) == 1
+    run([_bet("b", "active", commence=stale), _bet("c", "active", commence=stale)])
+    assert len(out) == 2
 
 
 def test_kill_switch(sent, monkeypatch):
