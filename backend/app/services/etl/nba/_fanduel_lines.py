@@ -244,6 +244,15 @@ def get_fanduel_line(
 
 NBA_SPORT = "basketball_nba"
 
+# Books read for player props. The Odds API bills markets x regions, and up to 10
+# ``bookmakers`` count as one region, so this list costs what FanDuel alone did
+# (confirmed 2026-11-14: 7 markets x these 10 books -> x-requests-last 7).
+# pinnacle is a reference (sharp consensus) only; see odds_math.REFERENCE_ONLY_BOOKS.
+PROP_BOOKS = (
+    "fanduel,draftkings,betmgm,williamhill_us,fanatics,"
+    "espnbet,betrivers,hardrockbet,pinnacle,ballybet"
+)
+
 # Odds API market keys for core player props (FanDuel bookmaker).
 PROP_MARKETS: dict[str, str] = {
     "points": "player_points",
