@@ -232,3 +232,39 @@ def test_historical_sub_score_uses_key_record_else_old_hit_rate():
     assert historical_sub_score(c, ctx) < 40  # losing key, not the 100 of the old rate
     ctx.records = {POINTS: combine(POINTS, proj_n=10, proj_hits=1)}  # thin: fall back
     assert historical_sub_score(c, ctx) == 100.0
+
+
+def test_nba_spread_projection_record_feeds_the_gate(sqlite_db):
+    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+
+    day = NOW.date() - timedelta(days=2)
+    for i in range(100):
+        home, away = f"H{i}", f"A{i}"
+        sqlite_db.add(
+            NBASpreadProjections(
+                game_date=day,
+                home_team_name=home,
+                away_team_name=away,
+                projected_margin=8.0,
+                home_win_prob=0.7,
+                market_spread_home=-3.5,
+                recommendation="HOME",
+            )
+        )
+        margin = 10 if i < 40 else 1  # home covers -3.5 in 40 of 100
+        sqlite_db.add(
+            NBASpreadActuals(
+                game_date=day,
+                home_team_name=home,
+                away_team_name=away,
+                home_score=100 + margin,
+                away_score=100,
+                actual_margin=margin,
+                home_won=True,
+            )
+        )
+    sqlite_db.commit()
+
+    rec = load_records(sqlite_db, NOW)[("NBA", "spread", None)]
+    assert (rec.proj_hits, rec.proj_n) == (40, 100)
+    assert rec.withheld

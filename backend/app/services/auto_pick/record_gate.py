@@ -27,7 +27,7 @@ from app.services.accuracy_shared import (
     edge_play_graded_counts,
     ou_call_graded_counts,
 )
-from app.services.auto_pick.candidate import BetCandidate, MarketType
+from app.services.auto_pick.candidate import BetCandidate, MarketType, utc_to_eastern
 from app.services.auto_pick.context_builder import (
     _normalize_market_type,
     _normalize_sport,
@@ -214,14 +214,35 @@ def _nba_props(db, start, end):
 
 def _nba_totals(db, start, end):
     from app.models.predictions_models import NBATotalsActuals
-    from app.services.etl.nba.totals_baseline import pick_record
+    from app.services.etl.nba.totals_baseline import CALIBRATION_START, pick_record
 
+    # Rows before calibration came from the old model (same rule as the totals gate).
+    start = max(start, CALIBRATION_START)
     rows = (
         db.query(NBATotalsActuals)
         .filter(NBATotalsActuals.game_date >= start, NBATotalsActuals.game_date <= end)
         .all()
     )
     return {("NBA", "total", None): pick_record(rows)}
+
+
+def _nba_spread(db, start, end):
+    from app.models.predictions_models import NBASpreadActuals, NBASpreadProjections
+    from app.services.nfl_accuracy_service import _merge_actuals_spread
+
+    def q(model):
+        return (
+            db.query(model)
+            .filter(model.game_date >= start, model.game_date <= end)
+            .all()
+        )
+
+    rows = _merge_actuals_spread(q(NBASpreadProjections), q(NBASpreadActuals))
+    return {
+        ("NBA", "spread", None): edge_play_graded_counts(
+            rows, pick_field="recommendation", correct_field="spread_correct"
+        )
+    }
 
 
 def _nhl(db, start, end):
@@ -305,11 +326,12 @@ def _nfl(db, start, end):
     }
 
 
-# Keys without a projection record (bet record only): NBA spread / moneyline / pra
-# props, WNBA and MLB (off-season), and any key a new source adds.
+# Keys without a projection record (bet record only): NBA moneyline / pra props,
+# WNBA and MLB (off-season), and any key a new source adds.
 PROJECTION_LOADERS: dict[str, ProjectionLoader] = {
     "nba_props": _nba_props,
     "nba_totals": _nba_totals,
+    "nba_spread": _nba_spread,
     "nhl": _nhl,
     "nfl": _nfl,
 }
@@ -319,7 +341,7 @@ def load_projection_records(
     db: Session, now: datetime
 ) -> dict[RecordKey, tuple[int, int]]:
     """{key: (hits, graded)} over [today - window, today): today's results never leak in."""
-    today = now.date()
+    today = utc_to_eastern(now).date()  # slate dates are US Eastern
     start, end = today - timedelta(days=window_days()), today - timedelta(days=1)
     out: dict[RecordKey, tuple[int, int]] = {}
     for name, loader in PROJECTION_LOADERS.items():
