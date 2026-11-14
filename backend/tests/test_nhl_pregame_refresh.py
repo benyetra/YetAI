@@ -74,6 +74,8 @@ def test_run_goalie_refresh_keeps_only_unstarted_games_and_saves_market():
         patch.object(dp.NHLAPIClient, "get_schedule", return_value=sched),
         patch.object(dp, "get_nhl_events_from_odds_api", return_value=[]),
         patch.object(dp, "generate_goalie_predictions", return_value=2) as gen,
+        patch.object(dp, "generate_player_predictions", return_value=3),
+        patch.object(dp, "generate_team_totals_predictions", return_value=1),
         patch("app.services.etl.nhl._db.init_session"),
         patch("app.services.etl.nhl._db.close_session"),
     ):
@@ -81,5 +83,6 @@ def test_run_goalie_refresh_keeps_only_unstarted_games_and_saves_market():
         out = dp.run_goalie_refresh()
     games = gen.call_args.args[0]
     assert [g["id"] for g in games] == [1, 3]
-    assert gen.call_args.kwargs == {"odds_markets": "player_total_saves"}
+    assert gen.call_args.kwargs == {}
     assert out["goalie_predictions"] == 2 and out["status"] == "ok"
+    assert out["player_predictions"] == 3 and out["team_totals_predictions"] == 1

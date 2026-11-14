@@ -112,7 +112,7 @@ def _seed_totals(db, n, hits, day):
         goals = 7 if i < hits else 4
         db.add(
             NHLTeamTotalsActuals(
-                game_id=10_000 + i,
+                game_id=2026020000 + i,
                 game_date=day,
                 home_team_id=100 + i,
                 home_team_name=f"H{i}",

@@ -48,6 +48,12 @@ def _parse_pick(recommendation: Optional[str]) -> Optional[str]:
     return None
 
 
+def _preseason(*rows: Any) -> bool:
+    """NHL game ids are YYYY TT NNNN; type 01 is preseason. True if any row's is."""
+    ids = [getattr(r, "game_id", None) for r in rows]
+    return any(i is not None and i // 10000 % 100 == 1 for i in ids)
+
+
 def _fetch(db: Session, model: Any, start: date_type, end: date_type) -> list[Any]:
     return (
         db.query(model).filter(model.game_date >= start, model.game_date <= end).all()
@@ -83,6 +89,8 @@ def _nhl_rows(
         lambda p: (p.goalie_id, p.game_date),
     ):
         a = by_gid.get((p.goalie_id, p.game_date))
+        if _preseason(p, a):
+            continue
         # A superseded starter's row is kept for history but is not a call: his
         # full-game line must not be graded against relief-minutes saves.
         scratched = bool(p.was_scratch)
@@ -110,6 +118,8 @@ def _nhl_rows(
         lambda p: (p.player_id, p.game_date),
     ):
         a = by_pid.get((p.player_id, p.game_date))
+        if _preseason(a):
+            continue
         player_shots.append(
             {
                 "id": p.id,
@@ -131,6 +141,8 @@ def _nhl_rows(
         lambda p: (p.game_date, p.home_team_id, p.away_team_id),
     ):
         a = by_game.get((p.game_date, p.home_team_id, p.away_team_id))
+        if _preseason(a):
+            continue
         team_totals.append(
             {
                 "id": p.id,

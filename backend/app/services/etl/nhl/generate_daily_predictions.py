@@ -109,8 +109,8 @@ NHL_TO_ODDS_API_TEAMS = {
     "Florida": "Florida Panthers",
     "Los Angeles": "Los Angeles Kings",
     "Minnesota": "Minnesota Wild",
-    "Montréal": "Montreal Canadiens",
-    "Montreal": "Montreal Canadiens",
+    "Montréal": "Montréal Canadiens",
+    "Montreal": "Montréal Canadiens",
     "Nashville": "Nashville Predators",
     "New Jersey": "New Jersey Devils",
     "New York": "New York Islanders",  # Default to Islanders
@@ -127,7 +127,7 @@ NHL_TO_ODDS_API_TEAMS = {
     "Vegas": "Vegas Golden Knights",
     "Washington": "Washington Capitals",
     "Winnipeg": "Winnipeg Jets",
-    "Utah": "Utah Hockey Club",
+    "Utah": "Utah Mammoth",
 }
 
 
