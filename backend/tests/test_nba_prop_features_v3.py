@@ -362,8 +362,10 @@ def test_generators_remove_the_morning_row_of_a_player_now_out(module_name, mode
         patch.object(module, "_is_injured", return_value=(True, "out")),
         patch.object(module, "drop_projection_for_today"),
     ]
-    if hasattr(module, "get_metadata"):
-        patches.append(patch.object(module, "get_metadata", return_value={}))
+    if hasattr(module, "resolve_nba_prop_model_version"):
+        patches.append(
+            patch.object(module, "resolve_nba_prop_model_version", return_value="t")
+        )
     if hasattr(module, "line_diagnostics"):
         patches.append(patch.object(module, "line_diagnostics", return_value={}))
     from contextlib import ExitStack

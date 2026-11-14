@@ -27,6 +27,7 @@ from app.models.predictions_models import (
     StealsProjections,
     ThreePointProjections,
 )
+from app.services.nfl_accuracy_service import mae_by_model_version
 from app.services.accuracy_shared import (
     AccuracyBucket,
     assemble,
@@ -218,11 +219,24 @@ def daily_accuracy(db: Session, *, target_date: date_type) -> dict[str, Any]:
     ]
 
     available = any([pts_rows, tpm_rows, stl_rows, ast_rows, reb_rows])
-    return assemble(
+    assembled = assemble(
         date_str=target_date.isoformat(),
         buckets=buckets,
         available=available,
     )
+    assembled["by_model_version"] = {
+        f"{key}_mae": mae_by_model_version(
+            rows, projected_field=f"projected_{key}", actual_field=f"actual_{key}"
+        )
+        for key, rows in (
+            ("points", pts_rows),
+            ("three_pt_made", tpm_rows),
+            ("steals", stl_rows),
+            ("assists", ast_rows),
+            ("rebounds", reb_rows),
+        )
+    }
+    return assembled
 
 
 def _nba_season_window_rows(

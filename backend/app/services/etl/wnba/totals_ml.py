@@ -13,6 +13,8 @@ from typing import Any
 
 import numpy as np
 
+from app.services.ml_model_version import model_version_from_metadata
+
 logger = logging.getLogger(__name__)
 
 S3_BUCKET = "yetibets"
@@ -201,9 +203,13 @@ def enrich_projection(projection: dict[str, Any]) -> dict[str, Any]:
             residual or 0.0,
         )
 
+    projection["model_version"] = "heuristic-v1"
     if totals_ml_enabled() and ml_total is not None:
         projection["projected_total"] = ml_total
         _recompute_market_fields(projection)
+        projection["model_version"] = model_version_from_metadata(
+            _METADATA, prefix="xgb", fallback="xgb-totals-v1"
+        )
 
     return projection
 

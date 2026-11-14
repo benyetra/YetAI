@@ -52,6 +52,10 @@ def test_inference_writes_projection_when_features_available(
         patch(f"app.services.etl.wnba.{module_name}.build_features") as bf,
         patch(f"app.services.etl.wnba.{module_name}.predict") as pred,
         patch(f"app.services.etl.wnba.{module_name}.upsert_many") as um,
+        patch(
+            f"app.services.etl.wnba.{module_name}.get_metadata",
+            return_value={"model_version": "wnba-test"},
+        ),
     ):
         bf.return_value = {"points_l5": 15.0}
         pred.return_value = 17.3
@@ -62,3 +66,4 @@ def test_inference_writes_projection_when_features_available(
     rows = um.call_args[0][2]
     assert rows[0]["player_id"] == 100
     assert rows[0][projected_col] == pytest.approx(17.3)
+    assert rows[0]["model_version"] == "wnba-test"

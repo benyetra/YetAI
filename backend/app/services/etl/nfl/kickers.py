@@ -725,6 +725,7 @@ def save_kicker_data(kicker_data):
             ),
             game_stats=kicker_data.get("game_stats", []),
             projected_field_goals=projected_fg,
+            model_version="heuristic-v1",
             # Weather and venue information
             temperature=temperature,
             wind_speed=wind_speed,
@@ -747,6 +748,7 @@ def save_kicker_data(kicker_data):
         )
         kicker.game_stats = kicker_data.get("game_stats", [])
         kicker.projected_field_goals = projected_fg
+        kicker.model_version = "heuristic-v1"
         kicker.game_time = kicker_data["game_time"]
         # Update weather and venue information
         kicker.temperature = temperature

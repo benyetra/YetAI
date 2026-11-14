@@ -132,6 +132,14 @@ def model_available() -> bool:
     return _ensure_loaded()
 
 
+def get_model_version() -> str | None:
+    """Manifest version from the gated upload, else the metadata's tag."""
+    if not _ensure_loaded():
+        return None
+    version = None if _local_model_paths() else _s3_objects()[0].version
+    return version or str((_METADATA or {}).get("model_version") or "").strip() or None
+
+
 def predict_residual(features_dict: dict[str, float]) -> float | None:
     """Predict (actual_total - heuristic_total); None if model not loaded."""
     if not _ensure_loaded() or _MODEL is None or _METADATA is None:
@@ -196,9 +204,11 @@ def enrich_projection(projection: dict[str, Any]) -> dict[str, Any]:
             residual or 0.0,
         )
 
+    projection["model_version"] = "heuristic-v1"
     if totals_ml_enabled() and ml_total is not None:
         projection["projected_total"] = ml_total
         _recompute_market_fields(projection)
+        projection["model_version"] = get_model_version() or "ml-unversioned"
 
     return projection
 
