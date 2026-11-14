@@ -26,6 +26,7 @@ celery_app = Celery(
         "app.tasks.health",
         "app.tasks.auto_pick",
         "app.tasks.settle_yetai_bets",
+        "app.tasks.yetai_settlement_alert",
         "app.tasks.expire_pending_picks",
         "app.tasks.league_vault_sync",
     ],
@@ -69,6 +70,12 @@ celery_app.conf.beat_schedule = {
         "task": "yetai_bets.settle",
         "schedule": crontab(minute="*/15"),
         "options": {"expires": 600},
+    },
+    # Hourly: bets stuck unsettled / voided (alert only when state changed).
+    "yetai-settlement-alert": {
+        "task": "yetai_bets.settlement_alert",
+        "schedule": crontab(minute=15),
+        "options": {"expires": 1800},
     },
     # === ETL pipeline (u9t) — overnight orchestrator ===
     "nba-update-pipeline-daily": {
