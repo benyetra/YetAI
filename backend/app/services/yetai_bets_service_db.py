@@ -734,7 +734,7 @@ class YetAIBetsServiceDB:
 
     def compute_history_stats(
         self, bets: List[Dict], period_days: int
-    ) -> Dict[str, float | int]:
+    ) -> Dict[str, float | int | None]:
         won = [b for b in bets if b.get("status") == "won"]
         lost = [b for b in bets if b.get("status") == "lost"]
         pushed = [b for b in bets if b.get("status") == "pushed"]
@@ -751,7 +751,8 @@ class YetAIBetsServiceDB:
                 units += self._american_odds_units_profit(odds_val)
             elif status == "lost":
                 units -= 1.0
-        win_rate = round((len(won) / graded) * 100, 1) if graded else 0.0
+        # None (not 0) when nothing was graded: "no record" is not a 0% record.
+        win_rate = round((len(won) / graded) * 100, 1) if graded else None
         return {
             "period_days": period_days,
             "total": len(bets),
@@ -759,6 +760,7 @@ class YetAIBetsServiceDB:
             "lost": len(lost),
             "pushed": len(pushed),
             "void": len(void),
+            "graded": graded,
             "win_rate": win_rate,
             "units": round(units, 2),
         }
@@ -792,7 +794,7 @@ class YetAIBetsServiceDB:
 
         yetai_status = (yetai.status or "").lower()
         if yetai_status in {"active", "pending"}:
-            if unified_bet.status == UnifiedBetStatus.PENDING:
+            if unified_bet.status in (UnifiedBetStatus.PENDING, UnifiedBetStatus.LIVE):
                 return False
             unified_bet.status = UnifiedBetStatus.PENDING
             unified_bet.settled_at = None
@@ -875,30 +877,16 @@ class YetAIBetsServiceDB:
         live_rows = [bet for bet in rows if yetai_bet_subscriber_live_visible(bet)]
         return [self._yetai_bet_to_dict(bet) for bet in live_rows]
 
-    def get_yetai_bets_history_for_user(
-        self,
-        user_tier: str,
-        db: Session,
-        *,
-        days: int = 90,
-        limit: int = 100,
-    ) -> tuple[List[Dict], Dict[str, float | int]]:
-        """Promoted picks in the window (newest first); stats cover the whole window."""
-        since = datetime.utcnow() - timedelta(days=max(days, 1))
-        rows = self._query_yetai_bets_for_user(
-            user_tier,
-            db,
-            tuple(self.SUBSCRIBER_VISIBLE_STATUSES),
-            since=since,
-            limit=limit,
-            order_by="created",
-        )
-        bets = [self._yetai_bet_to_dict(bet) for bet in rows]
-        settled = [
+    def _history_stat_rows(
+        self, user_tier: str, db: Session, since: datetime
+    ) -> List[Dict]:
+        """Settled rows (the history population) as dicts for compute_history_stats."""
+        return [
             {
                 "status": bet.status,
                 "odds": bet.odds,
                 "effective_odds": _settlement(bet).get("effective_odds"),
+                "created_at": bet.created_at,
             }
             for bet in self._query_yetai_bets_for_user(
                 user_tier,
@@ -908,10 +896,61 @@ class YetAIBetsServiceDB:
                 order_by="created",
             )
         ]
+
+    def get_public_history_stats(self, db: Session, *, days: int = 90) -> Dict:
+        """History stats over all non-demo shown picks (every tier) in the window."""
+        since = datetime.utcnow() - timedelta(days=max(days, 1))
+        rows = self._history_stat_rows(SubscriptionTier.ELITE.value, db, since)
+        return self.compute_history_stats(rows, period_days=days)
+
+    def get_yetai_bets_history_for_user(
+        self,
+        user_tier: str,
+        db: Session,
+        *,
+        days: int = 90,
+        limit: int = 100,
+    ) -> tuple[List[Dict], Dict, Dict[str, Dict]]:
+        """Promoted picks in the window (newest first).
+
+        Returns (bets, stats, blocks): stats cover the whole window; blocks holds the
+        `today` (America/New_York day) and `last_7d` stats over the same population,
+        windowed on created_at like the history itself.
+        """
+        now = datetime.utcnow()
+        since = now - timedelta(days=max(days, 1))
+        rows = self._query_yetai_bets_for_user(
+            user_tier,
+            db,
+            tuple(self.SUBSCRIBER_VISIBLE_STATUSES),
+            since=since,
+            limit=limit,
+            order_by="created",
+        )
+        bets = [self._yetai_bet_to_dict(bet) for bet in rows]
+        settled = self._history_stat_rows(user_tier, db, since)
         stats = self.compute_history_stats(settled, period_days=days)
         stats["returned"] = len(bets)
         stats["settled"] = len(settled)
-        return bets, stats
+
+        et_midnight = (
+            datetime.now(ZoneInfo("America/New_York"))
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .astimezone(timezone.utc)
+            .replace(tzinfo=None)
+        )
+
+        def window(start: datetime, period: int) -> Dict:
+            return self.compute_history_stats(
+                [r for r in settled if r["created_at"] and r["created_at"] >= start],
+                period_days=period,
+            )
+
+        blocks = {
+            "today": window(et_midnight, 1),
+            "last_7d": window(now - timedelta(days=7), 7),
+        }
+        return bets, stats, blocks
 
     async def get_active_bets(self, user_tier: object = "free") -> List[Dict]:
         """Get active YetAI Bets based on user tier from database

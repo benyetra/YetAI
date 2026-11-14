@@ -589,7 +589,7 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
             "Platform stats response: users=%s, winnings=%s, 30d_bets=%s, avatars=%s",
             data["total_users"],
             data["total_winnings"],
-            data["performance_30d"]["total_bets"],
+            data["record"]["stats"]["total"],
             len(data["user_avatars"]),
         )
         return {"status": "success", "data": data}
@@ -602,14 +602,7 @@ async def get_platform_statistics(db: Session = Depends(get_db)):
             "data": {
                 "total_users": 0,
                 "total_winnings": 0,
-                "performance_30d": {
-                    "win_rate": 0,
-                    "profit": 0,
-                    "total_bets": 0,
-                    "wins": 0,
-                    "losses": 0,
-                },
-                "performance_7d": {"win_rate": 0, "profit": 0, "wow_change": 0},
+                "record": None,
                 "user_avatars": [],
             },
         }
@@ -2116,7 +2109,7 @@ async def get_yetai_bets_history(
             yetai_service = get_service("yetai_bets_service")
             db = next(_get_db())
             try:
-                bets, stats = yetai_service.get_yetai_bets_history_for_user(
+                bets, stats, blocks = yetai_service.get_yetai_bets_history_for_user(
                     user_tier, db, days=days, limit=limit
                 )
             finally:
@@ -2125,26 +2118,13 @@ async def get_yetai_bets_history(
                 "status": "success",
                 "bets": bets,
                 "stats": stats,
+                **blocks,
                 "user_tier": user_tier,
             }
         except Exception as e:
             logger.error(f"Error fetching YetAI bets history: {e}")
 
-    return {
-        "status": "success",
-        "bets": [],
-        "stats": {
-            "period_days": days,
-            "total": 0,
-            "won": 0,
-            "lost": 0,
-            "pushed": 0,
-            "void": 0,
-            "win_rate": 0,
-            "units": 0,
-        },
-        "user_tier": user_tier,
-    }
+    raise HTTPException(status_code=503, detail="YetAI Bets temporarily unavailable")
 
 
 @app.get("/api/yetai-bets")
@@ -2178,12 +2158,7 @@ async def get_yetai_bets(current_user: dict = Depends(get_current_user)):
         except Exception as e:
             logger.error(f"Error fetching YetAI bets: {e}")
 
-    return {
-        "status": "success",
-        "bets": [],
-        "user_tier": user_tier,
-        "message": "YetAI bets service unavailable",
-    }
+    raise HTTPException(status_code=503, detail="YetAI Bets temporarily unavailable")
 
 
 @app.get("/api/admin/yetai-bets")

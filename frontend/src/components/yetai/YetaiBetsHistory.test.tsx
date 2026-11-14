@@ -36,3 +36,12 @@ test('parlay row lists legs with statuses', () => {
   expect(legs[1].textContent).toContain('void');
   expect(legs[1].textContent).toContain('Postponed');
 });
+
+test('win rate null renders em dash, 0 renders 0%', () => {
+  const { rerender } = render(
+    <YetaiBetsHistory bets={[]} stats={{ ...stats, total: 1, won: 0, lost: 0, win_rate: null }} />,
+  );
+  expect(screen.getByText('—')).toBeTruthy();
+  rerender(<YetaiBetsHistory bets={[]} stats={{ ...stats, win_rate: 0 }} />);
+  expect(screen.getByText('0%')).toBeTruthy();
+});
