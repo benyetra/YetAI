@@ -1,9 +1,11 @@
 """Walk-forward evaluation of the NBA line-residual model (rebounds / assists).
 
     DATABASE_URL=... PYTHONPATH=. python scripts/nba_residual_eval.py \
-        --stat all --out <dir> [--kind ridge|gbm|both] [--db-url URL]
+        --stat all --out <dir> [--kind ridge_cv|ridge|gbm|all] [--db-url URL]
 
-Writes <out>/eval_<stat>.json (all numbers) and <out>/eval.md. Deterministic: model
+Writes <out>/eval_<stat>.json (all numbers), <out>/scored_<stat>.csv (ridge_cv scored
+rows) and <out>/eval.md. ``--kind all`` (default; ``both`` is an alias) runs ridge_cv,
+ridge and gbm; ablation, placebo and the verdict use ridge_cv. Deterministic: model
 seeds are fixed in residual/model.py, placebo seeds are 0..4. Reads only.
 """
 
@@ -28,6 +30,12 @@ from app.services.etl.nba.residual.dataset import (
 )
 
 START, SEASON_SPLIT = "2025-10-01", "2026-10-01"
+ALL_KINDS = ["ridge_cv", "ridge", "gbm"]
+POSTHOC_FAMILIES = ["proj_", "line_"]
+SCORED_COLS = [
+    "date", "player_id", "line", "actual", "resid", "pred_resid", "p_over",
+    "fit_date", "alpha", "over_price", "under_price",
+]  # fmt: skip
 
 
 def _clean(o):
@@ -44,7 +52,24 @@ def _clean(o):
     return o
 
 
-def evaluate_stat(df: pd.DataFrame, stat: str, kinds) -> dict:
+def _run(df, feats, kind):
+    sc = ev.walk_forward(df, feats, kind)
+    base = float(sc["train_base"].mean()) if len(sc) else 0.5
+    alphas = (
+        sc.groupby("fit_date")["alpha"].first().dropna().round(4).tolist()
+        if len(sc)
+        else []
+    )
+    return sc, dict(
+        metrics=ev.metrics(sc, train_base_rate=base),
+        train_base_rate=base,
+        first_scored=sc["date"].min(),
+        last_scored=sc["date"].max(),
+        alphas=alphas,
+    )
+
+
+def evaluate_stat(df: pd.DataFrame, stat: str, kinds, scored_out=None) -> dict:
     feats = feature_columns()
     counts = (
         df.assign(
@@ -58,26 +83,26 @@ def evaluate_stat(df: pd.DataFrame, stat: str, kinds) -> dict:
     )
     out = dict(stat=stat, rows=len(df), row_counts=counts, models={})
     for kind in kinds:
-        sc = ev.walk_forward(df, feats, kind)
-        base = float(sc["train_base"].mean()) if len(sc) else 0.5
-        out["models"][kind] = dict(
-            metrics=ev.metrics(sc, train_base_rate=base),
-            train_base_rate=base,
-            first_scored=sc["date"].min(),
-            last_scored=sc["date"].max(),
-        )
-    k0 = "ridge" if "ridge" in kinds else kinds[0]
+        sc, out["models"][kind] = _run(df, feats, kind)
+        if kind == "ridge_cv" and scored_out is not None:
+            scored_out[stat] = sc
+    k0 = "ridge_cv" if "ridge_cv" in kinds else kinds[0]
     out["ablation"] = ev.ablation(df, list(FEATURE_FAMILIES), k0)
     out["placebo"] = ev.placebo(df, feats, k0, seeds=range(5))
     out["ablation_placebo_kind"] = k0
-    if {"ridge", "gbm"} <= set(kinds):
+    if k0 == "ridge_cv":  # chosen after seeing the first run: reported separately
+        ph_feats = feature_columns(POSTHOC_FAMILIES)
+        _, out["posthoc"] = _run(df, ph_feats, k0)
+        out["posthoc"]["placebo"] = ev.placebo(df, ph_feats, k0, seeds=range(5))
+    others = [k for k in ("ridge", "gbm") if k in kinds]
+    out["gbm_adopted"] = None
+    if "gbm" in kinds and "ridge" in kinds:
         r, g = (out["models"][k]["metrics"] for k in ("ridge", "gbm"))
         out["gbm_adopted"] = bool(
             g["mae_delta"] < r["mae_delta"] and g["slope"] > r["slope"]
         )
-    adopted = "gbm" if out.get("gbm_adopted") else k0
-    out["adopted"] = adopted
-    out["verdict"] = ev.verdict(out["models"][adopted]["metrics"])
+    out["adopted"] = k0  # the verdict never comes from the post-hoc variant or gbm
+    out["verdict"] = ev.verdict(out["models"][k0]["metrics"])
     return out
 
 
@@ -102,7 +127,10 @@ def render(res: dict) -> str:
         "| model | n | slope (se) | corr | MAE line | MAE model | delta | hit>=0.5 (n) | ROI@-110 >=0.5 |",
         "|---|---|---|---|---|---|---|---|---|",
     ]
-    for kind, m in res["models"].items():
+    rows = list(res["models"].items())
+    if "posthoc" in res:
+        rows.append(("ridge_cv proj_+line_ (post-hoc)", res["posthoc"]))
+    for kind, m in rows:
         x = m["metrics"]
         c = next(c for c in x["cumulative"] if c["threshold"] == 0.5)
         L.append(
@@ -110,16 +138,27 @@ def render(res: dict) -> str:
             f"{_f(x['mae_line'])} | {_f(x['mae_model'])} | {_f(x['mae_delta'], 4)} | "
             f"{_f(c['hit_rate'])} ({c['n']}) | {_f(c['roi_units_110'], 1)} |"
         )
-    if "gbm_adopted" in res:
+    for kind, m in rows:
+        L.append(f"\nAlpha chosen at each refit ({kind}): {m.get('alphas') or '-'}")
+    if res.get("gbm_adopted") is not None:
         if res["gbm_adopted"] and res["models"]["gbm"]["metrics"]["mae_delta"] >= 0:
             L.append(
                 "\nNote: GBM wins the rule against ridge but is still worse than the line."
             )
         L.append(
-            f"\nGBM adopted: **{res['gbm_adopted']}** (needs lower MAE delta and higher slope than ridge)."
+            f"\nGBM beats ridge (alpha 10) on MAE delta and slope: **{res['gbm_adopted']}** (informational; the verdict uses ridge_cv)."
         )
-    for kind, m in res["models"].items():
+    sections = list(res["models"].items())
+    if "posthoc" in res:
+        sections += [("ridge_cv proj_+line_ (post-hoc)", res["posthoc"])]
+    for kind, m in sections:
         x = m["metrics"]
+        if kind.endswith("(post-hoc)"):
+            L += [
+                "",
+                "## Post-hoc variant (chosen after seeing the first run; optimistic, "
+                "can only be confirmed in shadow)",
+            ]
         L += [
             "",
             f"### {kind}: calls by |pred_resid|",
@@ -196,9 +235,20 @@ def render(res: dict) -> str:
         f"{_f(a.get('mae_delta'), 4)} | {_f(a.get('hit_050'))} | {a.get('n_050')} |"
         for a in res["ablation"]
     ]
-    L += [
+    L += _placebo_table(
+        f"Placebo ({k0}; resid and over shuffled within date)", res["placebo"]
+    )
+    if "posthoc" in res:
+        L += _placebo_table(
+            "Placebo (post-hoc proj_+line_ variant)", res["posthoc"]["placebo"]
+        )
+    return "\n".join(L) + "\n"
+
+
+def _placebo_table(title, rows):
+    L = [
         "",
-        f"### Placebo ({k0}; resid and over shuffled within date)",
+        f"### {title}",
         "",
         "| seed | n | slope (se) | corr | MAE delta | hit>=0.5 | n>=0.5 |",
         "|---|---|---|---|---|---|---|",
@@ -206,9 +256,9 @@ def render(res: dict) -> str:
     L += [
         f"| {p['seed']} | {p['n']} | {_f(p.get('slope'))} ({_f(p.get('slope_se'))}) | {_f(p.get('corr'))} | "
         f"{_f(p.get('mae_delta'), 4)} | {_f(p.get('hit_050'))} | {p.get('n_050')} |"
-        for p in res["placebo"]
+        for p in rows
     ]
-    return "\n".join(L) + "\n"
+    return L
 
 
 def main() -> None:
@@ -216,11 +266,11 @@ def main() -> None:
     ap.add_argument("--stat", default="all", choices=[*STAT_COLUMN, "all"])
     ap.add_argument("--db-url", default=os.environ.get("DATABASE_URL"))
     ap.add_argument("--out", required=True)
-    ap.add_argument("--kind", default="both", choices=["ridge", "gbm", "both"])
+    ap.add_argument("--kind", default="all", choices=[*ALL_KINDS, "all", "both"])
     a = ap.parse_args()
     if not a.db_url:
         raise SystemExit("--db-url or DATABASE_URL required")
-    kinds = ["ridge", "gbm"] if a.kind == "both" else [a.kind]
+    kinds = ALL_KINDS if a.kind in ("all", "both") else [a.kind]
     stats = list(STAT_COLUMN) if a.stat == "all" else [a.stat]
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -234,7 +284,11 @@ def main() -> None:
     ]
     for stat in stats:
         df = build_rows(inputs, stat, start=START)
-        res = _clean(evaluate_stat(df, stat, kinds))
+        scored = {}
+        res = _clean(evaluate_stat(df, stat, kinds, scored))
+        if stat in scored:
+            cols = [c for c in SCORED_COLS if c in scored[stat].columns]
+            scored[stat][cols].to_csv(out / f"scored_{stat}.csv", index=False)
         (out / f"eval_{stat}.json").write_text(json.dumps(res, indent=1))
         md.append(render(res))
     (out / "eval.md").write_text("\n".join(md))

@@ -36,21 +36,26 @@ def wilson(hits: int, n: int) -> tuple[float, float]:
 def walk_forward(
     df: pd.DataFrame,
     features,
-    kind="ridge",
+    kind="ridge_cv",
     *,
     refit_days=7,
     min_train_rows=300,
     seed=0,
 ) -> pd.DataFrame:
     """Expanding-window weekly refit. Returns scored rows with pred_resid, p_over,
-    fit_date, train_base. ``seed`` is unused: model seeds are fixed in model.py."""
+    fit_date, train_base, alpha. ``seed`` is unused: model seeds are fixed in model.py.
+    """
     df = df.sort_values("date").reset_index(drop=True)
     dates = df["date"]
     uniq = np.sort(dates.unique())
     first = next((d for d in uniq if (dates < d).sum() >= min_train_rows), None)
     if first is None:
         return df.iloc[0:0].assign(
-            pred_resid=np.nan, p_over=np.nan, fit_date=pd.NaT, train_base=np.nan
+            pred_resid=np.nan,
+            p_over=np.nan,
+            fit_date=pd.NaT,
+            train_base=np.nan,
+            alpha=np.nan,
         )
     first = pd.Timestamp(first)
     last = dates.max()
@@ -64,6 +69,7 @@ def walk_forward(
             continue
         seg["pred_resid"], seg["p_over"] = mdl.predict(seg)
         seg["fit_date"] = r
+        seg["alpha"] = np.nan if mdl.alpha is None else mdl.alpha
         seg["train_base"] = df.loc[dates < r, "over"].mean()
         parts.append(seg)
     return pd.concat(parts, ignore_index=True)
@@ -268,7 +274,7 @@ def _summary(scored: pd.DataFrame) -> dict:
     )
 
 
-def ablation(df: pd.DataFrame, families, kind="ridge", **wf) -> list[dict]:
+def ablation(df: pd.DataFrame, families, kind="ridge_cv", **wf) -> list[dict]:
     """Walk-forward with each family dropped, and with only that family (+ line_)."""
     out = []
     for fam in families:
@@ -287,7 +293,7 @@ def ablation(df: pd.DataFrame, families, kind="ridge", **wf) -> list[dict]:
 
 
 def placebo(
-    df: pd.DataFrame, features, kind="ridge", seeds=range(5), **wf
+    df: pd.DataFrame, features, kind="ridge_cv", seeds=range(5), **wf
 ) -> list[dict]:
     """Shuffle resid and over together within date, rerun the identical walk-forward."""
     out = []

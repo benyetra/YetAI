@@ -41,7 +41,7 @@ def test_walk_forward_never_fits_on_scored_dates(monkeypatch):
         return real(train, features, kind, **kw)
 
     monkeypatch.setattr(ev, "fit", spy)
-    scored = ev.walk_forward(df, FEATS, "ridge", min_train_rows=100)
+    scored = ev.walk_forward(df, FEATS, "ridge_cv", min_train_rows=100)
     fits = scored.groupby("fit_date").size().index
     assert len(seen) == len(fits) > 3
     for (max_train, _), fit_date in zip(seen, fits):
@@ -69,12 +69,13 @@ def test_noise_slope_ci_covers_zero_and_placebo_has_no_skill():
 
 def test_model_pickles_with_identical_predictions():
     df = _synth()
-    for kind in ("ridge", "gbm"):
+    for kind in ("ridge_cv", "ridge", "gbm"):
         m = md.fit(df, FEATS, kind, stat="rebounds")
         m2 = pickle.loads(pickle.dumps(m))
         a, b = m.predict(df), m2.predict(df)
         assert np.array_equal(a[0], b[0]) and np.array_equal(a[1], b[1])
-        assert m.version == f"resid-rebounds-{kind}" and m.n_train == len(df)
+        end = df["date"].max().strftime("%Y%m%d")
+        assert m.version == f"resid-rebounds-{kind}-{end}" and m.n_train == len(df)
 
 
 def test_wilson_and_roi_hand_computed():
@@ -107,3 +108,41 @@ def test_wilson_and_roi_hand_computed():
 
 def american_be(p):
     return abs(p) / (abs(p) + 100) if p < 0 else 100 / (p + 100)
+
+
+def test_ridge_cv_alpha_larger_on_noise_than_signal():
+    a_noise = md.fit(_synth(False), FEATS, "ridge_cv").alpha
+    a_sig = md.fit(_synth(True), FEATS, "ridge_cv").alpha
+    assert a_noise > a_sig and a_noise in md.CV_ALPHAS
+
+
+def test_oof_platt_never_scores_a_row_with_a_model_that_trained_on_it(monkeypatch):
+    df = _synth().assign(f1=lambda d: np.arange(len(d), dtype=float))  # unique ids
+    calls, overlaps = [], []
+    real = md._fit_est
+
+    class Spy:
+        def __init__(self, est, train_ids):
+            self.est, self.train_ids = est, train_ids
+
+        def predict(self, x):
+            overlaps.append(len(self.train_ids & set(x[:, 0])))
+            return self.est.predict(x)
+
+    def spy(kind, x, y):
+        calls.append(len(x))
+        return Spy(real(kind, x, y), set(x[:, 0]))
+
+    monkeypatch.setattr(md, "_fit_est", spy)
+    m = md.fit(df, ["f1"], "ridge")
+    assert len(calls) == md.N_SPLITS + 1 and calls[0] == len(df)
+    assert all(c < len(df) for c in calls[1:])
+    assert overlaps == [0] * md.N_SPLITS  # no in-sample predictions: OOF was used
+    assert m.platt != (0.0, 0.0)
+
+
+def test_invalid_price_is_missing():
+    from app.services.etl.nba.residual.dataset import _valid_price
+
+    p = _valid_price(pd.Series([-9, 0, np.nan, -110, 105, 99]))
+    assert p.isna().tolist() == [True, True, True, False, False, True]

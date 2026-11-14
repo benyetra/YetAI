@@ -105,6 +105,12 @@ def _snapshot_query(conn, start: str, end: str) -> pd.DataFrame | None:
     )
 
 
+def _valid_price(p: pd.Series) -> pd.Series:
+    """American odds have |price| >= 100; anything else (0, -9, NaN) is missing."""
+    p = p.astype(float)
+    return p.where(p.abs() >= 100)
+
+
 def _closing(df: pd.DataFrame, key: list[str]) -> pd.DataFrame:
     """Per key, the rows of the latest observation; a book listing two lines in one
     observation keeps the one priced nearest even money."""
@@ -122,6 +128,8 @@ def _snapshot_lines(snap: pd.DataFrame, key_to_player: dict) -> pd.DataFrame:
     if snap is None or snap.empty:
         return pd.DataFrame()
     s = snap.copy()
+    for c in ("over_price", "under_price"):
+        s[c] = _valid_price(s[c])
     s["player_id"] = s["player_key"].map(key_to_player)
     s["stat"] = s["market"].map({v: k for k, v in SNAPSHOT_MARKET.items()})
     s["date"] = pd.to_datetime(s["game_date"])
@@ -162,7 +170,7 @@ def _projection_lines(conn, stat: str, start: str, end: str) -> pd.DataFrame:
         .str[:1]
         .map({"o": "over", "u": "under"})
     )
-    price = df["fanduel_price"].astype(float)
+    price = _valid_price(df["fanduel_price"])
     out = pd.DataFrame(
         {
             "stat": stat,
