@@ -233,10 +233,8 @@ class PlayerPropVerificationService:
         return None
 
     def is_yetai_linked(self, bet: SimpleUnifiedBet) -> bool:
-        return (
-            bool(getattr(bet, "yetai_bet_id", None))
-            or self._resolve_yetai_pick(bet) is not None
-        )
+        """Copy of an existing YetAI pick (a dangling yetai_bet_id is graded on its own)."""
+        return self._resolve_yetai_pick(bet) is not None
 
     def _resolve_yetai_pick(self, bet: SimpleUnifiedBet) -> Optional[YetAIBet]:
         """Find linked YetAI pick from yetai_bet_id or legacy UUID game/event ids."""

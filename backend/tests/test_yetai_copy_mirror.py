@@ -249,3 +249,12 @@ def test_integer_line_prop_pushes(db):
         res = asyncio.run(svc.verify_single_prop(bet))
     assert res and res["status"] == BetStatus.PUSHED
     assert res["result_amount"] == 100.0
+
+
+def test_copy_of_deleted_pick_is_graded_on_its_own(db):
+    # Picks could be hard-deleted before B1: a dangling yetai_bet_id has no pick to mirror.
+    row = copy(db, pick_id="gone")
+    service = PlayerPropVerificationService(db)
+    assert not service.is_yetai_linked(row)
+    pick(db)
+    assert service.is_yetai_linked(copy(db, id="copy-2"))

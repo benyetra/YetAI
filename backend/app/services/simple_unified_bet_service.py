@@ -376,7 +376,7 @@ class SimpleUnifiedBetService:
                 continue
 
             # Linked copies mirror their pick (sync_linked_unified_for_user); never re-grade.
-            if prop_service._resolve_yetai_pick(bet) or bet.yetai_bet_id:
+            if prop_service.is_yetai_linked(bet):
                 continue
 
             prop_result = await prop_service.verify_single_prop(bet)
