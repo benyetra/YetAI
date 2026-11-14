@@ -27,6 +27,15 @@ class NHLAPIClient:
             response = requests.get(url, timeout=10)
         return response
 
+    def _stats_url(self, path, season=None, regular_season=False):
+        """stats/rest URL returning ALL rows (the default page is only 50)."""
+        url = f"{self.stats_url}/{path}?limit=-1"
+        if season:
+            url += f"&cayenneExp=seasonId={season}"
+            if regular_season:
+                url += "%20and%20gameTypeId=2"
+        return url
+
     def get_schedule(self, date=None):
         """
         Get schedule for a specific date
@@ -78,9 +87,7 @@ class NHLAPIClient:
         Get team statistics
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/summary", season, regular_season=True)
 
         response = self._get(url)
 
@@ -165,9 +172,7 @@ class NHLAPIClient:
         Get special teams statistics (PP%, PK%, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/summary", season, regular_season=True)
 
         response = self._get(url)
 
@@ -182,9 +187,7 @@ class NHLAPIClient:
         Get realtime team statistics (blocked shots, hits, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/team/realtime"
-        if season:
-            url += f"?cayenneExp=seasonId={season}"
+        url = self._stats_url("team/realtime", season, regular_season=True)
 
         response = self._get(url)
 
@@ -213,9 +216,7 @@ class NHLAPIClient:
         Get all skater statistics (goals, assists, shots, ice time, etc.)
         season: Season ID (e.g., 20252026)
         """
-        url = f"{self.stats_url}/skater/summary"
-        if season:
-            url += f"?cayenneExp=seasonId={season}%20and%20gameTypeId=2"
+        url = self._stats_url("skater/summary", season, regular_season=True)
 
         response = self._get(url)
 
