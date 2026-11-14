@@ -154,7 +154,10 @@ def test_rerun_without_line_keeps_line_and_does_not_duplicate(run):
 def test_starter_change_flags_old_row_and_adds_new_without_old_line(run):
     run(_slot())
     n, rows = run(_slot(goalie_id=8480947, name="K. Lankinen"), payload={})
-    assert [(r.goalie_id, r.was_scratch) for r in rows] == [(8482447, True), (8480947, False)]
+    assert [(r.goalie_id, r.was_scratch) for r in rows] == [
+        (8482447, True),
+        (8480947, False),
+    ]
     assert rows[0].saves_line == 24.5  # what users saw stays
     assert rows[1].saves_line is None and rows[1].line_available is False
 

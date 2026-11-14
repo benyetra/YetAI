@@ -74,7 +74,11 @@ def test_spread_loader_no_sticky_failure_and_refresh(s3):
 def test_spread_version_prefers_manifest(s3):
     _put(s3, "xgb_spread", "OLD", "e1", {**SPREAD, "model_version": "m"})
     assert smp.get_model_version() == "m"
-    s3.put("wnba/ml_models/xgb_spread_manifest.json", json.dumps({"version": "xgb-9"}).encode(), "e2")
+    s3.put(
+        "wnba/ml_models/xgb_spread_manifest.json",
+        json.dumps({"version": "xgb-9"}).encode(),
+        "e2",
+    )
     _put(s3, "xgb_spread", "NEW", "e3", {**SPREAD, "model_version": "m"})
     assert smp.get_model_version() == "xgb-9"
 
@@ -89,7 +93,9 @@ def test_totals_loader_no_sticky_failure_and_refresh(s3):
 
 
 def test_prop_metadata_version_comes_from_manifest(s3):
-    _put(s3, "xgb_points", "OLD", "e1", meta={"features": ["a"], "model_version": "old"})
+    _put(
+        s3, "xgb_points", "OLD", "e1", meta={"features": ["a"], "model_version": "old"}
+    )
     s3.put(
         "wnba/ml_models/xgb_points_manifest.json",
         json.dumps({"version": "xgb-202611130000"}).encode(),

@@ -263,7 +263,11 @@ def run() -> dict:
                     if fd_line is None:
                         # No market now: keep the stored line and price; re-derive
                         # the side (an OUT flag is lifted, he is active again).
-                        for k in ("fanduel_line", "fanduel_over_under", "fanduel_price"):
+                        for k in (
+                            "fanduel_line",
+                            "fanduel_over_under",
+                            "fanduel_price",
+                        ):
                             del payload[k]
                         if existing.fanduel_line is not None:
                             existing.fanduel_over_under = pick_side(

@@ -54,9 +54,20 @@ def test_prop_model_cache_picks_up_new_upload(s3):
 
 
 def test_prop_model_version_from_manifest_then_metadata(s3):
-    _put(s3, "nba/ml_models", "xgb_points", "OLD", "e1", {"features": ["a"], "model_version": "meta-v"})
+    _put(
+        s3,
+        "nba/ml_models",
+        "xgb_points",
+        "OLD",
+        "e1",
+        {"features": ["a"], "model_version": "meta-v"},
+    )
     assert mlp.get_model_version("points") == "meta-v"
-    s3.put("nba/ml_models/xgb_points_manifest.json", json.dumps({"version": "xgb-202611"}).encode(), "e2")
+    s3.put(
+        "nba/ml_models/xgb_points_manifest.json",
+        json.dumps({"version": "xgb-202611"}).encode(),
+        "e2",
+    )
     _put(s3, "nba/ml_models", "xgb_points", "NEW", "e3")
     assert mlp.get_model_version("points") == "xgb-202611"
 
@@ -68,7 +79,12 @@ def test_prop_model_s3_blip_keeps_last_good(s3):
     assert mlp.predict("points", {"a": 1}) == 1.0
 
 
-WIN = {"features": ["elo_diff"], "split": "chronological", "test_mae": 9.0, "baseline_test_mae": 10.0}
+WIN = {
+    "features": ["elo_diff"],
+    "split": "chronological",
+    "test_mae": 9.0,
+    "baseline_test_mae": 10.0,
+}
 
 
 def test_spread_loader_no_sticky_failure(s3):
@@ -88,7 +104,11 @@ def test_spread_ignored_model_is_replaced_by_a_passing_upload(s3):
 
 def test_spread_version_prefers_manifest(s3):
     _put(s3, "nba/ml_models", "xgb_spread", "OLD", "e1", {**WIN, "model_version": "m"})
-    s3.put("nba/ml_models/xgb_spread_manifest.json", json.dumps({"version": "xgb-9"}).encode(), "e1")
+    s3.put(
+        "nba/ml_models/xgb_spread_manifest.json",
+        json.dumps({"version": "xgb-9"}).encode(),
+        "e1",
+    )
     smp.model_available()
     assert smp.get_model_version() == "xgb-9"
 

@@ -224,8 +224,13 @@ def _run_totals(games, now):
 
 
 def _tgame():
-    return {"home_team": "Home", "away_team": "Away", "market_total": 160.5,
-            "spread_home": -3.5, "game_time": TIP}
+    return {
+        "home_team": "Home",
+        "away_team": "Away",
+        "market_total": 160.5,
+        "spread_home": -3.5,
+        "game_time": TIP,
+    }
 
 
 def test_totals_projector_skips_started_game():

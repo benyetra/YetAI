@@ -806,7 +806,10 @@ class YetAIBetsServiceDB:
             # Never published, or pulled before it was shown: nobody will grade the
             # copy, so an open one is cancelled with the stake back, like a void.
             # (Expired rows the sweep still grades or voids are left to it.)
-            if unified_bet.status not in (UnifiedBetStatus.PENDING, UnifiedBetStatus.LIVE):
+            if unified_bet.status not in (
+                UnifiedBetStatus.PENDING,
+                UnifiedBetStatus.LIVE,
+            ):
                 return False
             if yetai_status == "expired" and (
                 self._legacy_sweepable(yetai) or self._admin_expired_shown(db, yetai)
@@ -857,7 +860,9 @@ class YetAIBetsServiceDB:
             with db.begin_nested():
                 self.mirror_to_linked_copies(db, yetai)
         except Exception:
-            logger.exception("YETAI_MIRROR_FAILED pick=%s (pick still settles)", yetai.id)
+            logger.exception(
+                "YETAI_MIRROR_FAILED pick=%s (pick still settles)", yetai.id
+            )
 
     def sync_linked_unified_for_user(self, db: Session, user_id: int) -> int:
         """Align placed bets with their linked YetAI pick outcomes for one user."""
@@ -1302,7 +1307,12 @@ class YetAIBetsServiceDB:
         seen = set()
         return [
             b
-            for b in [*rows, *legacy, *admin_expired, *self._pulled_with_open_copies(db)]
+            for b in [
+                *rows,
+                *legacy,
+                *admin_expired,
+                *self._pulled_with_open_copies(db),
+            ]
             if not (b.id in seen or seen.add(b.id))
         ]
 
@@ -1328,9 +1338,7 @@ class YetAIBetsServiceDB:
             )
             .all()
         )
-        ids = {
-            yid or (event or "")[len(prefix):] for yid, event in open_copies
-        } - {""}
+        ids = {yid or (event or "")[len(prefix) :] for yid, event in open_copies} - {""}
         if not ids:
             return []
         return (

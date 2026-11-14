@@ -80,8 +80,9 @@ def test_nba_totals_enrich_stamps_heuristic():
     from app.services.etl.nba import totals_ml
 
     proj = {"projected_total": 220.0, "factors": {}}
-    with patch.object(totals_ml, "features_from_projection", return_value={}), patch.object(
-        totals_ml, "predict_residual", return_value=None
+    with (
+        patch.object(totals_ml, "features_from_projection", return_value={}),
+        patch.object(totals_ml, "predict_residual", return_value=None),
     ):
         totals_ml.enrich_projection(proj)
     assert proj["model_version"] == "heuristic-v1"
@@ -119,21 +120,27 @@ def test_nba_accuracy_by_model_version():
     proj = {
         "PointsProjections": [
             col_row(
-                id=1, player_id=1, date=date(2026, 5, 23), projected_points=18.0,
-                fanduel_line=17.5, fanduel_over_under="over", model_version="v-a",
+                id=1,
+                player_id=1,
+                date=date(2026, 5, 23),
+                projected_points=18.0,
+                fanduel_line=17.5,
+                fanduel_over_under="over",
+                model_version="v-a",
             ),
             col_row(
-                id=2, player_id=2, date=date(2026, 5, 23), projected_points=10.0,
-                fanduel_line=None, fanduel_over_under=None, model_version=None,
+                id=2,
+                player_id=2,
+                date=date(2026, 5, 23),
+                projected_points=10.0,
+                fanduel_line=None,
+                fanduel_over_under=None,
+                model_version=None,
             ),
         ],
         "PointsActuals": [
-            SimpleNamespace(
-                player_id=1, date=date(2026, 5, 23), actual_points=20.0
-            ),
-            SimpleNamespace(
-                player_id=2, date=date(2026, 5, 23), actual_points=14.0
-            ),
+            SimpleNamespace(player_id=1, date=date(2026, 5, 23), actual_points=20.0),
+            SimpleNamespace(player_id=2, date=date(2026, 5, 23), actual_points=14.0),
         ],
     }
     db = MagicMock()

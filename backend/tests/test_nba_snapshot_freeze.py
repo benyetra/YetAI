@@ -102,9 +102,7 @@ def _event(commence, spread=None):
 def _run_lines(monkeypatch, db, event):
     monkeypatch.setattr(ugl, "_fetch_bulk_odds", lambda: [event])
     monkeypatch.setattr(ugl, "SessionLocal", lambda: db)
-    monkeypatch.setattr(
-        ugl, "now_eastern", lambda: NOW.astimezone(_game_start.EASTERN)
-    )
+    monkeypatch.setattr(ugl, "now_eastern", lambda: NOW.astimezone(_game_start.EASTERN))
     ugl.run()
 
 

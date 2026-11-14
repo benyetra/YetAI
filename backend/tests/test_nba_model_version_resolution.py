@@ -36,7 +36,9 @@ def test_prop_version_resolved_once_not_per_player(mod, monkeypatch):
     monkeypatch.setattr(mod, "_is_injured", lambda *a, **k: (False, None))
     monkeypatch.setattr(mod, "build_features", lambda **k: {"f": 1})
     monkeypatch.setattr(mod, "predict", lambda stat, f: 2.0)
-    monkeypatch.setattr(mod, "get_event_id_for_game", lambda *a, **k: None, raising=False)
+    monkeypatch.setattr(
+        mod, "get_event_id_for_game", lambda *a, **k: None, raising=False
+    )
     calls = []
     monkeypatch.setattr(
         mod, "resolve_nba_prop_model_version", lambda s: calls.append(s) or "xgb-1"

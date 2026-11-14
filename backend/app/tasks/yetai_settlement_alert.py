@@ -97,7 +97,9 @@ def _is_new(signature: str, last: Optional[str]) -> bool:
     (a bet settled, a void aged out of the 24h window) stays quiet."""
     if not last or "|v:" not in last:  # none yet, or the old count-based format
         return True
-    ids = lambda sig: [set(p.split(",")) - {""} for p in sig[2:].split("|v:")]  # noqa: E731
+    ids = lambda sig: [
+        set(p.split(",")) - {""} for p in sig[2:].split("|v:")
+    ]  # noqa: E731
     return any(cur - before for cur, before in zip(ids(signature), ids(last)))
 
 

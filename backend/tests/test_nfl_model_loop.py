@@ -70,7 +70,10 @@ def test_version_tier_when_ml_not_applied(s3):
     assert qbm.resolve_qb_model_version(pub_method="tier", ml_yards=None) == "tier-v3"
     # ML computed but no real line -> published number is the tier
     assert qbm.resolve_qb_model_version(pub_method="tier", ml_yards=260.0) == "tier-v3"
-    assert qbm.resolve_qb_model_version(pub_method="soft_anchor", ml_yards=None) == "tier-v3"
+    assert (
+        qbm.resolve_qb_model_version(pub_method="soft_anchor", ml_yards=None)
+        == "tier-v3"
+    )
 
 
 def test_version_marks_shadow_ml_soft_anchor(s3):
@@ -112,13 +115,19 @@ def _put_ou(s3, p, brier, etag="e1", manifest=None):
     meta = {"features": ["tier_yards"], "holdout_brier": brier}
     s3.put(f"{PFX}/qb_pass_yds_ou_metadata.json", json.dumps(meta).encode(), etag)
     if manifest:
-        s3.put(f"{PFX}/qb_pass_yds_ou_manifest.json", json.dumps(manifest).encode(), etag)
+        s3.put(
+            f"{PFX}/qb_pass_yds_ou_manifest.json", json.dumps(manifest).encode(), etag
+        )
 
 
 @pytest.fixture
 def ou(s3, monkeypatch):
     monkeypatch.setattr(ouc, "_OBJECTS", None)
-    monkeypatch.setattr(ouc, "_LOCAL", (Clf(0.55), {"features": ["tier_yards"], "holdout_brier": 0.2479}))
+    monkeypatch.setattr(
+        ouc,
+        "_LOCAL",
+        (Clf(0.55), {"features": ["tier_yards"], "holdout_brier": 0.2479}),
+    )
     monkeypatch.setattr(ouc, "_LOCAL_FAILED", False)
     return s3
 
@@ -161,7 +170,9 @@ def test_ou_coin_flip_brier_not_used(ou, monkeypatch):
 def test_ou_manifest_brier_wins_over_metadata(ou, monkeypatch):
     monkeypatch.setattr(ouc, "_LOCAL", None)
     monkeypatch.setattr(ouc, "_LOCAL_FAILED", True)
-    _put_ou(ou, 0.9, 0.20, manifest={"metric_name": "holdout_brier", "holdout_metric": 0.26})
+    _put_ou(
+        ou, 0.9, 0.20, manifest={"metric_name": "holdout_brier", "holdout_metric": 0.26}
+    )
     assert _over() is None
 
 
@@ -189,7 +200,11 @@ class Yards:
 
 def _live_yards(s3, c):
     s3.put(f"{PFX}/qb_passing_yards.pkl", pickle.dumps(Yards(c)), "e0")
-    meta = {"features": ["tier_yards"], "residual_target": True, "baseline_mode": "tier"}
+    meta = {
+        "features": ["tier_yards"],
+        "residual_target": True,
+        "baseline_mode": "tier",
+    }
     s3.put(f"{PFX}/qb_passing_yards_metadata.json", json.dumps(meta).encode(), "e0")
 
 
@@ -203,7 +218,11 @@ def test_qb_upload_rejects_worse_candidate_and_leaves_live_untouched(s3):
     live = s3.objects[f"{PFX}/qb_passing_yards.pkl"]
     X, y = _hold()
     out = tqm.upload_qb_model(
-        Yards(30.0), {"features": ["tier_yards"]}, candidate_mae=30.0, X_hold=X, y_hold=y
+        Yards(30.0),
+        {"features": ["tier_yards"]},
+        candidate_mae=30.0,
+        X_hold=X,
+        y_hold=y,
     )
     assert out["status"] == "rejected_by_champion"
     assert s3.objects[f"{PFX}/qb_passing_yards.pkl"] == live
@@ -217,7 +236,9 @@ def test_qb_upload_ships_better_candidate_with_manifest_and_archive(s3):
         Yards(0.0), {"features": ["tier_yards"]}, candidate_mae=0.0, X_hold=X, y_hold=y
     )
     assert out["status"] == "uploaded"
-    assert json.loads(s3.objects[f"{PFX}/qb_passing_yards_manifest.json"])["version"].startswith("gbm-qb-")
+    assert json.loads(s3.objects[f"{PFX}/qb_passing_yards_manifest.json"])[
+        "version"
+    ].startswith("gbm-qb-")
     assert out["archive_stamp"]
     assert f"{PFX}/qb_passing_yards_metadata.json" in s3.objects
 
@@ -228,7 +249,11 @@ def _ou_hold():
 
 def _live_ou(s3, p):
     s3.put(f"{PFX}/qb_pass_yds_ou.pkl", pickle.dumps(Clf(p)), "e0")
-    s3.put(f"{PFX}/qb_pass_yds_ou_metadata.json", json.dumps({"features": ["tier_yards"]}).encode(), "e0")
+    s3.put(
+        f"{PFX}/qb_pass_yds_ou_metadata.json",
+        json.dumps({"features": ["tier_yards"]}).encode(),
+        "e0",
+    )
 
 
 def test_ou_upload_requires_brier_under_coin_flip(s3):
@@ -270,12 +295,16 @@ def test_ou_upload_ships_when_candidate_beats_live(s3):
     assert f"{PFX}/qb_pass_yds_ou_manifest.json" in s3.objects
 
 
-def test_prod_eval_upload_needs_promote_and_force_still_hits_champion_gate(s3, monkeypatch, tmp_path):
+def test_prod_eval_upload_needs_promote_and_force_still_hits_champion_gate(
+    s3, monkeypatch, tmp_path
+):
     from scripts import nfl_prod_qb_eval as ev
 
     monkeypatch.setattr(ev, "_MODELS_DIR", tmp_path)
     (tmp_path / "qb_passing_yards.pkl").write_bytes(pickle.dumps(Yards(30.0)))
-    (tmp_path / "qb_passing_yards_metadata.json").write_text(json.dumps({"features": ["tier_yards"]}))
+    (tmp_path / "qb_passing_yards_metadata.json").write_text(
+        json.dumps({"features": ["tier_yards"]})
+    )
     _live_yards(s3, 0.0)  # live is perfect on the holdout
     X, y = _hold()
     holdout = {"yards": (X, y), "yards_mae": 30.0}
@@ -283,7 +312,9 @@ def test_prod_eval_upload_needs_promote_and_force_still_hits_champion_gate(s3, m
     skipped = ev.maybe_upload({"promote_recommended": False}, holdout=holdout)
     assert "s3_upload_skipped" in skipped and not s3.names("put")
 
-    forced = ev.maybe_upload({"promote_recommended": False}, force=True, holdout=holdout)
+    forced = ev.maybe_upload(
+        {"promote_recommended": False}, force=True, holdout=holdout
+    )
     assert forced["force_upload"] is True
     assert forced["s3_upload"]["qb_passing_yards"]["status"] == "rejected_by_champion"
     assert forced["s3_uploaded"] == {} and not s3.names("put")
@@ -298,20 +329,35 @@ def test_atd_trainer_stamps_current_lambda_family(monkeypatch, tmp_path):
     from scripts import nfl_anytime_td_train_calibration as trainer
 
     monkeypatch.setattr(cal, "CONVERSION_RATE_FAMILY_RZ_GL", "rz_gl_v2")
-    monkeypatch.setattr(bt, "grade_week_from_weekly_records", lambda *a, **k: [{"position": "RB"}])
-    monkeypatch.setattr(feats, "load_weekly_records_with_fallback", lambda *a, **k: ([{}], "x"))
+    monkeypatch.setattr(
+        bt, "grade_week_from_weekly_records", lambda *a, **k: [{"position": "RB"}]
+    )
+    monkeypatch.setattr(
+        feats, "load_weekly_records_with_fallback", lambda *a, **k: ([{}], "x")
+    )
     monkeypatch.setattr(pbp, "load_pbp_records_nflverse", lambda *_: [])
     monkeypatch.setattr(cal, "fit_position_gbm_bundle", lambda rows: {"rb": "stub"})
 
     def run(passes):
         monkeypatch.setattr(
-            bt, "run_walk_forward_backtest",
+            bt,
+            "run_walk_forward_backtest",
             lambda **k: {"passes_gate": passes, "metrics": {}, "gate": {}},
         )
         meta_path = tmp_path / f"m{passes}.json"
         rc = trainer.main(
-            ["--seasons", "2025", "--start-week", "2", "--end-week", "2",
-             "--model-path", str(tmp_path / "m.pkl"), "--meta-path", str(meta_path)]
+            [
+                "--seasons",
+                "2025",
+                "--start-week",
+                "2",
+                "--end-week",
+                "2",
+                "--model-path",
+                str(tmp_path / "m.pkl"),
+                "--meta-path",
+                str(meta_path),
+            ]
         )
         return rc, json.loads(meta_path.read_text())
 

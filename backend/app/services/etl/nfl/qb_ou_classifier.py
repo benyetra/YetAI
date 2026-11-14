@@ -261,7 +261,9 @@ def _unpickle(body: bytes) -> object:
     return pickle.loads(body)  # nosec B301 - our own private bucket
 
 
-def holdout_brier(metadata: Mapping[str, Any], manifest: Mapping[str, Any] | None) -> float | None:
+def holdout_brier(
+    metadata: Mapping[str, Any], manifest: Mapping[str, Any] | None
+) -> float | None:
     """Holdout Brier from the S3 manifest (when it carries one), else metadata."""
     if manifest and manifest.get("metric_name") == BRIER_METRIC:
         raw = manifest.get("holdout_metric")
@@ -274,7 +276,9 @@ def holdout_brier(metadata: Mapping[str, Any], manifest: Mapping[str, Any] | Non
 
 
 def _usable(
-    model: object | None, meta: Mapping[str, Any] | None, manifest: Mapping[str, Any] | None
+    model: object | None,
+    meta: Mapping[str, Any] | None,
+    manifest: Mapping[str, Any] | None,
 ) -> bool:
     if model is None or meta is None:
         return False
@@ -299,7 +303,10 @@ def _from_local() -> tuple[object, dict[str, Any]] | None:
                     raise FileNotFoundError("no local O/U classifier")
                 model_path, meta_path = local
                 with model_path.open("rb") as f:
-                    _LOCAL = (pickle.load(f), json.loads(meta_path.read_text()))  # nosec B301
+                    _LOCAL = (
+                        pickle.load(f),
+                        json.loads(meta_path.read_text()),
+                    )  # nosec B301
             except Exception as exc:
                 logger.info("NFL QB O/U local classifier unavailable: %s", exc)
                 _LOCAL_FAILED = True

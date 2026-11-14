@@ -73,7 +73,11 @@ def test_enrich_promotes_ml_when_enabled(monkeypatch):
     pred = _sample_prediction()
     with patch.object(psm, "predict_shots_ml_loaded", return_value=3.9):
         with patch.object(
-            psm, "_PAIR", SimpleNamespace(get=lambda: (object(), {"model_version": "xgb-sog-20260525"}))
+            psm,
+            "_PAIR",
+            SimpleNamespace(
+                get=lambda: (object(), {"model_version": "xgb-sog-20260525"})
+            ),
         ):
             out = enrich_player_shots_prediction_for_write(pred)
     assert out["predicted_shots"] == 3.9

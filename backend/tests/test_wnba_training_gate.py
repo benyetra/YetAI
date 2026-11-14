@@ -47,7 +47,9 @@ class Linear:
 def s3(monkeypatch):
     fake = FakeS3()
     monkeypatch.setattr(model_store.boto3, "client", lambda *_a, **_k: fake)
-    monkeypatch.setattr("app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: fake)
+    monkeypatch.setattr(
+        "app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: fake
+    )
     return fake
 
 
@@ -72,7 +74,9 @@ def _props(n=200):
 
 def test_props_split_is_chronological_and_validation_is_holdout_only(monkeypatch):
     feats, target = _props()
-    monkeypatch.setattr(run_train_props.build_training_dataset, "build", lambda *a: (feats, target))
+    monkeypatch.setattr(
+        run_train_props.build_training_dataset, "build", lambda *a: (feats, target)
+    )
     seen = {}
     real = validate_model.validate
 
@@ -93,9 +97,17 @@ def test_props_split_is_chronological_and_validation_is_holdout_only(monkeypatch
 
 def test_props_rejected_by_champion_does_not_touch_s3(s3, monkeypatch):
     feats, target = _props()
-    monkeypatch.setattr(run_train_props.build_training_dataset, "build", lambda *a: (feats, target))
+    monkeypatch.setattr(
+        run_train_props.build_training_dataset, "build", lambda *a: (feats, target)
+    )
     # A live model that predicts the truth better than any candidate can.
-    _live(s3, "wnba/ml_models", "xgb_points", Linear("points_l5", 0.7), ["points_l5", "minutes_l5"])
+    _live(
+        s3,
+        "wnba/ml_models",
+        "xgb_points",
+        Linear("points_l5", 0.7),
+        ["points_l5", "minutes_l5"],
+    )
     out = run_train_props.run("points", upload=True, **WINDOW)
     assert out["status"] == "rejected_by_champion"
     assert "s3_keys" not in out
@@ -104,7 +116,9 @@ def test_props_rejected_by_champion_does_not_touch_s3(s3, monkeypatch):
 
 def test_props_better_candidate_uploads_with_manifest_and_archive(s3, monkeypatch):
     feats, target = _props()
-    monkeypatch.setattr(run_train_props.build_training_dataset, "build", lambda *a: (feats, target))
+    monkeypatch.setattr(
+        run_train_props.build_training_dataset, "build", lambda *a: (feats, target)
+    )
     _live(s3, "wnba/ml_models", "xgb_points", Const(500), ["points_l5"])  # terrible
     out = run_train_props.run("points", upload=True, **WINDOW)
     assert out["status"] == "ok"
@@ -124,7 +138,13 @@ def test_spread_chronological_and_rejected_by_champion(s3, monkeypatch):
     target = pd.Series(x + rng.normal(0, 2, n), name="margin")
     monkeypatch.setattr(train_spread_model, "build", lambda *a: (feats, target))
 
-    _live(s3, "wnba/ml_models", "xgb_spread", Linear("elo_diff", 1.0), ["elo_diff", "pace_adj"])
+    _live(
+        s3,
+        "wnba/ml_models",
+        "xgb_spread",
+        Linear("elo_diff", 1.0),
+        ["elo_diff", "pace_adj"],
+    )
     out = train_spread_model.run(upload=True, skip_gate=True, **WINDOW)
     assert out["metadata"]["split"] == "chronological"
     assert out["status"] == "rejected_by_champion"
@@ -136,9 +156,13 @@ def test_spread_chronological_and_rejected_by_champion(s3, monkeypatch):
 
 def _totals(feature_names, n=120):
     rng = np.random.default_rng(2)
-    feats = pd.DataFrame(rng.normal(0, 1, (n, len(feature_names))), columns=feature_names)
+    feats = pd.DataFrame(
+        rng.normal(0, 1, (n, len(feature_names))), columns=feature_names
+    )
     feats["heuristic_total"] = rng.normal(160, 5, n)
-    target = pd.Series(1.5 * feats[feature_names[1]] + rng.normal(0, 0.05, n), name="residual")
+    target = pd.Series(
+        1.5 * feats[feature_names[1]] + rng.normal(0, 0.05, n), name="residual"
+    )
     dates = pd.Series([date(2025, 5, 1) + timedelta(days=i // 2) for i in range(n)])
     return feats, target, dates
 

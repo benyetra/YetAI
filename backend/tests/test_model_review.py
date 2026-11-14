@@ -233,7 +233,11 @@ def test_lookup_matches_json_round_tripped_datetime_ref():
     index = {tuple(str(i) for i in ident): ("ou", {"label": "QB 42"})}
     ref = json.loads(
         json.dumps(
-            {"table": "pred_nfl_qb", "game_date": datetime(2026, 11, 9), "qb_player_id": 42},
+            {
+                "table": "pred_nfl_qb",
+                "game_date": datetime(2026, 11, 9),
+                "qb_player_id": 42,
+            },
             default=lambda d: d.isoformat(),
         )
     )

@@ -513,11 +513,15 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
                 "state": (
                     "WITHHELD losing"
                     if r.withheld
-                    else "WITHHELD unproven"
-                    if drop_reason(r) == "unproven_record"
-                    else "unproven (would be withheld with AUTO_PICK_REQUIRE_PROVEN_RECORD)"
-                    if r.n_eff < min_picks()
-                    else "open"
+                    else (
+                        "WITHHELD unproven"
+                        if drop_reason(r) == "unproven_record"
+                        else (
+                            "unproven (would be withheld with AUTO_PICK_REQUIRE_PROVEN_RECORD)"
+                            if r.n_eff < min_picks()
+                            else "open"
+                        )
+                    )
                 ),
                 "qualifying_edge": (
                     round(fill_floor_edge(key[2]), 3)

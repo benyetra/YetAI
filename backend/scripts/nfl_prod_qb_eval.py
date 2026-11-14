@@ -865,11 +865,14 @@ def train_and_eval(
         metadata = {**metadata, **refit_meta, "refit_all_rows": True}
         report["rows_shipped_fit"] = int(len(features))
     if ou_meta is not None:
-        ou_meta = {**ou_meta, "data_window": _data_window(
-            pd.DataFrame(
-                [{"season": r["season"], "week": r["week"]} for r in ou_meta_rows]
-            )
-        )}
+        ou_meta = {
+            **ou_meta,
+            "data_window": _data_window(
+                pd.DataFrame(
+                    [{"season": r["season"], "week": r["week"]} for r in ou_meta_rows]
+                )
+            ),
+        }
 
     _MODELS_DIR.mkdir(parents=True, exist_ok=True)
     yards_path = _MODELS_DIR / f"{MODEL_KEY}.pkl"

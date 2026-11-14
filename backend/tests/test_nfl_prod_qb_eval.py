@@ -136,6 +136,7 @@ def test_run_holdout_ablations_smoke():
 
 # ---- C6: weekly run learns from this season without leaking into the gate ----
 
+
 class _Fit:
     """Picklable stand-in for a fitted model; remembers how many rows it saw."""
 
@@ -186,7 +187,9 @@ def _run(monkeypatch, tmp_path, promote):
     return report, fits
 
 
-def test_shipped_model_is_refit_on_all_rows_after_the_gate_passes(monkeypatch, tmp_path):
+def test_shipped_model_is_refit_on_all_rows_after_the_gate_passes(
+    monkeypatch, tmp_path
+):
     report, fits = _run(monkeypatch, tmp_path, promote=True)
     assert fits[0] == 60  # gate fit: everything before the holdout season
     assert fits[-1] == 105  # shipped fit: all graded rows, incl. this season

@@ -32,7 +32,12 @@ from app.services.auto_pick.candidate import (
 )
 from app.services.auto_pick.config_loader import load_scoring_config
 from app.services.auto_pick.context_builder import build_scoring_context
-from app.services.auto_pick.record_gate import combine, drop_reason, key_label, record_key
+from app.services.auto_pick.record_gate import (
+    combine,
+    drop_reason,
+    key_label,
+    record_key,
+)
 from app.services.auto_pick.scorer import ConfidenceScorer
 from app.services.auto_pick.parlay_selector import ParlaySelector, ScoredParlayPick
 from app.services.auto_pick.selector import (

@@ -77,7 +77,11 @@ def test_enrich_promotes_ml_when_enabled(monkeypatch):
     pred = _sample_prediction()
     with patch.object(gsm, "predict_saves_ml_loaded", return_value=29.0):
         with patch.object(
-            gsm, "_PAIR", SimpleNamespace(get=lambda: (object(), {"model_version": "xgb-goalie-20260525"}))
+            gsm,
+            "_PAIR",
+            SimpleNamespace(
+                get=lambda: (object(), {"model_version": "xgb-goalie-20260525"})
+            ),
         ):
             out = enrich_goalie_prediction_for_write(pred, {})
     assert out["predicted_saves"] == 29.0

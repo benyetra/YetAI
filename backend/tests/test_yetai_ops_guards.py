@@ -161,8 +161,16 @@ def test_new_stuck_bet_alerts_after_earlier_one_cleared(sent):
 def test_shrinking_set_does_not_realert(sent):
     out, run = sent
     stale = NOW - timedelta(hours=30)
-    old_void = lambda: _bet("v1", "void", settled=NOW - timedelta(hours=23), result="r")  # noqa: E731
-    run([_bet("a", "active", commence=stale), _bet("b", "active", commence=stale), old_void()])
+    old_void = lambda: _bet(
+        "v1", "void", settled=NOW - timedelta(hours=23), result="r"
+    )  # noqa: E731
+    run(
+        [
+            _bet("a", "active", commence=stale),
+            _bet("b", "active", commence=stale),
+            old_void(),
+        ]
+    )
     run([_bet("b", "active", commence=stale)])  # A settled and the void aged out
     assert len(out) == 1
     run([_bet("b", "active", commence=stale), _bet("c", "active", commence=stale)])

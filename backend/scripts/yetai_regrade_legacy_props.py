@@ -53,9 +53,11 @@ def candidates(db, ids=()):
             and (b.result or "").startswith(PREFIX)
             and b.bet_type == BetType.PROP
         )
-        if (legacy or b.id in ids) and all(
-            m.get(k) for k in ("player", "stat", "side")
-        ) and (m.get("opponent") or m.get("opponent_team_name")):
+        if (
+            (legacy or b.id in ids)
+            and all(m.get(k) for k in ("player", "stat", "side"))
+            and (m.get("opponent") or m.get("opponent_team_name"))
+        ):
             out.append(b)
     return sorted(out, key=lambda b: b.created_at or datetime.min)
 
