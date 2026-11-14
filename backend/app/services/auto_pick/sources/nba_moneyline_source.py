@@ -58,7 +58,11 @@ class NBAMoneylineSource:
             if market_p is None:
                 continue
             model_part = r.home_win_prob - market_p
-            if abs(model_part) < ML_MIN_MODEL_EDGE or (model_part > 0) != (edge > 0):
+            if (
+                edge == 0
+                or abs(model_part) < ML_MIN_MODEL_EDGE
+                or (model_part > 0) != (edge > 0)
+            ):
                 continue
             out.append(
                 {
