@@ -227,3 +227,23 @@ def test_live_board_endpoint_withholds_and_past_slate_does_not(sqlite_db, monkey
     monkeypatch.setattr(api, "_merge_past_results", lambda p, *a: p)
     api.nhl_predictions(target_date=date(2026, 1, 1), **kw)
     assert called == []
+
+
+def test_nba_board_strips_labels_for_new_steals_and_blocks_lines(sqlite_db):
+    payload = {
+        "steals": [{"id": 1, "recommendation": "OVER", "fanduel_over_under": "o"}],
+        "blocks": [{"id": 2, "recommendation": "UNDER", "fanduel_over_under": "u"}],
+        "points": [{"id": 3, "recommendation": "OVER", "fanduel_over_under": "o"}],
+    }
+    out = api._withhold_unproven_picks(
+        payload,
+        sqlite_db,
+        api._NBA_NEW_MARKET_KEYS,
+        loaders=("nba_props",),
+        no_pick=api._NBA_NO_PICK,
+    )
+    for group in ("steals", "blocks"):
+        row = out[group][0]
+        assert row["recommendation"] is None and row["fanduel_over_under"] is None
+        assert row["pick_withheld"] == "unproven_record"
+    assert out["points"][0]["recommendation"] == "OVER"  # not a new market: untouched
