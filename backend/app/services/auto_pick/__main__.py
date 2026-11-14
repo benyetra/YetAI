@@ -59,14 +59,15 @@ def dry_run(db, slate_date: date, now: datetime | None = None, providers=None) -
 def print_gate_report(rows: list[dict]) -> None:
     print(
         f"{'key':34} {'bets':>5} {'units':>7} {'prior':>9} {'hit%':>6} "
-        f"{'n_eff':>6} {'ROI':>8}  gate"
+        f"{'n_eff':>6} {'ROI':>8} {'min_edge':>8}  gate"
     )
     for r in rows:
         hit = "-" if r["prior_hit_rate"] is None else f"{r['prior_hit_rate']:.1%}"
         prior = f"{r['proj_hits']}/{r['proj_n']}"
+        qe = "-" if r["qualifying_edge"] is None else f"{r['qualifying_edge']:.2f}"
         print(
             f"{r['key']:34} {r['bet_n']:>5} {r['bet_units']:>7} {prior:>9} {hit:>6} "
-            f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%}  "
+            f"{r['n_eff']:>6} {r['shrunk_roi']:>8.2%} {qe:>8}  "
             f"{'WITHHELD' if r['withheld'] else 'open'}"
         )
 

@@ -152,6 +152,18 @@ async def test_points_losing_at_every_edge_is_withheld_rebounds_in_subset_open(
     assert reb.shrunk_roi > 0
 
 
+def test_production_shapes_points_withheld_rebounds_open_low_edge_ignored(sqlite_db):
+    # points 50.6% over 476 qualifying calls; sub-floor calls (edge 1.0 < 1.25) are ignored
+    _seed_points(sqlite_db, 476, 0.506, edge=2.0)
+    _seed_points(sqlite_db, 300, 0.60, edge=1.0, first_id=1000)
+    # rebounds 56.7% over 171 qualifying; 300 calls at 49% between 0.5 and 0.78 do not count
+    _seed_rebounds(sqlite_db, 171, 0.567, edge=1.0)
+    _seed_rebounds(sqlite_db, 300, 0.49, edge=0.6, first_id=1000)
+    recs = load_records(sqlite_db, NOW)
+    assert (recs[POINTS].proj_n, recs[POINTS].withheld) == (476, True)
+    assert (recs[REBOUNDS].proj_n, recs[REBOUNDS].withheld) == (171, False)
+
+
 def test_rebounds_overall_record_would_withhold_but_subset_is_what_counts(sqlite_db):
     _seed_rebounds(sqlite_db, 400, 0.50, edge=0.2)
     _seed_rebounds(sqlite_db, 100, 0.578, edge=1.0, first_id=1000)
@@ -163,7 +175,28 @@ def test_key_at_exact_breakeven_is_open():
     # 110/210 = 52.38% over at -110 is zero ROI.
     rec = combine(POINTS, proj_n=210, proj_hits=110)
     assert rec.shrunk_roi == 0 and not rec.withheld
-    assert combine(POINTS, proj_n=210, proj_hits=109).withheld
+    # a hair under breakeven sits in the dead band: still open
+    assert not combine(POINTS, proj_n=210, proj_hits=109).withheld
+
+
+def test_fill_floor_edges_come_from_the_scorer():
+    # neutral other sub-scores total 42.5, so the edge score must be 31.25
+    f = rg.fill_floor_edge
+    assert f("points") == pytest.approx(1.25)
+    assert f("rebounds") == pytest.approx(0.78125)
+    assert f("assists") == pytest.approx(0.625)
+    assert f("threes") == pytest.approx(0.375)
+    assert f("steals") == pytest.approx(0.25)
+
+
+def test_key_walking_around_breakeven_does_not_flip():
+    # hits 108..112 of 210 straddle breakeven (110); the old zero-ROI cut flipped here
+    states = [
+        combine(POINTS, proj_n=210, proj_hits=h).withheld
+        for h in (110, 109, 110, 108, 109, 110, 109, 112)
+    ]
+    assert states == [False] * len(states)
+    assert combine(POINTS, proj_n=210, proj_hits=100).withheld  # real losers still go
 
 
 def test_no_data_means_no_record_and_open_gate(sqlite_db):
@@ -328,9 +361,12 @@ def test_gate_report_prints_each_key_and_writes_nothing(sqlite_db, capsys):
     assert (pts["proj_n"], pts["proj_hits"], pts["withheld"]) == (250, 119, True)
     assert (reb["bet_n"], reb["proj_n"], reb["proj_hits"]) == (3, 225, 130)
     assert reb["withheld"] is False and reb["shrunk_roi"] > 0
+    assert reb["qualifying_edge"] == pytest.approx(0.781, abs=1e-3)
+    assert pts["qualifying_edge"] == pytest.approx(1.25)
     assert reb["prior_hit_rate"] == pytest.approx(130 / 225)
 
     cli.print_gate_report(rows)
     out = capsys.readouterr().out
     assert "NBA/player_prop/points" in out and "WITHHELD" in out
+    assert "min_edge" in out and "1.25" in out
     assert sqlite_db.query(YetAIBet).count() == bets_before

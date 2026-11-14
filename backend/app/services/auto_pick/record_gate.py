@@ -5,10 +5,13 @@ A key's record blends two sources, both over the last WINDOW_DAYS:
 - bet record: graded AUTO YetAIBet rows, units at the stored odds;
 - projection record: the model's published over/under calls graded vs the line they
   were published with (high volume prior), valued at -110 because rows store no price.
-  Only calls the source would turn into a pick count: where the stored call is made at
-  any edge (NBA props) rows below the source's own minimum edge are left out.
+  Only calls the scorer could publish count: where the stored call is made at any edge
+  (NBA props) rows below the fill-floor edge (``fill_floor_edge``) are left out.
 The blend is shrunk toward breakeven (zero ROI; 52.38% at -110), so a thin sample never
-withholds a key and a key needs no more than breakeven to stay open.
+withholds a key. A key is withheld only when its shrunk ROI is below MIN_ROI, a small
+negative dead band under breakeven: the gate keeps no state, and re-deriving "was withheld
+yesterday" from yesterday's ROI gives no memory beyond a day (a key parked inside the band
+would flip daily), so the plain dead band is the simplest rule that does not flip.
 
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
@@ -44,7 +47,7 @@ BREAKEVEN_ODDS = -110
 
 DEFAULT_MIN_PICKS = 30
 DEFAULT_WINDOW_DAYS = 90
-DEFAULT_MIN_ROI = 0.0
+DEFAULT_MIN_ROI = -0.02
 DEFAULT_PRIOR_MAX_PICKS = 60
 DEFAULT_SHRINK_PICKS = 20
 # historical_sub_score: 50 at breakeven ROI, +/-25 points per 10% ROI.
@@ -175,29 +178,76 @@ def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, f
     return {k: (n, u) for k, (n, u) in out.items()}
 
 
+# Which stored rows each prior grades (publishable calls only):
+# - NBA props: the stored call is made at any edge, so rows are cut at fill_floor_edge.
+# - NBA total: pick_record keeps |edge| >= 4.0, above the total's fill-floor edge
+#   (2.5 = 31.25/100 * 8.0), so every row is publishable.
+# - NBA/NFL spread, NFL total, NFL passing/receiving, NHL saves/total: rows are the
+#   stored recommendation/pick (NO_PLAY and pushes excluded); their edge thresholds
+#   live in each sport's ETL and were not compared with the fill-floor edge here.
 # Projection loaders: name -> fn(db, start, end) -> {key: (hits, graded)}; dates inclusive.
 ProjectionLoader = Callable[[Session, date, date], dict[RecordKey, tuple[int, int]]]
 
-# part -> (stat, actual field, projected field, EDGE_THRESHOLDS key)
+# part -> (stat, actual field, projected field)
 _NBA_PROP_STATS = {
-    "points_ou": ("points", "actual_points", "projected_points", "points"),
-    "three_pt_ou": (
-        "threes",
-        "actual_three_pt_made",
-        "projected_three_pt_made",
-        "three_pt_made",
-    ),
-    "steals_ou": ("steals", "actual_steals", "projected_steals", "steals"),
-    "assists_ou": ("assists", "actual_assists", "projected_assists", "assists"),
-    "rebounds_ou": ("rebounds", "actual_rebounds", "projected_rebounds", "rebounds"),
+    "points_ou": ("points", "actual_points", "projected_points"),
+    "three_pt_ou": ("threes", "actual_three_pt_made", "projected_three_pt_made"),
+    "steals_ou": ("steals", "actual_steals", "projected_steals"),
+    "assists_ou": ("assists", "actual_assists", "projected_assists"),
+    "rebounds_ou": ("rebounds", "actual_rebounds", "projected_rebounds"),
 }
 
 
-def _prop_qualifies(row, projected_field: str, min_edge: float) -> bool:
-    """Would the NBA prop source emit this stored call as a candidate?
+def fill_floor_edge(stat: str) -> float:
+    """Smallest raw edge at which a ``stat`` prop reaches the fill floor (pure).
 
-    The flag on these rows is just the side of projection vs line at any edge; a pick
-    needs the projection to clear the line by the stat's minimum edge on the called side.
+    The other sub-scores are neutral: the scorer's own functions on a no-metadata
+    candidate (no record, no movement, -110, fresh). Edge scores linearly in
+    edge / edge_normalizer, so solve the weighted total for the edge sub-score.
+    """
+    from app.services.auto_pick.scoring_context import ScoringContext, ScoringWeights
+    from app.services.auto_pick.selector import SelectorConfig
+    from app.services.auto_pick.sub_scores import (
+        edge_normalizer,
+        freshness_sub_score,
+        historical_sub_score,
+        line_movement_sub_score,
+        model_confidence_sub_score,
+        odds_sanity_sub_score,
+    )
+
+    c = BetCandidate(
+        market_type=MarketType.PLAYER_PROP,
+        league="NBA",
+        event_id="neutral",
+        selection="neutral",
+        market_line=10.0,
+        market_odds=BREAKEVEN_ODDS,
+        our_projection=10.0,
+        projection_metadata={"stat": stat},
+    )
+    w = ScoringWeights()
+    ctx = ScoringContext(weights=w, score_threshold=SelectorConfig().threshold)
+    rest = (
+        historical_sub_score(c, ctx) * w.historical
+        + freshness_sub_score(c, ctx) * w.freshness
+        + line_movement_sub_score(c, ctx) * w.line_movement
+        + odds_sanity_sub_score(c, ctx) * w.odds_sanity
+        + model_confidence_sub_score(c) * w.model_conf
+    )
+    edge_score = (SelectorConfig().min_score - rest) / w.edge
+    return edge_score / 100.0 * edge_normalizer(c)
+
+
+_NBA_STATS = {v[0] for v in _NBA_PROP_STATS.values()}
+
+
+def _prop_qualifies(row, projected_field: str, min_edge: float) -> bool:
+    """Could this stored call reach the fill floor as a pick?
+
+    The flag on these rows is just the side of projection vs line at any edge; the
+    source has no edge threshold, so the score decides: the projection must clear the
+    line on the called side by ``min_edge`` (``fill_floor_edge``).
     """
     proj, line = row.get(projected_field), row.get("fanduel_line")
     if proj is None or line is None:
@@ -208,14 +258,13 @@ def _prop_qualifies(row, projected_field: str, min_edge: float) -> bool:
 
 def _nba_props(db, start, end):
     from app.services.nba_accuracy_service import _nba_season_window_rows
-    from app.services.player_prop_projection_display import EDGE_THRESHOLDS
 
     out = {}
     for part, _label, rows, _merge in _nba_season_window_rows(db, start=start, end=end):
         if part not in _NBA_PROP_STATS:
             continue
-        stat, actual_field, proj_field, edge_key = _NBA_PROP_STATS[part]
-        min_edge = EDGE_THRESHOLDS[edge_key]
+        stat, actual_field, proj_field = _NBA_PROP_STATS[part]
+        min_edge = fill_floor_edge(stat)
         rows = [r for r in rows if _prop_qualifies(r, proj_field, min_edge)]
         hits, n = ou_call_graded_counts(
             rows,
@@ -404,6 +453,11 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
                 "n_eff": round(r.n_eff, 1),
                 "shrunk_roi": round(r.shrunk_roi, 4),
                 "withheld": r.withheld,
+                "qualifying_edge": (
+                    round(fill_floor_edge(key[2]), 3)
+                    if key[:2] == ("NBA", "player_prop") and key[2] in _NBA_STATS
+                    else None
+                ),
             }
         )
     return rows
