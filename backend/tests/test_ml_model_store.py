@@ -290,3 +290,12 @@ def test_rollback_dry_run_vs_apply(s3):
 
     with pytest.raises(ValueError):
         ms.rollback(KEY, "19990101T000000")
+
+
+def test_list_archive_stamps_only_those_holding_the_model(s3):
+    base = "nba/ml_models/archive"
+    s3.put(f"{base}/20260101T000000/xgb_points.pkl", b"x", "e1")
+    s3.put(f"{base}/20260102T000000/xgb_rebounds.pkl", b"x", "e1")  # other model
+    s3.put(f"{base}/20260103T000000/xgb_points_manifest.json", b"{}", "e1")  # no pkl
+    assert ms.list_archive_stamps(KEY) == ["20260101T000000"]
+    assert ms.list_archive_stamps("nba/ml_models/xgb_rebounds.pkl") == ["20260102T000000"]

@@ -308,7 +308,10 @@ def gated_upload(
 
 
 def list_archive_stamps(model_key: str, *, bucket: str = BUCKET) -> list[str]:
-    """Archive stamps for a model key, oldest first."""
+    """Archive stamps holding a copy of ``model_key``, oldest first.
+
+    ``archive/`` is shared by every model in the directory, so a stamp may
+    belong only to a sibling model."""
     s3 = boto3.client("s3")
     prefix = _join(_dir(model_key), "archive/")
     out: list[str] = []
@@ -319,8 +322,18 @@ def list_archive_stamps(model_key: str, *, bucket: str = BUCKET) -> list[str]:
             p["Prefix"][len(prefix) :].strip("/") for p in page.get("CommonPrefixes", [])
         ]
         if not page.get("IsTruncated"):
-            return sorted(out)
+            break
         kwargs["ContinuationToken"] = page["NextContinuationToken"]
+    name = model_key.rsplit("/", 1)[-1]
+    holding = []
+    for stamp in sorted(out):
+        try:
+            s3.head_object(Bucket=bucket, Key=f"{prefix}{stamp}/{name}")
+            holding.append(stamp)
+        except Exception as exc:
+            if not _is_missing(exc):
+                raise
+    return holding
 
 
 def rollback(
