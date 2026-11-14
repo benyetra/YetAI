@@ -501,7 +501,10 @@ def train_and_eval(
     *,
     season_start: date,
     season_end: date,
+    holdout_sink: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    """``holdout_sink`` receives the holdout rows (``yards``/``ou`` -> (X, y)) so
+    ``maybe_upload`` can score the live models on the same rows."""
     from app.services.etl.nfl.qb_ou_classifier import (
         MODEL_KEY as OU_KEY,
         build_ou_feature_row,
@@ -632,6 +635,9 @@ def train_and_eval(
     promote, recommendation = promote_decision(
         ml_mae=ml_mae, tier_mae=tier_mae, line_mae=line_mae
     )
+    if holdout_sink is not None:
+        holdout_sink["yards"] = (X_test, y_test)
+        holdout_sink["yards_mae"] = ml_mae_raw
 
     ablations = run_holdout_ablations(
         X_train=X_train,
@@ -802,9 +808,12 @@ def train_and_eval(
         ou_rows = [build_ou_feature_row(r["feats"], r["line"]) for r in train_ou]
         ou_labels = [r["label"] for r in train_ou]
         if len(set(ou_labels)) > 1:
+            ou_holdout: dict[str, Any] = {}
             ou_model, ou_meta = train_qb_ou_classifier(
-                pd.DataFrame(ou_rows), pd.Series(ou_labels)
+                pd.DataFrame(ou_rows), pd.Series(ou_labels), holdout_sink=ou_holdout
             )
+            if holdout_sink is not None:
+                holdout_sink["ou"] = (ou_holdout["X"], ou_holdout["y"])
             report["ou_classifier"] = {
                 "status": "ok",
                 "metadata": ou_meta,
@@ -865,42 +874,40 @@ def train_and_eval(
     return report
 
 
-def maybe_upload(report: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
-    """Upload QB artifacts to s3://yetibets/nfl/ml_models/ when AWS creds exist."""
-    import boto3
+def maybe_upload(
+    report: dict[str, Any],
+    *,
+    force: bool = False,
+    holdout: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Upload QB artifacts to s3://yetibets/nfl/ml_models/ through the champion gate.
 
-    from app.services.etl.nfl.qb_ou_classifier import MODEL_KEY as OU_KEY
-    from app.services.etl.nfl.qb_ou_classifier import S3_BUCKET, S3_PREFIX
-    from app.services.etl.nfl.qb_passing_yards_ml import MODEL_KEY
+    Needs ``promote_recommended`` (or ``force``, which only waives that check and
+    is logged). Either model is still skipped when it is worse than the live one
+    on the candidate's holdout; the O/U classifier also needs Brier < 0.25.
+    """
+    from app.services.etl.nfl.ml_training.train_qb_model import upload_local_artifacts
 
+    if force:
+        logger.warning(
+            "FORCE UPLOAD: promote_recommended=%s waived by --force-upload; "
+            "champion gate still applies",
+            report.get("promote_recommended"),
+        )
+        report["force_upload"] = True
     if not report.get("promote_recommended") and not force:
         report["s3_upload_skipped"] = (
             "promote_recommended=false; pass --force-upload to push shadow artifacts"
         )
         return report
 
-    s3 = boto3.client("s3")
-    uploaded = {}
-    mapping = {
-        MODEL_KEY: (
-            _MODELS_DIR / f"{MODEL_KEY}.pkl",
-            _MODELS_DIR / f"{MODEL_KEY}_metadata.json",
-        ),
-        OU_KEY: (
-            _MODELS_DIR / f"{OU_KEY}.pkl",
-            _MODELS_DIR / f"{OU_KEY}_metadata.json",
-        ),
+    results = upload_local_artifacts(_MODELS_DIR, holdout or {})
+    report["s3_upload"] = results
+    report["s3_uploaded"] = {
+        k: v
+        for k, v in results.items()
+        if v.get("status") in {"first_upload", "uploaded"}
     }
-    for key, (model_path, meta_path) in mapping.items():
-        if not model_path.is_file() or not meta_path.is_file():
-            continue
-        s3.upload_file(str(model_path), S3_BUCKET, f"{S3_PREFIX}/{key}.pkl")
-        s3.upload_file(str(meta_path), S3_BUCKET, f"{S3_PREFIX}/{key}_metadata.json")
-        uploaded[key] = {
-            "model": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}.pkl",
-            "metadata": f"s3://{S3_BUCKET}/{S3_PREFIX}/{key}_metadata.json",
-        }
-    report["s3_uploaded"] = uploaded
     return report
 
 
@@ -956,7 +963,8 @@ def main() -> int:
     parser.add_argument(
         "--force-upload",
         action="store_true",
-        help="Upload QB shadow artifacts even when promote=false",
+        help="Waive the promote_recommended check (logged); the per-model "
+        "champion gate still applies",
     )
     parser.add_argument(
         "--upload-kickers",
@@ -973,13 +981,15 @@ def main() -> int:
         print(json.dumps({"status": "error", "error": "DATABASE_URL required"}))
         return 2
 
+    holdout: dict[str, Any] = {}
     report = train_and_eval(
         season_start=date.fromisoformat(args.season_start),
         season_end=date.fromisoformat(args.season_end),
+        holdout_sink=holdout,
     )
     if args.upload or args.force_upload:
         try:
-            report = maybe_upload(report, force=args.force_upload)
+            report = maybe_upload(report, force=args.force_upload, holdout=holdout)
         except Exception as exc:
             report["s3_upload_error"] = str(exc)
     if args.upload_kickers:

@@ -151,7 +151,10 @@ def train_qb_ou_classifier(
     *,
     hyperparams: dict[str, Any] | None = None,
     time_ordered: bool = True,
+    holdout_sink: dict[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
+    """Train the O/U classifier; ``holdout_sink`` receives the holdout ``X``/``y``
+    so an upload gate can score the live classifier on the same rows."""
     from sklearn.ensemble import GradientBoostingClassifier  # type: ignore
     from sklearn.metrics import accuracy_score, brier_score_loss, log_loss  # type: ignore
     from sklearn.model_selection import train_test_split  # type: ignore
@@ -190,6 +193,8 @@ def train_qb_ou_classifier(
         X_train, X_test, y_train, y_test = train_test_split(
             X, y, test_size=0.25, random_state=42, stratify=y
         )
+    if holdout_sink is not None:
+        holdout_sink["X"], holdout_sink["y"] = X_test, y_test
     model = GradientBoostingClassifier(**hp)
     model.fit(X_train, y_train)
     proba_test = model.predict_proba(X_test)[:, 1]

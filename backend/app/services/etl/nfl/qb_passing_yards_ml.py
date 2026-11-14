@@ -599,9 +599,13 @@ def train_qb_yards_model(
     fit_full: bool = False,
     feature_order: Sequence[str] | None = None,
     baseline_mode: BaselineMode = "market",
+    holdout_sink: dict[str, Any] | None = None,
 ) -> tuple[Any, dict[str, Any]]:
     """
     Train GBM on residual ``actual − baseline`` (default) or direct yards.
+
+    ``holdout_sink``, when given, receives the CV holdout rows (``X``, yards
+    ``y``) so an upload gate can score the live model on the same rows.
 
     Baseline is market-aware (``resolve_yards_baseline``): blend of dynamic tier
     and real pass-yards line when present, else tier alone — or always tier when
@@ -647,6 +651,10 @@ def train_qb_yards_model(
     y_cv_train, y_cv_test = y.iloc[train_sl], y.iloc[test_sl]
     base_cv_train = baselines.iloc[train_sl].to_numpy()
     base_cv_test = baselines.iloc[test_sl].to_numpy()
+
+    if holdout_sink is not None:
+        holdout_sink["X"] = features_df.iloc[test_sl].reset_index(drop=True)
+        holdout_sink["y"] = (y_cv_test + base_cv_test if residual_target else y_cv_test).to_numpy()
 
     cv_model = GradientBoostingRegressor(**hp)
     cv_model.fit(X_cv_train, y_cv_train)
