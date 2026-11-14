@@ -271,3 +271,25 @@ def test_daily_predictions_no_longer_runs_name_matching_goalie_actuals_writer():
     assert not hasattr(NHLGoalieActuals, "prediction_correct")
     assert not hasattr(d, "collect_actuals_from_completed_games")
     assert not hasattr(d, "save_goalie_actual")
+
+
+def test_model_review_does_not_grade_a_scratched_goalie(db):
+    # B1 follow-through: the daily review reads NHLGoaliePredictions directly,
+    # not through _nhl_rows, so it must skip was_scratch itself.
+    from app.services import model_review_service as mrs
+
+    _goalie(db, 1, was_scratch=True)
+    _actual(db, 1, 9)  # relief appearance
+    _goalie(db, 2)
+    _actual(db, 2, 28)
+    loaded = mrs._nhl(db, PAST, PAST)
+    goalie_rows = [r for _, rows in loaded.values() for r in rows if r["label"].startswith("Goalie")]
+    assert [r["label"] for r in goalie_rows] == ["Goalie 2"]
+
+
+def test_diagnostics_count_excludes_scratched_goalies(db):
+    from app.services.auto_pick.diagnostics import projection_counts_for_day
+
+    _goalie(db, 1, d=eastern_today(), was_scratch=True)
+    _goalie(db, 2, d=eastern_today())
+    assert projection_counts_for_day(db, eastern_today())["nhl_goalie_saves_with_line"] == 1

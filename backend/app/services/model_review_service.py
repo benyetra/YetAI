@@ -220,6 +220,8 @@ def _nhl(db, start, end) -> Loaded:
     goalie_act = {(a.goalie_id, a.game_date): a for a in q(NHLGoalieActuals)}
     goalies = []
     for p in q(NHLGoaliePredictions):
+        if p.was_scratch:  # superseded starter: kept for history, not a call
+            continue
         a = goalie_act.get((p.goalie_id, p.game_date))
         goalies.append(
             _row(

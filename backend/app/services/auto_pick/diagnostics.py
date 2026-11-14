@@ -108,6 +108,7 @@ def projection_counts_for_day(db: Session, day: date) -> dict[str, int]:
             NHLGoaliePredictions,
             NHLGoaliePredictions.game_date == day,
             NHLGoaliePredictions.saves_line.isnot(None),
+            NHLGoaliePredictions.was_scratch.isnot(True),
         ),
         # MLB
         "mlb_strikeout_with_line": n(
