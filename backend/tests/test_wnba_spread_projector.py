@@ -80,3 +80,9 @@ def test_run_writes_projection_for_each_market_line(monkeypatch):
     assert row["away_elo"] == 1580.0
     assert row["market_spread_home"] == -2.5
     assert row["recommendation"] in {"HOME", "AWAY", "NO_PLAY"}
+
+
+def test_wnba_win_prob_unchanged_by_nba_scale():
+    from app.services.etl.wnba import spread_projector as wsp
+
+    assert wsp.margin_to_win_prob(6.0) == pytest.approx(0.7020633698789296, abs=1e-12)

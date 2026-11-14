@@ -66,7 +66,7 @@ def _run_spread(monkeypatch, loaded_version):
     monkeypatch.setattr(nsp, "get_model_version", lambda: loaded_version)
     with patch.object(nsp, "upsert_many") as um:
         nsp.run()
-    return um.call_args[0][2][0]["model_version"]
+    return um.call_args[0][2][0]["factors"]["ml_version"]
 
 
 def test_spread_without_metadata_version_uses_s3_last_modified(monkeypatch):
