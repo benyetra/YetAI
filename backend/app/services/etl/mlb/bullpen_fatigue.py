@@ -16,7 +16,6 @@ from app.models.predictions_models import BullpenFatigue
 
 from app.services.etl.mlb._db import db_session
 
-
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 

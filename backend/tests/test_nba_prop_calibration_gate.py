@@ -33,7 +33,9 @@ def test_stable_model_passes_out_of_sample():
     rng = np.random.default_rng(1)
     preds = rng.uniform(10, 30, 400)
     actuals = preds + rng.normal(0, 0.2, 400)
-    params, info = pc.fit_time_ordered("points", preds, actuals, np.round(actuals * 2) / 2)
+    params, info = pc.fit_time_ordered(
+        "points", preds, actuals, np.round(actuals * 2) / 2
+    )
     assert params.passes_gate and info["gate_rows"] == 200
 
 

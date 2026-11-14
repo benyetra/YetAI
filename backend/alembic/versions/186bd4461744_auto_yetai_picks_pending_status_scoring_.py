@@ -15,7 +15,6 @@ from alembic import op
 from sqlalchemy import inspect, text
 from sqlalchemy.dialects.postgresql import JSONB
 
-
 # revision identifiers, used by Alembic.
 revision: str = "186bd4461744"
 down_revision: Union[str, None] = "c3b8a1f92d04"
@@ -87,9 +86,7 @@ def upgrade() -> None:
     #    automatically re-creating the autopickrunstatus enum type.
     # ------------------------------------------------------------------
     if not _has_table("auto_pick_runs"):
-        conn.execute(
-            text(
-                """
+        conn.execute(text("""
                 CREATE TABLE auto_pick_runs (
                     id                   SERIAL PRIMARY KEY,
                     run_at               TIMESTAMP NOT NULL,
@@ -99,9 +96,7 @@ def upgrade() -> None:
                     dropped_reasons       JSONB,
                     error                 TEXT
                 )
-                """
-            )
-        )
+                """))
         conn.execute(
             text("CREATE INDEX idx_auto_pick_runs_run_at ON auto_pick_runs (run_at)")
         )

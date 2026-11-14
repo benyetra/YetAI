@@ -15,7 +15,6 @@ import app.main as m
 from app.core.auth import require_admin
 from app.core.database import get_db
 
-
 NBA_TASK = "app.tasks.etl_pipeline.run_nba_update_pipeline"
 NBA_BEAT_KEY = "nba-update-pipeline-daily"
 

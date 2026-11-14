@@ -56,7 +56,11 @@ def market_holdout_mae(model, X_test, y_test) -> dict[str, float | int | None]:
     lined = X_test["market_spread_home"].notna().to_numpy()
     n = int(lined.sum())
     if n == 0:
-        return {"n_market_rows": 0, "market_test_mae": None, "model_mae_on_market_rows": None}
+        return {
+            "n_market_rows": 0,
+            "market_test_mae": None,
+            "model_mae_on_market_rows": None,
+        }
     y = np.asarray(y_test, dtype=float)[lined]
     market = -np.asarray(X_test["market_spread_home"], dtype=float)[lined]
     pred = np.asarray(model.predict(X_test[lined]), dtype=float)

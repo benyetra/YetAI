@@ -16,7 +16,6 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy import inspect
 
-
 # revision identifiers, used by Alembic.
 revision: str = "2026_05_24_nhl"
 down_revision: Union[str, Sequence[str], None] = "20260524_strikeout_pick"

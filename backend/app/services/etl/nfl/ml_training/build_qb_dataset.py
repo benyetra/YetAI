@@ -17,7 +17,6 @@ from app.services.etl.nfl.qb_passing_yards_ml import (
     feature_names,
 )
 
-
 # Recomputed leak-safe from pred_qb_actuals for every row; never taken from the
 # stored prediction's feature blob.
 _HISTORY_DERIVED_KEYS = frozenset(

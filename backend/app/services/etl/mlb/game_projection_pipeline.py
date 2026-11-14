@@ -32,7 +32,6 @@ from app.services.ml_model_version import (
     resolve_mlb_game_projection_model_version,
 )
 
-
 logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
@@ -304,7 +303,10 @@ def store_game_projections(
                 if k not in ("game_id",) and hasattr(existing, k)
             }
             for marker, keys in _ODDS_GROUPS:
-                if pred.get(marker) is None and getattr(existing, marker, None) is not None:
+                if (
+                    pred.get(marker) is None
+                    and getattr(existing, marker, None) is not None
+                ):
                     for k in keys:
                         values.pop(k, None)
             keep_known(existing, values)

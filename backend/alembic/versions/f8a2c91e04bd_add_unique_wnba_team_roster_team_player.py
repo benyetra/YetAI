@@ -11,7 +11,6 @@ from typing import Sequence, Union
 
 from alembic import op
 
-
 revision: str = "f8a2c91e04bd"
 down_revision: Union[str, Sequence[str], None] = "e4d591511da1"
 branch_labels: Union[str, Sequence[str], None] = None
@@ -19,15 +18,13 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
-        """
+    op.execute("""
         DELETE FROM pred_wnba_team_roster a
         USING pred_wnba_team_roster b
         WHERE a.team_id = b.team_id
           AND a.player_id = b.player_id
           AND a.id > b.id
-        """
-    )
+        """)
     op.create_unique_constraint(
         "unique_wnba_team_roster_team_player",
         "pred_wnba_team_roster",

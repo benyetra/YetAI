@@ -31,7 +31,11 @@ def s3(monkeypatch):
     fake = FakeS3()
     monkeypatch.setattr(ms.boto3, "client", lambda *_a, **_k: fake)
     monkeypatch.setattr(ms, "REFRESH_SECONDS", 0)
-    monkeypatch.setattr(cm, "_CLF", ms.S3Object(cm.S3_KEY, lambda b: joblib.load(BytesIO(b)), bucket=cm.S3_BUCKET))
+    monkeypatch.setattr(
+        cm,
+        "_CLF",
+        ms.S3Object(cm.S3_KEY, lambda b: joblib.load(BytesIO(b)), bucket=cm.S3_BUCKET),
+    )
     return fake
 
 
@@ -101,9 +105,7 @@ def test_split_is_chronological_holdout_is_newest():
 
 
 def test_days_rest_uses_all_graded_starts():
-    df = pd.DataFrame(
-        {"date": pd.to_datetime(["2026-05-10"]), "pitcher_id": ["p1"]}
-    )
+    df = pd.DataFrame({"date": pd.to_datetime(["2026-05-10"]), "pitcher_id": ["p1"]})
     starts = [
         (pd.Timestamp("2026-05-05").date(), "p1"),  # no projection row, still a start
         (pd.Timestamp("2026-05-10").date(), "p1"),
@@ -118,7 +120,9 @@ def test_days_rest_uses_all_graded_starts():
 def _patched_train(monkeypatch, brier):
     X = pd.DataFrame({"projected_strikeouts": [1.0, 2.0]})
     y = pd.Series([0, 1])
-    clf = LogisticRegression().fit(pd.DataFrame({"projected_strikeouts": [0.0, 1.0, 2.0, 3.0]}), [0, 0, 1, 1])
+    clf = LogisticRegression().fit(
+        pd.DataFrame({"projected_strikeouts": [0.0, 1.0, 2.0, 3.0]}), [0, 0, 1, 1]
+    )
     monkeypatch.setattr(cm, "load_training_data", lambda: pd.DataFrame({"a": [1]}))
     monkeypatch.setattr(cm, "_train_classifier", lambda df: (clf, X, y))
     monkeypatch.setattr(cm, "_brier", lambda c, X, y: brier(c))
@@ -143,7 +147,9 @@ def test_gated_upload_first_upload_and_better_candidate(s3, monkeypatch):
     _patched_train(monkeypatch, lambda c: next(briers, 0.1))
     assert cm.train_and_persist()["status"] == "first_upload"
     assert cm.S3_KEY in s3.objects and "mlb/strikeout_model_manifest.json" in s3.objects
-    assert cm.train_and_persist()["status"] == "rejected_by_champion"  # a tie is not better
+    assert (
+        cm.train_and_persist()["status"] == "rejected_by_champion"
+    )  # a tie is not better
 
 
 def test_probe_reports_what_serving_uses_not_the_local_file(s3, tmp_path, monkeypatch):

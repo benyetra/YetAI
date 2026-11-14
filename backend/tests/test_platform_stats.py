@@ -52,7 +52,9 @@ def test_compute_platform_stats_uses_status_not_result(monkeypatch):
     )
 
     monkeypatch.setattr(ps, "public_record", lambda _db: {"label": "L", "stats": {}})
-    monkeypatch.setattr(ps, "legacy_performance", lambda _db: {"performance_30d": {"win_rate": 0.0}})
+    monkeypatch.setattr(
+        ps, "legacy_performance", lambda _db: {"performance_30d": {"win_rate": 0.0}}
+    )
     data = ps.compute_platform_stats(db)
 
     assert data["total_winnings"] == pytest.approx(90.91, rel=0.01)
@@ -88,7 +90,11 @@ def test_legacy_performance_keeps_old_keys_for_real_windows():
     out = ps.legacy_performance(None, svc, now=now)
     p30, p7 = out["performance_30d"], out["performance_7d"]
     assert p30 == {
-        "win_rate": 40.0, "profit": -100.0, "total_bets": 5, "wins": 2, "losses": 3,
+        "win_rate": 40.0,
+        "profit": -100.0,
+        "total_bets": 5,
+        "wins": 2,
+        "losses": 3,
     }
     assert p7["win_rate"] == pytest.approx(66.7) and p7["profit"] == 100.0
     # prior 7d profit was -100, this week +100: (100 - -100) / 100 = +200%

@@ -4,7 +4,6 @@ from app.services.auto_pick.candidate import BetCandidate, MarketType
 from app.services.auto_pick.scoring_context import ScoringContext, ScoringWeights
 from app.services.auto_pick.sub_scores import freshness_sub_score
 
-
 NOW = datetime(2026, 5, 22, 9, 0, 0)
 
 

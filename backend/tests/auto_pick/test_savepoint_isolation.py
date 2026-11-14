@@ -75,7 +75,9 @@ def _source_classes():
     for m in pkgutil.iter_modules(sources_pkg.__path__):
         mod = importlib.import_module(f"{sources_pkg.__name__}.{m.name}")
         for name, cls in inspect.getmembers(mod, inspect.isclass):
-            if cls.__module__ == mod.__name__ and hasattr(cls, "get_todays_projections"):
+            if cls.__module__ == mod.__name__ and hasattr(
+                cls, "get_todays_projections"
+            ):
                 out.append(cls)
     return out
 

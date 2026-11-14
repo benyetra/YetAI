@@ -17,7 +17,6 @@ from app.services.etl.nfl.nfl_common import (
 from app.services.etl.nfl.venues import surface_type as venue_surface_type
 from app.services.etl.nfl.venues import venue_type as venue_roof_type
 
-
 # Dynamic season and week detection
 season = get_nfl_season()
 current_week = get_current_nfl_week(season)

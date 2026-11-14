@@ -55,7 +55,9 @@ def _keep_stored_lines(db, rows: list[dict]) -> None:
         .all()
     }
     for row in rows:
-        old = stored.get((row["game_date"], row["home_team_name"], row["away_team_name"]))
+        old = stored.get(
+            (row["game_date"], row["home_team_name"], row["away_team_name"])
+        )
         for key, value in row.items():
             if value is None and old is not None:
                 row[key] = getattr(old, key, None)

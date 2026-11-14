@@ -35,8 +35,7 @@ def _get_connection():
     """Get SQLite connection, creating the database and table if needed."""
     db_path = os.path.abspath(CACHE_DB_PATH)
     conn = sqlite3.connect(db_path)
-    conn.execute(
-        """
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS api_cache (
             cache_key TEXT PRIMARY KEY,
             endpoint TEXT NOT NULL,
@@ -44,8 +43,7 @@ def _get_connection():
             response_json TEXT NOT NULL,
             created_at REAL NOT NULL
         )
-    """
-    )
+    """)
     conn.commit()
     return conn
 

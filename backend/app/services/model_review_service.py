@@ -54,9 +54,7 @@ _ISO_DATE = re.compile(r"\d{4}-\d{2}-\d{2}(?:[T ]|$)")
 
 def _norm(v: Any) -> str:
     """Dates (also ISO strings with a time, as JSON refs return them) -> YYYY-MM-DD."""
-    if isinstance(v, (date, datetime)) or (
-        isinstance(v, str) and _ISO_DATE.match(v)
-    ):
+    if isinstance(v, (date, datetime)) or (isinstance(v, str) and _ISO_DATE.match(v)):
         return str(v)[:10]
     return str(v)
 

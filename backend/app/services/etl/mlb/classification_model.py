@@ -33,9 +33,7 @@ S3_KEY = "mlb/strikeout_model.pkl"
 
 # Serving copy: re-checked against S3 on the shared refresh interval, last good
 # copy kept on failure, never read from local disk (see model_store.S3Object).
-_CLF = model_store.S3Object(
-    S3_KEY, lambda b: joblib.load(BytesIO(b)), bucket=S3_BUCKET
-)
+_CLF = model_store.S3Object(S3_KEY, lambda b: joblib.load(BytesIO(b)), bucket=S3_BUCKET)
 
 # ----------------------------
 # Park factors (venue -> park_id -> factor)
@@ -282,9 +280,7 @@ def train_and_persist() -> dict:
         buf.getvalue(),
         candidate_metric=_brier(clf, X_hold, y_hold),
         metric_name="holdout_brier",
-        score_champion=lambda live: _brier(
-            joblib.load(BytesIO(live)), X_hold, y_hold
-        ),
+        score_champion=lambda live: _brier(joblib.load(BytesIO(live)), X_hold, y_hold),
         manifest_extra={"holdout_rows": int(len(y_hold)), "rows": int(len(df))},
         version_prefix="gb",
         bucket=S3_BUCKET,

@@ -1,5 +1,6 @@
 """College slates: the right game is found (FBS + FCS merged), and when it is absent the
-answer is not-found, never another real game. Fixtures are trimmed real ESPN payloads."""
+answer is not-found, never another real game. Fixtures are trimmed real ESPN payloads.
+"""
 
 import json
 from datetime import date

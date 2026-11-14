@@ -7,7 +7,6 @@ import json
 
 from app.services.etl.wnba.backfill_shooting_columns import run
 
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Backfill WNBA eFG/TS columns")
     parser.add_argument("--dry-run", action="store_true")

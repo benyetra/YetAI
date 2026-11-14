@@ -30,11 +30,17 @@ from app.services.ml import model_store  # noqa: E402
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--key", required=True, help="model key, e.g. nba/ml_models/xgb_points.pkl")
+    ap.add_argument(
+        "--key", required=True, help="model key, e.g. nba/ml_models/xgb_points.pkl"
+    )
     ap.add_argument("--list", action="store_true", help="list archive stamps")
     ap.add_argument("--stamp", help="archive stamp to restore")
-    ap.add_argument("--extra", action="append", help="extra basename stored with the model")
-    ap.add_argument("--apply", action="store_true", help="perform the rollback (default: dry run)")
+    ap.add_argument(
+        "--extra", action="append", help="extra basename stored with the model"
+    )
+    ap.add_argument(
+        "--apply", action="store_true", help="perform the rollback (default: dry run)"
+    )
     args = ap.parse_args(argv)
 
     if args.list:
@@ -42,7 +48,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if not args.stamp:
         ap.error("--stamp is required unless --list")
-    extras = tuple(args.extra or [f"{args.key.rsplit('/', 1)[-1].rsplit('.', 1)[0]}_metadata.json"])
+    extras = tuple(
+        args.extra or [f"{args.key.rsplit('/', 1)[-1].rsplit('.', 1)[0]}_metadata.json"]
+    )
     out = model_store.rollback(
         args.key, args.stamp, extra_basenames=extras, dry_run=not args.apply
     )

@@ -39,7 +39,7 @@ def format_type_from_sleeper_type(settings_type: int) -> str:
 
 
 def league_format_flags_from_sleeper(
-    league: Optional[Dict[str, Any]]
+    league: Optional[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """Dynasty / keeper / redraft flags from a Sleeper league document."""
     settings_type = sleeper_settings_type(league)

@@ -84,15 +84,13 @@ class EmailService:
         try:
             if not self.api_key:
                 if self.dev_mode:
-                    logger.info(
-                        f"""
+                    logger.info(f"""
                 ========== EMAIL SIMULATION ==========
                 To: {to_email}
                 Subject: {subject}
                 Body: {text_body or 'HTML email'}
                 ======================================
-                """
-                    )
+                """)
                     return True
                 logger.error(
                     f"Cannot send email to {to_email}: BREVO_API_KEY is not configured"

@@ -70,7 +70,9 @@ def _load_records(db: Session, now: datetime) -> dict:
     from app.services.auto_pick.record_gate import load_records
 
     try:
-        with db.begin_nested():  # a failed statement must not abort the run's transaction
+        with (
+            db.begin_nested()
+        ):  # a failed statement must not abort the run's transaction
             return load_records(db, now)
     except Exception:
         # Gate stays open rather than crashing a run.

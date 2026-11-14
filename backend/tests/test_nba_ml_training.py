@@ -398,7 +398,9 @@ def test_run_end_to_end_gate_rejects_worse_candidate_without_put(
         }
     )
     monkeypatch.setattr(model_store.boto3, "client", lambda *_a, **_k: s3)
-    monkeypatch.setattr("app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: s3)
+    monkeypatch.setattr(
+        "app.services.ml.upload_to_s3.boto3.client", lambda *_a, **_k: s3
+    )
     out = run_train_props.run(
         "points",
         season_start=date(2024, 10, 1),

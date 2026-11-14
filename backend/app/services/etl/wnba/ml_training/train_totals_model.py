@@ -144,9 +144,7 @@ def upload_totals_model(
         model_key,
         model,
         metadata,
-        candidate_metric=float(
-            mean_absolute_error(y_hold, model.predict(X_hold))
-        ),
+        candidate_metric=float(mean_absolute_error(y_hold, model.predict(X_hold))),
         score_champion=score_live_pickle(
             f"{S3_PREFIX}/{MODEL_KEY}_metadata.json", X_hold, y_hold
         ),

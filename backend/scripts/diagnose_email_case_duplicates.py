@@ -19,9 +19,7 @@ from app.core.database import SessionLocal
 def main() -> int:
     db = SessionLocal()
     try:
-        rows = db.execute(
-            text(
-                """
+        rows = db.execute(text("""
                 SELECT lower(email) AS email_key,
                        count(*) AS n,
                        array_agg(id ORDER BY id) AS ids,
@@ -32,15 +30,11 @@ def main() -> int:
                 GROUP BY lower(email)
                 HAVING count(*) > 1
                 ORDER BY n DESC, email_key
-                """
-            )
-        ).fetchall()
+                """)).fetchall()
     except Exception as e:
         # password_set may not exist yet on older DBs
         print(f"query_failed: {e}")
-        rows = db.execute(
-            text(
-                """
+        rows = db.execute(text("""
                 SELECT lower(email) AS email_key,
                        count(*) AS n,
                        array_agg(id ORDER BY id) AS ids,
@@ -50,9 +44,7 @@ def main() -> int:
                 GROUP BY lower(email)
                 HAVING count(*) > 1
                 ORDER BY n DESC, email_key
-                """
-            )
-        ).fetchall()
+                """)).fetchall()
     finally:
         db.close()
 

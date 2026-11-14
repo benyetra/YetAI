@@ -1,6 +1,6 @@
 """Print the daily model review (what the 09:45 ET email and the admin API show).
 
-    PYTHONPATH=. python3 scripts/model_review.py [--date YYYY-MM-DD]
+PYTHONPATH=. python3 scripts/model_review.py [--date YYYY-MM-DD]
 """
 
 from __future__ import annotations

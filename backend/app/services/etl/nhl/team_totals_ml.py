@@ -149,9 +149,7 @@ def train_team_totals_model(
         if col not in features_df.columns:
             features_df[col] = 0.0
     X = features_df[order]
-    X_train, X_test, y_train, y_test = split(
-        X, target, chronological=True
-    )
+    X_train, X_test, y_train, y_test = split(X, target, chronological=True)
     model = GradientBoostingRegressor(**hp)
     model.fit(X_train, y_train)
     y_pred_train = model.predict(X_train)

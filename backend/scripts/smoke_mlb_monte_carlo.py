@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """Smoke test MLB Monte Carlo without DB or network.
 
-  cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_monte_carlo.py
+cd backend && PYTHONPATH=. .venv/bin/python scripts/smoke_mlb_monte_carlo.py
 """
 
 from __future__ import annotations

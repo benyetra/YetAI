@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.models.database_models import ScoringConfig
 from app.services.auto_pick.scoring_context import ScoringWeights
 
-
 MAX_PICKS_CAP = 3  # product cap; holds even if a legacy row still says 4
 
 

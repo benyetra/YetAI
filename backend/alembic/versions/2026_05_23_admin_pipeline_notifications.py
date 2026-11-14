@@ -17,7 +17,6 @@ from alembic import op
 from sqlalchemy import inspect, text
 from sqlalchemy.dialects.postgresql import ENUM as PG_ENUM
 
-
 # revision identifiers, used by Alembic.
 revision: str = "2026_05_23_anf"
 down_revision: Union[str, Sequence[str], None] = "186bd4461744"
