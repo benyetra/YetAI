@@ -246,3 +246,28 @@ def test_mlb_live_board_omits_pitcher_not_on_slate(monkeypatch):
 def test_mlb_past_board_keeps_pitcher_without_meta(monkeypatch):
     rows = _mlb(monkeypatch, [], [_k_row("2")], PAST)
     assert [r["pitcher_id"] for r in rows] == ["2"]
+
+
+# ---- B5 ---------------------------------------------------------------------
+
+
+def test_nba_totals_tracker_has_no_dead_entrypoint_calling_removed_report():
+    from app.services.etl.nba import totals_accuracy_tracker as t
+
+    assert not hasattr(t, "run_accuracy_tracker")  # it called a removed function
+    assert callable(t.run)  # the Celery entry point
+
+
+# ---- B6 ---------------------------------------------------------------------
+
+
+def test_daily_predictions_no_longer_runs_name_matching_goalie_actuals_writer():
+    # It built NHLGoalieActuals(prediction_correct=...), a column that does not
+    # exist, so it raised for every goalie and wrote nothing; the id/date-keyed,
+    # upserting collect_goalie_actuals (actuals phase) owns this table.
+    from app.models.predictions_models import NHLGoalieActuals
+    from app.services.etl.nhl import daily_predictions as d
+
+    assert not hasattr(NHLGoalieActuals, "prediction_correct")
+    assert not hasattr(d, "collect_actuals_from_completed_games")
+    assert not hasattr(d, "save_goalie_actual")

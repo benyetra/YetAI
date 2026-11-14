@@ -580,20 +580,6 @@ def update_yesterdays_results():
         _update_results_for(game_date)
 
 
-def run_accuracy_tracker():
-    """Main function to run accuracy tracking."""
-    global db
-    db = SessionLocal()
-    try:
-        update_yesterdays_results()
-        metrics = calculate_accuracy_metrics(days=30)
-        if metrics:
-            save_accuracy_metrics(metrics)
-            print_accuracy_report(metrics)
-    finally:
-        db.close()
-
-
 def run(days: int = 30) -> dict:
     global db
     db = SessionLocal()

@@ -12,7 +12,6 @@ Runs daily to:
 
 from app.models.predictions_models import (
     NHLGoaliePredictions,
-    NHLGoalieActuals,
     NHLPlayer,
     NHLPlayerShotsPredictions,
     NHLTeam,
@@ -41,8 +40,7 @@ from app.services.etl.nhl.generate_daily_predictions import (
     get_team_totals_odds_for_event,
     get_odds_api_team_name,
 )
-from datetime import datetime, date, timedelta, timezone
-from sqlalchemy import and_
+from datetime import datetime, date, timezone
 from app.services.etl._game_start import EASTERN, keep_known, not_started
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nhl._config import get_nhl_season
@@ -50,7 +48,6 @@ from app.services.etl.nhl._db import db_session
 from app.services.etl.nhl._slate import game_datetime_et, slate_game_dates_et
 import logging
 import time
-import requests
 
 # Setup logging
 logging.basicConfig(
@@ -597,183 +594,6 @@ def generate_team_totals_predictions(games, odds_events):
     return predictions_generated
 
 
-def collect_actuals_from_completed_games():
-    """Step 5: Collect actual results from yesterday's games"""
-    logging.info("=" * 80)
-    logging.info("STEP 5: Collecting actuals from completed games")
-    logging.info("=" * 80)
-
-    try:
-        yesterday = now_eastern().date() - timedelta(days=1)
-
-        # Get yesterday's schedule
-        url = f"https://api-web.nhle.com/v1/schedule/{yesterday.strftime('%Y-%m-%d')}"
-        response = requests.get(url)
-        response.raise_for_status()
-        schedule_data = response.json()
-
-        # Find completed games
-        completed_games = []
-        if "gameWeek" in schedule_data:
-            for game_day in schedule_data["gameWeek"]:
-                if "games" in game_day:
-                    for game in game_day["games"]:
-                        if game.get("gameState") in ["OFF", "FINAL"]:
-                            completed_games.append(game)
-
-        logging.info(
-            f"📊 Found {len(completed_games)} completed games from {yesterday}"
-        )
-
-        actuals_saved = 0
-
-        for game in completed_games:
-            game_id = game["id"]
-
-            # Get detailed boxscore
-            boxscore_url = f"https://api-web.nhle.com/v1/gamecenter/{game_id}/boxscore"
-            box_response = requests.get(boxscore_url)
-
-            if box_response.status_code != 200:
-                logging.warning(f"⚠️  Could not fetch boxscore for game {game_id}")
-                continue
-
-            box_data = box_response.json()
-
-            if "playerByGameStats" not in box_data:
-                continue
-
-            # Extract team info
-            away_team = box_data.get("awayTeam", {})
-            home_team = box_data.get("homeTeam", {})
-
-            # Process away team goalies
-            if "awayTeam" in box_data["playerByGameStats"]:
-                for position, players in box_data["playerByGameStats"][
-                    "awayTeam"
-                ].items():
-                    if position == "goalies":
-                        for goalie in players:
-                            actuals_saved += save_goalie_actual(
-                                goalie,
-                                game_id,
-                                yesterday,
-                                away_team.get("placeName", {}).get("default", ""),
-                                home_team.get("placeName", {}).get("default", ""),
-                            )
-
-            # Process home team goalies
-            if "homeTeam" in box_data["playerByGameStats"]:
-                for position, players in box_data["playerByGameStats"][
-                    "homeTeam"
-                ].items():
-                    if position == "goalies":
-                        for goalie in players:
-                            actuals_saved += save_goalie_actual(
-                                goalie,
-                                game_id,
-                                yesterday,
-                                home_team.get("placeName", {}).get("default", ""),
-                                away_team.get("placeName", {}).get("default", ""),
-                            )
-
-        db_session.commit()
-
-        logging.info(f"✅ Saved {actuals_saved} goalie actual results")
-        return actuals_saved
-
-    except Exception as e:
-        logging.error(f"❌ Error collecting actuals: {e}")
-        import traceback
-
-        logging.error(traceback.format_exc())
-        return 0
-
-
-def save_goalie_actual(goalie, game_id, game_date, team_name, opponent_name):
-    """Save a single goalie actual result to database"""
-    try:
-        goalie_id = goalie.get("playerId")
-        goalie_name = goalie.get("name", {}).get("default", "")
-
-        # Skip if played less than 10 minutes
-        toi = goalie.get("toi", "0:00")
-        toi_parts = toi.split(":")
-        if len(toi_parts) == 2:
-            minutes = int(toi_parts[0])
-            if minutes < 10:
-                logging.info(f"⏭️  Skipping {goalie_name} - only played {toi}")
-                return 0
-
-        # Check if already exists
-        existing = (
-            db_session.query(NHLGoalieActuals)
-            .filter(
-                and_(
-                    NHLGoalieActuals.game_id == game_id,
-                    NHLGoalieActuals.goalie_id == goalie_id,
-                )
-            )
-            .first()
-        )
-
-        if existing:
-            logging.info(f"⏭️  Result already exists for {goalie_name}")
-            return 0
-
-        # Find matching prediction
-        prediction = (
-            db_session.query(NHLGoaliePredictions)
-            .filter(
-                and_(
-                    NHLGoaliePredictions.goalie_name == goalie_name,
-                    NHLGoaliePredictions.game_date == game_date,
-                )
-            )
-            .first()
-        )
-
-        # Create actual record
-        actual = NHLGoalieActuals(
-            game_id=game_id,
-            game_date=game_date,
-            goalie_id=goalie_id,
-            goalie_name=goalie_name,
-            team_name=team_name,
-            opponent_team_name=opponent_name,
-            actual_saves=goalie.get("saves", 0),
-            actual_shots_against=goalie.get("shotsAgainst", 0),
-            actual_save_pct=goalie.get("savePctg", 0.0),
-            actual_goals_against=goalie.get("goalsAgainst", 0),
-            actual_toi=toi,
-            decision=goalie.get("decision", ""),
-            predicted_saves=prediction.predicted_saves if prediction else None,
-            predicted_shots_against=(
-                prediction.predicted_shots_against if prediction else None
-            ),
-            prediction_error=(
-                goalie.get("saves", 0) - prediction.predicted_saves
-                if prediction
-                else None
-            ),
-            prediction_correct=(
-                abs(goalie.get("saves", 0) - prediction.predicted_saves) <= 2
-                if prediction
-                else None
-            ),
-        )
-
-        db_session.add(actual)
-        logging.info(
-            f"✅ {goalie_name}: {actual.actual_saves} saves (predicted: {actual.predicted_saves or 'N/A'})"
-        )
-        return 1
-
-    except Exception as e:
-        logging.error(f"❌ Error saving actual for {goalie_name}: {e}")
-        return 0
-
-
 def _run_daily_core() -> dict:
     """Main automation function - runs daily (ET slate date)."""
     slate_date = now_eastern().date()
@@ -830,8 +650,6 @@ def _run_daily_core() -> dict:
     player_count = generate_player_predictions(games, odds_events)
     time.sleep(2)
     team_count = generate_team_totals_predictions(games, odds_events)
-    time.sleep(2)
-    actuals_count = collect_actuals_from_completed_games()
 
     logging.info("\n" + "=" * 80)
     logging.info("AUTOMATION COMPLETE")
@@ -839,7 +657,6 @@ def _run_daily_core() -> dict:
     logging.info(f"✅ Goalie predictions: {goalie_count}")
     logging.info(f"✅ Player predictions: {player_count}")
     logging.info(f"✅ Team totals predictions: {team_count}")
-    logging.info(f"✅ Actuals collected: {actuals_count}")
     logging.info("=" * 80 + "\n")
 
     return {
@@ -851,7 +668,6 @@ def _run_daily_core() -> dict:
         "goalie_predictions": goalie_count,
         "player_predictions": player_count,
         "team_totals_predictions": team_count,
-        "actuals_collected": actuals_count,
     }
 
 
