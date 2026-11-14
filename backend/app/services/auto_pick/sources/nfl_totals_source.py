@@ -12,6 +12,7 @@ from app.models.predictions_models import NFLGameLines, NFLTotalsProjections
 from app.services.auto_pick.candidate import (
     DateRange,
     moved_line_edge,
+    projection_ref,
     same_line,
     to_naive_utc,
 )
@@ -72,6 +73,13 @@ class NFLTotalsSource:
                     "game_date": day,
                     "home_team_name": r.home_team_name,
                     "away_team_name": r.away_team_name,
+                    "projection_ref": projection_ref(
+                        r,
+                        game_date=r.game_date,
+                        home_team_name=r.home_team_name,
+                        away_team_name=r.away_team_name,
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projected_total": float(r.projected_total),
                     "market_total": float(gl.total),
                     "line_odds": int(odds),

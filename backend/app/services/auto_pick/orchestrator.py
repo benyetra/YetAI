@@ -593,6 +593,7 @@ class AutoPickOrchestrator:
                 ),
                 "reasoning": leg.score.reasoning or "",
                 "grading": grading_block(c),
+                "projection_ref": c.projection_metadata.get("projection_ref"),
             }
         )
 
@@ -705,6 +706,7 @@ class AutoPickOrchestrator:
             "away_team",
             "commence_time",
             "prediction_factors",
+            "model_version",
         ):
             setattr(bet, field, getattr(fresh, field))
 
@@ -763,11 +765,14 @@ class AutoPickOrchestrator:
             home_team=c.home_team,
             away_team=c.away_team,
             commence_time=c.commence_time,
+            model_version=str(c.projection_metadata.get("model_version") or "")[:100]
+            or None,
             prediction_factors=_json_safe(
                 {
                     "market_line": c.market_line,
                     "our_projection": c.our_projection,
                     "projection_metadata": c.projection_metadata,
+                    "projection_ref": c.projection_metadata.get("projection_ref"),
                     "event_id": c.event_id,
                     "grading": grading_block(c),
                     "slate_date": c.game_date.isoformat() if c.game_date else None,

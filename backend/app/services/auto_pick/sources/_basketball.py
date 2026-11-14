@@ -5,6 +5,7 @@ import logging
 from app.services.auto_pick.candidate import (
     DateRange,
     moved_line_edge,
+    projection_ref,
     same_line,
     to_naive_utc,
 )
@@ -84,6 +85,13 @@ def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
         out.append(
             {
                 **_base(gl, league, r.game_date, r.home_team_name, r.away_team_name),
+                "projection_ref": projection_ref(
+                    r,
+                    game_date=r.game_date,
+                    home_team_name=r.home_team_name,
+                    away_team_name=r.away_team_name,
+                ),
+                "model_version": getattr(r, "model_version", None),
                 "projected_margin": r.projected_margin,
                 "market_spread_home": gl.spread_home,
                 "spread_odds": odds,
@@ -138,6 +146,13 @@ def totals_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
         out.append(
             {
                 **_base(gl, league, r.game_date, r.home_team_name, r.away_team_name),
+                "projection_ref": projection_ref(
+                    r,
+                    game_date=r.game_date,
+                    home_team_name=r.home_team_name,
+                    away_team_name=r.away_team_name,
+                ),
+                "model_version": getattr(r, "model_version", None),
                 "projected_total": r.projected_total,
                 "market_total": gl.total,
                 "side": side,
@@ -192,6 +207,10 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
             out.append(
                 {
                     **_base(gl, league, r.date, gl.home_team_name, gl.away_team_name),
+                    "projection_ref": projection_ref(
+                        r, date=r.date, player_id=r.player_id, stat=stat
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "player": r.player_name or f"player_{r.player_id}",
                     "stat": stat,
                     "line": float(line),

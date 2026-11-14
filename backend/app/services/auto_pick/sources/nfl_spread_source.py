@@ -15,6 +15,7 @@ from app.models.predictions_models import NFLGameLines, NFLSpreadProjections
 from app.services.auto_pick.candidate import (
     DateRange,
     moved_line_edge,
+    projection_ref,
     same_line,
     to_naive_utc,
 )
@@ -78,6 +79,13 @@ class NFLSpreadSource:
                     "game_date": day,
                     "home_team_name": r.home_team_name,
                     "away_team_name": r.away_team_name,
+                    "projection_ref": projection_ref(
+                        r,
+                        game_date=r.game_date,
+                        home_team_name=r.home_team_name,
+                        away_team_name=r.away_team_name,
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projected_margin": float(r.projected_margin),
                     "market_spread_home": float(gl.spread_home),
                     "spread_odds": int(odds),

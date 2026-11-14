@@ -14,7 +14,7 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import GameProjections
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 
 log = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ class MLBGameMoneylineSource:
                     "game_date": day,
                     "home_team_name": r.home_team,
                     "away_team_name": r.away_team,
+                    "projection_ref": projection_ref(r, date=day, game_id=r.game_id),
+                    "model_version": getattr(r, "model_version", None),
                     "side": rec.lower(),
                     "home_win_prob": float(r.home_win_prob),
                     "away_win_prob": float(r.away_win_prob),

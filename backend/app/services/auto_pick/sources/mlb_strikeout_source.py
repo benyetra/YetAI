@@ -13,7 +13,7 @@ from app.models.predictions_models import (
     Pitcher,
     StrikeoutProjections,
 )
-from app.services.auto_pick.candidate import DateRange, to_naive_utc
+from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
 from app.services.mlb_strikeout_pick import (
     pick_confidence_pct,
     projection_pick_side,
@@ -127,6 +127,10 @@ class MLBStrikeoutSource:
                     "line": float(line_val),
                     "odds": odds,
                     "odds_assumed": assumed,
+                    "projection_ref": projection_ref(
+                        r, date=r.date, pitcher_id=r.pitcher_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "projection": float(r.projected_strikeouts),
                     "side": side,
                     "sample_size": None,

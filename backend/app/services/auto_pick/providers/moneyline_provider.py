@@ -70,6 +70,8 @@ class MoneylineCandidateProvider:
                             "home_win_prob": r.get("home_win_prob"),
                             "generated_at": r.get("generated_at"),
                             "side": side,
+                            "projection_ref": r.get("projection_ref"),
+                            "model_version": r.get("model_version"),
                             "opp_odds": (
                                 int(opp_odds) if opp_odds is not None else None
                             ),

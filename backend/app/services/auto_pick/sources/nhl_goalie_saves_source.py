@@ -27,7 +27,11 @@ import os
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NHLGoaliePredictions
-from app.services.auto_pick.candidate import DateRange, eastern_naive_to_utc
+from app.services.auto_pick.candidate import (
+    DateRange,
+    eastern_naive_to_utc,
+    projection_ref,
+)
 from app.services.auto_pick.sources._nhl_teams import nhl_full_name
 
 log = logging.getLogger(__name__)
@@ -108,6 +112,10 @@ class NHLGoalieSavesSource:
                     ).get("full_name")
                     or r.goalie_name,
                     "stat": "saves",
+                    "projection_ref": projection_ref(
+                        r, game_date=r.game_date, goalie_id=r.goalie_id
+                    ),
+                    "model_version": getattr(r, "model_version", None),
                     "line": float(r.saves_line),
                     "odds": int(odds),
                     "projection": float(r.predicted_saves),
