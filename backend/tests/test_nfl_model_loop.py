@@ -287,3 +287,25 @@ def test_prod_eval_upload_needs_promote_and_force_still_hits_champion_gate(s3, m
     assert forced["force_upload"] is True
     assert forced["s3_upload"]["qb_passing_yards"]["status"] == "rejected_by_champion"
     assert forced["s3_uploaded"] == {} and not s3.names("put")
+
+
+# L13: the ATD calibration trainer stamps the family the λ code declares
+def test_atd_trainer_stamps_current_lambda_family(monkeypatch, tmp_path):
+    from app.services.etl.nfl import anytime_td_backtest as bt
+    from app.services.etl.nfl import anytime_td_calibration as cal
+    from app.services.etl.nfl import anytime_td_features as feats
+    from app.services.etl.nfl import anytime_td_pbp as pbp
+    from scripts import nfl_anytime_td_train_calibration as trainer
+
+    monkeypatch.setattr(cal, "CONVERSION_RATE_FAMILY_RZ_GL", "rz_gl_v2")
+    monkeypatch.setattr(bt, "grade_week_from_weekly_records", lambda *a, **k: [{"position": "RB"}])
+    monkeypatch.setattr(feats, "load_weekly_records_with_fallback", lambda *a, **k: ([{}], "x"))
+    monkeypatch.setattr(pbp, "load_pbp_records_nflverse", lambda *_: [])
+    monkeypatch.setattr(cal, "fit_position_gbm_bundle", lambda rows: {"rb": "stub"})
+    meta_path = tmp_path / "m.json"
+    rc = trainer.main(
+        ["--seasons", "2025", "--start-week", "2", "--end-week", "2",
+         "--model-path", str(tmp_path / "m.pkl"), "--meta-path", str(meta_path)]
+    )
+    assert rc == 0
+    assert json.loads(meta_path.read_text())["conversion_rate_family"] == "rz_gl_v2"
