@@ -3938,3 +3938,35 @@ class OddsLineSnapshot(Base):
         Index("ix_odds_snap_event", "event_id", "market", "book"),
         Index("ix_odds_snap_lookup", "game_date", "market", "player_key"),
     )
+
+
+class NBAPropShadow(Base):
+    """Residual-model shadow prediction for an NBA rebounds/assists line.
+
+    Written daily by app/services/etl/nba/residual/shadow.py and graded only in
+    the model review. Nothing published or auto-picked reads this table.
+    """
+
+    __tablename__ = "pred_nba_prop_shadow"
+
+    id = Column(Integer, primary_key=True)
+    date = Column(Date, nullable=False)
+    player_id = Column(Integer, nullable=False)
+    player_name = Column(String(100), nullable=True)
+    stat = Column(String(16), nullable=False)
+    line = Column(Float, nullable=False)
+    line_source = Column(String(64), nullable=True)
+    over_price = Column(Integer, nullable=True)
+    under_price = Column(Integer, nullable=True)
+    best_over_price = Column(Integer, nullable=True)
+    best_under_price = Column(Integer, nullable=True)
+    pred_residual = Column(Float, nullable=False)
+    p_over = Column(Float, nullable=False)
+    model_version = Column(String(64), nullable=False)
+    features = Column(JSON, nullable=True)
+    created_at = Column(DateTime, nullable=True, default=datetime.utcnow)
+    updated_at = Column(DateTime, nullable=True, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("date", "player_id", "stat", name="uq_nba_prop_shadow"),
+    )

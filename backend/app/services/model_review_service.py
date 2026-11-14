@@ -19,7 +19,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from statistics import mean, median
 from typing import Any, Callable, Optional
 
-from sqlalchemy import func
+from sqlalchemy import bindparam, func
 from sqlalchemy.orm import Session
 
 from app.models.database_models import BetType, YetAIBet
@@ -903,6 +903,168 @@ def _clv_section(db: Session, today: date, cur: Optional[Loaded] = None) -> dict
     }
 
 
+SHADOW_EDGE_THRESHOLD = 0.5  # |pred_residual| at which a shadow row counts as a call
+SHADOW_WINDOW_DAYS = 30
+SHADOW_STATS = {"rebounds": "player_rebounds", "assists": "player_assists"}
+
+
+def _wilson(h: int, n: int) -> Optional[list]:
+    if not n:
+        return None
+    p, z2 = h / n, 1.96**2
+    centre = (p + z2 / (2 * n)) / (1 + z2 / n)
+    half = 1.96 * (p * (1 - p) / n + z2 / (4 * n * n)) ** 0.5 / (1 + z2 / n)
+    return [_r(centre - half, 3), _r(centre + half, 3)]
+
+
+def _shadow_clv(db: Session, calls: list[dict]) -> dict:
+    """Mean closing-line move in the call's favour, from FanDuel's last pre-start
+    observation in odds_line_snapshots."""
+    from sqlalchemy import inspect, text
+
+    from app.services.etl.nba._api_sports import normalize_player_name
+
+    if not inspect(db.get_bind()).has_table("odds_line_snapshots"):
+        return {"note": "CLV pending: no snapshot table"}
+    lo, hi = min(c["date"] for c in calls), max(c["date"] for c in calls)
+    snap = db.execute(
+        text(
+            "SELECT game_date, market, player_key, line, over_price, under_price, "
+            "first_seen_at FROM odds_line_snapshots WHERE book = 'fanduel' "
+            "AND game_date >= :lo AND game_date <= :hi AND line > 0 "
+            "AND first_seen_at < commence_time AND market IN :m"
+        ).bindparams(bindparam("m", expanding=True)),
+        {"lo": lo, "hi": hi, "m": list(SHADOW_STATS.values())},
+    ).fetchall()
+    close: dict[tuple, tuple] = {}
+    for gd, market, key, line, op, up, seen in snap:
+        k = (str(gd)[:10], market, key)
+        # latest observation wins; two lines in it -> nearest even money
+        skew = abs((op or 0) + (up or 0)) + abs((op or 0) - (up or 0))
+        cand = (str(seen), -skew, float(line))
+        if k not in close or cand > close[k]:
+            close[k] = cand
+    moves = []
+    for c in calls:
+        got = close.get(
+            (
+                c["date"].isoformat(),
+                SHADOW_STATS[c["stat"]],
+                normalize_player_name(c["name"]),
+            )
+        )
+        if got:
+            d = got[2] - c["line"]
+            moves.append(d if c["over"] else -d)
+    if not moves:
+        return {"n": 0, "note": "CLV pending: no closing snapshots for these calls"}
+    return {"n": len(moves), "mean_move": _r(_mean(moves), 3)}
+
+
+def _shadow_section(db: Session, today: date) -> dict:
+    """Residual-model shadow rows (pred_nba_prop_shadow) graded against box scores."""
+    from sqlalchemy import inspect
+
+    from app.models.predictions_models import NBAPropShadow, RecentGames
+    from app.services.auto_pick.parlay_utils import american_to_decimal
+
+    if not inspect(db.get_bind()).has_table(NBAPropShadow.__tablename__):
+        return {"note": "no shadow rows"}
+    start = today - timedelta(days=SHADOW_WINDOW_DAYS)
+    q = (
+        db.query(NBAPropShadow, RecentGames)
+        .join(
+            RecentGames,
+            (RecentGames.player_id == NBAPropShadow.player_id)
+            & (RecentGames.game_date == NBAPropShadow.date),
+        )
+        .filter(
+            NBAPropShadow.date >= start,
+            NBAPropShadow.date < today,
+            RecentGames.minutes > 0,
+        )
+        .all()
+    )
+    total = (
+        db.query(func.count(NBAPropShadow.id))
+        .filter(NBAPropShadow.date >= start, NBAPropShadow.date < today)
+        .scalar()
+    )
+    if not total:
+        return {"note": "no shadow rows"}
+    out: dict = {
+        "rows": total,
+        "graded_rows": len(q),
+        "threshold": SHADOW_EDGE_THRESHOLD,
+    }
+    stats_out: dict = {}
+    all_calls: list[dict] = []
+    for stat in SHADOW_STATS:
+        rows = []
+        for sh, rg in q:
+            if sh.stat != stat:
+                continue
+            actual = rg.rebounds if stat == "rebounds" else rg.assists
+            if actual is None or actual == sh.line:  # push / no box value
+                continue
+            rows.append((sh, actual > sh.line))
+        calls, hits, units110, units_px, n_px = [], 0, 0.0, 0.0, 0
+        for sh, went_over in rows:
+            if abs(sh.pred_residual) < SHADOW_EDGE_THRESHOLD:
+                continue
+            over = sh.pred_residual > 0
+            win = over == went_over
+            hits += win
+            units110 += (100 / 110) if win else -1.0
+            px = sh.over_price if over else sh.under_price
+            if px:
+                n_px += 1
+                units_px += (american_to_decimal(px) - 1) if win else -1.0
+            calls.append(
+                {
+                    "date": sh.date,
+                    "stat": stat,
+                    "name": sh.player_name or "",
+                    "line": sh.line,
+                    "over": over,
+                }
+            )
+        bins = []
+        for b in range(10):
+            sel = [(sh.p_over, o) for sh, o in rows if min(int(sh.p_over * 10), 9) == b]
+            if sel:
+                bins.append(
+                    {
+                        "bin": f"{b / 10:.1f}-{(b + 1) / 10:.1f}",
+                        "n": len(sel),
+                        "mean_pred": _r(_mean([p for p, _ in sel]), 3),
+                        "observed": _r(_mean([float(o) for _, o in sel]), 3),
+                    }
+                )
+        n = len(calls)
+        stats_out[stat] = {
+            "graded": len(rows),
+            "calls": n,
+            "hits": hits,
+            "hit_rate": _r(hits / n, 3) if n else None,
+            "wilson95": _wilson(hits, n),
+            "units_110": _r(units110, 2),
+            "units_price": _r(units_px, 2),
+            "n_price": n_px,
+            "calibration": bins,
+            "brier": _r(_mean([(sh.p_over - o) ** 2 for sh, o in rows]), 4),
+            "brier_half": _r(_mean([(0.5 - o) ** 2 for _, o in rows]), 4),
+        }
+        all_calls += calls
+    out["stats"] = stats_out
+    out["clv"] = (
+        _shadow_clv(db, all_calls)
+        if all_calls
+        else {"note": "CLV pending: no graded calls"}
+    )
+    return out
+
+
 # ---------- build ----------
 
 
@@ -941,6 +1103,7 @@ def build_review(db: Session, today: date) -> dict:
         "disagreements": _safe(db, _disagreements_section, db, today, cur),
         "model_versions": _safe(db, _versions_section, db, today),
         "clv": _safe(db, _clv_section, db, today, cur),
+        "shadow": _safe(db, _shadow_section, db, today),
     }
 
 
@@ -1148,6 +1311,40 @@ def render_text(review: dict) -> str:
             )
         for k, why in c["unjoined"].items():
             L.append(f"  {k}: no snapshot join yet ({why})")
+    L.append("")
+
+    L.append("== Residual shadow (NBA rebounds/assists, not published) ==")
+    sh = review.get("shadow", {"note": "no shadow rows"})
+    if _unavailable(sh):
+        L.append(_unavailable(sh))
+    elif "stats" not in sh:
+        L.append(f"  {sh['note']}")
+    else:
+        L.append(
+            f"  {sh['rows']} rows, {sh['graded_rows']} graded; calls at "
+            f"|pred residual| >= {sh['threshold']}"
+        )
+        for stat, t in sh["stats"].items():
+            w = t["wilson95"]
+            ci = f" [{_pct(w[0])}-{_pct(w[1])}]" if w else ""
+            L.append(
+                f"  {stat}: {t['hits']}/{t['calls']} {_pct(t['hit_rate'])}{ci}; "
+                f"{_num(t['units_110'], True)}u at -110, {_num(t['units_price'], True)}u "
+                f"at stored price (n={t['n_price']}); Brier {t['brier']} vs "
+                f"{t['brier_half']} at 0.5 (n={t['graded']})"
+            )
+            for b in t["calibration"]:
+                L.append(
+                    f"    p_over {b['bin']}: n={b['n']}, pred {b['mean_pred']}, "
+                    f"observed {b['observed']}"
+                )
+        clv = sh["clv"]
+        L.append(
+            f"  CLV: {clv['note']}"
+            if "note" in clv
+            else f"  CLV: mean close move in call's favour {clv['mean_move']:+.3f} "
+            f"(n={clv['n']})"
+        )
     return "\n".join(L) + "\n"
 
 

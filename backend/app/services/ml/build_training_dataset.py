@@ -31,6 +31,7 @@ def _build_chunk(config: LeagueMLConfig, stat_col: str, rows: list, label: str):
     db = SessionLocal()
     feats_out: list[dict] = []
     targets: list[float] = []
+    keys: list[tuple] = []
     try:
         for i, (player_id, game_date, opponent_team_id, target_value) in enumerate(
             rows, 1
@@ -69,7 +70,8 @@ def _build_chunk(config: LeagueMLConfig, stat_col: str, rows: list, label: str):
                 continue
             feats_out.append(feats)
             targets.append(float(target_value))
-        return feats_out, targets
+            keys.append((player_id, game_date))
+        return feats_out, targets, keys
     finally:
         db.close()
 
@@ -127,6 +129,9 @@ def build(
                     enumerate(chunks),
                 )
             )
-    rows_features = [f for feats, _ in results for f in feats]
-    rows_target = [t for _, targets in results for t in targets]
-    return pd.DataFrame(rows_features), pd.Series(rows_target, name=stat_col)
+    rows_features = [f for feats, _, _ in results for f in feats]
+    rows_target = [t for _, targets, _ in results for t in targets]
+    df = pd.DataFrame(rows_features)
+    # (player_id, game_date) per row, aligned with df; lets callers join lines.
+    df.attrs["keys"] = [k for _, _, keys in results for k in keys]
+    return df, pd.Series(rows_target, name=stat_col)

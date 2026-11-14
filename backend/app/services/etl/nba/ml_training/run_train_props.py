@@ -7,7 +7,11 @@ from datetime import date
 from typing import Any
 
 import numpy as np
+import pandas as pd
 
+from app.core import database
+from app.services.etl.nba.residual import dataset as residual_dataset
+from app.services.etl.nba.residual.gate import line_comparison
 from app.services.etl.nba.ml_training import (
     build_training_dataset,
     train_model,
@@ -54,6 +58,39 @@ def naive_holdout_mae(stat_col: str, X_hold, y_hold) -> float | None:
         float(np.mean(np.abs(np.asarray(X_hold.loc[usable, c], dtype=float) - y)))
         for c in cols
     )
+
+
+def _load_lines(stat_col: str, start, end):
+    with database.engine.connect() as conn:
+        return residual_dataset.load_lines(conn, stat_col, start, end)
+
+
+def holdout_line_comparison(stat_col: str, keys, preds, actuals) -> dict:
+    """Model vs the stored betting line on the holdout rows that have one.
+    Reported only; never raises (no keys / no lines -> ``{"n": 0, ...}``)."""
+    try:
+        if not keys:
+            raise ValueError("builder returned no (player_id, game_date) keys")
+        k = pd.DataFrame(keys, columns=["player_id", "date"])
+        k["date"] = pd.to_datetime(k["date"])
+        k["pred"], k["actual"] = np.asarray(preds, float), np.asarray(actuals, float)
+        lines = _load_lines(stat_col, k["date"].min(), k["date"].max())
+        lines = lines.assign(player_id=lines["player_id"].astype(k["player_id"].dtype))
+        m = k.merge(
+            lines[["player_id", "date", "line"]],
+            on=["player_id", "date"],
+            how="left",
+        )
+        out = line_comparison(m["pred"], m["actual"], m["line"])
+        out["holdout_rows"] = len(k)
+        return out
+    except Exception as exc:
+        logger.warning("NBA %s line comparison unavailable: %s", stat_col, exc)
+        return {
+            **line_comparison([], [], []),
+            "holdout_rows": len(keys or []),
+            "error": str(exc),
+        }
 
 
 def _enrich_metadata(stat_col: str, metadata: dict[str, Any]) -> dict[str, Any]:
@@ -141,6 +178,12 @@ def run(
     _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
     holdout_actuals = y_hold.values
+    # Reported, not gating: how the holdout predictions compare with the stored line.
+    keys = features_df.attrs.get("keys") or []
+    metadata["line_comparison"] = holdout_line_comparison(
+        stat_col, keys[len(features_df) - len(X_hold) :], holdout_preds, holdout_actuals
+    )
+    logger.info("NBA %s line comparison: %s", stat_col, metadata["line_comparison"])
     holdout_lines = np.round(holdout_actuals.astype(float) * 2) / 2
     # Fit on the earlier holdout rows, gate on the later ones (not served yet:
     # NBA_PROP_CALIBRATION_ENABLED stays off).
@@ -222,6 +265,7 @@ def run(
             metadata,
             candidate_metric=validation["mae"],
             score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
+            manifest_extra={"line_comparison": metadata["line_comparison"]},
         )
         result["gate"] = out
         if out["status"] == "rejected_by_champion":
