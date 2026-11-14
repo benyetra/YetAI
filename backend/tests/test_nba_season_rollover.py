@@ -3,6 +3,7 @@ defense window, roster safety."""
 
 from __future__ import annotations
 
+import contextlib
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, patch
 
@@ -346,6 +347,12 @@ def test_process_day_expands_box_score_names_from_roster(monkeypatch):
         def filter_by(self, **kw):
             return self
 
+        def filter(self, *a):
+            return self
+
+        def all(self):
+            return []
+
         def first(self):
             return None
 
@@ -359,6 +366,9 @@ def test_process_day_expands_box_score_names_from_roster(monkeypatch):
 
         def add(self, row):
             added.append(row)
+
+        def begin_nested(self):
+            return contextlib.nullcontext()
 
         def commit(self):
             pass
