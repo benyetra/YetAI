@@ -30,10 +30,21 @@ def _bet(db, id, status, ref_player=None, **kw):
         }
     db.add(
         YetAIBet(
-            id=id, title=f"Bet {id}", bet_type=BetType.PROP, selection="s",
-            odds=-110, confidence=70, status=status, source=BetSource.AUTO,
-            sport="basketball_nba", settled_at=SETTLED, created_at=SETTLED,
-            commence_time=SETTLED, prediction_factors=pf, model_version="v-test", **kw,
+            id=id,
+            title=f"Bet {id}",
+            bet_type=BetType.PROP,
+            selection="s",
+            odds=-110,
+            confidence=70,
+            status=status,
+            source=BetSource.AUTO,
+            sport="basketball_nba",
+            settled_at=SETTLED,
+            created_at=SETTLED,
+            commence_time=SETTLED,
+            prediction_factors=pf,
+            model_version="v-test",
+            **kw,
         )
     )
 
@@ -43,7 +54,8 @@ def _fake_other_sports(db, start, end):
     return {
         ("NHL", "player_prop", "saves"): ("ou", [row(30.0, 25.5, 24.0, "G. Goalie")]),
         ("NFL", "player_prop", "passing_yards"): (
-            "ou", [row(280.0, 250.5, 300.0, "QB Smith")],
+            "ou",
+            [row(280.0, 250.5, 300.0, "QB Smith")],
         ),
     }
 
@@ -56,13 +68,18 @@ def review_db(sqlite_db, monkeypatch):  # noqa: F811
         extra = {"player_name": f"P{i}", "projected_points": 30.0}
         db.add(
             PointsProjections(
-                date=YESTERDAY, player_id=i, fanduel_line=20.5,
-                fanduel_over_under="over", **extra,
+                date=YESTERDAY,
+                player_id=i,
+                fanduel_line=20.5,
+                fanduel_over_under="over",
+                **extra,
             )
         )
         db.add(
             PointsActuals(
-                date=YESTERDAY, player_id=i, actual_points=25.0 if i < 10 else 10.0,
+                date=YESTERDAY,
+                player_id=i,
+                actual_points=25.0 if i < 10 else 10.0,
                 **extra,
             )
         )
@@ -81,9 +98,13 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     text = ms.render_text(review)
 
     for header in (
-        "== YetAI Bets record ==", "== Projection accuracy", "== Record gate ==",
-        "== Biggest misses 2026-11-12 ==", "== Bet vs projection disagreements",
-        "== Model versions", "== CLV ==",
+        "== YetAI Bets record ==",
+        "== Projection accuracy",
+        "== Record gate ==",
+        "== Biggest misses 2026-11-12 ==",
+        "== Bet vs projection disagreements",
+        "== Model versions",
+        "== CLV ==",
     ):
         assert header in text, header
     # 3-1 at -110: 3*(100/110) - 1 = +1.73u
@@ -102,7 +123,11 @@ def test_review_text_has_every_section_and_fixture_numbers(review_db):
     assert "w3 Bet w3: bet won, projection lost" in text
     # misses: ranked by error vs the key's MAE; a 20-point miss leads, saves miss is small
     top = review["misses"]["rows"][0]
-    assert (top["key"], top["error"], top["actual"]) == ("NBA/player_prop/points", 20.0, 10.0)
+    assert (top["key"], top["error"], top["actual"]) == (
+        "NBA/player_prop/points",
+        20.0,
+        10.0,
+    )
     assert len(review["misses"]["rows"]) == 10
     assert "v-test" in text
     assert "CLV: closing lines are not stored for NBA, NFL, NHL" in text
@@ -145,9 +170,14 @@ def test_api_admin_200_and_non_admin_403(review_db):
     assert r.status_code == 200
     body = r.json()
     assert body["date"] == "2026-11-13" and "== CLV ==" in body["text"]
-    assert _client(review_db, admin=False).get("/api/admin/model-review").status_code == 403
     assert (
-        _client(review_db, admin=True).get("/api/admin/model-review?date=nope").status_code
+        _client(review_db, admin=False).get("/api/admin/model-review").status_code
+        == 403
+    )
+    assert (
+        _client(review_db, admin=True)
+        .get("/api/admin/model-review?date=nope")
+        .status_code
         == 422
     )
 
@@ -175,7 +205,7 @@ def test_task_emails_configured_recipient_once(review_db, monkeypatch):
     monkeypatch.delenv("MODEL_REVIEW_EMAIL_ENABLED", raising=False)
     result = _run_task(review_db, monkeypatch)
     assert result["sent"] == 1
-    (to, subject, body), = _FakeEmail.sent
+    ((to, subject, body),) = _FakeEmail.sent
     assert to == "owner@example.com" and "model review" in subject and "<pre" in body
 
 

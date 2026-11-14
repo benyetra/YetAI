@@ -17,7 +17,10 @@ HOME, AWAY = "Boston Celtics", "New York Knicks"
 
 def _row(d, actual, published, applied=0.0):
     return SimpleNamespace(
-        game_date=d, actual_total=actual, projected_total=published, applied_bias=applied
+        game_date=d,
+        actual_total=actual,
+        projected_total=published,
+        applied_bias=applied,
     )
 
 
@@ -85,11 +88,14 @@ def test_clamp_holds():
 
 
 def test_kill_switch_off_uses_baseline_bias(monkeypatch):
-    finals = [tb.Final(START + timedelta(days=i), HOME, AWAY, 110, 110) for i in range(3)]
+    finals = [
+        tb.Final(START + timedelta(days=i), HOME, AWAY, 110, 110) for i in range(3)
+    ]
     d = START + timedelta(days=3)
     hist = [_row(START + timedelta(days=i), 220, 210.0) for i in range(3)]
-    with patch.object(tp, "published_history_for", return_value=hist), patch.object(
-        tp, "recent_bias", return_value=(1.5, 7)
+    with (
+        patch.object(tp, "published_history_for", return_value=hist),
+        patch.object(tp, "recent_bias", return_value=(1.5, 7)),
     ):
         monkeypatch.setenv("NBA_TOTALS_PUBLISHED_BIAS_ENABLED", "false")
         assert tp.bias_correction(finals, d) == (1.5, 7, "baseline")

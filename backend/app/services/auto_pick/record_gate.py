@@ -63,9 +63,7 @@ def _env_number(name: str, default, cast):
 
 
 def gate_enabled() -> bool:
-    return (
-        os.getenv("AUTO_PICK_RECORD_GATE_ENABLED", "true").strip().lower() == "true"
-    )
+    return os.getenv("AUTO_PICK_RECORD_GATE_ENABLED", "true").strip().lower() == "true"
 
 
 def min_picks() -> int:
@@ -81,9 +79,7 @@ def min_roi() -> float:
 
 
 def prior_max_picks() -> int:
-    return _env_number(
-        "AUTO_PICK_RECORD_PRIOR_MAX_PICKS", DEFAULT_PRIOR_MAX_PICKS, int
-    )
+    return _env_number("AUTO_PICK_RECORD_PRIOR_MAX_PICKS", DEFAULT_PRIOR_MAX_PICKS, int)
 
 
 def shrink_picks() -> int:
@@ -152,9 +148,7 @@ def combine(
 # ---------- loaders ----------
 
 
-def load_bet_records(
-    db: Session, now: datetime
-) -> dict[RecordKey, tuple[int, float]]:
+def load_bet_records(db: Session, now: datetime) -> dict[RecordKey, tuple[int, float]]:
     """{key: (graded bets, units)} for AUTO straight bets settled in [now - window, now)."""
     rows = (
         db.query(YetAIBet)
@@ -198,9 +192,7 @@ def _nba_props(db, start, end):
     from app.services.nba_accuracy_service import _nba_season_window_rows
 
     out = {}
-    for part, _label, rows, _merge in _nba_season_window_rows(
-        db, start=start, end=end
-    ):
+    for part, _label, rows, _merge in _nba_season_window_rows(db, start=start, end=end):
         stat, actual_field = _NBA_PROP_STATS[part]
         hits, n = ou_call_graded_counts(
             rows,
@@ -283,9 +275,13 @@ def _nfl(db, start, end):
     )
 
     def q(model):
-        return db.query(model).filter(
-            func.date(model.game_date) >= start, func.date(model.game_date) <= end
-        ).all()
+        return (
+            db.query(model)
+            .filter(
+                func.date(model.game_date) >= start, func.date(model.game_date) <= end
+            )
+            .all()
+        )
 
     qb_rows = _merge_actuals_qb_range(q(QBPredictions), q(QBActuals))
     recv_act = {(a.player_id, a.game_date): a for a in q(RecvYdsActuals)}

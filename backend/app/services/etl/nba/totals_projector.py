@@ -556,7 +556,8 @@ def _load_published_history(game_date: date, session=None) -> List:
     """Graded games with the total as published and the correction inside it."""
     start = max(CALIBRATION_START, season_opener(game_date))
     rows = (
-        (session or db).query(NBATotalsActuals, NBATotalsProjections.factors)
+        (session or db)
+        .query(NBATotalsActuals, NBATotalsProjections.factors)
         .outerjoin(
             NBATotalsProjections,
             (NBATotalsProjections.game_date == NBATotalsActuals.game_date)

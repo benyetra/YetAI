@@ -69,17 +69,35 @@ def _nba_props(db, start, end) -> Loaded:
     from app.services.nba_accuracy_service import _nba_season_window_rows
 
     stats = {
-        "points_ou": ("points", "projected_points", "actual_points", pm.PointsProjections),
+        "points_ou": (
+            "points",
+            "projected_points",
+            "actual_points",
+            pm.PointsProjections,
+        ),
         "three_pt_ou": (
-            "threes", "projected_three_pt_made", "actual_three_pt_made",
+            "threes",
+            "projected_three_pt_made",
+            "actual_three_pt_made",
             pm.ThreePointProjections,
         ),
-        "steals_ou": ("steals", "projected_steals", "actual_steals", pm.StealsProjections),
+        "steals_ou": (
+            "steals",
+            "projected_steals",
+            "actual_steals",
+            pm.StealsProjections,
+        ),
         "assists_ou": (
-            "assists", "projected_assists", "actual_assists", pm.AssistsProjections
+            "assists",
+            "projected_assists",
+            "actual_assists",
+            pm.AssistsProjections,
         ),
         "rebounds_ou": (
-            "rebounds", "projected_rebounds", "actual_rebounds", pm.ReboundsProjections
+            "rebounds",
+            "projected_rebounds",
+            "actual_rebounds",
+            pm.ReboundsProjections,
         ),
     }
     out: Loaded = {}
@@ -89,7 +107,9 @@ def _nba_props(db, start, end) -> Loaded:
             "ou",
             [
                 _row(
-                    r.get(pf), r.get("fanduel_line"), r.get(af),
+                    r.get(pf),
+                    r.get("fanduel_line"),
+                    r.get(af),
                     r.get("fanduel_over_under"),
                     (cls.__tablename__, r["date"], r["player_id"]),
                     r.get("player_name") or f"player {r['player_id']}",
@@ -122,12 +142,16 @@ def _nba_totals(db, start, end) -> Loaded:
         )
         # Same would-be call as totals_baseline.pick_record (sign of edge >= MIN_EDGE).
         pick = (
-            "over" if edge is not None and edge >= MIN_EDGE
+            "over"
+            if edge is not None and edge >= MIN_EDGE
             else "under" if edge is not None and edge <= -MIN_EDGE else None
         )
         out.append(
             _row(
-                r.projected_total, r.market_total, r.actual_total, pick,
+                r.projected_total,
+                r.market_total,
+                r.actual_total,
+                pick,
                 (table, r.game_date, r.home_team_name, r.away_team_name),
                 f"{r.away_team_name} @ {r.home_team_name}",
             )
@@ -140,7 +164,8 @@ def _spread_rows(projs, merged) -> list[dict]:
         _row(
             m["projected_margin"],
             None if m["market_spread_home"] is None else -m["market_spread_home"],
-            m["actual_margin"], m["recommendation"],
+            m["actual_margin"],
+            m["recommendation"],
             (p.__table__.name, p.game_date, p.home_team_name, p.away_team_name),
             f"{p.away_team_name} @ {p.home_team_name}",
             correct=m["spread_correct"],
@@ -181,24 +206,31 @@ def _nhl(db, start, end) -> Loaded:
             .all()
         )
 
-    goalie_act = {a.goalie_id: a for a in q(NHLGoalieActuals)}
+    goalie_act = {(a.goalie_id, a.game_date): a for a in q(NHLGoalieActuals)}
     goalies = []
     for p in q(NHLGoaliePredictions):
-        a = goalie_act.get(p.goalie_id)
+        a = goalie_act.get((p.goalie_id, p.game_date))
         goalies.append(
             _row(
-                p.predicted_saves, p.saves_line, a.actual_saves if a else None,
+                p.predicted_saves,
+                p.saves_line,
+                a.actual_saves if a else None,
                 _parse_pick(p.betting_recommendation),
-                (p.__table__.name, p.game_date, p.goalie_id), p.goalie_name,
+                (p.__table__.name, p.game_date, p.goalie_id),
+                p.goalie_name,
             )
         )
-    tot_act = {(a.home_team_name, a.away_team_name): a for a in q(NHLTeamTotalsActuals)}
+    tot_act = {
+        (a.home_team_name, a.away_team_name, a.game_date): a
+        for a in q(NHLTeamTotalsActuals)
+    }
     totals = []
     for p in q(NHLTeamTotalsPredictions):
-        a = tot_act.get((p.home_team_name, p.away_team_name))
+        a = tot_act.get((p.home_team_name, p.away_team_name, p.game_date))
         totals.append(
             _row(
-                p.predicted_total_goals, p.draftkings_ou_line,
+                p.predicted_total_goals,
+                p.draftkings_ou_line,
                 a.actual_total_goals if a else None,
                 _parse_pick(p.betting_recommendation),
                 (p.__table__.name, p.game_date, p.home_team_id, p.away_team_id),
@@ -241,7 +273,9 @@ def _nfl(db, start, end) -> Loaded:
     qb_p = q(QBPredictions)
     qb = [
         _row(
-            m["predicted_passing_yards"], m["ou_line"], m["actual_passing_yards"],
+            m["predicted_passing_yards"],
+            m["ou_line"],
+            m["actual_passing_yards"],
             m["betting_recommendation"],
             (p.__table__.name, _game_date_only(p.game_date), p.qb_player_id),
             f"QB {p.qb_player_id}",
@@ -254,9 +288,12 @@ def _nfl(db, start, end) -> Loaded:
         a = recv_act.get((p.player_id, p.game_date))
         recv.append(
             _row(
-                p.predicted_receiving_yards, p.ou_line,
-                a.actual_receiving_yards if a else None, p.betting_recommendation,
-                (p.__table__.name, p.game_date, p.player_id), p.player_name,
+                p.predicted_receiving_yards,
+                p.ou_line,
+                a.actual_receiving_yards if a else None,
+                p.betting_recommendation,
+                (p.__table__.name, p.game_date, p.player_id),
+                p.player_name,
             )
         )
     sp_p = q(NFLSpreadProjections)
@@ -264,7 +301,9 @@ def _nfl(db, start, end) -> Loaded:
     tot_p = q(NFLTotalsProjections)
     totals = [
         _row(
-            m["projected_total"], m["market_total"], m["actual_total"],
+            m["projected_total"],
+            m["market_total"],
+            m["actual_total"],
             m["recommendation"],
             (p.__table__.name, p.game_date, p.home_team_name, p.away_team_name),
             f"{p.away_team_name} @ {p.home_team_name}",
@@ -280,7 +319,11 @@ def _nfl(db, start, end) -> Loaded:
 
 
 LOADERS: tuple[Callable[..., Loaded], ...] = (
-    _nba_props, _nba_totals, _nba_spread, _nhl, _nfl,
+    _nba_props,
+    _nba_totals,
+    _nba_spread,
+    _nhl,
+    _nfl,
 )
 
 
@@ -312,7 +355,9 @@ def row_grade(kind: str, row: dict) -> Optional[bool]:
     if row["actual"] is None:
         return None
     if kind == "edge":
-        return row["correct"] if (row["pick"] or "").upper() in ("HOME", "AWAY") else None
+        return (
+            row["correct"] if (row["pick"] or "").upper() in ("HOME", "AWAY") else None
+        )
     pick = (row["pick"] or "").strip().lower()
     if pick not in ("over", "o", "under", "u") or row["line"] is None:
         return None
@@ -334,7 +379,9 @@ def stats(kind: str, rows: list[dict]) -> dict:
     scored = [r for r in rows if r["proj"] is not None and r["actual"] is not None]
     errs = [float(r["proj"]) - float(r["actual"]) for r in scored]
     line_errs = [
-        abs(float(r["line"]) - float(r["actual"])) for r in scored if r["line"] is not None
+        abs(float(r["line"]) - float(r["actual"]))
+        for r in scored
+        if r["line"] is not None
     ]
     return {
         "graded": graded,
@@ -394,7 +441,9 @@ def _bets_section(db: Session, today: date) -> dict:
                 _add(parlays, b.status, b.odds)
                 continue  # parlay units are not comparable to straight bets
             _add(total, b.status, b.odds)
-            _add(by_sport[_normalize_sport(str(b.sport or "unknown"))], b.status, b.odds)
+            _add(
+                by_sport[_normalize_sport(str(b.sport or "unknown"))], b.status, b.odds
+            )
             _add(by_market[b.bet_type.value], b.status, b.odds)
         windows[str(days)] = {
             **_fin(total),
@@ -493,7 +542,8 @@ def _gate_section(db: Session, today: date) -> dict:
         rows = (
             db.query(NBATotalsActuals)
             .filter(
-                NBATotalsActuals.game_date >= max(tb.CALIBRATION_START, today - timedelta(days=60)),
+                NBATotalsActuals.game_date
+                >= max(tb.CALIBRATION_START, today - timedelta(days=60)),
                 NBATotalsActuals.game_date < today,
             )
             .all()
@@ -706,8 +756,11 @@ def build_review(db: Session, today: date) -> dict:
     cur_start = today - timedelta(days=MODEL_WINDOW_DAYS)
     cur = _safe(db, load_rows, db, cur_start, today - timedelta(days=1))
     prior = _safe(
-        db, load_rows, db,
-        cur_start - timedelta(days=MODEL_WINDOW_DAYS), cur_start - timedelta(days=1),
+        db,
+        load_rows,
+        db,
+        cur_start - timedelta(days=MODEL_WINDOW_DAYS),
+        cur_start - timedelta(days=1),
     )
     if not isinstance(cur, dict) or "unavailable" in cur:
         cur = {}
@@ -768,7 +821,9 @@ def render_text(review: dict) -> str:
                 L.append("  " + _rec_line(f"{k}", v).strip())
             for k, v in w["by_market"].items():
                 L.append("  " + _rec_line(f"[{k}]", v).strip())
-        L.append(f"  active bets pending > {STUCK_HOURS}h after start: {bets['pending_too_long']}")
+        L.append(
+            f"  active bets pending > {STUCK_HOURS}h after start: {bets['pending_too_long']}"
+        )
         v = bets["voids_30d"]
         L.append(f"  voids (30d): {v['count']}")
         for r in v["rows"]:
@@ -785,12 +840,17 @@ def render_text(review: dict) -> str:
         L.append(f"  breakeven hit rate at -110: {_pct(BREAKEVEN)}")
         for p in proj:
             vs = (
-                "" if p["hit_rate"] is None
-                else " (above breakeven)" if p["hit_rate"] >= BREAKEVEN
-                else " (below breakeven)"
+                ""
+                if p["hit_rate"] is None
+                else (
+                    " (above breakeven)"
+                    if p["hit_rate"] >= BREAKEVEN
+                    else " (below breakeven)"
+                )
             )
             trend = (
-                "" if p["hit_rate_trend"] is None
+                ""
+                if p["hit_rate_trend"] is None
                 else f", hit trend {p['hit_rate_trend'] * 100:+.1f}pt"
             )
             mt = "" if p["mae_trend"] is None else f", MAE trend {p['mae_trend']:+.2f}"
@@ -886,7 +946,7 @@ def render_text(review: dict) -> str:
 
 def render_html(review: dict) -> str:
     return (
-        "<html><body><pre style=\"font-family:monospace;font-size:13px\">"
+        '<html><body><pre style="font-family:monospace;font-size:13px">'
         + html.escape(render_text(review))
         + "</pre></body></html>"
     )

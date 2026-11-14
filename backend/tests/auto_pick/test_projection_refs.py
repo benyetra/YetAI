@@ -86,7 +86,9 @@ def test_mlb_hits_rows_are_marked_assumed():
     r.team, r.opponent = "NYY", "BOS"
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [r]
-    dr = DateRange(datetime(2026, 6, 10), datetime(2026, 6, 11), datetime(2026, 6, 10).date())
+    dr = DateRange(
+        datetime(2026, 6, 10), datetime(2026, 6, 11), datetime(2026, 6, 10).date()
+    )
     (row,) = run(MLBHitsSource(db).get_todays_projections(dr))
     assert row["odds_assumed"] is True
 
@@ -132,11 +134,19 @@ def test_nba_sources(sqlite_db):
     (p,) = run(PlayerPropSource(sqlite_db).get_todays_projections(nba_t.RANGE))
     _ref(p, "pred_points_projections", date=nba_t.DAY, player_id=1, stat="points")
     # provider copies it into the candidate metadata
-    (c,) = run(SpreadCandidateProvider(NBASpreadSource(sqlite_db)).get_candidates(nba_t.RANGE))
+    (c,) = run(
+        SpreadCandidateProvider(NBASpreadSource(sqlite_db)).get_candidates(nba_t.RANGE)
+    )
     assert c.projection_metadata["projection_ref"] == s["projection_ref"]
-    (c,) = run(TotalsCandidateProvider(NBATotalsSource(sqlite_db)).get_candidates(nba_t.RANGE))
+    (c,) = run(
+        TotalsCandidateProvider(NBATotalsSource(sqlite_db)).get_candidates(nba_t.RANGE)
+    )
     assert c.projection_metadata["projection_ref"] == t["projection_ref"]
-    (c,) = run(PlayerPropCandidateProvider(PlayerPropSource(sqlite_db)).get_candidates(nba_t.RANGE))
+    (c,) = run(
+        PlayerPropCandidateProvider(PlayerPropSource(sqlite_db)).get_candidates(
+            nba_t.RANGE
+        )
+    )
     assert c.projection_metadata["projection_ref"] == p["projection_ref"]
 
 
@@ -197,16 +207,33 @@ def test_mlb_sources(sqlite_db):
     (g,) = run(MLBGameMoneylineSource(sqlite_db).get_todays_projections(mlb_t.DR))
     _ref(g, "pred_game_projections", date=mlb_t.DAY, game_id=77)
     assert g["model_version"] == "v1.0"  # column default
-    (c,) = run(PlayerPropCandidateProvider(MLBStrikeoutSource(sqlite_db)).get_candidates(mlb_t.DR))
+    (c,) = run(
+        PlayerPropCandidateProvider(MLBStrikeoutSource(sqlite_db)).get_candidates(
+            mlb_t.DR
+        )
+    )
     assert c.projection_metadata["model_version"] == "k1"
-    r = MagicMock(spec=["id", "player_id", "player_name", "game_id", "game_time",
-                        "combined_score", "hits_last_10_games", "team", "opponent"])
+    r = MagicMock(
+        spec=[
+            "id",
+            "player_id",
+            "player_name",
+            "game_id",
+            "game_time",
+            "combined_score",
+            "hits_last_10_games",
+            "team",
+            "opponent",
+        ]
+    )
     r.id, r.player_id, r.player_name, r.game_id = 5, "123", "A", 7
     r.game_time, r.combined_score, r.hits_last_10_games = datetime(2026, 6, 10), 3.5, 8
     r.team, r.opponent = "NYY", "BOS"
     db = MagicMock()
     db.query.return_value.filter.return_value.all.return_value = [r]
-    dr = DateRange(datetime(2026, 6, 10), datetime(2026, 6, 11), datetime(2026, 6, 10).date())
+    dr = DateRange(
+        datetime(2026, 6, 10), datetime(2026, 6, 11), datetime(2026, 6, 10).date()
+    )
     (h,) = run(MLBHitsSource(db).get_todays_projections(dr))
     assert h["projection_ref"]["id"] == 5 and h["projection_ref"]["player_id"] == "123"
     assert h["model_version"] is None
@@ -218,7 +245,9 @@ def test_nfl_sources(sqlite_db):
     nfl_t._spread(sqlite_db)
     nfl_t._total(sqlite_db)
     dr = nfl_t.DR
-    game = dict(game_date=nfl_t.DAY, home_team_name=nfl_t.HOME, away_team_name=nfl_t.AWAY)
+    game = dict(
+        game_date=nfl_t.DAY, home_team_name=nfl_t.HOME, away_team_name=nfl_t.AWAY
+    )
     (q,) = run(NFLQBPassingSource(sqlite_db).get_todays_projections(dr))
     _ref(q, "pred_qb_predictions", qb_player_id="q1")
     assert q["model_version"] == "q7"

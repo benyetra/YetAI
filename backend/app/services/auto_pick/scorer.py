@@ -1,6 +1,11 @@
 from app.services.auto_pick.candidate import BetCandidate
 from app.services.auto_pick.confidence_score import ConfidenceScore
-from app.services.auto_pick.record_gate import key_label, min_picks, record_key, window_days
+from app.services.auto_pick.record_gate import (
+    key_label,
+    min_picks,
+    record_key,
+    window_days,
+)
 from app.services.auto_pick.scoring_context import ScoringContext
 from app.services.auto_pick.sub_scores import (
     edge_sub_score,
