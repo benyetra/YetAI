@@ -757,11 +757,13 @@ def generate_projection(
         "defensive_matchup": f"Home DRtg: {home_stats['defensive_rating']:.1f}, Away DRtg: {away_stats['defensive_rating']:.1f}",
         "key_absence": None,
         "situational": None,
-        "bias_correction": {
-            "points": round(anchor.a, 2),
-            "games": anchor.n,
-            "source": "anchor",
-        },
+        # The correction inside projected_total: the anchor's constant on a
+        # line, the baseline's own correction when the model is published alone.
+        "bias_correction": (
+            {"points": round(anchor.a, 2), "games": anchor.n, "source": "anchor"}
+            if from_actuals and market_total
+            else {"points": round(bias, 2), "games": 0, "source": "baseline"}
+        ),
         "anchor": {
             "k": round(anchor.k, 4),
             "a": round(anchor.a, 2),
