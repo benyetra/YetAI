@@ -83,14 +83,20 @@ def _nhl_rows(
         lambda p: (p.goalie_id, p.game_date),
     ):
         a = by_gid.get((p.goalie_id, p.game_date))
+        # A superseded starter's row is kept for history but is not a call: his
+        # full-game line must not be graded against relief-minutes saves.
+        scratched = bool(p.was_scratch)
         goalie_rows.append(
             {
                 "id": p.id,
                 "game_date": p.game_date,
                 "predicted_saves": p.predicted_saves,
                 "saves_line": p.saves_line,
-                "betting_pick": _parse_pick(p.betting_recommendation),
-                "actual_saves": a.actual_saves if a else None,
+                "betting_pick": (
+                    None if scratched else _parse_pick(p.betting_recommendation)
+                ),
+                "scratched": scratched,
+                "actual_saves": None if scratched else (a.actual_saves if a else None),
                 "actual_expected": p.game_date in goalie_dates,
             }
         )
@@ -169,6 +175,8 @@ def past_row_results(
                 actual_expected=r["actual_expected"],
             )
             item: dict[str, Any] = {"actual": r[actual_f], "result": result}
+            if r.get("scratched"):
+                item["scratched"] = True
             if rk == "team_totals":
                 item.update(
                     actual_home_score=r["actual_home_goals"],

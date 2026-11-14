@@ -11,6 +11,7 @@ in dev; the guard will start enforcing real tiers once auth is fixed.
 """
 
 import importlib
+import logging
 from datetime import date as date_type, timedelta
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -75,11 +76,14 @@ from app.services.player_prop_projection_display import (
 router = APIRouter(prefix="/api/v1/predictions", tags=["predictions"])
 
 ALLOWED_TIERS = {"pro", "elite", "PRO", "ELITE"}
+logger = logging.getLogger(__name__)
+
 DEFAULT_LIMIT = 50
 # Ranked by minutes, this covers the rotations of a 12-game NBA slate.
 NBA_PROP_DEFAULT_LIMIT = 200
 WNBA_PROP_DEFAULT_LIMIT = 75
 MAX_LIMIT = 500
+PAST_ROWS_LIMIT = 100_000  # past slates return every row for the date
 ANYTIME_TD_POSITIONS = frozenset({"QB", "RB", "WR", "TE"})
 
 
@@ -143,6 +147,24 @@ def _query_recent(
     return list(latest.values())[:limit]
 
 
+def _mark_scratched(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """A superseded goalie keeps his row but carries no pick or value tier."""
+    return [
+        (
+            {
+                **r,
+                "scratched": True,
+                "betting_recommendation": None,
+                "recommendation": None,
+                "value_tier": None,
+            }
+            if r.get("was_scratch")
+            else r
+        )
+        for r in rows
+    ]
+
+
 def _is_past_date(target_date: date_type | None) -> bool:
     """True for an explicit date before today in Eastern time (a graded slate)."""
     return target_date is not None and target_date < eastern_today()
@@ -160,7 +182,17 @@ def _merge_past_results(
     if not _is_past_date(target_date):
         return payload
     service = importlib.import_module(f"app.services.{sport}_accuracy_service")
-    results = service.past_row_results(db, target_date=target_date)
+    try:
+        # Savepoint: a DB error in the grader must not poison the request session.
+        with db.begin_nested():
+            results = service.past_row_results(db, target_date=target_date)
+    except Exception:
+        logger.exception(
+            "past_row_results failed for %s on %s; returning rows without results",
+            sport,
+            target_date,
+        )
+        return payload
     for key, by_id in results.items():
         rows = payload.get(key)
         if not rows:
@@ -626,6 +658,9 @@ def mlb_predictions(
         # A past row keeps the line it was published with; today's live pitcher
         # line/flags would grade yesterday's pick against a different number.
         live = not _is_past_date(target_date)
+        if live and meta is None:
+            # Not on today's slate (scratched/replaced): not a live pick.
+            continue
         if meta:
             line = row.get("fanduel_line")
             fd_point = getattr(meta, "fanduel_point", None)
@@ -925,21 +960,27 @@ def nhl_predictions(
 ) -> dict[str, Any]:
     """Recent NHL props: goalie saves, player SOG, game totals O/U."""
     tz = _safe_tz(tz)
+    # Past slates list every row (the tiles count them all), deduped as the
+    # accuracy service dedupes; live boards keep the page limit.
+    if _is_past_date(target_date):
+        limit = PAST_ROWS_LIMIT
     return _merge_past_results(
         {
-            "goalie_predictions": enrich_prop_rows(
-                _query_recent(
-                    db,
-                    NHLGoaliePredictions,
-                    "game_date",
-                    target_date,
-                    limit,
-                    tz=tz,
-                    dedupe_keys=("goalie_id", "game_date"),
-                ),
-                sport="nhl",
-                stat="saves",
-                db=db,
+            "goalie_predictions": _mark_scratched(
+                enrich_prop_rows(
+                    _query_recent(
+                        db,
+                        NHLGoaliePredictions,
+                        "game_date",
+                        target_date,
+                        limit,
+                        tz=tz,
+                        dedupe_keys=("goalie_id", "game_date"),
+                    ),
+                    sport="nhl",
+                    stat="saves",
+                    db=db,
+                )
             ),
             "player_shots": enrich_prop_rows(
                 _query_recent(

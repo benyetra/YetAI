@@ -24,7 +24,7 @@ def test_merge_attaches_result_by_id_and_marks_missing_ungraded(monkeypatch):
         {"points": {1: {"actual": 22, "result": "hit"}}},
     )
     payload = {"points": [{"id": 1}, {"id": 2}], "blocks": [{"id": 9}]}
-    out = p._merge_past_results(payload, "nba", None, PAST)
+    out = p._merge_past_results(payload, "nba", MagicMock(), PAST)
     assert out["points"] == [
         {"id": 1, "actual": 22, "result": "hit"},
         {"id": 2, "result": "ungraded"},

@@ -40,6 +40,7 @@ def _goalie_p(d, *, gid=42, saves=28.0, line=27.5, rec="OVER 27.5", pid=None):
         predicted_saves=saves,
         saves_line=line,
         betting_recommendation=rec,
+        was_scratch=False,
     )
 
 
