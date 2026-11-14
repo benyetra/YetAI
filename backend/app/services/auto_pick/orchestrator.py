@@ -36,6 +36,7 @@ from app.services.auto_pick.record_gate import (
     combine,
     drop_reason,
     key_label,
+    prove_in_required,
     record_key,
 )
 from app.services.auto_pick.scorer import ConfidenceScorer
@@ -426,7 +427,8 @@ class AutoPickOrchestrator:
         if reason:
             return reason
         c = sc.candidate
-        reason = drop_reason(self._records.get(record_key(c)))
+        key = record_key(c)
+        reason = drop_reason(self._records.get(key), key)
         if reason:
             return reason
         stat = (
@@ -474,11 +476,13 @@ class AutoPickOrchestrator:
         withheld = {}
         for k in {record_key(sc.candidate) for sc in scored}:
             rec = (records or {}).get(k)
-            reason = drop_reason(rec)
+            reason = drop_reason(rec, k)
             if reason:
                 rec = rec or combine(k)
                 withheld[key_label(k)] = {
                     "reason": reason,
+                    # Shadow: the key must prove in before it can publish.
+                    "prove_in": prove_in_required(k),
                     "n_eff": round(rec.n_eff, 1),
                     "shrunk_roi": round(rec.shrunk_roi, 4),
                     "bet_n": rec.bet_n,

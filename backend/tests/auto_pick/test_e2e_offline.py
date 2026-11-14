@@ -46,8 +46,7 @@ def _nba_game(db, home, away, margin, spread_home, rec, utc_tip):
     )
 
 
-@pytest.mark.asyncio
-async def test_seeded_slate_publishes_three_gradeable_picks(sqlite_db):
+def _seed_slate(sqlite_db):
     # Home -4 but model has home by 9 -> HOME covers by 5.
     _nba_game(
         sqlite_db,
@@ -92,6 +91,26 @@ async def test_seeded_slate_publishes_three_gradeable_picks(sqlite_db):
     )
     sqlite_db.commit()
 
+
+@pytest.mark.asyncio
+async def test_nhl_key_without_record_runs_in_shadow(sqlite_db):
+    _seed_slate(sqlite_db)
+    result = await AutoPickOrchestrator(
+        db=sqlite_db, providers=_build_providers(sqlite_db), now=NOW
+    ).run()
+    assert result.pick_count == 2
+    assert {b.sport for b in sqlite_db.query(YetAIBet).all()} == {"NBA"}
+    dropped = sqlite_db.query(AutoPickRun).one().dropped_reasons
+    assert dropped["withheld_keys"]["NHL/total"]["reason"] == "unproven_record"
+    assert dropped["withheld_keys"]["NHL/total"]["prove_in"] is True
+
+
+@pytest.mark.asyncio
+async def test_seeded_slate_publishes_three_gradeable_picks(sqlite_db, monkeypatch):
+    # Pipeline mechanics with NHL prove-in off (the default withholds NHL until it
+    # has a record: test above).
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")
+    _seed_slate(sqlite_db)
     result = await AutoPickOrchestrator(
         db=sqlite_db, providers=_build_providers(sqlite_db), now=NOW
     ).run()

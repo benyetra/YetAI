@@ -494,11 +494,11 @@ async def test_market_concentration_counts_across_runs(sqlite_db):
 
     later = await _run(
         sqlite_db,
-        [_cand(3, league="NBA", commence=LATE), _cand(4, league="NHL", commence=LATE)],
+        [_cand(3, league="NBA", commence=LATE), _cand(4, league="MLB", commence=LATE)],
         now=NOW + timedelta(hours=6),
     )
     assert later.pick_count == 1
-    assert {b.sport for b in _bets(sqlite_db)} == {"NBA", "NHL"}
+    assert {b.sport for b in _bets(sqlite_db)} == {"NBA", "MLB"}
     assert _counts_last(sqlite_db) == {"market_concentration": 1}
 
 

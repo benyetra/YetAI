@@ -12,7 +12,7 @@ in dev; the guard will start enforcing real tiers once auth is fixed.
 
 import importlib
 import logging
-from datetime import date as date_type, timedelta
+from datetime import date as date_type, datetime, timedelta
 from typing import Any, Callable, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -163,6 +163,50 @@ def _mark_scratched(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         )
         for r in rows
     ]
+
+
+_NO_PICK = {
+    "betting_recommendation": None,
+    "recommendation": None,
+    "value_tier": None,
+    "edge_category": None,
+}
+
+# Board group -> auto-pick record key of its market.
+_NHL_MARKET_KEYS = {
+    "goalie_predictions": ("NHL", "player_prop", "saves"),
+    "player_shots": ("NHL", "player_prop", "shots"),
+    "team_totals": ("NHL", "total", None),
+}
+
+
+def _withhold_unproven_picks(
+    payload: dict[str, Any], db: Session, market_keys: dict[str, tuple]
+) -> dict[str, Any]:
+    """Strip pick labels and value tiers from groups whose market has no qualifying
+    record: the auto-pick record gate's rule (record_gate.withheld_keys), so the board
+    never labels a pick that auto picks would withhold. Projections and lines stay.
+    """
+    from app.services.auto_pick import record_gate
+
+    keys = set(market_keys.values())
+    try:
+        with db.begin_nested():
+            withheld = record_gate.withheld_keys(
+                db, datetime.utcnow(), keys, loaders=("nhl",)
+            )
+    except Exception:
+        logger.exception("record gate failed; withholding every pick label")
+        withheld = dict.fromkeys(keys, "record_unavailable")
+    out = dict(payload)
+    for group, key in market_keys.items():
+        reason = withheld.get(key)
+        if reason:
+            out[group] = [
+                {**r, **_NO_PICK, "pick_withheld": reason}
+                for r in payload.get(group) or []
+            ]
+    return out
 
 
 def _is_past_date(target_date: date_type | None) -> bool:
@@ -964,52 +1008,52 @@ def nhl_predictions(
     # accuracy service dedupes; live boards keep the page limit.
     if _is_past_date(target_date):
         limit = PAST_ROWS_LIMIT
-    return _merge_past_results(
-        {
-            "goalie_predictions": _mark_scratched(
-                enrich_prop_rows(
-                    _query_recent(
-                        db,
-                        NHLGoaliePredictions,
-                        "game_date",
-                        target_date,
-                        limit,
-                        tz=tz,
-                        dedupe_keys=("goalie_id", "game_date"),
-                    ),
-                    sport="nhl",
-                    stat="saves",
-                    db=db,
-                )
-            ),
-            "player_shots": enrich_prop_rows(
+    payload = {
+        "goalie_predictions": _mark_scratched(
+            enrich_prop_rows(
                 _query_recent(
                     db,
-                    NHLPlayerShotsPredictions,
+                    NHLGoaliePredictions,
                     "game_date",
                     target_date,
                     limit,
                     tz=tz,
-                    dedupe_keys=("player_id", "game_date"),
+                    dedupe_keys=("goalie_id", "game_date"),
                 ),
                 sport="nhl",
-                stat="shots",
+                stat="saves",
                 db=db,
-            ),
-            "team_totals": _query_recent(
+            )
+        ),
+        "player_shots": enrich_prop_rows(
+            _query_recent(
                 db,
-                NHLTeamTotalsPredictions,
+                NHLPlayerShotsPredictions,
                 "game_date",
                 target_date,
                 limit,
                 tz=tz,
-                dedupe_keys=("home_team_id", "away_team_id", "game_date"),
+                dedupe_keys=("player_id", "game_date"),
             ),
-        },
-        "nhl",
-        db,
-        target_date,
-    )
+            sport="nhl",
+            stat="shots",
+            db=db,
+        ),
+        "team_totals": _query_recent(
+            db,
+            NHLTeamTotalsPredictions,
+            "game_date",
+            target_date,
+            limit,
+            tz=tz,
+            dedupe_keys=("home_team_id", "away_team_id", "game_date"),
+        ),
+    }
+    # Past slates keep the calls they were graded on; live boards show a pick only
+    # for a market whose record qualifies.
+    if not _is_past_date(target_date):
+        payload = _withhold_unproven_picks(payload, db, _NHL_MARKET_KEYS)
+    return _merge_past_results(payload, "nhl", db, target_date)
 
 
 @router.get("/nhl/accuracy")

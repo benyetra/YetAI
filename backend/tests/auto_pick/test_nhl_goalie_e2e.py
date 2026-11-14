@@ -134,8 +134,24 @@ def test_writer_rows_carry_method_and_full_name(written):
 
 
 @pytest.mark.asyncio
+async def test_goalie_saves_without_record_runs_in_shadow(written, monkeypatch):
+    """Default: no graded saves record yet, so no pick; the rows and lines are written
+    and the run says why."""
+    monkeypatch.delenv("AUTO_PICK_PROVE_IN_KEYS", raising=False)
+    monkeypatch.delenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", raising=False)
+    res, bets = await _run(written)
+    assert [b for b in bets if b.sport == "NHL"] == []
+    rows = written.query(NHLGoaliePredictions).all()
+    assert len(rows) == 2 and all(r.saves_line is not None for r in rows)
+    withheld = written.query(AutoPickRun).one().dropped_reasons["withheld_keys"]
+    assert withheld["NHL/player_prop/saves"]["reason"] == "unproven_record"
+    assert withheld["NHL/player_prop/saves"]["prove_in"] is True
+
+
+@pytest.mark.asyncio
 async def test_confirmed_goalie_publishes_graded_pick(written, monkeypatch):
     monkeypatch.delenv("NHL_GOALIE_PROBABLE_PICKS", raising=False)
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")  # as once the record qualifies
     res, bets = await _run(written)
     (b,) = [b for b in bets if b.sport == "NHL"]  # probable VAN goalie is not picked
     assert b.status == "active"
@@ -157,6 +173,7 @@ async def test_confirmed_goalie_publishes_graded_pick(written, monkeypatch):
 @pytest.mark.asyncio
 async def test_probable_goalie_publishes_only_with_flag(written, monkeypatch):
     monkeypatch.setenv("NHL_GOALIE_PROBABLE_PICKS", "1")
+    monkeypatch.setenv("AUTO_PICK_PROVE_IN_KEYS", "")  # as once the record qualifies
     res, bets = await _run(written)
     # Same game: one pick per event (event_already_used), so one of the two goalies
     # is published; with the flag the probable VAN goalie is a candidate too.

@@ -15,6 +15,12 @@ would flip daily), so the plain dead band is the simplest rule that does not fli
 
 Records are recomputed every run from data that keeps being graded while a key is
 withheld, so re-admission is automatic.
+
+Prove-in keys (AUTO_PICK_PROVE_IN_KEYS, default every NHL key) must earn their way in
+whatever AUTO_PICK_REQUIRE_PROVEN_RECORD says: until the record has min_picks effective
+graded calls at or above breakeven the key is withheld as ``unproven_record`` and runs
+in shadow (its ETL keeps writing projections and lines, so the record builds). The
+board applies the same rule to its pick labels (``withheld_keys``).
 """
 
 import logging
@@ -50,6 +56,8 @@ DEFAULT_WINDOW_DAYS = 90
 DEFAULT_MIN_ROI = -0.02
 DEFAULT_PRIOR_MAX_PICKS = 60
 DEFAULT_SHRINK_PICKS = 20
+# Key labels (or label prefixes) that must prove in; "" turns prove-in off.
+DEFAULT_PROVE_IN_KEYS = "NHL"
 # historical_sub_score: 50 at breakeven ROI, +/-25 points per 10% ROI.
 ROI_SCORE_SLOPE = 250.0
 
@@ -74,6 +82,17 @@ def require_proven_record() -> bool:
     return (
         os.getenv("AUTO_PICK_REQUIRE_PROVEN_RECORD", "false").strip().lower() == "true"
     )
+
+
+def prove_in_keys() -> list[str]:
+    raw = os.getenv("AUTO_PICK_PROVE_IN_KEYS", DEFAULT_PROVE_IN_KEYS)
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+def prove_in_required(key: RecordKey) -> bool:
+    """True when ``key`` (or a prefix of its label, e.g. "NHL") is a prove-in key."""
+    label = key_label(key)
+    return any(label == p or label.startswith(p + "/") for p in prove_in_keys())
 
 
 def min_picks() -> int:
@@ -121,16 +140,21 @@ def key_label(key: RecordKey) -> str:
     return "/".join(p for p in key if p)
 
 
-def drop_reason(rec: Optional[KeyRecord]) -> Optional[str]:
-    """Why the gate withholds a key, or None; ``rec`` None = no data for the key."""
+def drop_reason(
+    rec: Optional[KeyRecord], key: Optional[RecordKey] = None
+) -> Optional[str]:
+    """Why the gate withholds a key, or None; ``rec`` None = no data for ``key``."""
     if rec is not None and rec.withheld:
         return "losing_record"
-    if (
-        gate_enabled()
-        and require_proven_record()
-        and (rec is None or rec.n_eff < min_picks())
-    ):
+    if not gate_enabled():
+        return None
+    if require_proven_record() and (rec is None or rec.n_eff < min_picks()):
         return "unproven_record"
+    key = rec.key if rec is not None else key
+    if key is not None and prove_in_required(key):
+        # Enough graded calls, at or above breakeven.
+        if rec is None or rec.n_eff < min_picks() or rec.shrunk_roi < 0:
+            return "unproven_record"
     return None
 
 
@@ -340,6 +364,12 @@ def _nhl(db, start, end):
             pick_field="betting_pick",
             actual_field="actual_saves",
         ),
+        ("NHL", "player_prop", "shots"): ou_call_graded_counts(
+            sets["player_shots"],
+            line_field="shots_line",
+            pick_field="betting_pick",
+            actual_field="actual_shots",
+        ),
         ("NHL", "total", None): ou_call_graded_counts(
             sets["team_totals"],
             line_field="draftkings_ou_line",
@@ -460,13 +490,18 @@ def emitted_keys() -> dict[str, set[RecordKey]]:
 
 
 def load_projection_records(
-    db: Session, now: datetime
+    db: Session, now: datetime, loaders: Optional[tuple[str, ...]] = None
 ) -> dict[RecordKey, tuple[int, int]]:
-    """{key: (hits, graded)} over [today - window, today): today's results never leak in."""
+    """{key: (hits, graded)} over [today - window, today): today's results never leak in.
+
+    ``loaders`` limits the run to those PROJECTION_LOADERS names (default all).
+    """
     today = utc_to_eastern(now).date()  # slate dates are US Eastern
     start, end = today - timedelta(days=window_days()), today - timedelta(days=1)
     out: dict[RecordKey, tuple[int, int]] = {}
     for name, loader in PROJECTION_LOADERS.items():
+        if loaders is not None and name not in loaders:
+            continue
         try:
             # Savepoint: on Postgres a failed statement aborts the whole transaction.
             with db.begin_nested():
@@ -476,9 +511,11 @@ def load_projection_records(
     return out
 
 
-def load_records(db: Session, now: datetime) -> dict[RecordKey, KeyRecord]:
+def load_records(
+    db: Session, now: datetime, loaders: Optional[tuple[str, ...]] = None
+) -> dict[RecordKey, KeyRecord]:
     bets = load_bet_records(db, now)
-    projs = load_projection_records(db, now)
+    projs = load_projection_records(db, now, loaders)
     return {
         key: combine(
             key,
@@ -489,6 +526,19 @@ def load_records(db: Session, now: datetime) -> dict[RecordKey, KeyRecord]:
         )
         for key in set(bets) | set(projs)
     }
+
+
+def withheld_keys(
+    db: Session, now: datetime, keys: set[RecordKey], loaders: tuple[str, ...]
+) -> dict[RecordKey, str]:
+    """{key: drop reason} for the ``keys`` the gate withholds; the board shows pick
+    labels only for the others. ``loaders`` names the projection loaders for ``keys``.
+    """
+    # ponytail: recomputed per request (one sport's loader, bounded to the window);
+    # cache per Eastern date if the board gets slow.
+    records = load_records(db, now, loaders)
+    reasons = {k: drop_reason(records.get(k), k) for k in keys}
+    return {k: r for k, r in reasons.items() if r}
 
 
 def gate_report(db: Session, now: datetime) -> list[dict]:
@@ -514,7 +564,11 @@ def gate_report(db: Session, now: datetime) -> list[dict]:
                     "WITHHELD losing"
                     if r.withheld
                     else (
-                        "WITHHELD unproven"
+                        (
+                            "WITHHELD unproven (prove-in key)"
+                            if prove_in_required(key)
+                            else "WITHHELD unproven"
+                        )
                         if drop_reason(r) == "unproven_record"
                         else (
                             "unproven (would be withheld with AUTO_PICK_REQUIRE_PROVEN_RECORD)"
