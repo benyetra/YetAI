@@ -28,6 +28,8 @@ from app.models.predictions_models import (
     NBATotalsProjections,
 )
 from app.services.etl.nba._season import regular_season_start
+from app.services.etl.nba import spread_projector
+from app.services.etl.nba import totals_baseline as tb
 from app.services.etl.nba.market_anchor import anchored, fit_anchor
 from app.services.etl.nba.totals_baseline import (
     BREAKEVEN,
@@ -143,6 +145,8 @@ def totals_rows(finals, lines, tp, season, until):
         out.append(
             dict(
                 d=d,
+                home=g.home_team_name,
+                away=g.away_team_name,
                 current=d >= opener,
                 actual=g.home_score + g.away_score,
                 market=market,
@@ -165,7 +169,7 @@ def walk_forward(rows, model_key, market_key, actual_key, **fit):
     hist = []
     out = []
     i = 0
-    by_date = sorted(rows, key=lambda r: r["d"])
+    by_date = sorted(rows, key=lambda r: (r["d"], r["home"], r["away"]))
     for r in by_date:
         while i < len(by_date) and by_date[i]["d"] < r["d"]:
             h = by_date[i]
@@ -407,6 +411,8 @@ def spread_rows(finals, lines, sp, until):
         out.append(
             dict(
                 d=p.game_date,
+                home=p.home_team_name,
+                away=p.away_team_name,
                 actual=g.home_score - g.away_score,
                 won=1.0 if g.home_score > g.away_score else 0.0,
                 market=-spread if spread is not None else None,
@@ -417,7 +423,7 @@ def spread_rows(finals, lines, sp, until):
                 ml=ml,
             )
         )
-    return sorted(out, key=lambda r: r["d"])
+    return sorted(out, key=lambda r: (r["d"], r["home"], r["away"]))
 
 
 def implied(american):
@@ -587,8 +593,19 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--until", type=date.fromisoformat, default=date.today())
-    ap.add_argument("--totals-choice", default="W=600 k_prior=200 a_prior=inf")
-    ap.add_argument("--spread-choice", default="W=200 k_prior=200 a_prior=inf")
+    # Defaults: the parameters production ships.
+    ap.add_argument(
+        "--totals-choice",
+        default=label_of(tb.ANCHOR_WINDOW, tb.ANCHOR_K_PRIOR, tb.ANCHOR_A_PRIOR),
+    )
+    ap.add_argument(
+        "--spread-choice",
+        default=label_of(
+            spread_projector.SPREAD_ANCHOR_WINDOW,
+            spread_projector.SPREAD_ANCHOR_K_PRIOR,
+            spread_projector.SPREAD_ANCHOR_A_PRIOR,
+        ),
+    )
     args = ap.parse_args()
     db = SessionLocal()
     try:

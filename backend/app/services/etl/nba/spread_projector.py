@@ -73,7 +73,7 @@ def spread_anchor_history(db, before: date) -> List[Tuple[float, float, float]]:
     rows = (
         _graded(db, P.projected_margin, P.market_spread_home, P.factors)
         .filter(P.game_date < before, P.market_spread_home.isnot(None))
-        .order_by(P.game_date.asc(), P.id.asc())
+        .order_by(P.game_date.asc(), P.home_team_name.asc(), P.away_team_name.asc())
         .all()
     )
     out = []

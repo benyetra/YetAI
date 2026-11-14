@@ -11,7 +11,7 @@ fitted jointly on the raw model, the correction is not counted twice. With no
 market line the model is published as is.
 
 Measured on 2026-27 (replay: scripts/nba_game_model_replay.py): the totals and
-spread models each lost to the line (MAE gap +2.1 and +0.4 points) and their
+spread models each lost to the line (MAE gap +2.0 and +0.5 points, n=183) and their
 edges had no predictive slope, so k stays near zero until that changes.
 """
 

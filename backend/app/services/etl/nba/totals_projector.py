@@ -586,7 +586,12 @@ def anchor_history(game_date: date) -> List[Tuple[float, float, float]]:
     }
     bias_by_date: Dict[date, float] = {}
     rows: List[Tuple[float, float, float]] = []
-    for g in sorted(finals, key=lambda f: f.game_date, reverse=True):
+    # Ties on a date in a fixed order, so the window edge matches the replay.
+    for g in sorted(
+        finals,
+        key=lambda f: (f.game_date, f.home_team_name, f.away_team_name),
+        reverse=True,
+    ):
         k = (g.game_date, g.home_team_name, g.away_team_name)
         market = proj.get(k) or lines.get(k)
         if not market:
@@ -1048,6 +1053,9 @@ def run(game_date: date | None = None) -> dict:
     if game_date is None:
         game_date = _today()
     global db
+    # A worker re-running a date must see finals graded since the last run.
+    _finals_cache.clear()
+    _anchor_cache.clear()
     db = SessionLocal()
     try:
         report = generate_nightly_report(game_date)

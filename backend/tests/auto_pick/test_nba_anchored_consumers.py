@@ -113,3 +113,35 @@ def test_moneyline_keeps_candidate_with_model_edge(sqlite_db):
     _ml(sqlite_db, 0.50, 0.60)  # away on both
     (r,) = _ml_rows(sqlite_db)
     assert r["side"] == "away" and abs(r["model_edge"] - (-0.10)) < 1e-9
+
+
+def test_moneyline_reanchors_win_prob_when_the_spread_moves(sqlite_db):
+    # Projected on -6.5 with k=0.3: stored model part ~+0.03, a candidate. The live
+    # line moved to -9.5, toward the model, so on that line the model adds ~0.005.
+    from app.services.etl._spread_model import NBA_CONFIG, margin_to_win_prob
+
+    k, old, new, model = 0.3, -6.5, -9.5, 10.0
+    margin = -old + k * (model + old)
+    _gl(sqlite_db, spread_home=new)
+    _spread(
+        sqlite_db,
+        rec="NO_PLAY",
+        hwp=margin_to_win_prob(margin, cfg=NBA_CONFIG),
+        factors={
+            "anchor": {"k": k, "a": 0.0, "n": 200},
+            "market_win_prob": margin_to_win_prob(-old, cfg=NBA_CONFIG),
+        },
+    )
+    sqlite_db.query(NBASpreadProjections).update(
+        {"projected_margin": margin, "market_spread_home": old}
+    )
+    assert _ml_rows(sqlite_db) == []
+    # Same row on an unmoved line is a candidate (the stale numbers were the issue).
+    sqlite_db.query(NBAGameLines).update({"spread_home": old})
+    assert len(_ml_rows(sqlite_db)) == 1
+
+
+def test_moneyline_moved_line_without_anchor_is_dropped(sqlite_db):
+    _gl(sqlite_db, spread_home=-4.5)
+    _spread(sqlite_db, rec="NO_PLAY", hwp=0.9, factors={"market_win_prob": 0.6})
+    assert _ml_rows(sqlite_db) == []

@@ -11,7 +11,14 @@ import logging
 from sqlalchemy.orm import Session
 
 from app.models.predictions_models import NBAGameLines, NBASpreadProjections
-from app.services.auto_pick.candidate import DateRange, projection_ref, to_naive_utc
+from app.services.auto_pick.candidate import (
+    DateRange,
+    projection_ref,
+    same_line,
+    to_naive_utc,
+)
+from app.services.auto_pick.sources._basketball import _reanchored
+from app.services.etl._spread_model import NBA_CONFIG, margin_to_win_prob
 
 log = logging.getLogger(__name__)
 
@@ -51,13 +58,20 @@ class NBAMoneylineSource:
             gl = gls.get((r.home_team_name, r.away_team_name))
             if gl is None or gl.moneyline_home is None or gl.moneyline_away is None:
                 continue
-            ih, ia = _implied(gl.moneyline_home), _implied(gl.moneyline_away)
-            edge = r.home_win_prob - ih / (ih + ia)
             f = r.factors if isinstance(r.factors, dict) else {}
-            market_p = f.get("market_win_prob")
+            home_p, market_p = r.home_win_prob, f.get("market_win_prob")
+            if not same_line(gl.spread_home, r.market_spread_home):
+                # Both probabilities sit on the old spread: move them to the live one.
+                margin = _reanchored(r, r.market_spread_home, gl.spread_home, -1)
+                if margin is None:
+                    continue
+                home_p = margin_to_win_prob(margin, cfg=NBA_CONFIG)
+                market_p = margin_to_win_prob(-gl.spread_home, cfg=NBA_CONFIG)
             if market_p is None:
                 continue
-            model_part = r.home_win_prob - market_p
+            ih, ia = _implied(gl.moneyline_home), _implied(gl.moneyline_away)
+            edge = home_p - ih / (ih + ia)
+            model_part = home_p - market_p
             if (
                 edge == 0
                 or abs(model_part) < ML_MIN_MODEL_EDGE
@@ -80,8 +94,8 @@ class NBAMoneylineSource:
                         away_team_name=r.away_team_name,
                     ),
                     "model_version": getattr(r, "model_version", None),
-                    "home_win_prob": r.home_win_prob,
-                    "away_win_prob": 1.0 - r.home_win_prob,
+                    "home_win_prob": home_p,
+                    "away_win_prob": 1.0 - home_p,
                     "model_edge": model_part,
                     "moneyline_home": gl.moneyline_home,
                     "moneyline_away": gl.moneyline_away,
