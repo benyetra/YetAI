@@ -200,7 +200,9 @@ def test_candidate_not_strictly_better_is_not_uploaded(s3):
 
 def _live_with_window(s3, window):
     s3.put(KEY, b"LIVE", "e1")
-    s3.put(MAN, json.dumps({"data_window": window, "holdout_metric": 5.0}).encode(), "e1")
+    s3.put(
+        MAN, json.dumps({"data_window": window, "holdout_metric": 5.0}).encode(), "e1"
+    )
 
 
 def test_unchanged_data_window_is_not_uploaded_even_if_better(s3):
@@ -232,7 +234,9 @@ def test_weekly_nba_style_cycle_through_upload_gated_pickle(s3):
         )["status"]
 
     assert go("2025-10-01..2026-11-01", 4.0) == "first_upload"
-    assert go("2025-10-01..2026-11-01", 3.0) == "rejected_by_champion"  # rerun, same data
+    assert (
+        go("2025-10-01..2026-11-01", 3.0) == "rejected_by_champion"
+    )  # rerun, same data
     assert go("2025-10-01..2026-11-08", 3.0) == "uploaded"  # a week later
 
 
@@ -293,7 +297,9 @@ def test_rollback_dry_run_vs_apply(s3):
     assert ms.manifest_key(KEY) not in s3.objects
     # the replaced live copy is itself archived, so rollback is undoable
     assert (
-        s3.objects[f"nba/ml_models/archive/{done['archived_current_as']}/xgb_points.pkl"]
+        s3.objects[
+            f"nba/ml_models/archive/{done['archived_current_as']}/xgb_points.pkl"
+        ]
         == b"V2-live"
     )
 
@@ -307,4 +313,6 @@ def test_list_archive_stamps_only_those_holding_the_model(s3):
     s3.put(f"{base}/20260102T000000/xgb_rebounds.pkl", b"x", "e1")  # other model
     s3.put(f"{base}/20260103T000000/xgb_points_manifest.json", b"{}", "e1")  # no pkl
     assert ms.list_archive_stamps(KEY) == ["20260101T000000"]
-    assert ms.list_archive_stamps("nba/ml_models/xgb_rebounds.pkl") == ["20260102T000000"]
+    assert ms.list_archive_stamps("nba/ml_models/xgb_rebounds.pkl") == [
+        "20260102T000000"
+    ]

@@ -654,7 +654,9 @@ def train_qb_yards_model(
 
     if holdout_sink is not None:
         holdout_sink["X"] = features_df.iloc[test_sl].reset_index(drop=True)
-        holdout_sink["y"] = (y_cv_test + base_cv_test if residual_target else y_cv_test).to_numpy()
+        holdout_sink["y"] = (
+            y_cv_test + base_cv_test if residual_target else y_cv_test
+        ).to_numpy()
 
     cv_model = GradientBoostingRegressor(**hp)
     cv_model.fit(X_cv_train, y_cv_train)

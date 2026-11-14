@@ -71,7 +71,9 @@ def live_yards_scorer(
 
     def score(live_body: bytes) -> float:
         meta = _live_metadata(S3_META_KEY)
-        end = _window_end(meta.get("data_window")) if meta.get("refit_all_rows") else None
+        end = (
+            _window_end(meta.get("data_window")) if meta.get("refit_all_rows") else None
+        )
         if end is not None and weeks_hold and min(map(tuple, weeks_hold)) <= end:
             raise ValueError(f"live model trained through {end}, inside the holdout")
         live = pickle.loads(live_body)  # nosec B301 - our own private bucket
@@ -166,7 +168,11 @@ def upload_ou_model(
     not worse than the live classifier's on the same rows."""
     brier = metadata.get(BRIER_METRIC)
     if brier is None or not float(brier) < COIN_FLIP_BRIER:
-        logger.warning("O/U classifier not uploaded: holdout Brier %s >= %s", brier, COIN_FLIP_BRIER)
+        logger.warning(
+            "O/U classifier not uploaded: holdout Brier %s >= %s",
+            brier,
+            COIN_FLIP_BRIER,
+        )
         return {
             "status": "rejected_coin_flip",
             "metric_name": BRIER_METRIC,

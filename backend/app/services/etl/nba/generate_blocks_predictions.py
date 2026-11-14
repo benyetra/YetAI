@@ -74,9 +74,7 @@ def run() -> dict:
             try:
                 injured, injury_status = _is_injured(db, player.player_id)
                 if injured:
-                    mark_projection_out(
-                        db, BlocksProjections, today, player.player_id
-                    )
+                    mark_projection_out(db, BlocksProjections, today, player.player_id)
                     skipped_injured += 1
                     continue
 

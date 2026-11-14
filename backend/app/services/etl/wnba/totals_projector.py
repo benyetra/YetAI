@@ -875,9 +875,7 @@ def generate_nightly_report(game_date: Optional[date] = None) -> Dict:
     logger.info(f"Found {len(games)} games for {game_date}")
 
     # Started games keep the projection users last saw.
-    games = not_started(
-        games, lambda g: (g["game_time"], game_date), now=now_eastern()
-    )
+    games = not_started(games, lambda g: (g["game_time"], game_date), now=now_eastern())
 
     projections = []
     value_plays = 0

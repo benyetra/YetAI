@@ -131,7 +131,9 @@ def run() -> dict:
                     existing.opponent_team_name = player.opponent_team_name
                     if fd_line > 0:
                         existing.fanduel_line = fd_line
-                        existing.fanduel_over_under = fd_flag if fd_flag != "n" else None
+                        existing.fanduel_over_under = (
+                            fd_flag if fd_flag != "n" else None
+                        )
                         existing.fanduel_price = fd_price_val
                     elif existing.fanduel_line is not None:
                         # No market now: keep the stored line; re-derive the side

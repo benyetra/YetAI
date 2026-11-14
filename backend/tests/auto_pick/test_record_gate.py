@@ -396,7 +396,7 @@ def test_orchestrator_drops_unproven_key_with_reason(sqlite_db, monkeypatch):
     o._records = {}
     sc = type("S", (), {"candidate": _cand(1, league="NBA")})()
     assert o._gate(sc, SelectorConfig(), set()) == "unproven_record"
-    assert o._summarize_drops([], {}) ["withheld_keys"] == {}
+    assert o._summarize_drops([], {})["withheld_keys"] == {}
 
 
 def test_gate_report_lists_no_data_keys_with_state(sqlite_db, monkeypatch, capsys):

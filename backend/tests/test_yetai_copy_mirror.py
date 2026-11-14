@@ -293,7 +293,11 @@ def test_mirror_failure_does_not_block_pick_settlement(db):
     [
         {"status": "rejected"},
         {"status": "expired", "result": None, "settled_at": None},
-        {"status": "expired", "result": "Auto-expired (unapproved)", "settled_at": None},
+        {
+            "status": "expired",
+            "result": "Auto-expired (unapproved)",
+            "settled_at": None,
+        },
         # unapproved queue pick past its start: the settle run rejects it first
         {"status": "pending_approval", "commence_time": NOW - timedelta(hours=3)},
     ],

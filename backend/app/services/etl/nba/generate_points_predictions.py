@@ -87,9 +87,7 @@ def run() -> dict:
                     logger.info(
                         "Skipping %s (injury: %s)", player.player_name, injury_status
                     )
-                    mark_projection_out(
-                        db, PointsProjections, today, player.player_id
-                    )
+                    mark_projection_out(db, PointsProjections, today, player.player_id)
                     skipped_injured += 1
                     continue
 

@@ -91,7 +91,11 @@ class S3Object:
         """Last good object (None until a load has succeeded)."""
         with self._lock:
             now = self._clock()
-            wait = REFRESH_SECONDS if self._last_ok else min(RETRY_BACKOFF_SECONDS, REFRESH_SECONDS)
+            wait = (
+                REFRESH_SECONDS
+                if self._last_ok
+                else min(RETRY_BACKOFF_SECONDS, REFRESH_SECONDS)
+            )
             if self._checked is not None and now - self._checked < wait:
                 return self._obj
             # Stamp first so concurrent callers do not all hit S3 on a slow refresh.
@@ -133,7 +137,9 @@ class S3Object:
         if body is None:
             raise RuntimeError("object missing")
         self._obj, self._token, self.manifest = self._deserialize(body), token, manifest
-        logger.info("loaded s3://%s/%s (version=%s)", self.bucket, self.key, self.version)
+        logger.info(
+            "loaded s3://%s/%s (version=%s)", self.bucket, self.key, self.version
+        )
 
     def _head_token(self, s3, key: str) -> str | None:
         """ETag/LastModified, or None when the key does not exist."""
@@ -244,7 +250,9 @@ def gated_upload(
                 else "champion_unscorable"
             )
 
-    if champion is not None and _not_better(candidate_metric, champion, lower_is_better):
+    if champion is not None and _not_better(
+        candidate_metric, champion, lower_is_better
+    ):
         logger.warning(
             "rejected %s: candidate %s=%.4f not better than champion %.4f",
             model_key,
@@ -315,7 +323,8 @@ def list_archive_stamps(model_key: str, *, bucket: str = BUCKET) -> list[str]:
     while True:
         page = s3.list_objects_v2(**kwargs)
         out += [
-            p["Prefix"][len(prefix) :].strip("/") for p in page.get("CommonPrefixes", [])
+            p["Prefix"][len(prefix) :].strip("/")
+            for p in page.get("CommonPrefixes", [])
         ]
         if not page.get("IsTruncated"):
             break

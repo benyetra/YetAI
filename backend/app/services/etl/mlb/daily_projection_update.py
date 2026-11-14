@@ -68,7 +68,11 @@ def store_projections(date, *, now=None):
             .first()
         )
         ev_pick = ev_pick_from_flag(fanduel_flag)
-        if not fanduel_line and existing_projection and existing_projection.fanduel_line:
+        if (
+            not fanduel_line
+            and existing_projection
+            and existing_projection.fanduel_line
+        ):
             # Book has no market right now: keep the line users saw and
             # re-evaluate the side against it.
             fanduel_line = existing_projection.fanduel_line

@@ -22,9 +22,27 @@ from tests.fake_s3 import FakeS3
 
 # module, trainer module, train fn name, upload fn name, loaded-predict name, enrich fn
 CASES = {
-    "goalie": (gsm, tg, "train_goalie_model", "upload_goalie_model", "predict_saves_ml_loaded"),
-    "shots": (psm, tp, "train_player_shots_model", "upload_player_shots_model", "predict_shots_ml_loaded"),
-    "totals": (ttm, tt, "train_team_totals_model", "upload_team_totals_model", "predict_total_ml_loaded"),
+    "goalie": (
+        gsm,
+        tg,
+        "train_goalie_model",
+        "upload_goalie_model",
+        "predict_saves_ml_loaded",
+    ),
+    "shots": (
+        psm,
+        tp,
+        "train_player_shots_model",
+        "upload_player_shots_model",
+        "predict_shots_ml_loaded",
+    ),
+    "totals": (
+        ttm,
+        tt,
+        "train_team_totals_model",
+        "upload_team_totals_model",
+        "predict_total_ml_loaded",
+    ),
 }
 IDS = list(CASES)
 
@@ -42,13 +60,20 @@ def _meta(mod) -> bytes:
 
 
 def _keys(mod):
-    return f"{mod.S3_PREFIX}/{mod.MODEL_KEY}.pkl", f"{mod.S3_PREFIX}/{mod.MODEL_KEY}_metadata.json"
+    return (
+        f"{mod.S3_PREFIX}/{mod.MODEL_KEY}.pkl",
+        f"{mod.S3_PREFIX}/{mod.MODEL_KEY}_metadata.json",
+    )
 
 
 @pytest.fixture(autouse=True)
 def _env(monkeypatch):
     monkeypatch.setattr(model_store, "REFRESH_SECONDS", 0)
-    for var in ("NHL_GOALIE_MODEL_LOCAL", "NHL_PLAYER_SOG_MODEL_LOCAL", "NHL_TOTALS_MODEL_LOCAL"):
+    for var in (
+        "NHL_GOALIE_MODEL_LOCAL",
+        "NHL_PLAYER_SOG_MODEL_LOCAL",
+        "NHL_TOTALS_MODEL_LOCAL",
+    ):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -88,11 +113,17 @@ def test_trainer_split_is_chronological(name):
 
 def _enrich(name):
     if name == "goalie":
-        return gsm.enrich_goalie_prediction_for_write(
-            {"predicted_shots_against": 30.0, "predicted_save_pct": 0.9}, {}
-        ), "heuristic_saves"
+        return (
+            gsm.enrich_goalie_prediction_for_write(
+                {"predicted_shots_against": 30.0, "predicted_save_pct": 0.9}, {}
+            ),
+            "heuristic_saves",
+        )
     if name == "shots":
-        return psm.enrich_player_shots_prediction_for_write({"baseline_shots": 3.0}), "heuristic_shots"
+        return (
+            psm.enrich_player_shots_prediction_for_write({"baseline_shots": 3.0}),
+            "heuristic_shots",
+        )
     return ttm.enrich_team_totals_prediction_for_write({}), "heuristic_total"
 
 
@@ -100,7 +131,11 @@ def _enrich(name):
 @pytest.mark.parametrize("flag", ["", "1"])
 def test_heuristic_always_in_features_used(name, flag, monkeypatch):
     mod, _, _, _, loaded = CASES[name]
-    for var in ("NHL_GOALIE_ML_ENABLED", "NHL_PLAYER_SOG_ML_ENABLED", "NHL_TOTALS_ML_ENABLED"):
+    for var in (
+        "NHL_GOALIE_ML_ENABLED",
+        "NHL_PLAYER_SOG_ML_ENABLED",
+        "NHL_TOTALS_ML_ENABLED",
+    ):
         monkeypatch.setenv(var, flag)
     monkeypatch.setattr(mod, loaded, lambda _f: 99.0)
     out, key = _enrich(name)
@@ -118,7 +153,9 @@ def test_upload_is_champion_gated(name, monkeypatch):
     y = pd.Series([1.0] * 10)  # live model (10.0) is far off; a 1.0 model is exact
     metadata = {"features": mod.feature_names(), "holdout_mae": 0.0}
 
-    worse = getattr(trainer, upload)(_model(50.0), {**metadata, "holdout_mae": 49.0}, X, y)
+    worse = getattr(trainer, upload)(
+        _model(50.0), {**metadata, "holdout_mae": 49.0}, X, y
+    )
     assert worse["status"] == "rejected_by_champion"
     assert s3.objects[pkl] == _const(10.0)
 

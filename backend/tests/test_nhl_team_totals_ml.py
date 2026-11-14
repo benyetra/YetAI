@@ -71,7 +71,11 @@ def test_enrich_promotes_ml_when_enabled(monkeypatch):
     pred = _sample_prediction()
     with patch.object(ttm, "predict_total_ml_loaded", return_value=6.6):
         with patch.object(
-            ttm, "_PAIR", SimpleNamespace(get=lambda: (object(), {"model_version": "gbm-totals-20260525"}))
+            ttm,
+            "_PAIR",
+            SimpleNamespace(
+                get=lambda: (object(), {"model_version": "gbm-totals-20260525"})
+            ),
         ):
             out = enrich_team_totals_prediction_for_write(pred)
     assert out["predicted_total_goals"] == 6.6
