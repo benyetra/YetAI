@@ -190,6 +190,7 @@ def run() -> dict:
                     "home_team_name": g.home_team_name,
                     "away_team_name": g.away_team_name,
                     "created_at": datetime.utcnow(),
+                    "model_version": "ppg-blend-v1",
                     **projection,
                 }
             )

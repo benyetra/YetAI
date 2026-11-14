@@ -162,6 +162,7 @@ def run() -> dict:
                 "player_name": p.player_name,
                 "opponent_team_name": p.opponent_team_name,
                 "projected_pra": round(projected, 1),
+                "model_version": "sum-pra-v1",  # sum of the P/R/A projections
                 "market_line": None,
                 "edge": None,
                 "recommendation": "NO_PLAY",

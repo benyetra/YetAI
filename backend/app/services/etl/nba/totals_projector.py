@@ -767,6 +767,7 @@ def save_projection(projection: Dict):
             existing.factors = projection["factors"]
             existing.home_starters = projection.get("home_starters")
             existing.away_starters = projection.get("away_starters")
+            existing.model_version = projection.get("model_version")
             existing.created_at = datetime.utcnow()
         else:
             # Create new
@@ -798,6 +799,7 @@ def save_projection(projection: Dict):
                 factors=projection["factors"],
                 home_starters=projection.get("home_starters"),
                 away_starters=projection.get("away_starters"),
+                model_version=projection.get("model_version"),
             )
             db.add(new_proj)
 

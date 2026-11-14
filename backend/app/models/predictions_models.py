@@ -148,6 +148,7 @@ class NFLTeam(Base):
 
 class Kickers(Base):
     __tablename__ = "pred_kickers"
+    model_version = Column(String(20), nullable=True)
     id = Column(Integer, primary_key=True)
     player_id = Column(Integer, unique=True, nullable=False)
     name = Column(String, nullable=False)
@@ -414,6 +415,7 @@ class NFLSpreadProjections(Base):
     """Spread / win-probability projections for NFL games."""
 
     __tablename__ = "pred_nfl_spread_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -450,6 +452,7 @@ class NFLTotalsProjections(Base):
     """Over/under totals projections for NFL games."""
 
     __tablename__ = "pred_nfl_totals_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -1240,6 +1243,7 @@ class TeamRoster(Base):
 
 class PointsProjections(Base):
     __tablename__ = "pred_points_projections"
+    model_version = Column(String(20), nullable=True)
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
     player_id = Column(Integer, nullable=False)
@@ -1265,6 +1269,7 @@ class PointsActuals(Base):
 
 class ThreePointProjections(Base):
     __tablename__ = "pred_three_point_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -1398,6 +1403,7 @@ class NoStealsActuals(Base):
 
 class StealsProjections(Base):
     __tablename__ = "pred_steals_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -1449,6 +1455,7 @@ class BlocksActuals(Base):
 
 class AssistsProjections(Base):
     __tablename__ = "pred_assists_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -1476,6 +1483,7 @@ class AssistsActuals(Base):
 
 class ReboundsProjections(Base):
     __tablename__ = "pred_rebounds_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -1527,6 +1535,7 @@ class PRAProjections(Base):
     """Points + Rebounds + Assists combo prop projections"""
 
     __tablename__ = "pred_pra_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     date = Column(Date, nullable=False)
@@ -2095,6 +2104,7 @@ class NHLGoalieActuals(Base):
 
 class NHLTeamShotsPredictions(Base):
     __tablename__ = "pred_nhl_team_shots_predictions"
+    model_version = Column(String(20), nullable=True)
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False)
     team_id = Column(Integer, nullable=False)
@@ -2539,6 +2549,7 @@ class NBATotalsProjections(Base):
     """
 
     __tablename__ = "pred_nba_totals_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -2671,6 +2682,7 @@ class NBASpreadProjections(Base):
     """Own spread / win-probability projections (backported from WNBA Elo+pace model)."""
 
     __tablename__ = "pred_nba_spread_projections"
+    model_version = Column(String(20), nullable=True)
 
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
@@ -3468,6 +3480,7 @@ class WNBAGameLinesFetchLog(Base):
 
 class WNBATotalsProjections(Base):
     __tablename__ = "pred_wnba_totals_projections"
+    model_version = Column(String(20), nullable=True)
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
     home_team_id = Column(Integer, nullable=True)
@@ -3584,6 +3597,7 @@ class WNBATotalsAccuracy(Base):
 
 class WNBASpreadProjections(Base):
     __tablename__ = "pred_wnba_spread_projections"
+    model_version = Column(String(20), nullable=True)
     id = Column(Integer, primary_key=True)
     game_date = Column(Date, nullable=False, index=True)
     home_team_id = Column(Integer, nullable=True)
@@ -3733,6 +3747,7 @@ def _make_prop_projection(prop: str, *, class_stem: str | None = None):
         f"projected_{prop}": Column(Float, nullable=False),
         "market_line": Column(Float, nullable=True),
         "fanduel_price": Column(Integer, nullable=True),
+        "model_version": Column(String(20), nullable=True),
         "edge": Column(Float, nullable=True),
         "recommendation": Column(String(20), nullable=True),
         "confidence_score": Column(Float, nullable=True),

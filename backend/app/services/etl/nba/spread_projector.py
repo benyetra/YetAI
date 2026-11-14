@@ -25,7 +25,11 @@ from app.services.etl._spread_model import (
 )
 from app.services.etl.nba._espn import now_eastern
 from app.services.etl.nba._spread_features import build_game_features
-from app.services.etl.nba._spread_ml_predict import model_available, predict_margin
+from app.services.etl.nba._spread_ml_predict import (
+    get_model_version,
+    model_available,
+    predict_margin,
+)
 from app.services.etl.wnba._db_upsert import upsert_many
 
 logger = logging.getLogger(__name__)
@@ -128,6 +132,11 @@ def run() -> dict:
                         "elo_pace_margin": elo_pace_margin,
                         "method": projection_method,
                     },
+                    "model_version": (
+                        (get_model_version() or "ml-unversioned")
+                        if projection_method == "ml"
+                        else "elo-pace-v1"
+                    ),
                     "created_at": datetime.utcnow(),
                 }
             )
