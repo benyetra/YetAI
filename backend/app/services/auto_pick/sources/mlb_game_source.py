@@ -26,9 +26,12 @@ class MLBGameMoneylineSource:
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         day = date_range.slate_date
         try:
-            rows = (
-                self.db.query(GameProjections).filter(GameProjections.date == day).all()
-            )
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(GameProjections)
+                    .filter(GameProjections.date == day)
+                    .all()
+                )
         except Exception:
             log.exception("MLBGameMoneylineSource: DB query failed")
             return []

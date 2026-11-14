@@ -49,15 +49,16 @@ def _totals_threshold(league: str) -> float:
 
 def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
     try:
-        rows = (
-            db.query(proj_model)
-            .filter(proj_model.game_date == date_range.slate_date)
-            .all()
-        )
-        gls = {
-            (g.home_team_name, g.away_team_name): g
-            for g in _lines(db, lines_model, date_range)
-        }
+        with db.begin_nested():  # keep a failed query from aborting the run
+            rows = (
+                db.query(proj_model)
+                .filter(proj_model.game_date == date_range.slate_date)
+                .all()
+            )
+            gls = {
+                (g.home_team_name, g.away_team_name): g
+                for g in _lines(db, lines_model, date_range)
+            }
     except Exception:
         log.exception("%s spread source: query failed", league)
         return []
@@ -109,15 +110,16 @@ def spread_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
 
 def totals_rows(db, proj_model, lines_model, league, date_range) -> list[dict]:
     try:
-        rows = (
-            db.query(proj_model)
-            .filter(proj_model.game_date == date_range.slate_date)
-            .all()
-        )
-        gls = {
-            (g.home_team_name, g.away_team_name): g
-            for g in _lines(db, lines_model, date_range)
-        }
+        with db.begin_nested():  # keep a failed query from aborting the run
+            rows = (
+                db.query(proj_model)
+                .filter(proj_model.game_date == date_range.slate_date)
+                .all()
+            )
+            gls = {
+                (g.home_team_name, g.away_team_name): g
+                for g in _lines(db, lines_model, date_range)
+            }
     except Exception:
         log.exception("%s totals source: query failed", league)
         return []
@@ -175,17 +177,19 @@ def prop_rows(db, specs, lines_model, league, date_range, side_of) -> list[dict]
     and start time come from the game-lines row whose home/away is the opponent.
     """
     try:
-        by_team = {}
-        for g in _lines(db, lines_model, date_range):
-            by_team[g.home_team_name] = (g, True)
-            by_team[g.away_team_name] = (g, False)
+        with db.begin_nested():  # keep a failed query from aborting the run
+            by_team = {}
+            for g in _lines(db, lines_model, date_range):
+                by_team[g.home_team_name] = (g, True)
+                by_team[g.away_team_name] = (g, False)
     except Exception:
         log.exception("%s prop source: game lines query failed", league)
         return []
     out = []
     for model, stat, proj_attr, line_attr, gen_attr in specs:
         try:
-            rows = db.query(model).filter(model.date == date_range.slate_date).all()
+            with db.begin_nested():  # keep a failed query from aborting the run
+                rows = db.query(model).filter(model.date == date_range.slate_date).all()
         except Exception:
             log.exception("%s prop source: query failed for %s", league, stat)
             continue

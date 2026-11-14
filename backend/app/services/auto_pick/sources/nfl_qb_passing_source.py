@@ -38,15 +38,16 @@ class NFLQBPassingSource:
         end_et = start_et + timedelta(days=1)
 
         try:
-            rows = (
-                self.db.query(QBPredictions)
-                .filter(
-                    QBPredictions.game_date >= start_et,
-                    QBPredictions.game_date < end_et,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(QBPredictions)
+                    .filter(
+                        QBPredictions.game_date >= start_et,
+                        QBPredictions.game_date < end_et,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            lines = load_nfl_lines(self.db, day) if rows else []
+                lines = load_nfl_lines(self.db, day) if rows else []
         except Exception:
             log.exception("NFLQBPassingSource: DB query failed")
             return []

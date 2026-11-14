@@ -24,17 +24,18 @@ class NBAMoneylineSource:
 
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         try:
-            rows = (
-                self.db.query(NBASpreadProjections)
-                .filter(NBASpreadProjections.game_date == date_range.slate_date)
-                .all()
-            )
-            gls = {
-                (g.home_team_name, g.away_team_name): g
-                for g in self.db.query(NBAGameLines)
-                .filter(NBAGameLines.game_date == date_range.slate_date)
-                .all()
-            }
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NBASpreadProjections)
+                    .filter(NBASpreadProjections.game_date == date_range.slate_date)
+                    .all()
+                )
+                gls = {
+                    (g.home_team_name, g.away_team_name): g
+                    for g in self.db.query(NBAGameLines)
+                    .filter(NBAGameLines.game_date == date_range.slate_date)
+                    .all()
+                }
         except Exception:
             log.exception("NBAMoneylineSource: query failed")
             return []

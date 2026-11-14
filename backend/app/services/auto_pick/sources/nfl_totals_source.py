@@ -31,17 +31,18 @@ class NFLTotalsSource:
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         day = date_range.slate_date
         try:
-            rows = (
-                self.db.query(NFLTotalsProjections)
-                .filter(NFLTotalsProjections.game_date == day)
-                .all()
-            )
-            lines = {
-                (g.home_team_name, g.away_team_name): g
-                for g in self.db.query(NFLGameLines)
-                .filter(NFLGameLines.game_date == day)
-                .all()
-            }
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NFLTotalsProjections)
+                    .filter(NFLTotalsProjections.game_date == day)
+                    .all()
+                )
+                lines = {
+                    (g.home_team_name, g.away_team_name): g
+                    for g in self.db.query(NFLGameLines)
+                    .filter(NFLGameLines.game_date == day)
+                    .all()
+                }
         except Exception:
             log.exception("NFLTotalsSource: DB query failed")
             return []

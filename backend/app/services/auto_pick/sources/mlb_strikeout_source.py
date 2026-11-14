@@ -31,29 +31,30 @@ class MLBStrikeoutSource:
         day = date_range.slate_date
 
         try:
-            rows = (
-                self.db.query(StrikeoutProjections)
-                .filter(
-                    StrikeoutProjections.date == day,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(StrikeoutProjections)
+                    .filter(
+                        StrikeoutProjections.date == day,
+                    )
+                    .all()
                 )
-                .all()
-            )
-            # pred_pitcher has no date column; keep only today's starts (naive UTC).
-            pitcher_meta = {
-                p.pitcher_id: p
-                for p in self.db.query(Pitcher)
-                .filter(
-                    Pitcher.game_time >= date_range.start,
-                    Pitcher.game_time < date_range.end,
-                )
-                .all()
-            }
-            games = {
-                g.game_id: g
-                for g in self.db.query(GameProjections)
-                .filter(GameProjections.date == day)
-                .all()
-            }
+                # pred_pitcher has no date column; keep only today's starts (naive UTC).
+                pitcher_meta = {
+                    p.pitcher_id: p
+                    for p in self.db.query(Pitcher)
+                    .filter(
+                        Pitcher.game_time >= date_range.start,
+                        Pitcher.game_time < date_range.end,
+                    )
+                    .all()
+                }
+                games = {
+                    g.game_id: g
+                    for g in self.db.query(GameProjections)
+                    .filter(GameProjections.date == day)
+                    .all()
+                }
         except Exception:
             log.exception("MLBStrikeoutSource: DB query failed")
             return []

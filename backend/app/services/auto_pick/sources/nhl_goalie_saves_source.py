@@ -53,13 +53,14 @@ class NHLGoalieSavesSource:
         day = date_range.slate_date
 
         try:
-            rows = (
-                self.db.query(NHLGoaliePredictions)
-                .filter(
-                    NHLGoaliePredictions.game_date == day,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NHLGoaliePredictions)
+                    .filter(
+                        NHLGoaliePredictions.game_date == day,
+                    )
+                    .all()
                 )
-                .all()
-            )
         except Exception:
             log.exception("NHLGoalieSavesSource: DB query failed")
             return []

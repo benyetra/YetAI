@@ -344,7 +344,9 @@ def load_projection_records(
     out: dict[RecordKey, tuple[int, int]] = {}
     for name, loader in PROJECTION_LOADERS.items():
         try:
-            out.update(loader(db, start, end))
+            # Savepoint: on Postgres a failed statement aborts the whole transaction.
+            with db.begin_nested():
+                out.update(loader(db, start, end))
         except Exception:
             log.exception("record_gate: projection loader %s failed", name)
     return out

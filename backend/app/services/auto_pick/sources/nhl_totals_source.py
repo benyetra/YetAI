@@ -41,13 +41,14 @@ class NHLTotalsSource:
         day = date_range.slate_date
 
         try:
-            rows = (
-                self.db.query(NHLTeamTotalsPredictions)
-                .filter(
-                    NHLTeamTotalsPredictions.game_date == day,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(NHLTeamTotalsPredictions)
+                    .filter(
+                        NHLTeamTotalsPredictions.game_date == day,
+                    )
+                    .all()
                 )
-                .all()
-            )
         except Exception:
             log.exception("NHLTotalsSource: DB query failed")
             return []

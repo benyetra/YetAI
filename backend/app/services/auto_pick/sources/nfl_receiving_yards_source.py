@@ -28,12 +28,13 @@ class NFLReceivingYardsSource:
     async def get_todays_projections(self, date_range: DateRange) -> list[dict]:
         day = date_range.slate_date
         try:
-            rows = (
-                self.db.query(RecvYdsPredictions)
-                .filter(RecvYdsPredictions.game_date == day)
-                .all()
-            )
-            lines = load_nfl_lines(self.db, day) if rows else []
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(RecvYdsPredictions)
+                    .filter(RecvYdsPredictions.game_date == day)
+                    .all()
+                )
+                lines = load_nfl_lines(self.db, day) if rows else []
         except Exception:
             log.exception("NFLReceivingYardsSource: DB query failed")
             return []

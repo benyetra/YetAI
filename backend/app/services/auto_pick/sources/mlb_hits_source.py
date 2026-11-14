@@ -31,14 +31,15 @@ class MLBHitsSource:
         end = date_range.end
 
         try:
-            rows = (
-                self.db.query(Hitter)
-                .filter(
-                    Hitter.game_time >= start,
-                    Hitter.game_time <= end,
+            with self.db.begin_nested():  # keep a failed query from aborting the run
+                rows = (
+                    self.db.query(Hitter)
+                    .filter(
+                        Hitter.game_time >= start,
+                        Hitter.game_time <= end,
+                    )
+                    .all()
                 )
-                .all()
-            )
         except Exception:
             log.exception("MLBHitsSource: DB query failed")
             return []
