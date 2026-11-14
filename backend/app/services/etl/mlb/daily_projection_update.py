@@ -15,6 +15,7 @@ from app.models.predictions_models import (
     Pitcher,
 )
 
+from app.services.etl._game_start import has_started
 from app.services.etl.mlb._db import db_session
 from app.services.mlb_strikeout_pick import (
     ev_pick_from_flag,
@@ -34,7 +35,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
-def store_projections(date):
+def store_projections(date, *, now=None):
     pitchers = db_session.query(Pitcher).all()
     if not pitchers:
         logger.warning(
@@ -44,22 +45,16 @@ def store_projections(date):
         )
         return
 
-    # Drop rows for this date that aren't in the current pitcher slate so
-    # the projections table stays in sync with today's probable starters
-    # instead of accumulating stale entries from earlier (partial) runs.
-    current_ids = {p.pitcher_id for p in pitchers}
-    if current_ids:
-        db_session.query(StrikeoutProjections).filter(
-            StrikeoutProjections.date == date,
-            ~StrikeoutProjections.pitcher_id.in_(current_ids),
-        ).delete(synchronize_session=False)
-        db_session.commit()
-
+    # Rows already shown stay: a starter scratched or missing from the slate is
+    # left as-is (no actual -> ungraded), never deleted.
     model_version = resolve_mlb_strikeout_model_version(
         allow_network=os.getenv("ML_MODEL_VERSION_ALLOW_S3", "1") == "1"
     )
 
     for pitcher in pitchers:
+        # Pitcher.game_time (NOT NULL) is naive UTC: strikeouts.py parses the feed's Z time.
+        if has_started(getattr(pitcher, "game_time", None), game_date=date, now=now):
+            continue
         pitcher_id = pitcher.pitcher_id
         pitcher_name = pitcher.name
         innings_pitched = pitcher.projected_innings
@@ -67,8 +62,18 @@ def store_projections(date):
         projected_strikeouts = pitcher.projected_strikeouts
         fanduel_line = pitcher.fanduel_point
         fanduel_flag = pitcher.fanduel_flag  # 'o' | 'u' | 'n' from +EV stack
-        yetai_pick = projection_pick_side(projected_strikeouts, fanduel_line)
+        existing_projection = (
+            db_session.query(StrikeoutProjections)
+            .filter_by(date=date, pitcher_id=pitcher_id)
+            .first()
+        )
         ev_pick = ev_pick_from_flag(fanduel_flag)
+        if not fanduel_line and existing_projection and existing_projection.fanduel_line:
+            # Book has no market right now: keep the line users saw and
+            # re-evaluate the side against it.
+            fanduel_line = existing_projection.fanduel_line
+            ev_pick = existing_projection.ev_over_under
+        yetai_pick = projection_pick_side(projected_strikeouts, fanduel_line)
         prob_over = getattr(pitcher, "prob_over", None)
         pick_edge_pct = getattr(pitcher, "pick_edge_pct", None)
         confidence = (
@@ -82,11 +87,6 @@ def store_projections(date):
             else None
         )
 
-        existing_projection = (
-            db_session.query(StrikeoutProjections)
-            .filter_by(date=date, pitcher_id=pitcher_id)
-            .first()
-        )
         if existing_projection:
             existing_projection.projected_strikeouts = projected_strikeouts
             existing_projection.projected_innings_pitched = innings_pitched

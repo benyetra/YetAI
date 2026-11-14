@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -70,7 +70,8 @@ def test_store_projections_copies_matchup_source_from_pitcher():
         patch.object(dpu, "ev_pick_from_flag", return_value="o"),
         patch.object(dpu, "pick_confidence_pct", return_value=55.0),
     ):
-        dpu.store_projections(date(2026, 8, 5))
+        # run on the slate day itself (a past ET date is frozen)
+        dpu.store_projections(date(2026, 8, 5), now=datetime(2026, 8, 5, 12, 0))
 
     assert existing.matchup_source == "observed"
 
