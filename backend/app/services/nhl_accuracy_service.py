@@ -271,15 +271,16 @@ def _nhl_season_overview_row_sets(
         )
         .all()
     )
-    by_gid = {a.goalie_id: a for a in act_g}
+    # Keyed by game date too: a multi-day window holds several games per goalie.
+    by_gid = {(a.goalie_id, a.game_date): a for a in act_g}
     goalie_rows = [
         {
             "predicted_saves": p.predicted_saves,
             "saves_line": p.saves_line,
             "betting_pick": _parse_pick(p.betting_recommendation),
             "actual_saves": (
-                by_gid.get(p.goalie_id).actual_saves
-                if by_gid.get(p.goalie_id)
+                by_gid.get((p.goalie_id, p.game_date)).actual_saves
+                if by_gid.get((p.goalie_id, p.game_date))
                 else None
             ),
         }
@@ -331,10 +332,10 @@ def _nhl_season_overview_row_sets(
         )
         .all()
     )
-    by_pid = {a.player_id: a for a in act_ps}
+    by_pid = {(a.player_id, a.game_date): a for a in act_ps}
     player_shots: list[dict[str, Any]] = []
     for p in proj_ps:
-        a = by_pid.get(p.player_id)
+        a = by_pid.get((p.player_id, p.game_date))
         player_shots.append(
             {
                 "predicted_shots": p.predicted_shots,
@@ -360,10 +361,10 @@ def _nhl_season_overview_row_sets(
         )
         .all()
     )
-    by_tt = {(a.home_team_name, a.away_team_name): a for a in act_tt}
+    by_tt = {(a.home_team_name, a.away_team_name, a.game_date): a for a in act_tt}
     team_totals: list[dict[str, Any]] = []
     for p in proj_tt:
-        a = by_tt.get((p.home_team_name, p.away_team_name))
+        a = by_tt.get((p.home_team_name, p.away_team_name, p.game_date))
         team_totals.append(
             {
                 "predicted_total_goals": p.predicted_total_goals,
