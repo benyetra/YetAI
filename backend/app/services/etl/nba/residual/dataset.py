@@ -247,6 +247,14 @@ def load_inputs(conn, start, end) -> dict[str, pd.DataFrame]:
     }
 
 
+def load_lines(conn, stat: str, start, end) -> pd.DataFrame:
+    """Lines of record for ``stat`` (player_id, date, line, prices, line_source) in
+    [start, end]: the snapshot table when present, else the projection row's line."""
+    ln = load_inputs(conn, start, end)["lines"]
+    ln = ln[(ln["stat"] == stat) & (ln["date"] >= pd.Timestamp(start))]
+    return ln[ln["date"] <= pd.Timestamp(end)].reset_index(drop=True)
+
+
 # ---------------------------------------------------------------- context
 
 
