@@ -28,6 +28,7 @@ from app.services.etl.wnba._espn import now_eastern
 from app.services.etl.wnba._spread_features import build_game_features
 from app.services.etl.wnba._spread_ml_predict import (
     get_metadata,
+    get_model_version,
     model_available,
     predict_margin,
 )
@@ -161,8 +162,11 @@ def run() -> dict:
                         "method": projection_method,
                     },
                     "model_version": (
-                        model_version_from_metadata(
-                            get_metadata(), prefix="xgb", fallback="xgb-spread-v1"
+                        (
+                            get_model_version()
+                            or model_version_from_metadata(
+                                get_metadata(), prefix="xgb", fallback="xgb-spread-v1"
+                            )
                         )
                         if projection_method == "ml"
                         else "elo-pace-v1"

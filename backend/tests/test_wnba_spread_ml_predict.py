@@ -2,6 +2,11 @@ from unittest.mock import patch
 
 from app.services.etl.wnba import _spread_ml_predict as smp
 from app.services.etl.wnba.ml_training.config import SPREAD_MAE_GATE
+from tests.fake_s3 import Static
+
+
+def _seed(monkeypatch, model, metadata):
+    monkeypatch.setattr(smp, "_OBJECTS", (Static(model), Static(metadata)))
 
 
 def _passing_metadata(**extra):
@@ -16,32 +21,25 @@ def _passing_metadata(**extra):
 
 
 def test_predict_margin_when_model_loaded(monkeypatch):
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-    monkeypatch.setattr(smp, "_METADATA", _passing_metadata())
-
     class FakeModel:
         def predict(self, vec):
             return [3.5]
 
-    monkeypatch.setattr(smp, "_MODEL", FakeModel())
+    _seed(monkeypatch, FakeModel(), _passing_metadata())
 
     margin = smp.predict_margin({"elo_diff": 10.0, "pace_adj": 0.5})
     assert margin == 3.5
 
 
 def test_predict_margin_none_when_not_loaded(monkeypatch):
-    monkeypatch.setattr(smp, "_MODEL", None)
-    monkeypatch.setattr(smp, "_METADATA", None)
-    monkeypatch.setattr(smp, "_LOAD_FAILED", True)
+    _seed(monkeypatch, None, None)
     assert smp.predict_margin({"elo_diff": 1.0}) is None
 
 
 def test_model_available_false_when_quality_gate_fails(monkeypatch):
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-    monkeypatch.setattr(smp, "_MODEL", object())
-    monkeypatch.setattr(
-        smp,
-        "_METADATA",
+    _seed(
+        monkeypatch,
+        object(),
         {
             "features": ["elo_diff"],
             "test_mae": SPREAD_MAE_GATE + 3.0,
@@ -54,11 +52,9 @@ def test_model_available_false_when_quality_gate_fails(monkeypatch):
 
 
 def test_model_available_true_when_force_override(monkeypatch):
-    monkeypatch.setattr(smp, "_LOAD_FAILED", False)
-    monkeypatch.setattr(smp, "_MODEL", object())
-    monkeypatch.setattr(
-        smp,
-        "_METADATA",
+    _seed(
+        monkeypatch,
+        object(),
         {
             "features": ["elo_diff"],
             "validation": {"passes_gate": False},

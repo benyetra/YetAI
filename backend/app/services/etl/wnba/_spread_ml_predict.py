@@ -6,15 +6,13 @@ import json
 import logging
 import os
 import pickle  # nosec B403 - artifacts from our own private bucket
-import tempfile
 import threading
-from pathlib import Path
 
-import boto3
 import numpy as np
 
 from app.services.etl.wnba.ml_training.config import SPREAD_MAE_GATE
 from app.services.etl.wnba.ml_training.validate_spread_model import validate_holdout
+from app.services.ml.model_store import S3Object
 
 logger = logging.getLogger(__name__)
 
@@ -23,51 +21,46 @@ S3_PREFIX = "wnba/ml_models"
 MODEL_KEY = "xgb_spread"
 MIN_TRAINING_ROWS = 40
 
-_MODEL: object | None = None
-_METADATA: dict | None = None
-_LOAD_FAILED = False
+# (model, metadata) S3Objects, built on first use. They re-check S3 on the
+# shared refresh interval and keep the last good copy on any failure.
+_OBJECTS: tuple[S3Object, S3Object] | None = None
 _LOCK = threading.Lock()
 
 _TRUTHY = frozenset({"1", "true", "yes"})
 
 
-def _download_artifact(s3_key: str, local_path: Path) -> None:
-    s3 = boto3.client("s3")
-    s3.download_file(S3_BUCKET, s3_key, str(local_path))
-
-
-def _ensure_loaded() -> bool:
-    global _MODEL, _METADATA, _LOAD_FAILED
-    if _MODEL is not None and _METADATA is not None:
-        return True
-    if _LOAD_FAILED:
-        return False
+def _objects() -> tuple[S3Object, S3Object]:
+    global _OBJECTS
     with _LOCK:
-        if _MODEL is not None and _METADATA is not None:
-            return True
-        if _LOAD_FAILED:
-            return False
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                tmp = Path(tmpdir)
-                model_local = tmp / f"{MODEL_KEY}.pkl"
-                meta_local = tmp / f"{MODEL_KEY}_metadata.json"
-                _download_artifact(f"{S3_PREFIX}/{MODEL_KEY}.pkl", model_local)
-                _download_artifact(f"{S3_PREFIX}/{MODEL_KEY}_metadata.json", meta_local)
-                with model_local.open("rb") as f:
-                    _MODEL = pickle.load(f)  # nosec B301
-                _METADATA = json.loads(meta_local.read_text())
-            return True
-        except Exception as exc:
-            logger.info("WNBA spread ML model unavailable, using Elo+pace: %s", exc)
-            _LOAD_FAILED = True
-            return False
+        if _OBJECTS is None:
+            _OBJECTS = (
+                S3Object(
+                    f"{S3_PREFIX}/{MODEL_KEY}.pkl",
+                    lambda b: pickle.loads(b),  # nosec B301
+                    bucket=S3_BUCKET,
+                ),
+                S3Object(
+                    f"{S3_PREFIX}/{MODEL_KEY}_metadata.json",
+                    json.loads,
+                    bucket=S3_BUCKET,
+                ),
+            )
+        return _OBJECTS
+
+
+def _loaded() -> tuple[object, dict] | None:
+    """(model, metadata) once a model has loaded, else None. Not sticky: a
+    failed load is retried at the next refresh."""
+    model_obj, meta_obj = _objects()
+    model, metadata = model_obj.get(), meta_obj.get()
+    if model is None or metadata is None:
+        return None
+    return model, metadata
 
 
 def get_metadata() -> dict | None:
-    if not _ensure_loaded() or _METADATA is None:
-        return None
-    return dict(_METADATA)
+    loaded = _loaded()
+    return dict(loaded[1]) if loaded else None
 
 
 def passes_quality_gate(metadata: dict | None = None) -> bool:
@@ -93,29 +86,42 @@ def passes_quality_gate(metadata: dict | None = None) -> bool:
 
 def model_available() -> bool:
     """True when S3 model loads AND clears the quality gate (else Elo fallback)."""
-    if not _ensure_loaded():
+    loaded = _loaded()
+    if loaded is None:
         return False
-    if passes_quality_gate(_METADATA):
+    metadata = loaded[1]
+    if passes_quality_gate(metadata):
         return True
     logger.info(
         "WNBA spread ML loaded but failed quality gate; using Elo+pace "
         "(test_mae=%s test_brier=%s). Set WNBA_SPREAD_ML_FORCE=1 to override.",
-        (_METADATA or {}).get("test_mae"),
-        (_METADATA or {}).get("test_brier"),
+        metadata.get("test_mae"),
+        metadata.get("test_brier"),
     )
     return False
 
 
 def get_feature_names() -> list[str]:
-    if not _ensure_loaded() or _METADATA is None:
-        return []
-    return list(_METADATA["features"])
+    loaded = _loaded()
+    return list(loaded[1]["features"]) if loaded else []
 
 
 def predict_margin(features_dict: dict[str, float]) -> float | None:
     """Return projected home margin, or None if model not loaded / gated out."""
-    if not model_available() or _MODEL is None or _METADATA is None:
+    if not model_available():
         return None
-    feature_order = _METADATA["features"]
-    vec = np.array([[float(features_dict.get(f, 0.0)) for f in feature_order]])
-    return float(_MODEL.predict(vec)[0])
+    model, metadata = _loaded()  # type: ignore[misc]
+    vec = np.array([[float(features_dict.get(f, 0.0)) for f in metadata["features"]]])
+    return float(model.predict(vec)[0])
+
+
+def get_model_version() -> str | None:
+    """Manifest version from the gated upload, else the metadata's tag."""
+    loaded = _loaded()
+    if loaded is None:
+        return None
+    version = _objects()[0].version
+    if version:
+        return version
+    tag = str(loaded[1].get("model_version") or "").strip()
+    return tag or None
