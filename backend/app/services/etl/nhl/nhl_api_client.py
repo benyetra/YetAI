@@ -15,15 +15,21 @@ class NHLAPIClient:
         self.base_url = "https://api-web.nhle.com/v1"
         self.stats_url = "https://api.nhle.com/stats/rest/en"
 
-    def _get(self, url):
-        """GET with a timeout and one retry on 429 (honours Retry-After)."""
+    def _get(self, url, retries=4):
+        """GET with a timeout; on 429 back off and retry (honours Retry-After).
+
+        The public API throttles bursts (~25 quick calls, e.g. one roster per team
+        on a full slate), so one short retry is not enough.
+        """
         response = requests.get(url, timeout=10)
-        if response.status_code == 429:
+        for attempt in range(retries):
+            if response.status_code != 429:
+                break
             try:
-                wait = float(response.headers.get("Retry-After", 1.5))
+                wait = float(response.headers.get("Retry-After", 0))
             except (TypeError, ValueError):
-                wait = 1.5
-            time.sleep(min(max(wait, 0.5), 5))
+                wait = 0
+            time.sleep(min(max(wait, 2.0 * 2**attempt), 30))
             response = requests.get(url, timeout=10)
         return response
 
