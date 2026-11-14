@@ -11,8 +11,10 @@ preseason games only, goalie stats summed every season and skater stats held 50 
   2. rebuild pred_nhl_goalies, pred_nhl_team_stats and pred_nhl_players for --season;
   3. check team games played against the league standings (--check-standings).
 
-Relief-goalie actuals and the per-skater/totals actuals come from
-scripts/nhl_recollect_actuals.py (run it after this one for the same season dates).
+This writes starter goalie actuals only. Relief appearances (10+ minutes) come from
+scripts/nhl_recollect_actuals.py: run it after this one for the season's dates, then
+run this script with --apply once more (no new games, about 70 calls) so goalie
+games_played counts them. The 05:00 ET pipeline also rebuilds goalie stats daily.
 
 Dry run is the default: everything runs inside one transaction that is rolled back
 (commits become flushes). Pass --apply to write. Idempotent: a second --apply fetches

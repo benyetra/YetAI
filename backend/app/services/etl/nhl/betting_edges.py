@@ -2,9 +2,11 @@
 Shared DraftKings line vs model edge helpers for NHL daily_predictions.
 
 Shadow calls only. The backtest (scripts/nhl_backtest_2026.py, 2026-27 as-of) found
-no edge threshold whose hit rate clears 52.4% with a Wilson interval: shots, best
-edge >= 0.5 was 55.2% (lower bound 0.457, n=105); totals every threshold below 50%;
-goalie saves has no stored lines to test. The stored calls build the graded record
+no edge threshold whose hit rate clears 52.4% with a Wilson interval for the
+production formulas: shots (K=10 rate) 53.3% at any edge (n=471, lower bound 0.488),
+51.4% at edge >= 0.5 (n=109, 0.421); totals every threshold below 50%; goalie saves
+has no stored lines to test. The thresholds below are therefore not pick
+thresholds: they decide which rows carry a shadow call to grade. The stored calls build the graded record
 that the auto-pick gate and the board read; the board shows no label until that
 record qualifies. The backtest supports no MEDIUM/HIGH tier, so edge_category is
 always None.
