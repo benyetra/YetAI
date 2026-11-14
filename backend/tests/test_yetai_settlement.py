@@ -451,7 +451,12 @@ def sqlite_db():
         return "JSON"
 
     engine = create_engine("sqlite://")
+    from app.models.simple_unified_bet_model import SimpleUnifiedBet
+
     YetAIBet.__table__.create(engine)
+    SimpleUnifiedBet.__table__.create(
+        engine
+    )  # auto admin-expired rows look up user copies
     session = sessionmaker(bind=engine)()
     yield session
     session.close()
@@ -468,8 +473,8 @@ LEGACY_SHAPES = [
     ("queue", "expired", None, False, False),
     ("queue-settled-null", "expired", None, True, False),
     # admin expire endpoint, any status
-    # (manual -> "admin" is moved to void, see below; an auto one cannot be told from a
-    # never-approved queue row, so it stays)
+    # (manual -> "admin" is moved to void, see below; an auto one without a linked user
+    # copy cannot be told from a never-approved queue row, so it stays)
     ("admin", "expired", "Admin expired (stale pick)", True, False),
     ("admin-auto", "expired", "Admin expired (stale pick)", True, False),
     ("unapproved", "expired", "Auto-expired (unapproved)", True, False),

@@ -23,7 +23,6 @@ from app.models.database_models import (
 from app.models.bet_models import (
     CreateYetAIBetRequest,
     CreateParlayBetRequest,
-    UpdateYetAIBetRequest,
     BetStatus,
     YetAIBetType,
 )
@@ -156,7 +155,8 @@ def _yetai_anchor_game_day(bet: YetAIBet) -> date:
 def game_date_for_yetai_bet(bet: YetAIBet) -> date:
     """Best-effort game date for prop/stat lookups."""
     if bet.commence_time:
-        return _naive_utc(bet.commence_time).date()
+        ct = _naive_utc(bet.commence_time).replace(tzinfo=timezone.utc)
+        return ct.astimezone(_ET).date()  # same ET day as yetai_grading.game_day_for
     factors = bet.prediction_factors if isinstance(bet.prediction_factors, dict) else {}
     event_id = str(factors.get("event_id") or "")
     match = PROP_EVENT_DATE_RE.search(event_id)
@@ -1005,41 +1005,8 @@ class YetAIBetsServiceDB:
             logger.error(f"Error getting all bets: {e}")
             return []
 
-    async def update_bet(
-        self, bet_id: str, update_request: UpdateYetAIBetRequest, admin_user_id: int
-    ) -> Dict:
-        """Update a YetAI Bet (settle, update status, etc.) in database"""
-        try:
-            db = SessionLocal()
-            try:
-                bet = db.query(YetAIBet).filter(YetAIBet.id == bet_id).first()
-
-                if not bet:
-                    return {"success": False, "error": "Bet not found"}
-
-                if update_request.status:
-                    bet.status = update_request.status
-                    if update_request.status in ["won", "lost", "pushed"]:
-                        bet.settled_at = datetime.utcnow()
-
-                if update_request.result:
-                    bet.result = update_request.result
-
-                db.commit()
-
-                logger.info(f"Updated YetAI Bet: {bet_id} by admin {admin_user_id}")
-
-                return {"success": True, "message": "Bet updated successfully"}
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Error updating bet: {e}")
-            return {"success": False, "error": "Failed to update bet"}
-
     async def delete_bet(self, bet_id: str, admin_user_id: int) -> Dict:
-        """Delete a YetAI Bet from database and associated bet history"""
+        """Delete a never-shown YetAI Bet (pending_approval/rejected) and its bet history"""
         try:
             db = SessionLocal()
             try:
@@ -1047,6 +1014,15 @@ class YetAIBetsServiceDB:
 
                 if not bet:
                     return {"success": False, "error": "Bet not found"}
+
+                if bet.status not in ("pending_approval", "rejected"):
+                    return {
+                        "success": False,
+                        "code": 409,
+                        "error": "This bet was shown to users; pull it instead "
+                        "(POST /api/admin/yetai-picks/{id}/reject) so it stays in "
+                        "history as void.",
+                    }
 
                 # Also delete any associated bet history records
                 from app.models.database_models import BetHistory
@@ -1074,41 +1050,6 @@ class YetAIBetsServiceDB:
         except Exception as e:
             logger.error(f"Error deleting bet: {e}")
             return {"success": False, "error": "Failed to delete bet"}
-
-    async def get_performance_stats(self) -> Dict:
-        """Calculate performance statistics for YetAI Bets from database"""
-        try:
-            db = SessionLocal()
-            try:
-                all_bets = db.query(YetAIBet).all()
-
-                if not all_bets:
-                    return {"total_bets": 0, "win_rate": 0, "pending_bets": 0}
-
-                settled_bets = [
-                    bet for bet in all_bets if bet.status in ["won", "lost"]
-                ]
-                won_bets = [bet for bet in settled_bets if bet.status == "won"]
-                pending_bets = [bet for bet in all_bets if bet.status == "pending"]
-
-                win_rate = (
-                    (len(won_bets) / len(settled_bets) * 100) if settled_bets else 0
-                )
-
-                return {
-                    "total_bets": len(all_bets),
-                    "settled_bets": len(settled_bets),
-                    "won_bets": len(won_bets),
-                    "pending_bets": len(pending_bets),
-                    "win_rate": round(win_rate, 1),
-                }
-
-            finally:
-                db.close()
-
-        except Exception as e:
-            logger.error(f"Error calculating performance stats: {e}")
-            return {"total_bets": 0, "win_rate": 0, "pending_bets": 0}
 
     def _yetai_bet_to_dict(self, bet: YetAIBet) -> Dict:
         """Convert YetAIBet model to dictionary"""
@@ -1228,16 +1169,19 @@ class YetAIBetsServiceDB:
             ),
         )
 
-    @staticmethod
-    def _admin_expired_shown(bet: YetAIBet) -> bool:
-        """Manual pick an admin (or the reopen script) expired: manual picks are created
-        pending, so users had seen it. Auto picks cannot be told apart from never-approved
-        queue rows, so they are left alone."""
-        source = getattr(bet.source, "value", bet.source)
-        return (
+    def _admin_expired_shown(self, db: Session, bet: YetAIBet) -> bool:
+        """Pick an admin (or the reopen script) expired that users had seen. Manual picks
+        are created pending, so always shown. Auto picks look the same as never-approved
+        queue rows, except when a user placed a copy (linked bet): that proves it was shown.
+        Nothing writes "expired" any more; this only sweeps old rows."""
+        if not (
             (bet.status or "").lower() == "expired"
             and (bet.result or "").lower().startswith("admin expired")
-            and source == BetSource.MANUAL.value
+        ):
+            return False
+        source = getattr(bet.source, "value", bet.source)
+        return source == BetSource.MANUAL.value or bool(
+            self._linked_unified_bets_for_yetai_pick(db, bet)
         )
 
     @classmethod
@@ -1280,10 +1224,10 @@ class YetAIBetsServiceDB:
             .filter(
                 YetAIBet.status == "expired",
                 YetAIBet.result.ilike("Admin expired%"),
-                YetAIBet.source == BetSource.MANUAL,
             )
             .all()
         )
+        admin_expired = [b for b in admin_expired if self._admin_expired_shown(db, b)]
         seen = set()
         return [
             b
@@ -1309,7 +1253,7 @@ class YetAIBetsServiceDB:
         from app.services import yetai_parlay_verification as parlays
 
         status = (bet.status or "").lower()
-        if self._admin_expired_shown(bet):
+        if self._admin_expired_shown(db, bet):
             bet.status = "void"  # keeps the admin's reason in `result`
             bet.settled_at = bet.settled_at or now
             logger.info("YETAI_ADMIN_EXPIRED_TO_VOID bet=%s", bet.id)
