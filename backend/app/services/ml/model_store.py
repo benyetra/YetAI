@@ -77,7 +77,7 @@ class S3Object:
         self._clock = clock
         self._lock = threading.Lock()
         self._obj: Any = None
-        self._token: str | None = None
+        self._token: tuple | None = None
         self._checked: float | None = None
         self._last_ok = False
         self.manifest: dict | None = None
@@ -113,18 +113,14 @@ class S3Object:
     def _refresh(self) -> None:
         """Object + manifest are one unit: swap both in only when both loaded.
 
-        Uploads write the manifest last, so when one exists its ETag is the
-        change signal (a model seen mid-upload is reloaded once the manifest
-        lands). Without a manifest (legacy / rolled-back model) the object's
-        own ETag is the signal.
+        The change token is (object ETag, manifest ETag or None): a model written
+        by a path that writes no manifest (manual upload, older workflow) is still
+        noticed, and a manifest landing after the model is too.
         """
         s3 = boto3.client("s3", config=_LOADER_S3_CONFIG)
         mkey = manifest_key(self.key)
         m_token = self._head_token(s3, mkey)
-        if m_token:
-            token = f"manifest:{m_token}"
-        else:
-            token = f"object:{self._head_token(s3, self.key)}"
+        token = (self._head_token(s3, self.key), m_token)
         if self._obj is not None and token == self._token:
             return
         manifest = None

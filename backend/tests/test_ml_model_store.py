@@ -105,6 +105,15 @@ def test_manifest_is_reread_each_interval_even_if_model_etag_same(s3):
     assert o.version == "xgb-2"
 
 
+def test_model_overwritten_without_a_manifest_change_is_reloaded(s3):
+    s3.put(KEY, b"m1", "e1")
+    s3.put(MAN, json.dumps({"version": "xgb-1"}).encode(), "e1")
+    o = _obj()
+    assert o.get() == "m1"
+    s3.put(KEY, b"m2", "e2")  # manual upload: manifest untouched
+    assert o.get() == "m2"
+
+
 def test_unreadable_manifest_keeps_last_good_set(s3):
     s3.put(KEY, b"m", "e1")
     s3.put(MAN, json.dumps({"version": "xgb-1"}).encode(), "e1")
