@@ -1,4 +1,4 @@
-"""End-to-end WNBA prop XGB retrain: dataset → train → MAE gate → optional S3 upload."""
+"""End-to-end WNBA prop XGB retrain: dataset → train → MAE gate → champion-gated S3 upload."""
 
 from __future__ import annotations
 
@@ -8,7 +8,6 @@ from typing import Any
 
 import numpy as np
 from sklearn.metrics import mean_absolute_error  # type: ignore
-from sklearn.model_selection import train_test_split  # type: ignore
 
 from app.services.etl.wnba.ml_training import (
     build_training_dataset,
@@ -18,6 +17,7 @@ from app.services.etl.wnba.ml_training import (
 )
 from app.services.etl.wnba.ml_training.config import WNBA_ML_CONFIG
 from app.services.etl.wnba.prop_calibration import fit_residual_calibration
+from app.services.ml.train_model import split
 from app.services.ml_model_version import model_version_from_metadata
 
 logger = logging.getLogger(__name__)
@@ -81,12 +81,15 @@ def run(
             "season_end": season_end.isoformat(),
         }
 
-    model, metadata = train_model.train(stat_col, features_df, target)
-    metadata = _enrich_metadata(stat_col, metadata)
-
-    _, X_hold, _, y_hold = train_test_split(
-        features_df, target, test_size=0.2, random_state=42
+    # Chronological: the builder emits rows in date order, so the holdout is
+    # games after the ones the model learned from.
+    model, metadata = train_model.train(
+        stat_col, features_df, target, chronological=True
     )
+    metadata = _enrich_metadata(stat_col, metadata)
+    metadata["data_window"] = f"{season_start}..{season_end}"
+
+    _, X_hold, _, y_hold = split(features_df, target, chronological=True)
     holdout_preds = model.predict(X_hold)
     holdout_mae = float(mean_absolute_error(y_hold, holdout_preds))
     metadata["holdout_mae"] = holdout_mae
@@ -98,7 +101,9 @@ def run(
     )
     metadata["prop_calibration"] = cal_params.to_dict()
 
-    validation = validate_model.validate(stat_col, model, features_df, target)
+    # Judge on the holdout only: validating on every row would include the 80%
+    # the model trained on.
+    validation = validate_model.validate(stat_col, model, X_hold, y_hold)
     metadata["validation"] = validation
 
     if not validation["passes_gate"]:
@@ -126,7 +131,26 @@ def run(
     }
 
     if upload:
-        keys = upload_to_s3.upload(stat_col, model, metadata)
-        result["s3_keys"] = keys
+        # Only replace the live model if it is not worse on this same holdout.
+        out = upload_to_s3.upload_gated(
+            stat_col,
+            model,
+            metadata,
+            candidate_metric=validation["mae"],
+            score_champion=upload_to_s3.live_scorer(stat_col, X_hold, y_hold),
+        )
+        result["gate"] = out
+        if out["status"] == "rejected_by_champion":
+            logger.warning(
+                "WNBA %s candidate rejected: holdout MAE %.3f vs live %.3f",
+                stat_col,
+                out["candidate_metric"],
+                out["champion_metric"],
+            )
+            result["status"] = "rejected_by_champion"
+        else:
+            result["s3_keys"] = {
+                k: out[k] for k in ("model_key", "metadata_key", "manifest_key")
+            }
 
     return result

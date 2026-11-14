@@ -77,9 +77,27 @@ def score_live_mae(
     candidate's holdout, using the live model's own feature list (from its
     stored metadata). Features the holdout lacks are filled with ``fill``
     (0 for props, as predict does; NaN for the spread model)."""
+    return score_live_pickle(
+        f"{config.s3_prefix}/xgb_{stat_col}_metadata.json",
+        X_hold,
+        y_hold,
+        fill=fill,
+    )
+
+
+def score_live_pickle(
+    meta_key: str,
+    X_hold: pd.DataFrame,
+    y_hold: Any,
+    *,
+    fill: float = 0.0,
+) -> Callable[[bytes], float]:
+    """``score_champion`` for any pickled regressor whose metadata JSON (at
+    ``meta_key``) lists its features. Totals residual models use this too: the
+    residual MAE equals the full-total MAE, since actual - (heuristic + pred)
+    is the residual target minus the residual prediction."""
 
     def score(live_body: bytes) -> float:
-        meta_key = f"{config.s3_prefix}/xgb_{stat_col}_metadata.json"
         raw = model_store.get_bytes(boto3.client("s3"), S3_BUCKET, meta_key)
         if raw is None:
             raise ValueError(f"live metadata {meta_key} missing")
@@ -99,6 +117,36 @@ def score_live_mae(
         return float(np.mean(np.abs(pred - np.asarray(y_hold, dtype=float))))
 
     return score
+
+
+def upload_gated_pickle(
+    model_key: str,
+    model: Any,
+    metadata: dict[str, Any],
+    *,
+    candidate_metric: float,
+    score_champion: Callable[[bytes], float],
+    metric_name: str = "holdout_mae",
+) -> dict:
+    """``upload_gated`` for a model with its own key (``<name>.pkl`` +
+    ``<name>_metadata.json``), e.g. the totals residual models."""
+    meta_key = f"{model_key.rsplit('.', 1)[0]}_metadata.json"
+    out = model_store.gated_upload(
+        model_key,
+        pickle.dumps(model),
+        candidate_metric=candidate_metric,
+        metric_name=metric_name,
+        score_champion=score_champion,
+        extra_files={
+            meta_key.rsplit("/", 1)[-1]: json.dumps(
+                metadata, indent=2, default=str
+            ).encode()
+        },
+        manifest_extra={"data_window": metadata.get("data_window")},
+    )
+    if out["status"] != "rejected_by_champion":
+        out["metadata_key"] = meta_key
+    return out
 
 
 def upload_gated(
