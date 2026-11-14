@@ -85,7 +85,7 @@ export default function AdminYetaiBetsManage({ refreshToken = 0 }: AdminYetaiBet
     const s = (bet.status || '').toLowerCase();
     if (filter === 'all') return true;
     if (filter === 'live') return s === 'pending' || s === 'active';
-    if (filter === 'settled') return s === 'won' || s === 'lost' || s === 'pushed';
+    if (filter === 'settled') return s === 'won' || s === 'lost' || s === 'pushed' || s === 'void';
     if (filter === 'pending_approval') return s === 'pending_approval';
     if (filter === 'rejected') return s === 'rejected' || s === 'expired';
     return true;
