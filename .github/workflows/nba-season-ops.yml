@@ -6,9 +6,9 @@ name: NBA Season Ops
 #   (dry run unless apply is checked).
 # refresh-roster-projections: update_team_roster + totals/spread projectors run
 #   from the runner against prod (no worker deploy needed).
-# repair-recent-game-dates: re-file pred_recent_games under each game's Eastern
-#   date (backs up, deletes, re-pulls per season; dry run unless apply is
-#   checked). Set `seasons` (league start years, e.g. 2026 or 2024,2025,2026).
+# repair-recent-game-dates: re-date and de-duplicate pred_recent_games against the
+#   ESPN finals in pred_nba_spread_actuals (no API calls; dry run unless apply is
+#   checked).
 # Same secrets/services as enqueue-wnba-pipeline.yml and nba-train-props.yml.
 
 on:
@@ -42,10 +42,6 @@ on:
         description: Prop stat (props-experiment only)
         required: false
         default: points
-      seasons:
-        description: League start years (repair-recent-game-dates only, e.g. 2026 or 2025,2026)
-        required: false
-        default: "2026"
       apply:
         description: Write changes (backfill and repair only; otherwise dry run)
         required: false
@@ -234,13 +230,11 @@ jobs:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
           POSTGRES_SERVICE_ID: 421f0104-94c9-478a-8f11-d19955df0d37
           DEBUG: "false"
-          SEASONS: ${{ inputs.seasons }}
           APPLY: ${{ inputs.apply && '--apply' || '' }}
         run: |
           set -euo pipefail
           export DATABASE_URL="$(python3 scripts/resolve_railway_database_url.py)"
-          export NBA_API_KEY="$(python3 scripts/resolve_railway_variable.py NBA_API_KEY)"
-          PYTHONPATH=. python3 scripts/nba_recent_games_date_repair.py --seasons "$SEASONS" $APPLY
+          PYTHONPATH=. python3 scripts/nba_recent_games_redate.py $APPLY
 
       - name: Upload verify log
         if: inputs.action == 'verify'
