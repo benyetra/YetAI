@@ -39,15 +39,17 @@ def upgrade() -> None:
         # Fail fast if a running pipeline holds one of the tables, so the tables
         # already altered in this transaction are not left locked; safe to re-run.
         op.execute("SET LOCAL lock_timeout = '5s'")
+        # 64 wide: some writers stamp a raw metadata tag (an ISO timestamp is over
+        # 20 chars) and Postgres rejects an over-length value instead of truncating.
         for table in TABLES:
             op.execute(
-                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_version VARCHAR(20)"
+                f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS model_version VARCHAR(64)"
             )
         return
     inspector = sa.inspect(bind)
     for table in TABLES:
         if "model_version" not in {c["name"] for c in inspector.get_columns(table)}:
-            op.add_column(table, sa.Column("model_version", sa.String(20)))
+            op.add_column(table, sa.Column("model_version", sa.String(64)))
 
 
 def downgrade() -> None:
