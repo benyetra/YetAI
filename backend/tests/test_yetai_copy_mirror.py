@@ -265,3 +265,63 @@ def test_open_pick_leaves_live_copy_live(db):
     row = copy(db, status=BetStatus.LIVE)
     assert not YetAIBetsServiceDB().sync_unified_from_yetai_pick(db, p, row)
     assert row.status == BetStatus.LIVE
+
+
+# ---- A6: a failing mirror must not block the pick's own settlement ----
+def test_mirror_failure_does_not_block_pick_settlement(db):
+    from sqlalchemy import text
+
+    p = pick(db)
+    c = copy(db)
+
+    def broken(self, session, yetai):
+        session.execute(text("select * from table_that_does_not_exist"))
+
+    with patch.object(YetAIBetsServiceDB, "mirror_to_linked_copies", broken):
+        settle(db, "won")
+    assert p.status == "won" and p.settled_at is not None
+    assert c.status == BetStatus.PENDING  # page-load sync catches it up later
+    assert db.query(YetAIBet).count() == 1  # session still usable
+    # next cycle (mirror healthy again) catches the copy up through the same path
+    YetAIBetsServiceDB().mirror_to_linked_copies(db, p)
+    assert c.status == BetStatus.WON
+
+
+# ---- A7: copies of picks that were never published / pulled get cancelled ----
+@pytest.mark.parametrize(
+    "kw",
+    [
+        {"status": "rejected"},
+        {"status": "expired", "result": None, "settled_at": None},
+        {"status": "expired", "result": "Auto-expired (unapproved)", "settled_at": None},
+        # unapproved queue pick past its start: the settle run rejects it first
+        {"status": "pending_approval", "commence_time": NOW - timedelta(hours=3)},
+    ],
+)
+def test_copy_of_pulled_or_unpublished_pick_is_cancelled_with_stake_back(db, kw):
+    pick(db, **kw)
+    c = copy(db)
+    settle(db, "won")  # grader must not be what decides this
+    assert c.status == BetStatus.CANCELLED and c.result_amount == 100.0
+    assert c.settled_at is not None
+
+
+def test_copy_of_pending_approval_pick_before_start_stays_open(db):
+    pick(db, status="pending_approval", commence_time=NOW + timedelta(hours=3))
+    c = copy(db)
+    settle(db, "won")
+    assert c.status == BetStatus.PENDING
+
+
+def test_page_load_sync_cancels_copy_of_rejected_pick(db):
+    p = pick(db, status="rejected")
+    c = copy(db)
+    assert YetAIBetsServiceDB().sync_unified_from_yetai_pick(db, p, c) is True
+    assert c.status == BetStatus.CANCELLED and c.result_amount == 100.0
+    assert YetAIBetsServiceDB().sync_unified_from_yetai_pick(db, p, c) is False
+
+
+def test_graded_copy_of_rejected_pick_is_left_alone(db):
+    p = pick(db, status="rejected")
+    c = copy(db, status=BetStatus.WON, result_amount=190.0)
+    assert YetAIBetsServiceDB().sync_unified_from_yetai_pick(db, p, c) is False

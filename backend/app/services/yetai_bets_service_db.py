@@ -801,12 +801,23 @@ class YetAIBetsServiceDB:
             unified_bet.result_amount = None
             unified_bet.reasoning = None
             return True
-        if yetai_status not in {"won", "lost", "pushed", "void"}:
+        pulled = yetai_status in {"rejected", "expired"}
+        if pulled:
+            # Never published, or pulled before it was shown: nobody will grade the
+            # copy, so an open one is cancelled with the stake back, like a void.
+            # (Expired rows the sweep still grades or voids are left to it.)
+            if unified_bet.status not in (UnifiedBetStatus.PENDING, UnifiedBetStatus.LIVE):
+                return False
+            if yetai_status == "expired" and (
+                self._legacy_sweepable(yetai) or self._admin_expired_shown(db, yetai)
+            ):
+                return False
+        elif yetai_status not in {"won", "lost", "pushed", "void"}:
             return False
 
         # A voided pick (postponed, DNP, ungradeable) refunds the placed bet: the
         # unified model's no-action status is CANCELLED with the stake returned.
-        void = yetai_status == "void"
+        void = pulled or yetai_status == "void"
         target = UnifiedBetStatus.CANCELLED if void else UnifiedBetStatus(yetai_status)
         if unified_bet.status == target:
             return False
@@ -814,7 +825,11 @@ class YetAIBetsServiceDB:
         unified_bet.status = target
         unified_bet.settled_at = yetai.settled_at or datetime.utcnow()
         note = (yetai.result or "").strip()
-        unified_bet.reasoning = note or f"Graded from YetAI pick ({yetai_status})"
+        unified_bet.reasoning = note or (
+            f"YetAI pick withdrawn ({yetai_status}); stake returned"
+            if pulled
+            else f"Graded from YetAI pick ({yetai_status})"
+        )
 
         if target == UnifiedBetStatus.WON:
             unified_bet.result_amount = unified_bet.amount + unified_bet.potential_win
@@ -834,6 +849,15 @@ class YetAIBetsServiceDB:
             self.sync_unified_from_yetai_pick(db, yetai, copy)
             for copy in self._linked_unified_bets_for_yetai_pick(db, yetai)
         )
+
+    def _mirror_in_savepoint(self, db: Session, yetai: YetAIBet) -> None:
+        """Mirror inside a savepoint: a failing copy must not roll back (and so retry
+        forever) the pick's own settlement. The page-load sync is the catch-up."""
+        try:
+            with db.begin_nested():
+                self.mirror_to_linked_copies(db, yetai)
+        except Exception:
+            logger.exception("YETAI_MIRROR_FAILED pick=%s (pick still settles)", yetai.id)
 
     def sync_linked_unified_for_user(self, db: Session, user_id: int) -> int:
         """Align placed bets with their linked YetAI pick outcomes for one user."""
@@ -1278,9 +1302,42 @@ class YetAIBetsServiceDB:
         seen = set()
         return [
             b
-            for b in [*rows, *legacy, *admin_expired]
+            for b in [*rows, *legacy, *admin_expired, *self._pulled_with_open_copies(db)]
             if not (b.id in seen or seen.add(b.id))
         ]
+
+    @staticmethod
+    def _pulled_with_open_copies(db: Session) -> List[YetAIBet]:
+        """Rejected/expired picks that still have a PENDING/LIVE linked copy."""
+        from app.models.simple_unified_bet_model import BetStatus as UnifiedBetStatus
+        from app.models.simple_unified_bet_model import SimpleUnifiedBet
+
+        prefix = "yetai-pick-"
+        open_copies = (
+            db.query(SimpleUnifiedBet.yetai_bet_id, SimpleUnifiedBet.odds_api_event_id)
+            .filter(
+                SimpleUnifiedBet.status.in_(
+                    [UnifiedBetStatus.PENDING, UnifiedBetStatus.LIVE]
+                )
+            )
+            .filter(
+                or_(
+                    SimpleUnifiedBet.yetai_bet_id.isnot(None),
+                    SimpleUnifiedBet.odds_api_event_id.like(f"{prefix}%"),
+                )
+            )
+            .all()
+        )
+        ids = {
+            yid or (event or "")[len(prefix):] for yid, event in open_copies
+        } - {""}
+        if not ids:
+            return []
+        return (
+            db.query(YetAIBet)
+            .filter(YetAIBet.id.in_(ids), YetAIBet.status.in_(["rejected", "expired"]))
+            .all()
+        )
 
     @staticmethod
     def _load_for_settlement(db: Session, bet_id: str) -> Optional[YetAIBet]:
@@ -1304,8 +1361,11 @@ class YetAIBetsServiceDB:
             bet.status = "void"  # keeps the admin's reason in `result`
             bet.settled_at = bet.settled_at or now
             logger.info("YETAI_ADMIN_EXPIRED_TO_VOID bet=%s", bet.id)
-            self.mirror_to_linked_copies(db, bet)
+            self._mirror_in_savepoint(db, bet)
             return "void"
+        if status in ("rejected", "expired") and not self._legacy_sweepable(bet):
+            self._mirror_in_savepoint(db, bet)  # cancel any open copy (A7)
+            return "skipped"
         legacy = status in self.LEGACY_STATUSES
         error_loss = status == "lost" and self._is_retryable_error_loss(bet)
         if not (status in YETAI_UNSETTLED_STATUSES or legacy or error_loss):
@@ -1386,7 +1446,7 @@ class YetAIBetsServiceDB:
         bet.status = kind
         bet.settled_at = now
         bet.result = clamp_yetai_result(text, max_len=200)
-        self.mirror_to_linked_copies(db, bet)  # same transaction as the pick
+        self._mirror_in_savepoint(db, bet)
         return "void" if kind == "void" else "settled"
 
     def _record_settlement_error(
