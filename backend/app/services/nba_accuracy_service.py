@@ -167,6 +167,14 @@ def _prop_rows(
     return out
 
 
+def _nba_season_window_rows(
+    db: Session, *, start: date_type, end: date_type
+) -> list[tuple[str, str, list[dict[str, Any]], dict[str, int]]]:
+    """(bucket key, label, merged rows, merge stats) per prop over a window."""
+    props = _prop_rows(db, start=start, end=end)
+    return [(bk, label, *props[rk]) for rk, bk, label, *_ in _PROPS]
+
+
 def _upper(value: Any) -> str:
     return str(value or "").strip().upper()
 

@@ -128,8 +128,12 @@ def test_nba_accuracy_by_model_version():
             ),
         ],
         "PointsActuals": [
-            SimpleNamespace(player_id=1, actual_points=20.0),
-            SimpleNamespace(player_id=2, actual_points=14.0),
+            SimpleNamespace(
+                player_id=1, date=date(2026, 5, 23), actual_points=20.0
+            ),
+            SimpleNamespace(
+                player_id=2, date=date(2026, 5, 23), actual_points=14.0
+            ),
         ],
     }
     db = MagicMock()

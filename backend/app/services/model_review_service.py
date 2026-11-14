@@ -102,6 +102,8 @@ def _nba_props(db, start, end) -> Loaded:
     }
     out: Loaded = {}
     for part, _label, rows, _merge in _nba_season_window_rows(db, start=start, end=end):
+        if part not in stats:
+            continue
         stat, pf, af, cls = stats[part]
         out[("NBA", "player_prop", stat)] = (
             "ou",

@@ -193,6 +193,8 @@ def _nba_props(db, start, end):
 
     out = {}
     for part, _label, rows, _merge in _nba_season_window_rows(db, start=start, end=end):
+        if part not in _NBA_PROP_STATS:
+            continue
         stat, actual_field = _NBA_PROP_STATS[part]
         hits, n = ou_call_graded_counts(
             rows,
