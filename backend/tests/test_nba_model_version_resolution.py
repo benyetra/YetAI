@@ -28,6 +28,7 @@ def _players(n=3):
 
 @pytest.mark.parametrize("mod", [steals, threes])
 def test_prop_version_resolved_once_not_per_player(mod, monkeypatch):
+    monkeypatch.setenv("NBA_LAST10_PROPS", "0")  # model path under test
     db = MagicMock()
     db.query.return_value.filter.return_value.first.return_value = None
     monkeypatch.setattr(mod, "SessionLocal", lambda: db)

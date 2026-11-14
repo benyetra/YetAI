@@ -1192,6 +1192,8 @@ class RecentGames(Base):
 
     # Game context
     home_game = Column(Boolean, nullable=True)  # True if home game, False if away
+    # API-Sports game id: identifies the game regardless of which date it was filed under
+    api_game_id = Column(Integer, nullable=True)
 
     # Advanced metrics
     true_shooting_percentage = Column(Float, nullable=True)
@@ -1224,6 +1226,9 @@ class RecentGames(Base):
     __table_args__ = (
         UniqueConstraint(
             "player_id", "game_date", name="unique_recent_games_player_game_date"
+        ),
+        UniqueConstraint(
+            "player_id", "api_game_id", name="uq_recent_games_player_api_game"
         ),
     )
 
@@ -1360,6 +1365,7 @@ class FreeThrowPredictions(Base):
     actual_free_throws = Column(Float, nullable=True)  # Optional for validation
     minutes_played = Column(Float, nullable=True)  # Actual minutes in the game
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    model_version = Column(String(64), nullable=True)
 
     def __repr__(self):
         return f"<FreeThrowPredictions Player ID: {self.player_id}, Predicted: {self.predicted_free_throws}>"
@@ -1438,6 +1444,7 @@ class BlocksProjections(Base):
     player_name = Column(String(100), nullable=False)
     opponent_team_name = Column(String(100), nullable=False)
     projected_blocks = Column(Float, nullable=False)
+    model_version = Column(String(64), nullable=True)
 
 
 class BlocksActuals(Base):

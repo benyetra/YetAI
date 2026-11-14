@@ -262,6 +262,7 @@ def _collect_player_games(
                     (game.get("teams", {}).get("home") or {}).get("id"),
                     (game.get("teams", {}).get("visitors") or {}).get("id"),
                 )
+                fields["api_game_id"] = (line.get("game") or {}).get("id")
                 if fields["minutes"] is not None:  # skip did-not-play lines
                     rows[(pid, game_date)] = fields
             time.sleep(0.2)
