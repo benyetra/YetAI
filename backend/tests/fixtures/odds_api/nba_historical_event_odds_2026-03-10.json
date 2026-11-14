@@ -1,0 +1,563 @@
+{
+ "path": "/historical/sports/basketball_nba/events/e989d01a7b748cf7e0c892b5259ea99d/odds",
+ "params": {
+  "date": "2026-03-10T18:10:00Z",
+  "regions": "us",
+  "markets": "player_rebounds",
+  "bookmakers": "fanduel,draftkings,betmgm,williamhill_us,fanatics,espnbet,betrivers,hardrockbet,pinnacle,ballybet",
+  "oddsFormat": "american"
+ },
+ "status": 200,
+ "headers": {
+  "x-requests-last": "10",
+  "x-requests-used": "31",
+  "x-requests-remaining": "99969"
+ },
+ "body": {
+  "timestamp": "2026-03-10T18:05:37Z",
+  "previous_timestamp": "2026-03-10T18:00:46Z",
+  "next_timestamp": "2026-03-10T18:10:38Z",
+  "data": {
+   "id": "e989d01a7b748cf7e0c892b5259ea99d",
+   "sport_key": "basketball_nba",
+   "sport_title": "NBA",
+   "commence_time": "2026-03-11T00:10:00Z",
+   "home_team": "San Antonio Spurs",
+   "away_team": "Boston Celtics",
+   "bookmakers": [
+    {
+     "key": "fanduel",
+     "title": "FanDuel",
+     "last_update": "2026-03-10T18:05:06Z",
+     "markets": [
+      {
+       "key": "player_rebounds",
+       "last_update": "2026-03-10T18:05:11Z",
+       "outcomes": [
+        {
+         "name": "Over",
+         "description": "Julian Champagnie",
+         "price": -162,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Julian Champagnie",
+         "price": 122,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Keldon Johnson",
+         "price": -152,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Keldon Johnson",
+         "price": 114,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Baylor Scheierman",
+         "price": -172,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Baylor Scheierman",
+         "price": 128,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Devin Vassell",
+         "price": -136,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Devin Vassell",
+         "price": 102,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Derrick White",
+         "price": 120,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Derrick White",
+         "price": -160,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Victor Wembanyama",
+         "price": -136,
+         "point": 10.5
+        },
+        {
+         "name": "Under",
+         "description": "Victor Wembanyama",
+         "price": 102,
+         "point": 10.5
+        },
+        {
+         "name": "Over",
+         "description": "Jayson Tatum",
+         "price": -122,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jayson Tatum",
+         "price": -108,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Sam Hauser",
+         "price": 116,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Sam Hauser",
+         "price": -154,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Neemias Queta",
+         "price": 106,
+         "point": 9.5
+        },
+        {
+         "name": "Under",
+         "description": "Neemias Queta",
+         "price": -140,
+         "point": 9.5
+        },
+        {
+         "name": "Over",
+         "description": "Jaylen Brown",
+         "price": -114,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jaylen Brown",
+         "price": -114,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Stephon Castle",
+         "price": -102,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Stephon Castle",
+         "price": -130,
+         "point": 4.5
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "draftkings",
+     "title": "DraftKings",
+     "last_update": "2026-03-10T18:05:32Z",
+     "markets": [
+      {
+       "key": "player_rebounds",
+       "last_update": "2026-03-10T18:06:13Z",
+       "outcomes": [
+        {
+         "name": "Over",
+         "description": "Victor Wembanyama",
+         "price": -137,
+         "point": 10.5
+        },
+        {
+         "name": "Under",
+         "description": "Victor Wembanyama",
+         "price": 104,
+         "point": 10.5
+        },
+        {
+         "name": "Over",
+         "description": "Neemias Queta",
+         "price": -139,
+         "point": 8.5
+        },
+        {
+         "name": "Under",
+         "description": "Neemias Queta",
+         "price": 106,
+         "point": 8.5
+        },
+        {
+         "name": "Over",
+         "description": "Jayson Tatum",
+         "price": -118,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jayson Tatum",
+         "price": -111,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Jaylen Brown",
+         "price": -116,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jaylen Brown",
+         "price": -113,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Julian Champagnie",
+         "price": -151,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Julian Champagnie",
+         "price": 114,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Baylor Scheierman",
+         "price": 105,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Baylor Scheierman",
+         "price": -138,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Stephon Castle",
+         "price": 106,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Stephon Castle",
+         "price": -139,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Derrick White",
+         "price": 114,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Derrick White",
+         "price": -150,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Keldon Johnson",
+         "price": -157,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Keldon Johnson",
+         "price": 119,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Devin Vassell",
+         "price": -129,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Devin Vassell",
+         "price": -102,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Sam Hauser",
+         "price": 116,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Sam Hauser",
+         "price": -152,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "De'Aaron Fox",
+         "price": -167,
+         "point": 2.5
+        },
+        {
+         "name": "Under",
+         "description": "De'Aaron Fox",
+         "price": 126,
+         "point": 2.5
+        },
+        {
+         "name": "Over",
+         "description": "Dylan Harper",
+         "price": -119,
+         "point": 2.5
+        },
+        {
+         "name": "Under",
+         "description": "Dylan Harper",
+         "price": -110,
+         "point": 2.5
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "betrivers",
+     "title": "BetRivers",
+     "last_update": "2026-03-10T18:05:33Z",
+     "markets": [
+      {
+       "key": "player_rebounds",
+       "last_update": "2026-03-10T18:06:10Z",
+       "outcomes": [
+        {
+         "name": "Over",
+         "description": "Neemias Queta",
+         "price": 102,
+         "point": 9.5
+        },
+        {
+         "name": "Under",
+         "description": "Neemias Queta",
+         "price": -139,
+         "point": 9.5
+        },
+        {
+         "name": "Over",
+         "description": "Julian Champagnie",
+         "price": -157,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Julian Champagnie",
+         "price": 115,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Stephon Castle",
+         "price": 116,
+         "point": 4.5
+        },
+        {
+         "name": "Under",
+         "description": "Stephon Castle",
+         "price": -157,
+         "point": 4.5
+        },
+        {
+         "name": "Over",
+         "description": "Devin Vassell",
+         "price": -139,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Devin Vassell",
+         "price": 104,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Baylor Scheierman",
+         "price": -148,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Baylor Scheierman",
+         "price": 108,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Keldon Johnson",
+         "price": -127,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Keldon Johnson",
+         "price": -108,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Jayson Tatum",
+         "price": -113,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jayson Tatum",
+         "price": -121,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Victor Wembanyama",
+         "price": -134,
+         "point": 10.5
+        },
+        {
+         "name": "Under",
+         "description": "Victor Wembanyama",
+         "price": -103,
+         "point": 10.5
+        },
+        {
+         "name": "Over",
+         "description": "De'Aaron Fox",
+         "price": -152,
+         "point": 2.5
+        },
+        {
+         "name": "Under",
+         "description": "De'Aaron Fox",
+         "price": 112,
+         "point": 2.5
+        },
+        {
+         "name": "Over",
+         "description": "Dylan Harper",
+         "price": -127,
+         "point": 2.5
+        },
+        {
+         "name": "Under",
+         "description": "Dylan Harper",
+         "price": -106,
+         "point": 2.5
+        },
+        {
+         "name": "Over",
+         "description": "Derrick White",
+         "price": -167,
+         "point": 3.5
+        },
+        {
+         "name": "Under",
+         "description": "Derrick White",
+         "price": 123,
+         "point": 3.5
+        },
+        {
+         "name": "Over",
+         "description": "Jaylen Brown",
+         "price": -122,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jaylen Brown",
+         "price": -112,
+         "point": 6.5
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "key": "pinnacle",
+     "title": "Pinnacle",
+     "last_update": "2026-03-10T18:05:33Z",
+     "markets": [
+      {
+       "key": "player_rebounds",
+       "last_update": "2026-03-10T18:05:30Z",
+       "outcomes": [
+        {
+         "name": "Over",
+         "description": "Jaylen Brown",
+         "price": -134,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jaylen Brown",
+         "price": 101,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Jayson Tatum",
+         "price": -136,
+         "point": 6.5
+        },
+        {
+         "name": "Under",
+         "description": "Jayson Tatum",
+         "price": 102,
+         "point": 6.5
+        },
+        {
+         "name": "Over",
+         "description": "Neemias Queta",
+         "price": -145,
+         "point": 8.5
+        },
+        {
+         "name": "Under",
+         "description": "Neemias Queta",
+         "price": 109,
+         "point": 8.5
+        },
+        {
+         "name": "Over",
+         "description": "Victor Wembanyama",
+         "price": 109,
+         "point": 11.5
+        },
+        {
+         "name": "Under",
+         "description": "Victor Wembanyama",
+         "price": -145,
+         "point": 11.5
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ }
+}
